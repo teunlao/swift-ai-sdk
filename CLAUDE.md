@@ -98,6 +98,50 @@ Swift:      Sources/SwiftAISDK/ProviderUtils/Delay.swift
 Tests:      Tests/SwiftAISDKTests/ProviderUtils/DelayTests.swift
 ```
 
+**⚠️ REQUIRED: Upstream References in Code**
+
+Every ported file MUST include header comment with upstream source:
+
+```swift
+/**
+ Brief description of the module.
+
+ Port of `@ai-sdk/provider-utils/src/delay.ts`.
+
+ Additional details if needed.
+ */
+```
+
+**Format:**
+- Functions/Types: `Port of '@ai-sdk/PACKAGE/src/PATH.ts'`
+- Use backticks around path
+- Package names: `provider`, `provider-utils`, `ai`
+
+**Examples:**
+```swift
+// ✅ Good - File header
+/**
+ Delays execution for a specified time.
+
+ Port of `@ai-sdk/provider-utils/src/delay.ts`.
+ */
+
+// ✅ Good - Complex function
+/**
+ Converts TypeScript AbortSignal to Swift cancellation check.
+
+ Port of `@ai-sdk/ai/src/generate-text.ts` (abortSignal handling).
+ Adapted: Swift uses @Sendable closure instead of AbortSignal.
+ */
+
+// ✅ Good - Type with adaptation
+/**
+ Port of `@ai-sdk/provider/src/language-model/v3/message.ts`.
+
+ TypeScript union: `type | type` → Swift enum with associated values.
+ */
+```
+
 **API must match exactly**:
 ```typescript
 // TypeScript
@@ -174,9 +218,27 @@ date -u +"%Y-%m-%dT%H:%M:%SZ"
 
 ### Document Deviations
 If exact parity is impossible:
-- Add code comment with upstream reference
-- Document in `plan/design-decisions.md`
+- **MUST**: Add code comment with upstream reference (see "Upstream References in Code" above)
+- **MUST**: Explain why adaptation was needed
+- Document significant changes in `plan/design-decisions.md`
 - Ensure tests verify adapted behavior
+
+**Example of documented deviation:**
+```swift
+/**
+ Port of `@ai-sdk/ai/src/generate-text.ts` (cancellation handling).
+
+ TypeScript: Uses AbortSignal for cancellation
+ Swift: Uses @Sendable () -> Bool closure that returns true when cancelled
+
+ Reason: Swift has no standard AbortSignal type. Closure pattern is idiomatic
+ and integrates with Swift's Task cancellation model.
+ */
+public struct CallSettings {
+    public var abortSignal: (@Sendable () -> Bool)?
+    // ...
+}
+```
 
 ## Common Patterns
 
@@ -309,7 +371,8 @@ Before marking task complete:
 - [ ] Behavior matches exactly (same inputs → outputs/errors)
 - [ ] ALL upstream tests ported
 - [ ] All tests pass (including existing tests)
-- [ ] Code comments reference upstream when needed
+- [ ] **Every file has upstream reference in header comment** (`Port of '@ai-sdk/...'`)
+- [ ] Adaptations documented with explanation if needed
 - [ ] `plan/progress.md` updated with UTC timestamp
 - [ ] No regressions introduced
 
