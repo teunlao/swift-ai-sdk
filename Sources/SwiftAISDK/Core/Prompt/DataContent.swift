@@ -63,8 +63,10 @@ public func convertToLanguageModelV3DataContent(
         // Try to parse string as URL
         if let url = URL(string: str), url.scheme == "data" {
             return try extractDataFromDataURL(url)
-        } else if let url = URL(string: str) {
-            // Regular URL
+        } else if let url = URL(string: str),
+                  let scheme = url.scheme,
+                  (scheme == "http" || scheme == "https") {
+            // Regular URL with valid http/https scheme
             return (data: .url(url), mediaType: nil)
         } else {
             // Not a valid URL, treat as base64 string
@@ -159,7 +161,7 @@ private func extractDataFromDataURL(_ url: URL) throws -> (data: LanguageModelV3
 // MARK: - Supporting Types
 
 /// Union type for data content or URL
-public enum DataContentOrURL: Sendable {
+public enum DataContentOrURL: Sendable, Equatable {
     case data(Data)
     case string(String)
     case url(URL)

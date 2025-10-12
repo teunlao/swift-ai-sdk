@@ -29,17 +29,16 @@ struct StandardizePromptTests {
         #expect(result.system == nil)
         #expect(result.messages.count == 1)
 
-        guard case .user(let content, _) = result.messages[0] else {
+        guard case .user(let userMessage) = result.messages[0] else {
             Issue.record("Expected user message")
             return
         }
 
-        #expect(content.count == 1)
-        guard case .text(let textContent) = content[0] else {
+        guard case .text(let text) = userMessage.content else {
             Issue.record("Expected text content")
             return
         }
-        #expect(textContent.text == "Hello, world!")
+        #expect(text == "Hello, world!")
     }
 
     @Test("converts text prompt with system message")
@@ -54,30 +53,29 @@ struct StandardizePromptTests {
         #expect(result.system == "You are a helpful assistant")
         #expect(result.messages.count == 1)
 
-        guard case .user(let content, _) = result.messages[0] else {
+        guard case .user(let userMessage) = result.messages[0] else {
             Issue.record("Expected user message")
             return
         }
 
-        #expect(content.count == 1)
-        guard case .text(let textContent) = content[0] else {
+        guard case .text(let text) = userMessage.content else {
             Issue.record("Expected text content")
             return
         }
-        #expect(textContent.text == "Hello!")
+        #expect(text == "Hello!")
     }
 
     @Test("passes through messages array")
     func passesThroughMessagesArray() throws {
-        let messages: [LanguageModelV3Message] = [
-            .user(
-                content: [.text(.init(text: "Message 1"))],
+        let messages: [ModelMessage] = [
+            .user(UserModelMessage(
+                content: .parts([.text(TextPart(text: "Message 1"))]),
                 providerOptions: nil
-            ),
-            .assistant(
-                content: [.text(.init(text: "Response 1"))],
+            )),
+            .assistant(AssistantModelMessage(
+                content: .parts([.text(TextPart(text: "Response 1"))]),
                 providerOptions: nil
-            ),
+            )),
         ]
 
         let prompt = Prompt(system: nil, messages: messages)
@@ -99,11 +97,11 @@ struct StandardizePromptTests {
 
     @Test("handles messages with system")
     func handlesMessagesWithSystem() throws {
-        let messages: [LanguageModelV3Message] = [
-            .user(
-                content: [.text(.init(text: "Hello"))],
+        let messages: [ModelMessage] = [
+            .user(UserModelMessage(
+                content: .parts([.text(TextPart(text: "Hello"))]),
                 providerOptions: nil
-            )
+            ))
         ]
 
         let prompt = Prompt(system: "System prompt", messages: messages)
@@ -116,11 +114,11 @@ struct StandardizePromptTests {
 
     @Test("converts PromptContent.messages to array")
     func convertsPromptContentMessages() throws {
-        let messages: [LanguageModelV3Message] = [
-            .user(
-                content: [.text(.init(text: "Test"))],
+        let messages: [ModelMessage] = [
+            .user(UserModelMessage(
+                content: .parts([.text(TextPart(text: "Test"))]),
                 providerOptions: nil
-            )
+            ))
         ]
 
         let prompt = Prompt(system: nil, prompt: .messages(messages))

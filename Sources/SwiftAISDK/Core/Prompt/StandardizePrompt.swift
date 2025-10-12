@@ -1,6 +1,19 @@
 import Foundation
 
 /**
+ Standardized prompt structure containing system message and messages.
+ */
+public struct StandardizedPrompt: Sendable {
+    public let system: String?
+    public let messages: [ModelMessage]
+
+    public init(system: String?, messages: [ModelMessage]) {
+        self.system = system
+        self.messages = messages
+    }
+}
+
+/**
  Standardizes a prompt into a consistent format with system message and message list.
 
  Port of `@ai-sdk/ai/src/prompt/standardize-prompt.ts`.
@@ -12,27 +25,27 @@ import Foundation
  - Validates that messages are not empty
 
  TypeScript version is async due to zod schema validation. Swift version is
- synchronous since type system guarantees `[LanguageModelV3Message]` correctness.
+ synchronous since type system guarantees `[ModelMessage]` correctness.
 
  - Parameter prompt: The prompt to standardize
- - Returns: A tuple containing optional system message and array of messages
+ - Returns: StandardizedPrompt containing optional system message and array of messages
  - Throws: `InvalidPromptError` if messages are empty or prompt is invalid
  */
-public func standardizePrompt(_ prompt: Prompt) throws -> (system: String?, messages: [LanguageModelV3Message]) {
+public func standardizePrompt(_ prompt: Prompt) throws -> StandardizedPrompt {
     // Extract system message
     let system = prompt.system
 
-    var messages: [LanguageModelV3Message]
+    var messages: [ModelMessage]
 
     // Handle prompt content
     if let promptContent = prompt.prompt {
         switch promptContent {
         case .text(let text):
-            // Convert simple text to user message
-            messages = [LanguageModelV3Message.user(
-                content: [.text(.init(text: text))],
+            // Convert simple text to user message (matches upstream line 46-47)
+            messages = [.user(UserModelMessage(
+                content: .text(text),
                 providerOptions: nil
-            )]
+            ))]
 
         case .messages(let msgs):
             // Already have messages
@@ -61,8 +74,9 @@ public func standardizePrompt(_ prompt: Prompt) throws -> (system: String?, mess
     }
 
     // Note: TypeScript version validates message schema via zod (line 66-79).
-    // Swift relies on type system: [LanguageModelV3Message] is compile-time guaranteed.
+    // Swift relies on type system: [ModelMessage] is compile-time guaranteed.
     // No runtime schema validation needed.
 
-    return (system, messages)
+    // Return StandardizedPrompt struct (matches upstream line 81-84)
+    return StandardizedPrompt(system: system, messages: messages)
 }

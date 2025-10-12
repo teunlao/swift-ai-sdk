@@ -41,7 +41,7 @@ public struct Prompt: Sendable, Equatable {
     /**
      Array of messages. Mutually exclusive with `prompt`.
      */
-    public let messages: [LanguageModelV3Message]?
+    public let messages: [ModelMessage]?
 
     /**
      Creates a prompt with a simple text or message list.
@@ -63,7 +63,7 @@ public struct Prompt: Sendable, Equatable {
        - system: Optional system message
        - messages: Array of messages
      */
-    public init(system: String? = nil, messages: [LanguageModelV3Message]) {
+    public init(system: String? = nil, messages: [ModelMessage]) {
         self.system = system
         self.prompt = nil
         self.messages = messages
@@ -83,7 +83,7 @@ public enum PromptContent: Sendable, Equatable {
     case text(String)
 
     /// Array of messages
-    case messages([LanguageModelV3Message])
+    case messages([ModelMessage])
 }
 
 // MARK: - Convenience Initializers
@@ -107,7 +107,7 @@ extension Prompt {
        - messages: Array of messages
        - system: Optional system message
      */
-    public static func messages(_ messages: [LanguageModelV3Message], system: String? = nil) -> Prompt {
+    public static func messages(_ messages: [ModelMessage], system: String? = nil) -> Prompt {
         Prompt(system: system, messages: messages)
     }
 }
