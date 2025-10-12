@@ -7,3 +7,9 @@ DerivedData/
 .swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
 .netrc
 external/
+
+# Validation artifacts (real validation requests/reports created during work)
+# Documentation, examples, and templates ARE committed
+.validation/requests/validate-*
+.validation/reports/*-validation-*
+.validation/temp/
