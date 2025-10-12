@@ -40,3 +40,8 @@ Unofficial Swift port of the Vercel AI SDK. The goal is to mirror the original T
 
 ## Upstream Reference
 - Vercel AI SDK 6.0.0-beta.42 (`77db222eeded7a936a8a268bf7795ff86c060c2f`).
+
+## License
+Swift AI SDK is an independent port of the Vercel AI SDK (Apache License 2.0).  
+This repository is distributed under the **Apache License 2.0**—see [`LICENSE`](LICENSE) for the full text.  
+Portions of the code are adapted from the upstream Vercel AI SDK project; all modifications are documented within this repo.
