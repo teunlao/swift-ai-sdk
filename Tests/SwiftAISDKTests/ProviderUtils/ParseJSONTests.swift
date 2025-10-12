@@ -231,4 +231,67 @@ struct ParseJSONTests {
         #expect(isParsableJson("invalid") == false)
         #expect(isParsableJson(#"{"foo": }"#) == false)
     }
+
+    // MARK: - Number/Boolean Distinction Tests (Critical for NSNumber coercion fix)
+
+    @Test("parseJSON correctly distinguishes numbers from booleans")
+    func parseJSONNumberBooleanDistinction() async throws {
+        // Test numbers 0 and 1 specifically (edge case with NSNumber coercion)
+        let numbersJson = "[0, 1, 2]"
+        let numbersResult = try await parseJSON(ParseJSONOptions(text: numbersJson))
+
+        guard case .array(let numbers) = numbersResult else {
+            Issue.record("Expected array")
+            return
+        }
+
+        #expect(numbers.count == 3)
+        #expect(numbers[0] == .number(0))  // Not .bool(false)!
+        #expect(numbers[1] == .number(1))  // Not .bool(true)!
+        #expect(numbers[2] == .number(2))
+
+        // Test actual booleans
+        let booleansJson = "[true, false]"
+        let booleansResult = try await parseJSON(ParseJSONOptions(text: booleansJson))
+
+        guard case .array(let bools) = booleansResult else {
+            Issue.record("Expected array")
+            return
+        }
+
+        #expect(bools.count == 2)
+        #expect(bools[0] == .bool(true))
+        #expect(bools[1] == .bool(false))
+
+        // Test mixed types
+        let mixedJson = #"{"flag": true, "count": 1, "zero": 0}"#
+        let mixedResult = try await parseJSON(ParseJSONOptions(text: mixedJson))
+
+        guard case .object(let obj) = mixedResult else {
+            Issue.record("Expected object")
+            return
+        }
+
+        #expect(obj["flag"] == .bool(true))    // Boolean
+        #expect(obj["count"] == .number(1))    // Number 1, not bool!
+        #expect(obj["zero"] == .number(0))     // Number 0, not bool!
+    }
+
+    @Test("safeParseJSON correctly distinguishes numbers from booleans")
+    func safeParseJSONNumberBooleanDistinction() async {
+        let json = "[0, 1, true, false]"
+        let result = await safeParseJSON(ParseJSONOptions(text: json))
+
+        guard case .success(let value, _) = result,
+              case .array(let arr) = value else {
+            Issue.record("Expected successful parse with array")
+            return
+        }
+
+        #expect(arr.count == 4)
+        #expect(arr[0] == .number(0))      // Number, not bool
+        #expect(arr[1] == .number(1))      // Number, not bool
+        #expect(arr[2] == .bool(true))     // Boolean
+        #expect(arr[3] == .bool(false))    // Boolean
+    }
 }

@@ -128,6 +128,18 @@ private func jsonValue(from value: Any) throws -> JSONValue {
         return .null
     }
 
+    // CRITICAL FIX: Check NSNumber BEFORE Bool to avoid NSNumber(0)/NSNumber(1) coercion
+    // See validation report: parsejson-bool-coercion-investigation-2025-10-12.md
+    if let number = value as? NSNumber {
+        // Detect actual JSON booleans using CFBoolean type check
+        // JSONSerialization returns __NSCFBoolean for true/false, __NSCFNumber for numbers
+        if CFGetTypeID(number as CFTypeRef) == CFBooleanGetTypeID() {
+            return .bool(number.boolValue)
+        }
+        return .number(number.doubleValue)
+    }
+
+    // This check now only catches non-NSNumber Bool values (rare edge case)
     if let bool = value as? Bool {
         return .bool(bool)
     }
@@ -152,10 +164,9 @@ private func jsonValue(from value: Any) throws -> JSONValue {
         return .string(string)
     }
 
-    if let number = value as? NSNumber {
-        // NSNumber may also represent boolean; bools handled above.
-        return .number(number.doubleValue)
-    }
+    // Individual number checks (Double, Int, Float) are now unreachable
+    // because NSNumber check above catches all numeric types from JSONSerialization.
+    // Keeping them for defensive programming in case non-JSONSerialization values are passed.
 
     if let double = value as? Double {
         return .number(double)
