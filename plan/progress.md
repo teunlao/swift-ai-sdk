@@ -5,15 +5,15 @@
 
 Формат: отмечаем завершённые элементы из `plan/todo.md`, указываем дату/комментарий.
 
-## Сводка (Last Update: 2025-10-12)
+## Сводка (Last Update: 2025-10-12T14:10:15Z)
 - ✅ **EventSourceParser**: 100% паритет, 30 тестов
 - ✅ **LanguageModelV2**: 17 типов, 50 тестов, 100% покрытие типов
 - ✅ **LanguageModelV3**: 17 типов, 39 тестов, 100% паритет (+ preliminary field)
 - ✅ **Provider Errors**: 15 типов, 26 тестов, 100% паритет
-- ✅ **ProviderUtils**: 13 утилит (GenerateID, Delay, Headers, UserAgent, LoadSettings, HTTP Utils), 68 тестов, 100% паритет ✅
+- ✅ **ProviderUtils**: 15 утилит (GenerateID, Delay, Headers, UserAgent, LoadSettings, HTTP Utils, Version, SecureJsonParse), 77 тестов, 100% паритет ✅
 - ✅ **JSONValue**: Codable + Expressible протоколы
-- 📊 **Итого**: ~6200+ строк кода, 89 файлов, **227/227 тестов** ✅ 🎯
-- 🏗️ **Сборка**: `swift build` ~0.2-1.2s, `swift test` **227/227 passed**
+- 📊 **Итого**: ~9500+ строк кода, 104 файла, **236/236 тестов** ✅ 🎯
+- 🏗️ **Сборка**: `swift build` ~0.7-0.9s, `swift test` **236/236 passed**
 
 ## Блок A. Инфраструктура (`@ai-sdk/provider`)
 - [x] **shared типы** — JSONValue (Codable + Expressible), SharedV2/V3 алиасы ✅
@@ -64,7 +64,18 @@
   - `Sources/SwiftAISDK/ProviderUtils/{IsAbortError,Resolve,HandleFetchError}.swift`
   - `Tests/SwiftAISDKTests/ProviderUtils/HTTPUtilsTests.swift`
   - 18 тестов, 100% паритет (4 overloads for resolve)
-- [ ] HTTP-хелперы (post-to-api) — не начато
+- [x] **Version** — package version string ✅
+  - `Sources/SwiftAISDK/ProviderUtils/Version.swift`
+  - Константа VERSION для User-Agent headers
+- [x] **SecureJsonParse** — безопасный JSON parsing с защитой от prototype pollution ✅
+  - `Sources/SwiftAISDK/ProviderUtils/SecureJsonParse.swift`
+  - `Tests/SwiftAISDKTests/ProviderUtils/SecureJsonParseTests.swift`
+  - 9 тестов (6 upstream + 3 для вложенных массивов), 100% паритет
+  - Адаптирован из fastify/secure-json-parse (BSD-3-Clause)
+  - Использует .fragmentsAllowed для поддержки JSON primitives
+  - Рекурсивный обход массивов любой глубины (исправлено по замечанию валидатора)
+- [ ] HTTP-хелперы (post-to-api, get-from-api) — не начато
+- [ ] parse-json / validate-types — не начато
 - [ ] schema/validation — не начато
 
 ## Блок C. Util (packages/ai/src/util)
@@ -242,3 +253,34 @@
 **Итого:** 227/227 тестов, 100% upstream паритет ✅
 
 </details>
+
+---
+
+## [executor][claude-code] Сессия 2025-10-12T14:02:53Z (четырнадцатая): Version & SecureJsonParse
+
+**Реализовано:**
+- ✅ `Version.swift` — константа VERSION="0.1.0-alpha" для package versioning
+- ✅ `SecureJsonParse.swift` — защита от prototype pollution (адаптирован из fastify/secure-json-parse, BSD-3-Clause)
+- ✅ 9 тестов (100% паритет с upstream + 3 дополнительных для вложенных массивов)
+- ✅ **236/236 тестов** проходят (+9 новых: 6 базовых + 3 для вложенных массивов)
+
+**Детали реализации:**
+- `.fragmentsAllowed` для поддержки JSON primitives (null, 0, "X")
+- Regex pre-check + BFS scan для обнаружения `__proto__` и `constructor.prototype`
+- ✅ **Рекурсивный обход массивов любой глубины** (исправлено по замечанию валидатора)
+- Полный BSD-3-Clause copyright header
+
+**Validator fix (2025-10-12T14:15:00Z):**
+- ⚠️ **Критическая находка валидатора**: исходная версия не обрабатывала массивы-of-массивов `[[{"__proto__": {}}]]`
+- ✅ **Исправлено**: добавлена функция `collectDictionaries(from:)` для рекурсивного сбора словарей из вложенных массивов
+- ✅ **Добавлено 3 теста**:
+  1. `errorsOnProtoInNestedArrays` — проверка `__proto__` в `[[{...}]]`
+  2. `errorsOnConstructorInNestedArrays` — проверка `constructor.prototype` в `[[[{...}]]]`
+  3. `parsesCleanNestedArrays` — позитивный тест для чистых вложенных массивов
+- ✅ **100% upstream parity** достигнут
+
+**Объём:** 2 файла реализации (~160 строк), 1 тест (~105 строк)
+
+**Итого:** ~9500 строк, 104 файла, 236/236 тестов ✅
+
+— agent‑executor/claude‑code, 2025-10-12T14:02:53Z (updated 2025-10-12T14:15:00Z)
