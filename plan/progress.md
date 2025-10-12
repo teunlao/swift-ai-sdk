@@ -36,7 +36,6 @@
 - [x] **SSE parser** — EventSourceParser (порт `eventsource-parser@3.0.6`) ✅
   - `Sources/EventSourceParser/*.swift` (3 файла)
   - 30 тестов, 100% паритет
-  - 📋 Ревью: `plan/review-2025-10-12-parser.md`
 - [x] **generate-id / createIDGenerator** — ID generation utilities ✅
   - `Sources/SwiftAISDK/ProviderUtils/GenerateID.swift`
   - `Tests/SwiftAISDKTests/ProviderUtils/GenerateIDTests.swift`
@@ -196,10 +195,8 @@
 - StreamPart расширен до 19 событий (было 10)
 
 ### Детальные ревью
-- `plan/review-2025-10-12-v2types.md` — анализ расхождений V2
-- `plan/review-2025-10-12-parser.md` — валидация EventSourceParser
-- `plan/review-2025-10-12-missing-tests.md` — анализ покрытия тестами
 - `plan/v2-vs-v3-analysis.md` — обоснование V3
+- `plan/review-2025-10-12-missing-types-tests.md` — финальная валидация V2 тестов (100% coverage)
 
 </details>
 
