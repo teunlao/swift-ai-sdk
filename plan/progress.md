@@ -10,10 +10,10 @@
 - ✅ **LanguageModelV2**: 17 типов, 50 тестов, 100% покрытие типов
 - ✅ **LanguageModelV3**: 17 типов, 39 тестов, 100% паритет (+ preliminary field)
 - ✅ **Provider Errors**: 15 типов, 26 тестов, 100% паритет
-- ✅ **ProviderUtils**: 10 утилит (GenerateID, Delay, Headers, UserAgent, LoadSettings), 48 тестов, 100% паритет ✅
+- ✅ **ProviderUtils**: 13 утилит (GenerateID, Delay, Headers, UserAgent, LoadSettings, HTTP Utils), 60 тестов, 100% паритет ✅
 - ✅ **JSONValue**: Codable + Expressible протоколы
-- 📊 **Итого**: ~6000+ строк кода, 85 файлов, **207/207 тестов** ✅ 🎯
-- 🏗️ **Сборка**: `swift build` ~0.2-1.2s, `swift test` **207/207 passed**
+- 📊 **Итого**: ~6200+ строк кода, 89 файлов, **219/219 тестов** ✅ 🎯
+- 🏗️ **Сборка**: `swift build` ~0.2-1.2s, `swift test` **219/219 passed**
 
 ## Блок A. Инфраструктура (`@ai-sdk/provider`)
 - [x] **shared типы** — JSONValue (Codable + Expressible), SharedV2/V3 алиасы ✅
@@ -61,7 +61,11 @@
   - `Sources/SwiftAISDK/ProviderUtils/{LoadSetting,LoadOptionalSetting,LoadAPIKey}.swift`
   - `Tests/SwiftAISDKTests/ProviderUtils/LoadSettingsTests.swift`
   - 6 тестов, 100% паритет
-- [ ] HTTP-хелперы (fetch/post/retry) — не начато
+- [x] **isAbortError / resolve / handleFetchError** ✅
+  - `Sources/SwiftAISDK/ProviderUtils/{IsAbortError,Resolve,HandleFetchError}.swift`
+  - `Tests/SwiftAISDKTests/ProviderUtils/HTTPUtilsTests.swift`
+  - 12 тестов, 100% паритет
+- [ ] HTTP-хелперы (post-to-api) — не начато
 - [ ] schema/validation — не начато
 
 ## Блок C. Util (packages/ai/src/util)
@@ -342,5 +346,16 @@
 - ✅ **LoadOptionalSetting** — загрузка опциональных настроек
 - ✅ **LoadAPIKey** — загрузка API ключей
 - ✅ **207/207 тестов** (+6 новых)
+
+— agent‑executor/claude‑code, 2025-10-12
+
+---
+
+## [executor][claude-code] Сессия 2025-10-12 (тринадцатая): HTTP Utils
+
+- ✅ **IsAbortError** — проверка cancellation errors
+- ✅ **Resolve** — async резолв значений/closures
+- ✅ **HandleFetchError** — обработка network ошибок
+- ✅ **219/219 тестов** (+12 новых)
 
 — agent‑executor/claude‑code, 2025-10-12
