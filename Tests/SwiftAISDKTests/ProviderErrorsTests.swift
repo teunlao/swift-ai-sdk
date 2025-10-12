@@ -142,7 +142,7 @@ struct ProviderErrorsTests {
     @Test("InvalidPromptError prepends 'Invalid prompt:'")
     func testInvalidPromptError() {
         let error = InvalidPromptError(
-            prompt: ["invalid": "prompt"],
+            prompt: "Prompt(system: nil, prompt: nil, messages: nil)",
             message: "Missing required fields"
         )
         #expect(error.message == "Invalid prompt: Missing required fields")

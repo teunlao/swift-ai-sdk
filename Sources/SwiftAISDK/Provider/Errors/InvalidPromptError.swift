@@ -1,29 +1,74 @@
+import Foundation
+
 /**
- * A prompt is invalid. This error should be thrown by providers when they cannot
- * process a prompt.
- *
- * Swift port of TypeScript `InvalidPromptError`.
+ Error thrown when a prompt is invalid.
+
+ Port of `@ai-sdk/provider/src/errors/invalid-prompt-error.ts`.
+
+ This error should be thrown by providers when they cannot process a prompt.
+ Reasons include:
+ - Empty messages array
+ - Both prompt and messages are nil
+ - Both prompt and messages are defined (XOR violation)
+ - Invalid message structure
+
+ ## Example
+ ```swift
+ // Empty messages
+ throw InvalidPromptError(
+     prompt: "Prompt(system: nil, prompt: nil, messages: nil)",
+     message: "messages must not be empty"
+ )
+
+ // Both defined
+ throw InvalidPromptError(
+     prompt: "Prompt(system: \"...\", prompt: \"...\", messages: [...])",
+     message: "prompt and messages cannot be defined at the same time"
+ )
+ ```
  */
-public struct InvalidPromptError: AISDKError, @unchecked Sendable {
-    public static let errorDomain = "vercel.ai.error.AI_InvalidPromptError"
+public struct InvalidPromptError: Error, AISDKError, Sendable {
+    public static let errorDomain = "AI_InvalidPromptError"
+    public var name: String { Self.errorDomain }
 
-    public let name = "AI_InvalidPromptError"
     public let message: String
+    public let prompt: String // description of invalid prompt
     public let cause: (any Error)?
-    public let prompt: Any?
 
-    public init(
-        prompt: Any?,
-        message: String,
-        cause: (any Error)? = nil
-    ) {
+    /**
+     Creates an invalid prompt error.
+
+     - Parameters:
+       - prompt: Description of the invalid prompt (for debugging)
+       - message: Error message explaining what is wrong
+       - cause: Optional underlying error
+     */
+    public init(prompt: String, message: String, cause: (any Error)? = nil) {
         self.prompt = prompt
-        self.message = "Invalid prompt: \(message)"
         self.cause = cause
+        self.message = "Invalid prompt: \(message)"
     }
 
-    /// Check if an error is an instance of InvalidPromptError
+    public var errorDescription: String? {
+        message
+    }
+
+    public func toDictionary() -> [String: Any] {
+        var dict: [String: Any] = [
+            "name": Self.errorDomain,
+            "message": message,
+            "prompt": prompt
+        ]
+
+        if let cause = cause {
+            dict["cause"] = String(describing: cause)
+        }
+
+        return dict
+    }
+
+    /// Type guard to check if an error is an InvalidPromptError
     public static func isInstance(_ error: any Error) -> Bool {
-        SwiftAISDK.hasMarker(error, marker: errorDomain)
+        return error is InvalidPromptError
     }
 }
