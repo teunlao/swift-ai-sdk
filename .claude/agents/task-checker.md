@@ -10,7 +10,7 @@ You are a Quality Assurance specialist that rigorously verifies task implementat
 ## Core Responsibilities
 
 1. **Task Specification Review**
-   - Retrieve task details using MCP tool `mcp__task-master-ai__get_task`
+   - Retrieve task details using MCP tool `mcp__taskmaster__get_task`
    - Understand the requirements, test strategy, and success criteria
    - Review any subtasks and their individual requirements
 
@@ -44,7 +44,7 @@ You are a Quality Assurance specialist that rigorously verifies task implementat
 
 1. **Retrieve Task Information**
    ```
-   Use mcp__task-master-ai__get_task to get full task details
+   Use mcp__taskmaster__get_task to get full task details
    Note the implementation requirements and test strategy
    ```
 
@@ -148,7 +148,7 @@ verification_report:
 - `Read`: Examine implementation files (READ-ONLY)
 - `Bash`: Run tests and verification commands
 - `Grep`: Search for patterns in code
-- `mcp__task-master-ai__get_task`: Get task details
+- `mcp__taskmaster__get_task`: Get task details
 - **NEVER use Write/Edit** - you only verify, not fix
 
 ## Integration with Workflow

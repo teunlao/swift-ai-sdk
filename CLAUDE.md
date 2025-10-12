@@ -420,24 +420,24 @@ This project has **Task Master AI** available as an **optional structured task t
 
 ```bash
 # View tasks (via MCP)
-mcp__taskmaster-ai__get_tasks
+mcp__taskmaster__get_tasks
 
 # Find next task
-mcp__taskmaster-ai__next_task
+mcp__taskmaster__next_task
 
 # Add task manually (explicit text, no AI)
-mcp__taskmaster-ai__add_task
+mcp__taskmaster__add_task
   title: "Implement PrepareTools function"
   description: "Port prepareTools from @ai-sdk/ai/src/..."
   details: "Detailed implementation notes here"
 
 # Update task status
-mcp__taskmaster-ai__set_task_status
+mcp__taskmaster__set_task_status
   id: "1.2"
   status: "done"
 
 # Add dependencies
-mcp__taskmaster-ai__add_dependency
+mcp__taskmaster__add_dependency
   id: "2.1"
   dependsOn: "1.2"
 ```
@@ -461,7 +461,7 @@ Task Master provides structured task tracking:
 
 - `.taskmaster/` — Fully gitignored (each dev installs if needed)
 - `.claude/commands/tm/` — Task Master slash commands (committed)
-- `.mcp.json` — MCP config (committed, but optional to use)
+- Task Master MCP server configured globally (no local config needed)
 
 ---
 

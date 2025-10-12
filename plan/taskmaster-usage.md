@@ -32,7 +32,7 @@ Task Master AI is available as an **optional structured task tracker** for this 
 ### View Tasks
 
 ```
-mcp__taskmaster-ai__get_tasks
+mcp__taskmaster__get_tasks
 projectRoot: /path/to/swift-ai-sdk
 ```
 
@@ -44,7 +44,7 @@ Options:
 ### Get Next Task
 
 ```
-mcp__taskmaster-ai__next_task
+mcp__taskmaster__next_task
 projectRoot: /path/to/swift-ai-sdk
 tag: "block-d"  # optional filter
 ```
@@ -54,7 +54,7 @@ Automatically finds next available task considering dependencies.
 ### Add Task (Manual)
 
 ```
-mcp__taskmaster-ai__add_task
+mcp__taskmaster__add_task
 projectRoot: /path/to/swift-ai-sdk
 title: "Implement PrepareTools function"
 description: "Port prepareTools from @ai-sdk/ai/src/generate-text/prepare-tools.ts"
@@ -68,7 +68,7 @@ tag: "block-d"
 ### Add Subtask
 
 ```
-mcp__taskmaster-ai__add_subtask
+mcp__taskmaster__add_subtask
 projectRoot: /path/to/swift-ai-sdk
 taskId: "1"
 title: "Write tests for PrepareTools"
@@ -79,7 +79,7 @@ status: "pending"
 ### Update Task Status
 
 ```
-mcp__taskmaster-ai__set_task_status
+mcp__taskmaster__set_task_status
 projectRoot: /path/to/swift-ai-sdk
 id: "1.2"
 status: "done"
@@ -90,7 +90,7 @@ Status values: `pending`, `in-progress`, `done`, `review`, `deferred`, `cancelle
 ### Add Dependencies
 
 ```
-mcp__taskmaster-ai__add_dependency
+mcp__taskmaster__add_dependency
 projectRoot: /path/to/swift-ai-sdk
 id: "2.1"
 dependsOn: "1.2"
@@ -101,14 +101,14 @@ Task 2.1 will be blocked until task 1.2 is done.
 ### ❌ Update Task — NOT AVAILABLE IN MANUAL MODE
 
 ```
-❌ FORBIDDEN: mcp__taskmaster-ai__update_task
-❌ FORBIDDEN: mcp__taskmaster-ai__update_subtask
+❌ FORBIDDEN: mcp__taskmaster__update_task
+❌ FORBIDDEN: mcp__taskmaster__update_subtask
 ```
 
 **Why**: `prompt` is a **required parameter** for these tools. They ALWAYS trigger AI generation.
 
 **Manual alternatives**:
-- Change status: `mcp__taskmaster-ai__set_task_status`
+- Change status: `mcp__taskmaster__set_task_status`
 - Change other fields: Edit `.taskmaster/tasks/tasks.json` directly
 - Or recreate the task with correct values
 
@@ -186,7 +186,7 @@ Task Master is the **primary** task management system:
 └── ...
 
 .claude/commands/tm/         # Committed (slash commands)
-.mcp.json                    # Committed (MCP config, optional)
+# Task Master MCP server configured globally (no local config needed)
 ```
 
 ---
@@ -201,19 +201,19 @@ Task Master is already initialized. Just use MCP tools.
 
 ```
 # Add main task
-mcp__taskmaster-ai__add_task
+mcp__taskmaster__add_task
   title: "Implement Block D: PrepareTools"
   description: "Port prepare-tools.ts from upstream"
   tag: "block-d"
   priority: "high"
 
 # Add subtasks
-mcp__taskmaster-ai__add_subtask
+mcp__taskmaster__add_subtask
   taskId: "1"
   title: "Implement prepareTools function"
   description: "Core function implementation"
 
-mcp__taskmaster-ai__add_subtask
+mcp__taskmaster__add_subtask
   taskId: "1"
   title: "Port all tests"
   description: "15 tests from prepare-tools.test.ts"
@@ -223,17 +223,17 @@ mcp__taskmaster-ai__add_subtask
 
 ```
 # Get next task
-mcp__taskmaster-ai__next_task
+mcp__taskmaster__next_task
 
 # Mark as in progress
-mcp__taskmaster-ai__set_task_status
+mcp__taskmaster__set_task_status
   id: "1.1"
   status: "in-progress"
 
 # ... implement ...
 
 # Mark as done
-mcp__taskmaster-ai__set_task_status
+mcp__taskmaster__set_task_status
   id: "1.1"
   status: "done"
 ```
@@ -242,7 +242,7 @@ mcp__taskmaster-ai__set_task_status
 
 ```
 # Block E depends on Block D
-mcp__taskmaster-ai__add_dependency
+mcp__taskmaster__add_dependency
   id: "5"      # Block E task
   dependsOn: "4"  # Block D task
 
@@ -271,15 +271,15 @@ The `.taskmaster/` directory is gitignored, so it won't affect other developers.
 
 | Operation | MCP Tool |
 |-----------|----------|
-| View all tasks | `mcp__taskmaster-ai__get_tasks` |
-| Get next task | `mcp__taskmaster-ai__next_task` |
-| Add task | `mcp__taskmaster-ai__add_task` |
-| Add subtask | `mcp__taskmaster-ai__add_subtask` |
-| Update status | `mcp__taskmaster-ai__set_task_status` |
-| Add dependency | `mcp__taskmaster-ai__add_dependency` |
-| Remove dependency | `mcp__taskmaster-ai__remove_dependency` |
-| Get specific task | `mcp__taskmaster-ai__get_task` |
-| Validate dependencies | `mcp__taskmaster-ai__validate_dependencies` |
+| View all tasks | `mcp__taskmaster__get_tasks` |
+| Get next task | `mcp__taskmaster__next_task` |
+| Add task | `mcp__taskmaster__add_task` |
+| Add subtask | `mcp__taskmaster__add_subtask` |
+| Update status | `mcp__taskmaster__set_task_status` |
+| Add dependency | `mcp__taskmaster__add_dependency` |
+| Remove dependency | `mcp__taskmaster__remove_dependency` |
+| Get specific task | `mcp__taskmaster__get_task` |
+| Validate dependencies | `mcp__taskmaster__validate_dependencies` |
 
 ---
 
