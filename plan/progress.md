@@ -202,158 +202,43 @@
 
 ---
 
-## [validator][claude-code] Валидация 2025-10-12: Missing V2 Types Tests
-
-### Статус: ✅ APPROVED
-
-**Проверено:** 4 новых тестовых файла (+14 тестов)
-- LanguageModelV2CallOptionsTests.swift (2 теста)
-- LanguageModelV2CallWarningTests.swift (5 тестов)
-- LanguageModelV2PromptTests.swift (5 тестов)
-- LanguageModelV2ResponseMetadataTests.swift (2 теста)
-
-**Результаты:**
-- ✅ Все тесты проходят: **145/145 passed** (было 131/131)
-- ✅ **100% паритет с upstream** TypeScript типами
-- ✅ **0 критических расхождений** найдено
-- ✅ **100% покрытие V2 типов** достигнуто (17/17)
-
-**Upstream comparison:**
-- Upstream V2 unit-тестов: **0**
-- Наш SDK V2 unit-тестов: **50** 🏆
-- **Мы лучше upstream** по test coverage
-
-**Готовность:** ✅ Готов к коммиту
-
-📋 **Детальный отчёт:** `plan/review-2025-10-12-missing-types-tests.md`
-
-— validator/claude-code, 2025-10-12
-
----
-
 > **Примечание**: Детальные описания сессий архивируются после завершения блоков. Текущий статус и следующие задачи см. в разделах A-O выше.
 
 ---
 
-## [executor][claude-code] Сессия 2025-10-12 (девятая): ProviderUtils - GenerateID & Delay
+<details>
+<summary>Сессии 9-13 (2025-10-12): ProviderUtils завершение — 13 утилит, 68 тестов</summary>
 
-### Реализовано
-- ✅ **GenerateID utility** — порт `generate-id.ts` (100% паритет)
-  - `createIDGenerator()` — фабрика с кастомным alphabet/prefix/separator/size
-  - `generateID()` — глобальный генератор (16 символов по умолчанию)
-  - `IDGenerator` typealias — `@Sendable () -> String`
-  - Валидация: separator не должен быть в alphabet
-  - 8 тестов покрывают все сценарии
+**Сессия 9: GenerateID & Delay** (16 тестов)
+- `createIDGenerator()` + `generateID()` — ID generation с кастомизацией
+- `delay()` — async delay с Task cancellation
+- Решения: Sendable compliance, edge cases (nil/negative), Task.sleep
 
-- ✅ **Delay utility** — порт `delay.ts` (100% паритет)
-  - `delay(_ delayInMs: Int?)` — async delay с поддержкой cancellation
-  - Использует Swift structured concurrency (`Task.sleep`)
-  - Обработка edge cases: nil (instant), negative (instant), 0 (instant)
-  - 8 тестов включая cancellation scenarios
+**Сессия 10: Headers** (17 тестов)
+- `combineHeaders()` — merge multiple header dictionaries (10 тестов)
+- `extractResponseHeaders()` — HTTPURLResponse → Dictionary (7 тестов)
 
-### Детали реализации
-- **Sendable compliance**: все closures помечены `@Sendable` для thread-safety
-- **Cancellation**: delay интегрирован с Task cancellation через `Task.checkCancellation()`
-- **Negative handling**: отрицательные значения обрабатываются как immediate (паритет с TS)
-- **Random generation**: использует Swift `Int.random(in:)` вместо Math.random()
+**Сессия 11: UserAgent** (11 тестов, +2 validator)
+- `removeUndefinedEntries()` — filter nil values
+- `getRuntimeEnvironmentUserAgent()` — platform detection (iOS/macOS/Linux)
+- `withUserAgentSuffix()` — append to User-Agent header
 
-### Тесты (16 новых)
-**GenerateIDTests** (8 тестов):
-- Custom/default length validation
-- Prefix format checking
-- Alphabet constraint enforcement
-- Separator validation (throws InvalidArgumentError)
-- Uniqueness проверка
+**Сессия 12: LoadSettings** (6 тестов)
+- `loadSetting()` — обязательные настройки (throws)
+- `loadOptionalSetting()` — опциональные настройки
+- `loadAPIKey()` — environment variables для API keys
 
-**DelayTests** (8 тестов):
-- Basic timing validation (50ms delay)
-- Nil/zero/negative delays (immediate return)
-- Cancellation handling (before/during delay)
-- Multiple concurrent delays
-- Large delay values (smoke test)
+**Сессия 13: HTTP Utils** (18 тестов, +8 validator revision)
+- `isAbortError()` — detect cancellation (CancellationError, URLError)
+- `resolve()` — 4 overloads для value/sync/async closures (11 тестов)
+- `handleFetchError()` — convert network errors to APICallError
 
-### Объём работы
-- 2 файла реализации (~150 строк)
-- 2 тестовых файла (~200 строк)
-- 0 breaking changes
+**Технические решения:**
+- Swift Sendable для thread-safety
+- Task cancellation вместо AbortSignal
+- Function overloading вместо Union types
+- URLError codes вместо TypeError
 
-### Сборка/тесты
-- ✅ `swift build` — успешно (0.72s)
-- ✅ `swift test` — **175/175 passed** (было 159/159)
-- ✅ +16 новых тестов для ProviderUtils
-- ✅ Все тесты проходят без warnings
+**Итого:** 227/227 тестов, 100% upstream паритет ✅
 
-### Технические решения
-1. **Sendable compliance**: 
-   - `IDGenerator = @Sendable () -> String`
-   - Все closures внутри функций помечены `@Sendable`
-   
-2. **Delay cancellation**:
-   - Swift: `Task.checkCancellation()` + `Task.sleep(nanoseconds:)`
-   - TypeScript: `AbortSignal` → Swift: встроенная Task cancellation
-
-3. **Negative delay handling**:
-   ```swift
-   guard delayInMs > 0 else { return } // Immediate return
-   ```
-
-### Следующие приоритетные задачи
-1. Headers utilities (combine/extract) — простые утилиты
-2. HTTP базовая инфраструктура (fetch/response-handler) — ключевой компонент
-3. Retry/Resolve utilities — нужны для HTTP
-4. Load settings (API keys) — нужны для провайдеров
-
-### Итог:
-- ✅ **2 утилиты** реализованы с 100% паритетом
-- ✅ **16 тестов** добавлено
-- ✅ **175/175 тестов** проходят
-- ✅ `swift build` — 0.72s
-- 📊 Проект: ~5400+ строк кода, 73 файла
-- 🚀 **Готов к следующему этапу (Headers/HTTP)**
-
-— agent‑executor/claude‑code, 2025-10-12
-
----
-
-## [executor][claude-code] Сессия 2025-10-12 (десятая): Headers Utilities
-
-- ✅ **CombineHeaders** — порт `combine-headers.ts` (10 тестов)
-- ✅ **ExtractResponseHeaders** — порт `extract-response-headers.ts` (7 тестов)
-- ✅ **192/192 тестов** проходят
-- 🚀 Готов к HTTP infrastructure
-
-— agent‑executor/claude‑code, 2025-10-12
-
----
-
-## [executor][claude-code] Сессия 2025-10-12 (одиннадцатая): User Agent Utilities
-
-- ✅ **RemoveUndefinedEntries** — фильтр nil значений
-- ✅ **GetRuntimeEnvironmentUserAgent** — платформа Swift (iOS/macOS/Linux)
-- ✅ **WithUserAgentSuffix** — добавление суффиксов к User-Agent
-- ✅ **201/201 тестов** (+9 новых)
-
-— agent‑executor/claude‑code, 2025-10-12
-
----
-
-## [executor][claude-code] Сессия 2025-10-12 (двенадцатая): Load Settings Utilities
-
-- ✅ **LoadSetting** — загрузка обязательных настроек
-- ✅ **LoadOptionalSetting** — загрузка опциональных настроек
-- ✅ **LoadAPIKey** — загрузка API ключей
-- ✅ **207/207 тестов** (+6 новых)
-
-— agent‑executor/claude‑code, 2025-10-12
-
----
-
-## [executor][claude-code] Сессия 2025-10-12 (тринадцатая): HTTP Utils
-
-- ✅ **IsAbortError** — проверка cancellation errors (4 теста)
-- ✅ **Resolve** — async резолв значений/closures (11 тестов, 4 overloads)
-- ✅ **HandleFetchError** — обработка network ошибок (3 теста)
-- ✅ **227/227 тестов** (+18 новых для HTTP Utils)
-- 🔄 **Validator revision**: +8 тестов для resolve (headers use-case, stateful closures)
-
-— agent‑executor/claude‑code, 2025-10-12
+</details>
