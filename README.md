@@ -20,8 +20,8 @@ Unofficial Swift port of the Vercel AI SDK. The goal is to mirror the original T
 
 ### Current Stats
 - ✅ Build: `swift build` — ~0.2s
-- ✅ Tests: 67/67 passed (EventSourceParser: 30, V2 types: 11, Provider Errors: 26)
-- 📊 Total: ~2300+ lines of code across 35+ files
+- ✅ Tests: 92/92 passed (EventSourceParser: 30, V2 types: 36, Provider Errors: 26)
+- 📊 Total: ~2800+ lines of code across 40+ files
 
 ## Upstream Reference
 - Vercel AI SDK 6.0.0-beta.42 (`77db222eeded7a936a8a268bf7795ff86c060c2f`).
