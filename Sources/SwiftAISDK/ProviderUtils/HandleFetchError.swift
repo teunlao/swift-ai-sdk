@@ -7,7 +7,7 @@ import Foundation
 public func handleFetchError(
     error: Error,
     url: String,
-    requestBodyValues: JSONValue?
+    requestBodyValues: Any?
 ) -> Error {
     if isAbortError(error) {
         return error
