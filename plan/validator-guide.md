@@ -22,9 +22,8 @@
 ## Что делает валидатор
 - Снимает `git diff` и сверяет изменения с upstream‑контрактами и реализациями.
 - Прогоняет сборку/тесты локально и фиксирует статус.
-- Обновляет:
-  - `plan/progress.md` — краткие статусы по блокам (с префиксом `[validator]`).
-  - `plan/review-YYYY-MM-DD.md` — подробный отчёт с ссылками на файлы и actionable items.
+- Создает отчёты валидации:
+  - `.validation/reports/` — подробный отчёт с ссылками на файлы и actionable items.
 - Отмечает серьёзность замечаний: `blocker | major | minor | nit`.
 
 ## Когда запускать
@@ -63,32 +62,38 @@
    - Сопоставить изменённые области с `external/vercel-ai-sdk/...`.
 3. Сборка/тесты
    - `swift build` и `swift test` → зафиксировать итог.
-4. Обновить план
-   - `plan/progress.md` — кратко, с `[validator]`.
-   - `plan/review-YYYY-MM-DD.md` — подробно: «ЧТО СДЕЛАНО / РАСХОЖДЕНИЯ / ACTION ITEMS».
+4. Создать отчёт валидации
+   - `.validation/reports/` — подробно: «ЧТО СДЕЛАНО / РАСХОЖДЕНИЯ / ACTION ITEMS».
+   - Использовать шаблон из `.validation/QUICKSTART.md`.
 
-## Шаблон отчёта (`plan/review-YYYY-MM-DD.md`)
+## Шаблон отчёта (`.validation/reports/validation-YYYY-MM-DD.md`)
 ```
-# Отчёт валидации — YYYY‑MM‑DD
-> Документ составлен агентом‑валидатором для исполнителя.
-> Время отчёта (UTC): YYYY-MM-DDTHH:MM:SSZ
+# Validation Report — Feature Name
 
-## Сводка
-- Коммиты/ветка: <кратко>
-- Сборка/тесты: pass|fail, детали
+**Validator**: validator/model-name
+**Date**: YYYY-MM-DDTHH:MM:SSZ
+**Status**: ✅ APPROVED / ⚠️ ISSUES / ❌ REJECTED
 
-## Что сделано (валидировано)
-- Пуленые пункты со ссылками на файлы и строками.
+## Executive Summary
+[Brief overview]
 
-## Расхождения vs upstream
-- [severity] Описание и ссылки на соответствующие исходники (Swift/TS).
+## Files Validated
+[List of files]
 
-## Action items
-- [severity] Краткое задание → куда править (файл:строка).
+## API Parity Verification
+[Detailed comparison]
 
-## Примечания
-- Риски (незакоммиченные файлы, плавающие тесты, TODO без реализации и т.п.).
+## Behavior Parity Verification
+[Test results and behavior checks]
+
+## Issues Found
+[List of blockers, major, minor issues]
+
+## Verdict
+[Final decision with reasoning]
 ```
+
+См. `.validation/QUICKSTART.md` и примеры в `.validation/reports/` для подробностей.
 
 ## Промпт для запуска валидатора (скопируй‑вставь)
 ```
@@ -100,18 +105,17 @@
 - Цель: выявить расхождения (API, поведение, типы, HTTP/SSE, тесты), предложить исправления.
 
 Сделай:
-1) Сними git‑дифф и список незакоммиченных файлов.
-2) Сопоставь затронутые области с upstream файлами.
-3) Прогони сборку/тесты.
-4) Обнови план:
-   - plan/progress.md — краткие статусы ([validator]) с меткой времени `YYYY-MM-DDTHH:MM:SSZ`.
-   - plan/review-YYYY-MM-DD.md — подробный отчёт с severity и actionable items; вверху укажи «Время отчёта (UTC): YYYY-MM-DDTHH:MM:SSZ».
+1) Прочитай validation request из `.validation/requests/`.
+2) Сними git‑дифф и список незакоммиченных файлов.
+3) Сопоставь затронутые области с upstream файлами.
+4) Прогони сборку/тесты.
+5) Создай validation report в `.validation/reports/` с severity и actionable items.
 
-Отчёт дай с разделами: Сводка / Что сделано / Расхождения / Action items / Примечания. Все новые записи помечай [validator] и добавляй метку времени `YYYY-MM-DDTHH:MM:SSZ`.
+Используй шаблон из `.validation/QUICKSTART.md`. Отчёт должен содержать: Executive Summary / Files Validated / API Parity / Behavior Parity / Issues Found / Verdict.
 ```
 
 ## Маркировка и серьёзность
-- Префикс: `[validator]` в `plan/progress.md` и начале пунктов в review.
+- Префикс: `[validator]` в validation reports.
 - Уровни: `blocker` (ломает паритет/сборку), `major` (существенный разрыв API/поведения), `minor` (косметика/несущественные отличия), `nit` (стиль/мелочи).
 
 ## Definition of Done (для валидируемого изменения)
@@ -119,9 +123,9 @@
 - Тесты покрывают основные и пограничные сценарии, локально зелёные.
 - Документация/пакет обновлены, план/отчёт заполнены.
 
-## Примечания по файлам плана
-- `plan/progress.md` — живой журнал кратких статусов.
-- `plan/review-YYYY-MM-DD.md` — подробности конкретной валидации за дату.
+## Примечания по файлам валидации
+- `.validation/requests/` — запросы на валидацию от исполнителей.
+- `.validation/reports/` — отчёты валидации с детальным анализом.
 - Все ссылки на файлы указывать с путями вида `Sources/...:строка`.
 
 ---

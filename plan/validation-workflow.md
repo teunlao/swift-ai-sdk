@@ -95,7 +95,7 @@ swift-ai-sdk/
 | `.validation/temp/` | Scratch files | ❌ No (temporary) |
 | `plan/` | Permanent documentation | ✅ Yes |
 
-**Important**: `.validation/` is gitignored. Final validation outcomes should be documented in `plan/progress.md` or committed reports.
+**Important**: `.validation/` is gitignored. Final validation outcomes should be documented in Task Master and `plan/design-decisions.md` if relevant.
 
 ---
 
@@ -150,7 +150,7 @@ The validator agent automatically:
 
 ### Phase 5: Documentation (Both)
 
-1. Executor documents completion in `plan/progress.md`
+1. Executor updates task status in Task Master
 2. Validation outcome summarized (not full report)
 3. Delete temporary files from `.validation/`
 
@@ -173,7 +173,7 @@ The validator agent automatically:
 [2-3 sentences describing what was implemented]
 
 **Upstream**: Vercel AI SDK v6.0.0-beta.42 (commit `77db222ee`)
-**Block**: [Block A/B/C/etc from plan/todo.md]
+**Block**: [Block A/B/C/etc from Task Master]
 
 ---
 
@@ -324,7 +324,7 @@ This custom validator agent **complements** the existing validation process:
 ### Before (Manual Review)
 
 1. Executor implements feature
-2. Executor updates `plan/progress.md`
+2. Executor updates task status in Task Master
 3. Validator manually reads code
 4. Validator creates review in `plan/review-*.md`
 5. Review file committed to git
@@ -336,7 +336,7 @@ This custom validator agent **complements** the existing validation process:
 3. **Validator agent automatically reviews** ✨
 4. Agent creates report in `.validation/reports/` (temp)
 5. Executor fixes issues
-6. **Final outcome documented in `plan/progress.md`**
+6. **Final outcome documented in Task Master**
 7. Temp files deleted
 
 ### Benefits

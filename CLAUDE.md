@@ -10,10 +10,18 @@ Port **Vercel AI SDK** from TypeScript to Swift with **100% upstream parity**.
 
 ## Quick Start
 
-**Read these files first every session**:
+**📋 Task Management:**
 ```bash
-plan/todo.md                    # Task list
-plan/progress.md                # Current status & history
+# Task Master commands
+mcp__taskmaster__next_task                              # Find next task
+mcp__taskmaster__get_task --id=4.3                      # Get task details
+mcp__taskmaster__get_tasks --status=pending             # List pending
+mcp__taskmaster__set_task_status --id=4.3 --status=done # Mark done
+```
+
+**📚 Read first:**
+```bash
+.taskmaster/CLAUDE.md           # Task Master guide
 plan/executor-guide.md          # Executor workflow
 plan/validation-workflow.md     # Validation process
 plan/principles.md              # Porting rules
@@ -89,13 +97,13 @@ external/vercel-ai-sdk/
 ### Executor Role
 **Implement features, write tests, update docs.**
 
-1. Read plan docs (`plan/*.md`)
+1. Find next task: `mcp__taskmaster__next_task`
 2. Find TypeScript code in `external/vercel-ai-sdk/`
 3. Port to Swift in `Sources/SwiftAISDK/`
 4. Port ALL upstream tests to `Tests/SwiftAISDKTests/`
 5. Run `swift build && swift test` (must pass 100%)
 6. Request validation review
-7. Update `plan/progress.md` with timestamped entry
+7. Mark complete: `mcp__taskmaster__set_task_status --id=X --status=done`
 
 **Never**: Commit/push without permission, break parity, leave failing tests.
 
@@ -147,8 +155,8 @@ EOF
 
 ### 1. Planning
 ```bash
-cat plan/todo.md              # Check tasks
-cat plan/progress.md | tail   # Check status
+mcp__taskmaster__next_task                  # Find next task
+mcp__taskmaster__get_task --id=4.3          # Check task details
 ```
 
 ### 2. Find Upstream Code
@@ -204,23 +212,6 @@ swift test               # All tests must pass
 
 See **Validation Workflow** above or `.validation/QUICKSTART.md`
 
-### 7. Document Progress
-```bash
-date -u +"%Y-%m-%dT%H:%M:%SZ"  # Get timestamp
-```
-
-Update `plan/progress.md`:
-```markdown
-## [executor][agent-name] Session YYYY-MM-DDTHH:MM:SSZ: Feature Name
-
-**Implemented:**
-- ✅ File.swift — description (X tests, 100% parity)
-
-**Tests:** X/X passed (+Y new)
-
-— agent-executor/model-name, YYYY-MM-DDTHH:MM:SSZ
-```
-
 ---
 
 ## Parity Standards
@@ -269,7 +260,7 @@ See `plan/principles.md` for complete guidelines.
 - JSONValue (universal JSON type)
 - Block D Foundation (8 tests): Prompt, CallSettings, DataContent
 
-**🚧 Next Priorities** (see `plan/todo.md`):
+**🚧 Next Priorities** (see Task Master):
 - Block D: PrepareTools, ConvertToLanguageModelPrompt
 - Block E: Generate/Stream Text core functionality
 - Block F: Text/UI streams
@@ -281,9 +272,6 @@ See `plan/principles.md` for complete guidelines.
 ## Key Commands
 
 ```bash
-# Planning
-cat plan/todo.md plan/progress.md
-
 # Find upstream
 ls external/vercel-ai-sdk/packages/*/src/
 
@@ -323,9 +311,8 @@ Before requesting validation:
 1. **Read first, code second** — Always check upstream and plan
 2. **Test everything** — No code without tests (100% coverage)
 3. **Validate early** — Use validator agent proactively
-4. **Document progress** — Every session logged in progress.md
-5. **100% parity** — Match TypeScript behavior exactly
-6. **Never commit** — Wait for approval
+4. **100% parity** — Match TypeScript behavior exactly
+5. **Never commit** — Wait for approval
 
 ---
 
@@ -337,8 +324,6 @@ Before requesting validation:
 - `Package.swift` — SwiftPM manifest
 
 ### Plan Directory
-- `todo.md` — Master task list (blocks A-O)
-- `progress.md` — Session history with timestamps
 - `principles.md` — Porting guidelines with examples
 - `executor-guide.md` — Detailed executor workflow
 - `validation-workflow.md` — ⭐ Validation process & agent usage
@@ -397,15 +382,26 @@ This project has **Task Master AI** available as an **optional structured task t
 
 **We do NOT use Task Master's AI features.** No API keys required.
 
-- ❌ Do NOT use `--research` flag
-- ❌ Do NOT use `parse-prd` with AI generation
-- ❌ Do NOT use `expand-task` with AI
-- ❌ Do NOT use `add-task --prompt` with AI generation
-- ✅ DO manually create tasks with explicit text
-- ✅ DO use Task Master as a structured database
-- ✅ DO use tags for organization (block-a, block-b, etc.)
-- ✅ DO use dependencies tracking
-- ✅ DO use status management (pending/in-progress/done)
+### ❌ FORBIDDEN (Always Use AI):
+- `update_task` — requires `prompt` parameter (AI-only)
+- `update_subtask` — requires `prompt` parameter (AI-only)
+- `expand_task` — AI generation
+- `parse-prd` — AI generation
+- `--research` flag
+- Any tool with required `prompt` parameter
+
+### ✅ ALLOWED Tools (Manual Only):
+- `get_tasks` — view tasks
+- `get_task` — get specific task details
+- `next_task` — find next available task
+- `set_task_status` — change status (use this for updates!)
+- `add_task` — with explicit `title`, `description`, `details`
+- `add_subtask` — with explicit fields
+- `remove_task` / `remove_subtask`
+- `add_dependency` / `remove_dependency`
+- `validate_dependencies` / `fix_dependencies`
+
+**Rule**: `update_task` is AI-only. Use `set_task_status` for status changes, or edit JSON directly for other fields.
 
 ### Basic Usage (Manual Mode)
 
@@ -435,10 +431,9 @@ mcp__taskmaster-ai__add_dependency
 
 ### Integration with Existing Workflow
 
-Task Master **supplements** (not replaces) existing docs:
+Task Master provides structured task tracking:
 
-- **Primary source**: `plan/todo.md`, `plan/progress.md`
-- **Task Master**: Optional structured view of same tasks
+- **Primary source**: Task Master for task management
 - **Session contexts**: Still used in `.sessions/`
 - **Validation**: Still uses `.validation/` workflow
 
@@ -447,16 +442,13 @@ Task Master **supplements** (not replaces) existing docs:
 - ✅ Complex multi-block projects with dependencies
 - ✅ Tracking parallel work across multiple agents
 - ✅ Need structured view of task hierarchy
-- ❌ Simple linear tasks (just use todo.md)
-- ❌ Quick one-off fixes
+- ✅ All project task management
 
 ### Files
 
 - `.taskmaster/` — Fully gitignored (each dev installs if needed)
 - `.claude/commands/tm/` — Task Master slash commands (committed)
 - `.mcp.json` — MCP config (committed, but optional to use)
-
-**If you don't use Task Master**: Just ignore it. All task info is still in `plan/todo.md` and `plan/progress.md`.
 
 ---
 

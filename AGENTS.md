@@ -10,8 +10,7 @@ Port **Vercel AI SDK** from TypeScript to Swift with **100% upstream parity**.
 
 **Read these files first every session**:
 ```bash
-plan/todo.md              # Task list
-plan/progress.md          # Current status & history
+Task Master               # Task management system
 plan/executor-guide.md    # Executor workflow
 plan/validator-guide.md   # Validator checklist
 plan/principles.md        # Porting rules
@@ -61,7 +60,7 @@ external/eventsource-parser/      # SSE parsing library
 3. Port to Swift in `Sources/SwiftAISDK/`
 4. Port tests to `Tests/SwiftAISDKTests/`
 5. Run `swift build && swift test` (must pass 100%)
-6. Update `plan/progress.md` with timestamped entry
+6. Update task status in Task Master
 
 **Never**: Commit/push without permission, break parity, leave failing tests.
 
@@ -78,11 +77,11 @@ external/eventsource-parser/      # SSE parsing library
 
 ### 1. Planning
 ```bash
-# Check what needs to be done
-cat plan/todo.md
+# Get next task
+mcp__taskmaster__next_task
 
-# Check current status
-cat plan/progress.md | tail -50
+# Check task details
+mcp__taskmaster__get_task --id=4.3
 ```
 
 ### 2. Find Upstream Code
@@ -182,7 +181,7 @@ swift test               # All tests must pass
 ```
 
 ### 6. Document Progress
-**Update `plan/progress.md`**:
+**Update Task Master**:
 ```markdown
 ## [executor][agent-name] Session YYYY-MM-DDTHH:MM:SSZ: Feature Name
 
@@ -334,7 +333,7 @@ struct ModuleTests {
 - ProviderUtils (77 tests): ID gen, delays, headers, user-agent, settings, HTTP utils, version, secure JSON parsing
 - JSONValue (universal JSON type)
 
-**🚧 Next Priorities** (see `plan/todo.md`):
+**🚧 Next Priorities** (see Task Master):
 - Schema & validation system
 - ParseJSON & ValidateTypes
 - HTTP API functions (post-to-api, get-from-api)
@@ -344,7 +343,7 @@ struct ModuleTests {
 
 ```bash
 # Read plan
-cat plan/todo.md plan/progress.md
+mcp__taskmaster__get_tasks
 
 # Find upstream
 ls external/vercel-ai-sdk/packages/*/src/
@@ -375,14 +374,14 @@ Before marking task complete:
 - [ ] All tests pass (including existing tests)
 - [ ] **Every file has upstream reference in header comment** (`Port of '@ai-sdk/...'`)
 - [ ] Adaptations documented with explanation if needed
-- [ ] `plan/progress.md` updated with UTC timestamp
+- [ ] Task status updated in Task Master
 - [ ] No regressions introduced
 
 ## Key Principles
 
 1. **Read first, code second** — Always check upstream and plan
 2. **Test everything** — No code without tests
-3. **Document progress** — Every session logged in progress.md
+3. **Track progress** — Update task statuses in Task Master
 4. **100% parity** — Match TypeScript behavior exactly
 5. **Ask before deviating** — Document unavoidable differences
 6. **Never commit** — Wait for approval
@@ -395,8 +394,7 @@ Before marking task complete:
 - `Package.swift` — SwiftPM manifest
 
 ### Plan Directory
-- `todo.md` — Master task list (blocks A-O)
-- `progress.md` — Session history with timestamps
+- Task Master — Task management and status tracking
 - `principles.md` — Porting guidelines
 - `executor-guide.md` — Detailed executor workflow
 - `validator-guide.md` — Validation checklist

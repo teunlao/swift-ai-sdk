@@ -37,7 +37,7 @@ Use the validator agent to review .validation/requests/validate-my-feature-2025-
 cat .validation/reports/my-feature-validation-2025-10-12.md
 
 # If issues found, fix them and re-request validation
-# If approved, document in plan/progress.md and delete temp files
+# If approved, update task status in Task Master and delete temp files
 ```
 
 ---

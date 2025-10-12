@@ -98,17 +98,19 @@ dependsOn: "1.2"
 
 Task 2.1 will be blocked until task 1.2 is done.
 
-### Update Task (Manual)
+### ❌ Update Task — NOT AVAILABLE IN MANUAL MODE
 
 ```
-mcp__taskmaster-ai__update_task
-projectRoot: /path/to/swift-ai-sdk
-id: "1.2"
-prompt: "Added implementation notes:\n- Function signature matches upstream\n- All 15 tests passing"
-append: true
+❌ FORBIDDEN: mcp__taskmaster-ai__update_task
+❌ FORBIDDEN: mcp__taskmaster-ai__update_subtask
 ```
 
-**Note**: `prompt` here is just text content to append, NOT AI generation.
+**Why**: `prompt` is a **required parameter** for these tools. They ALWAYS trigger AI generation.
+
+**Manual alternatives**:
+- Change status: `mcp__taskmaster-ai__set_task_status`
+- Change other fields: Edit `.taskmaster/tasks/tasks.json` directly
+- Or recreate the task with correct values
 
 ---
 
@@ -139,21 +141,21 @@ Recommended tags matching our blocks:
 
 ## Integration with Existing Workflow
 
-Task Master is **optional** and **supplements** (not replaces) existing docs:
+Task Master is the **primary** task management system:
 
-### Primary Sources (Always Used)
-- `plan/todo.md` — High-level plan with blocks A-O
-- `plan/progress.md` — Session history and completed work
-- `.sessions/` — Session contexts for multi-session work
-- `.validation/` — Validation workflow
-
-### Task Master (Optional)
+### Task Master (Primary)
 - Provides structured view with dependencies
 - Helps find next task automatically
 - Tracks status across multiple agents
 - Useful for complex multi-block work
 
-**Rule**: If task is in Task Master, keep both `plan/progress.md` and Task Master in sync.
+### Other Systems
+- `.sessions/` — Session contexts for multi-session work
+- `.validation/` — Validation workflow
+- `plan/design-decisions.md` — Important technical decisions
+- `plan/*-guide.md` — Process documentation
+
+**Rule**: Document important technical decisions in `plan/design-decisions.md`.
 
 ---
 
@@ -170,7 +172,7 @@ Task Master is **optional** and **supplements** (not replaces) existing docs:
 - Simple linear tasks
 - Single-block implementation
 - Quick one-off fixes
-- When `plan/todo.md` is sufficient
+- Never - Task Master is the primary task management system
 
 ---
 
@@ -255,11 +257,11 @@ mcp__taskmaster-ai__add_dependency
 
 Task Master is initialized but no tasks created yet. This is normal. Either:
 - Create tasks manually via `add_task`
-- Or continue using `plan/todo.md`
+- Task Master is the primary system
 
 ### Want to disable Task Master?
 
-Just don't use it! Everything works from `plan/todo.md` and `plan/progress.md`.
+Task Master is optional but provides structured task management. If not using it, track work through git commits and design-decisions.md.
 
 The `.taskmaster/` directory is gitignored, so it won't affect other developers.
 

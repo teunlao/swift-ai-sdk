@@ -13,7 +13,7 @@
 
 **Related**:
 - Upstream: `external/vercel-ai-sdk/packages/ai/src/generate-text/generate-text.ts`
-- Plan: `plan/todo.md` Block E
+- Plan: Task Master Block E
 - Previous session: `.sessions/session-2025-10-11-17-00-generatetext.md` (if any)
 
 ---
@@ -126,7 +126,7 @@ await withTaskGroup(of: ToolResult.self) { group in
 - `external/vercel-ai-sdk/packages/ai/src/generate-text/execute-tool-call.ts` (tools)
 
 ### Documentation
-- `plan/todo.md` - Block E
+- Task Master - Block E tasks
 - `plan/principles.md` - Async patterns
 - `.validation/requests/validate-generatetext-2025-10-12.md` (if created)
 
