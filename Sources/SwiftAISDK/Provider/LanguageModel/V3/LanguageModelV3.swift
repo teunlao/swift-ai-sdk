@@ -1,12 +1,12 @@
 import Foundation
 
 /**
- Specification for a language model that implements the language model interface version 2.
+ Specification for a language model that implements the language model interface version 3.
 
  TypeScript equivalent:
  ```typescript
  export type LanguageModelV3 = {
-   readonly specificationVersion: 'v2';
+   readonly specificationVersion: 'v3';
    readonly provider: string;
    readonly modelId: string;
    supportedUrls: PromiseLike<Record<string, RegExp[]>> | Record<string, RegExp[]>;
@@ -43,7 +43,7 @@ public protocol LanguageModelV3: Sendable {
 }
 
 extension LanguageModelV3 {
-    public var specificationVersion: String { "v2" }
+    public var specificationVersion: String { "v3" }
 
     /// Default implementation returns empty dictionary (no native URL support)
     public var supportedUrls: [String: [NSRegularExpression]] {

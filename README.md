@@ -30,9 +30,9 @@ Unofficial Swift port of the Vercel AI SDK. The goal is to mirror the original T
 - **JSONValue** - Universal JSON type with Codable support
 
 ### Current Stats
-- ✅ Build: `swift build` — ~1.2s
-- ✅ Tests: 92/92 passed (EventSourceParser: 30, V2 types: 36, Provider Errors: 26)
-- 📊 Total: ~4000+ lines of code across 60+ files
+- ✅ Build: `swift build` — ~0.2s
+- ✅ Tests: 131/131 passed (EventSourceParser: 30, V2: 36, V3: 39, Provider Errors: 26)
+- 📊 Total: ~5200+ lines of code across 65+ files
 
 ## Upstream Reference
 - Vercel AI SDK 6.0.0-beta.42 (`77db222eeded7a936a8a268bf7795ff86c060c2f`).
