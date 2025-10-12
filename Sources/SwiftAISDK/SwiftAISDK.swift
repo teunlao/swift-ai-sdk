@@ -1,2 +1,7 @@
-// The Swift Programming Language
-// https://docs.swift.org/swift-book
+import Foundation
+
+// Публичный неймспейс SDK
+public enum AISDK {}
+
+// Короткий алиас, как договорились
+public enum ai {}
