@@ -10,10 +10,10 @@
 - ✅ **LanguageModelV2**: 17 типов, 50 тестов, 100% покрытие типов
 - ✅ **LanguageModelV3**: 17 типов, 39 тестов, 100% паритет (+ preliminary field)
 - ✅ **Provider Errors**: 15 типов, 26 тестов, 100% паритет
-- ✅ **ProviderUtils**: 2 утилиты (GenerateID, Delay), 16 тестов, 100% паритет ✅
+- ✅ **ProviderUtils**: 4 утилиты (GenerateID, Delay, CombineHeaders, ExtractResponseHeaders), 33 тестов, 100% паритет ✅
 - ✅ **JSONValue**: Codable + Expressible протоколы
-- 📊 **Итого**: ~5400+ строк кода, 73 файлов, **175/175 тестов** ✅ 🎯
-- 🏗️ **Сборка**: `swift build` ~0.2-1.2s, `swift test` **175/175 passed**
+- 📊 **Итого**: ~5700+ строк кода, 77 файлов, **192/192 тестов** ✅ 🎯
+- 🏗️ **Сборка**: `swift build` ~0.2-1.2s, `swift test` **192/192 passed**
 
 ## Блок A. Инфраструктура (`@ai-sdk/provider`)
 - [x] **shared типы** — JSONValue (Codable + Expressible), SharedV2/V3 алиасы ✅
@@ -45,6 +45,14 @@
   - `Sources/SwiftAISDK/ProviderUtils/Delay.swift`
   - `Tests/SwiftAISDKTests/ProviderUtils/DelayTests.swift`
   - 8 тестов, 100% паритет с `delay.ts`
+- [x] **combineHeaders** — combine multiple header dictionaries ✅
+  - `Sources/SwiftAISDK/ProviderUtils/CombineHeaders.swift`
+  - `Tests/SwiftAISDKTests/ProviderUtils/CombineHeadersTests.swift`
+  - 10 тестов, 100% паритет с `combine-headers.ts`
+- [x] **extractResponseHeaders** — extract headers from HTTPURLResponse ✅
+  - `Sources/SwiftAISDK/ProviderUtils/ExtractResponseHeaders.swift`
+  - `Tests/SwiftAISDKTests/ProviderUtils/ExtractResponseHeadersTests.swift`
+  - 7 тестов, 100% паритет с `extract-response-headers.ts`
 - [ ] HTTP-хелперы (fetch/post/retry) — не начато
 - [ ] load-setting — не начато
 - [ ] schema/validation — не начато
@@ -295,5 +303,16 @@
 - ✅ `swift build` — 0.72s
 - 📊 Проект: ~5400+ строк кода, 73 файла
 - 🚀 **Готов к следующему этапу (Headers/HTTP)**
+
+— agent‑executor/claude‑code, 2025-10-12
+
+---
+
+## [executor][claude-code] Сессия 2025-10-12 (десятая): Headers Utilities
+
+- ✅ **CombineHeaders** — порт `combine-headers.ts` (10 тестов)
+- ✅ **ExtractResponseHeaders** — порт `extract-response-headers.ts` (7 тестов)
+- ✅ **192/192 тестов** проходят
+- 🚀 Готов к HTTP infrastructure
 
 — agent‑executor/claude‑code, 2025-10-12
