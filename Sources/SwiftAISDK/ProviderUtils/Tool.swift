@@ -8,26 +8,10 @@ import Foundation
 
  Port of `@ai-sdk/provider-utils/types/tool.ts`.
 
- **TEMPORARY ADAPTATION**: This file uses `LanguageModelV3Message` (from Provider layer)
- as a temporary substitute for `ModelMessage` (ProviderUtils layer) in callback signatures.
+ Uses `ModelMessage` from `ProviderUtils/ModelMessage.swift` for callback signatures.
 
- **Rationale**:
- - Block D (Prompt Preparation) does not use `ModelMessage` in any logic
- - Full `ModelMessage` + `ContentPart` implementation (~14 files) belongs to Block G (Tool API)
- - This typealias enables Tool type definition without blocking Block D progress
-
- **TODO (Block G)**: Replace typealias with proper ModelMessage implementation including:
- - SystemModelMessage, UserModelMessage, AssistantModelMessage, ToolModelMessage
- - ContentPart types (TextPart, ImagePart, FilePart, ReasoningPart, ToolCallPart, etc.)
- - ToolApprovalRequest, ToolApprovalResponse
- - Update all callback signatures to use ProviderUtils.ModelMessage
-
- **Upstream reference**: `@ai-sdk/provider-utils/types/model-message.ts`
+ **Upstream reference**: `@ai-sdk/provider-utils/types/tool.ts`
  */
-
-// TEMPORARY: Using LanguageModelV3Message until full ModelMessage ported in Block G
-// This is semantically different but structurally similar for callback signatures
-public typealias ModelMessage = LanguageModelV3Message
 
 public struct Tool: Sendable {
     /// An optional description of what the tool does.
@@ -62,7 +46,7 @@ public struct Tool: Sendable {
     public let outputSchema: FlexibleSchema<JSONValue>?
 
     /// Optional conversion function that maps the tool result to an output for the language model.
-    public let toModelOutput: (@Sendable (JSONValue) -> JSONValue)?
+    public let toModelOutput: (@Sendable (JSONValue) -> LanguageModelV3ToolResultOutput)?
 
     /// The type of the tool.
     public let type: ToolType?
@@ -86,7 +70,7 @@ public struct Tool: Sendable {
         onInputAvailable: (@Sendable (ToolCallInputOptions) async throws -> Void)? = nil,
         execute: (@Sendable (JSONValue, ToolCallOptions) async throws -> JSONValue)? = nil,
         outputSchema: FlexibleSchema<JSONValue>? = nil,
-        toModelOutput: (@Sendable (JSONValue) -> JSONValue)? = nil,
+        toModelOutput: (@Sendable (JSONValue) -> LanguageModelV3ToolResultOutput)? = nil,
         type: ToolType? = nil,
         id: String? = nil,
         name: String? = nil,
@@ -262,7 +246,7 @@ public func tool(
     onInputAvailable: (@Sendable (ToolCallInputOptions) async throws -> Void)? = nil,
     execute: (@Sendable (JSONValue, ToolCallOptions) async throws -> JSONValue)? = nil,
     outputSchema: FlexibleSchema<JSONValue>? = nil,
-    toModelOutput: (@Sendable (JSONValue) -> JSONValue)? = nil
+    toModelOutput: (@Sendable (JSONValue) -> LanguageModelV3ToolResultOutput)? = nil
 ) -> Tool {
     Tool(
         description: description,
@@ -289,7 +273,7 @@ public func dynamicTool(
     providerOptions: [String: JSONValue]? = nil,
     inputSchema: FlexibleSchema<JSONValue>,
     execute: @escaping @Sendable (JSONValue, ToolCallOptions) async throws -> JSONValue,
-    toModelOutput: (@Sendable (JSONValue) -> JSONValue)? = nil
+    toModelOutput: (@Sendable (JSONValue) -> LanguageModelV3ToolResultOutput)? = nil
 ) -> Tool {
     Tool(
         description: description,
