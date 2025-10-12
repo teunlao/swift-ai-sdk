@@ -10,10 +10,10 @@
 - ✅ **LanguageModelV2**: 17 типов, 50 тестов, 100% покрытие типов
 - ✅ **LanguageModelV3**: 17 типов, 39 тестов, 100% паритет (+ preliminary field)
 - ✅ **Provider Errors**: 15 типов, 26 тестов, 100% паритет
-- ✅ **ProviderUtils**: 4 утилиты (GenerateID, Delay, CombineHeaders, ExtractResponseHeaders), 33 тестов, 100% паритет ✅
+- ✅ **ProviderUtils**: 7 утилит (GenerateID, Delay, CombineHeaders, ExtractResponseHeaders, RemoveUndefinedEntries, GetRuntimeEnvironmentUserAgent, WithUserAgentSuffix), 42 тестов, 100% паритет ✅
 - ✅ **JSONValue**: Codable + Expressible протоколы
-- 📊 **Итого**: ~5700+ строк кода, 77 файлов, **192/192 тестов** ✅ 🎯
-- 🏗️ **Сборка**: `swift build` ~0.2-1.2s, `swift test` **192/192 passed**
+- 📊 **Итого**: ~5900+ строк кода, 81 файлов, **201/201 тестов** ✅ 🎯
+- 🏗️ **Сборка**: `swift build` ~0.2-1.2s, `swift test` **201/201 passed**
 
 ## Блок A. Инфраструктура (`@ai-sdk/provider`)
 - [x] **shared типы** — JSONValue (Codable + Expressible), SharedV2/V3 алиасы ✅
@@ -53,10 +53,13 @@
   - `Sources/SwiftAISDK/ProviderUtils/ExtractResponseHeaders.swift`
   - `Tests/SwiftAISDKTests/ProviderUtils/ExtractResponseHeadersTests.swift`
   - 7 тестов, 100% паритет с `extract-response-headers.ts`
+- [x] **removeUndefinedEntries / getRuntimeEnvironmentUserAgent / withUserAgentSuffix** ✅
+  - `Sources/SwiftAISDK/ProviderUtils/{RemoveUndefinedEntries,GetRuntimeEnvironmentUserAgent,WithUserAgentSuffix}.swift`
+  - `Tests/SwiftAISDKTests/ProviderUtils/UserAgentTests.swift`
+  - 9 тестов, 100% паритет
 - [ ] HTTP-хелперы (fetch/post/retry) — не начато
 - [ ] load-setting — не начато
 - [ ] schema/validation — не начато
-- [ ] runtime user agent — не начато
 
 ## Блок C. Util (packages/ai/src/util)
 - [ ] асинхронные стримы
@@ -314,5 +317,16 @@
 - ✅ **ExtractResponseHeaders** — порт `extract-response-headers.ts` (7 тестов)
 - ✅ **192/192 тестов** проходят
 - 🚀 Готов к HTTP infrastructure
+
+— agent‑executor/claude‑code, 2025-10-12
+
+---
+
+## [executor][claude-code] Сессия 2025-10-12 (одиннадцатая): User Agent Utilities
+
+- ✅ **RemoveUndefinedEntries** — фильтр nil значений
+- ✅ **GetRuntimeEnvironmentUserAgent** — платформа Swift (iOS/macOS/Linux)
+- ✅ **WithUserAgentSuffix** — добавление суффиксов к User-Agent
+- ✅ **201/201 тестов** (+9 новых)
 
 — agent‑executor/claude‑code, 2025-10-12
