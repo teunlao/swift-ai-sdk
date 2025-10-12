@@ -367,6 +367,7 @@ Before requesting validation:
 
 ### For Executors
 - 🚨 **NEVER edit files outside your task** — If `swift test` fails on other agents' files, STOP work and report to user. Wait for them to fix it
+- 🚨 **NEVER commit `.sessions/` or `.validation/` to git** — These are temporary artifacts, fully gitignored
 - ✅ **Set task status to `in-progress` at start**
 - ✅ Port ALL upstream tests, not just some
 - ✅ Use validator agent after implementation
@@ -380,6 +381,7 @@ Before requesting validation:
 - ❌ Don't mark task complete before validation
 - ❌ Don't leave old session contexts after completion
 - ❌ **NEVER fix compilation errors in other agents' files**
+- ❌ **NEVER git add/commit temporary directories** (`.sessions/`, `.validation/`)
 
 ### For Validators
 - ✅ Use the custom validator agent (`.claude/agents/validator.md`)
