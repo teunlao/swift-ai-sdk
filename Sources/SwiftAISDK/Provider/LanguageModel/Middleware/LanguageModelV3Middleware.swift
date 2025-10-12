@@ -6,6 +6,9 @@
  This type defines the structure for middleware that can be used to modify
  the behavior of LanguageModelV3 operations.
  */
+
+import Foundation
+
 public struct LanguageModelV3Middleware: Sendable {
     /**
      Middleware specification version. Use `v3` for the current version.
@@ -34,7 +37,7 @@ public struct LanguageModelV3Middleware: Sendable {
      - Parameter model: The language model instance.
      - Returns: A dictionary mapping URL types to arrays of regular expression patterns.
      */
-    public let overrideSupportedUrls: (@Sendable (_ model: any LanguageModelV3) async throws -> [String: [String]])?
+    public let overrideSupportedUrls: (@Sendable (_ model: any LanguageModelV3) async throws -> [String: [NSRegularExpression]])?
 
     /**
      Transforms the parameters before they are passed to the language model.
@@ -103,7 +106,7 @@ public struct LanguageModelV3Middleware: Sendable {
         middlewareVersion: String? = "v3",
         overrideProvider: (@Sendable (_ model: any LanguageModelV3) -> String)? = nil,
         overrideModelId: (@Sendable (_ model: any LanguageModelV3) -> String)? = nil,
-        overrideSupportedUrls: (@Sendable (_ model: any LanguageModelV3) async throws -> [String: [String]])? = nil,
+        overrideSupportedUrls: (@Sendable (_ model: any LanguageModelV3) async throws -> [String: [NSRegularExpression]])? = nil,
         transformParams: (@Sendable (_ type: OperationType, _ params: LanguageModelV3CallOptions, _ model: any LanguageModelV3) async throws -> LanguageModelV3CallOptions)? = nil,
         wrapGenerate: (@Sendable (
             _ doGenerate: @Sendable () async throws -> LanguageModelV3GenerateResult,
