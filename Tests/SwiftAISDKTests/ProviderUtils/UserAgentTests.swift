@@ -125,4 +125,43 @@ struct UserAgentTests {
         let result = removeUndefinedEntries(input)
         #expect(result.isEmpty)
     }
+
+    @Test("removeUndefinedEntries preserves falsy string values (empty string)")
+    func testPreserveFalsyValues() {
+        // In TypeScript, "", 0, false are falsy but should be preserved.
+        // In Swift, we test that empty string (falsy in JS) is preserved.
+        let input: [String: String?] = [
+            "empty": "",           // Empty string (falsy in JavaScript)
+            "value": "test",
+            "undefined": nil       // Should be removed
+        ]
+
+        let result = removeUndefinedEntries(input)
+
+        #expect(result["empty"] == "")     // Empty string preserved
+        #expect(result["value"] == "test")
+        #expect(result["undefined"] == nil) // Removed
+        #expect(result.count == 2)
+    }
+
+    // MARK: - WithUserAgentSuffix - Case Sensitivity
+
+    @Test("withUserAgentSuffix handles case-sensitive header keys")
+    func testCaseSensitiveHeaders() {
+        // Note: HTTP headers are case-insensitive per RFC 2616, but Swift Dictionary is case-sensitive.
+        // This test documents the behavior: we use lowercase "user-agent" convention.
+
+        let headersLowercase = ["user-agent": "TestApp/1.0"]
+        let resultLower = withUserAgentSuffix(headersLowercase, "ai-sdk/0.0.0")
+        #expect(resultLower["user-agent"] == "TestApp/1.0 ai-sdk/0.0.0")
+
+        // If someone uses capitalized "User-Agent", it won't be found (dictionary is case-sensitive)
+        let headersCapitalized = ["User-Agent": "TestApp/1.0"]
+        let resultCap = withUserAgentSuffix(headersCapitalized, "ai-sdk/0.0.0")
+
+        // The function looks for lowercase "user-agent", so capitalized one is preserved as-is
+        #expect(resultCap["User-Agent"] == "TestApp/1.0")  // Original preserved
+        #expect(resultCap["user-agent"] == "ai-sdk/0.0.0") // New lowercase key created
+        #expect(resultCap.count == 2) // Two separate keys
+    }
 }
