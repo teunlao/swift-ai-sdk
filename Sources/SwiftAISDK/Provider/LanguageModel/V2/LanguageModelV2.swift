@@ -126,28 +126,46 @@ public struct LanguageModelV2RequestInfo: Sendable {
 }
 
 /// Response information for non-streaming calls
+/// This is an intersection type in TypeScript: LanguageModelV2ResponseMetadata & { headers?, body? }
+/// In Swift, we flatten all fields to one level.
 public struct LanguageModelV2ResponseInfo: Sendable {
+    // Fields from LanguageModelV2ResponseMetadata:
+
+    /// ID for the generated response, if the provider sends one.
+    public let id: String?
+
+    /// Timestamp for the start of the generated response, if the provider sends one.
+    public let timestamp: Date?
+
+    /// The ID of the response model that was used to generate the response, if the provider sends one.
+    public let modelId: String?
+
+    // Additional fields:
+
     /// Response headers.
     public let headers: SharedV2Headers?
 
     /// Response HTTP body.
     public let body: JSONValue?
 
-    /// Response metadata.
-    public let metadata: LanguageModelV2ResponseMetadata?
-
     public init(
+        id: String? = nil,
+        timestamp: Date? = nil,
+        modelId: String? = nil,
         headers: SharedV2Headers? = nil,
-        body: JSONValue? = nil,
-        metadata: LanguageModelV2ResponseMetadata? = nil
+        body: JSONValue? = nil
     ) {
+        self.id = id
+        self.timestamp = timestamp
+        self.modelId = modelId
         self.headers = headers
         self.body = body
-        self.metadata = metadata
     }
 }
 
 /// Response information for streaming calls
+/// In TypeScript: { headers?: SharedV2Headers }
+/// Note: Unlike ResponseInfo, stream response does NOT include metadata fields.
 public struct LanguageModelV2StreamResponseInfo: Sendable {
     /// Response headers.
     public let headers: SharedV2Headers?
