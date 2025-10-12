@@ -30,7 +30,7 @@ public typealias LanguageModelV2Prompt = [LanguageModelV2Message]
  */
 public enum LanguageModelV2Message: Sendable, Equatable, Codable {
     case system(content: String, providerOptions: SharedV2ProviderOptions?)
-    case user(content: [LanguageModelV2MessagePart], providerOptions: SharedV2ProviderOptions?)
+    case user(content: [LanguageModelV2UserMessagePart], providerOptions: SharedV2ProviderOptions?)
     case assistant(content: [LanguageModelV2MessagePart], providerOptions: SharedV2ProviderOptions?)
     case tool(content: [LanguageModelV2ToolResultPart], providerOptions: SharedV2ProviderOptions?)
 
@@ -50,7 +50,7 @@ public enum LanguageModelV2Message: Sendable, Equatable, Codable {
             let content = try container.decode(String.self, forKey: .content)
             self = .system(content: content, providerOptions: providerOptions)
         case "user":
-            let content = try container.decode([LanguageModelV2MessagePart].self, forKey: .content)
+            let content = try container.decode([LanguageModelV2UserMessagePart].self, forKey: .content)
             self = .user(content: content, providerOptions: providerOptions)
         case "assistant":
             let content = try container.decode([LanguageModelV2MessagePart].self, forKey: .content)
@@ -92,7 +92,7 @@ public enum LanguageModelV2Message: Sendable, Equatable, Codable {
 }
 
 /**
- Message part (for user and assistant roles).
+ Assistant message part (for assistant role content).
  Discriminated union of text/file/reasoning/tool-call/tool-result parts.
  */
 public enum LanguageModelV2MessagePart: Sendable, Equatable, Codable {
@@ -141,6 +141,45 @@ public enum LanguageModelV2MessagePart: Sendable, Equatable, Codable {
         case .toolCall(let part):
             try part.encode(to: encoder)
         case .toolResult(let part):
+            try part.encode(to: encoder)
+        }
+    }
+}
+
+/**
+ User message part (restricted to text/file for parity with TypeScript union).
+ */
+public enum LanguageModelV2UserMessagePart: Sendable, Equatable, Codable {
+    case text(LanguageModelV2TextPart)
+    case file(LanguageModelV2FilePart)
+
+    private enum TypeKey: String, CodingKey {
+        case type
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: TypeKey.self)
+        let type = try container.decode(String.self, forKey: .type)
+
+        switch type {
+        case "text":
+            self = .text(try LanguageModelV2TextPart(from: decoder))
+        case "file":
+            self = .file(try LanguageModelV2FilePart(from: decoder))
+        default:
+            throw DecodingError.dataCorruptedError(
+                forKey: .type,
+                in: container,
+                debugDescription: "User messages support only text and file parts, received: \(type)"
+            )
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        switch self {
+        case .text(let part):
+            try part.encode(to: encoder)
+        case .file(let part):
             try part.encode(to: encoder)
         }
     }

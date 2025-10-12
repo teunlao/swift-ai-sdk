@@ -33,7 +33,7 @@ struct LanguageModelV2CallOptionsTests {
     @Test("CallOptions: full configuration")
     func full() throws {
         // Prompt with user text + file, assistant with tool-call, tool message with result
-        let userParts: [LanguageModelV2MessagePart] = [
+        let userParts: [LanguageModelV2UserMessagePart] = [
             .text(.init(text: "Hello")),
             .file(.init(data: .url(URL(string: "https://example.com/a.png")!), mediaType: "image/png", filename: "a.png"))
         ]

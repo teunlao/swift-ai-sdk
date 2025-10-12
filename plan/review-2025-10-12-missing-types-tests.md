@@ -212,7 +212,7 @@ public typealias LanguageModelV2Prompt = [LanguageModelV2Message]
 
 public enum LanguageModelV2Message: Sendable, Equatable, Codable {
     case system(content: String, providerOptions: SharedV2ProviderOptions?)       // ✅
-    case user(content: [LanguageModelV2MessagePart], providerOptions: ...)       // ✅
+    case user(content: [LanguageModelV2UserMessagePart], providerOptions: ...)   // ✅
     case assistant(content: [LanguageModelV2MessagePart], providerOptions: ...)  // ✅
     case tool(content: [LanguageModelV2ToolResultPart], providerOptions: ...)    // ✅
 }

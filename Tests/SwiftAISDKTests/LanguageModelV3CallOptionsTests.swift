@@ -33,7 +33,7 @@ struct LanguageModelV3CallOptionsTests {
     @Test("CallOptions: full configuration")
     func v3_full() throws {
         // Prompt with user text + file, assistant with tool-call, tool message with result
-        let userParts: [LanguageModelV3MessagePart] = [
+        let userParts: [LanguageModelV3UserMessagePart] = [
             .text(.init(text: "Hello")),
             .file(.init(data: .url(URL(string: "https://example.com/a.png")!), mediaType: "image/png", filename: "a.png"))
         ]
@@ -94,4 +94,3 @@ struct LanguageModelV3CallOptionsTests {
         #expect(opts.providerOptions?["provider"]?["opt"] == .bool(true))
     }
 }
-

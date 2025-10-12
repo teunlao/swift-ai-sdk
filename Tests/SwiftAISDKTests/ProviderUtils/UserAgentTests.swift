@@ -11,19 +11,37 @@ import Testing
 struct UserAgentTests {
     // MARK: - GetRuntimeEnvironmentUserAgent
 
-    @Test("getRuntimeEnvironmentUserAgent returns platform-specific runtime")
-    func testGetRuntimeEnvironmentUserAgent() {
+    @Test("getRuntimeEnvironmentUserAgent defaults to unknown runtime")
+    func testRuntimeEnvironmentUnknown() {
         let userAgent = getRuntimeEnvironmentUserAgent()
+        #expect(userAgent == "runtime/unknown")
+    }
 
-        #if os(macOS)
-        #expect(userAgent == "runtime/swift-macos")
-        #elseif os(iOS)
-        #expect(userAgent == "runtime/swift-ios")
-        #elseif os(Linux)
-        #expect(userAgent == "runtime/swift-linux")
-        #else
-        #expect(userAgent.hasPrefix("runtime/swift"))
-        #endif
+    @Test("getRuntimeEnvironmentUserAgent detects browser")
+    func testRuntimeEnvironmentBrowser() {
+        let snapshot = RuntimeEnvironmentSnapshot(hasWindow: true)
+        #expect(getRuntimeEnvironmentUserAgent(snapshot) == "runtime/browser")
+    }
+
+    @Test("getRuntimeEnvironmentUserAgent uses navigator user agent")
+    func testRuntimeEnvironmentNavigator() {
+        let snapshot = RuntimeEnvironmentSnapshot(navigatorUserAgent: "Test-UA")
+        #expect(getRuntimeEnvironmentUserAgent(snapshot) == "runtime/test-ua")
+    }
+
+    @Test("getRuntimeEnvironmentUserAgent detects Node.js")
+    func testRuntimeEnvironmentNode() {
+        let snapshot = RuntimeEnvironmentSnapshot(
+            processVersionsNode: "v20.0.0",
+            processVersion: "v20.0.0"
+        )
+        #expect(getRuntimeEnvironmentUserAgent(snapshot) == "runtime/node.js/v20.0.0")
+    }
+
+    @Test("getRuntimeEnvironmentUserAgent detects Edge runtime")
+    func testRuntimeEnvironmentEdgeRuntime() {
+        let snapshot = RuntimeEnvironmentSnapshot(edgeRuntime: true)
+        #expect(getRuntimeEnvironmentUserAgent(snapshot) == "runtime/vercel-edge")
     }
 
     // MARK: - WithUserAgentSuffix
@@ -159,9 +177,8 @@ struct UserAgentTests {
         let headersCapitalized = ["User-Agent": "TestApp/1.0"]
         let resultCap = withUserAgentSuffix(headersCapitalized, "ai-sdk/0.0.0")
 
-        // The function looks for lowercase "user-agent", so capitalized one is preserved as-is
-        #expect(resultCap["User-Agent"] == "TestApp/1.0")  // Original preserved
-        #expect(resultCap["user-agent"] == "ai-sdk/0.0.0") // New lowercase key created
-        #expect(resultCap.count == 2) // Two separate keys
+        #expect(resultCap["User-Agent"] == nil)  // Headers normalized to lowercase keys
+        #expect(resultCap["user-agent"] == "TestApp/1.0 ai-sdk/0.0.0")
+        #expect(resultCap.count == 1)
     }
 }

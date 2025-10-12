@@ -16,7 +16,7 @@ struct LanguageModelV3PromptTests {
     @Test("Message: user with text and file parts")
     func v3_user_with_parts() throws {
         let bytes = Data(base64Encoded: "QUJD")!
-        let parts: [LanguageModelV3MessagePart] = [
+        let parts: [LanguageModelV3UserMessagePart] = [
             .text(.init(text: "Hello")),
             .file(.init(data: .data(bytes), mediaType: "image/png", filename: "a.png"))
         ]
@@ -77,5 +77,22 @@ struct LanguageModelV3PromptTests {
         let back = try JSONDecoder().decode(LanguageModelV3Prompt.self, from: data)
         #expect(back == prompt)
     }
-}
 
+    @Test("Message: user rejects reasoning/tool parts")
+    func v3_user_rejects_invalid_parts() throws {
+        let json = """
+        [
+          {
+            "role": "user",
+            "content": [
+              { "type": "reasoning", "text": "not allowed" }
+            ]
+          }
+        ]
+        """.data(using: .utf8)!
+
+        #expect(throws: DecodingError.self) {
+            _ = try JSONDecoder().decode(LanguageModelV3Prompt.self, from: json)
+        }
+    }
+}

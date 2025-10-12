@@ -15,13 +15,17 @@ public func withUserAgentSuffix(
 ) -> [String: String] {
     let cleanedHeaders = removeUndefinedEntries(headers ?? [:])
 
-    let currentUserAgent = cleanedHeaders["user-agent"] ?? ""
+    var normalizedHeaders: [String: String] = [:]
+    for (key, value) in cleanedHeaders {
+        normalizedHeaders[key.lowercased()] = value
+    }
+
+    let currentUserAgent = normalizedHeaders["user-agent"] ?? ""
 
     let parts = [currentUserAgent] + userAgentSuffixParts
     let newUserAgent = parts.filter { !$0.isEmpty }.joined(separator: " ")
 
-    var result = cleanedHeaders
-    result["user-agent"] = newUserAgent
+    normalizedHeaders["user-agent"] = newUserAgent
 
-    return result
+    return normalizedHeaders
 }
