@@ -13,10 +13,11 @@
 - [ ] Портировать HTTP-хелперы: `fetch-function`, `get-from-api`, `post-to-api`, `response-handler`, `prepare-headers`.
 - [ ] Реализовать SSE и EventSource парсер (`parse-json-event-stream`, `EventSourceParserStream` аналог).
 - [ ] Портировать работу с API ключами и настройками (`load-setting`, `load-optional-setting`, `parse-provider-options`).
-- [ ] Перенести утилиты сериализации/валидации (`schema`, `validate-types`, `remove-undefined-entries`).
+- [ ] Перенести утилиты сериализации/валидации (`schema` ✅, `validate-types` ✅, `parse-json` ✅, `remove-undefined-entries`).
 - [ ] Реализовать `withUserAgentSuffix`, `getRuntimeEnvironmentUserAgent` (адаптация под Darwin).
 - [ ] Портировать утилиты `resolve`, `delay`, `retry-with-exponential-backoff`, `prepare-retries`.
 - [ ] Настроить re-exports и публичный API провайдер-утилит.
+- [ ] [executor][TODO] Документация: описать подход к схемам без Zod (использование `Schema.codable`, custom validators, явный UnsupportedStandardSchemaVendorError) и зафиксировать возможность будущего DSL для удобной декларации схем на Swift.
 
 ## Блок C. Общие утилиты AI SDK (`packages/ai/src/util`)
 - [ ] Портировать стримовые утилиты (`async-iterable-stream`, `create-stitchable-stream`, `simulate-readable-stream`).
