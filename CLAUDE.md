@@ -109,6 +109,7 @@ external/vercel-ai-sdk/
 10. **Commit ONLY when user requests**: Wait for explicit permission
 
 **Never**:
+- ❌ **NEVER TOUCH OTHER AGENTS' WORK** — If you see compilation/test errors in files you didn't create, STOP and wait for that agent to fix them. DO NOT edit, fix, or modify any files outside your current task scope
 - ❌ Commit/push without explicit user permission
 - ❌ Mark task as `done` before validation approval
 - ❌ Skip setting task status to `in-progress` at start
@@ -315,13 +316,14 @@ Before requesting validation:
 
 ## Key Principles
 
-1. **Read first, code second** — Always check upstream and plan
-2. **Update task status at start** — Mark `in-progress` before coding
-3. **Test everything** — No code without tests (100% coverage)
-4. **Validate early** — Use validator agent proactively
-5. **Mark done ONLY after validation** — Never mark complete before approval
-6. **Never commit without permission** — Wait for explicit user request
-7. **100% parity** — Match TypeScript behavior exactly
+1. **🚨 NEVER TOUCH OTHER AGENTS' WORK** — Only edit files within your assigned task. If other files have errors, STOP and report to user. Multiple agents work in parallel — editing other agents' files causes conflicts and data loss
+2. **Read first, code second** — Always check upstream and plan
+3. **Update task status at start** — Mark `in-progress` before coding
+4. **Test everything** — No code without tests (100% coverage)
+5. **Validate early** — Use validator agent proactively
+6. **Mark done ONLY after validation** — Never mark complete before approval
+7. **Never commit without permission** — Wait for explicit user request
+8. **100% parity** — Match TypeScript behavior exactly
 
 ---
 
@@ -364,6 +366,7 @@ Before requesting validation:
 ## Quick Tips
 
 ### For Executors
+- 🚨 **NEVER edit files outside your task** — If `swift test` fails on other agents' files, STOP work and report to user. Wait for them to fix it
 - ✅ **Set task status to `in-progress` at start**
 - ✅ Port ALL upstream tests, not just some
 - ✅ Use validator agent after implementation
@@ -376,6 +379,7 @@ Before requesting validation:
 - ❌ Don't commit without explicit user permission
 - ❌ Don't mark task complete before validation
 - ❌ Don't leave old session contexts after completion
+- ❌ **NEVER fix compilation errors in other agents' files**
 
 ### For Validators
 - ✅ Use the custom validator agent (`.claude/agents/validator.md`)
