@@ -1,7 +1,7 @@
 import Foundation
 
 /**
- Stream parts for language model V2 streaming responses.
+ Stream parts for language model V3 streaming responses.
 
  TypeScript equivalent (discriminated union):
  ```typescript

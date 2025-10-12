@@ -1,7 +1,7 @@
 import Foundation
 
 /**
- Call options for language model V2.
+ Call options for language model V3.
 
  TypeScript equivalent:
  ```typescript
