@@ -345,6 +345,7 @@ Before requesting validation:
 - `validator-guide.md` — Manual validation checklist (legacy)
 - `design-decisions.md` — Documented deviations
 - `tests.md` — Testing approach
+- `taskmaster-usage.md` — Task Master usage (optional, manual mode)
 
 ### Validation
 - `.claude/agents/validator.md` — Custom validator agent
@@ -385,6 +386,77 @@ Before requesting validation:
 - ✅ Run tests yourself
 - ❌ Don't accept "close enough"
 - ❌ Don't skip checking edge cases
+
+---
+
+## Task Management (Optional)
+
+This project has **Task Master AI** available as an **optional structured task tracker**.
+
+### ⚠️ Important: Manual Mode Only
+
+**We do NOT use Task Master's AI features.** No API keys required.
+
+- ❌ Do NOT use `--research` flag
+- ❌ Do NOT use `parse-prd` with AI generation
+- ❌ Do NOT use `expand-task` with AI
+- ❌ Do NOT use `add-task --prompt` with AI generation
+- ✅ DO manually create tasks with explicit text
+- ✅ DO use Task Master as a structured database
+- ✅ DO use tags for organization (block-a, block-b, etc.)
+- ✅ DO use dependencies tracking
+- ✅ DO use status management (pending/in-progress/done)
+
+### Basic Usage (Manual Mode)
+
+```bash
+# View tasks (via MCP)
+mcp__taskmaster-ai__get_tasks
+
+# Find next task
+mcp__taskmaster-ai__next_task
+
+# Add task manually (explicit text, no AI)
+mcp__taskmaster-ai__add_task
+  title: "Implement PrepareTools function"
+  description: "Port prepareTools from @ai-sdk/ai/src/..."
+  details: "Detailed implementation notes here"
+
+# Update task status
+mcp__taskmaster-ai__set_task_status
+  id: "1.2"
+  status: "done"
+
+# Add dependencies
+mcp__taskmaster-ai__add_dependency
+  id: "2.1"
+  dependsOn: "1.2"
+```
+
+### Integration with Existing Workflow
+
+Task Master **supplements** (not replaces) existing docs:
+
+- **Primary source**: `plan/todo.md`, `plan/progress.md`
+- **Task Master**: Optional structured view of same tasks
+- **Session contexts**: Still used in `.sessions/`
+- **Validation**: Still uses `.validation/` workflow
+
+### When to Use
+
+- ✅ Complex multi-block projects with dependencies
+- ✅ Tracking parallel work across multiple agents
+- ✅ Need structured view of task hierarchy
+- ❌ Simple linear tasks (just use todo.md)
+- ❌ Quick one-off fixes
+
+### Files
+
+- `.taskmaster/` — Fully gitignored (each dev installs if needed)
+- `.claude/commands/tm/` — Task Master slash commands (committed)
+- `.mcp.json` — MCP config (committed, but optional to use)
+
+**If you don't use Task Master**: Just ignore it. All task info is still in `plan/todo.md` and `plan/progress.md`.
 
 ---
 
