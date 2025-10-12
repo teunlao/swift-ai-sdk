@@ -1,7 +1,7 @@
 /**
- * A function argument is invalid.
- *
- * Swift port of TypeScript `InvalidArgumentError`.
+ A function argument is invalid.
+
+ Port of `@ai-sdk/ai/src/error/invalid-argument-error.ts`.
  */
 public struct InvalidArgumentError: AISDKError, Sendable {
     public static let errorDomain = "vercel.ai.error.AI_InvalidArgumentError"
@@ -9,15 +9,22 @@ public struct InvalidArgumentError: AISDKError, Sendable {
     public let name = "AI_InvalidArgumentError"
     public let message: String
     public let cause: (any Error)?
-    public let argument: String
+
+    /// The parameter name that is invalid
+    public let parameter: String
+
+    /// The value that was provided for the parameter (can be any type)
+    public let value: JSONValue?
 
     public init(
-        argument: String,
+        parameter: String,
+        value: JSONValue? = nil,
         message: String,
         cause: (any Error)? = nil
     ) {
-        self.argument = argument
-        self.message = message
+        self.parameter = parameter
+        self.value = value
+        self.message = "Invalid argument for parameter \(parameter): \(message)"
         self.cause = cause
     }
 
