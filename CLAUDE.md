@@ -98,14 +98,21 @@ external/vercel-ai-sdk/
 **Implement features, write tests, update docs.**
 
 1. Find next task: `mcp__taskmaster__next_task`
-2. Find TypeScript code in `external/vercel-ai-sdk/`
-3. Port to Swift in `Sources/SwiftAISDK/`
-4. Port ALL upstream tests to `Tests/SwiftAISDKTests/`
-5. Run `swift build && swift test` (must pass 100%)
-6. Request validation review
-7. Mark complete: `mcp__taskmaster__set_task_status --id=X --status=done`
+2. **Mark task as in-progress**: `mcp__taskmaster__set_task_status --id=X --status=in-progress`
+3. Find TypeScript code in `external/vercel-ai-sdk/`
+4. Port to Swift in `Sources/SwiftAISDK/`
+5. Port ALL upstream tests to `Tests/SwiftAISDKTests/`
+6. Run `swift build && swift test` (must pass 100%)
+7. Request validation review (create request in `.validation/requests/`)
+8. Wait for validation approval
+9. **Mark complete ONLY after approval**: `mcp__taskmaster__set_task_status --id=X --status=done`
+10. **Commit ONLY when user requests**: Wait for explicit permission
 
-**Never**: Commit/push without permission, break parity, leave failing tests.
+**Never**:
+- ❌ Commit/push without explicit user permission
+- ❌ Mark task as `done` before validation approval
+- ❌ Skip setting task status to `in-progress` at start
+- ❌ Break parity or leave failing tests
 
 ### Validator Role
 **Review executor work for 100% upstream parity.**
@@ -309,10 +316,12 @@ Before requesting validation:
 ## Key Principles
 
 1. **Read first, code second** — Always check upstream and plan
-2. **Test everything** — No code without tests (100% coverage)
-3. **Validate early** — Use validator agent proactively
-4. **100% parity** — Match TypeScript behavior exactly
-5. **Never commit** — Wait for approval
+2. **Update task status at start** — Mark `in-progress` before coding
+3. **Test everything** — No code without tests (100% coverage)
+4. **Validate early** — Use validator agent proactively
+5. **Mark done ONLY after validation** — Never mark complete before approval
+6. **Never commit without permission** — Wait for explicit user request
+7. **100% parity** — Match TypeScript behavior exactly
 
 ---
 
@@ -355,13 +364,17 @@ Before requesting validation:
 ## Quick Tips
 
 ### For Executors
+- ✅ **Set task status to `in-progress` at start**
 - ✅ Port ALL upstream tests, not just some
 - ✅ Use validator agent after implementation
+- ✅ **Mark task `done` ONLY after validation approval**
+- ✅ **Commit ONLY when user explicitly requests**
 - ✅ Add upstream references to every file
 - ✅ Document adaptations with rationale
 - ✅ Save session context for multi-session tasks ("Зафиксируй контекст")
 - ❌ Don't skip edge case tests
-- ❌ Don't commit without validation approval
+- ❌ Don't commit without explicit user permission
+- ❌ Don't mark task complete before validation
 - ❌ Don't leave old session contexts after completion
 
 ### For Validators
