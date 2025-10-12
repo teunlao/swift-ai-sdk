@@ -1,5 +1,15 @@
 # Swift AI SDK
 
+> ⚠️ **WORK IN PROGRESS** ⚠️
+>
+> **This project is currently under active development and is NOT production-ready.**
+>
+> - ❌ **NOT functional yet** - Core functionality is still being implemented
+> - ❌ **NOT stable** - APIs will change without notice
+> - ❌ **NOT suitable for production use**
+>
+> This is an experimental port. Use at your own risk.
+
 Unofficial Swift port of the Vercel AI SDK. The goal is to mirror the original TypeScript implementation 1:1 (API, behavior, tests), adapting it to Swift and SwiftPM conventions.
 
 ## Structure
