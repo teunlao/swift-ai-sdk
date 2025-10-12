@@ -207,4 +207,58 @@ struct SchemaTests {
             "additionalProperties": .bool(false)
         ]))
     }
+
+    @Test("standardSchema uses fallback JSON schema when resolver missing")
+    func standardSchemaFallbackJsonSchema() async throws {
+        let definition = StandardSchemaV1<[String: Any]>.Definition(
+            vendor: "custom",
+            validate: { value in
+                guard let dict = value as? [String: Any] else {
+                    return .issues("not a dictionary")
+                }
+                return .value(dict)
+            }
+        )
+
+        let schema = standardSchema(StandardSchemaV1(definition: definition))
+        let resolved = try await schema.jsonSchema()
+
+        #expect(resolved == .object([
+            "properties": .object([:]),
+            "additionalProperties": .bool(false)
+        ]))
+    }
+
+    @Test("standardSchema passes through provided JSON schema for other vendors")
+    func standardSchemaVendorSpecificJsonSchema() async throws {
+        let expected: JSONValue = .object([
+            "$schema": .string("http://json-schema.org/draft-07/schema#"),
+            "type": .string("object"),
+            "properties": .object([
+                "value": .object(["type": "number"])
+            ])
+        ])
+
+        let definition = StandardSchemaV1<Double>.Definition(
+            vendor: "arktype",
+            jsonSchema: { expected },
+            validate: { value in
+                guard let number = value as? Double else {
+                    return .issues("expected number")
+                }
+                return .value(number)
+            }
+        )
+
+        let schema = standardSchema(StandardSchemaV1(definition: definition))
+        let resolved = try await schema.jsonSchema()
+        #expect(resolved == expected)
+
+        let result = await schema.validate(42.0)
+        guard case .success(let typed) = result else {
+            Issue.record("Expected success for arktype vendor schema")
+            return
+        }
+        #expect(typed == 42.0)
+    }
 }
