@@ -162,7 +162,7 @@ public func resolveLanguageModel(_ model: LanguageModel) throws -> any LanguageM
             // TypeScript uses gateway as fallback, but we require explicit provider setup
             throw NoSuchProviderError(
                 modelId: id,
-                modelType: "languageModel",
+                modelType: .languageModel,
                 providerId: "default",
                 availableProviders: [],
                 message: "No global default provider set. Set `globalDefaultProvider` before resolving string model IDs."
@@ -205,7 +205,7 @@ public func resolveEmbeddingModel<VALUE: Sendable>(_ model: EmbeddingModel<VALUE
             // TypeScript uses gateway as fallback, but we require explicit provider setup
             throw NoSuchProviderError(
                 modelId: id,
-                modelType: "textEmbeddingModel",
+                modelType: .textEmbeddingModel,
                 providerId: "default",
                 availableProviders: [],
                 message: "No global default provider set. Set `globalDefaultProvider` before resolving string model IDs."

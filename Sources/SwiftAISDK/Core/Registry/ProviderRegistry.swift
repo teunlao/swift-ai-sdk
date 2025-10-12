@@ -88,7 +88,7 @@ final class DefaultProviderRegistry: ProviderRegistryProvider {
 
     private func getProvider(
         id: String,
-        modelType: String
+        modelType: NoSuchModelError.ModelType
     ) throws -> any ProviderV3 {
         guard let provider = providers[id] else {
             throw NoSuchProviderError(
@@ -103,14 +103,14 @@ final class DefaultProviderRegistry: ProviderRegistryProvider {
 
     private func splitId(
         id: String,
-        modelType: String
+        modelType: NoSuchModelError.ModelType
     ) throws -> (providerId: String, modelId: String) {
         // Support multi-character separators (e.g., " > ")
         guard let range = id.range(of: separator) else {
             throw NoSuchModelError(
                 modelId: id,
-                modelType: NoSuchModelError.ModelType(rawValue: modelType) ?? .languageModel,
-                message: "Invalid \(modelType) id for registry: \(id) " +
+                modelType: modelType,
+                message: "Invalid \(modelType.rawValue) id for registry: \(id) " +
                         "(must be in the format \"providerId\(separator)modelId\")"
             )
         }
@@ -123,8 +123,8 @@ final class DefaultProviderRegistry: ProviderRegistryProvider {
 
     public func languageModel(id: String) -> any LanguageModelV3 {
         do {
-            let (providerId, modelId) = try splitId(id: id, modelType: "languageModel")
-            let provider = try getProvider(id: providerId, modelType: "languageModel")
+            let (providerId, modelId) = try splitId(id: id, modelType: .languageModel)
+            let provider = try getProvider(id: providerId, modelType: .languageModel)
 
             let model = provider.languageModel(modelId: modelId)
 
@@ -148,8 +148,8 @@ final class DefaultProviderRegistry: ProviderRegistryProvider {
 
     public func textEmbeddingModel(id: String) -> any EmbeddingModelV3<String> {
         do {
-            let (providerId, modelId) = try splitId(id: id, modelType: "textEmbeddingModel")
-            let provider = try getProvider(id: providerId, modelType: "textEmbeddingModel")
+            let (providerId, modelId) = try splitId(id: id, modelType: .textEmbeddingModel)
+            let provider = try getProvider(id: providerId, modelType: .textEmbeddingModel)
 
             let model = provider.textEmbeddingModel(modelId: modelId)
             return model
@@ -160,8 +160,8 @@ final class DefaultProviderRegistry: ProviderRegistryProvider {
 
     public func imageModel(id: String) -> any ImageModelV3 {
         do {
-            let (providerId, modelId) = try splitId(id: id, modelType: "imageModel")
-            let provider = try getProvider(id: providerId, modelType: "imageModel")
+            let (providerId, modelId) = try splitId(id: id, modelType: .imageModel)
+            let provider = try getProvider(id: providerId, modelType: .imageModel)
 
             let model = provider.imageModel(modelId: modelId)
             return model
@@ -172,8 +172,8 @@ final class DefaultProviderRegistry: ProviderRegistryProvider {
 
     public func transcriptionModel(id: String) -> any TranscriptionModelV3 {
         do {
-            let (providerId, modelId) = try splitId(id: id, modelType: "transcriptionModel")
-            let provider = try getProvider(id: providerId, modelType: "transcriptionModel")
+            let (providerId, modelId) = try splitId(id: id, modelType: .transcriptionModel)
+            let provider = try getProvider(id: providerId, modelType: .transcriptionModel)
 
             guard let model = provider.transcriptionModel(modelId: modelId) else {
                 throw NoSuchModelError(modelId: id, modelType: .transcriptionModel)
@@ -187,8 +187,8 @@ final class DefaultProviderRegistry: ProviderRegistryProvider {
 
     public func speechModel(id: String) -> any SpeechModelV3 {
         do {
-            let (providerId, modelId) = try splitId(id: id, modelType: "speechModel")
-            let provider = try getProvider(id: providerId, modelType: "speechModel")
+            let (providerId, modelId) = try splitId(id: id, modelType: .speechModel)
+            let provider = try getProvider(id: providerId, modelType: .speechModel)
 
             guard let model = provider.speechModel(modelId: modelId) else {
                 throw NoSuchModelError(modelId: id, modelType: .speechModel)
