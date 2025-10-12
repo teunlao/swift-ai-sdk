@@ -49,7 +49,7 @@ public struct EventSourceParserStream {
                 }
             ))
 
-            Task { @MainActor in
+            Task {
                 do {
                     for try await chunk in input {
                         if await stopFlag.get() { break }
