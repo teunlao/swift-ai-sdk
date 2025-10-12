@@ -116,11 +116,12 @@ public struct LanguageModelV2StreamResult: Sendable {
 }
 
 /// Request information for telemetry
-public struct LanguageModelV2RequestInfo: Sendable {
+public struct LanguageModelV2RequestInfo: @unchecked Sendable {
     /// Request HTTP body that was sent to the provider API.
-    public let body: JSONValue?
+    /// Marked @unchecked Sendable to match TypeScript's unknown type.
+    public let body: Any?
 
-    public init(body: JSONValue? = nil) {
+    public init(body: Any? = nil) {
         self.body = body
     }
 }
@@ -128,7 +129,7 @@ public struct LanguageModelV2RequestInfo: Sendable {
 /// Response information for non-streaming calls
 /// This is an intersection type in TypeScript: LanguageModelV2ResponseMetadata & { headers?, body? }
 /// In Swift, we flatten all fields to one level.
-public struct LanguageModelV2ResponseInfo: Sendable {
+public struct LanguageModelV2ResponseInfo: @unchecked Sendable {
     // Fields from LanguageModelV2ResponseMetadata:
 
     /// ID for the generated response, if the provider sends one.
@@ -146,14 +147,15 @@ public struct LanguageModelV2ResponseInfo: Sendable {
     public let headers: SharedV2Headers?
 
     /// Response HTTP body.
-    public let body: JSONValue?
+    /// Marked @unchecked Sendable to match TypeScript's unknown type.
+    public let body: Any?
 
     public init(
         id: String? = nil,
         timestamp: Date? = nil,
         modelId: String? = nil,
         headers: SharedV2Headers? = nil,
-        body: JSONValue? = nil
+        body: Any? = nil
     ) {
         self.id = id
         self.timestamp = timestamp

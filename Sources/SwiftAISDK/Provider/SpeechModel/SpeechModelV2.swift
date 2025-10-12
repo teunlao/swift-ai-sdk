@@ -64,17 +64,18 @@ public struct SpeechModelV2Result: Sendable {
     }
 
     /// Request information for telemetry and debugging
-    public struct RequestInfo: Sendable {
+    public struct RequestInfo: @unchecked Sendable {
         /// Request body (available only for providers that use HTTP requests)
-        public let body: JSONValue?
+        /// Marked @unchecked Sendable to match TypeScript's unknown type.
+        public let body: Any?
 
-        public init(body: JSONValue? = nil) {
+        public init(body: Any? = nil) {
             self.body = body
         }
     }
 
     /// Response information for telemetry and debugging
-    public struct ResponseInfo: Sendable {
+    public struct ResponseInfo: @unchecked Sendable {
         /// Timestamp for the start of the generated response
         public let timestamp: Date
 
@@ -85,13 +86,14 @@ public struct SpeechModelV2Result: Sendable {
         public let headers: SharedV2Headers?
 
         /// Response body
-        public let body: JSONValue?
+        /// Marked @unchecked Sendable to match TypeScript's unknown type.
+        public let body: Any?
 
         public init(
             timestamp: Date,
             modelId: String,
             headers: SharedV2Headers? = nil,
-            body: JSONValue? = nil
+            body: Any? = nil
         ) {
             self.timestamp = timestamp
             self.modelId = modelId

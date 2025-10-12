@@ -126,16 +126,17 @@ public struct EmbeddingModelV2Usage: Sendable {
 }
 
 /// Response information for debugging
-public struct EmbeddingModelV2ResponseInfo: Sendable {
+public struct EmbeddingModelV2ResponseInfo: @unchecked Sendable {
     /// Response headers
     public let headers: SharedV2Headers?
 
     /// The response body
-    public let body: JSONValue?
+    /// Marked @unchecked Sendable to match TypeScript's unknown type.
+    public let body: Any?
 
     public init(
         headers: SharedV2Headers? = nil,
-        body: JSONValue? = nil
+        body: Any? = nil
     ) {
         self.headers = headers
         self.body = body
