@@ -19,7 +19,18 @@
   - Файлы: `Sources/SwiftAISDK/Provider/LanguageModel/V2/*.swift` (готов к коммиту)
 - [ ] language-model/v3 — не начато (адаптер и контракт отсутствуют).
 - [ ] embedding/speech/image/transcription модели — не начато.
-- [ ] errors — не начато (нужны Swift‑ошибки провайдера и `UnsupportedModelVersion`).
+- [x] **errors — ЗАВЕРШЕНО** ✅ [executor][claude-code]
+  - Реализовано **15 файлов** (100% паритет с upstream):
+    - AISDKError (протокол), GetErrorMessage (утилита)
+    - APICallError, EmptyResponseBodyError, InvalidArgumentError
+    - InvalidPromptError, InvalidResponseDataError, JSONParseError
+    - LoadAPIKeyError, LoadSettingError, NoContentGeneratedError
+    - NoSuchModelError, TooManyEmbeddingValuesForCallError
+    - TypeValidationError, UnsupportedFunctionalityError
+  - ✅ Сборка: `swift build` — 0.19s
+  - ✅ Тесты: `swift test` — 26/26 passed (ProviderErrorsTests)
+  - ✅ **Паритет**: 100% 🎯 (все ошибки соответствуют upstream 1:1)
+  - 📋 Файлы: `Sources/SwiftAISDK/Provider/Errors/*.swift` (готов к коммиту)
 - [ ] provider registry — не начато.
 - [ ] экспорт API — не начато.
 
@@ -346,6 +357,82 @@
 - ✅ `swift build` — 0.90s
 - ✅ `swift test` — 30/30 passed
 - ✅ ~600 строк изменений
+- 🚀 **Готов к коммиту**
+
+— agent‑executor/claude‑code, 2025-10-12
+
+## [executor][claude-code] Сессия 2025-10-12 (пятая): Provider Errors
+
+### Реализовано
+- ✅ **15 файлов Provider Errors** — полный паритет 1:1 с TypeScript
+  - Базовая инфраструктура:
+    - AISDKError (протокол с errorDomain маркером)
+    - getErrorMessage (утилита извлечения сообщений)
+    - isAISDKError / hasMarker (функции проверки типов)
+  - 13 специализированных ошибок:
+    - APICallError (HTTP ошибки с url, statusCode, isRetryable логикой)
+    - EmptyResponseBodyError, InvalidArgumentError, InvalidPromptError
+    - InvalidResponseDataError, JSONParseError, LoadAPIKeyError
+    - LoadSettingError, NoContentGeneratedError, NoSuchModelError
+    - TooManyEmbeddingValuesForCallError, TypeValidationError (с wrap методом)
+    - UnsupportedFunctionalityError
+
+### Детали реализации
+- Все ошибки conform к `Error`, `LocalizedError`, `CustomStringConvertible`
+- `@unchecked Sendable` для типов с `Any?` полями
+- errorDomain используется вместо TypeScript Symbol.for()
+- Каждая ошибка имеет `isInstance()` метод для проверки типа
+- TypeValidationError.wrap() с проверкой идентичности
+- APICallError с автоматической логикой isRetryable (408, 429, 5xx)
+
+### Тесты
+- ✅ **26 unit-тестов** в `ProviderErrorsTests.swift`
+- Покрывают создание, сообщения, проверку типов, специальные методы
+- Все тесты проходят без ошибок
+
+### Объём работы
+- ~554 строк кода в 15 файлах
+- 1 тестовый файл с 26 тестами
+- 0 breaking changes к существующим типам
+
+### Сборка/тесты
+- ✅ `swift build` — успешно (0.19s)
+- ✅ `swift test --filter ProviderErrorsTests` — 26/26 passed
+- ✅ Компиляция без warnings
+- ✅ Все диагностики исправлены
+
+### Файлы
+```
+Sources/SwiftAISDK/Provider/Errors/
+├── AISDKError.swift
+├── GetErrorMessage.swift
+├── APICallError.swift
+├── EmptyResponseBodyError.swift
+├── InvalidArgumentError.swift
+├── InvalidPromptError.swift
+├── InvalidResponseDataError.swift
+├── JSONParseError.swift
+├── LoadAPIKeyError.swift
+├── LoadSettingError.swift
+├── NoContentGeneratedError.swift
+├── NoSuchModelError.swift
+├── TooManyEmbeddingValuesForCallError.swift
+├── TypeValidationError.swift
+└── UnsupportedFunctionalityError.swift
+
+Tests/SwiftAISDKTests/
+└── ProviderErrorsTests.swift (26 tests)
+```
+
+### Следующие приоритетные задачи
+1. language-model/v3 типы + адаптер V2→V3
+2. Provider utils (HTTP helpers, id generators, retry/delay)
+3. Prompt preparation (standardizePrompt, prepare-call-settings)
+
+### Итог:
+- ✅ **15/15 файлов** реализованы с 100% паритетом
+- ✅ **26/26 тестов** проходят
+- ✅ `swift build` — 0.19s
 - 🚀 **Готов к коммиту**
 
 — agent‑executor/claude‑code, 2025-10-12
