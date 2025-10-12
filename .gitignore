@@ -10,10 +10,14 @@ external/
 
 # Validation artifacts (real validation requests/reports created during work)
 # Documentation, examples, and templates ARE committed
-.validation/requests/validate-*
-.validation/reports/*-validation-*
+.validation/requests/*
+!.validation/requests/EXAMPLE-*
+.validation/reports/*
+!.validation/reports/EXAMPLE-*
 .validation/temp/
 
 # Session contexts (real session files created during work)
 # Documentation and templates ARE committed
-.sessions/session-*
+.sessions/*
+!.sessions/EXAMPLE-*
+!.sessions/README.md
