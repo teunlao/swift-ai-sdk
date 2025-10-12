@@ -28,6 +28,9 @@ swift-ai-sdk/
 ├── .claude/
 │   └── agents/
 │       └── validator.md        # Custom validator agent
+├── .sessions/                   # Session contexts (gitignored)
+│   ├── README.md               # Session context guide
+│   └── EXAMPLE-*.md            # Context template
 ├── .validation/                 # Temp validation artifacts (gitignored)
 │   ├── requests/               # Validation requests
 │   ├── reports/                # Validation reports
@@ -44,6 +47,26 @@ swift-ai-sdk/
 │   └── eventsource-parser/     # SSE parser reference
 └── plan/                        # Documentation & progress
 ```
+
+### Session Contexts
+
+**Problem**: Multiple agents can work in parallel, losing context between sessions.
+
+**Solution**: Session context files (`.sessions/`) fix state between sessions.
+
+**Usage**:
+- 💬 **Capture context**: `"Зафиксируй контекст текущей работы"`
+- 📂 **Resume work**: `"Загрузи контекст из .sessions/session-YYYY-MM-DD-HH-MM-feature.md"`
+- 🗑️ **Cleanup**: Delete context after task completion
+
+**When to use**:
+- ✅ Multi-session tasks
+- ✅ Interrupted work (need to continue later)
+- ✅ Blocked work (waiting for clarification)
+- ✅ Complex tasks (need checkpoint)
+- ❌ Simple one-session tasks
+
+**See**: `.sessions/README.md` for complete guide
 
 ---
 
@@ -267,6 +290,10 @@ ls external/vercel-ai-sdk/packages/*/src/
 # Build & test
 swift build && swift test
 
+# Session contexts
+cat .sessions/README.md          # How to use contexts
+ls .sessions/session-*.md        # List active contexts
+
 # Validation
 cat .validation/QUICKSTART.md
 
@@ -325,6 +352,10 @@ Before requesting validation:
 - `.validation/requests/EXAMPLE-*.md` — Request template
 - `.validation/reports/EXAMPLE-*.md` — Report example
 
+### Session Contexts
+- `.sessions/README.md` — Session context guide
+- `.sessions/EXAMPLE-session-context.md` — Context template
+
 ---
 
 ## Resources
@@ -342,8 +373,10 @@ Before requesting validation:
 - ✅ Use validator agent after implementation
 - ✅ Add upstream references to every file
 - ✅ Document adaptations with rationale
+- ✅ Save session context for multi-session tasks ("Зафиксируй контекст")
 - ❌ Don't skip edge case tests
 - ❌ Don't commit without validation approval
+- ❌ Don't leave old session contexts after completion
 
 ### For Validators
 - ✅ Use the custom validator agent (`.claude/agents/validator.md`)

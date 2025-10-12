@@ -13,3 +13,7 @@ external/
 .validation/requests/validate-*
 .validation/reports/*-validation-*
 .validation/temp/
+
+# Session contexts (real session files created during work)
+# Documentation and templates ARE committed
+.sessions/session-*
