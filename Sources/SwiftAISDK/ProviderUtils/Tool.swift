@@ -7,7 +7,28 @@ import Foundation
  The tool can also contain an optional execute function for the actual execution function of the tool.
 
  Port of `@ai-sdk/provider-utils/types/tool.ts`.
+
+ **TEMPORARY ADAPTATION**: This file uses `LanguageModelV3Message` (from Provider layer)
+ as a temporary substitute for `ModelMessage` (ProviderUtils layer) in callback signatures.
+
+ **Rationale**:
+ - Block D (Prompt Preparation) does not use `ModelMessage` in any logic
+ - Full `ModelMessage` + `ContentPart` implementation (~14 files) belongs to Block G (Tool API)
+ - This typealias enables Tool type definition without blocking Block D progress
+
+ **TODO (Block G)**: Replace typealias with proper ModelMessage implementation including:
+ - SystemModelMessage, UserModelMessage, AssistantModelMessage, ToolModelMessage
+ - ContentPart types (TextPart, ImagePart, FilePart, ReasoningPart, ToolCallPart, etc.)
+ - ToolApprovalRequest, ToolApprovalResponse
+ - Update all callback signatures to use ProviderUtils.ModelMessage
+
+ **Upstream reference**: `@ai-sdk/provider-utils/types/model-message.ts`
  */
+
+// TEMPORARY: Using LanguageModelV3Message until full ModelMessage ported in Block G
+// This is semantically different but structurally similar for callback signatures
+public typealias ModelMessage = LanguageModelV3Message
+
 public struct Tool: Sendable {
     /// An optional description of what the tool does.
     /// Will be used by the language model to decide whether to use the tool.
