@@ -10,10 +10,10 @@
 - ✅ **LanguageModelV2**: 17 типов, 50 тестов, 100% покрытие типов
 - ✅ **LanguageModelV3**: 17 типов, 39 тестов, 100% паритет (+ preliminary field)
 - ✅ **Provider Errors**: 15 типов, 26 тестов, 100% паритет
-- ✅ **ProviderUtils**: 7 утилит (GenerateID, Delay, CombineHeaders, ExtractResponseHeaders, RemoveUndefinedEntries, GetRuntimeEnvironmentUserAgent, WithUserAgentSuffix), 42 тестов, 100% паритет ✅
+- ✅ **ProviderUtils**: 10 утилит (GenerateID, Delay, Headers, UserAgent, LoadSettings), 48 тестов, 100% паритет ✅
 - ✅ **JSONValue**: Codable + Expressible протоколы
-- 📊 **Итого**: ~5900+ строк кода, 81 файлов, **201/201 тестов** ✅ 🎯
-- 🏗️ **Сборка**: `swift build` ~0.2-1.2s, `swift test` **201/201 passed**
+- 📊 **Итого**: ~6000+ строк кода, 85 файлов, **207/207 тестов** ✅ 🎯
+- 🏗️ **Сборка**: `swift build` ~0.2-1.2s, `swift test` **207/207 passed**
 
 ## Блок A. Инфраструктура (`@ai-sdk/provider`)
 - [x] **shared типы** — JSONValue (Codable + Expressible), SharedV2/V3 алиасы ✅
@@ -57,8 +57,11 @@
   - `Sources/SwiftAISDK/ProviderUtils/{RemoveUndefinedEntries,GetRuntimeEnvironmentUserAgent,WithUserAgentSuffix}.swift`
   - `Tests/SwiftAISDKTests/ProviderUtils/UserAgentTests.swift`
   - 9 тестов, 100% паритет
+- [x] **loadSetting / loadOptionalSetting / loadAPIKey** ✅
+  - `Sources/SwiftAISDK/ProviderUtils/{LoadSetting,LoadOptionalSetting,LoadAPIKey}.swift`
+  - `Tests/SwiftAISDKTests/ProviderUtils/LoadSettingsTests.swift`
+  - 6 тестов, 100% паритет
 - [ ] HTTP-хелперы (fetch/post/retry) — не начато
-- [ ] load-setting — не начато
 - [ ] schema/validation — не начато
 
 ## Блок C. Util (packages/ai/src/util)
@@ -328,5 +331,16 @@
 - ✅ **GetRuntimeEnvironmentUserAgent** — платформа Swift (iOS/macOS/Linux)
 - ✅ **WithUserAgentSuffix** — добавление суффиксов к User-Agent
 - ✅ **201/201 тестов** (+9 новых)
+
+— agent‑executor/claude‑code, 2025-10-12
+
+---
+
+## [executor][claude-code] Сессия 2025-10-12 (двенадцатая): Load Settings Utilities
+
+- ✅ **LoadSetting** — загрузка обязательных настроек
+- ✅ **LoadOptionalSetting** — загрузка опциональных настроек
+- ✅ **LoadAPIKey** — загрузка API ключей
+- ✅ **207/207 тестов** (+6 новых)
 
 — agent‑executor/claude‑code, 2025-10-12
