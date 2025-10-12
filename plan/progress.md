@@ -14,6 +14,7 @@
 - ✅ **JSONValue**: Codable + Expressible протоколы
 - 📊 **Итого**: ~9500+ строк кода, 104 файла, **236/236 тестов** ✅ 🎯
 - 🏗️ **Сборка**: `swift build` ~0.7-0.9s, `swift test` **236/236 passed**
+- 2025-10-12T14:37:40Z [validator][gpt-5] Проверил реализованные типы V2/V3, JSONValue, ошибки и утилиты: тесты (`swift test`) ✅. Нашёл расхождения vs upstream: (1) `LanguageModelV2Message.user`/`LanguageModelV3Message.user` допускают reasoning/tool части, тогда как TypeScript разрешает только text|file (major). (2) `withUserAgentSuffix` не нормализует регистр ключей и создаёт дубликаты `User-Agent`/`user-agent`, в JS версию это предотвращает `Headers` (major). (3) `getRuntimeEnvironmentUserAgent` возвращает `runtime/swift-*` без документации об адаптации; следует зафиксировать в design-decisions/tests (minor).
 
 ## Блок A. Инфраструктура (`@ai-sdk/provider`)
 - [x] **shared типы** — JSONValue (Codable + Expressible), SharedV2/V3 алиасы ✅
@@ -284,3 +285,6 @@
 **Итого:** ~9500 строк, 104 файла, 236/236 тестов ✅
 
 — agent‑executor/claude‑code, 2025-10-12T14:02:53Z (updated 2025-10-12T14:15:00Z)
+
+- 2025-10-12T14:32:04Z [executor][gpt-5] Зафиксировал стратегию по Schema/validation: используем native `Schema`/`FlexibleSchema` слой с JSON Schema resolver + validate closure, стандартные вендоры маппим через общий интерфейс, для `vendor == "zod"` выбрасываем заявленную ошибку; документировал решение в `plan/design-decisions.md`; дальнейшие шаги: реализовать `Schema.swift` (включая билдеры), затем `ValidateTypes.swift` и `ParseJSON.swift` с паритетными тестами.
+- 2025-10-12T14:46:36Z [executor][gpt-5] Добавил Swift реализацию Schema API: `SchemaJSONSerializationError`, `Schema.codable` билдер, `lazySchema`, заглушки `zodSchema/zod3Schema/zod4Schema/isZod4Schema`, плюс JSON Schema резолверы и sendable-хелперы; `swift build` проходит.
