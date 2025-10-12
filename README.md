@@ -35,8 +35,19 @@ Unofficial Swift port of the Vercel AI SDK. The goal is to mirror the original T
 - ✅ Tests: 236/236 passed (EventSourceParser: 30, V2: 50, V3: 39, Errors: 26, ProviderUtils: 77, JSONValue)
 - 📊 Total: ~9500+ lines of code across 104 files
 
-## Known Limitations
-- Schema helpers (`Schema`, `parseJSON`, `validateTypes`) accept Swift-native validators or JSON Schema resolvers. Adapters for JS-centric libraries (`zod`, `arktype`, `effect`, `valibot`) are not ported; using vendor `"zod"` will throw `UnsupportedStandardSchemaVendorError`. Provide JSON Schema + validation closure (e.g., via `Schema.codable`) until a Swift DSL lands.
+## Known Limitations & Parity Deviations
+
+### Schema/Validation
+- **Zod/ArkType/Effect/Valibot not ported**: JS-specific libraries have no Swift equivalents. Using vendor `"zod"` throws `UnsupportedStandardSchemaVendorError`.
+- **Solution**: Use `Schema.codable()` for Decodable types or provide custom JSON Schema + validation closure.
+
+### HTTP Response
+- **statusText**: TypeScript uses server's HTTP reason phrase; Swift uses localized system string due to Foundation API limitation.
+- **Impact**: Minimal - custom error messages are in response body, not status line.
+
+### Error Structure
+- **ValidateTypes**: Swift uses single-level TypeValidationError wrapping vs TypeScript's double-wrapping.
+- **Impact**: Error introspection differs but functional behavior identical.
 
 ## Upstream Reference
 - Vercel AI SDK 6.0.0-beta.42 (`77db222eeded7a936a8a268bf7795ff86c060c2f`).

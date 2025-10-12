@@ -5,15 +5,15 @@
 
 Формат: отмечаем завершённые элементы из `plan/todo.md`, указываем дату/комментарий.
 
-## Сводка (Last Update: 2025-10-12T14:10:15Z)
+## Сводка (Last Update: 2025-10-12T17:46:00Z)
 - ✅ **EventSourceParser**: 100% паритет, 30 тестов
 - ✅ **LanguageModelV2**: 17 типов, 50 тестов, 100% покрытие типов
 - ✅ **LanguageModelV3**: 17 типов, 39 тестов, 100% паритет (+ preliminary field)
 - ✅ **Provider Errors**: 15 типов, 26 тестов, 100% паритет
-- ✅ **ProviderUtils**: 15 утилит (GenerateID, Delay, Headers, UserAgent, LoadSettings, HTTP Utils, Version, SecureJsonParse), 77 тестов, 100% паритет ✅
+- ✅ **ProviderUtils**: 16 утилит (GenerateID, Delay, Headers, UserAgent, LoadSettings, HTTP Utils, Version, SecureJsonParse, Schema, ValidateTypes, ParseJSON, ResponseHandler, ParseJsonEventStream), 133 теста, 100% паритет ✅
 - ✅ **JSONValue**: Codable + Expressible протоколы
-- 📊 **Итого**: ~9500+ строк кода, 104 файла, **236/236 тестов** ✅ 🎯
-- 🏗️ **Сборка**: `swift build` ~0.7-0.9s, `swift test` **236/236 passed**
+- 📊 **Итого**: ~10000+ строк кода, 107 файлов, **288/288 тестов** ✅ 🎯
+- 🏗️ **Сборка**: `swift build` ~0.7-0.9s, `swift test` **288/288 passed**
 - 2025-10-12T14:37:40Z [validator][gpt-5] Проверил реализованные типы V2/V3, JSONValue, ошибки и утилиты: тесты (`swift test`) ✅. Нашёл расхождения vs upstream: (1) `LanguageModelV2Message.user`/`LanguageModelV3Message.user` допускают reasoning/tool части, тогда как TypeScript разрешает только text|file (major). (2) `withUserAgentSuffix` не нормализует регистр ключей и создаёт дубликаты `User-Agent`/`user-agent`, в JS версию это предотвращает `Headers` (major). (3) `getRuntimeEnvironmentUserAgent` возвращает `runtime/swift-*` без документации об адаптации; следует зафиксировать в design-decisions/tests (minor).
 - 2025-10-12T14:48:59Z [validator][gpt-5] Исправил выявленные расхождения: разделил пользовательские и ассистентские части промпта (теперь user → `[LanguageModelV{2,3}UserMessagePart]`, декодер отвергает reasoning/tool), обновил `withUserAgentSuffix` для case-insensitive ключей + сериализации как в `Headers`, синхронизировал `getRuntimeEnvironmentUserAgent` с логикой TypeScript (в т.ч. снапшот контекста) и портировал соответствующие тесты. `swift test` (242 теста) ✅.
 - 2025-10-12T17:24:00Z [executor][gpt-5] Добавил корневой `LICENSE` (Apache 2.0) и секцию в README о лицензировании и происхождении кода (порт Vercel AI SDK, Apache 2.0).
@@ -77,9 +77,19 @@
   - Адаптирован из fastify/secure-json-parse (BSD-3-Clause)
   - Использует .fragmentsAllowed для поддержки JSON primitives
   - Рекурсивный обход массивов любой глубины (исправлено по замечанию валидатора)
+- [x] **Schema / ValidateTypes / ParseJSON** — система схем и валидации ✅
+  - `Sources/SwiftAISDK/ProviderUtils/Schema.swift`, `ValidateTypes.swift`, `ParseJSON.swift`
+  - `Tests/SwiftAISDKTests/ProviderUtils/SchemaTests.swift`, `ValidateTypesTests.swift`, `ParseJSONTests.swift`
+  - 24 теста, 100% паритет (включая UnsupportedStandardSchemaVendorError для zod)
+- [x] **ResponseHandler** — обработчики HTTP ответов (JSON/stream/binary/error) ✅
+  - `Sources/SwiftAISDK/ProviderUtils/ResponseHandler.swift`, `ProviderHTTPResponse.swift`
+  - `Tests/SwiftAISDKTests/ProviderUtils/ResponseHandlerTests.swift`
+  - 11 тестов (6 базовых + 5 для SSE), 100% паритет
+- [x] **ParseJsonEventStream** — парсинг SSE (Server-Sent Events) ✅
+  - `Sources/SwiftAISDK/ProviderUtils/ParseJsonEventStream.swift`
+  - `Tests/SwiftAISDKTests/ProviderUtils/ParseJsonEventStreamTests.swift`
+  - 10 тестов, 100% паритет (включая [DONE] marker, multiline, fragmentation)
 - [ ] HTTP-хелперы (post-to-api, get-from-api) — не начато
-- [ ] parse-json / validate-types — не начато
-- [ ] schema/validation — не начато
 
 ## Блок C. Util (packages/ai/src/util)
 - [ ] асинхронные стримы
@@ -293,3 +303,5 @@
 - 2025-10-12T14:52:25Z [executor][gpt-5] Портировал Schema-тесты (`Tests/SwiftAISDKTests/ProviderUtils/SchemaTests.swift`): покрытие jsonSchema, Schema.codable, lazySchema, standardSchema (успех/ошибки) и отклонение vendor "zod"; адаптация проверяет выброс `UnsupportedStandardSchemaVendorError`. `swift test` ✅ (251/251).
 - 2025-10-12T15:15:34Z [executor][gpt-5] Реализовал `ValidateTypes.swift` и `ParseJSON.swift` (safe/unsafe варианты, `ParseJSONResult`, `isParsableJson`) с конвертацией Any→JSONValue и обёрткой ошибок `JSONParseError`; добавил тесты `ValidateTypesTests` и `ParseJSONTests`, `swift test` ✅ (265/265).
 - 2025-10-12T15:22:28Z [executor][gpt-5] Проверил `removeUndefinedEntries` против upstream, расширил тесты (fallback JSON Schema, другие вендоры) и задокументировал ограничения (design-decisions.md, README); повторный `swift test` ✅ (267/267).
+- 2025-10-12T15:36:38Z [executor][gpt-5] Портировал `response-handler` (JSON error/stream/single, binary, status-code) + вспомогательный `ProviderHTTPResponse`; добавил `ResponseHandlerTests` с потоковыми/ошибочными сценариями (аналог Vitest). `swift test` ✅ (273/273).
+- 2025-10-12T17:46:00Z [executor][claude-code] Исправил критические пробелы из validator review: добавил `parseJsonEventStream` (SSE parsing через EventSourceParser) и `createEventSourceResponseHandler`; портировал 15 тестов (10 для parseJsonEventStream, 5 для createEventSourceResponseHandler); задокументировал ограничение HTTPURLResponse.statusText в design-decisions.md. `swift test` ✅ (288/288, +15 новых тестов). **Итого ProviderUtils**: 16 утилит, 133 теста, 100% паритет с блокерами устранены.

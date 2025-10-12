@@ -10,7 +10,7 @@
 
 ## Блок B. Утилиты провайдера (@ai-sdk/provider-utils)
 - [ ] Реализовать id генераторы, работу с UUID (`generate-id`, `createIdGenerator`).
-- [ ] Портировать HTTP-хелперы: `fetch-function`, `get-from-api`, `post-to-api`, `response-handler`, `prepare-headers`.
+- [ ] Портировать HTTP-хелперы: `fetch-function`, `get-from-api`, `post-to-api`, `response-handler` ✅, `prepare-headers`.
 - [ ] Реализовать SSE и EventSource парсер (`parse-json-event-stream`, `EventSourceParserStream` аналог).
 - [ ] Портировать работу с API ключами и настройками (`load-setting`, `load-optional-setting`, `parse-provider-options`).
 - [ ] Перенести утилиты сериализации/валидации (`schema` ✅, `validate-types` ✅, `parse-json` ✅, `remove-undefined-entries`).
