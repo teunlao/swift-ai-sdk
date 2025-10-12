@@ -27,12 +27,13 @@ Unofficial Swift port of the Vercel AI SDK. The goal is to mirror the original T
 - **LanguageModelV2** (17 types) - 100% parity with upstream TypeScript
 - **LanguageModelV3** (17 types) - 100% parity with upstream TypeScript
 - **Provider Errors** (15 error types) - 100% parity with upstream TypeScript
+- **ProviderUtils** (15 utilities) - ID generation, Delay, Headers, UserAgent, LoadSettings, HTTP Utils, Version, SecureJsonParse
 - **JSONValue** - Universal JSON type with Codable support
 
 ### Current Stats
-- ✅ Build: `swift build` — ~0.2s
-- ✅ Tests: 131/131 passed (EventSourceParser: 30, V2: 36, V3: 39, Provider Errors: 26)
-- 📊 Total: ~5200+ lines of code across 65+ files
+- ✅ Build: `swift build` — ~0.7-0.9s
+- ✅ Tests: 236/236 passed (EventSourceParser: 30, V2: 50, V3: 39, Errors: 26, ProviderUtils: 77, JSONValue)
+- 📊 Total: ~9500+ lines of code across 104 files
 
 ## Upstream Reference
 - Vercel AI SDK 6.0.0-beta.42 (`77db222eeded7a936a8a268bf7795ff86c060c2f`).
