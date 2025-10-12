@@ -10,10 +10,10 @@
 - ✅ **LanguageModelV2**: 17 типов, 50 тестов, 100% покрытие типов
 - ✅ **LanguageModelV3**: 17 типов, 39 тестов, 100% паритет (+ preliminary field)
 - ✅ **Provider Errors**: 15 типов, 26 тестов, 100% паритет
-- ✅ **ProviderUtils**: 13 утилит (GenerateID, Delay, Headers, UserAgent, LoadSettings, HTTP Utils), 60 тестов, 100% паритет ✅
+- ✅ **ProviderUtils**: 13 утилит (GenerateID, Delay, Headers, UserAgent, LoadSettings, HTTP Utils), 68 тестов, 100% паритет ✅
 - ✅ **JSONValue**: Codable + Expressible протоколы
-- 📊 **Итого**: ~6200+ строк кода, 89 файлов, **219/219 тестов** ✅ 🎯
-- 🏗️ **Сборка**: `swift build` ~0.2-1.2s, `swift test` **219/219 passed**
+- 📊 **Итого**: ~6200+ строк кода, 89 файлов, **227/227 тестов** ✅ 🎯
+- 🏗️ **Сборка**: `swift build` ~0.2-1.2s, `swift test` **227/227 passed**
 
 ## Блок A. Инфраструктура (`@ai-sdk/provider`)
 - [x] **shared типы** — JSONValue (Codable + Expressible), SharedV2/V3 алиасы ✅
@@ -56,7 +56,7 @@
 - [x] **removeUndefinedEntries / getRuntimeEnvironmentUserAgent / withUserAgentSuffix** ✅
   - `Sources/SwiftAISDK/ProviderUtils/{RemoveUndefinedEntries,GetRuntimeEnvironmentUserAgent,WithUserAgentSuffix}.swift`
   - `Tests/SwiftAISDKTests/ProviderUtils/UserAgentTests.swift`
-  - 9 тестов, 100% паритет
+  - 11 тестов, 100% паритет (+2 validator coverage gaps)
 - [x] **loadSetting / loadOptionalSetting / loadAPIKey** ✅
   - `Sources/SwiftAISDK/ProviderUtils/{LoadSetting,LoadOptionalSetting,LoadAPIKey}.swift`
   - `Tests/SwiftAISDKTests/ProviderUtils/LoadSettingsTests.swift`
@@ -64,7 +64,7 @@
 - [x] **isAbortError / resolve / handleFetchError** ✅
   - `Sources/SwiftAISDK/ProviderUtils/{IsAbortError,Resolve,HandleFetchError}.swift`
   - `Tests/SwiftAISDKTests/ProviderUtils/HTTPUtilsTests.swift`
-  - 12 тестов, 100% паритет
+  - 18 тестов, 100% паритет (4 overloads for resolve)
 - [ ] HTTP-хелперы (post-to-api) — не начато
 - [ ] schema/validation — не начато
 
@@ -353,9 +353,10 @@
 
 ## [executor][claude-code] Сессия 2025-10-12 (тринадцатая): HTTP Utils
 
-- ✅ **IsAbortError** — проверка cancellation errors
-- ✅ **Resolve** — async резолв значений/closures
-- ✅ **HandleFetchError** — обработка network ошибок
-- ✅ **219/219 тестов** (+12 новых)
+- ✅ **IsAbortError** — проверка cancellation errors (4 теста)
+- ✅ **Resolve** — async резолв значений/closures (11 тестов, 4 overloads)
+- ✅ **HandleFetchError** — обработка network ошибок (3 теста)
+- ✅ **227/227 тестов** (+18 новых для HTTP Utils)
+- 🔄 **Validator revision**: +8 тестов для resolve (headers use-case, stateful closures)
 
 — agent‑executor/claude‑code, 2025-10-12
