@@ -1,7 +1,9 @@
 /**
- * Too many values for a single embedding call.
- *
- * Swift port of TypeScript `TooManyEmbeddingValuesForCallError`.
+ Too many values for a single embedding call.
+
+ Port of `@ai-sdk/provider/src/errors/too-many-embedding-values-for-call-error.ts`.
+
+ Thrown when the number of values to embed exceeds the model's maxEmbeddingsPerCall limit.
  */
 public struct TooManyEmbeddingValuesForCallError: AISDKError, @unchecked Sendable {
     public static let errorDomain = "vercel.ai.error.AI_TooManyEmbeddingValuesForCallError"
