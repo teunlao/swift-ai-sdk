@@ -39,8 +39,8 @@ struct ToolTests {
     func toolWithExecute() async throws {
         let schema = FlexibleSchema<JSONValue>(jsonSchema(.object(["type": .string("object")])))
 
-        let executeFn: @Sendable (JSONValue, ToolCallOptions) async throws -> JSONValue = { input, _ in
-            return JSONValue.string("result")
+        let executeFn: @Sendable (JSONValue, ToolCallOptions) async throws -> ToolExecutionResult<JSONValue> = { input, _ in
+            return .value(JSONValue.string("result"))
         }
 
         let createdTool = tool(
@@ -56,7 +56,8 @@ struct ToolTests {
             toolCallId: "test-id",
             messages: []
         )
-        let result = try await createdTool.execute?(JSONValue.object([:]), options)
+        let executionResult = try await createdTool.execute?(JSONValue.object([:]), options)
+        let result = try await executionResult?.resolve()
         #expect(result == JSONValue.string("result"))
     }
 
@@ -138,8 +139,8 @@ struct ToolTests {
     func dynamicToolFunction() async throws {
         let schema = FlexibleSchema<JSONValue>(jsonSchema(.object(["type": .string("object")])))
 
-        let executeFn: @Sendable (JSONValue, ToolCallOptions) async throws -> JSONValue = { _, _ in
-            return JSONValue.string("dynamic result")
+        let executeFn: @Sendable (JSONValue, ToolCallOptions) async throws -> ToolExecutionResult<JSONValue> = { _, _ in
+            return .value(JSONValue.string("dynamic result"))
         }
 
         let createdTool = dynamicTool(
@@ -162,12 +163,12 @@ struct ToolTests {
             ])
         ])))
 
-        let executeFn: @Sendable (JSONValue, ToolCallOptions) async throws -> JSONValue = { input, options in
+        let executeFn: @Sendable (JSONValue, ToolCallOptions) async throws -> ToolExecutionResult<JSONValue> = { input, options in
             // Dynamic tools process input at runtime
-            return JSONValue.object([
+            return .value(JSONValue.object([
                 "toolCallId": JSONValue.string(options.toolCallId),
                 "processed": JSONValue.bool(true)
-            ])
+            ]))
         }
 
         let createdTool = dynamicTool(
@@ -181,7 +182,8 @@ struct ToolTests {
             messages: []
         )
 
-        let result = try await createdTool.execute?(JSONValue.object(["query": JSONValue.string("test")]), options)
+        let executionResult = try await createdTool.execute?(JSONValue.object(["query": JSONValue.string("test")]), options)
+        let result = try await executionResult?.resolve()
 
         #expect(result == JSONValue.object([
             "toolCallId": JSONValue.string("mcp-call-1"),
@@ -193,8 +195,8 @@ struct ToolTests {
     func dynamicToolWithToModelOutput() async throws {
         let schema = FlexibleSchema<JSONValue>(jsonSchema(.object(["type": .string("object")])))
 
-        let executeFn: @Sendable (JSONValue, ToolCallOptions) async throws -> JSONValue = { _, _ in
-            return JSONValue.string("result")
+        let executeFn: @Sendable (JSONValue, ToolCallOptions) async throws -> ToolExecutionResult<JSONValue> = { _, _ in
+            return .value(JSONValue.string("result"))
         }
 
         let toModelOutputFn: @Sendable (JSONValue) -> LanguageModelV3ToolResultOutput = { output in
@@ -221,8 +223,8 @@ struct ToolTests {
     func dynamicToolWithProviderOptions() async throws {
         let schema = FlexibleSchema<JSONValue>(jsonSchema(.object(["type": .string("object")])))
 
-        let executeFn: @Sendable (JSONValue, ToolCallOptions) async throws -> JSONValue = { _, _ in
-            return JSONValue.null
+        let executeFn: @Sendable (JSONValue, ToolCallOptions) async throws -> ToolExecutionResult<JSONValue> = { _, _ in
+            return .value(JSONValue.null)
         }
 
         let providerOpts: [String: JSONValue] = [

@@ -2,6 +2,109 @@ import Foundation
 import AISDKProvider
 
 /**
+ Represents the possible result kinds from a tool execution.
+
+ Port of `@ai-sdk/provider-utils/src/types/tool.ts` - ToolExecuteFunction return type.
+
+ TypeScript upstream returns `AsyncIterable<OUTPUT> | PromiseLike<OUTPUT> | OUTPUT`.
+ Swift adaptation uses enum with three cases to represent this union type:
+ - `.value`: Immediate synchronous result
+ - `.future`: Deferred async computation (like Promise)
+ - `.stream`: Streaming async sequence (like AsyncIterable)
+ */
+public enum ToolExecutionResult<Output: Sendable>: Sendable {
+    /// Immediate synchronous value.
+    case value(Output)
+
+    /// Deferred async computation. The closure captures input/options and executes when needed.
+    case future(@Sendable () async throws -> Output)
+
+    /// Streaming async sequence.
+    case stream(AsyncThrowingStream<Output, Error>)
+
+    /// Check if the result is streaming.
+    ///
+    /// Port of `@ai-sdk/provider-utils/src/is-async-iterable.ts` check.
+    public var isStreaming: Bool {
+        if case .stream = self { return true }
+        return false
+    }
+
+    /// Convert any result type to a unified AsyncThrowingStream.
+    ///
+    /// Port of upstream executeTool behavior that normalizes all result types
+    /// into an async generator.
+    ///
+    /// - `.value`: Yields single value then finishes
+    /// - `.future`: Awaits operation, yields result, then finishes
+    /// - `.stream`: Returns the stream as-is
+    ///
+    /// **Note**: AsyncThrowingStream is single-use (like JS AsyncIterable).
+    /// Call this method at the consumption point, not for storage.
+    public func asAsyncStream() -> AsyncThrowingStream<Output, Error> {
+        switch self {
+        case .value(let output):
+            return AsyncThrowingStream { continuation in
+                continuation.yield(output)
+                continuation.finish()
+            }
+
+        case .future(let operation):
+            return AsyncThrowingStream { continuation in
+                let task = Task {
+                    do {
+                        let output = try await operation()
+                        continuation.yield(output)
+                        continuation.finish()
+                    } catch {
+                        continuation.finish(throwing: error)
+                    }
+                }
+
+                continuation.onTermination = { _ in
+                    task.cancel()
+                }
+            }
+
+        case .stream(let stream):
+            return stream
+        }
+    }
+
+    /// Resolve to a single value (for non-streaming cases).
+    ///
+    /// Port of upstream behavior that awaits promises or returns immediate values.
+    ///
+    /// - Throws: `ToolExecutionResultError.streamingResultRequiresStreamConsumption`
+    ///   if called on a `.stream` case.
+    public func resolve() async throws -> Output {
+        switch self {
+        case .value(let output):
+            return output
+        case .future(let operation):
+            return try await operation()
+        case .stream:
+            throw ToolExecutionResultError.streamingResultRequiresStreamConsumption
+        }
+    }
+}
+
+/**
+ Errors related to tool execution results.
+ */
+public enum ToolExecutionResultError: Error, LocalizedError {
+    /// Attempted to resolve a streaming result without consuming its stream.
+    case streamingResultRequiresStreamConsumption
+
+    public var errorDescription: String? {
+        switch self {
+        case .streamingResultRequiresStreamConsumption:
+            return "Attempted to resolve a streaming tool result without consuming its stream."
+        }
+    }
+}
+
+/**
  A tool contains the description and the schema of the input that the tool expects.
  This enables the language model to generate the input.
 
@@ -41,7 +144,11 @@ public struct Tool: Sendable {
     public let onInputAvailable: (@Sendable (ToolCallInputOptions) async throws -> Void)?
 
     /// Async function that is called with the arguments from the tool call and produces a result.
-    public let execute: (@Sendable (JSONValue, ToolCallOptions) async throws -> JSONValue)?
+    ///
+    /// Returns `ToolExecutionResult<JSONValue>` to support streaming and non-streaming execution.
+    /// Port of TypeScript `ToolExecuteFunction<INPUT, OUTPUT>` which returns
+    /// `AsyncIterable<OUTPUT> | PromiseLike<OUTPUT> | OUTPUT`.
+    public let execute: (@Sendable (JSONValue, ToolCallOptions) async throws -> ToolExecutionResult<JSONValue>)?
 
     /// Optional output schema for validation.
     public let outputSchema: FlexibleSchema<JSONValue>?
@@ -69,7 +176,7 @@ public struct Tool: Sendable {
         onInputStart: (@Sendable (ToolCallOptions) async throws -> Void)? = nil,
         onInputDelta: (@Sendable (ToolCallDeltaOptions) async throws -> Void)? = nil,
         onInputAvailable: (@Sendable (ToolCallInputOptions) async throws -> Void)? = nil,
-        execute: (@Sendable (JSONValue, ToolCallOptions) async throws -> JSONValue)? = nil,
+        execute: (@Sendable (JSONValue, ToolCallOptions) async throws -> ToolExecutionResult<JSONValue>)? = nil,
         outputSchema: FlexibleSchema<JSONValue>? = nil,
         toModelOutput: (@Sendable (JSONValue) -> LanguageModelV3ToolResultOutput)? = nil,
         type: ToolType? = nil,
@@ -312,7 +419,7 @@ public func tool(
     onInputStart: (@Sendable (ToolCallOptions) async throws -> Void)? = nil,
     onInputDelta: (@Sendable (ToolCallDeltaOptions) async throws -> Void)? = nil,
     onInputAvailable: (@Sendable (ToolCallInputOptions) async throws -> Void)? = nil,
-    execute: (@Sendable (JSONValue, ToolCallOptions) async throws -> JSONValue)? = nil,
+    execute: (@Sendable (JSONValue, ToolCallOptions) async throws -> ToolExecutionResult<JSONValue>)? = nil,
     outputSchema: FlexibleSchema<JSONValue>? = nil,
     toModelOutput: (@Sendable (JSONValue) -> LanguageModelV3ToolResultOutput)? = nil
 ) -> Tool {
@@ -340,7 +447,7 @@ public func dynamicTool(
     description: String? = nil,
     providerOptions: [String: JSONValue]? = nil,
     inputSchema: FlexibleSchema<JSONValue>,
-    execute: @escaping @Sendable (JSONValue, ToolCallOptions) async throws -> JSONValue,
+    execute: @escaping @Sendable (JSONValue, ToolCallOptions) async throws -> ToolExecutionResult<JSONValue>,
     toModelOutput: (@Sendable (JSONValue) -> LanguageModelV3ToolResultOutput)? = nil
 ) -> Tool {
     Tool(

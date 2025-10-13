@@ -219,7 +219,7 @@ internal final class DefaultMCPClient: MCPClient, @unchecked Sendable {
             let description = mcpTool.description
 
             // Weak self for execute closure
-            let execute: @Sendable (JSONValue, ToolCallOptions) async throws -> JSONValue = { [weak self] args, options in
+            let execute: @Sendable (JSONValue, ToolCallOptions) async throws -> ToolExecutionResult<JSONValue> = { [weak self] args, options in
                 guard let self = self else {
                     throw MCPClientError(message: "Client was deallocated")
                 }
@@ -235,8 +235,8 @@ internal final class DefaultMCPClient: MCPClient, @unchecked Sendable {
                     abortSignal: options.abortSignal
                 )
 
-                // Convert CallToolResult to JSONValue
-                return try self.callToolResultToJSON(result)
+                // Convert CallToolResult to JSONValue and wrap in ToolExecutionResult
+                return .value(try self.callToolResultToJSON(result))
             }
 
             // Create appropriate tool based on schemas parameter
