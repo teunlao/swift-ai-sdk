@@ -56,7 +56,7 @@ public struct DownloadResult: Sendable {
 
  Experimental. Can change in patch versions without warning.
  */
-public typealias DownloadFunction = ([DownloadRequest]) async throws -> [DownloadResult?]
+public typealias DownloadFunction = @Sendable ([DownloadRequest]) async throws -> [DownloadResult?]
 
 /**
  Creates a default download function.

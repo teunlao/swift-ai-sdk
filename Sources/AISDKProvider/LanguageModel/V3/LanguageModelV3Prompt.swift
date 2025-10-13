@@ -380,6 +380,7 @@ public struct LanguageModelV3ToolResultPart: Sendable, Equatable, Codable {
 public enum LanguageModelV3ToolResultOutput: Sendable, Equatable, Codable {
     case text(value: String)
     case json(value: JSONValue)
+    case executionDenied(reason: String?)
     case errorText(value: String)
     case errorJson(value: JSONValue)
     case content(value: [LanguageModelV3ToolResultContentPart])
@@ -387,6 +388,7 @@ public enum LanguageModelV3ToolResultOutput: Sendable, Equatable, Codable {
     private enum CodingKeys: String, CodingKey {
         case type
         case value
+        case reason
     }
 
     public init(from decoder: Decoder) throws {
@@ -400,6 +402,9 @@ public enum LanguageModelV3ToolResultOutput: Sendable, Equatable, Codable {
         case "json":
             let value = try container.decode(JSONValue.self, forKey: .value)
             self = .json(value: value)
+        case "execution-denied":
+            let reason = try container.decodeIfPresent(String.self, forKey: .reason)
+            self = .executionDenied(reason: reason)
         case "error-text":
             let value = try container.decode(String.self, forKey: .value)
             self = .errorText(value: value)
@@ -428,6 +433,9 @@ public enum LanguageModelV3ToolResultOutput: Sendable, Equatable, Codable {
         case .json(let value):
             try container.encode("json", forKey: .type)
             try container.encode(value, forKey: .value)
+        case .executionDenied(let reason):
+            try container.encode("execution-denied", forKey: .type)
+            try container.encodeIfPresent(reason, forKey: .reason)
         case .errorText(let value):
             try container.encode("error-text", forKey: .type)
             try container.encode(value, forKey: .value)

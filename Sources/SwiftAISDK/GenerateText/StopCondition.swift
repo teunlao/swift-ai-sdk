@@ -13,19 +13,10 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-// Forward declaration: StepResult will be implemented in Task 5.3
-// This allows StopCondition to compile before StepResult is available
-
 /// Stop condition function type
 /// - Parameter steps: Array of step results
 /// - Returns: true if generation should stop, false otherwise
-public typealias StopCondition = @Sendable (_ steps: [any StepResultProtocol]) async -> Bool
-
-/// Protocol for StepResult (will be fully implemented in Task 5.3)
-public protocol StepResultProtocol: Sendable {
-    /// Tool calls in this step
-    var toolCalls: [TypedToolCall] { get }
-}
+public typealias StopCondition = @Sendable (_ steps: [StepResult]) async -> Bool
 
 /// Creates a stop condition that stops after a specific number of steps
 /// - Parameter stepCount: Number of steps after which to stop
@@ -58,7 +49,7 @@ public func hasToolCall(_ toolName: String) -> StopCondition {
 /// - Returns: true if any stop condition is satisfied, false otherwise
 public func isStopConditionMet(
     stopConditions: [StopCondition],
-    steps: [any StepResultProtocol]
+    steps: [StepResult]
 ) async -> Bool {
     let results = await withTaskGroup(of: Bool.self) { group in
         for condition in stopConditions {

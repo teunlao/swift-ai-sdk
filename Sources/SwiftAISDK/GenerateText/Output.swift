@@ -1,151 +1,189 @@
-/**
- Output parser for text and object generation.
-
- Port of `@ai-sdk/ai/src/generate-text/output.ts`.
-
- Provides two output modes:
- - `text()`: Parse text output
- - `object(schema:)`: Parse and validate structured JSON output against a schema
-
- The Output protocol handles both partial parsing (for streaming) and final
- output parsing with validation.
- */
-
 import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-/// Output parser protocol for text and object generation
-public protocol Output: Sendable {
-    /// Output type identifier
-    var type: String { get }
+/**
+ Output parser helpers for text and object generation.
 
-    /// Response format configuration for the language model
-    func responseFormat() async throws -> LanguageModelV3ResponseFormat
+ Port of `@ai-sdk/ai/src/generate-text/output.ts`.
 
-    /// Parse partial output (for streaming)
-    /// - Parameter text: The partial text to parse
-    /// - Returns: Parsed partial result, or nil if parsing not yet possible
-    func parsePartial(text: String) async throws -> JSONValue?
+ Provides factory helpers (`Output.text()`, `Output.object(schema:)`) that return
+ typed specifications for parsing structured or plain-text model outputs. These
+ specifications are consumed by `generateText`/`streamText` to configure model
+ response formats and to decode the final results.
+ */
+public enum Output {
+    // MARK: - Types
 
-    /// Parse final output with validation
-    /// - Parameters:
-    ///   - text: The complete text to parse
-    ///   - response: Response metadata
-    ///   - usage: Token usage information
-    ///   - finishReason: Reason why generation finished
-    /// - Returns: Parsed and validated output
-    func parseOutput(
-        text: String,
-        response: LanguageModelResponseMetadata,
-        usage: LanguageModelUsage,
-        finishReason: FinishReason
-    ) async throws -> JSONValue
-}
-
-// MARK: - Text Output
-
-/// Creates a text output parser
-/// - Returns: Output parser that returns text as-is
-public func text() -> any Output {
-    TextOutput()
-}
-
-private struct TextOutput: Output {
-    public var type: String { "text" }
-
-    public func responseFormat() async throws -> LanguageModelV3ResponseFormat {
-        return .text
+    /// Output kind identifier (matches upstream string union `'text' | 'object'`).
+    public enum OutputType: String, Sendable {
+        case text
+        case object
     }
 
-    public func parsePartial(text: String) async throws -> JSONValue? {
-        .string(text)
-    }
+    /// Context information available when parsing the final output.
+    public struct Context: Sendable {
+        public let response: LanguageModelResponseMetadata
+        public let usage: LanguageModelUsage
+        public let finishReason: FinishReason
 
-    public func parseOutput(
-        text: String,
-        response: LanguageModelResponseMetadata,
-        usage: LanguageModelUsage,
-        finishReason: FinishReason
-    ) async throws -> JSONValue {
-        .string(text)
-    }
-}
-
-// MARK: - Object Output
-
-/// Creates an object output parser with schema validation
-/// - Parameter schema: Schema to validate output against (using type erasure)
-/// - Returns: Output parser that validates JSON objects
-public func object<T>(schema: Schema<T>) -> any Output {
-    ObjectOutput(schema: schema)
-}
-
-private struct ObjectOutput<T>: Output {
-    let schema: Schema<T>
-
-    public var type: String { "object" }
-
-    public func responseFormat() async throws -> LanguageModelV3ResponseFormat {
-        let jsonSchema = try await schema.jsonSchema()
-        return .json(schema: jsonSchema, name: nil, description: nil)
-    }
-
-    public func parsePartial(text: String) async throws -> JSONValue? {
-        let result = await parsePartialJson(text)
-
-        switch result.state {
-        case .failedParse, .undefinedInput:
-            return nil
-
-        case .repairedParse, .successfulParse:
-            // Note: currently no validation of partial results
-            return result.value
+        public init(
+            response: LanguageModelResponseMetadata,
+            usage: LanguageModelUsage,
+            finishReason: FinishReason
+        ) {
+            self.response = response
+            self.usage = usage
+            self.finishReason = finishReason
         }
     }
 
-    public func parseOutput(
-        text: String,
-        response: LanguageModelResponseMetadata,
-        usage: LanguageModelUsage,
-        finishReason: FinishReason
-    ) async throws -> JSONValue {
-        // Parse JSON
-        let parseResult = await safeParseJSON(ParseJSONOptions(text: text))
+    /**
+     Type-erased specification describing how to request and parse model output.
 
-        let value: JSONValue
-        switch parseResult {
-        case .success(let parsedValue, _):
-            value = parsedValue
-        case .failure(let error, _):
-            throw NoObjectGeneratedError(
-                message: "No object generated: could not parse the response.",
-                cause: error,
+     - `OutputValue`: Final structured type produced when parsing completes.
+     - `PartialOutput`: Partial result type emitted during streaming (unused for `generateText` but required for parity with upstream API).
+     */
+    public struct Specification<OutputValue: Sendable, PartialOutput: Sendable>: Sendable {
+        public let type: OutputType
+
+        private let responseFormatClosure: @Sendable () async throws -> LanguageModelV3ResponseFormat
+        private let parsePartialClosure: @Sendable (_ text: String) async throws -> PartialOutput?
+        private let parseOutputClosure: @Sendable (_ text: String, _ context: Context) async throws -> OutputValue
+
+        public init(
+            type: OutputType,
+            responseFormat: @escaping @Sendable () async throws -> LanguageModelV3ResponseFormat,
+            parsePartial: @escaping @Sendable (_ text: String) async throws -> PartialOutput?,
+            parseOutput: @escaping @Sendable (_ text: String, _ context: Context) async throws -> OutputValue
+        ) {
+            self.type = type
+            self.responseFormatClosure = responseFormat
+            self.parsePartialClosure = parsePartial
+            self.parseOutputClosure = parseOutput
+        }
+
+        /// Resolve the language-model response format for this output.
+        public func responseFormat() async throws -> LanguageModelV3ResponseFormat {
+            try await responseFormatClosure()
+        }
+
+        /// Parse a partial output chunk (used by streaming flows).
+        public func parsePartial(text: String) async throws -> PartialOutput? {
+            try await parsePartialClosure(text)
+        }
+
+        /// Parse the final output using explicit context values.
+        public func parseOutput(
+            text: String,
+            context: Context
+        ) async throws -> OutputValue {
+            try await parseOutputClosure(text, context)
+        }
+
+        /// Convenience overload that mirrors the upstream call-site signature.
+        public func parseOutput(
+            text: String,
+            response: LanguageModelResponseMetadata,
+            usage: LanguageModelUsage,
+            finishReason: FinishReason
+        ) async throws -> OutputValue {
+            try await parseOutput(
                 text: text,
-                response: response,
-                usage: usage,
-                finishReason: finishReason
+                context: Context(
+                    response: response,
+                    usage: usage,
+                    finishReason: finishReason
+                )
             )
         }
+    }
 
-        // Validate against schema
-        let validationResult = await safeValidateTypes(
-            ValidateTypesOptions(value: value, schema: FlexibleSchema(schema))
+    // MARK: - Text Output
+
+    /// Create a specification that treats the model output as plain text.
+    public static func text() -> Specification<String, String> {
+        Specification<String, String>(
+            type: .text,
+            responseFormat: { .text },
+            parsePartial: { text in text },
+            parseOutput: { text, _ in text }
         )
+    }
 
-        switch validationResult {
-        case .success:
-            // Return the original JSONValue (validation passed)
-            return value
-        case .failure(let error, _):
-            throw NoObjectGeneratedError(
-                message: "No object generated: response did not match schema.",
-                cause: error,
-                text: text,
-                response: response,
-                usage: usage,
-                finishReason: finishReason
-            )
-        }
+    // MARK: - Object Output
+
+    /// Create a specification that parses the output as JSON validated against a schema.
+    ///
+    /// - Parameter schema: Schema describing the expected output structure.
+    public static func object<OutputValue: Sendable>(
+        schema inputSchema: FlexibleSchema<OutputValue>
+    ) -> Specification<OutputValue, JSONValue> {
+        let resolvedSchema = inputSchema.resolve()
+
+        return Specification<OutputValue, JSONValue>(
+            type: .object,
+            responseFormat: {
+                let jsonSchema = try await resolvedSchema.jsonSchema()
+                return .json(schema: jsonSchema, name: nil, description: nil)
+            },
+            parsePartial: { text in
+                let result = await parsePartialJson(text)
+
+                switch result.state {
+                case .failedParse, .undefinedInput:
+                    return nil
+                case .repairedParse, .successfulParse:
+                    // Note: currently no validation of partial results.
+                    return result.value
+                }
+            },
+            parseOutput: { text, context in
+                let parseResult = await safeParseJSON(ParseJSONOptions(text: text))
+
+                let parsedValue: JSONValue
+                switch parseResult {
+                case .success(let value, _):
+                    parsedValue = value
+                case .failure(let error, _):
+                    throw NoObjectGeneratedError(
+                        message: "No object generated: could not parse the response.",
+                        cause: error,
+                        text: text,
+                        response: context.response,
+                        usage: context.usage,
+                        finishReason: context.finishReason
+                    )
+                }
+
+                let validationResult = await safeValidateTypes(
+                    ValidateTypesOptions(
+                        value: parsedValue,
+                        schema: FlexibleSchema(resolvedSchema)
+                    )
+                )
+
+                switch validationResult {
+                case .success(let typedValue, _):
+                    return typedValue
+                case .failure(let error, _):
+                    throw NoObjectGeneratedError(
+                        message: "No object generated: response did not match schema.",
+                        cause: error,
+                        text: text,
+                        response: context.response,
+                        usage: context.usage,
+                        finishReason: context.finishReason
+                    )
+                }
+            }
+        )
+    }
+
+    /// Convenience overload that accepts a plain `Schema` instead of a `FlexibleSchema`.
+    public static func object<OutputValue: Sendable>(
+        schema inputSchema: Schema<OutputValue>
+    ) -> Specification<OutputValue, JSONValue> {
+        object(schema: FlexibleSchema(inputSchema))
     }
 }
