@@ -6,409 +6,346 @@ Port **Vercel AI SDK** from TypeScript to Swift with **100% upstream parity**.
 
 **Goal**: 1:1 feature-complete implementation matching TypeScript API, behavior, types, and tests.
 
+---
+
 ## Quick Start
 
-**Read these files first every session**:
+**📋 Task Management:**
 ```bash
-Task Master               # Task management system
-plan/executor-guide.md    # Executor workflow
-plan/validator-guide.md   # Validator checklist
-plan/principles.md        # Porting rules
+mcp__taskmaster__next_task                              # Find next task
+mcp__taskmaster__get_task --id=4.3                      # Get details
+mcp__taskmaster__get_tasks --status=pending             # List pending
+mcp__taskmaster__set_task_status --id=4.3 --status=done # Mark done
 ```
 
-**Важно (CLI исполнение):** для _любой_ команды через `shell` всегда указываем `with_escalated_permissions: true` и заполняем `justification`. Без этого Codex CLI блокирует даже безопасные операции.
+**📚 Read first:**
+```bash
+Task Master                     # Task management
+plan/executor-guide.md          # Executor workflow
+plan/validation-workflow.md     # Validation process
+plan/principles.md              # Porting rules
+```
+
+---
 
 ## Project Structure
 
 ```
 swift-ai-sdk/
+├── .sessions/                   # Session contexts (gitignored)
+├── .validation/                 # Validation artifacts (gitignored)
+├── Package.swift                # SwiftPM manifest (3 targets)
 ├── Sources/
-│   ├── EventSourceParser/       # SSE parser
-│   └── SwiftAISDK/
-│       ├── Provider/            # V2/V3 types, errors, JSONValue
-│       ├── ProviderUtils/       # HTTP, JSON, delays, headers
-│       └── Core/                # Generate-text, streams, tools
-├── Tests/                        # Swift Testing tests
-├── external/                     # ⚠️ UPSTREAM REFERENCE (read-only)
-│   ├── vercel-ai-sdk/           # TypeScript source to port
-│   └── eventsource-parser/      # SSE parser reference
-└── plan/                         # Documentation & progress tracking
+│   ├── AISDKProvider/          # Foundation (78 files, ~210 tests)
+│   ├── AISDKProviderUtils/     # Utilities (35 files, ~200 tests)
+│   ├── SwiftAISDK/             # Main SDK (105 files, ~300 tests)
+│   └── EventSourceParser/      # SSE parser (2 files, 30 tests)
+├── Tests/                       # Swift Testing tests
+├── external/                    # ⚠️ UPSTREAM REFERENCE (read-only)
+│   ├── vercel-ai-sdk/packages/ # TypeScript source
+│   │   ├── provider/           → AISDKProvider
+│   │   ├── provider-utils/     → AISDKProviderUtils
+│   │   └── ai/                 → SwiftAISDK
+│   └── eventsource-parser/     # SSE parser reference
+└── plan/                        # Documentation
 ```
+
+### Package Dependencies
+```
+AISDKProvider (no dependencies)
+    ↑
+AISDKProviderUtils (depends on: AISDKProvider)
+    ↑
+SwiftAISDK (depends on: AISDKProvider, AISDKProviderUtils, EventSourceParser)
+```
+
+### Session Contexts
+
+**Usage**: `.sessions/` files preserve state between parallel agent sessions.
+
+- 💬 Capture: `"Зафиксируй контекст текущей работы"`
+- 📂 Resume: `"Загрузи контекст из .sessions/session-*.md"`
+- 🗑️ Cleanup: Delete after task completion
+
+**Use for**: Multi-session tasks, interrupted work, complex checkpoints
+**See**: `.sessions/README.md`
+
+---
 
 ## Upstream References
 
-**Vercel AI SDK** (current: 6.0.0-beta.42, commit `77db222ee`):
+**Vercel AI SDK** (6.0.0-beta.42, commit `77db222ee`):
 ```
-external/vercel-ai-sdk/
-├── packages/provider/            # Language model types (V2/V3)
-├── packages/provider-utils/      # Utilities (HTTP, JSON, SSE)
-└── packages/ai/                  # Core SDK (generate-text, streams, tools)
+external/vercel-ai-sdk/packages/
+├── provider/        → Sources/AISDKProvider/
+├── provider-utils/  → Sources/AISDKProviderUtils/
+└── ai/              → Sources/SwiftAISDK/
 ```
 
-**EventSource Parser**:
-```
-external/eventsource-parser/      # SSE parsing library
-```
+**EventSource Parser**: `external/eventsource-parser/` → `Sources/EventSourceParser/`
+
+---
 
 ## Roles & Workflow
 
 ### Executor Role
-**Implement features, write tests, update docs.**
+**Implement features, write tests, validate, commit only when approved.**
 
-1. Read plan docs (`plan/*.md`)
-2. Find TypeScript code in `external/vercel-ai-sdk/`
-3. Port to Swift in `Sources/SwiftAISDK/`
-4. Port tests to `Tests/SwiftAISDKTests/`
-5. Run `swift build && swift test` (must pass 100%)
-6. Update task status in Task Master
+1. Find next task: `mcp__taskmaster__next_task`
+2. **Mark in-progress**: `mcp__taskmaster__set_task_status --id=X --status=in-progress`
+3. Find TypeScript in `external/vercel-ai-sdk/packages/`
+4. Port to appropriate Swift package
+5. Port ALL upstream tests
+6. Run `swift build && swift test` (must pass 100%)
+7. Create validation request in `.validation/requests/validate-TASK-YYYY-MM-DD.md`
+8. **Request validation review** (coordinate with validator)
+9. Wait for validator approval (✅ APPROVED)
+10. **Mark done ONLY after approval**: `set_task_status --status=done`
+11. **Commit ONLY when user requests explicitly**
 
-**Never**: Commit/push without permission, break parity, leave failing tests.
+**🚨 CRITICAL Rules**:
+- ❌ **NEVER TOUCH OTHER AGENTS' WORK** — Only edit files in your task scope
+- ❌ Never commit without explicit user permission
+- ❌ Never mark `done` before validator approval
+- ✅ Request validation review after completing implementation
 
 ### Validator Role
-**Review executor work for correctness.**
+**Review executor work for 100% upstream parity.**
 
-1. Compare Swift vs TypeScript source
-2. Verify 100% API/behavior match
-3. Check test coverage completeness
-4. Document deviations/issues
-5. Approve or request fixes
+**Manual validation**:
+1. Read validation request from `.validation/requests/`
+2. Compare Swift vs TypeScript source line-by-line
+3. Verify API/behavior parity, test coverage
+4. Run tests, check for regressions
+5. Generate report in `.validation/reports/`
+6. Document verdict: ✅ APPROVED / ⚠️ ISSUES / ❌ REJECTED
 
-## Standard Workflow
+**Documentation**:
+- 📘 `plan/validation-workflow.md` — Complete process
+- 🚀 `.validation/QUICKSTART.md` — Quick start
+- 📋 `plan/validator-guide.md` — Manual checklist
 
-### 1. Planning
+---
+
+## Implementation Workflow
+
+### 1. Find Upstream Code
 ```bash
-# Get next task
-mcp__taskmaster__next_task
-
-# Check task details
-mcp__taskmaster__get_task --id=4.3
-```
-
-### 2. Find Upstream Code
-```bash
-# Example: Porting delay function
 cat external/vercel-ai-sdk/packages/provider-utils/src/delay.ts
 cat external/vercel-ai-sdk/packages/provider-utils/src/delay.test.ts
 ```
 
-### 3. Implement in Swift
-**File naming pattern**:
+### 2. Implement in Swift
+
+**File naming** (match upstream package):
 ```
-TypeScript: external/vercel-ai-sdk/packages/provider-utils/src/delay.ts
-Swift:      Sources/SwiftAISDK/ProviderUtils/Delay.swift
-Tests:      Tests/SwiftAISDKTests/ProviderUtils/DelayTests.swift
+TS:   external/.../packages/provider-utils/src/delay.ts
+Swift: Sources/AISDKProviderUtils/Delay.swift
+Test:  Tests/AISDKProviderUtilsTests/DelayTests.swift
 ```
 
-**⚠️ REQUIRED: Upstream References in Code**
-
-Every ported file MUST include header comment with upstream source:
-
+**⚠️ Header required**:
 ```swift
 /**
- Brief description of the module.
-
- Port of `@ai-sdk/provider-utils/src/delay.ts`.
-
- Additional details if needed.
- */
-```
-
-**Format:**
-- Functions/Types: `Port of '@ai-sdk/PACKAGE/src/PATH.ts'`
-- Use backticks around path
-- Package names: `provider`, `provider-utils`, `ai`
-
-**Examples:**
-```swift
-// ✅ Good - File header
-/**
- Delays execution for a specified time.
+ Brief description.
 
  Port of `@ai-sdk/provider-utils/src/delay.ts`.
  */
-
-// ✅ Good - Complex function
-/**
- Converts TypeScript AbortSignal to Swift cancellation check.
-
- Port of `@ai-sdk/ai/src/generate-text.ts` (abortSignal handling).
- Adapted: Swift uses @Sendable closure instead of AbortSignal.
- */
-
-// ✅ Good - Type with adaptation
-/**
- Port of `@ai-sdk/provider/src/language-model/v3/message.ts`.
-
- TypeScript union: `type | type` → Swift enum with associated values.
- */
 ```
 
-**API must match exactly**:
-```typescript
-// TypeScript
-export async function delay(delayInMs?: number): Promise<void>
-```
+### 3. Port ALL Tests
 
-```swift
-// Swift
-public func delay(_ delayInMs: Int?) async throws
-```
+Port every test case from `.test.ts` to Swift Testing:
+- Same test names (camelCase)
+- Same test data and edge cases
+- **100% coverage required**
 
-### 4. Port ALL Tests
-```typescript
-// TypeScript test
-it('resolves after specified time', async () => {
-  const start = Date.now();
-  await delay(50);
-  expect(Date.now() - start).toBeGreaterThanOrEqual(50);
-});
-```
+### 4. Verify & Validate
 
-```swift
-// Swift test
-@Test("resolves after specified time")
-func resolvesAfterSpecifiedTime() async throws {
-    let start = Date.now
-    try await delay(50)
-    #expect(Date.now - start >= 0.05)
-}
-```
-
-### 5. Verify
 ```bash
-swift build              # Must succeed
-swift test               # All tests must pass
+swift build && swift test           # Must pass
+# Create validation request
+# Request validation review
 ```
 
-### 6. Document Progress
-**Update Task Master**:
-```markdown
-## [executor][agent-name] Session YYYY-MM-DDTHH:MM:SSZ: Feature Name
+See `.validation/QUICKSTART.md` for template.
 
-**Implemented:**
-- ✅ File.swift — description (X tests, 100% parity)
-
-**Details:**
-- Key implementation decisions
-- Adaptations from TypeScript
-
-**Tests:** X/X passed (+Y new)
-
-— agent-executor/model-name, YYYY-MM-DDTHH:MM:SSZ
-```
-
-**Get UTC timestamp**:
-```bash
-date -u +"%Y-%m-%dT%H:%M:%SZ"
-```
+---
 
 ## Parity Standards
 
-### Must Match Exactly
-✅ Public API (names, parameters, return types)
-✅ Behavior (edge cases, errors, null handling)
-✅ Error messages (same text when possible)
-✅ Test scenarios (all upstream tests ported)
+### Must Match
+- ✅ Public API (names, parameters, types)
+- ✅ Behavior (edge cases, errors)
+- ✅ Error messages (same text)
+- ✅ Test scenarios (all ported)
 
-### Swift Adaptations (Allowed)
-✅ `Promise<T>` → `async throws -> T`
-✅ `AbortSignal` → `@Sendable () -> Bool` or Task cancellation
-✅ Union types → `enum` with associated values
-✅ `undefined` → `nil` (optional types)
-✅ `Record<K, V>` → `[K: V]`
+### Allowed Adaptations
+- ✅ `Promise<T>` → `async throws -> T`
+- ✅ `AbortSignal` → `@Sendable () -> Bool`
+- ✅ Union types → `enum` with associated values
+- ✅ `undefined` → `nil`
+- ✅ `Record<K, V>` → `[K: V]`
 
-### Document Deviations
-If exact parity is impossible:
-- **MUST**: Add code comment with upstream reference (see "Upstream References in Code" above)
-- **MUST**: Explain why adaptation was needed
-- Document significant changes in `plan/design-decisions.md`
-- Ensure tests verify adapted behavior
+**Document adaptations** with rationale. See `plan/principles.md`.
 
-**Example of documented deviation:**
-```swift
-/**
- Port of `@ai-sdk/ai/src/generate-text.ts` (cancellation handling).
+---
 
- TypeScript: Uses AbortSignal for cancellation
- Swift: Uses @Sendable () -> Bool closure that returns true when cancelled
+## TypeScript → Swift Patterns
 
- Reason: Swift has no standard AbortSignal type. Closure pattern is idiomatic
- and integrates with Swift's Task cancellation model.
- */
-public struct CallSettings {
-    public var abortSignal: (@Sendable () -> Bool)?
-    // ...
-}
-```
+| TypeScript | Swift |
+|------------|-------|
+| `Promise<T>` | `async throws -> T` |
+| `value?: T \| undefined` | `value: T? = nil` |
+| `type A \| B` | `enum Result { case a(A), case b(B) }` |
+| `Record<K, V>` | `[K: V]` |
+| `AbortSignal` | `@Sendable () -> Bool` |
 
-## Common Patterns
-
-### TypeScript → Swift
-
-**Async functions**:
-```typescript
-async function foo(): Promise<string> { }
-```
-```swift
-func foo() async throws -> String { }
-```
-
-**Optionals**:
-```typescript
-value?: string | undefined
-```
-```swift
-value: String? = nil
-```
-
-**Union types**:
-```typescript
-type Status = 'pending' | 'done' | 'error'
-```
-```swift
-enum Status: String, Codable {
-    case pending, done, error
-}
-```
-
-**Discriminated unions**:
-```typescript
-type Result =
-  | { type: 'success'; value: T }
-  | { type: 'error'; error: Error }
-```
-```swift
-enum Result {
-    case success(value: T)
-    case error(Error)
-}
-```
-
-**Dictionaries**:
-```typescript
-headers?: Record<string, string>
-```
-```swift
-headers: [String: String]? = nil
-```
-
-## Testing Standards
-
-### Port ALL Tests
-Every `.test.ts` file must be ported to Swift Testing.
-
-### Test Structure
-```swift
-import Testing
-@testable import SwiftAISDK
-
-@Suite("Module Name")
-struct ModuleTests {
-    @Test("feature works correctly")
-    func featureWorksCorrectly() throws {
-        // Arrange
-        let input = "test"
-
-        // Act
-        let result = function(input)
-
-        // Assert
-        #expect(result == expected)
-    }
-}
-```
-
-### Naming
-- Use upstream test names (converted to camelCase)
-- Keep descriptions in English
-- Group related tests in `@Suite`
+---
 
 ## Current Status
 
-**✅ Completed** (236/236 tests passing):
-- EventSourceParser (30 tests)
-- LanguageModelV2 (50 tests)
-- LanguageModelV3 (39 tests)
-- Provider Errors (26 tests)
-- ProviderUtils (77 tests): ID gen, delays, headers, user-agent, settings, HTTP utils, version, secure JSON parsing
-- JSONValue (universal JSON type)
+**✅ Completed** (763/763 tests passing):
+- **AISDKProvider** (78 files, ~210 tests): LanguageModelV2/V3, EmbeddingModel, ImageModel, SpeechModel, TranscriptionModel, Errors, JSONValue
+- **AISDKProviderUtils** (35 files, ~200 tests): HTTP/JSON utilities, Schema, Tools, Data handling
+- **SwiftAISDK** (105 files, ~300 tests): Prompt conversion, Tool execution, Registry, Middleware, Telemetry
+- **EventSourceParser** (2 files, 30 tests)
 
-**🚧 Next Priorities** (see Task Master):
-- Schema & validation system
-- ParseJSON & ValidateTypes
-- HTTP API functions (post-to-api, get-from-api)
-- Response handlers
+**🚧 Next**: Block E/F (Generate/Stream Text), Provider implementations
+
+**Stats**: ~14,300 lines, 220 files, 3 packages
+
+---
 
 ## Key Commands
 
 ```bash
-# Read plan
-mcp__taskmaster__get_tasks
-
 # Find upstream
 ls external/vercel-ai-sdk/packages/*/src/
 
 # Build & test
 swift build && swift test
 
-# Test summary
-swift test 2>&1 | tail -5
+# Session contexts
+cat .sessions/README.md
+
+# Validation
+cat .validation/QUICKSTART.md
 
 # UTC timestamp
 date -u +"%Y-%m-%dT%H:%M:%SZ"
-
-# Count files
-find Sources Tests -name "*.swift" | wc -l
-
-# Count lines
-find Sources Tests -name "*.swift" -exec wc -l {} + | tail -1
 ```
+
+---
 
 ## Pre-Completion Checklist
 
-Before marking task complete:
-
-- [ ] Public API matches upstream TypeScript
-- [ ] Behavior matches exactly (same inputs → outputs/errors)
+- [ ] Public API matches upstream
+- [ ] Behavior matches exactly
 - [ ] ALL upstream tests ported
-- [ ] All tests pass (including existing tests)
-- [ ] **Every file has upstream reference in header comment** (`Port of '@ai-sdk/...'`)
-- [ ] Adaptations documented with explanation if needed
-- [ ] Task status updated in Task Master
-- [ ] No regressions introduced
+- [ ] All tests pass
+- [ ] Upstream reference in file header
+- [ ] Adaptations documented
+- [ ] `swift build` succeeds
+- [ ] Validation request created
+- [ ] Validation review requested
+
+---
 
 ## Key Principles
 
-1. **Read first, code second** — Always check upstream and plan
-2. **Test everything** — No code without tests
-3. **Track progress** — Update task statuses in Task Master
-4. **100% parity** — Match TypeScript behavior exactly
-5. **Ask before deviating** — Document unavoidable differences
-6. **Never commit** — Wait for approval
+1. **🚨 NEVER TOUCH OTHER AGENTS' WORK** — Only edit your task files. Multiple agents work in parallel.
+2. **Read first, code second** — Check upstream, then plan
+3. **Mark in-progress at start** — Update status before coding
+4. **Test everything** — 100% coverage required
+5. **Request validation review** — After completing implementation
+6. **Mark done ONLY after validation** — Wait for approval
+7. **Never commit without permission** — Explicit user request required
+8. **100% parity** — Match TypeScript exactly
+
+---
 
 ## Documentation Files
 
 ### Core
-- `README.md` — Project overview, stats
-- `CHANGELOG.md` — Release notes
+- `README.md` — Project overview
+- `AGENTS.md` — This file
 - `Package.swift` — SwiftPM manifest
 
 ### Plan Directory
-- Task Master — Task management and status tracking
 - `principles.md` — Porting guidelines
-- `executor-guide.md` — Detailed executor workflow
-- `validator-guide.md` — Validation checklist
-- `dependencies.md` — External dependencies strategy
-- `tests.md` — Testing approach
+- `executor-guide.md` — Executor workflow
+- `validation-workflow.md` — Validation process
+- `validator-guide.md` — Manual checklist
 - `design-decisions.md` — Documented deviations
+- `tests.md` — Testing approach
 
-## Resources
+### Validation
+- `.validation/QUICKSTART.md` — Usage guide
+- `.validation/requests/EXAMPLE-*.md` — Templates
+- `.validation/reports/EXAMPLE-*.md` — Examples
 
-**Upstream repo**: https://github.com/vercel/ai
-**EventSource parser**: https://github.com/EventSource/eventsource-parser
+### Session Contexts
+- `.sessions/README.md` — Context guide
+- `.sessions/EXAMPLE-*.md` — Templates
 
 ---
 
-**Remember**: Every line of code must match upstream behavior. When in doubt, check TypeScript source.
+## Resources
 
-*Last updated: 2025-10-12*
+- **Upstream repo**: https://github.com/vercel/ai
+- **EventSource parser**: https://github.com/EventSource/eventsource-parser
+- **Swift Testing**: https://developer.apple.com/documentation/testing
+
+---
+
+## Quick Tips
+
+### For Executors
+- 🚨 **Only edit your task files** — If other files fail, STOP and report
+- 🚨 **Never commit temp dirs** — `.sessions/`, `.validation/` are gitignored
+- ✅ Mark `in-progress` at start, `done` only after approval
+- ✅ Port ALL tests, add upstream references
+- ✅ Save session context for multi-session work
+- ✅ Request validation review after implementation
+- ❌ Don't skip tests or commit without permission
+
+### For Validators
+- ✅ Follow validation workflow (`.validation/QUICKSTART.md`)
+- ✅ Check line-by-line parity, verify all tests ported
+- ✅ Generate detailed reports
+- ❌ Don't accept "close enough"
+
+---
+
+## Task Management (Optional)
+
+**Task Master AI** available as optional tracker (manual mode only, no API keys).
+
+### Allowed Tools (Manual)
+- `get_tasks`, `get_task`, `next_task` — view tasks
+- `set_task_status` — change status
+- `add_task`, `add_subtask` — with explicit fields
+- `remove_task`, `remove_subtask`
+- `add_dependency`, `remove_dependency`, `validate_dependencies`
+
+### Forbidden Tools (AI-only)
+- `update_task`, `update_subtask` (require `prompt` parameter)
+- `expand_task`, `parse-prd`, `--research` flag
+
+**Basic Usage**:
+```bash
+mcp__taskmaster__next_task
+mcp__taskmaster__add_task title: "..." description: "..." details: "..."
+mcp__taskmaster__set_task_status id: "1.2" status: "done"
+```
+
+**Integration**: Task Master for management, `.sessions/` for contexts, `.validation/` for validation.
+
+**Files**: `.taskmaster/` gitignored.
+
+---
+
+**Remember**: Every line must match upstream. Request validation review for 100% parity.
+
+*Last updated: 2025-10-13*

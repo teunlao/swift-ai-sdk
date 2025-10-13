@@ -45,3 +45,6 @@ node_modules/
 
 # Task Master AI (optional tool, each developer installs if needed)
 .taskmaster/
+
+# Internal notes and experiments (not for commits)
+.info/
