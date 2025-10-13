@@ -73,24 +73,40 @@ If not specified, use defaults from config:
 2. Build `codex exec` command:
 
 ```bash
-# Default (uses config: gpt-5-codex with high reasoning)
-codex exec "question here"
+# ⚠️ ALWAYS include full permissions flags:
+# -c approval_policy="on-failure" -c sandbox="danger-full-access"
 
-# Override model
-codex exec -m gpt-5 "question here"
-codex exec -m gpt-5-codex "question here"
+# Default (uses config: gpt-5-codex with high reasoning) + FULL PERMISSIONS
+codex exec \
+  -c approval_policy="on-failure" \
+  -c sandbox="danger-full-access" \
+  "question here"
 
-# Override reasoning effort
-codex exec -c model_reasoning_effort="low" "question here"
-codex exec -c model_reasoning_effort="medium" "question here"
-codex exec -c model_reasoning_effort="high" "question here"
+# Override model + FULL PERMISSIONS
+codex exec \
+  -m gpt-5 \
+  -c approval_policy="on-failure" \
+  -c sandbox="danger-full-access" \
+  "question here"
 
-# Combined overrides
-codex exec -m gpt-5 -c model_reasoning_effort="medium" "question here"
+# Override reasoning effort + FULL PERMISSIONS
+codex exec \
+  -c model_reasoning_effort="high" \
+  -c approval_policy="on-failure" \
+  -c sandbox="danger-full-access" \
+  "question here"
+
+# Combined overrides + FULL PERMISSIONS
+codex exec \
+  -m gpt-5-codex \
+  -c model_reasoning_effort="medium" \
+  -c approval_policy="on-failure" \
+  -c sandbox="danger-full-access" \
+  "question here"
 ```
 
-3. Set timeout: 120000ms (2 minutes) for Codex processing time
-4. Sandbox: read-only (safe, already in config)
+3. Set timeout: 120000ms (2 minutes) for Codex processing time, or 900000ms (15 minutes) for deep analysis
+4. For long tasks, use Bash tool with `run_in_background=true`
 
 ### Extract and Present Result
 
@@ -110,7 +126,11 @@ codex exec -m gpt-5 -c model_reasoning_effort="medium" "question here"
 
 ### You execute:
 ```bash
-codex exec -c model_reasoning_effort="high" "What's the best Swift pattern for AsyncSequence-based return types?"
+codex exec \
+  -c model_reasoning_effort="high" \
+  -c approval_policy="on-failure" \
+  -c sandbox="danger-full-access" \
+  "What's the best Swift pattern for AsyncSequence-based return types?"
 ```
 
 ### User types:
@@ -120,7 +140,12 @@ codex exec -c model_reasoning_effort="high" "What's the best Swift pattern for A
 
 ### You execute:
 ```bash
-codex exec -m gpt-5 -c model_reasoning_effort="low" "Should I use struct or class for this data model?"
+codex exec \
+  -m gpt-5 \
+  -c model_reasoning_effort="low" \
+  -c approval_policy="on-failure" \
+  -c sandbox="danger-full-access" \
+  "Should I use struct or class for this data model?"
 ```
 
 ---
@@ -136,6 +161,90 @@ From `~/.codex/config.toml`:
 
 ---
 
+## ⚠️ IMPORTANT: Full Permissions Required
+
+**CRITICAL**: Codex **MUST** be run with full permissions, otherwise it gets blocked and cannot work.
+
+### Why Full Permissions?
+
+Codex has strict internal instructions requiring escalated permissions for all operations. Without full access:
+- ❌ Cannot read files (even with `read-only` sandbox)
+- ❌ Cannot analyze codebase structure
+- ❌ Gets blocked immediately with permission errors
+- ❌ Wastes time and tokens without producing results
+
+### How to Grant Full Permissions
+
+**ALWAYS add these flags to every Codex execution:**
+
+```bash
+codex exec \
+  -c approval_policy="on-failure" \
+  -c sandbox="danger-full-access" \
+  [other flags] \
+  "your prompt here"
+```
+
+**Parameters explained:**
+- `approval_policy="on-failure"` - Allow Codex to run commands, ask for approval only if they fail
+- `sandbox="danger-full-access"` - Full filesystem and command access
+
+### ⚠️ Safety Through Prompt Engineering
+
+**We grant full permissions BUT control behavior through prompts:**
+
+✅ **GOOD PROMPTS** (request analysis/reports):
+```bash
+"Analyze the task structure and provide a detailed report..."
+"Review the architecture and recommend solutions..."
+"Compare implementations and document differences..."
+```
+
+❌ **BAD PROMPTS** (request direct actions):
+```bash
+"Fix all the bugs in the codebase..."
+"Refactor these files automatically..."
+"Implement the missing features..."
+```
+
+**Strategy:**
+- ✅ Give full **technical** permissions (so Codex can read/analyze)
+- ✅ Request **analytical output** in prompts (reports, recommendations, analysis)
+- ✅ **You** implement changes based on Codex's recommendations
+- ❌ Don't ask Codex to directly modify code
+
+### Recommended Command Template
+
+For complex analysis tasks (like project audits):
+
+```bash
+codex exec \
+  -m gpt-5-codex \
+  -c model_reasoning_effort="high" \
+  -c approval_policy="on-failure" \
+  -c sandbox="danger-full-access" \
+  "Your detailed analysis request here...
+
+  ## Deliverables
+  Provide a comprehensive report with:
+  - Analysis findings
+  - Recommendations
+  - Action items
+
+  DO NOT modify files directly - provide analysis only."
+```
+
+### Background Execution
+
+For long-running analysis (>2 minutes), use background execution:
+
+```bash
+# Via Bash tool with run_in_background=true
+# Set timeout=900000 (15 minutes) for deep analysis
+```
+
+---
+
 ## Implementation Instructions
 
 1. Parse `$ARGUMENTS` to extract:
@@ -143,16 +252,25 @@ From `~/.codex/config.toml`:
    - `--reasoning=VALUE` → set reasoning config
    - Remaining text → actual question
 
-2. Build command:
+2. Build command with **FULL PERMISSIONS ALWAYS INCLUDED**:
    ```bash
-   codex exec [model flag if specified] [reasoning config if specified] "question"
+   codex exec \
+     [model flag if specified] \
+     [reasoning config if specified] \
+     -c approval_policy="on-failure" \
+     -c sandbox="danger-full-access" \
+     "question"
    ```
 
-3. Use Bash tool with timeout=120000ms
+3. Use Bash tool:
+   - For quick questions: `timeout=120000ms` (2 minutes)
+   - For deep analysis: `timeout=900000ms` (15 minutes) + `run_in_background=true`
 
 4. Extract Codex's answer (after "codex" section in output)
 
 5. Present result clearly to user
+
+**CRITICAL**: Never forget the permission flags! Without them, Codex will fail immediately.
 
 ---
 
