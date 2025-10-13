@@ -3,11 +3,23 @@
 Parse Codex MCP JSONL output into readable format.
 
 Usage:
-    python scripts/parse-codex-output.py /tmp/codex-interactive-output.jsonl --last 50
-    python scripts/parse-codex-output.py /tmp/codex-interactive-output.jsonl --reasoning
-    python scripts/parse-codex-output.py /tmp/codex-interactive-output.jsonl --commands
-    python scripts/parse-codex-output.py /tmp/codex-interactive-output.jsonl --timeline
-    python scripts/parse-codex-output.py /tmp/codex-interactive-output.jsonl --stuck
+    # Basic filtering
+    python scripts/parse-codex-output.py /tmp/codex-output.jsonl --last 50
+    python scripts/parse-codex-output.py /tmp/codex-output.jsonl --reasoning
+    python scripts/parse-codex-output.py /tmp/codex-output.jsonl --commands
+    python scripts/parse-codex-output.py /tmp/codex-output.jsonl --timeline
+    python scripts/parse-codex-output.py /tmp/codex-output.jsonl --stuck
+
+    # Request-specific filtering (NEW)
+    python scripts/parse-codex-output.py /tmp/codex-output.jsonl --request-id=3
+    python scripts/parse-codex-output.py /tmp/codex-output.jsonl --request-stats
+    python scripts/parse-codex-output.py /tmp/codex-output.jsonl --check-request=3
+    python scripts/parse-codex-output.py /tmp/codex-output.jsonl --last-of-type=message
+    python scripts/parse-codex-output.py /tmp/codex-output.jsonl --types=reasoning,message
+
+    # Combined filters
+    python scripts/parse-codex-output.py /tmp/codex-output.jsonl --request-id=3 --reasoning
+    python scripts/parse-codex-output.py /tmp/codex-output.jsonl --request-id=3 --last 100
 """
 
 import json
@@ -29,19 +41,28 @@ class Colors:
     END = '\033[0m'
 
 
-def parse_jsonl(file_path, last_n=None):
+def parse_jsonl(file_path, last_n=None, request_id=None):
     """Read JSONL file and return parsed events."""
     events = []
     try:
         with open(file_path, 'r') as f:
             lines = f.readlines()
-            if last_n:
+            if last_n and not request_id:
                 lines = lines[-last_n:]
             for line in lines:
                 try:
-                    events.append(json.loads(line))
+                    event = json.loads(line)
+                    # Filter by request_id if specified
+                    if request_id is not None:
+                        event_request_id = event.get('params', {}).get('_meta', {}).get('requestId')
+                        if event_request_id != request_id:
+                            continue
+                    events.append(event)
                 except json.JSONDecodeError:
                     continue
+            # Apply last_n after filtering if request_id was specified
+            if last_n and request_id and len(events) > last_n:
+                events = events[-last_n:]
     except FileNotFoundError:
         print(f"❌ File not found: {file_path}")
         sys.exit(1)
@@ -276,6 +297,87 @@ def detect_stuck(merged, threshold_minutes=10):
     return {'status': 'ok'}
 
 
+def print_request_stats(events, use_colors=True):
+    """Print statistics about different requests."""
+    request_stats = defaultdict(lambda: {'events': 0, 'types': defaultdict(int), 'complete': False})
+
+    for event in events:
+        request_id = event.get('params', {}).get('_meta', {}).get('requestId')
+        if request_id is not None:
+            request_stats[request_id]['events'] += 1
+            msg_type = event.get('params', {}).get('msg', {}).get('type', 'unknown')
+            request_stats[request_id]['types'][msg_type] += 1
+            if msg_type == 'task_complete':
+                request_stats[request_id]['complete'] = True
+
+    if not request_stats:
+        print("❌ No requests found in file")
+        return
+
+    color_bold = Colors.BOLD if use_colors else ''
+    color_green = Colors.GREEN if use_colors else ''
+    color_yellow = Colors.YELLOW if use_colors else ''
+    end = Colors.END if use_colors else ''
+
+    print(f"\n{color_bold}📊 Request Statistics:{end}\n")
+
+    for req_id in sorted(request_stats.keys()):
+        stats = request_stats[req_id]
+        status = f"{color_green}✅ Complete{end}" if stats['complete'] else f"{color_yellow}🔄 Running{end}"
+        print(f"  Request {req_id}: {stats['events']} events - {status}")
+
+        # Show top event types
+        top_types = sorted(stats['types'].items(), key=lambda x: x[1], reverse=True)[:3]
+        for msg_type, count in top_types:
+            print(f"    - {msg_type}: {count}")
+
+
+def check_request_complete(events, request_id, use_colors=True):
+    """Check if a specific request is complete."""
+    request_events = [e for e in events if e.get('params', {}).get('_meta', {}).get('requestId') == request_id]
+
+    if not request_events:
+        print(f"❌ No events found for request {request_id}")
+        return
+
+    complete = any(e.get('params', {}).get('msg', {}).get('type') == 'task_complete' for e in request_events)
+
+    color_green = Colors.GREEN if use_colors else ''
+    color_yellow = Colors.YELLOW if use_colors else ''
+    color_bold = Colors.BOLD if use_colors else ''
+    end = Colors.END if use_colors else ''
+
+    print(f"\n{color_bold}Request {request_id}:{end}")
+    print(f"  Events: {len(request_events)}")
+
+    if complete:
+        print(f"  Status: {color_green}✅ COMPLETE{end}")
+        # Find last message
+        for event in reversed(request_events):
+            if event.get('params', {}).get('msg', {}).get('type') == 'agent_message':
+                msg = event['params']['msg'].get('message', '')
+                if msg:
+                    print(f"  Last message: {msg[:200]}...")
+                break
+    else:
+        print(f"  Status: {color_yellow}🔄 RUNNING{end}")
+        # Show last reasoning
+        for event in reversed(request_events):
+            if event.get('params', {}).get('msg', {}).get('type') == 'agent_reasoning':
+                reasoning = event['params']['msg'].get('text', '')
+                if reasoning:
+                    print(f"  Last reasoning: {reasoning[:200]}...")
+                break
+
+
+def get_last_of_type(merged, event_type):
+    """Get the last event of a specific type."""
+    for item in reversed(merged):
+        if item['type'] == event_type:
+            return item
+    return None
+
+
 def main():
     parser = argparse.ArgumentParser(description='Parse Codex MCP output')
     parser.add_argument('file', help='Path to JSONL file')
@@ -289,12 +391,19 @@ def main():
     parser.add_argument('--compact', action='store_true', help='Compact one-line format')
     parser.add_argument('--no-color', action='store_true', help='Disable colors')
 
+    # New filters
+    parser.add_argument('--request-id', type=int, help='Filter by request ID')
+    parser.add_argument('--request-stats', action='store_true', help='Show statistics by request')
+    parser.add_argument('--check-request', type=int, help='Check if specific request is complete')
+    parser.add_argument('--last-of-type', type=str, help='Show last event of type (reasoning, message, command, etc.)')
+    parser.add_argument('--types', type=str, help='Filter by types (comma-separated: reasoning,message,command)')
+
     args = parser.parse_args()
 
     use_colors = not args.no_color
 
     # Parse events
-    events = parse_jsonl(args.file, args.last)
+    events = parse_jsonl(args.file, args.last, request_id=args.request_id)
 
     if not events:
         print("❌ No events found")
@@ -302,7 +411,22 @@ def main():
 
     color = Colors.BOLD if use_colors else ''
     end = Colors.END if use_colors else ''
-    print(f"{color}📄 Total events: {len(events)}{end}")
+
+    # Show event count with request ID info if filtered
+    if args.request_id is not None:
+        print(f"{color}📄 Total events for request {args.request_id}: {len(events)}{end}")
+    else:
+        print(f"{color}📄 Total events: {len(events)}{end}")
+
+    # Request stats mode
+    if args.request_stats:
+        print_request_stats(events, use_colors)
+        return
+
+    # Check specific request
+    if args.check_request is not None:
+        check_request_complete(events, args.check_request, use_colors)
+        return
 
     if args.summary:
         print_summary(events)
@@ -310,6 +434,16 @@ def main():
 
     # Merge deltas
     merged = merge_deltas(events)
+
+    # Last of type mode
+    if args.last_of_type:
+        last_item = get_last_of_type(merged, args.last_of_type)
+        if last_item:
+            print(f"\n{color}Last {args.last_of_type}:{end}")
+            print(last_item['text'])
+        else:
+            print(f"❌ No events of type '{args.last_of_type}' found")
+        return
 
     # Stuck detection
     if args.stuck:
@@ -340,7 +474,13 @@ def main():
 
     # Filter by type
     filter_type = None
-    if args.reasoning:
+    filter_types = None
+    if args.types:
+        # Multiple types filter
+        filter_types = [t.strip() for t in args.types.split(',')]
+        # Filter merged events
+        merged = [item for item in merged if item['type'] in filter_types]
+    elif args.reasoning:
         filter_type = 'reasoning'
     elif args.commands:
         filter_type = 'command'

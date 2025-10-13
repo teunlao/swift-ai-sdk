@@ -634,6 +634,110 @@ struct GenerateTextAdvancedTests {
         }
     }
 
+    // MARK: - Preliminary tool results
+
+    @Test("preliminary tool results only keep final output in content")
+    func preliminaryToolResultsInContent() async throws {
+        let scenario = try await runPreliminaryToolScenario()
+        let content = scenario.result.content
+        #expect(content.count == 2)
+
+        if content.count == 2 {
+            if case .toolCall(let toolCall, _) = content[0] {
+                #expect(toolCall.toolName == "cityAttractions")
+                #expect(toolCall.toolCallId == "call-1")
+                #expect(toolCall.input == JSONValue.object(["city": .string("San Francisco")]))
+            } else {
+                Issue.record("Expected tool call entry as first content item")
+            }
+
+            if case .toolResult(let toolResult, _) = content[1] {
+                if case .static(let staticResult) = toolResult {
+                    #expect(staticResult.toolName == "cityAttractions")
+                    #expect(staticResult.preliminary == nil || staticResult.preliminary == false)
+                    #expect(staticResult.output == JSONValue.object([
+                        "status": .string("success"),
+                        "text": .string("The weather in San Francisco is 72°F"),
+                        "temperature": .number(72)
+                    ]))
+                } else {
+                    Issue.record("Expected static tool result for final output")
+                }
+            } else {
+                Issue.record("Expected tool result entry as second content item")
+            }
+        }
+    }
+
+    @Test("preliminary tool results replaced in step content")
+    func preliminaryToolResultsInSteps() async throws {
+        let scenario = try await runPreliminaryToolScenario()
+        let steps = scenario.result.steps
+        #expect(steps.count == 1)
+
+        if let step = steps.first {
+            #expect(step.finishReason == .toolCalls)
+            let content = step.content
+            #expect(content.count == 2)
+
+            if content.count == 2 {
+                if case .toolCall(let call, _) = content[0] {
+                    #expect(call.toolName == "cityAttractions")
+                } else {
+                    Issue.record("Expected tool call in step content")
+                }
+
+                if case .toolResult(let result, _) = content[1] {
+                    if case .static(let staticResult) = result {
+                        #expect(staticResult.preliminary == nil || staticResult.preliminary == false)
+                        #expect(staticResult.output == JSONValue.object([
+                            "status": .string("success"),
+                            "text": .string("The weather in San Francisco is 72°F"),
+                            "temperature": .number(72)
+                        ]))
+                    } else {
+                        Issue.record("Expected static tool result in step content")
+                    }
+                } else {
+                    Issue.record("Expected tool result in step content")
+                }
+            }
+
+            let responseMessages = step.response.messages
+            #expect(responseMessages.count == 2)
+
+            if responseMessages.count == 2 {
+                if case .assistant(let assistantMessage) = responseMessages[0] {
+                    switch assistantMessage.content {
+                    case .parts(let parts):
+                        #expect(parts.contains { part in
+                            if case .toolCall(let call) = part {
+                                return call.toolName == "cityAttractions"
+                            }
+                            return false
+                        })
+                    case .text:
+                        Issue.record("Expected assistant parts in response message")
+                    }
+                }
+
+                if case .tool(let toolMessage) = responseMessages[1] {
+                    let hasResult = toolMessage.content.contains { part in
+                        if case .toolResult(let resultPart) = part {
+                            if case .json(let json) = resultPart.output, case .object(let object) = json {
+                                return object["status"] == .string("success")
+                            }
+                        }
+                        return false
+                    }
+                    #expect(hasResult)
+                } else {
+                    Issue.record("Expected tool message with final result")
+                }
+            }
+        }
+    }
+
     @Test("tool execution errors included in response messages")
     func toolExecutionErrorsIncludedInMessages() async throws {
         let scenario = try await runToolExecutionErrorScenario()
@@ -890,6 +994,41 @@ struct GenerateTextAdvancedTests {
         )
     }
 
+    private func mockId(prefix: String) -> IDGenerator {
+        let counter = IDCounter(prefix: prefix)
+        return {
+            counter.next()
+        }
+    }
+
+    private func preliminaryStream(city: String) -> AsyncThrowingStream<JSONValue, Error> {
+        AsyncThrowingStream { continuation in
+            continuation.yield(
+                JSONValue.object([
+                    "status": .string("loading"),
+                    "text": .string("Getting weather for \(city)"),
+                ])
+            )
+            continuation.yield(
+                JSONValue.object([
+                    "status": .string("success"),
+                    "text": .string("The weather in \(city) is 72°F"),
+                    "temperature": .number(72)
+                ])
+            )
+            continuation.finish()
+        }
+    }
+
+    private func extractCity(from value: JSONValue) -> String {
+        guard case .object(let object) = value,
+              case .string(let city) = object["city"] else {
+            Issue.record("Expected city string in tool input")
+            return ""
+        }
+        return city
+    }
+
     private func runToolExecutionErrorScenario() async throws -> ToolExecutionErrorScenario {
         let model = MockLanguageModelV3(
             doGenerate: .singleValue(
@@ -923,6 +1062,54 @@ struct GenerateTextAdvancedTests {
         )
 
         return ToolExecutionErrorScenario(result: result)
+    }
+
+    private func runPreliminaryToolScenario() async throws -> PreliminaryToolScenario {
+        let model = MockLanguageModelV3(
+            doGenerate: .singleValue(
+                LanguageModelV3GenerateResult(
+                    content: [
+                        makeToolCallContent(
+                            toolCallId: "call-1",
+                            toolName: "cityAttractions",
+                            input: #"{ "city": "San Francisco" }"#
+                        )
+                    ],
+                    finishReason: .toolCalls,
+                    usage: LanguageModelUsage(inputTokens: 10, outputTokens: 20, totalTokens: 30),
+                    providerMetadata: nil,
+                    request: nil,
+                    response: LanguageModelV3ResponseInfo(
+                        id: "test-id",
+                        timestamp: Date(timeIntervalSince1970: 0),
+                        modelId: "mock-model-id"
+                    ),
+                    warnings: []
+                )
+            )
+        )
+
+        let tools: ToolSet = [
+            "cityAttractions": tool(
+                inputSchema: toolInputSchema(requiredKey: "city"),
+                execute: { input, _ in
+                    let city = extractCity(from: input)
+                    return .stream(preliminaryStream(city: city))
+                }
+            )
+        ]
+
+        let result: DefaultGenerateTextResult<JSONValue> = try await generateText(
+            model: .v3(model),
+            tools: tools,
+            prompt: "test-input",
+            internalOptions: GenerateTextInternalOptions(
+                generateId: mockId(prefix: "test-id"),
+                currentDate: { Date(timeIntervalSince1970: 0) }
+            )
+        )
+
+        return PreliminaryToolScenario(result: result)
     }
 
     private func runProviderExecutedToolsScenario() async throws -> ProviderExecutedToolsScenario {
@@ -1053,6 +1240,10 @@ private struct SummaryOutput: Codable, Equatable, Sendable {
     let summary: String
 }
 
+private struct PreliminaryToolScenario: Sendable {
+    let result: DefaultGenerateTextResult<JSONValue>
+}
+
 private struct ToolExecutionErrorScenario: Sendable {
     let result: DefaultGenerateTextResult<JSONValue>
 }
@@ -1063,6 +1254,24 @@ private struct ProviderExecutedToolsScenario: Sendable {
 
 private struct InvalidToolCallScenario: Sendable {
     let result: DefaultGenerateTextResult<JSONValue>
+}
+
+private final class WarningCollector: @unchecked Sendable {
+    private let lock = NSLock()
+    private var collected: [[Warning]] = []
+
+    func append(_ warnings: [Warning]) {
+        lock.lock()
+        collected.append(warnings)
+        lock.unlock()
+    }
+
+    func entries() -> [[Warning]] {
+        lock.lock()
+        let snapshot = collected
+        lock.unlock()
+        return snapshot
+    }
 }
 
 private actor Flag {
@@ -1086,5 +1295,33 @@ private actor ValueRecorder<Value> {
 
     func entries() -> [Value] {
         values
+    }
+}
+
+private actor IntCounter {
+    private var value = 0
+
+    func next() -> Int {
+        let current = value
+        value += 1
+        return current
+    }
+}
+
+private final class IDCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var current = 0
+    private let prefix: String
+
+    init(prefix: String) {
+        self.prefix = prefix
+    }
+
+    func next() -> String {
+        lock.lock()
+        defer { lock.unlock() }
+        let value = "\(prefix)-\(current)"
+        current += 1
+        return value
     }
 }

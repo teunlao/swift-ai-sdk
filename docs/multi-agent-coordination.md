@@ -286,16 +286,12 @@ task_id = Bash(
 )
 # → Returns hex ID (e.g., "9f865e")
 
-# 3. Send task via append (🚨 MUST include approval-policy and sandbox!)
+# 3. Send task (🚨 CRITICAL: Proper JSONL format!)
 Bash("""
-cat >> /tmp/codex-executor-N-commands.jsonl <<'EOF'
-{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"codex","arguments":{
-  "prompt":"YOUR TASK HERE",
-  "cwd":"/path/to/project",
-  "approval-policy":"never",
-  "sandbox":"danger-full-access"
-}}}
-EOF
+cat > /tmp/executor-task.json <<'JSONEOF'
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"codex","arguments":{"prompt":"YOUR TASK HERE","cwd":"/path/to/project","approval-policy":"never","sandbox":"danger-full-access"}}}
+JSONEOF
+cat /tmp/executor-task.json >> /tmp/codex-executor-N-commands.jsonl
 """)
 ```
 
@@ -303,6 +299,58 @@ EOF
 - `"approval-policy": "never"` - Autonomous execution
 - `"sandbox": "danger-full-access"` - Full file system access
 - `"cwd"` - Absolute path to project
+
+---
+
+### 2.1. 🚨 CRITICAL: JSONL Format Requirements
+
+**JSONL = JSON Lines = ONE LINE per JSON object**
+
+**❌ WRONG - Multiline heredoc (BREAKS MCP server!):**
+
+```bash
+# ❌ DON'T DO THIS - JSON splits into multiple lines!
+cat >> /tmp/codex-commands.jsonl <<'EOF'
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"codex","arguments":{
+  "prompt":"YOUR TASK HERE",
+  "cwd":"/path",
+  "approval-policy":"never",
+  "sandbox":"danger-full-access"
+}}}
+EOF
+```
+
+**Why this BREAKS:**
+- JSONL requires **ONE line = ONE JSON object**
+- Heredoc creates **MULTIPLE lines** in file
+- `tail -f` sends incomplete JSON → **MCP server IGNORES or CRASHES**
+
+**✅ CORRECT - Single line JSON:**
+
+**Method 1: Create JSON file first, then append as ONE line (RECOMMENDED)**
+
+```bash
+# 1. Create valid JSON in temp file
+cat > /tmp/command.json <<'JSONEOF'
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"codex","arguments":{"prompt":"YOUR TASK HERE","cwd":"/path/to/project","approval-policy":"never","sandbox":"danger-full-access"}}}
+JSONEOF
+
+# 2. Append as SINGLE LINE
+cat /tmp/command.json >> /tmp/codex-executor-N-commands.jsonl
+```
+
+**Verification:**
+
+```bash
+# Check last command is valid JSON
+tail -1 /tmp/codex-commands.jsonl | python3 -m json.tool > /dev/null && echo "✅ Valid" || echo "❌ Invalid"
+```
+
+**Key Rules:**
+1. 🔴 **NEVER use heredoc for appending** to JSONL files
+2. ✅ **Always create temp file first**, then append
+3. ✅ **Test with json.tool** before sending
+4. 🔴 **ONE line = ONE command** (no exceptions!)
 
 ---
 
@@ -346,29 +394,12 @@ task_id = Bash(
     timeout=3600000
 )
 
-# Send validation task (🚨 MUST be explicit!)
+# Send validation task (🚨 CRITICAL: Use proper JSONL format!)
 Bash("""
-cat >> /tmp/codex-validator-1-commands.jsonl <<'EOF'
-{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"codex","arguments":{
-  "prompt":"VALIDATOR ROLE: Validate Task X.Y
-
-READ validation request: .validation/requests/validate-task-X.Y-*.md
-
-EXECUTE these steps (don't just describe!):
-1. Read Swift implementation
-2. Read TypeScript upstream
-3. Compare line-by-line (all functions? all edge cases?)
-4. Read tests (all test cases ported?)
-5. Run: swift build && swift test --filter Tests
-6. Create report: /tmp/validation-task-X-Y.md
-7. Verdict: APPROVED or REJECTED
-
-Be critical. 100% parity required.",
-  "cwd":"/path/to/project",
-  "approval-policy":"never",
-  "sandbox":"danger-full-access"
-}}}
-EOF
+cat > /tmp/validator-cmd.json <<'JSONEOF'
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"codex","arguments":{"prompt":"VALIDATOR ROLE: Validate Task X.Y\\n\\nREAD validation request: .validation/requests/validate-task-X.Y-*.md\\n\\nEXECUTE these steps (don't just describe!):\\n1. Read Swift implementation\\n2. Read TypeScript upstream\\n3. Compare line-by-line (all functions? all edge cases?)\\n4. Read tests (all test cases ported?)\\n5. Run: swift build && swift test --filter Tests\\n6. Create report: /tmp/validation-task-X-Y.md\\n7. Verdict: APPROVED or REJECTED\\n\\nBe critical. 100% parity required.","cwd":"/path/to/project","approval-policy":"never","sandbox":"danger-full-access"}}}
+JSONEOF
+cat /tmp/validator-cmd.json >> /tmp/codex-validator-1-commands.jsonl
 """)
 ```
 
@@ -449,13 +480,11 @@ validator-2: ❌ REJECTED → Send fixes to executor-2
 python3 scripts/parse-codex-output.py /tmp/codex-executor-2-output.json --stuck
 # → ⏸️  POSSIBLY STUCK
 
-# Send clarification
-cat >> /tmp/codex-executor-2-commands.jsonl <<'EOF'
-{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"codex","arguments":{
-  "prompt":"STOP ANALYZING. Start implementing NOW. Create the Swift file.",
-  "cwd":"/path","approval-policy":"never","sandbox":"danger-full-access"
-}}}
-EOF
+# Send clarification (🚨 Use proper JSONL format!)
+cat > /tmp/clarify.json <<'JSONEOF'
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"codex","arguments":{"prompt":"STOP ANALYZING. Start implementing NOW. Create the Swift file.","cwd":"/path","approval-policy":"never","sandbox":"danger-full-access"}}}
+JSONEOF
+cat /tmp/clarify.json >> /tmp/codex-executor-2-commands.jsonl
 
 # If still stuck after 2 attempts → Kill and restart
 KillShell(shell_id="14e03a")
@@ -518,12 +547,14 @@ touch /tmp/codex-executor-N-commands.jsonl
 tail -f /tmp/codex-executor-N-commands.jsonl | codex mcp-server > /tmp/codex-executor-N-output.json 2>&1
 # (run_in_background: true, timeout: 7200000)
 
-# Send task (🚨 ALWAYS include approval-policy and sandbox!)
-cat >> /tmp/codex-executor-N-commands.jsonl <<'EOF'
-{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"codex","arguments":{
-  "prompt":"TASK","cwd":"/path","approval-policy":"never","sandbox":"danger-full-access"
-}}}
-EOF
+# Send task (🚨 CRITICAL: Use temp file method for JSONL!)
+cat > /tmp/cmd.json <<'JSONEOF'
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"codex","arguments":{"prompt":"TASK","cwd":"/path","approval-policy":"never","sandbox":"danger-full-access"}}}
+JSONEOF
+cat /tmp/cmd.json >> /tmp/codex-executor-N-commands.jsonl
+
+# Verify command is valid
+tail -1 /tmp/codex-executor-N-commands.jsonl | python3 -m json.tool > /dev/null && echo "✅ Valid"
 
 # Monitor (USE PARSE SCRIPT!)
 python3 scripts/parse-codex-output.py /tmp/codex-executor-N-output.json --stuck
