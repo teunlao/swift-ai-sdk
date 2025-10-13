@@ -163,10 +163,26 @@ external/vercel-ai-sdk/packages/
 5. Port to Swift in appropriate package: `Sources/AISDKProvider/`, `Sources/AISDKProviderUtils/`, or `Sources/SwiftAISDK/`
 6. Port ALL upstream tests to corresponding test target
 7. Run `swift build && swift test` (must pass 100%)
-8. Request validation review (create request in `.validation/requests/`)
-9. Wait for validation approval
-10. **Mark complete ONLY after approval**: `mcp__taskmaster__set_task_status --id=X --status=done`
-11. **Commit ONLY when user requests**: Wait for explicit permission
+8. Create validation request in `.validation/requests/validate-TASK-YYYY-MM-DD.md`
+9. **🤖 YOU MUST: Use Task tool to launch validator agent** (see command below)
+10. Wait for validator agent approval (✅ APPROVED)
+11. **Mark complete ONLY after approval**: `mcp__taskmaster__set_task_status --id=X --status=done`
+12. **Commit ONLY when user requests**: Wait for explicit permission
+
+**🚨 CRITICAL: Validation is YOUR responsibility**
+
+You MUST launch the validator agent yourself using the Task tool:
+```
+Use Task tool with:
+- subagent_type: "validator"
+- prompt: "Review .validation/requests/validate-TASK-YYYY-MM-DD.md"
+```
+
+**DO NOT**:
+- ❌ Wait for user to ask you to validate
+- ❌ Ask user to launch validator
+- ❌ Skip validation
+- ❌ Mark task as done before validator approval
 
 **Never**:
 - ❌ **NEVER TOUCH OTHER AGENTS' WORK** — If you see compilation/test errors in files you didn't create, STOP and wait for that agent to fix them. DO NOT edit, fix, or modify any files outside your current task scope
@@ -174,6 +190,7 @@ external/vercel-ai-sdk/packages/
 - ❌ Mark task as `done` before validation approval
 - ❌ Skip setting task status to `in-progress` at start
 - ❌ Break parity or leave failing tests
+- ❌ **NEVER skip automatic validator launch** — It's YOUR job, not user's
 
 ### Validator Role
 **Review executor work for 100% upstream parity.**
@@ -190,7 +207,7 @@ external/vercel-ai-sdk/packages/
 
 ### Validation Workflow (Quick)
 
-**Executor**:
+**Executor (YOU MUST DO THIS YOURSELF)**:
 ```bash
 # 1. Complete implementation + tests
 swift build && swift test
@@ -201,8 +218,17 @@ cat > .validation/requests/validate-feature-$(date +%Y-%m-%d).md <<EOF
 [see .validation/QUICKSTART.md for template]
 EOF
 
-# 3. Trigger validator agent in chat:
-# "Use the validator agent to review .validation/requests/validate-feature-YYYY-MM-DD.md"
+# 3. 🤖 AUTOMATICALLY launch validator agent using Task tool:
+# DO NOT wait for user - launch it immediately yourself!
+```
+
+**How to launch validator agent**:
+```
+Use Task tool with parameters:
+- subagent_type: "validator"
+- description: "Validate Task X implementation"
+- prompt: "Review validation request at .validation/requests/validate-TASK-YYYY-MM-DD.md
+and verify 100% upstream parity for all implemented features"
 ```
 
 **Validator agent** automatically:
@@ -211,6 +237,8 @@ EOF
 3. Runs tests, checks coverage
 4. Generates report in `.validation/reports/`
 5. Documents verdict: ✅ APPROVED / ⚠️ ISSUES / ❌ REJECTED
+
+**🚨 IMPORTANT**: You launch the validator. User does NOT need to ask or remind you.
 
 **Documentation**:
 - 📘 `plan/validation-workflow.md` — Complete workflow guide
@@ -404,8 +432,8 @@ Before requesting validation:
 2. **Read first, code second** — Always check upstream and plan
 3. **Update task status at start** — Mark `in-progress` before coding
 4. **Test everything** — No code without tests (100% coverage)
-5. **Validate early** — Use validator agent proactively
-6. **Mark done ONLY after validation** — Never mark complete before approval
+5. **🤖 YOU launch validator agent** — After creating validation request, immediately use Task tool to launch validator agent. DO NOT wait for user to ask. This is YOUR responsibility, not user's
+6. **Mark done ONLY after validation** — Never mark complete before validator approval
 7. **Never commit without permission** — Wait for explicit user request
 8. **100% parity** — Match TypeScript behavior exactly
 
@@ -452,9 +480,10 @@ Before requesting validation:
 ### For Executors
 - 🚨 **NEVER edit files outside your task** — If `swift test` fails on other agents' files, STOP work and report to user. Wait for them to fix it
 - 🚨 **NEVER commit `.sessions/` or `.validation/` to git** — These are temporary artifacts, fully gitignored
+- 🚨 **🤖 YOU LAUNCH VALIDATOR** — After creating validation request, immediately use Task tool to launch validator agent. DO NOT wait for user. DO NOT ask user. This is YOUR automatic responsibility!
 - ✅ **Set task status to `in-progress` at start**
 - ✅ Port ALL upstream tests, not just some
-- ✅ Use validator agent after implementation
+- ✅ **Automatically launch validator agent after creating validation request** — Use Task tool, don't wait
 - ✅ **Mark task `done` ONLY after validation approval**
 - ✅ **Commit ONLY when user explicitly requests**
 - ✅ Add upstream references to every file
@@ -463,6 +492,8 @@ Before requesting validation:
 - ❌ Don't skip edge case tests
 - ❌ Don't commit without explicit user permission
 - ❌ Don't mark task complete before validation
+- ❌ Don't wait for user to remind you to validate
+- ❌ Don't ask user to launch validator agent
 - ❌ Don't leave old session contexts after completion
 - ❌ **NEVER fix compilation errors in other agents' files**
 - ❌ **NEVER git add/commit temporary directories** (`.sessions/`, `.validation/`)
@@ -557,4 +588,4 @@ Task Master provides structured task tracking:
 
 **Remember**: Every line of code must match upstream behavior. Use validator agent to ensure 100% parity.
 
-*Last updated: 2025-10-12*
+*Last updated: 2025-10-13*

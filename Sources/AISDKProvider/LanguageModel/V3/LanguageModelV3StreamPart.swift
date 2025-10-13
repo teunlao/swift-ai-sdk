@@ -320,7 +320,7 @@ public enum LanguageModelV3StreamPart: Sendable, Equatable, Codable {
 
  TypeScript equivalent:
  ```typescript
- export type LanguageModelV3FinishReason = 'stop' | 'length' | 'content-filter' | 'tool-calls' | 'error' | 'other';
+ export type LanguageModelV3FinishReason = 'stop' | 'length' | 'content-filter' | 'tool-calls' | 'error' | 'other' | 'unknown';
  ```
  */
 public enum LanguageModelV3FinishReason: String, Sendable, Codable, Equatable {
@@ -330,6 +330,7 @@ public enum LanguageModelV3FinishReason: String, Sendable, Codable, Equatable {
     case toolCalls = "tool-calls"
     case error
     case other
+    case unknown
 }
 
 /**
