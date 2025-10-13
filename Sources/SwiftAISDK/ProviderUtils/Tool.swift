@@ -105,15 +105,82 @@ public enum ToolType: String, Sendable {
     case providerDefined = "provider-defined"
 }
 
-/// Whether the tool needs approval before it can be executed.
+/**
+ Whether the tool needs approval before it can be executed.
+
+ ## TypeScript Mapping
+
+ In TypeScript, the upstream type is:
+ ```typescript
+ needsApproval?: boolean | ((input, options) => boolean | Promise<boolean>)
+ ```
+
+ Swift adaptation using enum for better type safety:
+ - TypeScript `true` → Swift `.always`
+ - TypeScript `false` → Swift `.never`
+ - TypeScript `function` → Swift `.conditional(function)`
+
+ ## Usage Examples
+
+ ```swift
+ // Static approval (TypeScript: needsApproval: true)
+ let tool1 = tool(
+     inputSchema: schema,
+     needsApproval: .always
+ )
+
+ // No approval (TypeScript: needsApproval: false)
+ let tool2 = tool(
+     inputSchema: schema,
+     needsApproval: .never
+ )
+
+ // Dynamic approval (TypeScript: needsApproval: async (input, options) => {...})
+ let tool3 = tool(
+     inputSchema: schema,
+     needsApproval: .conditional { input, options in
+         // Check if input contains sensitive data
+         guard case .object(let obj) = input,
+               case .bool(let sensitive) = obj["sensitive"] else {
+             return false
+         }
+         return sensitive
+     }
+ )
+ ```
+
+ ## Rationale
+
+ Using an enum instead of `Bool | Closure` provides:
+ - **Type safety**: Compiler enforces correct usage
+ - **Pattern matching**: Easy to handle all cases exhaustively
+ - **Clarity**: Intent is explicit (`.always` vs `true`)
+ */
 public enum NeedsApproval: Sendable {
-    /// Always needs approval.
+    /// Always needs approval before execution.
+    ///
+    /// TypeScript equivalent: `needsApproval: true`
     case always
 
-    /// Never needs approval.
+    /// Never needs approval, executes immediately.
+    ///
+    /// TypeScript equivalent: `needsApproval: false` or `needsApproval: undefined`
     case never
 
-    /// Conditional approval based on input and options.
+    /// Conditional approval based on input and execution context.
+    ///
+    /// The closure receives the tool input and approval options, and returns
+    /// whether approval is needed for this specific invocation.
+    ///
+    /// TypeScript equivalent:
+    /// ```typescript
+    /// needsApproval: async (input, options) => boolean
+    /// ```
+    ///
+    /// - Parameters:
+    ///   - input: The tool input (JSONValue)
+    ///   - options: Approval context (tool call ID, messages, experimental context)
+    /// - Returns: `true` if approval is needed, `false` otherwise
     case conditional(@Sendable (JSONValue, ToolCallApprovalOptions) async throws -> Bool)
 }
 
