@@ -281,8 +281,12 @@ Bash(
 # 3. Check status
 BashOutput(bash_id: "81728d")
 
-# 4. Read detailed output
-tail -f /tmp/mcp-output.json  # Real-time JSON-RPC events
+# 4. Read detailed output (🚨 USE PARSE SCRIPT for token efficiency!)
+python3 scripts/parse-codex-output.py /tmp/mcp-output.json --last 100 --reasoning
+# ✅ ALWAYS use parse script FIRST - saves massive tokens!
+
+# Alternative: Raw file (only if parse script insufficient)
+# tail -f /tmp/mcp-output.json  # ⚠️ Wastes tokens!
 ```
 
 **Key indicators of native task**:
@@ -349,6 +353,8 @@ Bash("echo '{...id:2...}' >> /tmp/commands.jsonl")
 ```
 
 **Use cases**: Multi-step workflows, iterative debugging, stateful interactions.
+
+**🚨 Token Efficiency**: ALWAYS read Codex output via `scripts/parse-codex-output.py` - dramatically reduces token usage by filtering noise. See `docs/monitoring-codex-output.md`.
 
 **See**: `docs/interactive-mcp-sessions.md` for complete guide, `docs/native-background-tasks.md` for basics.
 

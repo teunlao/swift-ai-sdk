@@ -5,6 +5,24 @@
 
 ---
 
+## 🚨 CRITICAL: Always Use Parse Script
+
+**For token efficiency**, ALWAYS read Codex output through the parse script:
+
+```bash
+python3 scripts/parse-codex-output.py /tmp/codex-output.jsonl --last 100 --reasoning
+```
+
+**Why it's critical:**
+- ✅ **Saves massive tokens** - filters noise, shows only relevant info
+- ✅ **Human-readable** - no need to parse JSON manually
+- ✅ **Smart filtering** - reasoning, commands, messages, stuck detection
+- ❌ **Never use `cat` or `tail` directly on raw JSONL** - wastes tokens on deltas and metadata
+
+**Rule**: Parse script FIRST, raw file ONLY if script output is insufficient.
+
+---
+
 ## Overview
 
 When running Codex via MCP server (especially in background), it outputs JSON-RPC events in JSONL format. This guide shows how to effectively monitor and analyze this output.
@@ -41,16 +59,34 @@ Codex MCP server produces **JSON Lines (JSONL)** - one JSON object per line:
 
 ## Quick Monitoring
 
-### 1. Real-time Tail (Raw)
+### 1. Parse Script (RECOMMENDED ✅)
+
+```bash
+# Show recent reasoning (most useful)
+python3 scripts/parse-codex-output.py /tmp/codex-output.jsonl --last 100 --reasoning
+
+# Check if stuck
+python3 scripts/parse-codex-output.py /tmp/codex-output.jsonl --stuck
+
+# Show commands executed
+python3 scripts/parse-codex-output.py /tmp/codex-output.jsonl --commands
+```
+
+**Pros:** Token-efficient, human-readable, filtered
+**Cons:** None
+
+### 2. Real-time Tail (RAW - USE SPARINGLY ⚠️)
 
 ```bash
 tail -f /tmp/codex-output.jsonl
 ```
 
 **Pros:** Immediate updates
-**Cons:** Hard to read (JSONL format, word-by-word deltas)
+**Cons:** ❌ **WASTES TOKENS** - hard to read, word-by-word deltas, metadata noise
 
-### 2. Grep for Reasoning
+**Use ONLY for real-time monitoring, then switch to parse script!**
+
+### 3. Grep for Reasoning (LEGACY - AVOID)
 
 ```bash
 grep '"type":"agent_reasoning"' /tmp/codex-output.jsonl | tail -10 | jq -r '.params.msg.text'
@@ -76,9 +112,11 @@ Current total token count.
 
 ---
 
-## Parse Script (Recommended)
+## Parse Script (MANDATORY for Token Efficiency)
 
-Located at: `scripts/parse-codex-output.py`
+**Location**: `scripts/parse-codex-output.py`
+
+**🚨 ALWAYS USE THIS FIRST** - dramatically reduces token usage by filtering noise.
 
 This Python script provides human-readable output with colors, filtering, and analysis.
 

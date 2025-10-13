@@ -139,14 +139,25 @@ EOF
 
 ### 4. Read Responses
 
+**🚨 CRITICAL: Use parse script for token efficiency!**
+
 ```bash
-# Real-time monitoring
+# ✅ RECOMMENDED: Parse script (saves tokens!)
+python3 scripts/parse-codex-output.py /tmp/codex-session.json --last 100 --reasoning
+python3 scripts/parse-codex-output.py /tmp/codex-session.json --stuck
+
+# ⚠️ LEGACY: Raw file (only if parse script insufficient)
 tail -f /tmp/codex-session.json
 
 # Extract specific responses
 grep '"requestId":1' /tmp/codex-session.json | grep '"type":"agent_message"'
 grep '"requestId":2' /tmp/codex-session.json | grep '"type":"agent_message"'
 ```
+
+**Why parse script:**
+- ✅ Saves massive tokens by filtering noise
+- ✅ Human-readable output
+- ✅ Smart stuck detection
 
 ### 5. Stop Session When Done
 
@@ -190,8 +201,9 @@ EOF
 
 # Wait and check response
 sleep(5)
-Bash("tail -30 /tmp/codex-session.json | grep '\"requestId\":1' | grep '\"type\":\"agent_message\"'")
-# Output: {"type":"agent_message","message":"20"}
+# ✅ RECOMMENDED: Use parse script (saves tokens!)
+Bash("python3 scripts/parse-codex-output.py /tmp/codex-session.json --last 50 --messages")
+# Output: Human-readable messages only
 
 # Command 2: Use same session
 Bash("""
@@ -202,7 +214,8 @@ EOF
 
 # Check second response
 sleep(5)
-Bash("tail -30 /tmp/codex-session.json | grep '\"requestId\":2' | grep '\"type\":\"agent_message\"'")
+# ✅ RECOMMENDED: Use parse script
+Bash("python3 scripts/parse-codex-output.py /tmp/codex-session.json --last 50 --messages")
 # Output: {"type":"agent_message","message":"40"}
 ```
 

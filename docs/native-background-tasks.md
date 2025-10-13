@@ -140,14 +140,23 @@ Command running in background with ID: 336ae0
 
 ### Step 3: Monitor Progress
 
-**Via BashOutput** (for AI):
+**🚨 CRITICAL: Use parse script for token efficiency!**
+
+**Via parse script** (RECOMMENDED ✅):
+```python
+# Token-efficient monitoring
+Bash("python3 scripts/parse-codex-output.py /tmp/mcp-output.json --last 100 --reasoning")
+Bash("python3 scripts/parse-codex-output.py /tmp/mcp-output.json --stuck")
+```
+
+**Via BashOutput** (for AI status check):
 ```python
 BashOutput(bash_id="336ae0")
 ```
 
-**Via file** (for detailed output):
+**Via raw file** (ONLY if parse script insufficient ⚠️):
 ```bash
-tail -f /tmp/mcp-output.json
+tail -f /tmp/mcp-output.json  # Wastes tokens!
 ```
 
 **Via TUI** (for user):
@@ -205,9 +214,12 @@ sleep(5)
 output = BashOutput(bash_id="336ae0")
 # → status: running (or completed if quick operation)
 
-# 5. Read detailed output from file
-Bash("tail -100 /tmp/codex-output.json")
-# → See all JSON-RPC events in real-time
+# 5. Read detailed output (✅ USE PARSE SCRIPT for token efficiency!)
+Bash("python3 scripts/parse-codex-output.py /tmp/codex-output.json --last 100 --reasoning")
+# → Human-readable, filtered output (saves massive tokens!)
+
+# Alternative: Raw file (only if parse script insufficient)
+# Bash("tail -100 /tmp/codex-output.json")  # ⚠️ Wastes tokens!
 ```
 
 ---
