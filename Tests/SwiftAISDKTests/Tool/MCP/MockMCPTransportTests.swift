@@ -94,7 +94,7 @@ struct MockMCPTransportTests {
         let request = JSONRPCRequest(
             id: .string("1"),
             method: "initialize",
-            params: BaseParams()
+            params: nil
         )
 
         try await transport.send(message: .request(request))
@@ -137,7 +137,7 @@ struct MockMCPTransportTests {
         let request = JSONRPCRequest(
             id: .string("2"),
             method: "tools/list",
-            params: BaseParams()
+            params: nil
         )
 
         try await transport.send(message: .request(request))
@@ -173,7 +173,7 @@ struct MockMCPTransportTests {
         let request = JSONRPCRequest(
             id: .string("3"),
             method: "tools/list",
-            params: BaseParams()
+            params: nil
         )
 
         try await transport.send(message: .request(request))
@@ -214,7 +214,7 @@ struct MockMCPTransportTests {
         let request = JSONRPCRequest(
             id: .string("4"),
             method: "initialize",
-            params: BaseParams()
+            params: nil
         )
 
         try await transport.send(message: .request(request))
@@ -295,7 +295,7 @@ struct MockMCPTransportTests {
         let request = JSONRPCRequest(
             id: .string("5"),
             method: "tools/list",
-            params: BaseParams()
+            params: nil
         )
 
         try await transport.send(message: .request(request))

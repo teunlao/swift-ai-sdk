@@ -146,21 +146,17 @@ public final class MockMCPTransport: MCPTransport, @unchecked Sendable {
     private func handleToolCall(_ request: JSONRPCRequest) async throws {
         // Extract tool name and arguments from request params
         // MCP spec: params should have 'name' and 'arguments' fields
-        guard let params = request.params else {
+        guard let params = request.params, case .object(let paramDict) = params else {
             return
         }
 
-        // Try to extract from meta field (JSON-RPC extension)
-        if let meta = params.meta,
-           case .string(let toolName) = meta["name"] {
-            let arguments = meta["arguments"]
-            try await handleToolCallWithName(toolName, request: request, arguments: arguments)
+        // Extract name and arguments fields
+        guard case .string(let toolName) = paramDict["name"] else {
             return
         }
 
-        // If no meta, params itself might contain the data (need to convert to JSONValue)
-        // This is a simplified approach - real implementation would need proper param extraction
-        return
+        let arguments = paramDict["arguments"]
+        try await handleToolCallWithName(toolName, request: request, arguments: arguments)
     }
 
     private func handleToolCallWithName(_ toolName: String, request: JSONRPCRequest, arguments: JSONValue?) async throws {

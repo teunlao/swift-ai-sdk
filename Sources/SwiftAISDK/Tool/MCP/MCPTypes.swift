@@ -27,7 +27,7 @@ public let supportedProtocolVersions = [
 
 /// Tool schema definitions for MCP tools.
 /// Can be explicit schemas or "automatic" for dynamic discovery.
-public enum ToolSchemas {
+public enum ToolSchemas: Sendable {
     case automatic
     case schemas([String: ToolSchemaDefinition])
 }

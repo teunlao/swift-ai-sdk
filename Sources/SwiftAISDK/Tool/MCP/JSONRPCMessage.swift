@@ -55,10 +55,10 @@ public struct JSONRPCRequest: Codable, Sendable {
     public let jsonrpc: String
     public let id: JSONRPCID
     public let method: String
-    public let params: BaseParams?
+    public let params: JSONValue?
 
-    public init(id: JSONRPCID, method: String, params: BaseParams? = nil) {
-        self.jsonrpc = jsonrpcVersion
+    public init(jsonrpc: String = jsonrpcVersion, id: JSONRPCID, method: String, params: JSONValue? = nil) {
+        self.jsonrpc = jsonrpc
         self.id = id
         self.method = method
         self.params = params
@@ -114,10 +114,10 @@ public struct JSONRPCError: Codable, Sendable {
 public struct JSONRPCNotification: Codable, Sendable {
     public let jsonrpc: String
     public let method: String
-    public let params: BaseParams?
+    public let params: JSONValue?
 
-    public init(method: String, params: BaseParams? = nil) {
-        self.jsonrpc = jsonrpcVersion
+    public init(jsonrpc: String = jsonrpcVersion, method: String, params: JSONValue? = nil) {
+        self.jsonrpc = jsonrpc
         self.method = method
         self.params = params
     }
@@ -168,7 +168,7 @@ public enum JSONRPCMessage: Codable, Sendable {
             } else if container.contains(.method) {
                 // Request
                 let method = try container.decode(String.self, forKey: .method)
-                let params = try container.decodeIfPresent(BaseParams.self, forKey: .params)
+                let params = try container.decodeIfPresent(JSONValue.self, forKey: .params)
                 self = .request(JSONRPCRequest(id: id, method: method, params: params))
             } else {
                 throw DecodingError.dataCorruptedError(
@@ -180,7 +180,7 @@ public enum JSONRPCMessage: Codable, Sendable {
         } else {
             // No ID - must be notification
             let method = try container.decode(String.self, forKey: .method)
-            let params = try container.decodeIfPresent(BaseParams.self, forKey: .params)
+            let params = try container.decodeIfPresent(JSONValue.self, forKey: .params)
             self = .notification(JSONRPCNotification(method: method, params: params))
         }
     }

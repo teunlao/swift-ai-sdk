@@ -76,7 +76,7 @@ struct JSONRPCMessageTests {
         let request = JSONRPCRequest(
             id: .string("req-1"),
             method: "tools/list",
-            params: BaseParams(meta: ["cursor": .string("abc")])
+            params: .object(["_meta": .object(["cursor": .string("abc")])])
         )
 
         let encoded = try JSONEncoder().encode(request)
@@ -85,7 +85,12 @@ struct JSONRPCMessageTests {
         #expect(decoded.jsonrpc == "2.0")
         #expect(decoded.id == .string("req-1"))
         #expect(decoded.method == "tools/list")
-        #expect(decoded.params?.meta?["cursor"] == .string("abc"))
+        if case .object(let params) = decoded.params,
+           case .object(let meta) = params["_meta"] {
+            #expect(meta["cursor"] == .string("abc"))
+        } else {
+            Issue.record("Expected params with _meta")
+        }
     }
 
     @Test("JSONRPCRequest with int ID without params")
@@ -285,7 +290,7 @@ struct JSONRPCMessageTests {
     func testJSONRPCNotificationWithParams() throws {
         let notification = JSONRPCNotification(
             method: "progress",
-            params: BaseParams(meta: ["percent": .number(50)])
+            params: .object(["_meta": .object(["percent": .number(50)])])
         )
 
         let encoded = try JSONEncoder().encode(notification)
@@ -293,7 +298,12 @@ struct JSONRPCMessageTests {
 
         #expect(decoded.jsonrpc == "2.0")
         #expect(decoded.method == "progress")
-        #expect(decoded.params?.meta?["percent"] == .number(50))
+        if case .object(let params) = decoded.params,
+           case .object(let meta) = params["_meta"] {
+            #expect(meta["percent"] == .number(50))
+        } else {
+            Issue.record("Expected params with _meta")
+        }
     }
 
     @Test("JSONRPCNotification without params")
