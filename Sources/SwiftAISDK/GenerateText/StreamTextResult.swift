@@ -267,8 +267,26 @@ public struct StreamTextUIResponseOptions<Message: UIMessage>: Sendable {
     }
 }
 
-/// Response writer placeholder (e.g. HTTP server response).
-public protocol StreamTextResponseWriter: Sendable {}
+/// Abstraction over a streaming HTTP response writer (e.g. server response).
+///
+/// Port of the `ServerResponse` usage in `@ai-sdk/ai`.
+///
+/// Conforming types must be thread-safe because they can be invoked from
+/// background tasks while streaming chunks.
+public protocol StreamTextResponseWriter: AnyObject, Sendable {
+    /// Writes the HTTP status line and headers before streaming begins.
+    func writeHead(
+        status: Int,
+        statusText: String?,
+        headers: [String: String]
+    )
+
+    /// Writes a single UTF-8 encoded chunk to the underlying response.
+    func write(_ data: Data)
+
+    /// Finishes the response after all chunks have been written.
+    func end()
+}
 
 /// UI message stream response placeholder.
 public struct UIMessageStreamResponse<Message: UIMessage>: Sendable {
