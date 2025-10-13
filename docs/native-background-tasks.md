@@ -1,172 +1,101 @@
 # Native Background Tasks in Claude Code
 
-**Date**: 2025-10-13
-**Discovery**: True native background tasks vs. subprocess execution
+**Purpose**: True background tasks vs subprocess execution
 
 ---
 
-## Problem Statement
-
-When attempting to run MCP servers (like Codex CLI) in the background, tasks may not appear in the user's TUI, even though Claude Code sees them in system reminders. This guide explains the difference between **native background tasks** and **subprocess execution**, and how to use them correctly.
-
----
-
-## ❌ Wrong: Subprocess Background (Fake Background)
-
-### What Developers Often Do
+## ❌ Wrong: Using `&` Operator
 
 ```python
-Bash(
-    command="cat input.json | codex mcp-server > output.json 2>&1 &",
-    run_in_background=True
-)
+Bash(command="codex mcp-server ... &", run_in_background=True)
 ```
 
-### Result
-
-- **Shell ID**: `872747` (numeric format)
-- **Status**: `completed` immediately
-- **Process PID**: `37373` (separate process)
-- ❌ **NOT visible in user's TUI**
-- ✅ Only visible in Claude Code system reminders
-
-### Why This Doesn't Work
-
-The `&` operator inside the command creates a **subprocess in the shell**, not a native Claude Code background task:
-
-```
-Bash tool
-  └─> Shell (ID: 872747)
-       └─> codex mcp-server & (PID: 37373)
-            └─> runs separately
-```
-
-The shell completes immediately, but Codex continues running **outside Claude Code's control**.
+**Problems:**
+- Shell ID: numeric (`872747`) not hex
+- NOT visible in user's TUI
+- BashOutput/KillShell don't work properly
+- Process runs outside Claude Code control
 
 ---
 
-## ✅ ONLY Correct Method: Native Background Task in Claude Code
+## ✅ Correct: Native Background Task
 
-**🚨 CRITICAL**: ALWAYS use native background task with `run_in_background: true`.
-
-### Proper Command
+### Basic Pattern
 
 ```python
 Bash(
     command="codex mcp-server < /tmp/input.json > /tmp/output.json 2>&1",
-    run_in_background=True,  # ✅ ALWAYS use this!
-    timeout=600000  # 10 minutes
+    run_in_background=True,  # ✅ KEY!
+    timeout=600000  # 10 min
 )
+# → Returns hex ID (e.g., "336ae0")
 ```
 
-### Key Requirements
+### Key Rules
 
-1. ✅ **MUST use `run_in_background: true`** — Bash tool parameter
-2. ❌ **NEVER use `&`** at the end of the command
-3. ✅ Redirect via `<` and `>`
-4. ✅ Timeout for long operations
+1. ✅ **MUST** use `run_in_background: true`
+2. ❌ **NEVER** use `&` at end of command
+3. ✅ Use redirects: `< input > output 2>&1`
+4. ✅ Set timeout for long ops (default 2min may be too short)
 
 ### Result
 
-```json
-{
-  "result": "Command running in background with ID: 336ae0"
-}
-```
-
-**Characteristics**:
-- **Shell ID**: `336ae0` (**hex format!**)
-- **Status**: `running` while executing
-- ✅ **Visible in user's TUI**
-- ✅ Full control via `BashOutput`/`KillShell`
+- **Shell ID**: hex format (`336ae0`)
+- **Visible in TUI**: Yes
+- **BashOutput**: Works
+- **KillShell**: Works
 
 ---
 
-## Comparison
+## Quick Comparison
 
-| Characteristic | Subprocess (with `&`) | Native (without `&`) |
-|----------------|----------------------|---------------------|
-| Shell ID format | Number (`872747`) | Hex (`336ae0`) |
-| Visible in TUI | ❌ No | ✅ Yes |
-| Control | ⚠️ Limited | ✅ Full |
-| BashOutput | ⚠️ Doesn't work correctly | ✅ Works |
-| KillShell | ❌ Won't stop process | ✅ Stops process |
-| System reminders | ✅ Yes | ✅ Yes |
+| Feature | `&` operator | `run_in_background` |
+|---------|-------------|---------------------|
+| ID format | Number | Hex |
+| TUI visible | ❌ No | ✅ Yes |
+| BashOutput | ⚠️ Broken | ✅ Works |
+| KillShell | ❌ Broken | ✅ Works |
 
 ---
 
-## How to Use with MCP Servers
+## Complete Example
 
-### Step 1: Prepare JSON Request
-
-**⚠️ IMPORTANT**: For autonomous mode (no approval prompts), **ALWAYS** include these parameters:
-- `"approval-policy": "never"`
-- `"sandbox": "danger-full-access"`
-
-See [codex-sandbox-permissions.md](./codex-sandbox-permissions.md) for complete details.
+### 1. Prepare Request
 
 ```bash
-cat > /tmp/mcp-request.json <<'EOF'
-{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "method": "tools/call",
-  "params": {
-    "name": "codex",
-    "arguments": {
-      "prompt": "Your task here",
-      "cwd": "/path/to/project",
-      "approval-policy": "never",
-      "sandbox": "danger-full-access"
-    }
-  }
-}
+cat > /tmp/request.json <<'EOF'
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"codex","arguments":{"prompt":"Task here","cwd":"/path","approval-policy":"never","sandbox":"danger-full-access"}}}
 EOF
 ```
 
-### Step 2: Launch in Native Background (CORRECT)
+⚠️ **CRITICAL**: Always include `approval-policy` and `sandbox` params!
+See [codex-sandbox-permissions.md](./codex-sandbox-permissions.md)
+
+### 2. Launch
 
 ```python
-Bash(
-    command="codex mcp-server < /tmp/mcp-request.json > /tmp/mcp-output.json 2>&1",
-    description="Run MCP server in native background",
+task_id = Bash(
+    command="codex mcp-server < /tmp/request.json > /tmp/output.json 2>&1",
     run_in_background=True,
-    timeout=600000  # 10 minutes for long operations
+    timeout=600000
 )
+# → Returns: "336ae0"
 ```
 
-✅ **Result**:
-```
-Command running in background with ID: 336ae0
-```
+### 3. Monitor
 
-### Step 3: Monitor Progress
-
-**🚨 CRITICAL: Use parse script for token efficiency!**
-
-**Via parse script** (RECOMMENDED ✅):
+**Use parse script (saves tokens!):**
 ```python
-# Token-efficient monitoring
-Bash("python3 scripts/parse-codex-output.py /tmp/mcp-output.json --last 100 --reasoning")
-Bash("python3 scripts/parse-codex-output.py /tmp/mcp-output.json --stuck")
+Bash("python3 scripts/parse-codex-output.py /tmp/output.json --stuck")
+Bash("python3 scripts/parse-codex-output.py /tmp/output.json --last 50 --reasoning")
 ```
 
-**Via BashOutput** (for AI status check):
+**Check status:**
 ```python
 BashOutput(bash_id="336ae0")
 ```
 
-**Via raw file** (ONLY if parse script insufficient ⚠️):
-```bash
-tail -f /tmp/mcp-output.json  # Wastes tokens!
-```
-
-**Via TUI** (for user):
-- Background task is visible in the interface
-- Can be stopped through UI
-- Status updates in real-time
-
-### Step 4: Stop if Needed
+### 4. Stop
 
 ```python
 KillShell(shell_id="336ae0")
@@ -174,185 +103,36 @@ KillShell(shell_id="336ae0")
 
 ---
 
-## Practical Example: Codex MCP
+## Common Mistakes
 
-### Creating/Updating/Deleting a Task
-
-```python
-# 1. Create JSON request (⚠️ approval-policy and sandbox required!)
-Bash("""
-cat > /tmp/codex-request.json <<'EOF'
-{
-  "jsonrpc": "2.0",
-  "id": 2,
-  "method": "tools/call",
-  "params": {
-    "name": "codex",
-    "arguments": {
-      "prompt": "Create a test task in Taskmaster, update and delete it",
-      "cwd": "/Users/user/projects/swift-ai-sdk",
-      "approval-policy": "never",
-      "sandbox": "danger-full-access"
-    }
-  }
-}
-EOF
-""")
-
-# 2. Launch Codex in native background
-task_id = Bash(
-    command="codex mcp-server < /tmp/codex-request.json > /tmp/codex-output.json 2>&1",
-    run_in_background=True,
-    timeout=600000
-)
-# → ID: 336ae0
-
-# 3. Check status
-BashOutput(bash_id="336ae0")
-# → status: running
-
-# 4. Wait and check result
-sleep(5)
-output = BashOutput(bash_id="336ae0")
-# → status: running (or completed if quick operation)
-
-# 5. Read detailed output (✅ USE PARSE SCRIPT for token efficiency!)
-Bash("python3 scripts/parse-codex-output.py /tmp/codex-output.json --last 100 --reasoning")
-# → Human-readable, filtered output (saves massive tokens!)
-
-# Alternative: Raw file (only if parse script insufficient)
-# Bash("tail -100 /tmp/codex-output.json")  # ⚠️ Wastes tokens!
-```
-
----
-
-## What You See in Output
-
-### MCP Events (JSON-RPC)
-
-**Session configured**:
-```json
-{"type":"session_configured","session_id":"0199de23...","model":"gpt-5-codex"}
-```
-
-**Reasoning (word by word)**:
-```json
-{"type":"agent_reasoning_delta","delta":"Planning"}
-{"type":"agent_reasoning_delta","delta":" taskmaster"}
-{"type":"agent_reasoning_delta","delta":" tool"}
-...
-```
-
-**Tool calls**:
-```json
-{
-  "type":"mcp_tool_call_begin",
-  "call_id":"call_GN6TIkG2...",
-  "invocation":{
-    "server":"taskmaster",
-    "tool":"add_task",
-    "arguments":{"projectRoot":"/path","title":"Test"}
-  }
-}
-```
-
-**Results**:
-```json
-{
-  "type":"mcp_tool_call_end",
-  "duration":{"secs":0,"nanos":12996708},
-  "result":{"Ok":{"content":[{"text":"{\"taskId\":25,...}"}]}}
-}
-```
-
-**Tokens**:
-```json
-{
-  "type":"token_count",
-  "info":{
-    "input_tokens":10848,
-    "cached_input_tokens":0,
-    "output_tokens":572,
-    "reasoning_output_tokens":512
-  }
-}
-```
-
-**Final message**:
-```json
-{"type":"task_complete","last_agent_message":"Task 25 ... successfully."}
-```
-
----
-
-## Benefits of Native Background
-
-### For User
-- ✅ **Sees task in TUI** — transparency
-- ✅ **Can stop it** — control
-- ✅ **Sees status** — monitoring
-
-### For AI
-- ✅ **BashOutput works** — can check progress
-- ✅ **KillShell works** — can stop
-- ✅ **Proper lifecycle** — task managed by Claude Code
-
-### For Debugging
-- ✅ **Full output file** — can analyze after
-- ✅ **JSON-RPC events** — see every Codex step
-- ✅ **System reminders** — AI gets notifications
-
----
-
-## Important Notes
-
-### 1. Don't Use `&` with `run_in_background`
-
-❌ **Wrong**:
-```python
-Bash(
-    command="long-task &",
-    run_in_background=True
-)
-```
-
-✅ **Correct**:
-```python
-Bash(
-    command="long-task",
-    run_in_background=True
-)
-```
-
-### 2. Timeout is Required for Long Operations
+### Mistake 1: Using `&` with `run_in_background`
 
 ```python
-Bash(
-    command="codex mcp-server < input > output 2>&1",
-    run_in_background=True,
-    timeout=600000  # 10 minutes, not default 2!
-)
+# ❌ WRONG
+Bash(command="task &", run_in_background=True)
+
+# ✅ CORRECT
+Bash(command="task", run_in_background=True)
 ```
 
-### 3. Redirect is Required
-
-**Why**: MCP server's STDIN expects JSON, STDOUT/STDERR need to be saved
+### Mistake 2: No timeout for long ops
 
 ```python
-# ✅ Correct
-command="codex mcp-server < input.json > output.json 2>&1"
+# ❌ WRONG - default 2min may be too short
+Bash(command="codex ...", run_in_background=True)
 
-# ❌ Wrong (no input data)
+# ✅ CORRECT
+Bash(command="codex ...", run_in_background=True, timeout=600000)
+```
+
+### Mistake 3: Missing redirects
+
+```python
+# ❌ WRONG - no input/output
 command="codex mcp-server"
-```
 
-### 4. BashOutput May Be Empty
-
-Native background tasks stream output **gradually**. The file may update, but BashOutput only shows `status: running`.
-
-**Solution**: Read the file directly for detailed output:
-```bash
-tail -50 /tmp/codex-output.json
+# ✅ CORRECT
+command="codex mcp-server < input.json > output.json 2>&1"
 ```
 
 ---
@@ -361,76 +141,31 @@ tail -50 /tmp/codex-output.json
 
 ### Shell ID Formats
 
-**Subprocess** (fake background):
-- Format: Decimal number (e.g., `872747`)
-- Created by: `&` operator in shell
-- Managed by: Shell process (not Claude Code)
+- **Subprocess** (`&`): Decimal (`872747`)
+- **Native**: Hexadecimal (`336ae0`)
 
-**Native** (true background):
-- Format: Hexadecimal (e.g., `336ae0`, `bf4c12`)
-- Created by: `run_in_background: true` parameter
-- Managed by: Claude Code directly
+**If you see hex ID → native task (correct!)**
 
 ### Process Hierarchy
 
-**Subprocess**:
+**Subprocess:**
 ```
-Claude Code Bash Tool
-  └─> Shell (ID: 872747) [completes immediately]
-       └─> Process & (PID: 37373) [detached, runs independently]
+Bash Tool → Shell → Process & (detached)
 ```
 
-**Native**:
+**Native:**
 ```
-Claude Code Bash Tool
-  └─> Background Task (ID: 336ae0) [managed, visible in TUI]
-       └─> Process [controlled by Claude Code]
+Bash Tool → Background Task (managed by Claude Code)
 ```
 
 ---
 
-## Documentation
+## Related Docs
 
-### Official Sources
-
-1. **Bash tool docs**: https://docs.claude.com/en/docs/agents-and-tools/tool-use/bash-tool
-2. **Background commands**: Mentioned in changelog v1.0.71 (Ctrl+B)
-3. **GitHub issues**:
-   - https://github.com/anthropics/claude-code/issues/2550
-   - https://github.com/anthropics/claude-code/issues/5709
-
-### Key Information
-
-- Background tasks appeared in Claude Code v1.0.71 (October 2025)
-- ID format: hex (`336ae0`, `bf4c12`, etc.)
-- Separate shells for each background task
-- Incremental output via BashOutput
-- Keyboard shortcut: **Ctrl+B** to run command in background
+- [interactive-mcp-sessions.md](./interactive-mcp-sessions.md) - Persistent sessions with `tail -f`
+- [codex-sandbox-permissions.md](./codex-sandbox-permissions.md) - Autonomous mode params
+- [monitoring-codex-output.md](./monitoring-codex-output.md) - Output analysis
 
 ---
 
-## Conclusions
-
-1. **🚨 ALWAYS use native background tasks** with `run_in_background: true`
-2. **NEVER use subprocess with `&`** operator - not compatible with Claude Code
-3. **Hex ID** (`336ae0`) = native task (correct!)
-4. **Visibility in TUI** = required for proper operation
-5. **Native background is the ONLY supported method** for Claude Code
-
-### Rule
-
-> **ALWAYS use `run_in_background: true` parameter in Claude Code**
-> **NEVER use `&` operator** - it's not compatible
-
----
-
-## See Also
-
-- **[interactive-mcp-sessions.md](./interactive-mcp-sessions.md)** — Advanced: Persistent MCP sessions with multiple commands in same context using `tail -f`
-- **[codex-sandbox-permissions.md](./codex-sandbox-permissions.md)** — How to bypass approvals for autonomous operation (required parameters)
-
----
-
-**Author**: Claude Code AI
-**Date**: 2025-10-13
-**Tested with**: Codex CLI 0.46.0, Claude Code Sonnet 4.5
+**Last updated**: 2025-10-14
