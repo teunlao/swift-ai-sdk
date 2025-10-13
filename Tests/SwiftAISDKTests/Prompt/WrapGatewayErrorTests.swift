@@ -1,5 +1,7 @@
 import Testing
 import Foundation
+@testable import AISDKProvider
+@testable import AISDKProviderUtils
 @testable import SwiftAISDK
 
 /**

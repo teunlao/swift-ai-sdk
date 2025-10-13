@@ -1,4 +1,5 @@
 import Foundation
+import AISDKProvider
 
 /**
  Loads an API key from a parameter or environment variable.

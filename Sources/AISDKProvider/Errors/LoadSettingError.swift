@@ -16,6 +16,6 @@ public struct LoadSettingError: AISDKError, Sendable {
 
     /// Check if an error is an instance of LoadSettingError
     public static func isInstance(_ error: any Error) -> Bool {
-        SwiftAISDK.hasMarker(error, marker: errorDomain)
+        hasMarker(error, marker: errorDomain)
     }
 }

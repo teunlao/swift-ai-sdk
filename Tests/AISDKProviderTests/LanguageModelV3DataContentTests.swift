@@ -1,5 +1,5 @@
 import Testing
-@testable import SwiftAISDK
+@testable import AISDKProvider
 import Foundation
 
 @Test("DataContent encode: base64 string is plain string (no wrapper)")

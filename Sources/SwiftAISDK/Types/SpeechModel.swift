@@ -1,4 +1,6 @@
 import Foundation
+import AISDKProvider
+import AISDKProviderUtils
 
 /**
  Speech model types and type aliases.

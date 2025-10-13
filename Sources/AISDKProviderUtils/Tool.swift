@@ -1,4 +1,5 @@
 import Foundation
+import AISDKProvider
 
 /**
  A tool contains the description and the schema of the input that the tool expects.

@@ -1,4 +1,6 @@
 import Foundation
+import AISDKProvider
+import AISDKProviderUtils
 
 /**
  Converts prompt messages to LanguageModelV3 format for provider consumption.

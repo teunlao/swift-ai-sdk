@@ -12,6 +12,8 @@
  */
 
 import Foundation
+import AISDKProvider
+import AISDKProviderUtils
 
 /**
  Deeply merges two dictionaries.

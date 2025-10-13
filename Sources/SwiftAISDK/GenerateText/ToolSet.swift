@@ -1,4 +1,6 @@
 import Foundation
+import AISDKProvider
+import AISDKProviderUtils
 
 /**
  A set of tools that can be called by the language model.

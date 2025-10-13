@@ -1,3 +1,7 @@
+import Foundation
+import AISDKProvider
+import AISDKProviderUtils
+
 /**
  Creates a custom provider with specified models and optional fallback.
 

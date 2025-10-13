@@ -1,3 +1,7 @@
+import Foundation
+import AISDKProvider
+import AISDKProviderUtils
+
 /**
  Fixes incomplete or partial JSON by adding missing closing delimiters and completing partial literals.
 

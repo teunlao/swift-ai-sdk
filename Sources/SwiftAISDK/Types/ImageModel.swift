@@ -1,4 +1,6 @@
 import Foundation
+import AISDKProvider
+import AISDKProviderUtils
 
 /**
  Image model types and type aliases.

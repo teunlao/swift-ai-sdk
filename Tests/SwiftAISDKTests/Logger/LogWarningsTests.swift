@@ -12,6 +12,8 @@
 
 import Testing
 import Foundation
+@testable import AISDKProvider
+@testable import AISDKProviderUtils
 @testable import SwiftAISDK
 
 /// Thread-safe box for capturing values in closures

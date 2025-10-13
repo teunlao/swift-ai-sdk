@@ -12,6 +12,8 @@
  */
 
 import Foundation
+import AISDKProvider
+import AISDKProviderUtils
 
 /// Check if a tool call requires approval
 /// - Parameters:

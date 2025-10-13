@@ -8,6 +8,8 @@
  */
 
 import Foundation
+import AISDKProvider
+import AISDKProviderUtils
 
 /// Extract text content from language model content array
 /// - Parameter content: Array of content parts from the language model

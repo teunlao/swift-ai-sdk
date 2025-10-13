@@ -1,4 +1,6 @@
 import Foundation
+import AISDKProvider
+import AISDKProviderUtils
 
 /**
  Error thrown when no speech audio was generated.

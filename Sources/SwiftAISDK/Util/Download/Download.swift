@@ -5,6 +5,8 @@
  */
 
 import Foundation
+import AISDKProvider
+import AISDKProviderUtils
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif

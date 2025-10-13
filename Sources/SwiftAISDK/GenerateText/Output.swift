@@ -12,6 +12,8 @@
  */
 
 import Foundation
+import AISDKProvider
+import AISDKProviderUtils
 
 /// Output parser protocol for text and object generation
 public protocol Output: Sendable {

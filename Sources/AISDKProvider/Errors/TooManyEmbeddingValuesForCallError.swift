@@ -37,6 +37,6 @@ public struct TooManyEmbeddingValuesForCallError: AISDKError, @unchecked Sendabl
 
     /// Check if an error is an instance of TooManyEmbeddingValuesForCallError
     public static func isInstance(_ error: any Error) -> Bool {
-        SwiftAISDK.hasMarker(error, marker: errorDomain)
+        hasMarker(error, marker: errorDomain)
     }
 }

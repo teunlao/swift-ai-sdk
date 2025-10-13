@@ -1,7 +1,8 @@
 import Foundation
 import Testing
 import EventSourceParser
-@testable import SwiftAISDK
+@testable import AISDKProvider
+@testable import AISDKProviderUtils
 
 @Suite("ParseJsonEventStream")
 struct ParseJsonEventStreamTests {

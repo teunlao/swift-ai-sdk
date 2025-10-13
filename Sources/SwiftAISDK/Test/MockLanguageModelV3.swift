@@ -8,6 +8,8 @@
  */
 
 import Foundation
+import AISDKProvider
+import AISDKProviderUtils
 
 /// Mock implementation of LanguageModelV3 protocol for testing purposes.
 ///

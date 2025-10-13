@@ -1,3 +1,7 @@
+import Foundation
+import AISDKProvider
+import AISDKProviderUtils
+
 /**
  Assemble standardized operation name and attributes for telemetry.
 

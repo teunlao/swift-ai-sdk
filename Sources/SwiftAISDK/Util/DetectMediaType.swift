@@ -5,6 +5,8 @@
  */
 
 import Foundation
+import AISDKProvider
+import AISDKProviderUtils
 
 /// Represents a media type signature for file format detection.
 public struct MediaTypeSignature: Sendable {

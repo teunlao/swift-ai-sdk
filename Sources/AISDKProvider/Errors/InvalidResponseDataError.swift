@@ -37,6 +37,6 @@ public struct InvalidResponseDataError: AISDKError, @unchecked Sendable {
 
     /// Check if an error is an instance of InvalidResponseDataError
     public static func isInstance(_ error: any Error) -> Bool {
-        SwiftAISDK.hasMarker(error, marker: errorDomain)
+        hasMarker(error, marker: errorDomain)
     }
 }

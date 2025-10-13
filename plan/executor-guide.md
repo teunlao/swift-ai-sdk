@@ -4,8 +4,93 @@
 
 ## Роль и цели
 - Реализовать Swift‑порт Vercel AI SDK 1:1 с оригиналом (API, поведение, типы, тесты, документация).
-- Следовать структуре проекта (`Sources/SwiftAISDK`, `plan/*`, `external/*`) и принятым правилам.
+- Следовать структуре проекта (3 пакета: `AISDKProvider`, `AISDKProviderUtils`, `SwiftAISDK`) и принятым правилам.
 - Писать код и тесты с учётом минимальных расхождений и документировать прогресс.
+
+## Архитектура пакетов
+
+**Проект организован в 3 SwiftPM пакета** (matching upstream `@ai-sdk` architecture):
+
+### 📦 AISDKProvider — Foundation Package
+**Location**: `Sources/AISDKProvider/`
+**Dependencies**: None (foundation)
+**Upstream**: `@ai-sdk/provider`
+
+**Что размещать здесь**:
+- Protocol definitions (LanguageModel V2/V3, EmbeddingModel, ImageModel, etc.)
+- Provider-specific types (CallOptions, CallWarning, StreamPart, etc.)
+- Provider errors (APICallError, InvalidPromptError, etc.)
+- JSONValue universal JSON type
+- Middleware protocol interfaces (LanguageModelV2Middleware, LanguageModelV3Middleware)
+- Shared types (V2/V3 shared definitions)
+
+**Import statement**: No imports (foundation package)
+
+### 🔧 AISDKProviderUtils — Utilities Package
+**Location**: `Sources/AISDKProviderUtils/`
+**Dependencies**: AISDKProvider
+**Upstream**: `@ai-sdk/provider-utils`
+
+**Что размещать здесь**:
+- HTTP utilities (GetFromAPI, PostToAPI, ResponseHandler, CombineHeaders, etc.)
+- JSON utilities (ParseJSON, SecureJsonParse, FixJson, etc.)
+- Schema definitions (Schema, FlexibleSchema, StandardSchema)
+- Type validation (ValidateTypes)
+- Tool definitions (Tool, DynamicTool, ToolSet)
+- Data handling (DataContent, SplitDataUrl, ContentPart)
+- Utility functions (GenerateID, Delay, LoadSettings, IsUrlSupported, etc.)
+- Media type detection and handling
+
+**Import statement**: `import AISDKProvider`
+
+### 🚀 SwiftAISDK — Main SDK Package
+**Location**: `Sources/SwiftAISDK/`
+**Dependencies**: AISDKProvider, AISDKProviderUtils, EventSourceParser
+**Upstream**: `@ai-sdk/ai`
+
+**Что размещать здесь**:
+- High-level SDK functions (generateText, streamText, etc.)
+- Prompt conversion and standardization
+- Call settings preparation
+- Tool execution framework
+- Provider registry and model resolution
+- Middleware implementations (DefaultSettings, ExtractReasoning, SimulateStreaming)
+- Gateway integration
+- Telemetry and logging
+- SDK-specific errors (NoSuchToolError, InvalidToolInputError, etc.)
+- Testing utilities (MockLanguageModelV2, MockLanguageModelV3)
+
+**Import statements**:
+```swift
+import AISDKProvider
+import AISDKProviderUtils
+```
+
+### Граф зависимостей
+```
+AISDKProvider (no deps)
+    ↑
+AISDKProviderUtils
+    ↑
+SwiftAISDK + EventSourceParser
+```
+
+### Правила размещения нового кода
+
+**Проверка upstream location**:
+1. Найти файл в `external/vercel-ai-sdk/packages/`
+2. Определить пакет: `provider/`, `provider-utils/`, или `ai/`
+3. Поместить в соответствующий Swift пакет
+
+**Примеры**:
+- `packages/provider/src/language-model/v3/language-model-v3.ts` → `Sources/AISDKProvider/LanguageModel/V3/LanguageModelV3.swift`
+- `packages/provider-utils/src/delay.ts` → `Sources/AISDKProviderUtils/Delay.swift`
+- `packages/ai/src/generate-text/generate-text.ts` → `Sources/SwiftAISDK/GenerateText/GenerateText.swift`
+
+**Tests organization**:
+- `Tests/AISDKProviderTests/` — для AISDKProvider
+- `Tests/AISDKProviderUtilsTests/` — для AISDKProviderUtils
+- `Tests/SwiftAISDKTests/` — для SwiftAISDK
 
 ## Основные обязанности
 1. **Планирование**

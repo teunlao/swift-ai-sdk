@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import SwiftAISDK
+@testable import AISDKProvider
 
 /**
  * Tests for LanguageModelV3 Tool types

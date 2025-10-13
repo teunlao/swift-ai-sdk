@@ -5,6 +5,8 @@
  */
 
 import Foundation
+import AISDKProvider
+import AISDKProviderUtils
 
 /// Error thrown when downloading a file fails.
 public struct DownloadError: AISDKError, Sendable {
@@ -59,6 +61,6 @@ public struct DownloadError: AISDKError, Sendable {
     /// - Parameter error: The error to check.
     /// - Returns: `true` if the error is a DownloadError, `false` otherwise.
     public static func isInstance(_ error: Error) -> Bool {
-        return SwiftAISDK.hasMarker(error, marker: errorDomain)
+        return hasMarker(error, marker: errorDomain)
     }
 }

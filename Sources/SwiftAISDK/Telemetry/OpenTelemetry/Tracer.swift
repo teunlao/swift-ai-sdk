@@ -1,3 +1,7 @@
+import Foundation
+import AISDKProvider
+import AISDKProviderUtils
+
 /**
  OpenTelemetry Tracer protocol.
 

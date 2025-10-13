@@ -1,6 +1,7 @@
 import Testing
 import Foundation
-@testable import SwiftAISDK
+@testable import AISDKProvider
+@testable import AISDKProviderUtils
 
 /**
  Tests for delay utility.

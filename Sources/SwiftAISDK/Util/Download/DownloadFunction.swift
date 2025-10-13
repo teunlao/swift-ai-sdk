@@ -7,6 +7,8 @@
  */
 
 import Foundation
+import AISDKProvider
+import AISDKProviderUtils
 
 /// Represents a download request for a single URL.
 public struct DownloadRequest: Sendable {

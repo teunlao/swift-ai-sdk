@@ -9,6 +9,8 @@
  */
 
 import Foundation
+import AISDKProvider
+import AISDKProviderUtils
 
 /**
  Consumes an AsyncSequence until completion.

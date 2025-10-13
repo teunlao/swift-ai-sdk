@@ -33,6 +33,8 @@
 
 import Foundation
 import Testing
+@testable import AISDKProvider
+@testable import AISDKProviderUtils
 @testable import SwiftAISDK
 
 @Suite("RetryWithExponentialBackoff Tests")

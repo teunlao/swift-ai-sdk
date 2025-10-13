@@ -11,6 +11,8 @@
  */
 
 import Foundation
+import AISDKProvider
+import AISDKProviderUtils
 
 /// Record a span and execute a function within its context
 ///

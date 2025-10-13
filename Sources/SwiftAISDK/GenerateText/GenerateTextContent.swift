@@ -21,6 +21,8 @@
  */
 
 import Foundation
+import AISDKProvider
+import AISDKProviderUtils
 
 /// Content part representing different types of content in a response
 public enum ContentPart: Sendable {

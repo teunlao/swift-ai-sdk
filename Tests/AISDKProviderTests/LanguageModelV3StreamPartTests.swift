@@ -1,5 +1,5 @@
 import Testing
-@testable import SwiftAISDK
+@testable import AISDKProvider
 import Foundation
 
 @Test("StreamPart round-trip: text/reasoning with providerMetadata")

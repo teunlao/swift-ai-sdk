@@ -6,6 +6,8 @@
 
 import Foundation
 import Testing
+@testable import AISDKProvider
+@testable import AISDKProviderUtils
 @testable import SwiftAISDK
 
 // MARK: - Test Helpers

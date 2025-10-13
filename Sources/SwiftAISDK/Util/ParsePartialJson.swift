@@ -10,6 +10,8 @@
  */
 
 import Foundation
+import AISDKProvider
+import AISDKProviderUtils
 
 /// The result of parsing partial JSON
 public struct ParsePartialJsonResult {

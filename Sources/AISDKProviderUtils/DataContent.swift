@@ -1,9 +1,10 @@
 import Foundation
+import AISDKProvider
 
 /**
  Data content utilities for handling images, files, and other binary data in prompts.
 
- Port of `@ai-sdk/ai/src/prompt/data-content.ts`.
+ Port of `@ai-sdk/provider-utils/src/types/data-content.ts`.
 
  Data content can be provided as:
  - Base64-encoded string

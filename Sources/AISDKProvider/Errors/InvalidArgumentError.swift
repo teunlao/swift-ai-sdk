@@ -30,6 +30,6 @@ public struct InvalidArgumentError: AISDKError, Sendable {
 
     /// Check if an error is an instance of InvalidArgumentError
     public static func isInstance(_ error: any Error) -> Bool {
-        SwiftAISDK.hasMarker(error, marker: errorDomain)
+        hasMarker(error, marker: errorDomain)
     }
 }

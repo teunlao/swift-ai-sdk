@@ -11,6 +11,8 @@
  */
 
 import Foundation
+import AISDKProvider
+import AISDKProviderUtils
 
 /**
  Creates a middleware that simulates streaming from a generate result.

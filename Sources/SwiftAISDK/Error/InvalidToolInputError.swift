@@ -1,4 +1,6 @@
 import Foundation
+import AISDKProvider
+import AISDKProviderUtils
 
 /**
  Error thrown when a tool receives invalid input.
@@ -31,7 +33,7 @@ public struct InvalidToolInputError: AISDKError, Sendable {
         if let message = message {
             self.message = message
         } else {
-            self.message = "Invalid input for tool \(toolName): \(getErrorMessage(cause))"
+            self.message = "Invalid input for tool \(toolName): \(AISDKProvider.getErrorMessage(cause))"
         }
     }
 

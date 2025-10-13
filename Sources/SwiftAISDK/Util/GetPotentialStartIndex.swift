@@ -1,3 +1,7 @@
+import Foundation
+import AISDKProvider
+import AISDKProviderUtils
+
 /**
  Returns the index of the start of the searched text in the text, or nil if it is not found.
 

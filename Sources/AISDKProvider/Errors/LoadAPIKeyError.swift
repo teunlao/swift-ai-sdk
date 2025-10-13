@@ -16,6 +16,6 @@ public struct LoadAPIKeyError: AISDKError, Sendable {
 
     /// Check if an error is an instance of LoadAPIKeyError
     public static func isInstance(_ error: any Error) -> Bool {
-        SwiftAISDK.hasMarker(error, marker: errorDomain)
+        hasMarker(error, marker: errorDomain)
     }
 }

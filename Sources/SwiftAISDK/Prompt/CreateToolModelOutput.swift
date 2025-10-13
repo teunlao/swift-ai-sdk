@@ -1,4 +1,6 @@
 import Foundation
+import AISDKProvider
+import AISDKProviderUtils
 
 /**
  Creates a tool result output in the LanguageModel V3 format.
@@ -54,7 +56,7 @@ public func createToolModelOutput(
     // Handle error modes first (priority over tool.toModelOutput)
     switch errorMode {
     case .text:
-        return .errorText(value: getErrorMessage(output))
+        return .errorText(value: AISDKProvider.getErrorMessage(output))
     case .json:
         return .errorJson(value: toJSONValue(output))
     case .none:

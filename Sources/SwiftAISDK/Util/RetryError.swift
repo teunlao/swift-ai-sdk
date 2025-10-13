@@ -1,3 +1,7 @@
+import Foundation
+import AISDKProvider
+import AISDKProviderUtils
+
 /**
  Error thrown when retry logic fails.
 
@@ -57,6 +61,6 @@ public struct RetryError: AISDKError, Sendable {
     /// - Parameter error: The error to check
     /// - Returns: `true` if the error is a RetryError, `false` otherwise
     public static func isInstance(_ error: any Error) -> Bool {
-        SwiftAISDK.hasMarker(error, marker: Self.errorDomain)
+        hasMarker(error, marker: Self.errorDomain)
     }
 }

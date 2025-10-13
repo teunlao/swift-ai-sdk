@@ -3,7 +3,7 @@ import Foundation
 /**
  Splits a Data URL into its media type and base64 content components.
 
- Port of `@ai-sdk/ai/src/prompt/split-data-url.ts`.
+ Port of `@ai-sdk/provider-utils/src/split-data-url.ts`.
 
  Data URLs have the format: `data:[<mediatype>][;base64],<data>`
 

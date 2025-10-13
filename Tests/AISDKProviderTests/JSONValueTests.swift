@@ -1,6 +1,6 @@
 import Testing
 import Foundation
-@testable import SwiftAISDK
+@testable import AISDKProvider
 
 @Test func jsonValueCodableRoundTrip() throws {
     let original: JSONValue = [

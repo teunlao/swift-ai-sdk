@@ -8,7 +8,8 @@
  */
 
 import Testing
-@testable import SwiftAISDK
+@testable import AISDKProvider
+@testable import AISDKProviderUtils
 
 @Suite("Tool Helper Functions")
 struct ToolTests {

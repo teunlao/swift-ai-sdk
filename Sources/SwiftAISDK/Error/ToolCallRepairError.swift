@@ -1,4 +1,6 @@
 import Foundation
+import AISDKProvider
+import AISDKProviderUtils
 
 /**
  Union type for the original error in ToolCallRepairError.
@@ -36,7 +38,7 @@ public struct ToolCallRepairError: AISDKError, Sendable {
         if let message = message {
             self.message = message
         } else {
-            self.message = "Error repairing tool call: \(getErrorMessage(cause))"
+            self.message = "Error repairing tool call: \(AISDKProvider.getErrorMessage(cause))"
         }
     }
 

@@ -1,5 +1,6 @@
 import Testing
-@testable import SwiftAISDK
+@testable import AISDKProvider
+@testable import AISDKProviderUtils
 
 @Suite("ValidateTypes")
 struct ValidateTypesTests {

@@ -6,6 +6,8 @@
 
 import Foundation
 import Testing
+@testable import AISDKProvider
+@testable import AISDKProviderUtils
 @testable import SwiftAISDK
 
 // Note: These tests require a test server for full upstream parity.

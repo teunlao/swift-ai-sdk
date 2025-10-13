@@ -1,4 +1,5 @@
 import Foundation
+import AISDKProvider
 
 // MARK: - Schema Validation Result
 
@@ -340,7 +341,7 @@ public struct FlexibleSchema<Output>: @unchecked Sendable {
         self.resolver = { standardSchema(schema) }
     }
 
-    internal func resolve() -> Schema<Output> {
+    public func resolve() -> Schema<Output> {
         resolver()
     }
 }

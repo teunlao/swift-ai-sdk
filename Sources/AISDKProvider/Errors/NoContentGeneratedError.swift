@@ -16,6 +16,6 @@ public struct NoContentGeneratedError: AISDKError, Sendable {
 
     /// Check if an error is an instance of NoContentGeneratedError
     public static func isInstance(_ error: any Error) -> Bool {
-        SwiftAISDK.hasMarker(error, marker: errorDomain)
+        hasMarker(error, marker: errorDomain)
     }
 }

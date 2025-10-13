@@ -1,4 +1,6 @@
 import Testing
+@testable import AISDKProvider
+@testable import AISDKProviderUtils
 @testable import SwiftAISDK
 
 @Test func example() async throws {

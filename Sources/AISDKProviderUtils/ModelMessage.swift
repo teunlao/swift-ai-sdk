@@ -1,4 +1,5 @@
 import Foundation
+import AISDKProvider
 
 /**
  Model message types for prompts and conversations.

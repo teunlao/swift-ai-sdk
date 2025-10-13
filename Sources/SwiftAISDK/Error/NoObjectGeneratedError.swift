@@ -1,4 +1,6 @@
 import Foundation
+import AISDKProvider
+import AISDKProviderUtils
 
 /**
  Error thrown when no object could be generated.
@@ -51,6 +53,6 @@ public struct NoObjectGeneratedError: AISDKError, Sendable {
     }
 
     public static func isInstance(_ error: any Error) -> Bool {
-        SwiftAISDK.hasMarker(error, marker: errorDomain)
+        hasMarker(error, marker: errorDomain)
     }
 }

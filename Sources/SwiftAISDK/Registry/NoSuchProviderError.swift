@@ -1,3 +1,7 @@
+import Foundation
+import AISDKProvider
+import AISDKProviderUtils
+
 /**
  Provider not found error.
 
@@ -34,6 +38,6 @@ public struct NoSuchProviderError: AISDKError, Sendable {
 
     /// Check if an error is an instance of NoSuchProviderError
     public static func isInstance(_ error: any Error) -> Bool {
-        SwiftAISDK.hasMarker(error, marker: errorDomain)
+        hasMarker(error, marker: errorDomain)
     }
 }

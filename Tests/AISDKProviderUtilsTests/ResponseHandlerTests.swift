@@ -1,6 +1,7 @@
 import Foundation
 import Testing
-@testable import SwiftAISDK
+@testable import AISDKProvider
+@testable import AISDKProviderUtils
 
 @Suite("Response Handler")
 struct ResponseHandlerTests {

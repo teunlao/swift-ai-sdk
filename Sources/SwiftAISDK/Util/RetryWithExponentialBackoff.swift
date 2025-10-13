@@ -11,6 +11,8 @@
  */
 
 import Foundation
+import AISDKProvider
+import AISDKProviderUtils
 
 /// Gets the retry delay in milliseconds, respecting rate limit headers.
 ///
@@ -125,7 +127,7 @@ func _retryWithExponentialBackoff<OUTPUT>(
             throw error
         }
 
-        let errorMessage = getErrorMessage(error)
+        let errorMessage = AISDKProvider.getErrorMessage(error)
         let newErrors = errors + [error]
         let tryNumber = newErrors.count
 

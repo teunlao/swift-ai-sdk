@@ -1,5 +1,5 @@
 import Testing
-@testable import SwiftAISDK
+@testable import AISDKProvider
 import Foundation
 
 @Test("ResponseInfo: flat fields accessible (no nested metadata)")

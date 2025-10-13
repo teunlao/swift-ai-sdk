@@ -43,17 +43,67 @@ swift-ai-sdk/
 │   ├── requests/               # Validation requests
 │   ├── reports/                # Validation reports
 │   └── QUICKSTART.md           # How to use validator
+├── Package.swift                # SwiftPM manifest (3 targets)
 ├── Sources/
-│   ├── EventSourceParser/      # SSE parser
-│   └── SwiftAISDK/
-│       ├── Provider/           # V2/V3 types, errors, JSONValue
-│       ├── ProviderUtils/      # HTTP, JSON, delays, headers
-│       └── Core/               # Generate-text, streams, tools
+│   ├── AISDKProvider/          # Foundation package (78 files)
+│   │   ├── LanguageModel/      # V2/V3 protocols & types
+│   │   ├── EmbeddingModel/     # V2/V3 embedding types
+│   │   ├── ImageModel/         # V2/V3 image types
+│   │   ├── SpeechModel/        # V2/V3 speech types
+│   │   ├── TranscriptionModel/ # V2/V3 transcription types
+│   │   ├── Errors/             # Provider errors
+│   │   ├── JSONValue/          # Universal JSON type
+│   │   ├── Shared/             # Shared V2/V3 types
+│   │   └── ProviderV2/V3.swift # Provider protocols
+│   │
+│   ├── AISDKProviderUtils/     # Utilities package (35 files)
+│   │   ├── HTTP utilities      # GET/POST, headers, retries
+│   │   ├── JSON utilities      # Parsing, validation
+│   │   ├── Schema/             # Schema definitions
+│   │   ├── Tool definitions    # Tool, DynamicTool
+│   │   ├── Data handling       # DataContent, SplitDataUrl
+│   │   └── Utility functions   # ID gen, delays, etc.
+│   │
+│   ├── SwiftAISDK/             # Main SDK package (105 files)
+│   │   ├── GenerateText/       # High-level functions
+│   │   ├── Prompt/             # Prompt conversion
+│   │   ├── Tool/               # Tool execution, MCP
+│   │   ├── Registry/           # Provider registry
+│   │   ├── Middleware/         # Middleware implementations
+│   │   ├── Telemetry/          # Logging & telemetry
+│   │   ├── Gateway/            # Gateway integration
+│   │   ├── Error/              # SDK-specific errors
+│   │   ├── Model/              # Model resolution
+│   │   ├── Types/              # SDK types
+│   │   ├── Test/               # Mock models
+│   │   └── Util/               # SDK utilities
+│   │
+│   └── EventSourceParser/      # SSE parser (2 files)
+│
 ├── Tests/                       # Swift Testing tests
+│   ├── AISDKProviderTests/     # Provider tests (~210)
+│   ├── AISDKProviderUtilsTests/# Utils tests (~200)
+│   ├── SwiftAISDKTests/        # SDK tests (~300)
+│   └── EventSourceParserTests/ # SSE tests (30)
+│
 ├── external/                    # ⚠️ UPSTREAM REFERENCE (read-only)
 │   ├── vercel-ai-sdk/          # TypeScript source to port
+│   │   └── packages/
+│   │       ├── provider/       → AISDKProvider
+│   │       ├── provider-utils/ → AISDKProviderUtils
+│   │       └── ai/             → SwiftAISDK
 │   └── eventsource-parser/     # SSE parser reference
+│
 └── plan/                        # Documentation & progress
+```
+
+### Package Dependency Graph
+```
+AISDKProvider (no dependencies)
+    ↑
+AISDKProviderUtils (depends on: AISDKProvider)
+    ↑
+SwiftAISDK (depends on: AISDKProvider, AISDKProviderUtils, EventSourceParser)
 ```
 
 ### Session Contexts
@@ -82,13 +132,22 @@ swift-ai-sdk/
 
 **Vercel AI SDK** (current: 6.0.0-beta.42, commit `77db222ee`):
 ```
-external/vercel-ai-sdk/
-├── packages/provider/           # Language model types (V2/V3)
-├── packages/provider-utils/     # Utilities (HTTP, JSON, SSE)
-└── packages/ai/                 # Core SDK (generate-text, streams, tools)
+external/vercel-ai-sdk/packages/
+├── provider/           → Sources/AISDKProvider/
+│   ├── language-model/ → LanguageModel/V2/, LanguageModel/V3/
+│   ├── errors/         → Errors/
+│   └── ...
+├── provider-utils/     → Sources/AISDKProviderUtils/
+│   ├── delay.ts        → Delay.swift
+│   ├── schema.ts       → Schema/Schema.swift
+│   └── ...
+└── ai/                 → Sources/SwiftAISDK/
+    ├── generate-text/  → GenerateText/
+    ├── prompt/         → Prompt/
+    └── ...
 ```
 
-**EventSource Parser**: `external/eventsource-parser/`
+**EventSource Parser**: `external/eventsource-parser/` → `Sources/EventSourceParser/`
 
 ---
 
@@ -99,14 +158,15 @@ external/vercel-ai-sdk/
 
 1. Find next task: `mcp__taskmaster__next_task`
 2. **Mark task as in-progress**: `mcp__taskmaster__set_task_status --id=X --status=in-progress`
-3. Find TypeScript code in `external/vercel-ai-sdk/`
-4. Port to Swift in `Sources/SwiftAISDK/`
-5. Port ALL upstream tests to `Tests/SwiftAISDKTests/`
-6. Run `swift build && swift test` (must pass 100%)
-7. Request validation review (create request in `.validation/requests/`)
-8. Wait for validation approval
-9. **Mark complete ONLY after approval**: `mcp__taskmaster__set_task_status --id=X --status=done`
-10. **Commit ONLY when user requests**: Wait for explicit permission
+3. Find TypeScript code in `external/vercel-ai-sdk/packages/`
+4. Determine package: `provider/`, `provider-utils/`, or `ai/`
+5. Port to Swift in appropriate package: `Sources/AISDKProvider/`, `Sources/AISDKProviderUtils/`, or `Sources/SwiftAISDK/`
+6. Port ALL upstream tests to corresponding test target
+7. Run `swift build && swift test` (must pass 100%)
+8. Request validation review (create request in `.validation/requests/`)
+9. Wait for validation approval
+10. **Mark complete ONLY after approval**: `mcp__taskmaster__set_task_status --id=X --status=done`
+11. **Commit ONLY when user requests**: Wait for explicit permission
 
 **Never**:
 - ❌ **NEVER TOUCH OTHER AGENTS' WORK** — If you see compilation/test errors in files you didn't create, STOP and wait for that agent to fix them. DO NOT edit, fix, or modify any files outside your current task scope
@@ -176,11 +236,19 @@ cat external/vercel-ai-sdk/packages/provider-utils/src/delay.test.ts
 
 ### 3. Implement in Swift
 
-**File naming**:
+**File naming** (check upstream package location):
 ```
 TypeScript: external/vercel-ai-sdk/packages/provider-utils/src/delay.ts
-Swift:      Sources/SwiftAISDK/ProviderUtils/Delay.swift
-Tests:      Tests/SwiftAISDKTests/ProviderUtils/DelayTests.swift
+Swift:      Sources/AISDKProviderUtils/Delay.swift
+Tests:      Tests/AISDKProviderUtilsTests/DelayTests.swift
+
+TypeScript: external/vercel-ai-sdk/packages/provider/src/language-model/v3/language-model-v3.ts
+Swift:      Sources/AISDKProvider/LanguageModel/V3/LanguageModelV3.swift
+Tests:      Tests/AISDKProviderTests/LanguageModelV3Tests.swift
+
+TypeScript: external/vercel-ai-sdk/packages/ai/src/generate-text/generate-text.ts
+Swift:      Sources/SwiftAISDK/GenerateText/GenerateText.swift
+Tests:      Tests/SwiftAISDKTests/GenerateText/GenerateTextTests.swift
 ```
 
 **⚠️ REQUIRED: Upstream Reference**
@@ -198,7 +266,10 @@ Every ported file MUST include header:
 ```
 
 **Format**: `Port of '@ai-sdk/PACKAGE/src/PATH.ts'` in backticks
-**Packages**: `provider`, `provider-utils`, `ai`
+**Packages**:
+- `provider` → `Sources/AISDKProvider/`
+- `provider-utils` → `Sources/AISDKProviderUtils/`
+- `ai` → `Sources/SwiftAISDK/`
 
 ### 4. Port ALL Tests
 
@@ -259,21 +330,34 @@ See `plan/principles.md` for complete guidelines.
 
 ## Current Status
 
-**✅ Completed** (341/341 tests passing):
-- EventSourceParser (30 tests)
-- LanguageModelV2 (50 tests)
-- LanguageModelV3 (39 tests)
-- Provider Errors (26 tests)
-- ProviderUtils (185 tests): ID gen, delays, headers, HTTP, schema, validation, parsing
-- JSONValue (universal JSON type)
-- Block D Foundation (8 tests): Prompt, CallSettings, DataContent
+**✅ Completed** (763/763 tests passing):
+- **AISDKProvider Package** (78 files, ~210 tests):
+  - LanguageModelV2/V3 protocols & types
+  - EmbeddingModel, ImageModel, SpeechModel, TranscriptionModel V2/V3
+  - Provider errors (26 types)
+  - JSONValue universal JSON type
+  - Middleware protocols
+
+- **AISDKProviderUtils Package** (35 files, ~200 tests):
+  - HTTP utilities (GET/POST, headers, retries)
+  - JSON parsing, schema validation
+  - Tool definitions
+  - Data handling, utilities
+
+- **SwiftAISDK Package** (105 files, ~300 tests):
+  - Prompt conversion & standardization
+  - Tool execution framework
+  - Provider registry, middleware
+  - Mock models for testing
+
+- **EventSourceParser** (2 files, 30 tests)
 
 **🚧 Next Priorities** (see Task Master):
-- Block D: PrepareTools, ConvertToLanguageModelPrompt
 - Block E: Generate/Stream Text core functionality
 - Block F: Text/UI streams
+- Provider implementations (OpenAI, Anthropic, etc.)
 
-**Stats**: ~14,300 lines, 137 files, 100% upstream parity maintained
+**Stats**: ~14,300 lines, 220 files, 3 packages, 100% upstream parity maintained
 
 ---
 

@@ -12,6 +12,8 @@
  */
 
 import Foundation
+import AISDKProvider
+import AISDKProviderUtils
 
 /**
  Configuration for extracting reasoning from text.

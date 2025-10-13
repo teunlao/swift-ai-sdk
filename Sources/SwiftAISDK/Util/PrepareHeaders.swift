@@ -1,3 +1,7 @@
+import Foundation
+import AISDKProvider
+import AISDKProviderUtils
+
 /**
  Prepares HTTP headers by merging provided headers with defaults.
 

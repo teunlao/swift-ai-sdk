@@ -11,6 +11,8 @@
  */
 
 import Foundation
+import AISDKProvider
+import AISDKProviderUtils
 
 /// Union type for all warning types
 public enum Warning: Sendable, Equatable {

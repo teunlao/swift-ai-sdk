@@ -1,4 +1,6 @@
 import Foundation
+import AISDKProvider
+import AISDKProviderUtils
 
 /**
  Error thrown when an error occurs with the MCP (Model Context Protocol) client.

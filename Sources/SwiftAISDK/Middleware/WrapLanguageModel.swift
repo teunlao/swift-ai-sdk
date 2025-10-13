@@ -8,6 +8,8 @@
  */
 
 import Foundation
+import AISDKProvider
+import AISDKProviderUtils
 
 /**
  Wraps a LanguageModelV3 instance with middleware functionality.

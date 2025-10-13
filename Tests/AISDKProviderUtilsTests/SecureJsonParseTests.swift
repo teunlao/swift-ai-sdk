@@ -23,7 +23,8 @@
 
 import Testing
 import Foundation
-@testable import SwiftAISDK
+@testable import AISDKProvider
+@testable import AISDKProviderUtils
 
 @Suite("SecureJsonParse")
 struct SecureJsonParseTests {

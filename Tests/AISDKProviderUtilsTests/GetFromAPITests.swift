@@ -1,6 +1,7 @@
 import Foundation
 import Testing
-@testable import SwiftAISDK
+@testable import AISDKProvider
+@testable import AISDKProviderUtils
 
 /**
  Port of `@ai-sdk/provider-utils/src/get-from-api.test.ts`

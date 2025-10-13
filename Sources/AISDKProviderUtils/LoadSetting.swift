@@ -1,4 +1,5 @@
 import Foundation
+import AISDKProvider
 
 /**
  Loads a string setting from a parameter or environment variable.

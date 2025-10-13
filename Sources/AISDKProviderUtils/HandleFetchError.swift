@@ -1,4 +1,5 @@
 import Foundation
+import AISDKProvider
 
 /**
  Handles fetch errors and converts them to APICallError.

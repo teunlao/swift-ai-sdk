@@ -5,6 +5,8 @@
  */
 
 import Testing
+@testable import AISDKProvider
+@testable import AISDKProviderUtils
 @testable import SwiftAISDK
 
 /// Actor for tracking execution order in tests
