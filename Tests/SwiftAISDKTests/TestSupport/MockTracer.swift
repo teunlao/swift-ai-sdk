@@ -8,6 +8,23 @@ import Foundation
  protocols. Captures started spans and stores basic metadata for assertions.
  */
 final class MockTracer: Tracer, @unchecked Sendable {
+    struct SpanRecord: Equatable, Sendable {
+        let name: String
+        let attributes: Attributes
+        let events: [SpanEvent]
+        let status: SpanStatusRecord?
+    }
+
+    struct SpanEvent: Equatable, Sendable {
+        let name: String
+        let attributes: Attributes?
+    }
+
+    struct SpanStatusRecord: Equatable, Sendable {
+        let code: SpanStatusCode
+        let message: String?
+    }
+
     final class MockSpan: Span, @unchecked Sendable {
         let name: String
         private(set) var attributes: Attributes
@@ -78,6 +95,17 @@ final class MockTracer: Tracer, @unchecked Sendable {
     }
 
     private(set) var spans: [MockSpan] = []
+
+    var spanRecords: [SpanRecord] {
+        spans.map { span in
+            SpanRecord(
+                name: span.name,
+                attributes: span.attributes,
+                events: span.events.map { event in SpanEvent(name: event.name, attributes: event.attributes) },
+                status: span.status.map { SpanStatusRecord(code: $0.code, message: $0.message) }
+            )
+        }
+    }
 
     func startSpan(name: String, options: SpanOptions?) -> any Span {
         let span = MockSpan(name: name, attributes: options?.attributes)
