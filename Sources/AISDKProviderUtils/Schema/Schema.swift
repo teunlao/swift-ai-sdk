@@ -95,6 +95,22 @@ private extension SchemaValidationResult {
             return .success(value: typed)
         }
 
+        if Output.self == JSONValue.self {
+            // Port of `@ai-sdk/provider-utils/src/schema.ts` passthrough behavior.
+            // TypeScript's Zod schemas convert raw JSON objects into the typed output even
+            // when no explicit validator is provided. Perform the same conversion here
+            // so JSONValue schemas accept dictionaries parsed from JSON text.
+            do {
+                let converted = try jsonValue(from: value)
+                if let typed = converted as? Output {
+                    return .success(value: typed)
+                }
+            } catch {
+                let wrapped = TypeValidationError.wrap(value: value, cause: error)
+                return .failure(error: wrapped)
+            }
+        }
+
         let mismatch = SchemaTypeMismatchError(expected: type, actual: value)
         let error = TypeValidationError.wrap(value: value, cause: mismatch)
         return .failure(error: error)
@@ -103,11 +119,51 @@ private extension SchemaValidationResult {
 
 // MARK: - JSON Schema Builders
 
+/// Specialized overload for JSONValue schemas with automatic validation.
+///
+/// When creating a schema for JSONValue output, this overload automatically
+/// provides a validator that converts parsed JSON ([String: Any], etc.) to JSONValue.
+/// This matches TypeScript behavior where Zod schemas always include validation.
+///
+/// Port of upstream behavior: TypeScript's Zod schemas include validation that transforms
+/// raw parsed values to typed outputs. Swift needs explicit conversion from [String: Any] to JSONValue.
+///
+/// Port of `@ai-sdk/provider-utils/src/schema.ts` - validation behavior.
+public func jsonSchema(
+    _ jsonSchema: JSONValue
+) -> Schema<JSONValue> {
+    Schema(
+        jsonSchemaResolver: { jsonSchema },
+        validator: { value in
+            do {
+                // Reuse existing conversion logic from ParseJSON.swift
+                let converted = try jsonValue(from: value)
+                let issues = JSONSchemaValidator(schema: jsonSchema).validate(value: converted)
+
+                if issues.isEmpty {
+                    return .success(value: converted)
+                }
+
+                let validationError = JSONSchemaValidationIssuesError(issues: issues)
+                let wrapped = TypeValidationError.wrap(value: value, cause: validationError)
+                return .failure(error: wrapped)
+            } catch {
+                let wrapped = TypeValidationError.wrap(value: value, cause: error)
+                return .failure(error: wrapped)
+            }
+        }
+    )
+}
+
+/// Generic overload for typed schemas with optional custom validation.
+///
+/// This overload is for cases where you want a typed schema (not JSONValue)
+/// with optional custom validation logic.
 public func jsonSchema<Output>(
     _ jsonSchema: JSONValue,
-    validate: Schema<Output>.Validator? = nil
+    validate: Schema<Output>.Validator?
 ) -> Schema<Output> {
-    Schema(jsonSchemaResolver: { jsonSchema }, validator: validate)
+    return Schema(jsonSchemaResolver: { jsonSchema }, validator: validate)
 }
 
 public func jsonSchema<Output>(
@@ -352,7 +408,8 @@ public func asSchema<Output>(_ schema: FlexibleSchema<Output>?) -> Schema<Output
             .object([
                 "properties": .object([:]),
                 "additionalProperties": .bool(false)
-            ])
+            ]),
+            validate: nil
         )
     }
 

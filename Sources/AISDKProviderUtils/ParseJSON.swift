@@ -120,7 +120,7 @@ private func wrapJSONParseError(text: String, error: Error) -> Error {
     return JSONParseError(text: text, cause: error)
 }
 
-private func jsonValue(from value: Any) throws -> JSONValue {
+public func jsonValue(from value: Any) throws -> JSONValue {
     if let jsonValue = value as? JSONValue {
         return jsonValue
     }

@@ -19,7 +19,7 @@ struct SchemaTests {
             ])
         ])
 
-        let schema: Schema<[String: Any]> = jsonSchema(expected)
+        let schema: Schema<[String: Any]> = jsonSchema(expected, validate: nil)
         let resolved = try await schema.jsonSchema()
 
         #expect(resolved == expected)
@@ -27,7 +27,7 @@ struct SchemaTests {
 
     @Test("jsonSchema without validator passes through values")
     func jsonSchemaPassthroughValidation() async throws {
-        let schema: Schema<[String: Any]> = jsonSchema(.object([:]))
+        let schema: Schema<[String: Any]> = jsonSchema(.object([:]), validate: nil)
         let value: [String: Any] = ["foo": "bar"]
         let result = await schema.validate(value)
 
@@ -37,6 +37,67 @@ struct SchemaTests {
         }
 
         #expect(validated["foo"] as? String == "bar")
+    }
+
+    @Test("jsonSchema validates required properties")
+    func jsonSchemaValidatesRequiredProperties() async {
+        let schemaDefinition: JSONValue = .object([
+            "type": .string("object"),
+            "properties": .object([
+                "param1": .object(["type": .string("string")]),
+                "param2": .object(["type": .string("number")])
+            ]),
+            "required": .array([.string("param1"), .string("param2")])
+        ])
+
+        let validator = JSONSchemaValidator(schema: schemaDefinition)
+        let issues = validator.validate(value: .object(["param1": .string("test")]))
+        #expect(!issues.isEmpty)
+
+        let schema: Schema<JSONValue> = jsonSchema(schemaDefinition)
+
+        let directValidation = await schema.validate(["param1": "test"])
+        guard case .failure = directValidation else {
+            Issue.record("Expected failure for schema.validate")
+            return
+        }
+
+        let result = await schema.validate(["param1": "test"])
+
+        guard case .failure(let error) = result else {
+            Issue.record("Expected validation failure for missing required property")
+            return
+        }
+
+        #expect(TypeValidationError.isInstance(error))
+    }
+
+    @Test("safeParseJSON fails when required missing")
+    func safeParseJSONFailsWhenRequiredMissing() async {
+        let schema = FlexibleSchema(jsonSchema(
+            .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "param1": .object(["type": .string("string")]),
+                    "param2": .object(["type": .string("number")])
+                ]),
+                "required": .array([.string("param1"), .string("param2")])
+            ])
+        ))
+
+        let result = await safeParseJSON(
+            ParseJSONWithSchemaOptions(
+                text: #"{"param1": "test"}"#,
+                schema: schema
+            )
+        )
+
+        guard case .failure(let error, _) = result else {
+            Issue.record("Expected failure but received success")
+            return
+        }
+
+        #expect(TypeValidationError.isInstance(error))
     }
 
     @Test("Schema.codable decodes valid payloads")
@@ -96,7 +157,7 @@ struct SchemaTests {
 
         let lazy = lazySchema { () -> Schema<[String: Any]> in
             counter.value += 1
-            return jsonSchema(.object([:]))
+            return jsonSchema(.object([:]), validate: nil)
         }
 
         _ = try await lazy().jsonSchema()
