@@ -814,6 +814,784 @@ struct GenerateTextAdvancedTests {
         }
     }
 
+    // MARK: - Supported URL handling
+
+    @Test("messages supportedUrls handles model context")
+    func messagesSupportedUrlsHandlesModelContext() async throws {
+        var supportedUrlsCalled = false
+        var modelReference: MockLanguageModelV3!
+
+        modelReference = MockLanguageModelV3(
+            supportedUrls: .function {
+                supportedUrlsCalled = true
+                let regex = try NSRegularExpression(pattern: "^https://.*$", options: [])
+                if modelReference.modelId == "mock-model-id" {
+                    return ["image/*": [regex]]
+                }
+                return [:]
+            },
+            doGenerate: .singleValue(
+                LanguageModelV3GenerateResult(
+                    content: [textContent("Hello, world!")],
+                    finishReason: .stop,
+                    usage: testUsage
+                )
+            )
+        )
+
+        guard let imageURL = URL(string: "https://example.com/test.jpg") else {
+            Issue.record("Failed to create image URL")
+            return
+        }
+
+        let messages: [ModelMessage] = [
+            .user(
+                UserModelMessage(
+                    content: .parts([
+                        .image(ImagePart(image: .url(imageURL)))
+                    ])
+                )
+            )
+        ]
+
+        let result: DefaultGenerateTextResult<JSONValue> = try await generateText(
+            model: .v3(modelReference),
+            messages: messages
+        )
+
+        #expect(result.text == "Hello, world!")
+        #expect(supportedUrlsCalled)
+    }
+
+    // MARK: - Structured output
+
+    @Test("experimental output access throws when unspecified")
+    func experimentalOutputAccessThrowsWhenUnspecified() async throws {
+        let model = MockLanguageModelV3(
+            doGenerate: .singleValue(
+                LanguageModelV3GenerateResult(
+                    content: [textContent("Hello, world!")],
+                    finishReason: .stop,
+                    usage: testUsage
+                )
+            )
+        )
+
+        let result: DefaultGenerateTextResult<JSONValue> = try await generateText(
+            model: .v3(model),
+            prompt: "prompt"
+        )
+
+        #expect(throws: NoOutputSpecifiedError.self) {
+            _ = try result.experimentalOutput
+        }
+    }
+
+    @Test("text output returns experimental text")
+    func textOutputReturnsExperimentalText() async throws {
+        let model = MockLanguageModelV3(
+            doGenerate: .singleValue(
+                LanguageModelV3GenerateResult(
+                    content: [textContent("Hello, world!")],
+                    finishReason: .stop,
+                    usage: testUsage
+                )
+            )
+        )
+
+        let result: DefaultGenerateTextResult<String> = try await generateText(
+            model: .v3(model),
+            prompt: "prompt",
+            experimentalOutput: textOutputSpecification()
+        )
+
+        #expect(try result.experimentalOutput == "Hello, world!")
+    }
+
+    @Test("text output sets response format")
+    func textOutputSetsResponseFormat() async throws {
+        let model = MockLanguageModelV3(
+            doGenerate: .function { options in
+                return LanguageModelV3GenerateResult(
+                    content: [textContent("Hello, world!")],
+                    finishReason: .stop,
+                    usage: testUsage
+                )
+            }
+        )
+
+        let result: DefaultGenerateTextResult<String> = try await generateText(
+            model: .v3(model),
+            prompt: "prompt",
+            experimentalOutput: textOutputSpecification()
+        )
+
+        #expect(try result.experimentalOutput == "Hello, world!")
+
+        guard let options = model.doGenerateCalls.first else {
+            Issue.record("Expected language model call")
+            return
+        }
+
+        #expect(options.responseFormat == .text)
+        if case .user(let parts, _) = options.prompt.first {
+            #expect(parts.count == 1)
+            if parts.count == 1, case .text(let textPart) = parts[0] {
+                #expect(textPart.text == "prompt")
+            }
+        } else {
+            Issue.record("Expected user prompt for text output call")
+        }
+
+        if let userAgent = options.headers?["user-agent"] {
+            #expect(userAgent.hasPrefix("ai/"))
+        } else {
+            Issue.record("Expected user-agent header to be set")
+        }
+    }
+
+    @Test("object output parses json text")
+    func objectOutputParsesJsonText() async throws {
+        let model = MockLanguageModelV3(
+            doGenerate: .singleValue(
+                LanguageModelV3GenerateResult(
+                    content: [textContent("{\"summary\":\"result\"}")],
+                    finishReason: .stop,
+                    usage: testUsage
+                )
+            )
+        )
+
+        let result: DefaultGenerateTextResult<SummaryOutput> = try await generateText(
+            model: .v3(model),
+            prompt: "prompt",
+            experimentalOutput: Output.object(schema: summaryOutputSchema())
+        )
+
+        #expect(try result.experimentalOutput == SummaryOutput(summary: "result"))
+    }
+
+    @Test("object output sets json response format")
+    func objectOutputSetsJsonResponseFormat() async throws {
+        let callRecorder = ValueRecorder<LanguageModelV3CallOptions>()
+
+        let model = MockLanguageModelV3(
+            doGenerate: .function { options in
+                await callRecorder.append(options)
+                return LanguageModelV3GenerateResult(
+                    content: [textContent("{\"summary\":\"value\"}")],
+                    finishReason: .stop,
+                    usage: testUsage
+                )
+            }
+        )
+
+        let result: DefaultGenerateTextResult<SummaryOutput> = try await generateText(
+            model: .v3(model),
+            prompt: "prompt",
+            experimentalOutput: Output.object(schema: summaryOutputSchema())
+        )
+
+        #expect(try result.experimentalOutput == SummaryOutput(summary: "value"))
+
+        let options = await callRecorder.entries().first
+        if let options {
+            if case .user(let parts, _) = options.prompt.first {
+                #expect(parts.count == 1)
+                if parts.count == 1, case .text(let textPart) = parts[0] {
+                    #expect(textPart.text == "prompt")
+                }
+            }
+
+            let expectedSchema = try await summaryOutputSchema().resolve().jsonSchema()
+            #expect(options.responseFormat == .json(schema: expectedSchema, name: nil, description: nil))
+        } else {
+            Issue.record("Expected language model call for object output")
+        }
+    }
+
+    @Test("tool-calls finish reason skips output parsing")
+    func toolCallsFinishReasonSkipsOutputParsing() async throws {
+        let model = MockLanguageModelV3(
+            doGenerate: .singleValue(
+                LanguageModelV3GenerateResult(
+                    content: [
+                        makeToolCallContent(
+                            toolCallId: "call-1",
+                            toolName: "tool1",
+                            input: "{\"value\":\"value\"}"
+                        )
+                    ],
+                    finishReason: .toolCalls,
+                    usage: testUsage
+                )
+            )
+        )
+
+        let tools: ToolSet = [
+            "tool1": tool(
+                inputSchema: toolInputSchema(),
+                execute: { _, _ in .value(.string("result")) }
+            )
+        ]
+
+        let result: DefaultGenerateTextResult<String> = try await generateText(
+            model: .v3(model),
+            tools: tools,
+            prompt: "prompt",
+            stopWhen: [stepCountIs(3)],
+            experimentalOutput: textOutputSpecification()
+        )
+
+        #expect(throws: NoOutputSpecifiedError.self) {
+            _ = try result.experimentalOutput
+        }
+
+        #expect(result.toolCalls.count == 1)
+        #expect(result.toolResults.count == 1)
+    }
+
+    // MARK: - Log warnings
+
+    @Test("logWarnings captures warnings for single step")
+    func logWarningsCapturesWarningsForSingleStep() async throws {
+        try await LogWarningsTestLock.shared.withLock {
+            let expectedWarnings: [LanguageModelV3CallWarning] = [
+                .other(message: "Setting is not supported"),
+                .unsupportedSetting(setting: "temperature", details: "Temperature parameter not supported")
+            ]
+
+            let previousLogger = AI_SDK_LOG_WARNINGS
+            resetLogWarningsState()
+            let collector = WarningCollector()
+            AI_SDK_LOG_WARNINGS = ({ @Sendable warnings in
+                collector.append(warnings)
+            } as LogWarningsFunction)
+            #expect(AI_SDK_LOG_WARNINGS is LogWarningsFunction)
+            defer {
+                AI_SDK_LOG_WARNINGS = previousLogger
+                resetLogWarningsState()
+            }
+
+            let model = MockLanguageModelV3(
+                doGenerate: .singleValue(
+                    LanguageModelV3GenerateResult(
+                        content: [textContent("Hello, world!")],
+                        finishReason: .stop,
+                        usage: testUsage,
+                        warnings: expectedWarnings
+                    )
+                )
+            )
+
+            _ = try await generateText(
+                model: .v3(model),
+                prompt: "Hello"
+            ) as DefaultGenerateTextResult<JSONValue>
+
+            let entries = collector.entries()
+            #expect(entries.count == 1)
+            if let first = entries.first {
+                let expected = expectedWarnings.map { Warning.languageModel($0) }
+                #expect(first == expected)
+            }
+        }
+    }
+
+    @Test("logWarnings captures warnings per step")
+    func logWarningsCapturesWarningsPerStep() async throws {
+        try await LogWarningsTestLock.shared.withLock {
+            let warning1 = LanguageModelV3CallWarning.other(message: "Warning from step 1")
+            let warning2 = LanguageModelV3CallWarning.other(message: "Warning from step 2")
+
+            let previousLogger = AI_SDK_LOG_WARNINGS
+            resetLogWarningsState()
+            let collector = WarningCollector()
+            AI_SDK_LOG_WARNINGS = ({ @Sendable warnings in
+                collector.append(warnings)
+            } as LogWarningsFunction)
+            #expect(AI_SDK_LOG_WARNINGS is LogWarningsFunction)
+            defer {
+                AI_SDK_LOG_WARNINGS = previousLogger
+                resetLogWarningsState()
+            }
+
+            let callCounter = IntCounter()
+            let model = MockLanguageModelV3(
+                doGenerate: .function { options in
+                    let index = await callCounter.next()
+                    if index == 0 {
+                        return LanguageModelV3GenerateResult(
+                            content: [
+                            makeToolCallContent(
+                                toolCallId: "call-1",
+                                toolName: "testTool",
+                                input: "{\"value\":\"test\"}"
+                            )
+                            ],
+                            finishReason: .toolCalls,
+                            usage: testUsage,
+                            warnings: [warning1]
+                        )
+                    }
+
+                    return LanguageModelV3GenerateResult(
+                        content: [textContent("Final response")],
+                        finishReason: .stop,
+                        usage: testUsage,
+                        warnings: [warning2]
+                    )
+                }
+            )
+
+            let tools: ToolSet = [
+                "testTool": tool(
+                    inputSchema: toolInputSchema(),
+                    execute: { _, _ in .value(.string("result")) }
+                )
+            ]
+
+            let result: DefaultGenerateTextResult<JSONValue> = try await generateText(
+                model: .v3(model),
+                tools: tools,
+                prompt: "Hello",
+                stopWhen: [stepCountIs(3)]
+            )
+
+            #expect(result.steps.count == 2)
+
+            let entries = collector.entries()
+            #expect(entries.count == 2)
+            if entries.count == 2 {
+                #expect(entries[0] == [Warning.languageModel(warning1)])
+                #expect(entries[1] == [Warning.languageModel(warning2)])
+            }
+        }
+    }
+
+    @Test("logWarnings records empty array when no warnings")
+    func logWarningsRecordsEmptyArrayWhenNoWarnings() async throws {
+        try await LogWarningsTestLock.shared.withLock {
+            let previousLogger = AI_SDK_LOG_WARNINGS
+            resetLogWarningsState()
+            let collector = WarningCollector()
+            AI_SDK_LOG_WARNINGS = ({ @Sendable warnings in
+                collector.append(warnings)
+            } as LogWarningsFunction)
+            #expect(AI_SDK_LOG_WARNINGS is LogWarningsFunction)
+            defer {
+                AI_SDK_LOG_WARNINGS = previousLogger
+                resetLogWarningsState()
+            }
+
+            let model = MockLanguageModelV3(
+                doGenerate: .singleValue(
+                    LanguageModelV3GenerateResult(
+                        content: [textContent("Hello, world!")],
+                        finishReason: .stop,
+                        usage: testUsage,
+                        warnings: []
+                    )
+                )
+            )
+
+            _ = try await generateText(
+                model: .v3(model),
+                prompt: "Hello"
+            ) as DefaultGenerateTextResult<JSONValue>
+
+            let entries = collector.entries()
+            #expect(entries.isEmpty)
+        }
+    }
+
+    // MARK: - Tool approvals
+
+    @Test("needs approval always executes single step")
+    func needsApprovalAlwaysExecutesSingleStep() async throws {
+        let result = try await runAlwaysNeedsApprovalScenario()
+        #expect(result.steps.count == 1)
+    }
+
+    @Test("needs approval always uses tool calls finish reason")
+    func needsApprovalAlwaysUsesToolCallsFinishReason() async throws {
+        let result = try await runAlwaysNeedsApprovalScenario()
+        #expect(result.finishReason == .toolCalls)
+    }
+
+    @Test("needs approval always adds approval request to content")
+    func needsApprovalAlwaysAddsApprovalRequestToContent() async throws {
+        let result = try await runAlwaysNeedsApprovalScenario()
+        let content = result.content
+        #expect(content.count == 2)
+
+        if content.count == 2 {
+            if case .toolCall(let call, _) = content[0] {
+                #expect(call.toolCallId == "call-1")
+                #expect(call.toolName == "tool1")
+                #expect(call.input == JSONValue.object(["value": .string("value")]))
+            } else {
+                Issue.record("Expected first content element to be tool call")
+            }
+
+            if case .toolApprovalRequest(let approval) = content[1] {
+                #expect(approval.approvalId == "id-1")
+                #expect(approval.toolCall.toolCallId == "call-1")
+                #expect(approval.toolCall.toolName == "tool1")
+            } else {
+                Issue.record("Expected approval request as second content element")
+            }
+        }
+    }
+
+    @Test("needs approval always includes approval request in response")
+    func needsApprovalAlwaysIncludesApprovalRequestInResponse() async throws {
+        let result = try await runAlwaysNeedsApprovalScenario()
+        let messages = result.response.messages
+        #expect(messages.count == 1)
+
+        if let first = messages.first,
+           case .assistant(let assistantMessage) = first,
+           case .parts(let parts) = assistantMessage.content {
+            #expect(parts.count == 2)
+            if parts.count == 2 {
+                if case .toolCall(let callPart) = parts[0] {
+                    #expect(callPart.toolCallId == "call-1")
+                    #expect(callPart.toolName == "tool1")
+                }
+
+                if case .toolApprovalRequest(let approvalPart) = parts[1] {
+                    #expect(approvalPart.approvalId == "id-1")
+                    #expect(approvalPart.toolCallId == "call-1")
+                }
+            }
+        } else {
+            Issue.record("Expected assistant message with tool approval request")
+        }
+    }
+
+    @Test("needs approval closure executes single step")
+    func needsApprovalClosureExecutesSingleStep() async throws {
+        let scenario = try await runNeedsApprovalFunctionScenario()
+        #expect(scenario.result.steps.count == 1)
+    }
+
+    @Test("needs approval closure uses tool calls finish reason")
+    func needsApprovalClosureUsesToolCallsFinishReason() async throws {
+        let scenario = try await runNeedsApprovalFunctionScenario()
+        #expect(scenario.result.finishReason == .toolCalls)
+    }
+
+    @Test("needs approval closure adds approval request to content")
+    func needsApprovalClosureAddsApprovalRequestToContent() async throws {
+        let scenario = try await runNeedsApprovalFunctionScenario()
+        let content = scenario.result.content
+        #expect(content.count == 4)
+
+        if content.count == 4 {
+            if case .toolCall(let firstCall, _) = content[0] {
+                #expect(firstCall.toolCallId == "call-1")
+                #expect(firstCall.toolName == "tool1")
+            }
+
+            if case .toolCall(let secondCall, _) = content[1] {
+                #expect(secondCall.toolCallId == "call-2")
+                #expect(secondCall.toolName == "tool1")
+            }
+
+            if case .toolResult(let resultPart, _) = content[2] {
+                #expect(resultPart.toolCallId == "call-2")
+                #expect(resultPart.toolName == "tool1")
+                #expect(resultPart.output == JSONValue.string("result for value-no-approval"))
+            }
+
+            if case .toolApprovalRequest(let approval) = content[3] {
+                #expect(approval.approvalId == "id-1")
+                #expect(approval.toolCall.toolCallId == "call-1")
+            }
+        }
+    }
+
+    @Test("needs approval closure includes approval request in response")
+    func needsApprovalClosureIncludesApprovalRequestInResponse() async throws {
+        let scenario = try await runNeedsApprovalFunctionScenario()
+        let messages = scenario.result.response.messages
+        #expect(messages.count == 2)
+
+        if messages.count == 2 {
+            if case .assistant(let assistantMessage) = messages[0], case .parts(let parts) = assistantMessage.content {
+                #expect(parts.count == 3)
+                if parts.count == 3 {
+                    if case .toolCall(let firstCall) = parts[0] {
+                        #expect(firstCall.toolCallId == "call-1")
+                    }
+                    if case .toolCall(let secondCall) = parts[1] {
+                        #expect(secondCall.toolCallId == "call-2")
+                    }
+                    if case .toolApprovalRequest(let approval) = parts[2] {
+                        #expect(approval.toolCallId == "call-1")
+                    }
+                }
+            }
+
+            if case .tool(let toolMessage) = messages[1], let first = toolMessage.content.first {
+                if case .toolResult(let resultPart) = first {
+                    if case .text(let value) = resultPart.output {
+                        #expect(value == "result for value-no-approval")
+                    }
+                }
+            }
+        }
+    }
+
+    @Test("needs approval closure records correct approval calls")
+    func needsApprovalClosureRecordsCorrectApprovalCalls() async throws {
+        let scenario = try await runNeedsApprovalFunctionScenario()
+        let calls = scenario.approvalCalls
+        #expect(calls.count == 2)
+
+        if calls.count == 2 {
+            let first = calls[0]
+            if case .object(let object) = first.input, case .string(let value) = object["value"] {
+                #expect(value == "value-needs-approval")
+            }
+            #expect(first.options.toolCallId == "call-1")
+            if let message = first.options.messages.first, case .user(let userMessage) = message {
+                if case .text(let text) = userMessage.content {
+                    #expect(text == "test-input")
+                }
+            }
+
+            let second = calls[1]
+            if case .object(let object) = second.input, case .string(let value) = object["value"] {
+                #expect(value == "value-no-approval")
+            }
+            #expect(second.options.toolCallId == "call-2")
+        }
+    }
+
+    @Test("approved tool executes once")
+    func approvedToolExecutesOnce() async throws {
+        let scenario = try await runSingleApprovedToolScenario()
+        #expect(scenario.executeCallCount == 1)
+    }
+
+    @Test("approved tool prompt includes tool result")
+    func approvedToolPromptIncludesToolResult() async throws {
+        let scenario = try await runSingleApprovedToolScenario()
+        #expect(scenario.modelCalls.count == 1)
+
+        if let options = scenario.modelCalls.first {
+            #expect(options.prompt.count == 3)
+            if options.prompt.count == 3 {
+                if case .user(let parts, _) = options.prompt[0] {
+                    if case .text(let textPart) = parts.first {
+                        #expect(textPart.text == "test-input")
+                    }
+                }
+
+                if case .assistant(let assistantParts, _) = options.prompt[1] {
+                    if let firstPart = assistantParts.first, case .toolCall(let toolCall) = firstPart {
+                        #expect(toolCall.toolCallId == "call-1")
+                    }
+                }
+
+                if case .tool(let toolParts, _) = options.prompt[2] {
+                    if let resultPart = toolParts.first {
+                        if case .text(let value) = resultPart.output {
+                            #expect(value == "result1")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @Test("approved tool response includes tool result")
+    func approvedToolResponseIncludesToolResult() async throws {
+        let scenario = try await runSingleApprovedToolScenario()
+        let messages = scenario.result.response.messages
+        #expect(messages.count == 2)
+
+        if messages.count == 2 {
+            if case .tool(let toolMessage) = messages[0], let part = toolMessage.content.first, case .toolResult(let toolResult) = part {
+                if case .text(let value) = toolResult.output {
+                    #expect(value == "result1")
+                }
+            }
+
+            if case .assistant(let assistantMessage) = messages[1], case .parts(let parts) = assistantMessage.content {
+                if let first = parts.first, case .text(let textPart) = first {
+                    #expect(textPart.text == "Hello, world!")
+                }
+            }
+        }
+    }
+
+    @Test("denied tool does not execute")
+    func deniedToolDoesNotExecute() async throws {
+        let scenario = try await runSingleDeniedToolScenario()
+        #expect(scenario.executeCallCount == 0)
+    }
+
+    @Test("denied tool prompt includes execution denied result")
+    func deniedToolPromptIncludesExecutionDeniedResult() async throws {
+        let scenario = try await runSingleDeniedToolScenario()
+        if let options = scenario.modelCalls.first, options.prompt.count == 3 {
+            if case .tool(let toolParts, _) = options.prompt[2], let resultPart = toolParts.first {
+                #expect(resultPart.output == .executionDenied(reason: nil))
+            } else {
+                Issue.record("Expected tool result with execution denied output in prompt")
+            }
+        } else {
+            Issue.record("Expected prompt entries for denied approval scenario")
+        }
+    }
+
+    @Test("denied tool response includes error result")
+    func deniedToolResponseIncludesErrorResult() async throws {
+        let scenario = try await runSingleDeniedToolScenario()
+        if let toolMessage = scenario.result.response.messages.first, case .tool(let message) = toolMessage, let part = message.content.first, case .toolResult(let toolResult) = part {
+            #expect(toolResult.output == .executionDenied(reason: nil))
+        } else {
+            Issue.record("Expected tool response with execution denied result")
+        }
+    }
+
+    @Test("multiple approvals prompt includes tool results")
+    func multipleApprovalsPromptIncludesToolResults() async throws {
+        let scenario = try await runMultipleApprovedToolScenario()
+        #expect(scenario.executeCallCount == 2)
+
+        #expect(scenario.modelCalls.count == 1)
+
+        if let options = scenario.modelCalls.first, options.prompt.count == 3 {
+            if case .assistant(let assistantParts, _) = options.prompt[1] {
+                #expect(assistantParts.count == 2)
+            }
+
+            if case .tool(let toolParts, _) = options.prompt[2] {
+                #expect(toolParts.count == 2)
+            }
+        }
+    }
+
+    @Test("multiple approvals response includes tool results")
+    func multipleApprovalsResponseIncludesToolResults() async throws {
+        let scenario = try await runMultipleApprovedToolScenario()
+        if let toolMessage = scenario.result.response.messages.first, case .tool(let message) = toolMessage {
+            #expect(message.content.count == 2)
+            if message.content.count == 2 {
+                if case .toolResult(let firstResult) = message.content[0], case .text(let value1) = firstResult.output {
+                    #expect(value1 == "result1")
+                }
+                if case .toolResult(let secondResult) = message.content[1], case .text(let value2) = secondResult.output {
+                    #expect(value2 == "result1")
+                }
+            }
+        } else {
+            Issue.record("Expected tool response with two results")
+        }
+    }
+
+    // MARK: - Experimental download with prepare step
+
+    @Test("prepareStep download respects supported urls from override")
+    func prepareStepDownloadRespectsSupportedUrlsFromOverride() async throws {
+        let languageModelRecorder = ValueRecorder<LanguageModelV3CallOptions>()
+        let downloadRecorder = ValueRecorder<DownloadRequest>()
+
+        let urlRegex = try NSRegularExpression(pattern: "^https?://.*$", options: [])
+
+        let modelWithSupport = MockLanguageModelV3(
+            provider: "with-image-url-support",
+            modelId: "with-image-url-support",
+            supportedUrls: .value(["image/*": [urlRegex]]),
+            doGenerate: .function { options in
+                await languageModelRecorder.append(options)
+                return LanguageModelV3GenerateResult(
+                    content: [textContent("response from with-image-url-support")],
+                    finishReason: .stop,
+                    usage: testUsage
+                )
+            }
+        )
+
+        let modelWithoutSupport = MockLanguageModelV3(
+            provider: "without-image-url-support",
+            modelId: "without-image-url-support",
+            supportedUrls: .value([:]),
+            doGenerate: .function { options in
+                await languageModelRecorder.append(options)
+                return LanguageModelV3GenerateResult(
+                    content: [textContent("response from without-image-url-support")],
+                    finishReason: .stop,
+                    usage: testUsage
+                )
+            }
+        )
+
+        let downloadFunction: DownloadFunction = { requests in
+            for request in requests {
+                await downloadRecorder.append(request)
+            }
+
+            return requests.map { request in
+                if request.isUrlSupportedByModel {
+                    return nil
+                }
+                return DownloadResult(data: Data([1, 2, 3, 4]), mediaType: "image/png")
+            }
+        }
+
+        let messages: [ModelMessage] = [
+            .user(
+                UserModelMessage(
+                    content: .parts([
+                        .text(TextPart(text: "Describe this image")),
+                        .image(ImagePart(image: .string("https://example.com/test.jpg")))
+                    ])
+                )
+            )
+        ]
+
+        let result: DefaultGenerateTextResult<JSONValue> = try await generateText(
+            model: .v3(modelWithSupport),
+            messages: messages,
+            prepareStep: { _ in
+                PrepareStepResult(model: .v3(modelWithoutSupport))
+            },
+            experimentalDownload: downloadFunction
+        )
+
+        #expect(result.text == "response from without-image-url-support")
+
+        let downloadCalls = await downloadRecorder.entries()
+        #expect(downloadCalls.count == 1)
+        if let request = downloadCalls.first {
+            #expect(request.url.absoluteString == "https://example.com/test.jpg")
+            #expect(request.isUrlSupportedByModel == false)
+        }
+
+        let modelCalls = await languageModelRecorder.entries()
+        #expect(modelCalls.count == 1)
+        if let options = modelCalls.first {
+            #expect(options.prompt.count == 1)
+            if case .user(let parts, _) = options.prompt[0] {
+                #expect(parts.count == 2)
+                if parts.count == 2 {
+                    if case .text(let textPart) = parts[0] {
+                        #expect(textPart.text == "Describe this image")
+                    }
+
+                    if case .file(let filePart) = parts[1] {
+                        #expect(filePart.mediaType == "image/png")
+                    }
+                }
+            }
+        }
+    }
+
     // MARK: - Shared utilities
 
     private func summarizeMessages(_ messages: [ModelMessage]) -> [String] {
@@ -1202,6 +1980,354 @@ struct GenerateTextAdvancedTests {
 
         return InvalidToolCallScenario(result: result)
     }
+
+    private func runAlwaysNeedsApprovalScenario() async throws -> DefaultGenerateTextResult<JSONValue> {
+        let model = MockLanguageModelV3(
+            doGenerate: .singleValue(
+                LanguageModelV3GenerateResult(
+                    content: [
+                        makeToolCallContent(
+                            toolCallId: "call-1",
+                            toolName: "tool1",
+                            input: "{\"value\":\"value\"}"
+                        )
+                    ],
+                    finishReason: .toolCalls,
+                    usage: testUsage
+                )
+            )
+        )
+
+        let tools: ToolSet = [
+            "tool1": tool(
+                inputSchema: toolInputSchema(),
+                needsApproval: .always,
+                execute: { _, _ in .value(.string("result1")) }
+            )
+        ]
+
+        return try await generateText(
+            model: .v3(model),
+            tools: tools,
+            prompt: "test-input",
+            stopWhen: [stepCountIs(3)],
+            internalOptions: GenerateTextInternalOptions(
+                generateId: mockId(prefix: "id"),
+                currentDate: { Date(timeIntervalSince1970: 0) }
+            )
+        )
+    }
+
+    private func runNeedsApprovalFunctionScenario() async throws -> NeedsApprovalFunctionScenario {
+        let approvalRecorder = ValueRecorder<ToolApprovalCallRecord>()
+
+        let model = MockLanguageModelV3(
+            doGenerate: .singleValue(
+                LanguageModelV3GenerateResult(
+                    content: [
+                        makeToolCallContent(
+                            toolCallId: "call-1",
+                            toolName: "tool1",
+                            input: "{\"value\":\"value-needs-approval\"}"
+                        ),
+                        makeToolCallContent(
+                            toolCallId: "call-2",
+                            toolName: "tool1",
+                            input: "{\"value\":\"value-no-approval\"}"
+                        )
+                    ],
+                    finishReason: .toolCalls,
+                    usage: testUsage
+                )
+            )
+        )
+
+        let tools: ToolSet = [
+            "tool1": tool(
+                inputSchema: toolInputSchema(),
+                needsApproval: .conditional { input, options in
+                    await approvalRecorder.append(
+                        ToolApprovalCallRecord(input: input, options: options)
+                    )
+
+                    guard case .object(let object) = input,
+                          case .string(let value) = object["value"] else {
+                        return false
+                    }
+
+                    return value == "value-needs-approval"
+                },
+                execute: { input, _ in
+                    if case .object(let object) = input,
+                       case .string(let value) = object["value"] {
+                        return .value(.string("result for \(value)"))
+                    }
+
+                    return .value(.null)
+                }
+            )
+        ]
+
+        let result: DefaultGenerateTextResult<JSONValue> = try await generateText(
+            model: .v3(model),
+            tools: tools,
+            prompt: "test-input",
+            stopWhen: [stepCountIs(3)],
+            internalOptions: GenerateTextInternalOptions(
+                generateId: mockId(prefix: "id"),
+                currentDate: { Date(timeIntervalSince1970: 0) }
+            )
+        )
+
+        let approvalCalls = await approvalRecorder.entries()
+        return NeedsApprovalFunctionScenario(result: result, approvalCalls: approvalCalls)
+    }
+
+    private func runSingleApprovedToolScenario() async throws -> ToolApprovalExecutionScenario {
+        let callRecorder = ValueRecorder<LanguageModelV3CallOptions>()
+        let executeCounter = IntCounter()
+
+        let model = MockLanguageModelV3(
+            doGenerate: .function { options in
+                await callRecorder.append(options)
+                return LanguageModelV3GenerateResult(
+                    content: [textContent("Hello, world!")],
+                    finishReason: .stop,
+                    usage: testUsage
+                )
+            }
+        )
+
+        let tools: ToolSet = [
+            "tool1": tool(
+                inputSchema: toolInputSchema(),
+                needsApproval: .always,
+                execute: { _, _ in
+                    _ = await executeCounter.next()
+                    return .value(.string("result1"))
+                }
+            )
+        ]
+
+        let messages: [ModelMessage] = [
+            .user(UserModelMessage(content: .text("test-input"))),
+            .assistant(
+                AssistantModelMessage(
+                    content: .parts([
+                        .toolCall(
+                            ToolCallPart(
+                                toolCallId: "call-1",
+                                toolName: "tool1",
+                            input: JSONValue.object(["value": .string("value")]),
+                                providerOptions: nil,
+                                providerExecuted: nil
+                            )
+                        ),
+                        .toolApprovalRequest(
+                            ToolApprovalRequest(approvalId: "id-1", toolCallId: "call-1")
+                        )
+                    ])
+                )
+            ),
+            .tool(
+                ToolModelMessage(
+                    content: [
+                        .toolApprovalResponse(
+                            ToolApprovalResponse(approvalId: "id-1", approved: true)
+                        )
+                    ]
+                )
+            )
+        ]
+
+        let result: DefaultGenerateTextResult<JSONValue> = try await generateText(
+            model: .v3(model),
+            tools: tools,
+            messages: messages,
+            stopWhen: [stepCountIs(3)],
+            internalOptions: GenerateTextInternalOptions(
+                generateId: mockId(prefix: "id"),
+                currentDate: { Date(timeIntervalSince1970: 0) }
+            )
+        )
+
+        let modelCalls = await callRecorder.entries()
+        let executeCallCount = await executeCounter.current()
+        return ToolApprovalExecutionScenario(
+            result: result,
+            modelCalls: modelCalls,
+            executeCallCount: executeCallCount
+        )
+    }
+
+    private func runSingleDeniedToolScenario() async throws -> ToolApprovalExecutionScenario {
+        let callRecorder = ValueRecorder<LanguageModelV3CallOptions>()
+        let executeCounter = IntCounter()
+
+        let model = MockLanguageModelV3(
+            doGenerate: .function { options in
+                await callRecorder.append(options)
+                return LanguageModelV3GenerateResult(
+                    content: [textContent("Hello, world!")],
+                    finishReason: .toolCalls,
+                    usage: testUsage
+                )
+            }
+        )
+
+        let tools: ToolSet = [
+            "tool1": tool(
+                inputSchema: toolInputSchema(),
+                needsApproval: .always,
+                execute: { _, _ in
+                    _ = await executeCounter.next()
+                    return .value(.string("should-not-execute"))
+                }
+            )
+        ]
+
+        let messages: [ModelMessage] = [
+            .user(UserModelMessage(content: .text("test-input"))),
+            .assistant(
+                AssistantModelMessage(
+                    content: .parts([
+                        .toolCall(
+                            ToolCallPart(
+                                toolCallId: "call-1",
+                                toolName: "tool1",
+                            input: JSONValue.object(["value": .string("value")]),
+                                providerOptions: nil,
+                                providerExecuted: nil
+                            )
+                        ),
+                        .toolApprovalRequest(
+                            ToolApprovalRequest(approvalId: "id-1", toolCallId: "call-1")
+                        )
+                    ])
+                )
+            ),
+            .tool(
+                ToolModelMessage(
+                    content: [
+                        .toolApprovalResponse(
+                            ToolApprovalResponse(approvalId: "id-1", approved: false)
+                        )
+                    ]
+                )
+            )
+        ]
+
+        let result: DefaultGenerateTextResult<JSONValue> = try await generateText(
+            model: .v3(model),
+            tools: tools,
+            messages: messages,
+            stopWhen: [stepCountIs(3)],
+            internalOptions: GenerateTextInternalOptions(
+                generateId: mockId(prefix: "id"),
+                currentDate: { Date(timeIntervalSince1970: 0) }
+            )
+        )
+
+        let modelCalls = await callRecorder.entries()
+        let executeCallCount = await executeCounter.current()
+        return ToolApprovalExecutionScenario(
+            result: result,
+            modelCalls: modelCalls,
+            executeCallCount: executeCallCount
+        )
+    }
+
+    private func runMultipleApprovedToolScenario() async throws -> ToolApprovalExecutionScenario {
+        let callRecorder = ValueRecorder<LanguageModelV3CallOptions>()
+        let executeCounter = IntCounter()
+
+        let model = MockLanguageModelV3(
+            doGenerate: .function { options in
+                await callRecorder.append(options)
+                return LanguageModelV3GenerateResult(
+                    content: [textContent("Hello, world!")],
+                    finishReason: .toolCalls,
+                    usage: testUsage
+                )
+            }
+        )
+
+        let tools: ToolSet = [
+            "tool1": tool(
+                inputSchema: toolInputSchema(),
+                needsApproval: .always,
+                execute: { _, _ in
+                    _ = await executeCounter.next()
+                    return .value(.string("result1"))
+                }
+            )
+        ]
+
+        let messages: [ModelMessage] = [
+            .user(UserModelMessage(content: .text("test-input"))),
+            .assistant(
+                AssistantModelMessage(
+                    content: .parts([
+                        .toolCall(
+                            ToolCallPart(
+                                toolCallId: "call-1",
+                                toolName: "tool1",
+                                input: JSONValue.object(["value": .string("value1")]),
+                                providerOptions: nil,
+                                providerExecuted: nil
+                            )
+                        ),
+                        .toolApprovalRequest(
+                            ToolApprovalRequest(approvalId: "id-1", toolCallId: "call-1")
+                        ),
+                        .toolCall(
+                            ToolCallPart(
+                                toolCallId: "call-2",
+                                toolName: "tool1",
+                                input: JSONValue.object(["value": .string("value2")]),
+                                providerOptions: nil,
+                                providerExecuted: nil
+                            )
+                        ),
+                        .toolApprovalRequest(
+                            ToolApprovalRequest(approvalId: "id-2", toolCallId: "call-2")
+                        )
+                    ])
+                )
+            ),
+            .tool(
+                ToolModelMessage(
+                    content: [
+                        .toolApprovalResponse(
+                            ToolApprovalResponse(approvalId: "id-1", approved: true)
+                        ),
+                        .toolApprovalResponse(
+                            ToolApprovalResponse(approvalId: "id-2", approved: true)
+                        )
+                    ]
+                )
+            )
+        ]
+
+        let result: DefaultGenerateTextResult<JSONValue> = try await generateText(
+            model: .v3(model),
+            tools: tools,
+            messages: messages,
+            stopWhen: [stepCountIs(3)],
+            internalOptions: GenerateTextInternalOptions(
+                generateId: mockId(prefix: "id"),
+                currentDate: { Date(timeIntervalSince1970: 0) }
+            )
+        )
+
+        let modelCalls = await callRecorder.entries()
+        let executeCallCount = await executeCounter.current()
+        return ToolApprovalExecutionScenario(
+            result: result,
+            modelCalls: modelCalls,
+            executeCallCount: executeCallCount
+        )
+    }
 }
 
 // MARK: - Support Types
@@ -1256,6 +2382,22 @@ private struct InvalidToolCallScenario: Sendable {
     let result: DefaultGenerateTextResult<JSONValue>
 }
 
+private struct NeedsApprovalFunctionScenario: Sendable {
+    let result: DefaultGenerateTextResult<JSONValue>
+    let approvalCalls: [ToolApprovalCallRecord]
+}
+
+private struct ToolApprovalCallRecord: Sendable {
+    let input: JSONValue
+    let options: ToolCallApprovalOptions
+}
+
+private struct ToolApprovalExecutionScenario: Sendable {
+    let result: DefaultGenerateTextResult<JSONValue>
+    let modelCalls: [LanguageModelV3CallOptions]
+    let executeCallCount: Int
+}
+
 private final class WarningCollector: @unchecked Sendable {
     private let lock = NSLock()
     private var collected: [[Warning]] = []
@@ -1305,6 +2447,10 @@ private actor IntCounter {
         let current = value
         value += 1
         return current
+    }
+
+    func current() -> Int {
+        value
     }
 }
 
