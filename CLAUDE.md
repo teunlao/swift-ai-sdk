@@ -73,6 +73,44 @@ SwiftAISDK (depends on: AISDKProvider, AISDKProviderUtils, EventSourceParser)
 
 ---
 
+## Git Worktree Workflow (Multi-Agent Isolation)
+
+**🚨 CRITICAL for Parallel Agents**: Use Git worktrees to isolate agents working simultaneously.
+
+**Concept**: Each agent works in **separate directory** with **own branch** - no file conflicts!
+
+```
+/Users/teunlao/projects/public/
+├── swift-ai-sdk/              # Main (main branch)
+├── swift-ai-sdk-executor-1/   # Agent 1 (executor-1 branch)
+└── swift-ai-sdk-executor-2/   # Agent 2 (executor-2 branch)
+```
+
+**Benefits:**
+- ✅ Full isolation - agents can't touch each other's files
+- ✅ Independent builds - `swift build` doesn't conflict
+- ✅ Parallel testing - `swift test` runs simultaneously
+- ✅ Easy merge - `git merge executor-1` after validation
+
+**Quick Start:**
+```bash
+# Create worktree for agent
+git worktree add ../swift-ai-sdk-executor-1 -b executor-1-task-X
+
+# Launch agent with cwd in worktree
+"cwd": "/Users/teunlao/projects/public/swift-ai-sdk-executor-1"
+
+# After validation - merge to main
+git merge executor-1-task-X
+
+# Cleanup
+git worktree remove ../swift-ai-sdk-executor-1
+```
+
+**📖 Full Guide**: `docs/worktree-workflow.md` - complete rules, scenarios, troubleshooting
+
+---
+
 ## Upstream References
 
 **Vercel AI SDK** (6.0.0-beta.42, commit `77db222ee`):
@@ -404,6 +442,14 @@ Bash("echo '{...id:2...}' >> /tmp/commands.jsonl")
 - `.sessions/README.md` — Context guide
 - `.sessions/EXAMPLE-*.md` — Templates
 
+### Multi-Agent Development
+- `docs/worktree-workflow.md` — Git worktrees for agent isolation
+- `docs/multi-agent-coordination.md` — Agent coordination patterns
+- `docs/native-background-tasks.md` — Background task basics
+- `docs/interactive-mcp-sessions.md` — Persistent MCP sessions
+- `docs/monitoring-codex-output.md` — Output analysis
+- `docs/codex-sandbox-permissions.md` — Autonomous mode
+
 ---
 
 ## Resources
@@ -463,4 +509,4 @@ mcp__taskmaster__set_task_status id: "1.2" status: "done"
 
 **Remember**: Every line must match upstream. Use validator agent for 100% parity.
 
-*Last updated: 2025-10-13*
+*Last updated: 2025-10-14*
