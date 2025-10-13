@@ -45,22 +45,24 @@ The shell completes immediately, but Codex continues running **outside Claude Co
 
 ---
 
-## ✅ Correct: Native Background Task
+## ✅ ONLY Correct Method: Native Background Task in Claude Code
+
+**🚨 CRITICAL**: ALWAYS use native background task with `run_in_background: true`.
 
 ### Proper Command
 
 ```python
 Bash(
     command="codex mcp-server < /tmp/input.json > /tmp/output.json 2>&1",
-    run_in_background=True,
+    run_in_background=True,  # ✅ ALWAYS use this!
     timeout=600000  # 10 minutes
 )
 ```
 
-### Key Differences
+### Key Requirements
 
-1. ❌ **NO `&`** at the end of the command
-2. ✅ `run_in_background: true` — Bash tool parameter
+1. ✅ **MUST use `run_in_background: true`** — Bash tool parameter
+2. ❌ **NEVER use `&`** at the end of the command
 3. ✅ Redirect via `<` and `>`
 4. ✅ Timeout for long operations
 
@@ -409,16 +411,16 @@ Claude Code Bash Tool
 
 ## Conclusions
 
-1. **Native background tasks** are different from subprocess with `&`
-2. **`run_in_background: true` parameter** creates native task
-3. **Hex ID** (`336ae0`) = native, number (`872747`) = subprocess
-4. **Visibility in TUI** = important indicator of correct usage
-5. **MCP + native background** = ideal combination for long tasks
+1. **🚨 ALWAYS use native background tasks** with `run_in_background: true`
+2. **NEVER use subprocess with `&`** operator - not compatible with Claude Code
+3. **Hex ID** (`336ae0`) = native task (correct!)
+4. **Visibility in TUI** = required for proper operation
+5. **Native background is the ONLY supported method** for Claude Code
 
-### Rule of Thumb
+### Rule
 
-> If you need **control and visibility** → use native background (without `&`)
-> If you just need **fire and forget** → can use subprocess (with `&`)
+> **ALWAYS use `run_in_background: true` parameter in Claude Code**
+> **NEVER use `&` operator** - it's not compatible
 
 ---
 

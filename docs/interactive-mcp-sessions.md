@@ -87,37 +87,32 @@ codex mcp-server < input.json > output.json
 
 ### 1. Create Command Buffer
 
-```bash
+```python
 # Initialize empty command buffer (JSONL format)
-touch /tmp/codex-commands.jsonl
+Bash("touch /tmp/codex-commands.jsonl")
 ```
 
 ### 2. Launch Persistent Session
 
-**For manual shell** (outside Claude Code):
-```bash
-# Launch with tail -f using & operator
-tail -f /tmp/codex-commands.jsonl | \
-  codex mcp-server > /tmp/codex-session.json 2>&1 &
-```
+**🚨 ALWAYS use Claude Code native background task:**
 
-**For Claude Code Bash tool** (recommended):
 ```python
-# NO & operator! Use run_in_background parameter instead
-Bash(
-  command: "tail -f /tmp/codex-commands.jsonl | codex mcp-server > /tmp/codex-session.json 2>&1",
-  run_in_background: true,
-  timeout: 3600000  # 1 hour for long sessions
+# Use run_in_background parameter (NO & operator!)
+task_id = Bash(
+    command="tail -f /tmp/codex-commands.jsonl | codex mcp-server > /tmp/codex-session.json 2>&1",
+    run_in_background=True,  # ✅ ALWAYS use this for Claude Code!
+    timeout=3600000  # 1 hour for long sessions
 )
 # → Returns hex ID (e.g., "9de576") - visible in TUI!
 ```
 
-**Critical**: Don't use `&` with `run_in_background: true` - they conflict!
-
 **Result**:
-- ✅ Native background task (visible in TUI)
+- ✅ Native background task (visible in user's TUI)
 - ✅ MCP server running and waiting
 - ✅ STDIN kept open by `tail -f`
+- ✅ Full control via BashOutput/KillShell
+
+**Critical**: NEVER use `&` operator - only use `run_in_background: true` parameter!
 
 ### 3. Send Commands (Anytime!)
 
@@ -500,20 +495,15 @@ echo "Response: $result"
 
 ### Auto-Cleanup
 
-**For manual bash scripts** (outside Claude Code):
-```bash
-# Cleanup on exit
-trap 'pkill -f "tail -f /tmp/codex-commands.jsonl"; rm -f /tmp/codex-commands.jsonl /tmp/codex-session.json' EXIT
+**For Claude Code** (use KillShell):
 
-# Launch session with & operator (manual shell only!)
-tail -f /tmp/codex-commands.jsonl | codex mcp-server > /tmp/codex-session.json 2>&1 &
+```python
+# Clean stop when done
+KillShell(shell_id=task_id)
 
-# Work with session...
-
-# On script exit, cleanup runs automatically
+# Optional: cleanup files
+Bash("rm -f /tmp/codex-commands.jsonl /tmp/codex-session.json")
 ```
-
-**For Claude Code Bash tool**, use the pattern shown in "Integration with Native Background Tasks" section below (with `run_in_background: true`).
 
 ---
 

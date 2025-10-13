@@ -295,54 +295,44 @@ python3 scripts/parse-codex-output.py /tmp/mcp-output.json --last 100 --reasonin
 - ✅ BashOutput shows status/output
 - ✅ KillShell can terminate
 
-### ❌ Wrong: Subprocess (Fake Background)
+### ❌ NEVER Use & Operator
 
-**Not visible in TUI**, limited control.
+**NOT compatible with Claude Code!**
 
 ```bash
-# DON'T DO THIS - subprocess with & operator
+# ❌ NEVER DO THIS - & operator doesn't work in Claude Code!
 Bash(
   command: "codex mcp-server < input.json > output.json 2>&1 &",
   run_in_background: true
 )
-# → Number ID (872747) - NOT visible in TUI!
 ```
 
 **Why it's wrong**:
-- ❌ `&` creates subprocess outside Claude Code control
-- ❌ Shell completes immediately, process runs detached
-- ❌ User doesn't see it in TUI
-- ❌ BashOutput/KillShell don't work properly
+- ❌ NOT compatible with Claude Code
+- ❌ NOT visible in user's TUI
+- ❌ BashOutput/KillShell don't work
+- ❌ No proper lifecycle management
 
 ### Rules
 
-1. **Never use `&` with `run_in_background: true`** — they conflict
-2. **Always use file + redirect** — `< input.json > output.json 2>&1`
-3. **Set timeout for long ops** — default 2 min may be too short
-4. **Check hex ID** — confirms native task (visible in TUI)
+1. **🚨 ALWAYS use `run_in_background: true`** — ONLY method for Claude Code
+2. **NEVER use `&` operator** — not compatible with Claude Code
+3. **Always use file + redirect** — `< input.json > output.json 2>&1`
+4. **Set timeout for long ops** — default 2 min may be too short
+5. **Verify hex ID format** — confirms native task (e.g., "9de576")
 
 ### Interactive Sessions (Advanced)
 
 For **persistent MCP sessions** with multiple commands:
 
-**Manual shell** (outside Claude Code):
-```bash
-# 1. Launch with tail -f using & operator
-touch /tmp/commands.jsonl
-tail -f /tmp/commands.jsonl | codex mcp-server > /tmp/output.json 2>&1 &
+**🚨 ALWAYS use Claude Code native background task:**
 
-# 2. Send commands anytime (append to file)
-echo '{"jsonrpc":"2.0","id":1,...}' >> /tmp/commands.jsonl
-echo '{"jsonrpc":"2.0","id":2,...}' >> /tmp/commands.jsonl
-```
-
-**Claude Code Bash tool** (recommended):
 ```python
-# 1. Launch (NO & operator! - use run_in_background instead)
+# 1. Launch (ALWAYS use run_in_background parameter!)
 Bash("touch /tmp/commands.jsonl")
 task_id = Bash(
     command="tail -f /tmp/commands.jsonl | codex mcp-server > /tmp/output.json 2>&1",
-    run_in_background=True,
+    run_in_background=True,  # ✅ ALWAYS use this!
     timeout=3600000  # 1 hour
 )
 # → Hex ID (e.g., "9de576") - visible in TUI!
@@ -351,6 +341,8 @@ task_id = Bash(
 Bash("echo '{...id:1...}' >> /tmp/commands.jsonl")
 Bash("echo '{...id:2...}' >> /tmp/commands.jsonl")
 ```
+
+**NEVER use `&` operator** - only `run_in_background: true` is compatible with Claude Code!
 
 **Use cases**: Multi-step workflows, iterative debugging, stateful interactions.
 
