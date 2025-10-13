@@ -242,6 +242,71 @@ date -u +"%Y-%m-%dT%H:%M:%SZ"
 
 ---
 
+## MCP Background Execution
+
+**When to use**: Long-running MCP operations (e.g., Codex with complex prompts, research tasks).
+
+### ✅ Correct: Native Background Task
+
+**Visible in TUI**, full control via BashOutput/KillShell.
+
+```bash
+# 1. Create JSON request file
+cat > /tmp/mcp-request.json <<'EOF'
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"codex","arguments":{...}}}
+EOF
+
+# 2. Launch via STDIN redirect (NO & in command!)
+Bash(
+  command: "codex mcp-server < /tmp/mcp-request.json > /tmp/mcp-output.json 2>&1",
+  run_in_background: true,
+  timeout: 600000  # 10 min for long ops
+)
+# → Returns hex ID (e.g., "81728d") - visible in TUI!
+
+# 3. Check status
+BashOutput(bash_id: "81728d")
+
+# 4. Read detailed output
+tail -f /tmp/mcp-output.json  # Real-time JSON-RPC events
+```
+
+**Key indicators of native task**:
+- ✅ Hex ID format (`81728d`, not `872747`)
+- ✅ Visible in user's TUI
+- ✅ BashOutput shows status/output
+- ✅ KillShell can terminate
+
+### ❌ Wrong: Subprocess (Fake Background)
+
+**Not visible in TUI**, limited control.
+
+```bash
+# DON'T DO THIS - subprocess with & operator
+Bash(
+  command: "codex mcp-server < input.json > output.json 2>&1 &",
+  run_in_background: true
+)
+# → Number ID (872747) - NOT visible in TUI!
+```
+
+**Why it's wrong**:
+- ❌ `&` creates subprocess outside Claude Code control
+- ❌ Shell completes immediately, process runs detached
+- ❌ User doesn't see it in TUI
+- ❌ BashOutput/KillShell don't work properly
+
+### Rules
+
+1. **Never use `&` with `run_in_background: true`** — they conflict
+2. **Always use file + redirect** — `< input.json > output.json 2>&1`
+3. **Set timeout for long ops** — default 2 min may be too short
+4. **Check hex ID** — confirms native task (visible in TUI)
+
+**See**: `docs/native-background-tasks.md` for detailed guide.
+
+---
+
 ## Pre-Completion Checklist
 
 - [ ] Public API matches upstream
