@@ -320,18 +320,19 @@ date -u +"%Y-%m-%dT%H:%M:%SZ"
 
 ## Task Management (Optional)
 
-**Task Master AI** available as optional tracker (manual mode only, no API keys).
+**Task Master AI** available as optional tracker.
 
-### Allowed Tools (Manual)
+### Manual Tools
 - `get_tasks`, `get_task`, `next_task` — view tasks
 - `set_task_status` — change status
 - `add_task`, `add_subtask` — with explicit fields
 - `remove_task`, `remove_subtask`
 - `add_dependency`, `remove_dependency`, `validate_dependencies`
 
-### Forbidden Tools (AI-only)
-- `update_task`, `update_subtask` (require `prompt` parameter)
-- `expand_task`, `parse-prd`, `--research` flag
+### AI Tools
+- `update_task`, `update_subtask` — require `prompt` parameter
+- `expand_task`, `parse-prd` — AI generation
+- Tools with `--research` flag
 
 **Basic Usage**:
 ```bash

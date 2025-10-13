@@ -97,6 +97,12 @@ Bash(
 
 ### Step 1: Prepare JSON Request
 
+**⚠️ IMPORTANT**: For autonomous mode (no approval prompts), **ALWAYS** include these parameters:
+- `"approval-policy": "never"`
+- `"sandbox": "danger-full-access"`
+
+See [codex-sandbox-permissions.md](./codex-sandbox-permissions.md) for complete details.
+
 ```bash
 cat > /tmp/mcp-request.json <<'EOF'
 {
@@ -108,7 +114,8 @@ cat > /tmp/mcp-request.json <<'EOF'
     "arguments": {
       "prompt": "Your task here",
       "cwd": "/path/to/project",
-      "model": "gpt-5-codex"
+      "approval-policy": "never",
+      "sandbox": "danger-full-access"
     }
   }
 }
@@ -161,7 +168,7 @@ KillShell(shell_id="336ae0")
 ### Creating/Updating/Deleting a Task
 
 ```python
-# 1. Create JSON request
+# 1. Create JSON request (⚠️ approval-policy and sandbox required!)
 Bash("""
 cat > /tmp/codex-request.json <<'EOF'
 {
@@ -173,7 +180,8 @@ cat > /tmp/codex-request.json <<'EOF'
     "arguments": {
       "prompt": "Create a test task in Taskmaster, update and delete it",
       "cwd": "/Users/user/projects/swift-ai-sdk",
-      "model": "gpt-5-codex"
+      "approval-policy": "never",
+      "sandbox": "danger-full-access"
     }
   }
 }
@@ -399,6 +407,13 @@ Claude Code Bash Tool
 
 > If you need **control and visibility** → use native background (without `&`)
 > If you just need **fire and forget** → can use subprocess (with `&`)
+
+---
+
+## See Also
+
+- **[interactive-mcp-sessions.md](./interactive-mcp-sessions.md)** — Advanced: Persistent MCP sessions with multiple commands in same context using `tail -f`
+- **[codex-sandbox-permissions.md](./codex-sandbox-permissions.md)** — How to bypass approvals for autonomous operation (required parameters)
 
 ---
 

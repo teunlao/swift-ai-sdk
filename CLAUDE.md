@@ -246,14 +246,28 @@ date -u +"%Y-%m-%dT%H:%M:%SZ"
 
 **When to use**: Long-running MCP operations (e.g., Codex with complex prompts, research tasks).
 
+**🚨 CRITICAL for Codex MCP**: Always include these parameters in JSON:
+```json
+{
+  "arguments": {
+    "prompt": "...",
+    "cwd": "/path",
+    "approval-policy": "never",
+    "sandbox": "danger-full-access"
+  }
+}
+```
+
+**Without these, Codex will prompt for approval and block!** See `docs/codex-sandbox-permissions.md` for details.
+
 ### ✅ Correct: Native Background Task
 
 **Visible in TUI**, full control via BashOutput/KillShell.
 
 ```bash
-# 1. Create JSON request file
+# 1. Create JSON request file (⚠️ must include approval-policy and sandbox!)
 cat > /tmp/mcp-request.json <<'EOF'
-{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"codex","arguments":{...}}}
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"codex","arguments":{"prompt":"...","cwd":"/path","approval-policy":"never","sandbox":"danger-full-access"}}}
 EOF
 
 # 2. Launch via STDIN redirect (NO & in command!)
@@ -303,7 +317,40 @@ Bash(
 3. **Set timeout for long ops** — default 2 min may be too short
 4. **Check hex ID** — confirms native task (visible in TUI)
 
-**See**: `docs/native-background-tasks.md` for detailed guide.
+### Interactive Sessions (Advanced)
+
+For **persistent MCP sessions** with multiple commands:
+
+**Manual shell** (outside Claude Code):
+```bash
+# 1. Launch with tail -f using & operator
+touch /tmp/commands.jsonl
+tail -f /tmp/commands.jsonl | codex mcp-server > /tmp/output.json 2>&1 &
+
+# 2. Send commands anytime (append to file)
+echo '{"jsonrpc":"2.0","id":1,...}' >> /tmp/commands.jsonl
+echo '{"jsonrpc":"2.0","id":2,...}' >> /tmp/commands.jsonl
+```
+
+**Claude Code Bash tool** (recommended):
+```python
+# 1. Launch (NO & operator! - use run_in_background instead)
+Bash("touch /tmp/commands.jsonl")
+task_id = Bash(
+    command="tail -f /tmp/commands.jsonl | codex mcp-server > /tmp/output.json 2>&1",
+    run_in_background=True,
+    timeout=3600000  # 1 hour
+)
+# → Hex ID (e.g., "9de576") - visible in TUI!
+
+# 2. Send commands
+Bash("echo '{...id:1...}' >> /tmp/commands.jsonl")
+Bash("echo '{...id:2...}' >> /tmp/commands.jsonl")
+```
+
+**Use cases**: Multi-step workflows, iterative debugging, stateful interactions.
+
+**See**: `docs/interactive-mcp-sessions.md` for complete guide, `docs/native-background-tasks.md` for basics.
 
 ---
 
@@ -389,18 +436,19 @@ Bash(
 
 ## Task Management (Optional)
 
-**Task Master AI** available as optional tracker (manual mode only, no API keys).
+**Task Master AI** available as optional tracker.
 
-### Allowed Tools (Manual)
+### Manual Tools
 - `get_tasks`, `get_task`, `next_task` — view tasks
 - `set_task_status` — change status
 - `add_task`, `add_subtask` — with explicit fields
 - `remove_task`, `remove_subtask`
 - `add_dependency`, `remove_dependency`, `validate_dependencies`
 
-### Forbidden Tools (AI-only)
-- `update_task`, `update_subtask` (require `prompt` parameter)
-- `expand_task`, `parse-prd`, `--research` flag
+### AI Tools
+- `update_task`, `update_subtask` — require `prompt` parameter
+- `expand_task`, `parse-prd` — AI generation
+- Tools with `--research` flag
 
 **Basic Usage**:
 ```bash
