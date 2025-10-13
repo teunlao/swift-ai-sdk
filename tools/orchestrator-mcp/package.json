@@ -1,0 +1,36 @@
+{
+  "name": "@swift-ai-sdk/orchestrator-mcp",
+  "version": "0.1.0",
+  "description": "MCP server for orchestrating parallel Codex agents",
+  "type": "module",
+  "main": "dist/server.js",
+  "bin": {
+    "orchestrator-mcp": "dist/server.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/server.js",
+    "init-db": "node dist/scripts/init-db.js",
+    "test": "node --test"
+  },
+  "keywords": [
+    "mcp",
+    "orchestrator",
+    "codex",
+    "agent-management"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.20.0",
+    "better-sqlite3": "^12.4.1",
+    "simple-git": "^3.28.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.10.1",
+    "typescript": "^5.9.3"
+  }
+}

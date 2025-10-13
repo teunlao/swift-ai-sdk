@@ -1,0 +1,50 @@
+# Orchestrator MCP Server
+
+MCP server for orchestrating parallel Codex agents with automatic recovery and monitoring.
+
+## Features
+
+- 🚀 Launch agents in isolated Git worktrees
+- 📊 Real-time status monitoring
+- 🔄 Automatic stuck detection and recovery
+- 📝 Centralized logging and history
+- 🎯 Task Master integration
+- ⚡ Scale to multiple agents simultaneously
+
+## Installation
+
+```bash
+cd tools/orchestrator-mcp
+npm install
+npm run build
+```
+
+## Usage
+
+### Start the MCP server
+
+```bash
+npm start
+```
+
+### Available MCP Tools
+
+1. **launch_agent** - Launch a new agent
+2. **status** - Get agent status
+3. **get_logs** - Retrieve agent logs
+4. **kill_agent** - Stop an agent
+5. **auto_recover** - Enable automatic recovery
+6. **scale** - Launch multiple agents
+7. **get_history** - View execution history
+
+## Development
+
+```bash
+npm run dev    # Watch mode
+npm run build  # Build
+npm test       # Run tests
+```
+
+## Configuration
+
+See `docs/orchestrator-mcp-plan.md` for full documentation.
