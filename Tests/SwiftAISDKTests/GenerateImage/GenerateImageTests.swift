@@ -160,127 +160,133 @@ struct GenerateImageTests {
 
     @Test("should call logWarnings with the correct warnings", .disabled("logWarningsObserver conflict - Task created for investigation"))
     func logsWarnings() async throws {
-        let warning1: ImageGenerationWarning = .other(message: "Setting is not supported")
-        let warning2: ImageGenerationWarning = .unsupportedSetting(setting: "size", details: "Size parameter not supported")
-        let expected = [warning1, warning2]
+        try await LogWarningsTestLock.shared.withLock {
+            let warning1: ImageGenerationWarning = .other(message: "Setting is not supported")
+            let warning2: ImageGenerationWarning = .unsupportedSetting(setting: "size", details: "Size parameter not supported")
+            let expected = [warning1, warning2]
 
-        let warningsBox = LockedBox<[ImageGenerationWarning]>()
-        logWarningsObserver = { warnings in
-            let imageWarnings = warnings.compactMap { warning -> ImageGenerationWarning? in
-                guard case let .imageModel(imageWarning) = warning else {
-                    return nil
+            let warningsBox = LockedBox<[ImageGenerationWarning]>()
+            logWarningsObserver = { warnings in
+                let imageWarnings = warnings.compactMap { warning -> ImageGenerationWarning? in
+                    guard case let .imageModel(imageWarning) = warning else {
+                        return nil
+                    }
+                    return imageWarning
                 }
-                return imageWarning
+                warningsBox.set(imageWarnings)
             }
-            warningsBox.set(imageWarnings)
+            resetLogWarningsState()
+
+            defer { resetWarningHooks() }
+
+            _ = try await generateImage(
+                model: MockImageModelV3(
+                    doGenerate: { _ in
+                        self.createMockResponse(
+                            images: .base64([self.pngBase64]),
+                            warnings: expected
+                        )
+                    }
+                ),
+                prompt: prompt
+            )
+
+            guard let observed = warningsBox.get() else {
+                Issue.record("Expected logWarnings to be invoked with warnings.")
+                return
+            }
+            #expect(observed == expected)
         }
-        resetLogWarningsState()
-
-        defer { resetWarningHooks() }
-
-        _ = try await generateImage(
-            model: MockImageModelV3(
-                doGenerate: { _ in
-                    self.createMockResponse(
-                        images: .base64([self.pngBase64]),
-                        warnings: expected
-                    )
-                }
-            ),
-            prompt: prompt
-        )
-
-        guard let observed = warningsBox.get() else {
-            Issue.record("Expected logWarnings to be invoked with warnings.")
-            return
-        }
-        #expect(observed == expected)
     }
 
     @Test("should call logWarnings with aggregated warnings from multiple calls")
     func logsAggregatedWarnings() async throws {
-        let warning1: ImageGenerationWarning = .other(message: "Warning from call 1")
-        let warning2: ImageGenerationWarning = .other(message: "Warning from call 2")
+        try await LogWarningsTestLock.shared.withLock {
+            let warning1: ImageGenerationWarning = .other(message: "Warning from call 1")
+            let warning2: ImageGenerationWarning = .other(message: "Warning from call 2")
 
-        let warningsBox = LockedBox<[ImageGenerationWarning]>()
-        logWarningsObserver = { warnings in
-            let imageWarnings = warnings.compactMap { warning -> ImageGenerationWarning? in
-                guard case let .imageModel(imageWarning) = warning else {
-                    return nil
-                }
-                return imageWarning
-            }
-            warningsBox.set(imageWarnings)
-        }
-        resetLogWarningsState()
-        defer { resetWarningHooks() }
-
-        let counter = Counter()
-
-        _ = try await generateImage(
-            model: MockImageModelV3(
-                maxImagesPerCall: .value(1),
-                doGenerate: { _ in
-                    let index = await counter.next()
-                    switch index {
-                    case 0:
-                        return self.createMockResponse(
-                            images: .base64([self.pngBase64]),
-                            warnings: [warning1]
-                        )
-                    case 1:
-                        return self.createMockResponse(
-                            images: .base64([self.jpegBase64]),
-                            warnings: [warning2]
-                        )
-                    default:
-                        return self.createMockResponse(images: .base64([]))
+            let warningsBox = LockedBox<[ImageGenerationWarning]>()
+            logWarningsObserver = { warnings in
+                let imageWarnings = warnings.compactMap { warning -> ImageGenerationWarning? in
+                    guard case let .imageModel(imageWarning) = warning else {
+                        return nil
                     }
+                    return imageWarning
                 }
-            ),
-            prompt: prompt,
-            n: 2
-        )
+                warningsBox.set(imageWarnings)
+            }
+            resetLogWarningsState()
+            defer { resetWarningHooks() }
 
-        guard let observed = warningsBox.get() else {
-            Issue.record("Expected logWarnings to be invoked with warnings.")
-            return
+            let counter = Counter()
+
+            _ = try await generateImage(
+                model: MockImageModelV3(
+                    maxImagesPerCall: .value(1),
+                    doGenerate: { _ in
+                        let index = await counter.next()
+                        switch index {
+                        case 0:
+                            return self.createMockResponse(
+                                images: .base64([self.pngBase64]),
+                                warnings: [warning1]
+                            )
+                        case 1:
+                            return self.createMockResponse(
+                                images: .base64([self.jpegBase64]),
+                                warnings: [warning2]
+                            )
+                        default:
+                            return self.createMockResponse(images: .base64([]))
+                        }
+                    }
+                ),
+                prompt: prompt,
+                n: 2
+            )
+
+            guard let observed = warningsBox.get() else {
+                Issue.record("Expected logWarnings to be invoked with warnings.")
+                return
+            }
+            #expect(observed == [warning1, warning2])
         }
-        #expect(observed == [warning1, warning2])
     }
 
     @Test("should call logWarnings with empty array when no warnings are present")
     func logsEmptyWarnings() async throws {
-        let warningsBox = LockedBox<[ImageGenerationWarning]>()
-        logWarningsObserver = { warnings in
-            let imageWarnings = warnings.compactMap { warning -> ImageGenerationWarning? in
-                guard case let .imageModel(imageWarning) = warning else {
-                    return nil
+        try await LogWarningsTestLock.shared.withLock {
+            let warningsBox = LockedBox<[ImageGenerationWarning]>()
+            logWarningsObserver = { warnings in
+                let imageWarnings = warnings.compactMap { warning -> ImageGenerationWarning? in
+                    guard case let .imageModel(imageWarning) = warning else {
+                        return nil
+                    }
+                    return imageWarning
                 }
-                return imageWarning
+                warningsBox.set(imageWarnings)
             }
-            warningsBox.set(imageWarnings)
-        }
-        resetLogWarningsState()
-        defer { resetWarningHooks() }
+            resetLogWarningsState()
+            defer { resetWarningHooks() }
 
-        _ = try await generateImage(
-            model: MockImageModelV3(
-                doGenerate: { _ in
-                    self.createMockResponse(
-                        images: .base64([self.pngBase64]),
-                        warnings: []
-                    )
-                }
-            ),
-            prompt: prompt
-        )
+            _ = try await generateImage(
+                model: MockImageModelV3(
+                    doGenerate: { _ in
+                        self.createMockResponse(
+                            images: .base64([self.pngBase64]),
+                            warnings: []
+                        )
+                    }
+                ),
+                prompt: prompt
+            )
 
-        guard let observed = warningsBox.get() else {
-            Issue.record("Expected logWarnings to be invoked with warnings.")
-            return
+            guard let observed = warningsBox.get() else {
+                Issue.record("Expected logWarnings to be invoked with warnings.")
+                return
+            }
+            #expect(observed.isEmpty)
         }
-        #expect(observed.isEmpty)
     }
 
     @Test("should return generated images with correct mime types")

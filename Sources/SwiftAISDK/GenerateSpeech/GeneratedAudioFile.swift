@@ -60,7 +60,7 @@ public class DefaultGeneratedAudioFile: DefaultGeneratedFile, GeneratedAudioFile
 }
 
 /// Default generated audio file with `type` discriminator.
-public final class DefaultGeneratedAudioFileWithType: DefaultGeneratedAudioFile {
+public final class DefaultGeneratedAudioFileWithType: DefaultGeneratedAudioFile, @unchecked Sendable {
     public let type = "audio"
 
     public override init(data: Data, mediaType: String) {

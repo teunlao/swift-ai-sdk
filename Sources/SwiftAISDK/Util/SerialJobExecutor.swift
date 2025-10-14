@@ -4,14 +4,15 @@
  Port of `@ai-sdk/ai/src/util/serial-job-executor.ts`.
 
  Maintains a queue of jobs and processes them sequentially in the exact
- order they were submitted. Uses DispatchQueue to guarantee FIFO ordering
- even under concurrent `run()` calls, matching TypeScript behavior.
+ order they were submitted. Uses an explicit FIFO queue protected by an
+ `NSLock` to guarantee ordering even under concurrent `run()` calls,
+ matching TypeScript behavior.
 
  **FIFO Guarantee**: Unlike Swift actors (which don't guarantee message
- processing order), this implementation uses a serial DispatchQueue to
- ensure jobs execute in submission order. This is critical for upstream
- code that relies on SerialJobExecutor to prevent race conditions
- (e.g., chat.ts:615).
+ processing order), this implementation keeps an explicit queue and
+ processes jobs one-by-one on a helper task. This ensures jobs execute
+ in submission order, which upstream code depends on to prevent race
+ conditions (e.g., chat.ts:615).
  */
 
 import Foundation
@@ -29,28 +30,12 @@ public final class SerialJobExecutor: @unchecked Sendable {
         let continuation: CheckedContinuation<Void, Error>
     }
 
-    private let queue = DispatchQueue(label: "com.swiftaisdk.serialjobexecutor")
-    private let continuation: AsyncStream<QueuedJob>.Continuation
-    private let processingTask: Task<Void, Never>
+    private let lock = NSLock()
+    private var queue: [QueuedJob] = []
+    private var isProcessing = false
 
     /// Creates a new serial job executor.
-    public init() {
-        let (stream, continuation) = AsyncStream<QueuedJob>.makeStream()
-        self.continuation = continuation
-
-        // Start processing loop
-        self.processingTask = Task.detached {
-            // Process jobs sequentially
-            for await queuedJob in stream {
-                do {
-                    try await queuedJob.job()
-                    queuedJob.continuation.resume()
-                } catch {
-                    queuedJob.continuation.resume(throwing: error)
-                }
-            }
-        }
-    }
+    public init() {}
 
     /// Runs a job in the serial queue.
     ///
@@ -58,29 +43,51 @@ public final class SerialJobExecutor: @unchecked Sendable {
     /// queued jobs have completed. Jobs execute in strict FIFO
     /// order regardless of how quickly they're submitted.
     ///
-    /// The key to FIFO guarantee: DispatchQueue.sync ensures FULLY synchronous
-    /// enqueueing (unlike actors which don't guarantee order). The serial queue
-    /// processes jobs in strict FIFO order, matching TypeScript behavior where
-    /// `run()` synchronously adds to queue before returning Promise.
-    ///
-    /// Reference: https://forums.swift.org/t/simple-state-protection-via-actor-vs-dispatchqueue-sync/66184
-    /// "tasks waiting on an actor's Serial Executor are not necessarily executed in the order they were awaited,
-    /// which is a departure from the behavior of a Serial DispatchQueue, which adheres to a strict FIFO policy"
-    ///
-    /// - Parameter job: The job to execute
-    /// - Throws: Any error thrown by the job
+    /// - Parameter job: The job to execute.
+    /// - Throws: Any error thrown by the job.
     public func run(_ job: @escaping Job) async throws {
-        // Use DispatchQueue.sync to ensure FULLY synchronous enqueueing
-        // This guarantees FIFO order even with concurrent async calls
-        try await withCheckedThrowingContinuation { cont in
-            queue.sync {
-                continuation.yield(QueuedJob(job: job, continuation: cont))
+        try await withCheckedThrowingContinuation { continuation in
+            enqueue(job: job, continuation: continuation)
+        }
+    }
+
+    private func enqueue(
+        job: @escaping Job,
+        continuation: CheckedContinuation<Void, Error>
+    ) {
+        lock.lock()
+        queue.append(QueuedJob(job: job, continuation: continuation))
+        let shouldStartProcessing = !isProcessing
+        if shouldStartProcessing {
+            isProcessing = true
+        }
+        lock.unlock()
+
+        if shouldStartProcessing {
+            Task {
+                await processQueue()
             }
         }
     }
 
-    deinit {
-        continuation.finish()
-        processingTask.cancel()
+    private func dequeue() -> QueuedJob? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !queue.isEmpty else {
+            isProcessing = false
+            return nil
+        }
+        return queue.removeFirst()
+    }
+
+    private func processQueue() async {
+        while let queuedJob = dequeue() {
+            do {
+                try await queuedJob.job()
+                queuedJob.continuation.resume()
+            } catch {
+                queuedJob.continuation.resume(throwing: error)
+            }
+        }
     }
 }
