@@ -127,9 +127,11 @@ CRITICAL: Agents cannot call MCP tools - only YOU can. This is a destructive ope
 			const isApproved = args.result === "approved";
 			const executorStatus: AgentStatus = isApproved ? "validated" : "needs_fix";
 
+			// Keep current_validation_id pointing to the completed session so the UI
+			// can display the final validation result on the agent card. It will be
+			// replaced automatically when a NEW validation request is created.
 			const executorUpdates: Record<string, unknown> = {
 				status: executorStatus,
-				current_validation_id: null,
 				last_activity: now,
 			};
 			if (isApproved) {
@@ -141,9 +143,12 @@ CRITICAL: Agents cannot call MCP tools - only YOU can. This is a destructive ope
 			if (validator) {
 				// Only complete validator if approved; keep running for re-validation if rejected
 				validatorStatus = isApproved ? "completed" : "running";
+				// Preserve validator's current_validation_id as well so the validator
+				// card shows the completed validation status until a new one is assigned.
+				// assign_validator will overwrite this for a new session if the existing
+				// one is already completed.
 				const updates: Record<string, unknown> = {
 					status: validatorStatus,
-					current_validation_id: null,
 					last_activity: now,
 				};
 				if (isApproved) {

@@ -1,17 +1,19 @@
 import type { Agent, AgentLog, ValidationSession } from "./db";
 
 export type AgentSummary = {
-	id: string;
-	role: Agent["role"];
-	status: Agent["status"];
-	taskId: string | null;
-	worktree: string | null;
-	shellId: string;
-	createdAt: string;
-	startedAt: string | null;
-	endedAt: string | null;
-	lastActivity: string | null;
-	events: number;
+  id: string;
+  role: Agent["role"];
+  status: Agent["status"];
+  taskId: string | null;
+  worktree: string | null;
+  shellId: string;
+  model: string | null;
+  reasoningEffort: Agent["reasoning_effort"];
+  createdAt: string;
+  startedAt: string | null;
+  endedAt: string | null;
+  lastActivity: string | null;
+  events: number;
 	commands: number;
 	patches: number;
 	filesCreated: number;
@@ -25,18 +27,20 @@ export function toAgentSummary(
 	agent: Agent,
 	validation?: ValidationSession | null,
 ): AgentSummary {
-	return {
-		id: agent.id,
-		role: agent.role,
-		status: agent.status,
-		taskId: agent.task_id,
-		worktree: agent.worktree,
-		shellId: agent.shell_id,
-		createdAt: agent.created_at,
-		startedAt: agent.started_at,
-		endedAt: agent.ended_at,
-		lastActivity: agent.last_activity,
-		events: agent.events_count,
+  return {
+    id: agent.id,
+    role: agent.role,
+    status: agent.status,
+    taskId: agent.task_id,
+    worktree: agent.worktree,
+    shellId: agent.shell_id,
+    model: agent.model ?? null,
+    reasoningEffort: agent.reasoning_effort ?? null,
+    createdAt: agent.created_at,
+    startedAt: agent.started_at,
+    endedAt: agent.ended_at,
+    lastActivity: agent.last_activity,
+    events: agent.events_count,
 		commands: agent.commands_count,
 		patches: agent.patches_count,
 		filesCreated: agent.files_created,
@@ -99,7 +103,7 @@ export function toLogDto(log: AgentLog): LogDTO {
 }
 
 export type AgentDetail = AgentSummary & {
-	prompt: string | null;
+  prompt: string | null;
 };
 
 export type AgentDetailPayload = {

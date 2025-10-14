@@ -8,6 +8,8 @@ CREATE TABLE IF NOT EXISTS agents (
   shell_id TEXT NOT NULL,           -- hex ID from Bash tool
   worktree TEXT,                    -- "/path/to/worktree"
   prompt TEXT,                      -- initial prompt
+  model TEXT,                       -- model id used by agent (e.g., gpt-5-codex)
+  reasoning_effort TEXT,            -- "low" | "medium" | "high"
   status TEXT NOT NULL DEFAULT 'running', -- "running" | "stuck" | "completed" | "killed" | "validated" | "needs_fix"
   created_at TEXT NOT NULL,         -- ISO 8601 timestamp
   started_at TEXT,

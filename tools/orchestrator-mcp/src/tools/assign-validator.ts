@@ -106,14 +106,22 @@ CRITICAL: Validator MUST work in executor's worktree to access implementation fi
         }
 
         if (validator.current_validation_id) {
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: `Validator ${args.validator_id} already assigned to validation ${validator.current_validation_id}`,
-              },
-            ],
-          };
+          // Allow re-assignment if the validator's referenced session is already
+          // finished (approved/rejected). This keeps the UI showing the last
+          // result until a new assignment, and we overwrite it now.
+          const existing = db.getValidationSession(validator.current_validation_id);
+          const isActive = existing && (existing.status === "pending" || existing.status === "in_progress");
+          if (isActive) {
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text: `Validator ${args.validator_id} already assigned to validation ${validator.current_validation_id}`,
+                },
+              ],
+            };
+          }
+          // else finished — proceed and overwrite below
         }
 
         // Enforce worktree matching
@@ -147,6 +155,7 @@ CRITICAL: Validator MUST work in executor's worktree to access implementation fi
         };
 
         db.updateValidationSession(session.id, updatedSession);
+        // Overwrite current_validation_id with this session to reflect active work
         db.updateAgent(validator.id, { current_validation_id: session.id });
 
         const result: AssignValidatorOutput = {

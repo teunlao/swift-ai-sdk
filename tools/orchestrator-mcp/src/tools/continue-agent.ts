@@ -93,11 +93,13 @@ continue_agent(agent_id="executor-123", prompt="Fix all 4 bugs from validation r
 				}
 
 				// Send new prompt to existing session
+				const model = args.model ?? agent.model ?? "gpt-5-codex";
+				const reasoning = args.reasoning_effort ?? agent.reasoning_effort ?? "medium";
 				const success = await continueCodexAgent(
 					args.agent_id,
 					args.prompt,
-					args.model,
-					args.reasoning_effort
+					model,
+					reasoning
 				);
 
 				const result: ContinueAgentOutput = {
@@ -111,6 +113,8 @@ continue_agent(agent_id="executor-123", prompt="Fix all 4 bugs from validation r
 				// Update last activity
 				db.updateAgent(args.agent_id, {
 					last_activity: new Date().toISOString(),
+					model,
+					reasoning_effort: reasoning,
 				});
 
 				return {

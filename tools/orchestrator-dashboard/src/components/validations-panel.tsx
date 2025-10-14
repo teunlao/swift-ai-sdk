@@ -70,8 +70,8 @@ export function ValidationsPanel() {
 							<th className="px-4 py-2">Executor</th>
 							<th className="px-4 py-2">Validator</th>
 							<th className="px-4 py-2">Task</th>
-							<th className="px-4 py-2">Requested</th>
-							<th className="px-4 py-2">Updated</th>
+            <th className="px-4 py-2">Requested</th>
+            <th className="px-4 py-2">Updated</th>
 						</tr>
 					</thead>
 					<tbody>

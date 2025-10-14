@@ -117,14 +117,22 @@ CRITICAL: Agents cannot call MCP tools - only YOU can. Agents create files, YOU 
         }
 
         if (executor.current_validation_id) {
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: `Executor ${args.executor_id} already has active validation (${executor.current_validation_id})`,
-              },
-            ],
-          };
+          // Allow a new validation if the existing referenced session is already
+          // finished (approved/rejected). This lets the UI keep showing the last
+          // result via current_validation_id until we create a new session here.
+          const existing = db.getValidationSession(executor.current_validation_id);
+          const isActive = existing && (existing.status === "pending" || existing.status === "in_progress");
+          if (isActive) {
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text: `Executor ${args.executor_id} already has active validation (${executor.current_validation_id})`,
+                },
+              ],
+            };
+          }
+          // else: finished session present — proceed to create a new one and overwrite
         }
 
         const now = new Date().toISOString();
@@ -148,6 +156,9 @@ CRITICAL: Agents cannot call MCP tools - only YOU can. Agents create files, YOU 
         };
 
         db.createValidationSession(session);
+        // Overwrite current_validation_id with the new session id. This both
+        // starts the new validation and also naturally clears the display of
+        // the previous completed session on the agent card.
         db.updateAgent(executor.id, { current_validation_id: id });
 
         const result: RequestValidationOutput = {

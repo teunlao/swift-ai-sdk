@@ -40,10 +40,10 @@ export async function GET(
 	const logs = db.getLogs(agent.id, "all", 200).map(toLogDto).reverse();
 
 	return NextResponse.json({
-		agent: {
-			...summary,
-			prompt: agent.prompt ?? null,
-		},
+    agent: {
+      ...summary,
+      prompt: agent.prompt ?? null,
+    },
 		validation: currentValidation
 			? toValidationSummary(currentValidation)
 			: null,

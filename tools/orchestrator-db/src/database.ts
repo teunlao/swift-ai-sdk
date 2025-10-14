@@ -45,18 +45,31 @@ export class OrchestratorDB {
 		const schema = readFileSync(this.schemaPath, "utf-8");
 		this.db.exec(schema);
 
-		try {
-			this.db
-				.prepare("ALTER TABLE agents ADD COLUMN current_validation_id TEXT")
-				.run();
-		} catch (error) {
-			if (
-				!(error instanceof Error) ||
-				!error.message.includes("duplicate column")
-			) {
-				throw error;
-			}
-		}
+    try {
+      this.db
+        .prepare("ALTER TABLE agents ADD COLUMN current_validation_id TEXT")
+        .run();
+    } catch (error) {
+      if (!(error instanceof Error) || !error.message.includes("duplicate column")) {
+        throw error;
+      }
+    }
+    // add columns for model and reasoning_effort if not present
+    try {
+      this.db.prepare("ALTER TABLE agents ADD COLUMN model TEXT").run();
+    } catch (error) {
+      if (!(error instanceof Error) || !error.message.includes("duplicate column")) {
+        // ignore duplicate column errors only
+        throw error;
+      }
+    }
+    try {
+      this.db.prepare("ALTER TABLE agents ADD COLUMN reasoning_effort TEXT").run();
+    } catch (error) {
+      if (!(error instanceof Error) || !error.message.includes("duplicate column")) {
+        throw error;
+      }
+    }
 	}
 
 	createAgent(
@@ -70,11 +83,11 @@ export class OrchestratorDB {
 			| "auto_recover_attempts"
 		>,
 	): Agent {
-		const stmt = this.db.prepare(`
+    const stmt = this.db.prepare(`
       INSERT INTO agents (
-        id, role, task_id, shell_id, worktree, prompt, status,
+        id, role, task_id, shell_id, worktree, prompt, model, reasoning_effort, status,
         created_at, started_at, ended_at, last_activity, current_validation_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
 		stmt.run(
@@ -83,14 +96,16 @@ export class OrchestratorDB {
 			agent.task_id,
 			agent.shell_id,
 			agent.worktree,
-			agent.prompt,
-			agent.status,
-			agent.created_at,
-			agent.started_at,
-			agent.ended_at,
-			agent.last_activity,
-			agent.current_validation_id,
-		);
+      agent.prompt,
+      agent.model ?? null,
+      agent.reasoning_effort ?? null,
+      agent.status,
+      agent.created_at,
+      agent.started_at,
+      agent.ended_at,
+      agent.last_activity,
+      agent.current_validation_id,
+    );
 
 		const created = this.getAgent(agent.id)!;
 		this.events.publish({ type: "agent-created", agent: created });

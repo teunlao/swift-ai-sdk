@@ -103,13 +103,16 @@ launch_agent(role="executor", worktree="auto", prompt="Create snake game with 4 
 				}
 
 				// Launch Codex agent
+				const defaultModel = args.model ?? "gpt-5-codex";
+				const defaultReasoning = args.reasoning_effort ?? "medium";
+
 				const codexResult = await launchCodexAgent(
 					agent_id,
 					args.prompt,
 					worktreePath,
 					args.role,
-					args.model,
-					args.reasoning_effort
+					defaultModel,
+					defaultReasoning
 				);
 
 				const result: LaunchAgentOutput = {
@@ -127,6 +130,8 @@ launch_agent(role="executor", worktree="auto", prompt="Create snake game with 4 
 					shell_id: codexResult.shellId,
 					worktree: worktreePath,
 					prompt: args.prompt,
+					model: defaultModel,
+					reasoning_effort: defaultReasoning,
 				status: "running",
 				created_at: new Date().toISOString(),
 				started_at: new Date().toISOString(),

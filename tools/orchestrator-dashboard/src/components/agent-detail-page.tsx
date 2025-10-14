@@ -1,13 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import {
-	useCallback,
-	useEffect,
-	useMemo,
-	useRef,
-	useState,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StatusBadge } from "@/components/status-badge";
 import type {
 	AgentDetail,
@@ -211,13 +205,13 @@ export function AgentDetailPage({ agentId }: { agentId: string }) {
 		}
 	}, [agentReady, eventsCount, lastEventsCount, loadLogs]);
 
-useEffect(() => {
-    const container = logContainerRef.current;
-    if (!container) return;
-    if (autoScrollRef.current) {
-        container.scrollTop = container.scrollHeight;
-    }
-}, [logs]);
+	useEffect(() => {
+		const container = logContainerRef.current;
+		if (!container) return;
+		if (autoScrollRef.current) {
+			container.scrollTop = container.scrollHeight;
+		}
+	}, [logs]);
 
 	useEffect(() => {
 		const container = logContainerRef.current;
@@ -328,6 +322,7 @@ useEffect(() => {
 					<dl className="mt-4 space-y-3 text-sm text-neutral-300">
 						<div className="flex justify-between gap-4">
 							<dt className="text-neutral-400">Task</dt>
+
 							<dd>{agent.taskId ?? "–"}</dd>
 						</div>
 						<div className="flex justify-between gap-4">
@@ -339,6 +334,18 @@ useEffect(() => {
 						<div className="flex justify-between gap-4">
 							<dt className="text-neutral-400">Shell ID</dt>
 							<dd className="font-mono">{agent.shellId}</dd>
+						</div>
+						<div className="flex justify-between gap-4">
+							<dt className="text-neutral-400">Model</dt>
+							<dd className="text-neutral-300">
+								{agent.model ?? "gpt-5-codex"}
+							</dd>
+						</div>
+						<div className="flex justify-between gap-4">
+							<dt className="text-neutral-400">Reasoning</dt>
+							<dd className="text-neutral-300">
+								{agent.reasoningEffort ?? "medium"}
+							</dd>
 						</div>
 						<div className="flex justify-between gap-4">
 							<dt className="text-neutral-400">Started</dt>

@@ -25,6 +25,8 @@ export interface Agent {
   shell_id: string;
   worktree: string | null;
   prompt: string;
+  model: string | null;
+  reasoning_effort: "low" | "medium" | "high" | null;
   status: AgentStatus;
   created_at: string;
   started_at: string | null;

@@ -20,6 +20,7 @@ import { createAssignValidatorTool } from "./assign-validator.js";
 import { createSubmitValidationTool } from "./submit-validation.js";
 import { createGetValidationTool } from "./get-validation.js";
 import { createUpdateAgentStatusTool } from "./update-agent-status.js";
+import { createCleanupAgentsTool } from "./cleanup-agents.js";
 
 /**
  * Tool definition interface
@@ -50,5 +51,6 @@ export function createTools(db: OrchestratorDB): ToolDefinition[] {
 		createSubmitValidationTool(db),
 		createGetValidationTool(db),
 		createUpdateAgentStatusTool(db),
+		createCleanupAgentsTool(db),
 	];
 }

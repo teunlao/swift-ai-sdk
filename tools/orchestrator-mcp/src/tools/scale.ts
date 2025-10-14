@@ -64,11 +64,15 @@ export function createScaleTool(db: OrchestratorDB) {
 					}
 
 					// Launch Codex agent
+					const defaultModel = "gpt-5-codex";
+					const defaultReasoning: "low" | "medium" | "high" = "medium";
 					const codexResult = await launchCodexAgent(
 						agent_id,
 						prompt,
 						worktreePath,
 						args.role,
+						defaultModel,
+						defaultReasoning,
 					);
 
 					// Store in database
@@ -79,6 +83,8 @@ export function createScaleTool(db: OrchestratorDB) {
 						shell_id: codexResult.shellId,
 						worktree: worktreePath,
 						prompt: prompt,
+						model: defaultModel,
+						reasoning_effort: defaultReasoning,
 						status: "running",
 						created_at: new Date().toISOString(),
 						started_at: new Date().toISOString(),
