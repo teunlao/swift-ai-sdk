@@ -50,38 +50,46 @@ export async function launchCodexAgent(
     },
   };
 
-  // Write request to file
-  fs.writeFileSync(inputFile, JSON.stringify(request));
+  // Write initial JSON-RPC request FIRST (before tail -f starts)
+  fs.writeFileSync(inputFile, JSON.stringify(request) + "\n");
 
-  // Launch Codex MCP server
+  // Create shell script for detached execution
+  const scriptFile = path.join(tmpDir, "run.sh");
+  const shellScript = `#!/bin/bash
+cd "${cwd}"
+nohup sh -c 'tail -f "${inputFile}" | codex mcp-server' > "${outputFile}" 2> "${path.join(tmpDir, "stderr.log")}" &
+echo $! > "${path.join(tmpDir, "pid")}"
+disown
+`;
+  fs.writeFileSync(scriptFile, shellScript);
+  fs.chmodSync(scriptFile, "755");
+
+  // Launch detached Codex process via shell script
   const codexProcess = spawn(
-    "codex",
-    ["mcp-server"],
+    "bash",
+    [scriptFile],
     {
-      stdio: ["pipe", "pipe", "pipe"],
+      stdio: "ignore",
       cwd: cwd,
       detached: true,
     }
   );
 
-  // Pipe input file to stdin
-  const inputStream = fs.createReadStream(inputFile);
-  inputStream.pipe(codexProcess.stdin);
-
-  // Capture stdout to output file
-  const outputStream = fs.createWriteStream(outputFile);
-  codexProcess.stdout.pipe(outputStream);
-
-  // Capture stderr to separate file
-  const stderrFile = path.join(tmpDir, "stderr.log");
-  const stderrStream = fs.createWriteStream(stderrFile);
-  codexProcess.stderr.pipe(stderrStream);
-
-  // Don't wait for process to finish
+  // Unref to allow parent to exit
   codexProcess.unref();
 
+  // Wait for PID file to be created
+  await new Promise(resolve => setTimeout(resolve, 500));
+
+  // Read actual Codex PID from file
+  let actualPid = codexProcess.pid?.toString() || "unknown";
+  const pidFile = path.join(tmpDir, "pid");
+  if (fs.existsSync(pidFile)) {
+    actualPid = fs.readFileSync(pidFile, "utf-8").trim();
+  }
+
   return {
-    shellId: codexProcess.pid?.toString() || "unknown",
+    shellId: actualPid,
     outputFile,
     inputFile,
     process: codexProcess,
