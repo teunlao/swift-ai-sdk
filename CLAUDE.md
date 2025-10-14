@@ -211,11 +211,22 @@ continue_agent(executor_id, 'Fix bugs from validation report at .validation/repo
 
 **🚨 CRITICAL RULES:**
 1. **YOU ACTIVELY DRIVE THE WORKFLOW** - don't wait for user commands after each step
-2. **MONITOR agents continuously** - check status/logs every 30-60s until completion
+2. **MONITOR agents continuously** - check status/logs every 30-180s until completion
 3. **IMMEDIATELY call MCP tools** when agent finishes (request_validation, submit_validation)
 4. **DON'T ASK USER "what next?"** - you know the workflow, execute it!
 5. **Validation is iterative** - rejected → fix → re-validate → repeat until approved
 6. **Validation never skipped** - follow the mandate above unless the user literally says `skip validation` or `no validation needed`
+
+**⏱️ SLEEP BEFORE MONITORING (MANDATORY):**
+- **ALWAYS use sleep && before monitoring commands**
+- Write as ONE Bash command: `sleep N && monitoring_command`
+- Start with 30s, increase to 60s for complex tasks, up to 180s for very long tasks
+- Examples:
+  ```bash
+  Bash: sleep 30 && status(agent_id="executor-123")
+  Bash: sleep 60 && get_logs(agent_id="executor-123")
+  Bash: sleep 120 && status(agent_id="executor-123")
+  ```
 
 **⚠️ WORKTREE MODE - MANDATORY DEFAULTS:**
 

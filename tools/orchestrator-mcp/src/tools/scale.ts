@@ -10,7 +10,7 @@ import type {
 } from "@swift-ai-sdk/orchestrator-db";
 import { z } from "zod";
 import { launchCodexAgent } from "../codex.js";
-import { createWorktree } from "../git.js";
+import { createWorktree, normalizeWorktreeName } from "../git.js";
 
 export function createScaleTool(db: OrchestratorDB) {
 	return {
@@ -50,17 +50,26 @@ export function createScaleTool(db: OrchestratorDB) {
 
 					const agent_id = `${args.role}-${Date.now()}-${Math.random().toString(36).substring(7)}`;
 					const projectRoot = process.env.PROJECT_ROOT || process.cwd();
+					const taskSlug = task_id.replace(/[^A-Za-z0-9/_-]/g, "-");
+					const baseWorktreeName = `${args.role}-${taskSlug}`;
 
 					let worktreePath: string;
 					let worktreeCreated = false;
+					let branch: string;
 
 					// Handle worktree creation
 					if (args.worktree === "auto") {
-						const worktreeInfo = await createWorktree(agent_id, projectRoot);
+						const worktreeInfo = await createWorktree(
+							agent_id,
+							projectRoot,
+							baseWorktreeName,
+						);
 						worktreePath = worktreeInfo.path;
 						worktreeCreated = true;
+						branch = worktreeInfo.branch;
 					} else {
 						worktreePath = projectRoot;
+						({ branch } = normalizeWorktreeName(baseWorktreeName));
 					}
 
 					// Launch Codex agent
@@ -97,6 +106,7 @@ export function createScaleTool(db: OrchestratorDB) {
 						agent_id,
 						shell_id: codexResult.shellId,
 						worktree: worktreeCreated ? worktreePath : undefined,
+						branch,
 						status: "running" as const,
 						task_id,
 					};

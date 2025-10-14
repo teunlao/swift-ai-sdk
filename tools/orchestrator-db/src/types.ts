@@ -93,6 +93,7 @@ export interface LaunchAgentInput {
   role: AgentRole;
   task_id?: string;
   worktree: "auto" | "manual";
+  worktree_name: string;
   prompt: string;
   cwd?: string;
   model?: string;
@@ -104,6 +105,7 @@ export interface LaunchAgentOutput {
   agent_id: string;
   shell_id: string;
   worktree?: string;
+  branch?: string;
   status: AgentStatus;
 }
 

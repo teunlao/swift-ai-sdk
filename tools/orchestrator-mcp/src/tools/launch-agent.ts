@@ -8,7 +8,7 @@ import type {
   LaunchAgentInput,
   LaunchAgentOutput,
 } from "@swift-ai-sdk/orchestrator-db";
-import { createWorktree } from "../git.js";
+import { createWorktree, normalizeWorktreeName } from "../git.js";
 import { launchCodexAgent } from "../codex.js";
 import { startBackgroundParser } from "../background-parser.js";
 
@@ -17,7 +17,12 @@ export function createLaunchAgentTool(db: OrchestratorDB) {
 		name: "launch_agent",
 		schema: {
 			title: "Launch Agent",
-			description: `Launch a new Codex executor or validator agent with Git worktree isolation.
+				description: `Launch a new Codex executor or validator agent with Git worktree isolation.
+
+⚠️ WORKTREE NAME REQUIRED ⚠️
+- Every launch MUST provide the worktree_name argument.
+- The orchestrator prefixes 'agent/' automatically (e.g., agent/my-feature).
+- Omitting or leaving worktree_name blank will abort the launch.
 
 WHAT IT DOES:
 Creates a new autonomous Codex agent that runs in parallel, executes your prompt, and tracks all activity in real-time.
@@ -65,6 +70,12 @@ launch_agent(role="executor", worktree="auto", prompt="Create snake game with 4 
 					.describe(
 						"Worktree mode. 'auto' creates isolated Git worktree with unique branch for parallel work without conflicts. 'manual' uses cwd parameter for custom directory."
 					),
+				worktree_name: z
+					.string()
+					.min(1, "Worktree name is required")
+					.describe(
+						"REQUIRED. Human-readable worktree name suffix. The orchestrator automatically prefixes 'agent/' (e.g., 'agent/my-feature'). Only letters, numbers, '/', '-', and '_' are allowed; leaving this empty will cause launch to fail."
+					),
 				prompt: z
 					.string()
 					.describe(
@@ -94,18 +105,24 @@ launch_agent(role="executor", worktree="auto", prompt="Create snake game with 4 
 			try {
 				const agent_id = `${args.role}-${Date.now()}`;
 				const projectRoot = process.env.PROJECT_ROOT || process.cwd();
-
 				let worktreePath: string;
 				let worktreeCreated = false;
+				let branch: string;
 
 				// Handle worktree creation
 				if (args.worktree === "auto") {
-					const worktreeInfo = await createWorktree(agent_id, projectRoot);
+					const worktreeInfo = await createWorktree(
+						agent_id,
+						projectRoot,
+						args.worktree_name,
+					);
 					worktreePath = worktreeInfo.path;
 					worktreeCreated = true;
+					branch = worktreeInfo.branch;
 				} else {
 					// Manual mode - use provided cwd or project root
 					worktreePath = args.cwd || projectRoot;
+					({ branch } = normalizeWorktreeName(args.worktree_name));
 				}
 
 				// Launch Codex agent
@@ -118,13 +135,14 @@ launch_agent(role="executor", worktree="auto", prompt="Create snake game with 4 
 					worktreePath,
 					args.role,
 					defaultModel,
-					defaultReasoning
+					defaultReasoning,
 				);
 
 				const result: LaunchAgentOutput = {
 					agent_id,
 					shell_id: codexResult.shellId,
 					worktree: worktreeCreated ? worktreePath : undefined,
+					branch,
 					status: "running",
 				};
 
@@ -138,13 +156,13 @@ launch_agent(role="executor", worktree="auto", prompt="Create snake game with 4 
 					prompt: args.prompt,
 					model: defaultModel,
 					reasoning_effort: defaultReasoning,
-				status: "running",
-				created_at: new Date().toISOString(),
-				started_at: new Date().toISOString(),
-				ended_at: null,
-				last_activity: new Date().toISOString(),
-				current_validation_id: null,
-			});
+					status: "running",
+					created_at: new Date().toISOString(),
+					started_at: new Date().toISOString(),
+					ended_at: null,
+					last_activity: new Date().toISOString(),
+					current_validation_id: null,
+				});
 
 				// Start background parser for real-time log parsing
 				startBackgroundParser(agent_id, codexResult.outputFile, db);

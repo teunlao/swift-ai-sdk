@@ -8,6 +8,51 @@ import { simpleGit, SimpleGit } from "simple-git";
 import * as fs from "fs";
 import * as path from "path";
 
+const WORKTREE_BRANCH_PREFIX = "agent/";
+
+function normalizeWorktreeInput(name: string): string {
+  const trimmed = name.trim();
+  if (!trimmed) {
+    throw new Error("Worktree name is required");
+  }
+
+  const withoutPrefix = trimmed.startsWith(WORKTREE_BRANCH_PREFIX)
+    ? trimmed.slice(WORKTREE_BRANCH_PREFIX.length)
+    : trimmed;
+
+  const normalized = withoutPrefix
+    .replace(/\s+/g, "-")
+    .replace(/[^A-Za-z0-9\/_-]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/\/{2,}/g, "/")
+    .replace(/^[-/]+|[-/]+$/g, "");
+
+  if (!normalized) {
+    throw new Error(
+      "Worktree name must contain alphanumeric characters after the 'agent/' prefix",
+    );
+  }
+
+  if (!/^[A-Za-z0-9][A-Za-z0-9\/_-]*$/.test(normalized)) {
+    throw new Error(
+      "Worktree name must start with an alphanumeric character and may only include letters, numbers, '/', '-', or '_'",
+    );
+  }
+
+  return normalized;
+}
+
+export function normalizeWorktreeName(name: string): {
+  branch: string;
+  slug: string;
+  directory: string;
+} {
+  const slug = normalizeWorktreeInput(name);
+  const branch = `${WORKTREE_BRANCH_PREFIX}${slug}`;
+  const directory = `swift-ai-sdk-${WORKTREE_BRANCH_PREFIX.replace(/\//g, "-")}${slug.replace(/\//g, "-")}`;
+  return { branch, slug, directory };
+}
+
 export interface WorktreeInfo {
   path: string;
   branch: string;
@@ -18,17 +63,19 @@ export interface WorktreeInfo {
  */
 export async function createWorktree(
   agentId: string,
-  projectRoot: string
+  projectRoot: string,
+  requestedName: string
 ): Promise<WorktreeInfo> {
   const git: SimpleGit = simpleGit(projectRoot);
 
-  // Generate worktree path and branch name
-  const worktreeName = `agent-${agentId}`;
-  const worktreePath = path.join(
-    path.dirname(projectRoot),
-    `swift-ai-sdk-${worktreeName}`
-  );
-  const branchName = `agent/${agentId}`;
+  const { branch, directory } = normalizeWorktreeName(requestedName);
+  const worktreePath = path.join(path.dirname(projectRoot), directory);
+
+  // Ensure branch does not already exist
+  const branchList = await git.branch(["--list", branch]);
+  if (branchList.all.includes(branch)) {
+    throw new Error(`Branch ${branch} already exists. Choose a different worktree name.`);
+  }
 
   // Check if worktree already exists
   if (fs.existsSync(worktreePath)) {
@@ -36,11 +83,11 @@ export async function createWorktree(
   }
 
   // Create worktree with new branch
-  await git.raw(["worktree", "add", "-b", branchName, worktreePath, "main"]);
+  await git.raw(["worktree", "add", "-b", branch, worktreePath, "main"]);
 
   return {
     path: worktreePath,
-    branch: branchName,
+    branch,
   };
 }
 
@@ -107,15 +154,11 @@ export async function listWorktrees(
  * Check if a worktree exists for an agent
  */
 export async function worktreeExists(
-  agentId: string,
+  requestedName: string,
   projectRoot: string
 ): Promise<boolean> {
-  const worktreeName = `agent-${agentId}`;
-  const worktreePath = path.join(
-    path.dirname(projectRoot),
-    `swift-ai-sdk-${worktreeName}`
-  );
-
+  const { directory } = normalizeWorktreeName(requestedName);
+  const worktreePath = path.join(path.dirname(projectRoot), directory);
   return fs.existsSync(worktreePath);
 }
 
@@ -123,12 +166,9 @@ export async function worktreeExists(
  * Get worktree path for an agent
  */
 export function getWorktreePath(
-  agentId: string,
+  requestedName: string,
   projectRoot: string
 ): string {
-  const worktreeName = `agent-${agentId}`;
-  return path.join(
-    path.dirname(projectRoot),
-    `swift-ai-sdk-${worktreeName}`
-  );
+  const { directory } = normalizeWorktreeName(requestedName);
+  return path.join(path.dirname(projectRoot), directory);
 }
