@@ -1,9 +1,16 @@
 import Foundation
 
 /**
- Creates a `TextStreamResponse` with UTF-8 encoded text stream defaults.
+ Creates a `TextStreamResponse` with UTF-8 encoded text defaults.
 
  Port of `@ai-sdk/ai/src/text-stream/create-text-stream-response.ts`.
+
+ **Adaptations**:
+ - TypeScript returns a `Response` whose body is a `ReadableStream<Uint8Array>` produced by
+   piping the text stream through `TextEncoderStream`. The Swift port models this with the
+   existing `TextStreamResponse` placeholder that carries an `AsyncThrowingStream<String, Error>`
+   and metadata mirroring `ResponseInit`.
+ - Headers are represented as `[String: String]` while preserving case-insensitive semantics.
  */
 public func createTextStreamResponse(
     status: Int? = nil,
