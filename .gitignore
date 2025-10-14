@@ -46,5 +46,9 @@ node_modules/
 # Task Master AI (optional tool, each developer installs if needed)
 .taskmaster/
 
+# Orchestrator MCP (database files)
+orchestrator.db
+orchestrator.db-journal
+
 # Internal notes and experiments (not for commits)
 .info/
