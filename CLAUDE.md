@@ -167,21 +167,8 @@ assign_validator(validation_id=validation_id, validator_id=validator_id)
 → Session status → 'in_progress'
 
 **STEP 6: MONITOR Validator Until Completion**
-```bash
-# Use Bash with loop and sleep to monitor:
-while true; do
-  # Check status
-  status(agent_id=validator_id)
-  # If idle_minutes > 1, validator probably finished
-  # Check logs for final message
-  get_logs(agent_id=validator_id, last=5)
-  # Sleep 30 seconds before next check
-  sleep 30
-done
-```
-→ **CRITICAL**: Use Bash sleep in loop, NOT just waiting passively!
-→ Stop loop when `idle_minutes > 1` and validation report created
-→ Then proceed to STEP 7 immediately
+→ Periodically check status() and get_logs() until validator completes
+→ When `idle_minutes > 1` and validation report created, proceed to STEP 7
 
 **STEP 7: IMMEDIATELY Call submit_validation() - DON'T WAIT FOR USER!**
 ```
