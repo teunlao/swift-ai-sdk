@@ -15,6 +15,7 @@ interface CleanupAgentsInput {
   older_than?: string; // ISO date
   dry_run?: boolean; // default true
   confirm?: boolean; // default false
+  remove_worktrees?: boolean; // default false
 }
 
 interface CleanupAgentEntry {
@@ -33,6 +34,7 @@ interface CleanupAgentsOutput {
   strategy: Strategy;
   dry_run: boolean;
   confirm: boolean;
+  remove_worktrees: boolean;
   selected_count: number;
   skipped_protected_count: number;
   deleted_count: number;
@@ -43,6 +45,27 @@ interface CleanupAgentsOutput {
 
 const PROTECTED_STATUSES = new Set(["running", "needs_fix", "stuck", "blocked"]);
 
+function deleteValidationSessionsForAgent(db: OrchestratorDB, agentId: string) {
+  const sqliteDb = (db as unknown as { db?: { prepare?: (...args: unknown[]) => any } }).db;
+  if (!sqliteDb || typeof sqliteDb.prepare !== "function") {
+    return;
+  }
+
+  try {
+    sqliteDb
+      .prepare(
+        "DELETE FROM validation_sessions WHERE executor_id = ? OR validator_id = ?"
+      )
+      .run(agentId, agentId);
+  } catch (error) {
+    console.error(
+      `[cleanup_agents] Failed to delete validation sessions for agent ${agentId}: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
+  }
+}
+
 export function createCleanupAgentsTool(db: OrchestratorDB) {
   return {
     name: "cleanup_agents",
@@ -51,7 +74,7 @@ export function createCleanupAgentsTool(db: OrchestratorDB) {
       description: `Clean up old agent records from the orchestrator database with multiple strategies.
 
 WHAT IT DOES:
-Deletes agent rows from the database according to a strategy. Never deletes protected statuses (running, stuck/blocked, needs_fix). When not a dry run and confirmed, also attempts to remove matching Git worktrees created for those agents.
+Deletes agent rows from the database according to a strategy. Never deletes protected statuses (running, stuck/blocked, needs_fix). When not a dry run and confirmed, it can also remove matching Git worktrees created for those agents when remove_worktrees=true.
 
 STRATEGIES:
 - by_status: Delete agents with a specific status (e.g., killed, completed, validated)
@@ -102,6 +125,13 @@ SAFETY:
           .describe(
             "Required to perform actual deletion when dry_run=false. Prevents accidental data loss."
           ),
+        remove_worktrees: z
+          .boolean()
+          .optional()
+          .default(false)
+          .describe(
+            "When true, remove recognized worktrees after deleting agents. Defaults to false to preserve worktrees."
+          ),
       },
     },
     handler: async (args: CleanupAgentsInput) => {
@@ -109,6 +139,7 @@ SAFETY:
         const dryRun = args.dry_run ?? true;
         const confirm = args.confirm ?? false;
         const strategy = args.strategy;
+        const removeWorktrees = args.remove_worktrees ?? false;
         const projectRoot = process.env.PROJECT_ROOT || process.cwd();
 
         // Gather candidates based on strategy
@@ -216,7 +247,11 @@ SAFETY:
         for (const e of deletableEntries) {
           const path = e.worktree ?? undefined;
           e.worktree_will_be_removed = Boolean(
-            path && knownWorktreePaths.has(path) && path !== projectRoot && path.includes("swift-ai-sdk-agent-")
+            removeWorktrees &&
+              path &&
+              knownWorktreePaths.has(path) &&
+              path !== projectRoot &&
+              path.includes("swift-ai-sdk-agent-")
           );
         }
 
@@ -224,6 +259,10 @@ SAFETY:
         let deletedCount = 0;
         let freedWorktrees = 0;
         const results: CleanupAgentEntry[] = [];
+
+        if (!removeWorktrees) {
+          notes.push("Worktrees are preserved by default; set remove_worktrees=true to delete them.");
+        }
 
         if (dryRun) {
           results.push(...[...deletableEntries, ...protectedEntries]);
@@ -241,21 +280,26 @@ SAFETY:
           for (const entry of deletableEntries) {
             const res: CleanupAgentEntry = { ...entry };
             try {
-              // Attempt to remove worktree when recognized and safe
-              if (entry.worktree_will_be_removed && entry.worktree) {
+              // Delete dependent validation session records first to avoid FK constraint errors
+              deleteValidationSessionsForAgent(db, entry.id);
+
+              // Delete the agent record regardless of worktree cleanup outcome
+              db.deleteAgent(entry.id);
+              deletedCount += 1;
+
+              // Attempt to remove worktree only when explicitly requested
+              if (removeWorktrees && entry.worktree_will_be_removed && entry.worktree) {
                 try {
                   await removeWorktree(entry.worktree, projectRoot);
                   res.worktree_removed = true;
                   freedWorktrees += 1;
                 } catch (wtErr) {
-                  res.error = `Failed to remove worktree: ${wtErr instanceof Error ? wtErr.message : String(wtErr)}`;
+                  res.error = `Failed to remove worktree: ${
+                    wtErr instanceof Error ? wtErr.message : String(wtErr)
+                  }`;
                   res.worktree_removed = false;
                 }
               }
-
-              // Delete agent record last
-              db.deleteAgent(entry.id);
-              deletedCount += 1;
             } catch (err) {
               res.error = err instanceof Error ? err.message : String(err);
             }
@@ -272,6 +316,7 @@ SAFETY:
           strategy,
           dry_run: dryRun,
           confirm,
+          remove_worktrees: removeWorktrees,
           selected_count: selected.length,
           skipped_protected_count: protectedEntries.length,
           deleted_count: deletedCount,
