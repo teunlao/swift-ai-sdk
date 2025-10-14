@@ -139,13 +139,17 @@ CRITICAL: Agents cannot call MCP tools - only YOU can. This is a destructive ope
 
         let validatorStatus: AgentStatus = validator?.status ?? "running";
 			if (validator) {
-				validatorStatus = "completed";
-				db.updateAgent(validator.id, {
+				// Only complete validator if approved; keep running for re-validation if rejected
+				validatorStatus = isApproved ? "completed" : "running";
+				const updates: Record<string, unknown> = {
 					status: validatorStatus,
 					current_validation_id: null,
 					last_activity: now,
-					ended_at: validator.ended_at ?? now,
-				});
+				};
+				if (isApproved) {
+					updates.ended_at = validator.ended_at ?? now;
+				}
+				db.updateAgent(validator.id, updates as Partial<typeof validator>);
         }
 
         const output: SubmitValidationOutput = {
