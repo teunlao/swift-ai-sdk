@@ -165,8 +165,36 @@ export class OrchestratorDB {
 	}
 
 	deleteAgent(id: string): void {
-		const stmt = this.db.prepare("DELETE FROM agents WHERE id = ?");
-		stmt.run(id);
+		const selectValidationIdsStmt = this.db.prepare(
+			"SELECT id FROM validation_sessions WHERE executor_id = ? OR validator_id = ?",
+		);
+		const clearCurrentValidationStmt = this.db.prepare(
+			"UPDATE agents SET current_validation_id = NULL WHERE current_validation_id = ?",
+		);
+		const deleteValidationSessionsStmt = this.db.prepare(
+			"DELETE FROM validation_sessions WHERE executor_id = ? OR validator_id = ?",
+		);
+		const deleteAgentLogsStmt = this.db.prepare(
+			"DELETE FROM agent_logs WHERE agent_id = ?",
+		);
+		const deleteAgentStmt = this.db.prepare("DELETE FROM agents WHERE id = ?");
+
+		const deleteCascade = this.db.transaction((agentId: string) => {
+			const relatedValidations = selectValidationIdsStmt.all(
+				agentId,
+				agentId,
+			) as Array<{ id: string }>;
+
+			for (const validation of relatedValidations) {
+				clearCurrentValidationStmt.run(validation.id);
+			}
+
+			deleteValidationSessionsStmt.run(agentId, agentId);
+			deleteAgentLogsStmt.run(agentId);
+			deleteAgentStmt.run(agentId);
+		});
+
+		deleteCascade(id);
 		this.events.publish({ type: "agent-deleted", agentId: id });
 	}
 
