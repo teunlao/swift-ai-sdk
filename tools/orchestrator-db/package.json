@@ -1,0 +1,27 @@
+{
+  "name": "@swift-ai-sdk/orchestrator-db",
+  "version": "0.1.0",
+  "description": "Shared database layer and event bus for orchestrator agents",
+  "type": "module",
+  "main": "dist/index.js",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.4.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.10.1",
+    "typescript": "^5.9.3"
+  }
+}

@@ -1,0 +1,24 @@
+{
+	"name": "swift-ai-sdk-monorepo",
+	"private": true,
+	"packageManager": "pnpm@10.18.3",
+	"workspaces": [
+		"tools/orchestrator-mcp",
+		"tools/orchestrator-dashboard",
+		"tools/orchestrator-db"
+	],
+	"scripts": {
+		"build": "npm run build --workspaces",
+		"lint": "echo 'No lint configured'",
+		"test": "npm run test --workspaces"
+	},
+	"devDependencies": {
+		"@types/node": "^24.7.2"
+	},
+	"pnpm": {
+		"onlyBuiltDependencies": [
+			"better-sqlite3",
+			"sharp"
+		]
+	}
+}
