@@ -6,6 +6,7 @@ import { z } from "zod";
 import type { OrchestratorDB } from "../database.js";
 import { removeWorktree } from "../git.js";
 import { killCodexAgent, cleanupAgentFiles } from "../codex.js";
+import { stopBackgroundParser } from "../background-parser.js";
 import type { KillAgentInput, KillAgentOutput } from "../types.js";
 
 export function createKillAgentTool(db: OrchestratorDB) {
@@ -32,6 +33,9 @@ export function createKillAgentTool(db: OrchestratorDB) {
 						],
 					};
 				}
+
+				// Stop background parser
+				stopBackgroundParser(args.agent_id);
 
 				// Kill Codex process
 				killCodexAgent(agent.shell_id);

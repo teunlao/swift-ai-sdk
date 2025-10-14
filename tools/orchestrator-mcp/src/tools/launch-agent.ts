@@ -6,6 +6,7 @@ import { z } from "zod";
 import type { OrchestratorDB } from "../database.js";
 import { createWorktree } from "../git.js";
 import { launchCodexAgent } from "../codex.js";
+import { startBackgroundParser } from "../background-parser.js";
 import type { LaunchAgentInput, LaunchAgentOutput } from "../types.js";
 
 export function createLaunchAgentTool(db: OrchestratorDB) {
@@ -69,6 +70,9 @@ export function createLaunchAgentTool(db: OrchestratorDB) {
 					ended_at: null,
 					last_activity: new Date().toISOString(),
 				});
+
+				// Start background parser for real-time log parsing
+				startBackgroundParser(agent_id, codexResult.outputFile, db);
 
 				return {
 					content: [

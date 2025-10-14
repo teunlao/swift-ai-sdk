@@ -1,12 +1,12 @@
 /**
  * Get Logs Tool
+ *
+ * Reads parsed logs from database (populated by background parser).
  */
 
 import { z } from "zod";
 import type { OrchestratorDB } from "../database.js";
-import { readCodexOutput, getAgentTmpDir } from "../codex.js";
-import { extractLogs } from "../parser.js";
-import type { GetLogsInput, GetLogsOutput } from "../types.js";
+import type { GetLogsInput, GetLogsOutput, LogEntry } from "../types.js";
 
 export function createGetLogsTool(db: OrchestratorDB) {
 	return {
@@ -36,24 +36,15 @@ export function createGetLogsTool(db: OrchestratorDB) {
 					};
 				}
 
-				// Read Codex output file
-				const tmpDir = getAgentTmpDir(args.agent_id);
-				const outputFile = `${tmpDir}/output.json`;
-				const output = readCodexOutput(outputFile);
+				// Read from database (already parsed by background watcher!)
+				const dbLogs = db.getLogs(args.agent_id, args.filter, args.last);
 
-				if (!output) {
-					return {
-						content: [
-							{
-								type: "text" as const,
-								text: `No output available for agent ${args.agent_id}`,
-							},
-						],
-					};
-				}
-
-				// Parse and extract logs
-				const logs = extractLogs(output, args.filter, args.last);
+				// Convert AgentLog[] to LogEntry[]
+				const logs: LogEntry[] = dbLogs.map((log) => ({
+					type: log.event_type as LogEntry["type"],
+					timestamp: log.timestamp,
+					content: log.content,
+				}));
 
 				const result: GetLogsOutput = {
 					agent_id: args.agent_id,

@@ -14,8 +14,10 @@ const __dirname = dirname(__filename);
 export class OrchestratorDB {
   private db: Database.Database;
 
-  constructor(dbPath: string = join(process.cwd(), "orchestrator.db")) {
-    this.db = new Database(dbPath);
+  constructor(dbPath?: string) {
+    // Priority: 1) parameter, 2) env variable, 3) default (in orchestrator-mcp folder)
+    const defaultPath = process.env.DATABASE_PATH || join(__dirname, "../orchestrator.db");
+    this.db = new Database(dbPath || defaultPath);
     this.initialize();
   }
 
@@ -115,13 +117,33 @@ export class OrchestratorDB {
     stmt.run(log.agent_id, log.timestamp, log.event_type, log.content);
   }
 
-  getLogs(agent_id: string, limit?: number): AgentLog[] {
-    let query = "SELECT * FROM agent_logs WHERE agent_id = ? ORDER BY timestamp DESC";
+  getLogs(agent_id: string, filter?: string, limit?: number): AgentLog[] {
+    let query = "SELECT * FROM agent_logs WHERE agent_id = ?";
+    const params: any[] = [agent_id];
+
+    // Apply filter
+    if (filter && filter !== "all") {
+      const typeMap: Record<string, string> = {
+        reasoning: "reasoning",
+        messages: "message",
+        commands: "command",
+        errors: "error",
+      };
+      const targetType = typeMap[filter];
+      if (targetType) {
+        query += " AND event_type = ?";
+        params.push(targetType);
+      }
+    }
+
+    query += " ORDER BY timestamp DESC";
+
     if (limit) {
       query += ` LIMIT ${limit}`;
     }
+
     const stmt = this.db.prepare(query);
-    return stmt.all(agent_id) as AgentLog[];
+    return stmt.all(...params) as AgentLog[];
   }
 
   // ============ Config ============
