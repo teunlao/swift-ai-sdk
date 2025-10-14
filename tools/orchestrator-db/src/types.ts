@@ -6,12 +6,14 @@ export type AgentRole = "executor" | "validator";
 
 export type AgentStatus =
   | "running"
+  | "blocked"
   | "stuck"
   | "completed"
   | "killed"
   | "validated"
   | "merged"
-  | "needs_fix";
+  | "needs_fix"
+  | "needs_input";
 
 export type ValidationStatus =
   | "pending"

@@ -9,10 +9,10 @@ import type {
 	ScaleOutput,
 } from "@swift-ai-sdk/orchestrator-db";
 import { z } from "zod";
-import { launchCodexAgent } from "../codex.js";
-import { createWorktree, normalizeWorktreeName } from "../git.js";
+import { AutomationEngine } from "../automation/engine.js";
+import { createAgentSession } from "../automation/agent-factory.js";
 
-export function createScaleTool(db: OrchestratorDB) {
+export function createScaleTool(db: OrchestratorDB, automation: AutomationEngine) {
 	return {
 		name: "scale",
 		schema: {
@@ -48,65 +48,33 @@ export function createScaleTool(db: OrchestratorDB) {
 					// TODO: Integrate with Task Master to get detailed prompt
 					const prompt = `Work on task ${task_id}`;
 
-					const agent_id = `${args.role}-${Date.now()}-${Math.random().toString(36).substring(7)}`;
-					const projectRoot = process.env.PROJECT_ROOT || process.cwd();
+					const agent_id = `${args.role}-${Date.now()}-${Math.random()
+						.toString(36)
+						.substring(7)}`;
 					const taskSlug = task_id.replace(/[^A-Za-z0-9/_-]/g, "-");
 					const baseWorktreeName = `${args.role}-${taskSlug}`;
+					const worktreeMode = args.worktree ?? "auto";
 
-					let worktreePath: string;
-					let worktreeCreated = false;
-					let branch: string;
-
-					// Handle worktree creation
-					if (args.worktree === "auto") {
-						const worktreeInfo = await createWorktree(
-							agent_id,
-							projectRoot,
-							baseWorktreeName,
-						);
-						worktreePath = worktreeInfo.path;
-						worktreeCreated = true;
-						branch = worktreeInfo.branch;
-					} else {
-						worktreePath = projectRoot;
-						({ branch } = normalizeWorktreeName(baseWorktreeName));
-					}
-
-					// Launch Codex agent
-					const defaultModel = "gpt-5-codex";
-					const defaultReasoning: "low" | "medium" | "high" = "medium";
-					const codexResult = await launchCodexAgent(
-						agent_id,
-						prompt,
-						worktreePath,
-						args.role,
-						defaultModel,
-						defaultReasoning,
+					const session = await createAgentSession(
+						{
+							agentId: agent_id,
+							role: args.role,
+							prompt,
+							taskId: task_id,
+							worktreeMode,
+							worktreeName: baseWorktreeName,
+						},
+						{
+							db,
+							registerAgent: (agent) => automation.registerAgent(agent),
+						},
 					);
 
-					// Store in database
-					db.createAgent({
-						id: agent_id,
-						role: args.role,
-						task_id: task_id,
-						shell_id: codexResult.shellId,
-						worktree: worktreePath,
-						prompt: prompt,
-						model: defaultModel,
-						reasoning_effort: defaultReasoning,
-						status: "running",
-						created_at: new Date().toISOString(),
-						started_at: new Date().toISOString(),
-						ended_at: null,
-						last_activity: new Date().toISOString(),
-						current_validation_id: null,
-					});
-
 					return {
-						agent_id,
-						shell_id: codexResult.shellId,
-						worktree: worktreeCreated ? worktreePath : undefined,
-						branch,
+						agent_id: session.agent_id,
+						shell_id: session.shell_id,
+						worktree: worktreeMode === "auto" ? session.worktree : undefined,
+						branch: session.branch,
 						status: "running" as const,
 						task_id,
 					};

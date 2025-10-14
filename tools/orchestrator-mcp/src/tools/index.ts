@@ -5,6 +5,7 @@
  */
 
 import type { OrchestratorDB } from "@swift-ai-sdk/orchestrator-db";
+import { AutomationEngine } from "../automation/engine.js";
 import { createLaunchAgentTool } from "./launch-agent.js";
 import { createStatusTool } from "./status.js";
 import { createKillAgentTool } from "./kill-agent.js";
@@ -34,9 +35,9 @@ export interface ToolDefinition {
 /**
  * Create all tools for the Orchestrator MCP server
  */
-export function createTools(db: OrchestratorDB): ToolDefinition[] {
+export function createTools(db: OrchestratorDB, automation: AutomationEngine): ToolDefinition[] {
 	return [
-		createLaunchAgentTool(db),
+		createLaunchAgentTool(db, automation),
 		createStatusTool(db),
 		createKillAgentTool(db),
 		createContinueAgentTool(db),
@@ -44,7 +45,7 @@ export function createTools(db: OrchestratorDB): ToolDefinition[] {
 		createReadWorktreeFileTool(db),
 		createAutoRecoverTool(db),
 		createGetLogsTool(db),
-		createScaleTool(db),
+		createScaleTool(db, automation),
 		createGetHistoryTool(db),
 		createRequestValidationTool(db),
 		createAssignValidatorTool(db),

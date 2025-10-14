@@ -10,6 +10,7 @@ MCP server for orchestrating parallel Codex agents with automatic recovery and m
 - 📝 Centralized logging and history
 - 🎯 Task Master integration
 - ⚡ Scale to multiple agents simultaneously
+- 🤖 Flow-file automation for executor → validator cycles
 
 ## Installation
 
@@ -51,4 +52,4 @@ npm test       # Run tests
 
 ## Configuration
 
-See `docs/orchestrator-mcp-plan.md` for full documentation.
+See `docs/orchestrator-mcp-plan.md` and `plan/orchestrator-automation.md` for full documentation.

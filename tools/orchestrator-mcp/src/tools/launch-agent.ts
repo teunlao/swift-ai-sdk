@@ -8,11 +8,10 @@ import type {
   LaunchAgentInput,
   LaunchAgentOutput,
 } from "@swift-ai-sdk/orchestrator-db";
-import { createWorktree, normalizeWorktreeName } from "../git.js";
-import { launchCodexAgent } from "../codex.js";
-import { startBackgroundParser } from "../background-parser.js";
+import { AutomationEngine } from "../automation/engine.js";
+import { createAgentSession } from "../automation/agent-factory.js";
 
-export function createLaunchAgentTool(db: OrchestratorDB) {
+export function createLaunchAgentTool(db: OrchestratorDB, automation: AutomationEngine) {
 	return {
 		name: "launch_agent",
 		schema: {
@@ -101,71 +100,34 @@ launch_agent(role="executor", worktree="auto", prompt="Create snake game with 4 
 					),
 			},
 		},
-		handler: async (args: LaunchAgentInput) => {
+			handler: async (args: LaunchAgentInput) => {
 			try {
 				const agent_id = `${args.role}-${Date.now()}`;
-				const projectRoot = process.env.PROJECT_ROOT || process.cwd();
-				let worktreePath: string;
-				let worktreeCreated = false;
-				let branch: string;
-
-				// Handle worktree creation
-				if (args.worktree === "auto") {
-					const worktreeInfo = await createWorktree(
-						agent_id,
-						projectRoot,
-						args.worktree_name,
-					);
-					worktreePath = worktreeInfo.path;
-					worktreeCreated = true;
-					branch = worktreeInfo.branch;
-				} else {
-					// Manual mode - use provided cwd or project root
-					worktreePath = args.cwd || projectRoot;
-					({ branch } = normalizeWorktreeName(args.worktree_name));
-				}
-
-				// Launch Codex agent
-				const defaultModel = args.model ?? "gpt-5-codex";
-				const defaultReasoning = args.reasoning_effort ?? "medium";
-
-				const codexResult = await launchCodexAgent(
-					agent_id,
-					args.prompt,
-					worktreePath,
-					args.role,
-					defaultModel,
-					defaultReasoning,
+				const session = await createAgentSession(
+					{
+						agentId: agent_id,
+						role: args.role,
+						prompt: args.prompt,
+						taskId: args.task_id ?? null,
+						worktreeMode: args.worktree,
+						worktreeName: args.worktree_name,
+						cwd: args.cwd,
+						model: args.model,
+						reasoningEffort: args.reasoning_effort,
+					},
+					{
+						db,
+						registerAgent: (agent) => automation.registerAgent(agent),
+					},
 				);
 
 				const result: LaunchAgentOutput = {
-					agent_id,
-					shell_id: codexResult.shellId,
-					worktree: worktreeCreated ? worktreePath : undefined,
-					branch,
+					agent_id: session.agent_id,
+					shell_id: session.shell_id,
+					worktree: args.worktree === "auto" ? session.worktree : undefined,
+					branch: session.branch,
 					status: "running",
 				};
-
-				// Store in database
-				db.createAgent({
-					id: agent_id,
-					role: args.role,
-					task_id: args.task_id || null,
-					shell_id: codexResult.shellId,
-					worktree: worktreePath,
-					prompt: args.prompt,
-					model: defaultModel,
-					reasoning_effort: defaultReasoning,
-					status: "running",
-					created_at: new Date().toISOString(),
-					started_at: new Date().toISOString(),
-					ended_at: null,
-					last_activity: new Date().toISOString(),
-					current_validation_id: null,
-				});
-
-				// Start background parser for real-time log parsing
-				startBackgroundParser(agent_id, codexResult.outputFile, db);
 
 				return {
 					content: [

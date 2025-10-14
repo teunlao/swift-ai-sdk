@@ -16,9 +16,11 @@ import {
 } from "./background-parser.js";
 import { isCodexAgentRunning, getAgentTmpDir } from "./codex.js";
 import * as fs from "node:fs";
+import { AutomationEngine } from "./automation/engine.js";
 
 // Initialize database
 const db = new OrchestratorDB();
+const automation = new AutomationEngine(db);
 
 // Create MCP server
 const server = new McpServer(
@@ -115,7 +117,7 @@ Cycle 2: Executor fixes 4 bugs → Validator verifies → APPROVED → merge!`,
 console.error("Starting Orchestrator MCP Server...");
 
 // Register all tools
-const tools = createTools(db);
+const tools = createTools(db, automation);
 
 for (const tool of tools) {
 	server.registerTool(tool.name, tool.schema, tool.handler);
@@ -129,7 +131,18 @@ async function main() {
 	await server.connect(transport);
 
 	// Restore watchers for running agents
-	const runningAgents = db.getAllAgents({ status: "running" });
+const allAgents = db.getAllAgents();
+automation.start(
+	allAgents
+		.filter((agent) => Boolean(agent.worktree))
+		.map((agent) => ({
+			agentId: agent.id,
+			worktreePath: agent.worktree!,
+			role: agent.role,
+			taskId: agent.task_id,
+		}))
+);
+const runningAgents = allAgents.filter((agent) => agent.status === "running");
 	let restored = 0;
 
 	for (const agent of runningAgents) {
@@ -162,8 +175,9 @@ main().catch((error) => {
 // Cleanup on exit
 process.on("SIGINT", () => {
 	console.error("\n👋 Shutting down...");
-	stopAllBackgroundParsers();
-	db.close();
+stopAllBackgroundParsers();
+automation.stop();
+db.close();
 	process.exit(0);
 });
 
