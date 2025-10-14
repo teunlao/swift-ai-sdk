@@ -1,5 +1,7 @@
 "use client";
 
+import clsx from "clsx";
+import { ChevronDownIcon } from "@radix-ui/react-icons";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StatusBadge } from "@/components/status-badge";
@@ -78,6 +80,50 @@ function StatCard({ label, value }: { label: string; value: string | number }) {
 	);
 }
 
+function AccordionCard({
+	title,
+	description,
+	children,
+	defaultOpen = false,
+}: {
+	title: string;
+	description?: string;
+	children: React.ReactNode;
+	defaultOpen?: boolean;
+}) {
+	const [open, setOpen] = useState(defaultOpen);
+
+	return (
+		<div className="rounded-xl border border-white/5 bg-muted/30">
+			<button
+				type="button"
+				onClick={() => setOpen((prev) => !prev)}
+				className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left transition hover:bg-white/[0.03]"
+				aria-expanded={open}
+			>
+				<div>
+					<p className="text-lg font-semibold text-white">{title}</p>
+					{description && (
+						<p className="mt-1 text-sm text-neutral-400">{description}</p>
+					)}
+				</div>
+				<ChevronDownIcon
+					className={clsx(
+						"h-5 w-5 text-neutral-400 transition-transform duration-150",
+						open && "rotate-180",
+					)}
+					aria-hidden
+				/>
+			</button>
+			{open ? (
+				<div className="border-t border-white/5 px-5 py-4 text-sm text-neutral-200">
+					{children}
+				</div>
+			) : null}
+		</div>
+	);
+}
+
 export function AgentDetailPage({ agentId }: { agentId: string }) {
 	const [agent, setAgent] = useState<AgentDetail | null>(null);
 	const [currentValidation, setCurrentValidation] =
@@ -93,6 +139,7 @@ export function AgentDetailPage({ agentId }: { agentId: string }) {
 	const autoScrollRef = useRef(true);
 
 	const hasPrompt = Boolean(agent?.prompt);
+	const hasFlow = Boolean(agent?.flow);
 
 	const loadLogs = useCallback(async () => {
 		setLogError(null);
@@ -144,11 +191,19 @@ export function AgentDetailPage({ agentId }: { agentId: string }) {
 				);
 				if (matchingAgent) {
 					setAgent((prev) => {
-						const prompt = prev?.prompt ?? null;
+						if (!prev) {
+							return {
+								...matchingAgent,
+								prompt: null,
+								flow: null,
+							} as AgentDetail;
+						}
+
 						return {
-							...(prev ?? {}),
+							...prev,
 							...matchingAgent,
-							prompt,
+							prompt: prev.prompt,
+							flow: prev.flow,
 						};
 					});
 				}
@@ -183,6 +238,18 @@ export function AgentDetailPage({ agentId }: { agentId: string }) {
 			source.close();
 		};
 	}, [agent, agentId]);
+
+	const flowJson = useMemo(() => {
+		if (!agent?.flow) return null;
+		if (agent.flow.parsed) {
+			return JSON.stringify(agent.flow.parsed, null, 2);
+		}
+		try {
+			return JSON.stringify(JSON.parse(agent.flow.raw), null, 2);
+		} catch (error) {
+			return agent.flow.raw;
+		}
+	}, [agent?.flow]);
 
 	const agentReady = Boolean(agent);
 
@@ -409,12 +476,132 @@ export function AgentDetailPage({ agentId }: { agentId: string }) {
 				</div>
 			</section>
 
-			{hasPrompt && (
-				<section className="rounded-xl border border-white/5 bg-muted/30 p-5">
-					<h2 className="text-lg font-semibold text-white">Initial Prompt</h2>
-					<pre className="mt-4 max-h-64 overflow-auto rounded-md bg-black/30 p-4 text-sm text-neutral-200">
-						{agent.prompt}
-					</pre>
+			{(hasPrompt || hasFlow) && (
+				<section
+					className={clsx(
+						"grid gap-6",
+						hasPrompt && hasFlow && "lg:grid-cols-2",
+					)}
+				>
+					{hasPrompt && (
+						<AccordionCard title="Initial Prompt">
+							<pre className="max-h-64 overflow-auto rounded-md bg-black/30 p-4 text-sm text-neutral-200">
+								{agent.prompt}
+							</pre>
+						</AccordionCard>
+					)}
+					{hasFlow && agent.flow && (
+						<AccordionCard
+							title="Automation Flow"
+							description="State exported to .orchestrator/flow"
+						>
+							<div className="space-y-4">
+								{agent.flow.parsed ? (
+									<>
+										<dl className="space-y-3 text-sm text-neutral-300">
+											<div className="flex justify-between gap-4">
+												<dt className="text-neutral-400">Role</dt>
+												<dd className="font-medium text-white">
+													{agent.flow.parsed.role}
+												</dd>
+											</div>
+											<div className="flex justify-between gap-4">
+												<dt className="text-neutral-400">Status</dt>
+												<dd className="font-medium text-white">
+													{agent.flow.parsed.status}
+												</dd>
+											</div>
+											<div className="flex justify-between gap-4">
+												<dt className="text-neutral-400">Iteration</dt>
+												<dd>{agent.flow.parsed.iteration}</dd>
+											</div>
+											<div className="flex justify-between gap-4">
+												<dt className="text-neutral-400">Updated</dt>
+												<dd>
+													{formatDate(
+														agent.flow.parsed.timestamps?.updated_at ?? null,
+													)}
+												</dd>
+											</div>
+											<div className="flex justify-between gap-4">
+												<dt className="text-neutral-400">Request</dt>
+												<dd className="flex flex-col items-end gap-1 text-right">
+													<span className="font-mono text-xs text-neutral-300">
+														{agent.flow.parsed.request.path ?? "–"}
+													</span>
+													<span className="text-xs uppercase tracking-wide text-neutral-500">
+														{agent.flow.parsed.request.ready ? "Ready" : "Pending"}
+													</span>
+												</dd>
+											</div>
+											<div className="flex justify-between gap-4">
+												<dt className="text-neutral-400">Report</dt>
+												<dd className="flex flex-col items-end gap-1 text-right">
+													<span className="font-mono text-xs text-neutral-300">
+														{agent.flow.parsed.report.path ?? "–"}
+													</span>
+													<span className="text-xs uppercase tracking-wide text-neutral-500">
+														{agent.flow.parsed.report.result ?? "Pending"}
+													</span>
+												</dd>
+											</div>
+											{agent.flow.parsed.summary && (
+												<div className="flex justify-between gap-4">
+													<dt className="text-neutral-400">Summary</dt>
+													<dd className="max-w-xs text-right text-neutral-200">
+														{agent.flow.parsed.summary}
+													</dd>
+												</div>
+											)}
+										</dl>
+										{agent.flow.parsed.blockers.length > 0 && (
+											<div className="space-y-2 rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-3 text-sm text-yellow-100">
+												<p className="text-xs font-semibold uppercase tracking-wide text-yellow-300">
+													Blockers
+												</p>
+												<ul className="space-y-1">
+													{agent.flow.parsed.blockers.map((blocker) => (
+														<li
+															key={`${blocker.code}-${blocker.detail}`}
+															className="flex flex-col gap-1"
+														>
+															<span className="font-semibold text-yellow-200">
+																{blocker.code}
+															</span>
+															<span className="text-yellow-100">
+																{blocker.detail}
+															</span>
+														</li>
+													))}
+												</ul>
+											</div>
+										)}
+									</>
+								) : (
+									<p className="text-sm text-neutral-400">
+										Flow file detected, but content could not be parsed. Showing
+										raw payload below.
+									</p>
+								)}
+								<div>
+									<p className="mb-2 text-xs uppercase tracking-wide text-neutral-500">
+										Raw JSON
+										{agent.flow.path ? (
+											<>
+												{" "}
+												<span className="font-mono text-[10px] text-neutral-400">
+													{agent.flow.path}
+												</span>
+											</>
+										) : null}
+									</p>
+									<pre className="max-h-64 overflow-auto rounded-md bg-black/30 p-4 text-xs text-neutral-200">
+										{flowJson ?? "Flow artifact not found."}
+									</pre>
+								</div>
+							</div>
+						</AccordionCard>
+					)}
 				</section>
 			)}
 

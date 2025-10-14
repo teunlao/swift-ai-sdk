@@ -1,5 +1,67 @@
 import type { Agent, AgentLog, ValidationSession } from "./db";
 
+export type ExecutorFlowStatus =
+	| "working"
+	| "ready_for_validation"
+	| "needs_input"
+	| "done";
+
+export type ValidatorFlowStatus =
+	| "reviewing"
+	| "awaiting_executor"
+	| "needs_input"
+	| "done";
+
+export type FlowRole = "executor" | "validator";
+
+export type FlowBlocker = {
+	code: string;
+	detail: string;
+};
+
+export type FlowRequestMeta = {
+	path: string | null;
+	ready: boolean;
+};
+
+export type FlowReportMeta = {
+	path: string | null;
+	result: "approved" | "rejected" | null;
+};
+
+export type FlowTimestamps = {
+	updated_at: string;
+};
+
+export type BaseFlowState<TStatus extends string> = {
+	agent_id: string;
+	role: FlowRole;
+	task_id: string | null;
+	iteration: number;
+	status: TStatus;
+	summary: string | null;
+	request: FlowRequestMeta;
+	report: FlowReportMeta;
+	blockers: FlowBlocker[];
+	timestamps: FlowTimestamps;
+};
+
+export type ExecutorFlowState = BaseFlowState<ExecutorFlowStatus> & {
+	role: "executor";
+};
+
+export type ValidatorFlowState = BaseFlowState<ValidatorFlowStatus> & {
+	role: "validator";
+};
+
+export type FlowState = ExecutorFlowState | ValidatorFlowState;
+
+export type AgentFlow = {
+	raw: string;
+	parsed: FlowState | null;
+	path: string;
+};
+
 export type AgentSummary = {
   id: string;
   role: Agent["role"];
@@ -103,7 +165,8 @@ export function toLogDto(log: AgentLog): LogDTO {
 }
 
 export type AgentDetail = AgentSummary & {
-  prompt: string | null;
+	prompt: string | null;
+	flow: AgentFlow | null;
 };
 
 export type AgentDetailPayload = {
