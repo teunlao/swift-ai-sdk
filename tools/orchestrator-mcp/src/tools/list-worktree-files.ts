@@ -6,10 +6,35 @@ import { z } from "zod";
 import * as fs from "fs";
 import * as path from "path";
 import type {
-  OrchestratorDB,
-  ListWorktreeFilesInput,
-  ListWorktreeFilesOutput,
+	OrchestratorDB,
+	ListWorktreeFilesInput,
+	ListWorktreeFilesOutput,
 } from "@swift-ai-sdk/orchestrator-db";
+
+const WILDCARD_STAR_PLACEHOLDER = "__wildcard_star__";
+const WILDCARD_QUESTION_PLACEHOLDER = "__wildcard_question__";
+
+/**
+ * Convert a simple wildcard pattern into an equivalent regular expression.
+ * Supports `*` (any number of characters) and `?` (single character) while
+ * escaping any other regex meta characters to ensure literal matching.
+ */
+export function createPatternRegex(pattern: string): RegExp {
+	const withPlaceholders = pattern
+		.replaceAll("*", WILDCARD_STAR_PLACEHOLDER)
+		.replaceAll("?", WILDCARD_QUESTION_PLACEHOLDER);
+
+	const escaped = withPlaceholders.replaceAll(
+		/[.+^${}()|[\]\\]/g,
+		(match) => `\\${match}`,
+	);
+
+	const regexSource = escaped
+		.replaceAll(WILDCARD_STAR_PLACEHOLDER, ".*")
+		.replaceAll(WILDCARD_QUESTION_PLACEHOLDER, ".");
+
+	return new RegExp(`^${regexSource}$`);
+}
 
 export function createListWorktreeFilesTool(db: OrchestratorDB) {
 	return {
@@ -52,13 +77,10 @@ export function createListWorktreeFilesTool(db: OrchestratorDB) {
 
 				// Read directory
 				const entries = fs.readdirSync(worktreePath, { withFileTypes: true });
+				const regex = createPatternRegex(pattern);
 
 				for (const entry of entries) {
 					if (entry.isFile()) {
-						// Simple pattern matching (only * wildcard)
-						const regex = new RegExp(
-							"^" + pattern.replace(/\*/g, ".*").replace(/\?/g, ".") + "$"
-						);
 						if (regex.test(entry.name)) {
 							const fullPath = path.join(worktreePath, entry.name);
 							const stats = fs.statSync(fullPath);
