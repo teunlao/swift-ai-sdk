@@ -1064,7 +1064,13 @@ struct GenerateTextAdvancedTests {
             let previousLogger = AI_SDK_LOG_WARNINGS
             resetLogWarningsState()
             let collector = WarningCollector()
+            guard let token = LogWarningsTestLock.currentOwnerID() else {
+                Issue.record("Missing log warnings scope token")
+                return
+            }
             AI_SDK_LOG_WARNINGS = ({ @Sendable warnings in
+                // Capture warnings only for this locked scope to avoid cross-test interference.
+                guard LogWarningsTestLock.currentOwnerID() == token else { return }
                 collector.append(warnings)
             } as LogWarningsFunction)
             #expect(AI_SDK_LOG_WARNINGS is LogWarningsFunction)
@@ -1098,7 +1104,7 @@ struct GenerateTextAdvancedTests {
         }
     }
 
-    @Test("logWarnings captures warnings per step", .disabled("logWarningsObserver conflict - Task created for investigation"))
+    @Test("logWarnings captures warnings per step")
     func logWarningsCapturesWarningsPerStep() async throws {
         try await LogWarningsTestLock.shared.withLock {
             let warning1 = LanguageModelV3CallWarning.other(message: "Warning from step 1")
@@ -1107,7 +1113,13 @@ struct GenerateTextAdvancedTests {
             let previousLogger = AI_SDK_LOG_WARNINGS
             resetLogWarningsState()
             let collector = WarningCollector()
+            guard let token = LogWarningsTestLock.currentOwnerID() else {
+                Issue.record("Missing log warnings scope token")
+                return
+            }
             AI_SDK_LOG_WARNINGS = ({ @Sendable warnings in
+                // Capture warnings only for this locked scope to avoid cross-test interference.
+                guard LogWarningsTestLock.currentOwnerID() == token else { return }
                 collector.append(warnings)
             } as LogWarningsFunction)
             #expect(AI_SDK_LOG_WARNINGS is LogWarningsFunction)
@@ -1175,7 +1187,13 @@ struct GenerateTextAdvancedTests {
             let previousLogger = AI_SDK_LOG_WARNINGS
             resetLogWarningsState()
             let collector = WarningCollector()
+            guard let token = LogWarningsTestLock.currentOwnerID() else {
+                Issue.record("Missing log warnings scope token")
+                return
+            }
             AI_SDK_LOG_WARNINGS = ({ @Sendable warnings in
+                // Capture warnings only for this locked scope to avoid cross-test interference.
+                guard LogWarningsTestLock.currentOwnerID() == token else { return }
                 collector.append(warnings)
             } as LogWarningsFunction)
             #expect(AI_SDK_LOG_WARNINGS is LogWarningsFunction)
