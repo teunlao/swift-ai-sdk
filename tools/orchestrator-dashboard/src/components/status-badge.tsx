@@ -11,6 +11,7 @@ const STATUS_MAP: Record<Status, { label: string; className: string }> = {
   completed: { label: "Completed", className: "bg-neutral-500/10 text-neutral-300 border-neutral-500/30" },
   killed: { label: "Killed", className: "bg-red-500/10 text-red-300 border-red-500/30" },
   validated: { label: "Validated", className: "bg-emerald-500/10 text-emerald-300 border-emerald-500/30" },
+  merged: { label: "Merged", className: "bg-emerald-500/10 text-emerald-300 border-emerald-500/30" },
   needs_fix: { label: "Needs Fix", className: "bg-yellow-400/10 text-yellow-300 border-yellow-400/30" },
   pending: { label: "Pending", className: "bg-neutral-500/10 text-neutral-200 border-neutral-500/30" },
   in_progress: { label: "In Progress", className: "bg-blue-500/10 text-blue-300 border-blue-500/30" },

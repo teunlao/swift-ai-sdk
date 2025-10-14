@@ -10,6 +10,7 @@ export type AgentStatus =
   | "completed"
   | "killed"
   | "validated"
+  | "merged"
   | "needs_fix";
 
 export type ValidationStatus =
