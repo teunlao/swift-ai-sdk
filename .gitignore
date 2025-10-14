@@ -44,6 +44,8 @@ node_modules/
 *.sw?
 .next
 tsconfig.tsbuildinfo
+.build
+.build*
 # OS specific
 
 # Task Master AI (optional tool, each developer installs if needed)

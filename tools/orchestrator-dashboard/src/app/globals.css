@@ -11,6 +11,8 @@
 
   --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --spacing-8xl: 1440px;
 }
 
 :root {
