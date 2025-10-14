@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StatusBadge } from "@/components/status-badge";
+import { RoleBadge } from "@/components/role-badge";
 import type {
 	AgentDetail,
 	AgentDetailPayload,
@@ -10,6 +11,7 @@ import type {
 	LogDTO,
 	ValidationSummary,
 } from "@/lib/transformers";
+import type { AgentRole } from "@/lib/db";
 
 type LogFilter = "all" | "reasoning" | "messages" | "commands" | "errors";
 
@@ -231,18 +233,21 @@ export function AgentDetailPage({ agentId }: { agentId: string }) {
 
 	const validationRows = useMemo(() => {
 		if (!agent) return [];
-		return history.map((session) => ({
-			id: session.id,
-			status: session.status,
-			requestedAt: formatDate(session.requestedAt),
-			finishedAt: formatDate(session.finishedAt),
-			role:
+		return history.map((session) => {
+			const role: AgentRole | null =
 				session.executorId === agent.id
 					? "executor"
 					: session.validatorId === agent.id
 						? "validator"
-						: "—",
-		}));
+						: null;
+			return {
+				id: session.id,
+				status: session.status,
+				requestedAt: formatDate(session.requestedAt),
+				finishedAt: formatDate(session.finishedAt),
+				role,
+			};
+		});
 	}, [history, agent]);
 
 	const isLoadingInitial = initialLoading && !agent;
@@ -297,8 +302,12 @@ export function AgentDetailPage({ agentId }: { agentId: string }) {
 						<h1 className="text-3xl font-semibold text-white">
 							Agent {agent.id}
 						</h1>
-						<p className="text-sm text-neutral-400">
-							Role: {agent.role} • Created {formatDate(agent.createdAt)}
+						<p className="flex flex-wrap items-center gap-2 text-sm text-neutral-400">
+							<span className="flex items-center gap-2">
+								Role:
+								<RoleBadge role={agent.role} />
+							</span>
+							<span>• Created {formatDate(agent.createdAt)}</span>
 						</p>
 					</div>
 					<div className="flex items-center gap-2">
@@ -438,8 +447,8 @@ export function AgentDetailPage({ agentId }: { agentId: string }) {
 									<td className="px-4 py-3 font-mono text-xs text-neutral-300">
 										{row.id}
 									</td>
-									<td className="px-4 py-3 capitalize text-neutral-300">
-										{row.role}
+									<td className="px-4 py-3">
+										{row.role ? <RoleBadge role={row.role} /> : "—"}
 									</td>
 									<td className="px-4 py-3">
 										<StatusBadge status={row.status} />
