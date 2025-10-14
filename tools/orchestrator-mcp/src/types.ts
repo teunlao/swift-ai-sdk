@@ -143,6 +143,7 @@ export interface AutoRecoverOutput {
 export interface ScaleInput {
   tasks: string[];
   role: AgentRole;
+  worktree?: "auto" | "manual";
 }
 
 export interface ScaleOutput {

@@ -163,4 +163,41 @@ export class OrchestratorDB {
     const result = stmt.get() as { count: number };
     return result.count;
   }
+
+  // ============ History ============
+
+  getAgentHistory(filters?: {
+    from_date?: string;
+    to_date?: string;
+    task_id?: string;
+    role?: string;
+  }): Agent[] {
+    let query = "SELECT * FROM agents WHERE 1=1";
+    const params: any[] = [];
+
+    if (filters?.from_date) {
+      query += " AND created_at >= ?";
+      params.push(filters.from_date);
+    }
+
+    if (filters?.to_date) {
+      query += " AND created_at <= ?";
+      params.push(filters.to_date);
+    }
+
+    if (filters?.task_id) {
+      query += " AND task_id = ?";
+      params.push(filters.task_id);
+    }
+
+    if (filters?.role) {
+      query += " AND role = ?";
+      params.push(filters.role);
+    }
+
+    query += " ORDER BY created_at DESC";
+
+    const stmt = this.db.prepare(query);
+    return stmt.all(...params) as Agent[];
+  }
 }
