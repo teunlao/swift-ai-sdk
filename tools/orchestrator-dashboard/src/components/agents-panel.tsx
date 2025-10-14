@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 
 import { StatusBadge } from "@/components/status-badge";
+import { RoleBadge } from "@/components/role-badge";
 import { useDashboard } from "@/lib/hooks/dashboard-context";
 import type { AgentSummary } from "@/lib/transformers";
 
@@ -32,7 +33,9 @@ function AgentRow({ agent }: { agent: AgentSummary }) {
 			<td className="py-2 text-sm">
 				<StatusBadge status={agent.status} />
 			</td>
-			<td className="py-2 text-sm text-neutral-300">{agent.role}</td>
+			<td className="py-2 text-sm">
+				<RoleBadge role={agent.role} />
+			</td>
 			<td className="py-2 text-sm text-neutral-300">{agent.taskId ?? "–"}</td>
 			<td className="py-2 text-sm text-neutral-400">{agent.worktree ?? "–"}</td>
 			<td className="py-2 text-sm text-neutral-300">{agent.events}</td>
