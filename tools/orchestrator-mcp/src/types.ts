@@ -52,6 +52,8 @@ export interface LaunchAgentInput {
   worktree: "auto" | "manual";
   prompt: string;
   cwd?: string; // if worktree is manual
+  model?: string; // e.g. "gpt-5", "gpt-5-codex"
+  reasoning_effort?: "low" | "medium" | "high"; // reasoning level
 }
 
 export interface LaunchAgentOutput {
@@ -180,6 +182,8 @@ export interface GetHistoryOutput {
 export interface ContinueAgentInput {
   agent_id: string;
   prompt: string;
+  model?: string; // e.g. "gpt-5", "gpt-5-codex"
+  reasoning_effort?: "low" | "medium" | "high"; // reasoning level
 }
 
 export interface ContinueAgentOutput {

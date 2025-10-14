@@ -23,7 +23,9 @@ export async function launchCodexAgent(
   agentId: string,
   prompt: string,
   cwd: string,
-  role: string
+  role: string,
+  model?: string,
+  reasoningEffort?: "low" | "medium" | "high"
 ): Promise<CodexLaunchResult> {
   // Create temp directory for this agent
   const tmpDir = path.join(os.tmpdir(), `orchestrator-${agentId}`);
@@ -35,7 +37,7 @@ export async function launchCodexAgent(
   const outputFile = path.join(tmpDir, "output.json");
 
   // Create JSON-RPC request for Codex
-  const request = {
+  const request: any = {
     jsonrpc: "2.0",
     id: 1,
     method: "tools/call",
@@ -49,6 +51,18 @@ export async function launchCodexAgent(
       },
     },
   };
+
+  // Add optional model parameter
+  if (model) {
+    request.params.arguments.model = model;
+  }
+
+  // Add optional reasoning effort via config override
+  if (reasoningEffort) {
+    request.params.arguments.config = {
+      model_reasoning_effort: reasoningEffort,
+    };
+  }
 
   // Write initial JSON-RPC request FIRST (before tail -f starts)
   fs.writeFileSync(inputFile, JSON.stringify(request) + "\n");
@@ -101,7 +115,9 @@ disown
  */
 export async function continueCodexAgent(
   agentId: string,
-  prompt: string
+  prompt: string,
+  model?: string,
+  reasoningEffort?: "low" | "medium" | "high"
 ): Promise<boolean> {
   try {
     const tmpDir = getAgentTmpDir(agentId);
@@ -112,7 +128,7 @@ export async function continueCodexAgent(
     }
 
     // Create new JSON-RPC request with approval-policy and sandbox
-    const request = {
+    const request: any = {
       jsonrpc: "2.0",
       id: Date.now(),
       method: "tools/call",
@@ -125,6 +141,18 @@ export async function continueCodexAgent(
         },
       },
     };
+
+    // Add optional model parameter
+    if (model) {
+      request.params.arguments.model = model;
+    }
+
+    // Add optional reasoning effort via config override
+    if (reasoningEffort) {
+      request.params.arguments.config = {
+        model_reasoning_effort: reasoningEffort,
+      };
+    }
 
     // Append to input.json (tail -f will pick it up)
     fs.appendFileSync(inputFile, JSON.stringify(request) + "\n");

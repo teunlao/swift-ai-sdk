@@ -16,6 +16,8 @@ export function createContinueAgentTool(db: OrchestratorDB) {
 			inputSchema: {
 				agent_id: z.string(),
 				prompt: z.string(),
+				model: z.string().optional(),
+				reasoning_effort: z.enum(["low", "medium", "high"]).optional(),
 			},
 		},
 		handler: async (args: ContinueAgentInput) => {
@@ -44,7 +46,12 @@ export function createContinueAgentTool(db: OrchestratorDB) {
 				}
 
 				// Send new prompt to existing session
-				const success = await continueCodexAgent(args.agent_id, args.prompt);
+				const success = await continueCodexAgent(
+					args.agent_id,
+					args.prompt,
+					args.model,
+					args.reasoning_effort
+				);
 
 				const result: ContinueAgentOutput = {
 					agent_id: args.agent_id,

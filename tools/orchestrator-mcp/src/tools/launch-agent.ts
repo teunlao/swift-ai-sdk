@@ -21,6 +21,8 @@ export function createLaunchAgentTool(db: OrchestratorDB) {
 				worktree: z.enum(["auto", "manual"]),
 				prompt: z.string(),
 				cwd: z.string().optional(),
+				model: z.string().optional(),
+				reasoning_effort: z.enum(["low", "medium", "high"]).optional(),
 			},
 		},
 		handler: async (args: LaunchAgentInput) => {
@@ -46,7 +48,9 @@ export function createLaunchAgentTool(db: OrchestratorDB) {
 					agent_id,
 					args.prompt,
 					worktreePath,
-					args.role
+					args.role,
+					args.model,
+					args.reasoning_effort
 				);
 
 				const result: LaunchAgentOutput = {
