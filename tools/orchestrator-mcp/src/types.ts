@@ -74,6 +74,8 @@ export interface AgentSummary {
   events: number;
   files_created: number;
   uptime: string;
+  last_activity: string | null;
+  idle_minutes: number | null;
 }
 
 export interface AgentDetailed extends AgentSummary {

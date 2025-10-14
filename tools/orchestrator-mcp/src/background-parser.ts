@@ -194,10 +194,14 @@ export function startBackgroundParser(
               }
             }
 
-            // Update last_activity in agents table
-            db.updateAgent(agent_id, {
-              last_activity: timestamp,
-            });
+            // Update last_activity and increment events_count in agents table
+            const agent = db.getAgent(agent_id);
+            if (agent) {
+              db.updateAgent(agent_id, {
+                last_activity: timestamp,
+                events_count: agent.events_count + 1,
+              });
+            }
           } catch (err) {
             // Skip invalid JSON lines
           }

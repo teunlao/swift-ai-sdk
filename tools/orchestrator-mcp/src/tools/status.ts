@@ -33,7 +33,11 @@ export function createStatusTool(db: OrchestratorDB) {
 						};
 					}
 
-					// TODO: Add more detailed info from parsing output files
+					// Calculate idle time from last_activity
+					const idleMinutes = agent.last_activity
+						? Math.floor((Date.now() - new Date(agent.last_activity).getTime()) / 60000)
+						: null;
+
 					const result: StatusOutput = {
 						agents: [
 							{
@@ -45,6 +49,8 @@ export function createStatusTool(db: OrchestratorDB) {
 								uptime: agent.started_at
 									? `${Math.floor((Date.now() - new Date(agent.started_at).getTime()) / 60000)}m`
 									: "0m",
+								last_activity: agent.last_activity,
+								idle_minutes: idleMinutes,
 							},
 						],
 					};
@@ -63,16 +69,25 @@ export function createStatusTool(db: OrchestratorDB) {
 					const agents = db.getAllAgents();
 
 					const result: StatusOutput = {
-						agents: agents.map((agent) => ({
-							agent_id: agent.id,
-							task_id: agent.task_id,
-							status: agent.status,
-							events: agent.events_count,
-							files_created: agent.files_created,
-							uptime: agent.started_at
-								? `${Math.floor((Date.now() - new Date(agent.started_at).getTime()) / 60000)}m`
-								: "0m",
-						})),
+						agents: agents.map((agent) => {
+							// Calculate idle time from last_activity
+							const idleMinutes = agent.last_activity
+								? Math.floor((Date.now() - new Date(agent.last_activity).getTime()) / 60000)
+								: null;
+
+							return {
+								agent_id: agent.id,
+								task_id: agent.task_id,
+								status: agent.status,
+								events: agent.events_count,
+								files_created: agent.files_created,
+								uptime: agent.started_at
+									? `${Math.floor((Date.now() - new Date(agent.started_at).getTime()) / 60000)}m`
+									: "0m",
+								last_activity: agent.last_activity,
+								idle_minutes: idleMinutes,
+							};
+						}),
 					};
 
 					return {
