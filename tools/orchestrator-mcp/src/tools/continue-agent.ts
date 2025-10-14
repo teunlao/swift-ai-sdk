@@ -2,12 +2,12 @@
  * Continue Agent Tool
  */
 
-import { z } from "zod";
 import type {
-  OrchestratorDB,
-  ContinueAgentInput,
-  ContinueAgentOutput,
+	ContinueAgentInput,
+	ContinueAgentOutput,
+	OrchestratorDB,
 } from "@swift-ai-sdk/orchestrator-db";
+import { z } from "zod";
 import { continueCodexAgent } from "../codex.js";
 
 export function createContinueAgentTool(db: OrchestratorDB) {
@@ -15,10 +15,10 @@ export function createContinueAgentTool(db: OrchestratorDB) {
 		name: "continue_agent",
 		schema: {
 			title: "Continue Agent",
-			description: `Send follow-up instruction to running agent.
+			description: `Send follow-up instruction to a running agent.
 
 WHAT IT DOES:
-Continues existing agent session with new prompt without restarting. Agent receives your message and acts on it immediately.
+Continues an existing agent session with a new prompt. Automation uses this internally when validator rejects work; you can still call it manually for guidance or to resume a paused agent.
 
 WHEN TO USE:
 - Guide stuck agent with clarification or hint
@@ -27,15 +27,9 @@ WHEN TO USE:
 - **⚠️  VALIDATION LOOP: MANDATORY after validator rejects** (see below)
 - Escalate to stronger model for complex issues
 
-🔁 VALIDATION LOOP STEP 6 (MANDATORY after rejection):
-
-After submit_validation(result="rejected") → executor status='needs_fix':
-1. YOU MUST call continue_agent(executor_id, "Fix bugs from .validation/reports/...")
-2. Executor fixes issues and creates NEW validation request
-3. YOU call request_validation(executor_id) again → NEW validation session
-4. Loop repeats until validator approves
-
-⚠️  WITHOUT continue_agent, executor stays in 'needs_fix' forever - validation loop breaks!
+🔁 AUTOMATION CONTEXT:
+- When automation is active, the orchestrator sends the fix-it prompt automatically after a rejection.
+- Use this tool if automation was disabled, you need additional instructions, or you want to escalate the model.
 
 RESULT: Returns success/failure. Use get_logs() to see agent's response.
 
@@ -45,24 +39,24 @@ continue_agent(agent_id="executor-123", prompt="Fix all 4 bugs from validation r
 				agent_id: z
 					.string()
 					.describe(
-						"Agent ID to send prompt to (e.g., 'executor-1760408478640'). Agent must be in 'running' status. Use status tool to check agent state before continuing."
+						"Agent ID to send prompt to (e.g., 'executor-1760408478640'). Agent must be in 'running' status. Use status tool to check agent state before continuing.",
 					),
 				prompt: z
 					.string()
 					.describe(
-						"Follow-up instruction or clarification for the agent. Used to guide stuck agents, provide additional context, request status update, or correct course. Example: 'Run tests again after fixing the import' or 'Check the validation report in .validation/reports/'"
+						"Follow-up instruction or clarification for the agent. Used to guide stuck agents, provide additional context, request status update, or correct course. Example: 'Run tests again after fixing the import' or 'Check the validation report in .validation/reports/'",
 					),
 				model: z
 					.string()
 					.optional()
 					.describe(
-						"Override model for this continuation (e.g., 'claude-sonnet-4', 'o1'). Useful for escalating complex problems to more capable models. If omitted, uses agent's current model."
+						"Override model for this continuation (e.g., 'claude-sonnet-4', 'o1'). Useful for escalating complex problems to more capable models. If omitted, uses agent's current model.",
 					),
 				reasoning_effort: z
 					.enum(["low", "medium", "high"])
 					.optional()
 					.describe(
-						"Reasoning depth for this specific prompt. 'high' for debugging complex issues, 'medium' for standard follow-ups, 'low' for simple status checks. If omitted, uses agent's default."
+						"Reasoning depth for this specific prompt. 'high' for debugging complex issues, 'medium' for standard follow-ups, 'low' for simple status checks. If omitted, uses agent's default.",
 					),
 			},
 		},
@@ -94,12 +88,13 @@ continue_agent(agent_id="executor-123", prompt="Fix all 4 bugs from validation r
 
 				// Send new prompt to existing session
 				const model = args.model ?? agent.model ?? "gpt-5-codex";
-				const reasoning = args.reasoning_effort ?? agent.reasoning_effort ?? "medium";
+				const reasoning =
+					args.reasoning_effort ?? agent.reasoning_effort ?? "medium";
 				const success = await continueCodexAgent(
 					args.agent_id,
 					args.prompt,
 					model,
-					reasoning
+					reasoning,
 				);
 
 				const result: ContinueAgentOutput = {

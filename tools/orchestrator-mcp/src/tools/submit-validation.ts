@@ -2,187 +2,170 @@
  * Submit Validation Tool
  */
 
-import { z } from "zod";
 import type {
-  OrchestratorDB,
-  SubmitValidationInput,
-  SubmitValidationOutput,
-  AgentStatus,
+	AgentStatus,
+	OrchestratorDB,
+	SubmitValidationInput,
+	SubmitValidationOutput,
 } from "@swift-ai-sdk/orchestrator-db";
+import { z } from "zod";
 
 export function createSubmitValidationTool(db: OrchestratorDB) {
-  return {
-    name: "submit_validation",
-    schema: {
-      title: "Submit Validation Result",
-      description: `Finalize a validation session with verdict. STEP 5 of validation workflow.
+	return {
+		name: "submit_validation",
+		schema: {
+			title: "Submit Validation Result",
+			description: `Finalize a validation session with verdict.
 
-WORKFLOW CONTEXT (YOU orchestrate all steps):
-Step 1: Executor agent creates .validation/requests/*.md and stops
-Step 2: YOU called 'request_validation(executor_id)' → session created (status='pending')
-Step 3: YOU called 'assign_validator(validation_id, validator_id)' → validator started work (status='in_progress')
-Step 4: Validator agent creates .validation/reports/*.md and stops
-Step 5 (THIS TOOL): YOU call 'submit_validation(validation_id, result)' → workflow completes, updates statuses
+Automation finishes sessions automatically whenever validator flow files include report.result. Use this tool only when the automatic path is disabled or stuck (for example, validator crashed after producing a report).
 
-WHEN TO USE: After validator agent completes verification and creates validation report.
+MANUAL SUMMARY:
+- Approved verdict → validation status 'approved', executor → 'validated', validator → 'completed'.
+- Rejected verdict → validation status 'rejected', executor → 'needs_fix', validator stays 'completed'; remember to prompt the executor to retry if automation is off.
 
-RESULT (result='approved'):
-- Validation session → status='approved'
-- Executor → status='validated' (work approved, ready to merge)
-- Validator → status='completed' (job done)
-→ VALIDATION LOOP EXITS - Work complete!
+Only the human operator can apply this override; agents never call MCP tools directly.`,
+			inputSchema: {
+				validation_id: z
+					.string()
+					.describe(
+						"Validation session ID to finalize (e.g., 'validation-1739472000'). Session must be in 'in_progress' or 'pending' status. After submit, session status becomes 'approved' or 'rejected' (final states).",
+					),
+				result: z
+					.enum(["approved", "rejected"])
+					.describe(
+						"Validation verdict. 'approved': Implementation meets 100% upstream parity, executor status becomes 'validated', work can be merged. 'rejected': Issues found, executor status becomes 'needs_fix', executor must address problems and request re-validation.",
+					),
+				report_path: z
+					.string()
+					.describe(
+						"Path to detailed validation report document (e.g., '.validation/reports/report-task-4.3-2025-10-14.md'). Report should contain line-by-line comparison results, test coverage verification, parity assessment. Required for both approved and rejected verdicts.",
+					),
+				summary: z
+					.string()
+					.optional()
+					.describe(
+						"Optional brief summary of validation findings (e.g., 'All tests pass, API matches upstream, approved for merge' or 'Missing 3 test cases, incorrect error handling in line 45'). If omitted, uses summary from validation request.",
+					),
+			},
+		},
+		handler: async (args: SubmitValidationInput) => {
+			try {
+				const session = db.getValidationSession(args.validation_id);
+				if (!session) {
+					return {
+						content: [
+							{
+								type: "text" as const,
+								text: `Validation session not found: ${args.validation_id}`,
+							},
+						],
+					};
+				}
 
-RESULT (result='rejected'):
-- Validation session → status='rejected'
-- Executor → status='needs_fix' (MUST fix bugs and re-validate)
-- Validator → status='completed'
-→ VALIDATION LOOP CONTINUES - Go to step 6!
+				if (session.status !== "in_progress" && session.status !== "pending") {
+					// Allow finishing even if validator exited unexpectedly but no verdict recorded
+					if (session.status === "approved" || session.status === "rejected") {
+						return {
+							content: [
+								{
+									type: "text" as const,
+									text: `Validation ${args.validation_id} already completed (status: ${session.status})`,
+								},
+							],
+						};
+					}
+				}
 
-STEP 6 (MANDATORY after rejection):
-YOU call continue_agent(executor_id, "Fix bugs from .validation/reports/...")
-→ Executor fixes issues
-→ Executor calls request_validation again (NEW validation session)
-→ LOOP BACK TO STEP 2 (repeat until approved)
+				const executor = db.getAgent(session.executor_id);
+				if (!executor) {
+					return {
+						content: [
+							{
+								type: "text" as const,
+								text: `Executor agent ${session.executor_id} not found`,
+							},
+						],
+					};
+				}
 
-⚠️  VALIDATION IS ITERATIVE: Cycle repeats 2, 5, 10+ times until validator approves!
+				const validatorId = session.validator_id;
+				const validator = validatorId ? db.getAgent(validatorId) : undefined;
 
-CRITICAL: Agents cannot call MCP tools - only YOU can. This is a destructive operation (changes agent statuses permanently).`,
-      inputSchema: {
-        validation_id: z
-          .string()
-          .describe(
-            "Validation session ID to finalize (e.g., 'validation-1739472000'). Session must be in 'in_progress' or 'pending' status. After submit, session status becomes 'approved' or 'rejected' (final states)."
-          ),
-        result: z
-          .enum(["approved", "rejected"])
-          .describe(
-            "Validation verdict. 'approved': Implementation meets 100% upstream parity, executor status becomes 'validated', work can be merged. 'rejected': Issues found, executor status becomes 'needs_fix', executor must address problems and request re-validation."
-          ),
-        report_path: z
-          .string()
-          .describe(
-            "Path to detailed validation report document (e.g., '.validation/reports/report-task-4.3-2025-10-14.md'). Report should contain line-by-line comparison results, test coverage verification, parity assessment. Required for both approved and rejected verdicts."
-          ),
-        summary: z
-          .string()
-          .optional()
-          .describe(
-            "Optional brief summary of validation findings (e.g., 'All tests pass, API matches upstream, approved for merge' or 'Missing 3 test cases, incorrect error handling in line 45'). If omitted, uses summary from validation request."
-          ),
-      },
-    },
-    handler: async (args: SubmitValidationInput) => {
-      try {
-        const session = db.getValidationSession(args.validation_id);
-        if (!session) {
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: `Validation session not found: ${args.validation_id}`,
-              },
-            ],
-          };
-        }
+				const now = new Date().toISOString();
+				const validationStatus =
+					args.result === "approved" ? "approved" : "rejected";
 
-        if (session.status !== "in_progress" && session.status !== "pending") {
-          // Allow finishing even if validator exited unexpectedly but no verdict recorded
-          if (session.status === "approved" || session.status === "rejected") {
-            return {
-              content: [
-                {
-                  type: "text" as const,
-                  text: `Validation ${args.validation_id} already completed (status: ${session.status})`,
-                },
-              ],
-            };
-          }
-        }
+				db.updateValidationSession(session.id, {
+					status: validationStatus,
+					report_path: args.report_path,
+					summary: args.summary ?? session.summary,
+					finished_at: now,
+				});
 
-        const executor = db.getAgent(session.executor_id);
-        if (!executor) {
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: `Executor agent ${session.executor_id} not found`,
-              },
-            ],
-          };
-        }
+				const isApproved = args.result === "approved";
+				const executorStatus: AgentStatus = isApproved
+					? "validated"
+					: "needs_fix";
 
-        const validatorId = session.validator_id;
-        const validator = validatorId ? db.getAgent(validatorId) : undefined;
-
-        const now = new Date().toISOString();
-        const validationStatus = args.result === "approved" ? "approved" : "rejected";
-
-        db.updateValidationSession(session.id, {
-          status: validationStatus,
-          report_path: args.report_path,
-          summary: args.summary ?? session.summary,
-          finished_at: now,
-        });
-
-			const isApproved = args.result === "approved";
-			const executorStatus: AgentStatus = isApproved ? "validated" : "needs_fix";
-
-			// Keep current_validation_id pointing to the completed session so the UI
-			// can display the final validation result on the agent card. It will be
-			// replaced automatically when a NEW validation request is created.
-			const executorUpdates: Record<string, unknown> = {
-				status: executorStatus,
-				last_activity: now,
-			};
-			if (isApproved) {
-				executorUpdates.ended_at = executor.ended_at ?? now;
-			}
-			db.updateAgent(executor.id, executorUpdates as Partial<typeof executor>);
-
-        let validatorStatus: AgentStatus = validator?.status ?? "running";
-			if (validator) {
-				// Only complete validator if approved; keep running for re-validation if rejected
-				validatorStatus = isApproved ? "completed" : "running";
-				// Preserve validator's current_validation_id as well so the validator
-				// card shows the completed validation status until a new one is assigned.
-				// assign_validator will overwrite this for a new session if the existing
-				// one is already completed.
-				const updates: Record<string, unknown> = {
-					status: validatorStatus,
+				// Keep current_validation_id pointing to the completed session so the UI
+				// can display the final validation result on the agent card. It will be
+				// replaced automatically when a NEW validation request is created.
+				const executorUpdates: Record<string, unknown> = {
+					status: executorStatus,
 					last_activity: now,
 				};
 				if (isApproved) {
-					updates.ended_at = validator.ended_at ?? now;
+					executorUpdates.ended_at = executor.ended_at ?? now;
 				}
-				db.updateAgent(validator.id, updates as Partial<typeof validator>);
-        }
+				db.updateAgent(
+					executor.id,
+					executorUpdates as Partial<typeof executor>,
+				);
 
-        const output: SubmitValidationOutput = {
-          validation_id: session.id,
-          status: validationStatus,
-          executor_status: executorStatus,
-          validator_status: validatorStatus,
-        };
+				let validatorStatus: AgentStatus = validator?.status ?? "running";
+				if (validator) {
+					// Only complete validator if approved; keep running for re-validation if rejected
+					validatorStatus = isApproved ? "completed" : "running";
+					// Preserve validator's current_validation_id as well so the validator
+					// card shows the completed validation status until a new one is assigned.
+					// assign_validator will overwrite this for a new session if the existing
+					// one is already completed.
+					const updates: Record<string, unknown> = {
+						status: validatorStatus,
+						last_activity: now,
+					};
+					if (isApproved) {
+						updates.ended_at = validator.ended_at ?? now;
+					}
+					db.updateAgent(validator.id, updates as Partial<typeof validator>);
+				}
 
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify(output, null, 2),
-            },
-          ],
-          structuredContent: output,
-        };
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-        };
-      }
-    },
-  };
+				const output: SubmitValidationOutput = {
+					validation_id: session.id,
+					status: validationStatus,
+					executor_status: executorStatus,
+					validator_status: validatorStatus,
+				};
+
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: JSON.stringify(output, null, 2),
+						},
+					],
+					structuredContent: output,
+				};
+			} catch (error) {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+						},
+					],
+				};
+			}
+		},
+	};
 }

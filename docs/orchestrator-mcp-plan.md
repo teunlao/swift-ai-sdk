@@ -3,6 +3,7 @@
 **Дата**: 2025-10-14
 **Статус**: Planning
 **Цель**: MCP сервер для оркестрации параллельных Codex агентов
+**Статус**: Automation-first executor ⇄ validator loop (2025-10-14)
 
 ---
 
@@ -21,6 +22,7 @@
 - Мониторинга статуса
 - Автоматического recovery
 - Интеграции с Task Master
+- Автоматического цикла валидации через `.orchestrator/flow` артефакты
 
 ---
 
@@ -44,7 +46,8 @@ Orchestrator MCP Server
 3. **Worktree Manager** - Git worktree операции
 4. **Codex Manager** - Запуск/остановка Codex
 5. **Log Parser** - Парсинг output, stuck detection
-6. **Database** - SQLite для истории
+6. **Automation Engine** - Следит за `.orchestrator/flow` и управляет циклом executor ↔ validator
+7. **Database** - SQLite для истории
 
 ---
 

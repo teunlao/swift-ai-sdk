@@ -31,16 +31,17 @@ async function detectBranch(worktree: string | null): Promise<string | null> {
 export function createRequestValidationTool(db: OrchestratorDB) {
   return {
     name: "request_validation",
-    schema: {
-      title: "Request Validation",
-      description: `Create a validation session for an executor agent.
+			schema: {
+				title: "Request Validation",
+				description: `Create a validation session for an executor agent.
+
+⚠️ Automation first: executors now maintain .orchestrator/flow JSON files and the server auto-creates validation sessions whenever an executor sets status="ready_for_validation". Use this tool only for manual overrides (e.g., recovering a broken run, recreating a session after editing artifacts by hand).
 
 WORKFLOW (Multi-step process - YOU orchestrate all steps):
-1. Executor agent creates .validation/requests/*.md file and stops
-2. YOU call 'request_validation(executor_id)' → Creates validation session with status='pending'
-3. YOU call 'assign_validator(validation_id, validator_id)' → Starts validation, changes status='in_progress'
-4. Validator agent creates .validation/reports/*.md file and stops
-5. YOU call 'submit_validation(validation_id, result)' → Completes workflow, updates statuses
+1. Executor agent creates .orchestrator/flow/<agent-id>.json + request and marks status ready_for_validation (automation handles this automatically when using default prompts).
+2. If automation is disabled or you need to redo the session manually, call 'request_validation(executor_id)' → status='pending'.
+3. Call 'assign_validator(validation_id, validator_id)' to start manual validation.
+4. Validator produces report, then call 'submit_validation(validation_id, result)' to finish.
 
 WHEN TO USE:
 1. **Initial validation**: After executor finishes first implementation

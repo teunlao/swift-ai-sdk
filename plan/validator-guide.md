@@ -22,8 +22,10 @@
 ## Что делает валидатор
 - Снимает `git diff` и сверяет изменения с upstream‑контрактами и реализациями.
 - Прогоняет сборку/тесты локально и фиксирует статус.
-- Создает отчёты валидации:
-  - `.validation/reports/` — подробный отчёт с ссылками на файлы и actionable items.
+- Использует автоматические артефакты:
+  - `.orchestrator/flow/<executor-id>.json` — состояние исполнителя (итерация, статус, путь к запросу).
+  - `.orchestrator/requests/…` — входящий запрос на проверку (создаётся исполнителем автоматически).
+  - `.orchestrator/flow/<validator-id>.json` и `.orchestrator/reports/…` — твой отчёт и статус (автоматизация ожидает их появления).
 - Отмечает серьёзность замечаний: `blocker | major | minor | nit`.
 
 ## Когда запускать
@@ -63,10 +65,10 @@
 3. Сборка/тесты
    - `swift build` и `swift test` → зафиксировать итог.
 4. Создать отчёт валидации
-   - `.validation/reports/` — подробно: «ЧТО СДЕЛАНО / РАСХОЖДЕНИЯ / ACTION ITEMS».
-   - Использовать шаблон из `.validation/QUICKSTART.md`.
+  - `.orchestrator/reports/` — подробно: «ЧТО СДЕЛАНО / РАСХОЖДЕНИЯ / ACTION ITEMS».
+  - Автоматизация ожидает minified JSON в `.orchestrator/flow/<validator-id>.json` с итоговым статусом и ссылкой на отчёт.
 
-## Шаблон отчёта (`.validation/reports/validation-YYYY-MM-DD.md`)
+## Шаблон отчёта (`.orchestrator/reports/validate-<task>-<iteration>-<timestamp>-report.md`)
 ```
 # Validation Report — Feature Name
 
@@ -93,7 +95,7 @@
 [Final decision with reasoning]
 ```
 
-См. `.validation/QUICKSTART.md` и примеры в `.validation/reports/` для подробностей.
+См. `plan/orchestrator-automation.md` и примеры в `.orchestrator/reports/` для подробностей.
 
 ## Промпт для запуска валидатора (скопируй‑вставь)
 ```
@@ -105,13 +107,13 @@
 - Цель: выявить расхождения (API, поведение, типы, HTTP/SSE, тесты), предложить исправления.
 
 Сделай:
-1) Прочитай validation request из `.validation/requests/`.
+1) Прочитай запрос из `.orchestrator/requests/…` и flow-файл исполнителя `.orchestrator/flow/<executor-id>.json` (см. iteration/result).
 2) Сними git‑дифф и список незакоммиченных файлов.
 3) Сопоставь затронутые области с upstream файлами.
 4) Прогони сборку/тесты.
-5) Создай validation report в `.validation/reports/` с severity и actionable items.
+5) Создай отчёт в `.orchestrator/reports/…`, обнови свой flow-файл `.orchestrator/flow/<validator-id>.json`, зафиксируй verdict и severity.
 
-Используй шаблон из `.validation/QUICKSTART.md`. Отчёт должен содержать: Executive Summary / Files Validated / API Parity / Behavior Parity / Issues Found / Verdict.
+Используй шаблон из `plan/orchestrator-automation.md`. Отчёт должен содержать: Executive Summary / Files Validated / API Parity / Behavior Parity / Issues Found / Verdict.
 ```
 
 ## Маркировка и серьёзность
@@ -124,8 +126,8 @@
 - Документация/пакет обновлены, план/отчёт заполнены.
 
 ## Примечания по файлам валидации
-- `.validation/requests/` — запросы на валидацию от исполнителей.
-- `.validation/reports/` — отчёты валидации с детальным анализом.
+- `.orchestrator/requests/` — запросы на валидацию от исполнителей.
+- `.orchestrator/reports/` — отчёты валидации с детальным анализом.
 - Все ссылки на файлы указывать с путями вида `Sources/...:строка`.
 
 ---

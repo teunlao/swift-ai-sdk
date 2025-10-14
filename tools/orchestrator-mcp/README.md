@@ -12,6 +12,14 @@ MCP server for orchestrating parallel Codex agents with automatic recovery and m
 - ⚡ Scale to multiple agents simultaneously
 - 🤖 Flow-file automation for executor → validator cycles
 
+## Automation Workflow
+
+1. Executors and validators launch with system prompts that standardize `.orchestrator/` artifacts.
+2. Executors maintain `.orchestrator/flow/<executor-id>.json` and publish Markdown requests in `.orchestrator/requests/` when ready.
+3. The automation engine watches flow files, opens validation sessions, and launches a validator in the same worktree.
+4. Validators write reports under `.orchestrator/reports/` and update their own flow state; automation finalizes the session.
+5. Rejections trigger an automatic `continue_agent` prompt, looping until the validator approves or a blocker is raised.
+
 ## Installation
 
 ```bash

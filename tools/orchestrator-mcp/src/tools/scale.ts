@@ -8,16 +8,21 @@ import type {
 	ScaleInput,
 	ScaleOutput,
 } from "@swift-ai-sdk/orchestrator-db";
-import { z } from "zod";
-import { AutomationEngine } from "../automation/engine.js";
-import { createAgentSession } from "../automation/agent-factory.js";
 
-export function createScaleTool(db: OrchestratorDB, automation: AutomationEngine) {
+import { z } from "zod";
+import { createAgentSession } from "../automation/agent-factory.js";
+import type { AutomationEngine } from "../automation/engine.js";
+
+export function createScaleTool(
+	db: OrchestratorDB,
+	automation: AutomationEngine,
+) {
 	return {
 		name: "scale",
 		schema: {
 			title: "Scale Agents",
-			description: "Launch multiple agents in parallel",
+			description:
+				"Launch multiple agents in parallel with automation managing the validation loop",
 			inputSchema: {
 				tasks: z
 					.array(z.string())

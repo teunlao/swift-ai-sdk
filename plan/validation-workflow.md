@@ -9,60 +9,27 @@
 
 ## Overview
 
-The Swift AI SDK project uses a **custom validator agent** to ensure 100% upstream parity with Vercel AI SDK (TypeScript). This document describes the validation workflow, directory structure, and best practices.
+Validation is now **automation-first**. Executors and validators receive system промты, поддерживают артефакты в `.orchestrator/`, а MCP-сервер сам запускает проверки и повторные итерации. Этот документ описывает автоматический поток и поясняет, когда стоит использовать ручные инструменты как fallback.
 
 ## Quick Start
 
-### For Executors (requesting validation)
+### Automation (default path)
 
-```bash
-# 1. Complete your implementation
-# 2. Create validation request
-cat > .validation/requests/validate-my-feature-$(date +%Y-%m-%d).md <<EOF
-# Validation Request — My Feature
+1. **Executor работает** под системным промтом и ведёт `.orchestrator/flow/<executor-id>.json`.
+   - После завершения итерации создаёт Markdown-заявку в `.orchestrator/requests/` и ставит `status = "ready_for_validation"`.
+2. **Оркестратор замечает обновление** и автоматически:
+   - создаёт запись валидации,
+   - запускает валидатора в том же worktree,
+   - уведомляет валидатора через системный промт, где лежит запрос.
+3. **Validator** читает `.orchestrator/requests/…`, выполняет проверку, пишет отчёт в `.orchestrator/reports/…`, обновляет свой flow-файл.
+4. **Оркестратор завершает цикл**:
+   - `approved` → executor → `validated`, validator → `completed`;
+   - `rejected` → executor → `needs_fix`, validator → `completed`, автоматический `continue_agent` запускает новую итерацию.
+5. **Blockers** (`status = "needs_input"`) останавливают автоматику до ручного вмешательства.
 
-**Executor**: your-name
-**Date**: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
-**Priority**: HIGH
+### Manual override (fallback)
 
-## Context
-Brief description of what was implemented
-
-## Files to Validate
-- Implementation: [list Swift files]
-- Tests: [list test files]
-- Upstream: [list TypeScript sources]
-
-## Checklist
-- [ ] All public APIs implemented
-- [ ] All upstream tests ported
-- [ ] Build passes: swift build
-- [ ] Tests pass: swift test
-- [ ] Upstream references added
-
-## Questions for Validator
-[Optional: specific concerns or edge cases to verify]
-EOF
-
-# 3. Request validation from Claude
-# In chat: "Use the validator agent to review .validation/requests/validate-my-feature-2025-10-12.md"
-```
-
-### For Validators (manual review)
-
-```bash
-# 1. Read validation request
-cat .validation/requests/validate-feature-YYYY-MM-DD.md
-
-# 2. Compare implementation vs upstream
-# Use Read, Grep, Glob tools
-
-# 3. Run tests
-swift build && swift test
-
-# 4. Create report
-# validator agent will write to .validation/reports/
-```
+Используйте ручные MCP-инструменты (`request_validation`, `assign_validator`, `submit_validation`, `continue_agent`) только если автоматический процесс сломан или отключён. В этом случае вы можете создавать запросы/отчёты вручную и управлять статусами шаг за шагом (см. раздел Fallback Flow ниже).
 
 ---
 
@@ -73,13 +40,13 @@ swift-ai-sdk/
 ├── .claude/
 │   └── agents/
 │       └── validator.md           # Custom validator agent definition
-├── .validation/                    # Temporary validation artifacts (gitignored)
-│   ├── README.md                   # Directory documentation
-│   ├── requests/                   # Validation requests from executors
-│   │   └── validate-feature-YYYY-MM-DD.md
-│   ├── reports/                    # Validation reports from validator
-│   │   └── feature-validation-YYYY-MM-DD.md
-│   └── temp/                       # Temporary working files
+├── .orchestrator/                 # Automation artifacts (gitignored)
+│   ├── flow/                      # JSON state files for each agent
+│   │   └── executor-000.json
+│   ├── requests/                  # Executor-authored validation requests
+│   │   └── validate-task-iteration-timestamp.md
+│   └── reports/                   # Validator-authored reports
+│       └── validate-task-iteration-timestamp-report.md
 └── plan/
     ├── validation-workflow.md      # This file
     └── validator-guide.md          # Existing validator checklist
@@ -90,12 +57,12 @@ swift-ai-sdk/
 | Location | Purpose | Committed? |
 |----------|---------|------------|
 | `.claude/agents/` | Agent definitions | ✅ Yes |
-| `.validation/requests/` | Validation requests | ❌ No (temporary) |
-| `.validation/reports/` | Validation reports | ❌ No (temporary) |
-| `.validation/temp/` | Scratch files | ❌ No (temporary) |
+| `.orchestrator/flow/` | Automation state (executor & validator) | ❌ No (temporary) |
+| `.orchestrator/requests/` | Validation requests | ❌ No (temporary) |
+| `.orchestrator/reports/` | Validation reports | ❌ No (temporary) |
 | `plan/` | Permanent documentation | ✅ Yes |
 
-**Important**: `.validation/` is gitignored. Final validation outcomes should be documented in Task Master and `plan/design-decisions.md` if relevant.
+**Important**: `.orchestrator/` полностью gitignored. Итоги валидации фиксируются в Task Master и `plan/design-decisions.md` (если необходимы), а файлы служат только для автоматизации цикла.
 
 ---
 
@@ -109,54 +76,38 @@ swift-ai-sdk/
 4. Add upstream references to all files
 5. Document adaptations in code comments
 
-### Phase 2: Request Validation (Executor)
+### Phase 2: Signal readiness (Executor)
 
-1. Create validation request in `.validation/requests/`
-2. Include:
-   - List of files to validate
-   - Upstream sources for comparison
-   - Specific concerns or questions
-   - Confirmation checklist (build/tests pass)
+1. Сформируй Markdown-заявку в `.orchestrator/requests/` (шаблон в `plan/orchestrator-automation.md`).
+2. Обнови `.orchestrator/flow/<executor-id>.json`:
+   - `status = "ready_for_validation"`
+   - `request.ready = true`
+   - `request.path` — относительный путь к только что созданному файлу.
 
-3. Trigger validator agent:
-   ```
-   Use the validator agent to review .validation/requests/validate-feature-YYYY-MM-DD.md
-   ```
+### Phase 3: Automated validation (Server + Validator Agent)
 
-### Phase 3: Validation (Validator Agent)
-
-The validator agent automatically:
-
-1. **Reads request** - Parses `.validation/requests/` file
-2. **Gathers context** - Reads implementation, tests, upstream sources
-3. **Analyzes code**:
-   - API surface comparison (Swift vs TypeScript)
-   - Behavior verification (edge cases, errors)
-   - Test coverage analysis (all cases ported?)
-4. **Runs tests** - Executes `swift build && swift test`
-5. **Generates report** - Creates detailed report in `.validation/reports/`
-6. **Updates status** - Documents verdict (APPROVED/ISSUES/REJECTED)
+1. Watcher создаёт запись `validation_sessions`, переводит исполнителя в `blocked` и запускает валидатора (manual worktree).
+2. Валидатор читает `.orchestrator/flow/<executor-id>.json` + запрос, анализирует код, запускает тесты.
+3. По завершении записывает отчёт в `.orchestrator/reports/…`, обновляет свой flow-файл (`report.path`, `report.result`).
+4. Сервер фиксирует вердикт (`approved`/`rejected`).
 
 ### Phase 4: Resolution (Executor)
 
-1. Read validation report from `.validation/reports/`
-2. Address any issues found:
-   - **BLOCKER** 🔴 - Must fix before merge
-   - **MAJOR** 🟠 - Should fix
-   - **MINOR** 🟡 - Nice to have
-   - **INFO** 🔵 - For information only
-
-3. Re-request validation if changes made
+- `approved` → статус исполнителя `validated`, цикл завершён.
+- `rejected` → статус `needs_fix`, сервер отправляет follow-up промт через `continue_agent` с указанием отчёта. Исполнитель выполняет исправления, формирует новую заявку и повторяет Phase 2.
+- Любой `needs_input` требует ручного вмешательства (уточнить требования/данные, обновить flow-файл).
 
 ### Phase 5: Documentation (Both)
 
 1. Executor updates task status in Task Master
 2. Validation outcome summarized (not full report)
-3. Delete temporary files from `.validation/`
+3. Файлы в `.orchestrator/` остаются как операционные артефакты (gitignored). При необходимости их можно очистить вручную после завершения релиза.
 
 ---
 
 ## Validation Request Template
+
+> Save this as `.orchestrator/requests/validate-<task>-<iteration>-<timestamp>.md`.
 
 ```markdown
 # Validation Request — [Feature Name]
@@ -332,12 +283,12 @@ This custom validator agent **complements** the existing validation process:
 ### After (With Custom Agent)
 
 1. Executor implements feature
-2. Executor creates request in `.validation/requests/` (temp)
-3. **Validator agent automatically reviews** ✨
-4. Agent creates report in `.validation/reports/` (temp)
-5. Executor fixes issues
-6. **Final outcome documented in Task Master**
-7. Temp files deleted
+2. Executor формирует запрос в `.orchestrator/requests/` и обновляет flow-файл (`status = ready_for_validation`).
+3. **Оркестратор автоматически запускает валидатора и выполняет review** ✨
+4. Валидатор пишет отчёт в `.orchestrator/reports/` и обновляет свой flow-файл.
+5. Executor фиксит проблемы (если `rejected`)
+6. Оркестратор отправляет follow-up промт и ждёт новую итерацию
+7. Итог фиксируется в Task Master / `plan/design-decisions.md` при необходимости
 
 ### Benefits
 
@@ -355,7 +306,7 @@ This custom validator agent **complements** the existing validation process:
 
 **Request**:
 ```
-.validation/requests/validate-delay-function-2025-10-12.md
+.orchestrator/requests/validate-delay-function-2025-10-12.md
 ```
 
 **Agent Action**:
@@ -367,7 +318,7 @@ This custom validator agent **complements** the existing validation process:
 
 **Result**:
 ```
-.validation/reports/delay-validation-2025-10-12.md
+.orchestrator/reports/delay-validation-2025-10-12-report.md
 Status: ✅ APPROVED
 ```
 
@@ -375,7 +326,7 @@ Status: ✅ APPROVED
 
 **Request**:
 ```
-.validation/requests/validate-language-model-v3-2025-10-12.md
+.orchestrator/requests/validate-language-model-v3-2025-10-12.md
 17 type files, 39 tests
 ```
 
@@ -388,7 +339,7 @@ Status: ✅ APPROVED
 
 **Result**:
 ```
-.validation/reports/v3-validation-2025-10-12.md
+.orchestrator/reports/v3-validation-2025-10-12-report.md
 Status: ⚠️ ISSUES FOUND
 - MAJOR: Missing `preliminary` field in ToolResult
 - MAJOR: Usage fields not optional
@@ -396,8 +347,8 @@ Status: ⚠️ ISSUES FOUND
 
 **Resolution**:
 1. Executor fixes both issues
-2. Re-requests validation
-3. Final report: ✅ APPROVED
+2. Обновляет flow-файл и создаёт новую заявку (status `ready_for_validation`)
+3. Автоматический цикл выполняет повторную проверку → финальный отчёт: ✅ APPROVED
 
 ---
 
@@ -448,12 +399,12 @@ head -10 .claude/agents/validator.md
 
 ### Validation request ignored
 
-**Problem**: Agent doesn't read validation request
+**Problem**: Automation не подхватывает заявку
 
 **Solution**:
-- Ensure file is in `.validation/requests/`
-- Use explicit command: "Use the validator agent to review [exact path]"
-- Check request file has `.md` extension
+- Убедись, что файл лежит в `.orchestrator/requests/` и указан в flow-файле (`request.path`, `request.ready = true`).
+- Проверь, что flow-файл валиден (minified JSON) и `status = "ready_for_validation"`.
+- При необходимости запусти fallback: `request_validation(executor_id)`.
 
 ### Validation takes too long
 
@@ -478,11 +429,15 @@ head -10 .claude/agents/validator.md
 
 ## Changelog
 
+### 2025-10-14
+- 🤖 Enabled automated executor→validator loop (.orchestrator flow files)
+- 📝 Updated documentation to cover automation-first workflow
+
 ### 2025-10-12
 - ✨ Created custom validator agent
-- ✨ Established `.validation/` directory structure
+- ✨ Established `.validation/` (legacy) directory structure
 - ✨ Added `.validation/` to `.gitignore`
-- 📝 Documented validation workflow
+- 📝 Documented initial validation workflow
 
 ---
 

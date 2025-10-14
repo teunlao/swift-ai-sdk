@@ -24,7 +24,7 @@ export function createLaunchAgentTool(db: OrchestratorDB, automation: Automation
 - Omitting or leaving worktree_name blank will abort the launch.
 
 WHAT IT DOES:
-Creates a new autonomous Codex agent that runs in parallel, executes your prompt, and tracks all activity in real-time.
+Creates a new autonomous Codex agent that runs in parallel, executes your prompt, and tracks all activity in real-time. Automation injects a system prompt so the agent maintains `.orchestrator/` flow files and (for executors) drafts validation requests automatically.
 
 WHEN TO USE:
 - Start executor to implement features, write code, fix bugs
@@ -45,7 +45,7 @@ ROLES:
 - **Executors:** ALWAYS use worktree="auto" → creates NEW isolated worktree
 - **Validators:** ALWAYS use worktree="manual" with executor's worktree → works in SAME directory as executor being validated
 
-ONLY use different mode if user explicitly specifies it!
+Automation watches flow JSON and launches validators/continues executors without extra commands. Use manual tools only if you need to override the automated loop.
 
 RESULT: Returns agent_id + shell_id. Use these for status(), get_logs(), continue_agent(), kill_agent().
 
