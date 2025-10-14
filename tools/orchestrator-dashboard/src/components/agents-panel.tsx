@@ -6,7 +6,9 @@ import { useMemo, useState } from "react";
 import { StatusBadge } from "@/components/status-badge";
 import { RoleBadge } from "@/components/role-badge";
 import { useDashboard } from "@/lib/hooks/dashboard-context";
+import { useTicker } from "@/lib/hooks/use-ticker";
 import type { AgentSummary } from "@/lib/transformers";
+import { calculateUptime } from "@/lib/time";
 
 function formatDate(value: string | null) {
 	if (!value) return "–";
@@ -19,7 +21,9 @@ function formatDate(value: string | null) {
 	}).format(new Date(value));
 }
 
-function AgentRow({ agent }: { agent: AgentSummary }) {
+function AgentRow({ agent, now }: { agent: AgentSummary; now: number }) {
+	const uptime = calculateUptime(agent.startedAt, agent.endedAt, now);
+
 	return (
 		<tr className="border-b border-white/5">
 			<td className="py-2 text-sm text-neutral-400">
@@ -45,6 +49,9 @@ function AgentRow({ agent }: { agent: AgentSummary }) {
 			<td className="py-2 text-sm text-neutral-300">
 				{agent.reasoningEffort ?? "medium"}
 			</td>
+			<td className="py-2 text-sm font-mono text-neutral-200">
+				{uptime ?? "–"}
+			</td>
 			<td className="py-2 text-sm text-neutral-400">
 				{formatDate(agent.lastActivity)}
 			</td>
@@ -69,6 +76,7 @@ const STATUS_FILTERS = [
 export function AgentsPanel() {
 	const { agents, loading, refresh } = useDashboard();
 	const [status, setStatus] = useState<string>("all");
+	const now = useTicker(1000);
 
 	const filtered = useMemo(() => {
 		if (status === "all") return agents;
@@ -126,18 +134,19 @@ export function AgentsPanel() {
 							<th className="px-4 py-2">Events</th>
 							<th className="px-4 py-2">Model</th>
 							<th className="px-4 py-2">Reasoning</th>
+							<th className="px-4 py-2">Uptime</th>
 							<th className="px-4 py-2">Last activity</th>
 							<th className="px-4 py-2">Validation</th>
 						</tr>
 					</thead>
 					<tbody>
 						{filtered.map((agent) => (
-							<AgentRow key={agent.id} agent={agent} />
+							<AgentRow key={agent.id} agent={agent} now={now} />
 						))}
 						{filtered.length === 0 && (
 							<tr>
 								<td
-									colSpan={8}
+									colSpan={11}
 									className="px-4 py-6 text-center text-sm text-neutral-400"
 								>
 									{loading

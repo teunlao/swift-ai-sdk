@@ -6,6 +6,8 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StatusBadge } from "@/components/status-badge";
 import { RoleBadge } from "@/components/role-badge";
+import { useTicker } from "@/lib/hooks/use-ticker";
+import { calculateUptime } from "@/lib/time";
 import type {
 	AgentDetail,
 	AgentDetailPayload,
@@ -137,9 +139,14 @@ export function AgentDetailPage({ agentId }: { agentId: string }) {
 	const [lastEventsCount, setLastEventsCount] = useState<number | null>(null);
 	const logContainerRef = useRef<HTMLDivElement | null>(null);
 	const autoScrollRef = useRef(true);
+	const now = useTicker(1000);
 
 	const hasPrompt = Boolean(agent?.prompt);
 	const hasFlow = Boolean(agent?.flow);
+	const uptime = useMemo(() => {
+		if (!agent) return null;
+		return calculateUptime(agent.startedAt, agent.endedAt, now);
+	}, [agent, now]);
 
 	const loadLogs = useCallback(async () => {
 		setLogError(null);
@@ -385,6 +392,7 @@ export function AgentDetailPage({ agentId }: { agentId: string }) {
 					</div>
 				</div>
 				<div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+					<StatCard label="Uptime" value={uptime ?? "–"} />
 					<StatCard label="Events" value={agent.events} />
 					<StatCard label="Commands" value={agent.commands} />
 					<StatCard label="Patches" value={agent.patches} />

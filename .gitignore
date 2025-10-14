@@ -43,6 +43,7 @@ node_modules/
 *.sln
 *.sw?
 .next
+tsconfig.tsbuildinfo
 # OS specific
 
 # Task Master AI (optional tool, each developer installs if needed)
