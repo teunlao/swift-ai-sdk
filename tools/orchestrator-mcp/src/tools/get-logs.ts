@@ -17,7 +17,29 @@ export function createGetLogsTool(db: OrchestratorDB) {
 		name: "get_logs",
 		schema: {
 			title: "Get Agent Logs",
-			description: "Get parsed logs from a Codex agent",
+			description: `View real-time activity logs from agent.
+
+WHAT IT DOES:
+Shows agent's thinking, commands executed, errors, and messages. Logs parsed in real-time from Codex output.
+
+WHEN TO USE:
+- Monitor agent progress
+- Debug stuck agent
+- See what agent is currently doing
+- Check errors or failures
+- Verify agent completed task
+
+FILTER OPTIONS:
+- 'reasoning': Thinking blocks only
+- 'messages': User/assistant messages
+- 'commands': Bash/tool executions
+- 'errors': Error events
+- 'all': Everything (default)
+
+LAST PARAMETER: Limit to N most recent entries (e.g., last=10 for last 10 events)
+
+EXAMPLE:
+get_logs(agent_id="executor-123", filter="messages", last=20)`,
 			inputSchema: {
 				agent_id: z
 					.string()

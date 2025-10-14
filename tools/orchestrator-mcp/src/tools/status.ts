@@ -15,7 +15,39 @@ export function createStatusTool(db: OrchestratorDB) {
 		name: "status",
 		schema: {
 			title: "Get Agent Status",
-			description: "Get status of one or all agents",
+			description: `Check status of agents and validation queue.
+
+WHAT IT DOES:
+Shows current state of all agents: what they're doing, how long they've been running, if they're stuck, and validation status.
+
+WHEN TO USE:
+- Monitor progress of running agents
+- Check if agent is stuck (idle_minutes shows how long since last activity)
+- See validation queue (which executors waiting for validators)
+- Debug issues (check events count, uptime, last_activity)
+
+STATUS VALUES:
+- running: Agent actively working
+- blocked: Executor waiting for validation to complete
+- validating: Validator checking work
+- validated: Executor approved, work ready to merge
+- needs_fix: Executor rejected, must fix bugs
+- completed: Agent finished successfully
+- killed: Manually terminated
+
+RESULT FIELDS:
+- agent_id: Unique identifier for agent
+- task_id: Associated task (if any)
+- status: Current agent status
+- events: Number of activities logged (low count may indicate problem)
+- uptime: How long agent has been running
+- last_activity: Timestamp of last action
+- idle_minutes: How long since last activity (high value = stuck)
+- validation: If in validation workflow, shows validation_id + status
+
+EXAMPLE:
+status() → Shows all agents
+status(agent_id="executor-123") → Shows specific agent details`,
 			inputSchema: {
 				agent_id: z
 					.string()

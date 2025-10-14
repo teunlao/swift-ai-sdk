@@ -17,7 +17,31 @@ export function createLaunchAgentTool(db: OrchestratorDB) {
 		name: "launch_agent",
 		schema: {
 			title: "Launch Agent",
-			description: "Launch a new Codex agent in a worktree",
+			description: `Launch a new Codex executor or validator agent with Git worktree isolation.
+
+WHAT IT DOES:
+Creates a new autonomous Codex agent that runs in parallel, executes your prompt, and tracks all activity in real-time.
+
+WHEN TO USE:
+- Start executor to implement features, write code, fix bugs
+- Start validator to check code against requirements, find bugs, verify parity
+- Launch multiple agents in parallel for simultaneous work on independent tasks
+
+WORKTREE MODES:
+- 'auto': Creates isolated Git worktree + unique branch (RECOMMENDED for parallel work)
+  → No conflicts between agents, each has own directory
+- 'manual': Uses existing directory via cwd parameter
+  → For validators checking executor's work in same worktree
+
+ROLES:
+- executor: Implements features, writes code, creates tests, fixes bugs
+- validator: Reviews code, finds bugs, checks requirements, verifies parity
+
+RESULT: Returns agent_id + shell_id. Use these for status(), get_logs(), continue_agent(), kill_agent().
+
+EXAMPLE:
+launch_agent(role="executor", worktree="auto", prompt="Create snake game with 4 bugs")
+→ Returns agent_id="executor-1760450655037", creates isolated worktree`,
 			inputSchema: {
 				role: z
 					.enum(["executor", "validator"])

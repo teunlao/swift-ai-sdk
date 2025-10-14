@@ -15,8 +15,30 @@ export function createSubmitValidationTool(db: OrchestratorDB) {
     name: "submit_validation",
     schema: {
       title: "Submit Validation Result",
-      description:
-        "Finalize a validation session with a verdict (approved/rejected). Called by validator after verification completes. Updates both executor and validator statuses, unblocks agents, and completes the validation lifecycle. This is the FINAL step in validation workflow.",
+      description: `Finalize a validation session with verdict. STEP 5 (FINAL) of validation workflow.
+
+WORKFLOW CONTEXT (YOU orchestrate all steps):
+Step 1: Executor agent creates .validation/requests/*.md and stops
+Step 2: YOU called 'request_validation(executor_id)' → session created (status='pending')
+Step 3: YOU called 'assign_validator(validation_id, validator_id)' → validator started work (status='in_progress')
+Step 4: Validator agent creates .validation/reports/*.md and stops
+Step 5 (THIS TOOL): YOU call 'submit_validation(validation_id, result)' → workflow completes, updates statuses
+
+WHEN TO USE: After validator agent completes verification and creates validation report.
+
+RESULT (result='approved'):
+- Validation session → status='approved'
+- Executor → status='validated' (work approved, ready to merge)
+- Validator → status='completed' (job done)
+
+RESULT (result='rejected'):
+- Validation session → status='rejected'
+- Executor → status='needs_fix' (must fix issues and request re-validation)
+- Validator → status='completed'
+
+NEXT STEPS after rejection: YOU notify user, executor fixes issues, YOU call 'request_validation' again → new validation cycle starts.
+
+CRITICAL: Agents cannot call MCP tools - only YOU can. This is a destructive operation (changes agent statuses permanently).`,
       inputSchema: {
         validation_id: z
           .string()

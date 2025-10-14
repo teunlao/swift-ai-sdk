@@ -127,40 +127,58 @@ external/vercel-ai-sdk/packages/
 
 ## Roles & Workflow
 
-### Executor Role
-**Implement features, write tests, validate, commit only when approved.**
+### Executor Role (Codex Agent)
+**Implement features, write tests, create validation request.**
 
-1. Find next task: `mcp__taskmaster__next_task`
-2. **Mark in-progress**: `mcp__taskmaster__set_task_status --id=X --status=in-progress`
-3. Find TypeScript in `external/vercel-ai-sdk/packages/`
-4. Port to appropriate Swift package
-5. Port ALL upstream tests
-6. Run `swift build && swift test` (must pass 100%)
-7. Create validation request in `.validation/requests/validate-TASK-YYYY-MM-DD.md`
-8. **🤖 Launch validator agent yourself** using Task tool (see below)
-9. Wait for validator approval (✅ APPROVED)
-10. **Mark done ONLY after approval**: `set_task_status --status=done`
-11. **Commit ONLY when user requests explicitly**
+Executor agent workflow:
+1. Receive task via prompt from orchestrator
+2. Find TypeScript in `external/vercel-ai-sdk/packages/`
+3. Port to appropriate Swift package
+4. Port ALL upstream tests
+5. Run `swift build && swift test` (must pass 100%)
+6. Create validation request in `.validation/requests/validate-TASK-YYYY-MM-DD.md`
+7. **Stop and wait** - orchestrator will handle validation workflow
 
-**🚨 CRITICAL Rules**:
+**🚨 CRITICAL Rules for Executor Agents**:
 - ❌ **NEVER TOUCH OTHER AGENTS' WORK** — Only edit files in your task scope
-- ❌ Never commit without explicit user permission
-- ❌ Never mark `done` before validator approval
-- 🤖 **YOU launch validator** (not user) — automatic after creating request
+- ✅ Create `.validation/requests/*.md` file and stop
+- ❌ Do NOT call MCP tools (agents can't - only orchestrator can)
+- ❌ Do NOT launch validator (orchestrator does this)
 
-### Validator Agent Launch
+### Validator Role (Codex Agent)
+**Review implementation, compare with upstream, generate report.**
 
-**After creating validation request, YOU MUST immediately launch validator**:
+Validator agent workflow:
+1. Receive validation request path via prompt
+2. Read `.validation/requests/*.md` file
+3. Examine implementation files
+4. Compare with upstream TypeScript (line-by-line)
+5. Verify ALL tests ported
+6. Create `.validation/reports/report-*.md` with verdict (APPROVED/REJECTED)
+7. **Stop and wait** - orchestrator will handle status updates
+
+**🚨 CRITICAL Rules for Validator Agents**:
+- ✅ Work in executor's worktree (same directory)
+- ✅ Check EVERY requirement from validation scope
+- ✅ Be thorough - reject if ANY issue found
+- ❌ Do NOT call MCP tools (agents can't - only orchestrator can)
+
+### Orchestrator Workflow (Your Role)
+**YOU manage the full validation lifecycle using MCP tools:**
 
 ```
-Use Task tool with:
-- subagent_type: "validator"
-- description: "Validate Task X"
-- prompt: "Review .validation/requests/validate-TASK-YYYY-MM-DD.md
-          and verify 100% upstream parity"
+1. Launch executor agent via launch_agent(role='executor', worktree='auto')
+2. Wait for executor to create .validation/requests/*.md
+3. Call request_validation(executor_id) → creates validation session
+4. Launch validator agent via launch_agent(role='validator', worktree='manual', cwd=executor_worktree)
+5. Call assign_validator(validation_id, validator_id) → links them
+6. Wait for validator to create .validation/reports/*.md
+7. Call submit_validation(validation_id, result='approved/rejected') → updates statuses
+8. If approved: merge executor branch, cleanup worktree
+9. If rejected: notify user, executor must fix issues
 ```
 
-**Validator** compares Swift vs TypeScript, runs tests, generates report with verdict.
+**Key point**: Agents create files, YOU orchestrate workflow with MCP commands.
 
 **Documentation**:
 - 📘 `plan/validation-workflow.md` — Complete process
@@ -406,14 +424,14 @@ Bash("echo '{...id:2...}' >> /tmp/commands.jsonl")
 
 ## Key Principles
 
-1. **🚨 NEVER TOUCH OTHER AGENTS' WORK** — Only edit your task files. Multiple agents work in parallel.
-2. **Read first, code second** — Check upstream, then plan
-3. **Mark in-progress at start** — Update status before coding
-4. **Test everything** — 100% coverage required
-5. **🤖 YOU launch validator** — Automatic after request, don't wait for user
-6. **Mark done ONLY after validation** — Wait for approval
+1. **🚨 YOU orchestrate everything** — Agents create files, YOU call MCP commands for workflow
+2. **Agents can't call MCP tools** — Only YOU can use orchestrator commands
+3. **Validation is 3-step process** — request_validation → assign_validator → submit_validation
+4. **Executor creates request file** — Then YOU call request_validation(executor_id)
+5. **Validator creates report file** — Then YOU call submit_validation(validation_id, result)
+6. **100% parity required** — Match TypeScript exactly, reject if ANY issue
 7. **Never commit without permission** — Explicit user request required
-8. **100% parity** — Match TypeScript exactly
+8. **Worktree isolation** — Each executor gets own directory, validator shares it
 
 ---
 

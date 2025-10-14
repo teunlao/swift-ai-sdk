@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 const { spawn } = require("node:child_process");
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 
@@ -15,6 +16,94 @@ const nextBin = path.resolve(
 const port = process.env.ORCHESTRATOR_DASHBOARD_PORT || "4444";
 const host = process.env.ORCHESTRATOR_DASHBOARD_HOST || "localhost";
 const buildIdPath = path.join(dashboardDir, ".next", "BUILD_ID");
+const snapshotPath = path.join(dashboardDir, ".next", "dashboard-snapshot.json");
+const repoRoot = path.resolve(dashboardDir, "..", "..");
+
+const WATCH_PATHS = [
+  path.join(dashboardDir, "src"),
+  path.join(dashboardDir, "next.config.ts"),
+  path.join(dashboardDir, "package.json"),
+  path.join(dashboardDir, "tsconfig.json"),
+  path.join(dashboardDir, "tailwind.config.ts"),
+  path.join(dashboardDir, "postcss.config.cjs"),
+  path.join(dashboardDir, "next-env.d.ts"),
+  path.join(repoRoot, "pnpm-lock.yaml"),
+  path.join(repoRoot, "package.json"),
+];
+const IGNORED_DIRECTORIES = new Set(["node_modules", ".next", ".git", "dist", "build"]);
+
+function listDirectory(dirPath) {
+  try {
+    return fs.readdirSync(dirPath, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+}
+
+function addPathToHash(targetPath, hash, visited) {
+  if (!fs.existsSync(targetPath)) {
+    return;
+  }
+
+  const stats = fs.statSync(targetPath);
+
+  if (stats.isDirectory()) {
+    if (visited.has(targetPath)) return;
+    visited.add(targetPath);
+
+    const entries = listDirectory(targetPath).filter((entry) => !IGNORED_DIRECTORIES.has(entry.name));
+    entries.sort((a, b) => a.name.localeCompare(b.name));
+
+    for (const entry of entries) {
+      addPathToHash(path.join(targetPath, entry.name), hash, visited);
+    }
+    return;
+  }
+
+  const rel = path.relative(dashboardDir, targetPath);
+  hash.update(rel);
+  hash.update(fs.readFileSync(targetPath));
+}
+
+function computeSourceHash() {
+  const hash = crypto.createHash("sha256");
+  const visited = new Set();
+
+  for (const target of WATCH_PATHS) {
+    addPathToHash(target, hash, visited);
+  }
+
+  // Include ABI to force rebuild when Node/ABI changes.
+  hash.update(String(process.versions.node));
+  hash.update(String(process.versions.modules));
+
+  return hash.digest("hex");
+}
+
+function readSnapshot() {
+  if (!fs.existsSync(snapshotPath)) {
+    return null;
+  }
+  try {
+    const raw = fs.readFileSync(snapshotPath, "utf-8");
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function writeSnapshot(data) {
+  fs.mkdirSync(path.dirname(snapshotPath), { recursive: true });
+  fs.writeFileSync(snapshotPath, JSON.stringify(data, null, 2));
+}
+
+function buildSnapshot() {
+  return {
+    hash: computeSourceHash(),
+    nodeVersion: process.versions.node,
+    abiVersion: process.versions.modules,
+  };
+}
 
 function spawnStream(command, args, options = {}) {
   return new Promise((resolve, reject) => {
@@ -35,12 +124,28 @@ function spawnStream(command, args, options = {}) {
 }
 
 async function ensureBuild() {
-  if (fs.existsSync(buildIdPath) && !process.env.ORCHESTRATOR_DASHBOARD_FORCE_BUILD) {
+  const forceBuild = Boolean(process.env.ORCHESTRATOR_DASHBOARD_FORCE_BUILD);
+  const existingSnapshot = readSnapshot();
+  const currentSnapshot = buildSnapshot();
+  const buildExists = fs.existsSync(buildIdPath);
+
+  const needsBuild =
+    forceBuild ||
+    !buildExists ||
+    !existingSnapshot ||
+    existingSnapshot.hash !== currentSnapshot.hash ||
+    existingSnapshot.nodeVersion !== currentSnapshot.nodeVersion ||
+    existingSnapshot.abiVersion !== currentSnapshot.abiVersion;
+
+  if (!needsBuild) {
     return;
   }
 
   console.log("🔧 Building orchestrator dashboard...");
   await spawnStream(nextBin, ["build"], { cwd: dashboardDir });
+
+  const finalSnapshot = buildSnapshot();
+  writeSnapshot({ ...finalSnapshot, builtAt: new Date().toISOString() });
 }
 
 function copyBetterSqlite3Binary() {

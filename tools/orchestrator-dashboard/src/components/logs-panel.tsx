@@ -16,6 +16,13 @@ const FILTER_OPTIONS: { value: LogFilter; label: string }[] = [
 	{ value: "errors", label: "Errors" },
 ];
 
+const FILTER_TYPE_MAP: Record<Exclude<LogFilter, "all">, string[]> = {
+	reasoning: ["reasoning"],
+	messages: ["message"],
+	commands: ["command"],
+	errors: ["error"],
+};
+
 async function fetchLogs(
 	agentId: string,
 	filter: LogFilter,
@@ -32,12 +39,13 @@ async function fetchLogs(
 }
 
 function formatTimestamp(value: string) {
-	return new Intl.DateTimeFormat("en", {
+	return new Intl.DateTimeFormat(undefined, {
 		month: "short",
 		day: "numeric",
 		hour: "2-digit",
 		minute: "2-digit",
 		second: "2-digit",
+		hour12: false,
 	}).format(new Date(value));
 }
 
@@ -59,6 +67,14 @@ export function LogsPanel() {
 			})),
 		[agents],
 	);
+
+	const filteredLogs = useMemo(() => {
+		if (filter === "all") {
+			return logs;
+		}
+		const types = FILTER_TYPE_MAP[filter];
+		return logs.filter((log) => types.includes(log.type));
+	}, [filter, logs]);
 
 	useEffect(() => {
 		const firstAgent = agents[0];
@@ -131,13 +147,13 @@ export function LogsPanel() {
 			<div className="h-80 overflow-y-auto rounded-xl border border-white/5 bg-muted/30 p-4">
 				{loading && <p className="text-sm text-neutral-400">Loading logs…</p>}
 				{error && <p className="text-sm text-red-400">{error}</p>}
-				{!loading && logs.length === 0 && !error && (
+				{!loading && filteredLogs.length === 0 && !error && (
 					<p className="text-sm text-neutral-400">
 						No log entries for the current selection.
 					</p>
 				)}
 				<ul className="space-y-3 text-sm">
-					{logs.map((log) => (
+					{filteredLogs.map((log) => (
 						<li
 							key={`${log.timestamp}-${log.content.slice(0, 32)}`}
 							className="rounded-lg border border-white/5 bg-black/20 p-3"

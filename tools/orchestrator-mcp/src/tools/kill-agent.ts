@@ -17,7 +17,25 @@ export function createKillAgentTool(db: OrchestratorDB) {
 		name: "kill_agent",
 		schema: {
 			title: "Kill Agent",
-			description: "Stop a running agent",
+			description: `Terminate running agent and optionally cleanup its worktree.
+
+WHAT IT DOES:
+Stops agent process, updates status to 'killed', optionally removes Git worktree.
+
+WHEN TO USE:
+- Agent stuck or malfunctioning
+- Cancel unwanted work
+- Free resources after validation complete
+- Cleanup after testing
+
+CLEANUP OPTIONS:
+- cleanup_worktree=true: Removes worktree directory + branch (use after validation/merge)
+- cleanup_worktree=false: Keeps worktree for manual inspection
+
+RESULT: Agent status changes to 'killed', process terminated.
+
+EXAMPLE:
+kill_agent(agent_id="executor-123", cleanup_worktree=true)`,
 			inputSchema: {
 				agent_id: z
 					.string()

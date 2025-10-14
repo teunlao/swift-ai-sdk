@@ -10,6 +10,7 @@ import {
 } from "react";
 import { StatusBadge } from "@/components/status-badge";
 import type {
+	AgentDetail,
 	AgentDetailPayload,
 	AgentSummary,
 	LogDTO,
@@ -32,7 +33,10 @@ type SnapshotPayload = {
 	timestamp: number;
 };
 
-async function fetchLogs(agentId: string, filter: LogFilter): Promise<LogDTO[]> {
+async function fetchLogs(
+	agentId: string,
+	filter: LogFilter,
+): Promise<LogDTO[]> {
 	const params = new URLSearchParams({ filter, limit: "200" });
 	const response = await fetch(
 		`/api/agents/${encodeURIComponent(agentId)}/logs?${params.toString()}`,
@@ -45,24 +49,29 @@ async function fetchLogs(agentId: string, filter: LogFilter): Promise<LogDTO[]> 
 	return payload.logs;
 }
 
+async function fetchAgentDetail(agentId: string): Promise<AgentDetailPayload> {
+	const response = await fetch(`/api/agents/${encodeURIComponent(agentId)}`, {
+		cache: "no-store",
+	});
+	if (!response.ok) {
+		throw new Error(`Failed to load agent ${agentId}`);
+	}
+	return (await response.json()) as AgentDetailPayload;
+}
+
 function formatDate(value: string | null) {
 	if (!value) return "–";
-	return new Intl.DateTimeFormat("en", {
+	return new Intl.DateTimeFormat(undefined, {
 		month: "short",
 		day: "numeric",
 		hour: "2-digit",
 		minute: "2-digit",
 		second: "2-digit",
+		hour12: false,
 	}).format(new Date(value));
 }
 
-function StatCard({
-	label,
-	value,
-}: {
-	label: string;
-	value: string | number;
-}) {
+function StatCard({ label, value }: { label: string; value: string | number }) {
 	return (
 		<div className="rounded-xl border border-white/5 bg-muted/30 p-4">
 			<p className="text-xs uppercase tracking-wide text-neutral-400">
@@ -73,62 +82,84 @@ function StatCard({
 	);
 }
 
-export function AgentDetailPage({
-	initialData,
-}: {
-	initialData: AgentDetailPayload;
-}) {
-	const [agent, setAgent] = useState(initialData.agent);
-	const [currentValidation, setCurrentValidation] = useState<
-		ValidationSummary | null
-	>(initialData.validation);
-	const [history, setHistory] = useState<ValidationSummary[]>(
-		initialData.validationHistory,
-	);
-	const [logs, setLogs] = useState<LogDTO[]>(initialData.logs);
+export function AgentDetailPage({ agentId }: { agentId: string }) {
+	const [agent, setAgent] = useState<AgentDetail | null>(null);
+	const [currentValidation, setCurrentValidation] =
+		useState<ValidationSummary | null>(null);
+	const [history, setHistory] = useState<ValidationSummary[]>([]);
+	const [logs, setLogs] = useState<LogDTO[]>([]);
 	const [logFilter, setLogFilter] = useState<LogFilter>("all");
-	const [loadingLogs, setLoadingLogs] = useState(false);
 	const [logError, setLogError] = useState<string | null>(null);
+	const [initialLoading, setInitialLoading] = useState(true);
+	const [initialError, setInitialError] = useState<string | null>(null);
+	const [lastEventsCount, setLastEventsCount] = useState<number | null>(null);
+	const logContainerRef = useRef<HTMLDivElement | null>(null);
+	const autoScrollRef = useRef(true);
 
-	const hasPrompt = Boolean(agent.prompt);
-	const previousEventsRef = useRef(agent.events);
+	const hasPrompt = Boolean(agent?.prompt);
 
 	const loadLogs = useCallback(async () => {
-		setLoadingLogs(true);
 		setLogError(null);
 		try {
-			const next = await fetchLogs(agent.id, logFilter);
+			const next = await fetchLogs(agentId, logFilter);
 			setLogs(next);
 		} catch (error) {
 			setLogError(
 				error instanceof Error ? error.message : "Unable to refresh logs.",
 			);
-		} finally {
-			setLoadingLogs(false);
 		}
-	}, [agent.id, logFilter]);
+	}, [agentId, logFilter]);
 
 	useEffect(() => {
+		let cancelled = false;
+		setInitialLoading(true);
+		setInitialError(null);
+		fetchAgentDetail(agentId)
+			.then((payload) => {
+				if (cancelled) return;
+				setAgent(payload.agent);
+				setCurrentValidation(payload.validation);
+				setHistory(payload.validationHistory);
+			})
+			.catch((error) => {
+				if (cancelled) return;
+				console.error(error);
+				setInitialError(error instanceof Error ? error.message : String(error));
+			})
+			.finally(() => {
+				if (!cancelled) {
+					setInitialLoading(false);
+				}
+			});
+		return () => {
+			cancelled = true;
+		};
+	}, [agentId]);
+
+	useEffect(() => {
+		if (!agent) return undefined;
 		const source = new EventSource("/api/events");
 
 		const onSnapshot = (event: MessageEvent<string>) => {
 			try {
 				const payload: SnapshotPayload = JSON.parse(event.data);
 				const matchingAgent = payload.agents.find(
-					(item) => item.id === agent.id,
+					(item) => item.id === agentId,
 				);
 				if (matchingAgent) {
-					setAgent((prev) => ({
-						...prev,
-						...matchingAgent,
-						prompt: prev.prompt,
-					}));
+					setAgent((prev) => {
+						const prompt = prev?.prompt ?? null;
+						return {
+							...(prev ?? {}),
+							...matchingAgent,
+							prompt,
+						};
+					});
 				}
 
 				const relevantValidations = payload.validations.filter(
 					(session) =>
-						session.executorId === agent.id ||
-						session.validatorId === agent.id,
+						session.executorId === agentId || session.validatorId === agentId,
 				);
 				setHistory(relevantValidations);
 
@@ -155,17 +186,62 @@ export function AgentDetailPage({
 			source.removeEventListener("snapshot", onSnapshot as EventListener);
 			source.close();
 		};
-	}, [agent.id]);
+	}, [agent, agentId]);
+
+	const agentReady = Boolean(agent);
 
 	useEffect(() => {
-		const previous = previousEventsRef.current;
-		if (agent.events !== previous) {
-			previousEventsRef.current = agent.events;
+		if (!agentReady) return;
+		setLogs([]);
+		loadLogs().catch(() => undefined);
+	}, [agentReady, logFilter, loadLogs]);
+
+	const eventsCount = agent?.events ?? null;
+
+	useEffect(() => {
+		if (!agentReady) return;
+		if (eventsCount === null) return;
+		if (lastEventsCount === null) {
+			setLastEventsCount(eventsCount);
+			return;
+		}
+		if (eventsCount !== lastEventsCount) {
+			setLastEventsCount(eventsCount);
 			loadLogs().catch(() => undefined);
 		}
-	}, [agent.events, loadLogs]);
+	}, [agentReady, eventsCount, lastEventsCount, loadLogs]);
+
+	useEffect(() => {
+		const container = logContainerRef.current;
+		if (!container) return;
+		const threshold = 40;
+		const atBottom =
+			container.scrollTop + container.clientHeight >=
+			container.scrollHeight - threshold;
+		autoScrollRef.current = atBottom;
+		if (autoScrollRef.current) {
+			container.scrollTop = container.scrollHeight;
+		}
+	}, [logs]);
+
+	useEffect(() => {
+		const container = logContainerRef.current;
+		if (!container) return;
+		const handler = () => {
+			const threshold = 40;
+			const atBottom =
+				container.scrollTop + container.clientHeight >=
+				container.scrollHeight - threshold;
+			autoScrollRef.current = atBottom;
+		};
+		container.addEventListener("scroll", handler);
+		return () => {
+			container.removeEventListener("scroll", handler);
+		};
+	}, []);
 
 	const validationRows = useMemo(() => {
+		if (!agent) return [];
 		return history.map((session) => ({
 			id: session.id,
 			status: session.status,
@@ -178,7 +254,44 @@ export function AgentDetailPage({
 						? "validator"
 						: "—",
 		}));
-	}, [history, agent.id]);
+	}, [history, agent]);
+
+	const isLoadingInitial = initialLoading && !agent;
+
+	if (initialError) {
+		return (
+			<div className="flex flex-col gap-8">
+				<Link
+					href="/"
+					className="text-sm text-neutral-400 transition hover:text-white"
+				>
+					&larr; Back to dashboard
+				</Link>
+				<section className="rounded-xl border border-red-500/40 bg-red-500/10 p-6">
+					<h1 className="text-lg font-semibold text-white">
+						Failed to load agent
+					</h1>
+					<p className="mt-2 text-sm text-neutral-200">{initialError}</p>
+				</section>
+			</div>
+		);
+	}
+
+	if (isLoadingInitial || !agent) {
+		return (
+			<div className="flex flex-col gap-8">
+				<Link
+					href="/"
+					className="text-sm text-neutral-400 transition hover:text-white"
+				>
+					&larr; Back to dashboard
+				</Link>
+				<section className="rounded-xl border border-white/5 bg-muted/30 p-6">
+					<p className="text-sm text-neutral-400">Loading agent details…</p>
+				</section>
+			</div>
+		);
+	}
 
 	return (
 		<div className="flex flex-col gap-8">
@@ -382,18 +495,18 @@ export function AgentDetailPage({
 							type="button"
 							onClick={() => loadLogs().catch(() => undefined)}
 							className="rounded-md border border-white/10 bg-white/5 px-3 py-1 text-sm text-white hover:bg-white/10 disabled:opacity-50"
-							disabled={loadingLogs}
+							disabled={!agent}
 						>
 							Refresh
 						</button>
 					</div>
 				</header>
-				<div className="mt-4 h-96 overflow-y-auto rounded-lg border border-white/5 bg-black/20 p-4">
-					{loadingLogs && (
-						<p className="text-sm text-neutral-400">Loading logs…</p>
-					)}
+				<div
+					ref={logContainerRef}
+					className="mt-4 h-96 overflow-y-auto rounded-lg border border-white/5 bg-black/20 p-4"
+				>
 					{logError && <p className="text-sm text-red-400">{logError}</p>}
-					{!loadingLogs && logs.length === 0 && !logError && (
+					{logs.length === 0 && !logError && (
 						<p className="text-sm text-neutral-400">
 							No log entries for the selected filter.
 						</p>

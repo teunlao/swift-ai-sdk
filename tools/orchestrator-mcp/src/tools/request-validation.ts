@@ -33,7 +33,20 @@ export function createRequestValidationTool(db: OrchestratorDB) {
     name: "request_validation",
     schema: {
       title: "Request Validation",
-      description: "Create a validation session for an executor agent",
+      description: `Create a validation session for an executor agent.
+
+WORKFLOW (Multi-step process - YOU orchestrate all steps):
+1. Executor agent creates .validation/requests/*.md file and stops
+2. YOU call 'request_validation(executor_id)' → Creates validation session with status='pending'
+3. YOU call 'assign_validator(validation_id, validator_id)' → Starts validation, changes status='in_progress'
+4. Validator agent creates .validation/reports/*.md file and stops
+5. YOU call 'submit_validation(validation_id, result)' → Completes workflow, updates statuses
+
+WHEN TO USE: After executor agent finishes implementation and creates validation request document.
+
+RESULT: Returns validation_id. Use this ID in 'assign_validator' next.
+
+CRITICAL: Agents cannot call MCP tools - only YOU can. Agents create files, YOU orchestrate workflow.`,
       inputSchema: {
         executor_id: z
           .string()

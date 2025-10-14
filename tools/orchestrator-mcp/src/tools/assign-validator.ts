@@ -15,8 +15,23 @@ export function createAssignValidatorTool(db: OrchestratorDB) {
     name: "assign_validator",
     schema: {
       title: "Assign Validator",
-      description:
-        "Assign a validator agent to a validation session. Links validator to executor's worktree for verification. CRITICAL: Validator must be launched in the SAME worktree as executor to access implementation files. Updates session status from 'pending' to 'in_progress'.",
+      description: `Assign a validator agent to a validation session. STEP 3 of validation workflow.
+
+WORKFLOW CONTEXT (YOU orchestrate all steps):
+Step 1: Executor agent creates .validation/requests/*.md and stops
+Step 2: YOU called 'request_validation(executor_id)' → validation session created with status='pending'
+Step 3 (THIS TOOL): YOU call 'assign_validator(validation_id, validator_id)' → session becomes 'in_progress', validator starts work
+Step 4: Validator agent creates .validation/reports/*.md and stops
+Step 5: YOU call 'submit_validation(validation_id, result)' → workflow completes, updates statuses
+
+PREREQUISITES:
+- validation_id from 'request_validation' result
+- Validator agent MUST be launched in SAME worktree as executor (use executor_worktree from validation session)
+- Session must be in 'pending' status
+
+RESULT: Links validator to session, changes status to 'in_progress', blocks validator from other validations.
+
+CRITICAL: Validator MUST work in executor's worktree to access implementation files! Agents cannot call MCP tools - only YOU can.`,
       inputSchema: {
         validation_id: z
           .string()

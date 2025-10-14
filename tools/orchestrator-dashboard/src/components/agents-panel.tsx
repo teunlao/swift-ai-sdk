@@ -9,11 +9,12 @@ import type { AgentSummary } from "@/lib/transformers";
 
 function formatDate(value: string | null) {
   if (!value) return "–";
-  return new Intl.DateTimeFormat("en", {
+  return new Intl.DateTimeFormat(undefined, {
     month: "short",
     day: "numeric",
     hour: "2-digit",
     minute: "2-digit",
+    hour12: false,
   }).format(new Date(value));
 }
 

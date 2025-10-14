@@ -15,7 +15,25 @@ export function createContinueAgentTool(db: OrchestratorDB) {
 		name: "continue_agent",
 		schema: {
 			title: "Continue Agent",
-			description: "Send a new prompt to an existing agent session",
+			description: `Send follow-up instruction to running agent.
+
+WHAT IT DOES:
+Continues existing agent session with new prompt without restarting. Agent receives your message and acts on it immediately.
+
+WHEN TO USE:
+- Guide stuck agent with clarification or hint
+- Request status update ("What are you doing?")
+- Provide additional context or corrections
+- Tell executor to fix bugs after validator rejection
+- Escalate to stronger model for complex issues
+
+VALIDATION WORKFLOW:
+After validator rejects (executor status='needs_fix'), use this to tell executor: "Fix bugs from validation report at .validation/reports/..."
+
+RESULT: Returns success/failure. Use get_logs() to see agent's response.
+
+EXAMPLE:
+continue_agent(agent_id="executor-123", prompt="Fix the 4 bugs listed in validation report")`,
 			inputSchema: {
 				agent_id: z
 					.string()
