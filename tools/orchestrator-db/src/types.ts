@@ -96,6 +96,7 @@ export interface LaunchAgentInput {
   task_id?: string;
   worktree: "auto" | "manual";
   worktree_name: string;
+  spawn_new_validator?: boolean;
   prompt: string;
   cwd?: string;
   model?: string;
@@ -197,6 +198,7 @@ export interface ScaleInput {
   tasks: string[];
   role: AgentRole;
   worktree?: "auto" | "manual";
+  spawn_new_validator?: boolean;
 }
 
 export interface ScaleOutput {

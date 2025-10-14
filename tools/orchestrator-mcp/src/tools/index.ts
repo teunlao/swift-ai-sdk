@@ -22,6 +22,7 @@ import { createSubmitValidationTool } from "./submit-validation.js";
 import { createGetValidationTool } from "./get-validation.js";
 import { createUpdateAgentStatusTool } from "./update-agent-status.js";
 import { createCleanupAgentsTool } from "./cleanup-agents.js";
+import { createMergeAgentTool } from "./merge-agent.js";
 
 /**
  * Tool definition interface
@@ -53,5 +54,6 @@ export function createTools(db: OrchestratorDB, automation: AutomationEngine): T
 		createGetValidationTool(db),
 		createUpdateAgentStatusTool(db),
 		createCleanupAgentsTool(db),
+		createMergeAgentTool(db),
 	];
 }

@@ -6,17 +6,17 @@
  * Manages parallel Codex agents with automatic recovery and monitoring.
  */
 
+import * as fs from "node:fs";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { OrchestratorDB } from "@swift-ai-sdk/orchestrator-db";
-import { createTools } from "./tools/index.js";
+import { AutomationEngine } from "./automation/engine.js";
 import {
 	startBackgroundParser,
 	stopAllBackgroundParsers,
 } from "./background-parser.js";
-import { isCodexAgentRunning, getAgentTmpDir } from "./codex.js";
-import * as fs from "node:fs";
-import { AutomationEngine } from "./automation/engine.js";
+import { getAgentTmpDir, isCodexAgentRunning } from "./codex.js";
+import { createTools } from "./tools/index.js";
 
 // Initialize database
 const db = new OrchestratorDB();
@@ -110,9 +110,8 @@ Manages parallel Codex executor/validator agents with formal validation workflow
 
 Cycle 1: Executor implements → Validator finds 4 bugs → REJECTED
 Cycle 2: Executor fixes 4 bugs → Validator verifies → APPROVED → merge!`,
-	}
+	},
 );
-
 
 console.error("Starting Orchestrator MCP Server...");
 
@@ -131,18 +130,19 @@ async function main() {
 	await server.connect(transport);
 
 	// Restore watchers for running agents
-const allAgents = db.getAllAgents();
-automation.start(
-	allAgents
-		.filter((agent) => Boolean(agent.worktree))
-		.map((agent) => ({
-			agentId: agent.id,
-			worktreePath: agent.worktree!,
-			role: agent.role,
-			taskId: agent.task_id,
-		}))
-);
-const runningAgents = allAgents.filter((agent) => agent.status === "running");
+	const allAgents = db.getAllAgents();
+	automation.start(
+		allAgents
+			.filter((agent) => Boolean(agent.worktree))
+			.map((agent) => ({
+				agentId: agent.id,
+				worktreePath: agent.worktree!,
+				role: agent.role,
+				taskId: agent.task_id,
+				reuseValidator: agent.role === "executor",
+			})),
+	);
+	const runningAgents = allAgents.filter((agent) => agent.status === "running");
 	let restored = 0;
 
 	for (const agent of runningAgents) {
@@ -175,9 +175,9 @@ main().catch((error) => {
 // Cleanup on exit
 process.on("SIGINT", () => {
 	console.error("\n👋 Shutting down...");
-stopAllBackgroundParsers();
-automation.stop();
-db.close();
+	stopAllBackgroundParsers();
+	automation.stop();
+	db.close();
 	process.exit(0);
 });
 

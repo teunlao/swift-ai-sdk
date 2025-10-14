@@ -14,6 +14,7 @@ export interface CreateAgentParams {
   cwd?: string;
   model?: string;
   reasoningEffort?: "low" | "medium" | "high";
+  spawnNewValidator?: boolean;
 }
 
 export interface CreateAgentResult {
@@ -33,6 +34,7 @@ export async function createAgentSession(
       role: "executor" | "validator";
       worktreePath: string;
       taskId: string | null;
+      reuseValidator?: boolean;
     }) => void;
   }
 ): Promise<CreateAgentResult> {
@@ -94,6 +96,8 @@ export async function createAgentSession(
     role: params.role,
     worktreePath,
     taskId: params.taskId ?? null,
+    reuseValidator:
+      params.role === "executor" ? !(params.spawnNewValidator ?? false) : undefined,
   });
 
   return {

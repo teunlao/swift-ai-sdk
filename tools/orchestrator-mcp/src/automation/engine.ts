@@ -12,6 +12,7 @@ interface RegisteredAgent {
   worktreePath: string;
   role: "executor" | "validator";
   taskId: string | null;
+  reuseValidator?: boolean;
 }
 
 export class AutomationEngine {
@@ -21,6 +22,7 @@ export class AutomationEngine {
     string,
     { validationId: string; iteration: number; requestPath: string; validatorId?: string }
   >();
+  private readonly executorValidatorMap = new Map<string, string>();
   private readonly validatorToExecutor = new Map<string, string>();
   private started = false;
 
@@ -43,9 +45,15 @@ export class AutomationEngine {
       return;
     }
 
-    this.agents.set(agent.agentId, agent);
+    const normalized: RegisteredAgent = {
+      ...agent,
+      reuseValidator:
+        agent.role === "executor" ? agent.reuseValidator ?? true : false,
+    };
 
-    startFlowWatcher(agent.agentId, agent.worktreePath, ({ state, agentId, flowPath }) => {
+    this.agents.set(agent.agentId, normalized);
+
+    startFlowWatcher(normalized.agentId, normalized.worktreePath, ({ state, agentId, flowPath }) => {
       return this.handleFlowUpdate(agentId, flowPath, state);
     });
   }
@@ -88,6 +96,7 @@ export class AutomationEngine {
     this.agents.clear();
     this.flowSnapshots.clear();
     this.executorSessions.clear();
+    this.executorValidatorMap.clear();
     this.validatorToExecutor.clear();
   }
 
@@ -288,20 +297,25 @@ export class AutomationEngine {
       last_activity: now,
     });
 
-    this.executorSessions.set(agentRecord.id, {
-      validationId,
-      iteration: flow.iteration,
-      requestPath,
-    });
-
     try {
-      await this.launchValidatorForSession({
+      const { validatorId, reused } = await this.launchValidatorForSession({
         validationId,
         registered,
         executor: agentRecord,
         flow,
         requestPath,
       });
+
+      this.executorSessions.set(agentRecord.id, {
+        validationId,
+        iteration: flow.iteration,
+        requestPath,
+        validatorId,
+      });
+
+      if (!reused) {
+        this.executorValidatorMap.set(agentRecord.id, validatorId);
+      }
     } catch (error) {
       this.executorSessions.delete(agentRecord.id);
       this.db.updateAgent(agentRecord.id, {
@@ -333,10 +347,36 @@ export class AutomationEngine {
     executor: Agent;
     flow: ExecutorFlowState;
     requestPath: string;
-  }): Promise<void> {
+  }): Promise<{ validatorId: string; reused: boolean }> {
     try {
       const prompt = `Validate executor ${executor.id} iteration ${flow.iteration} for task ${flow.task_id ?? executor.task_id ?? "unknown"}. Review the request file at ${requestPath}, compare implementation to upstream requirements, run relevant tests, and produce a detailed report.`;
+      const now = new Date().toISOString();
 
+      // Reuse existing validator if configured and available
+      if (registered.reuseValidator) {
+        const existingId = this.executorValidatorMap.get(executor.id);
+        if (existingId) {
+          const v = this.db.getAgent(existingId);
+          if (v) {
+            this.db.updateValidationSession(validationId, {
+              validator_id: existingId,
+              status: "in_progress",
+              started_at: now,
+            });
+            this.db.updateAgent(existingId, {
+              current_validation_id: validationId,
+              status: "running",
+              last_activity: now,
+            });
+            this.validatorToExecutor.set(existingId, executor.id);
+            // Nudge validator to process new request
+            await continueCodexAgent(existingId, prompt, v.model ?? undefined, v.reasoning_effort ?? undefined);
+            return { validatorId: existingId, reused: true };
+          }
+        }
+      }
+
+      // Otherwise, create a fresh validator
       const validatorName = `${executor.id}-validator-${flow.iteration}`;
       const session = await createAgentSession(
         {
@@ -353,7 +393,6 @@ export class AutomationEngine {
         },
       );
 
-      const now = new Date().toISOString();
       this.db.updateValidationSession(validationId, {
         validator_id: session.agent_id,
         status: "in_progress",
@@ -365,19 +404,8 @@ export class AutomationEngine {
         last_activity: now,
       });
 
-      const existing = this.executorSessions.get(executor.id);
-      if (existing) {
-        existing.validatorId = session.agent_id;
-      } else {
-        this.executorSessions.set(executor.id, {
-          validationId,
-          iteration: flow.iteration,
-          requestPath,
-          validatorId: session.agent_id,
-        });
-      }
-
       this.validatorToExecutor.set(session.agent_id, executor.id);
+      return { validatorId: session.agent_id, reused: false };
     } catch (error) {
       console.error(`[automation] Failed to launch validator for ${executor.id}:`, error);
       throw error;

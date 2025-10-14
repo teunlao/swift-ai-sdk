@@ -19,7 +19,7 @@ export function createScaleTool(
 ) {
 	return {
 		name: "scale",
-		schema: {
+			schema: {
 			title: "Scale Agents",
 			description:
 				"Launch multiple agents in parallel with automation managing the validation loop",
@@ -39,6 +39,12 @@ export function createScaleTool(
 					.default("auto")
 					.describe(
 						"Worktree mode for all agents. 'auto': creates isolated worktrees for parallel work (DEFAULT for executors). 'manual': uses PROJECT_ROOT (only if user explicitly requests). Default: 'auto'.",
+					),
+				spawn_new_validator: z
+					.boolean()
+					.optional()
+					.describe(
+						"Optional (executors only). true → spawn a new validator per iteration; false/omitted → reuse one validator across iterations.",
 					),
 			},
 		},
@@ -68,6 +74,10 @@ export function createScaleTool(
 							taskId: task_id,
 							worktreeMode,
 							worktreeName: baseWorktreeName,
+							spawnNewValidator:
+								args.role === "executor"
+									? args.spawn_new_validator ?? false
+									: undefined,
 						},
 						{
 							db,
