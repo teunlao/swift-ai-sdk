@@ -1,0 +1,27 @@
+@import "tailwindcss";
+
+@theme {
+  --color-background: rgb(8, 10, 16);
+  --color-muted: rgb(15, 18, 27);
+  --color-primary: rgb(84, 113, 255);
+  --color-primary-foreground: #ffffff;
+  --color-success: rgb(34, 197, 94);
+  --color-warning: rgb(234, 179, 8);
+  --color-danger: rgb(239, 68, 68);
+
+  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  @apply min-h-screen bg-background text-neutral-200;
+  font-family: var(--font-sans);
+}
+
+a {
+  @apply text-primary transition-colors hover:text-primary/80;
+}

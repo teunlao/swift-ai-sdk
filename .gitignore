@@ -42,6 +42,7 @@ node_modules/
 *.njsproj
 *.sln
 *.sw?
+.next
 # OS specific
 
 # Task Master AI (optional tool, each developer installs if needed)

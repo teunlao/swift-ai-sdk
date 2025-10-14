@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "moduleResolution": "node",
+    "allowJs": false,
+    "checkJs": false,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": false,
+    "esModuleInterop": true,
+    "module": "ES2022",
+    "strict": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmitOnError": false,
+    "noUncheckedIndexedAccess": true,
+    "verbatimModuleSyntax": false,
+    "allowSyntheticDefaultImports": true
+  }
+}

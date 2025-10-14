@@ -7,6 +7,9 @@
 		"tools/orchestrator-dashboard",
 		"tools/orchestrator-db"
 	],
+	"bin": {
+		"orchestrator-dashboard": "./tools/orchestrator-dashboard/bin/start-dashboard.cjs"
+	},
 	"scripts": {
 		"build": "npm run build --workspaces",
 		"lint": "echo 'No lint configured'",
