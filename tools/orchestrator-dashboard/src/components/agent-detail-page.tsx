@@ -510,24 +510,24 @@ export function AgentDetailPage({ agentId }: { agentId: string }) {
 											<div className="flex justify-between gap-4">
 												<dt className="text-neutral-400">Role</dt>
 												<dd className="font-medium text-white">
-													{agent.flow.parsed.role}
+													{agent.flow.parsed?.role ?? "—"}
 												</dd>
 											</div>
 											<div className="flex justify-between gap-4">
 												<dt className="text-neutral-400">Status</dt>
 												<dd className="font-medium text-white">
-													{agent.flow.parsed.status}
+													{agent.flow.parsed?.status ?? "—"}
 												</dd>
 											</div>
 											<div className="flex justify-between gap-4">
 												<dt className="text-neutral-400">Iteration</dt>
-												<dd>{agent.flow.parsed.iteration}</dd>
+												<dd>{agent.flow.parsed?.iteration ?? "—"}</dd>
 											</div>
 											<div className="flex justify-between gap-4">
 												<dt className="text-neutral-400">Updated</dt>
 												<dd>
 													{formatDate(
-														agent.flow.parsed.timestamps?.updated_at ?? null,
+														agent.flow.parsed?.timestamps?.updated_at ?? null,
 													)}
 												</dd>
 											</div>
@@ -535,10 +535,10 @@ export function AgentDetailPage({ agentId }: { agentId: string }) {
 												<dt className="text-neutral-400">Request</dt>
 												<dd className="flex flex-col items-end gap-1 text-right">
 													<span className="font-mono text-xs text-neutral-300">
-														{agent.flow.parsed.request.path ?? "–"}
+														{agent.flow.parsed?.request?.path ?? "–"}
 													</span>
 													<span className="text-xs uppercase tracking-wide text-neutral-500">
-														{agent.flow.parsed.request.ready ? "Ready" : "Pending"}
+														{agent.flow.parsed?.request?.ready ? "Ready" : "Pending"}
 													</span>
 												</dd>
 											</div>
@@ -546,14 +546,14 @@ export function AgentDetailPage({ agentId }: { agentId: string }) {
 												<dt className="text-neutral-400">Report</dt>
 												<dd className="flex flex-col items-end gap-1 text-right">
 													<span className="font-mono text-xs text-neutral-300">
-														{agent.flow.parsed.report.path ?? "–"}
+														{agent.flow.parsed?.report?.path ?? "–"}
 													</span>
 													<span className="text-xs uppercase tracking-wide text-neutral-500">
-														{agent.flow.parsed.report.result ?? "Pending"}
+														{agent.flow.parsed?.report?.result ?? "Pending"}
 													</span>
 												</dd>
 											</div>
-											{agent.flow.parsed.summary && (
+											{agent.flow.parsed?.summary && (
 												<div className="flex justify-between gap-4">
 													<dt className="text-neutral-400">Summary</dt>
 													<dd className="max-w-xs text-right text-neutral-200">
@@ -562,28 +562,29 @@ export function AgentDetailPage({ agentId }: { agentId: string }) {
 												</div>
 											)}
 										</dl>
-										{agent.flow.parsed.blockers.length > 0 && (
-											<div className="space-y-2 rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-3 text-sm text-yellow-100">
-												<p className="text-xs font-semibold uppercase tracking-wide text-yellow-300">
-													Blockers
-												</p>
-												<ul className="space-y-1">
-													{agent.flow.parsed.blockers.map((blocker) => (
-														<li
-															key={`${blocker.code}-${blocker.detail}`}
-															className="flex flex-col gap-1"
-														>
-															<span className="font-semibold text-yellow-200">
-																{blocker.code}
-															</span>
-															<span className="text-yellow-100">
-																{blocker.detail}
-															</span>
-														</li>
-													))}
-												</ul>
-											</div>
-										)}
+										{Array.isArray(agent.flow.parsed?.blockers) &&
+											agent.flow.parsed.blockers.length > 0 && (
+												<div className="space-y-2 rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-3 text-sm text-yellow-100">
+													<p className="text-xs font-semibold uppercase tracking-wide text-yellow-300">
+														Blockers
+													</p>
+													<ul className="space-y-1">
+														{agent.flow.parsed.blockers.map((blocker) => (
+															<li
+																key={`${blocker.code}-${blocker.detail}`}
+																className="flex flex-col gap-1"
+															>
+																<span className="font-semibold text-yellow-200">
+																	{blocker.code}
+																</span>
+																<span className="text-yellow-100">
+																	{blocker.detail}
+																</span>
+															</li>
+														))}
+													</ul>
+												</div>
+											)}
 									</>
 								) : (
 									<p className="text-sm text-neutral-400">

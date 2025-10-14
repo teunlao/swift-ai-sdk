@@ -16,11 +16,13 @@ import {
 	stopAllBackgroundParsers,
 } from "./background-parser.js";
 import { getAgentTmpDir, isCodexAgentRunning } from "./codex.js";
+import { StuckMonitor } from "./monitoring/stuck-monitor.js";
 import { createTools } from "./tools/index.js";
 
 // Initialize database
 const db = new OrchestratorDB();
 const automation = new AutomationEngine(db);
+const stuckMonitor = new StuckMonitor(db);
 
 // Create MCP server
 const server = new McpServer(
@@ -165,6 +167,8 @@ async function main() {
 	if (restored > 0) {
 		console.error(`🔄 Restored ${restored} background parsers`);
 	}
+
+	stuckMonitor.start();
 }
 
 main().catch((error) => {
@@ -177,12 +181,14 @@ process.on("SIGINT", () => {
 	console.error("\n👋 Shutting down...");
 	stopAllBackgroundParsers();
 	automation.stop();
+	stuckMonitor.stop();
 	db.close();
 	process.exit(0);
 });
 
 process.on("SIGTERM", () => {
 	stopAllBackgroundParsers();
+	stuckMonitor.stop();
 	db.close();
 	process.exit(0);
 });

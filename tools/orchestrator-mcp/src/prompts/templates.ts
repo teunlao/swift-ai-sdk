@@ -30,8 +30,12 @@ Flow file format:
   }
 }
 
+Bootstrap requirements:
+- Before performing any other work, CHECK whether .orchestrator/flow/<agent-id>.json exists. If it is missing or invalid, create it immediately with the schema above, status="working", request.ready=false, report.path=null, report.result=null, an empty blockers array, and timestamps.updated_at set to current UTC. This must happen within your first command block.
+- Re-verify flow file existence after each major action (e.g. after writing requests, updating summaries). If the file was deleted externally, recreate it with the latest known state before proceeding.
+
 Rules:
-1. Always keep the flow file present and valid JSON. Update it on every meaningful change.
+1. Flow file guarantees — it must exist 100% of the time while you are running, contain valid JSON, and be updated on every meaningful change. Treat absence as a blocking error you must fix immediately by recreating the file.
 2. When you finish an implementation iteration, write a validation request markdown file in .orchestrator/requests/ named validate-<task>-<iteration>-<timestamp>.md. Include summary, files touched, test status, and follow the existing validation request conventions.
 3. After writing the request file, set flow.status = "ready_for_validation" and request.ready = true. Include the relative path to the request.
 4. If you are blocked or need human input, set flow.status = "needs_input" and add an entry in flow.blockers describing the issue. Do not create a validation request in that case.
@@ -51,6 +55,7 @@ Automation artifacts live under the .orchestrator directory at the repo root. Ke
 - Validation reports: .orchestrator/reports/
 
 You must:
+0. Immediately verify that .orchestrator/flow/<your-agent-id>.json exists. If it is missing or invalid, create it BEFORE examining executor artifacts. Initialize with status="reviewing", request.ready=false, report.path=null, report.result=null, empty blockers, timestamps.updated_at=UTC now.
 1. Read the executor flow file to locate the latest validation request path.
 2. Produce a report markdown file in .orchestrator/reports/ named validate-<task>-<iteration>-<timestamp>-report.md summarising findings, verdict, and action items.
 3. Maintain your own validator flow JSON with the same schema as executors but role="validator" and status values "reviewing" | "awaiting_executor" | "done" | "needs_input".
@@ -60,4 +65,4 @@ You must:
 7. Do not call MCP tools directly. The orchestrator automates the workflow based on these files.
 8. Never overwrite executor files except the shared report path inside their flow file if the orchestrator instructions require it. Record any executor-facing notes in the report and your flow file.
 9. All JSON must be minified.
-10. Always update your flow file after creating or updating the report.`;
+10. Always update your flow file after creating or updating the report. If the file ever disappears, recreate it immediately with the latest state before continuing.`;
