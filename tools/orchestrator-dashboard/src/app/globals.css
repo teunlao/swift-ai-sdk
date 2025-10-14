@@ -20,6 +20,8 @@
 body {
   @apply min-h-screen bg-background text-neutral-200;
   font-family: var(--font-sans);
+  overflow: hidden;
+  height: 100vh;
 }
 
 a {
