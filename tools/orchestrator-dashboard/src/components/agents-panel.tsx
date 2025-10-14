@@ -34,11 +34,15 @@ function AgentRow({ agent, now }: { agent: AgentSummary; now: number }) {
 					{agent.id}
 				</Link>
 			</td>
-			<td className="py-2 text-sm">
-				<StatusBadge status={agent.status} />
+			<td className="py-2">
+				<div className="flex items-center justify-center">
+					<StatusBadge status={agent.status} />
+				</div>
 			</td>
-			<td className="py-2 text-sm">
-				<RoleBadge role={agent.role} />
+			<td className="py-2">
+				<div className="flex items-center justify-center">
+					<RoleBadge role={agent.role} />
+				</div>
 			</td>
 			<td className="py-2 text-sm text-neutral-300">{agent.taskId ?? "–"}</td>
 			<td className="py-2 text-sm text-neutral-400">{agent.worktree ?? "–"}</td>
@@ -55,12 +59,14 @@ function AgentRow({ agent, now }: { agent: AgentSummary; now: number }) {
 			<td className="py-2 text-sm text-neutral-400">
 				{formatDate(agent.lastActivity)}
 			</td>
-			<td className="py-2 text-sm text-neutral-300">
-				{agent.validation ? (
-					<StatusBadge status={agent.validation.status} />
-				) : (
-					"–"
-				)}
+			<td className="py-2">
+				<div className="flex items-center justify-center">
+					{agent.validation ? (
+						<StatusBadge status={agent.validation.status} />
+					) : (
+						<span className="text-sm text-neutral-300">–</span>
+					)}
+				</div>
 			</td>
 		</tr>
 	);
