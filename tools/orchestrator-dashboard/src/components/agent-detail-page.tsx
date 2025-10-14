@@ -211,18 +211,13 @@ export function AgentDetailPage({ agentId }: { agentId: string }) {
 		}
 	}, [agentReady, eventsCount, lastEventsCount, loadLogs]);
 
-	useEffect(() => {
-		const container = logContainerRef.current;
-		if (!container) return;
-		const threshold = 40;
-		const atBottom =
-			container.scrollTop + container.clientHeight >=
-			container.scrollHeight - threshold;
-		autoScrollRef.current = atBottom;
-		if (autoScrollRef.current) {
-			container.scrollTop = container.scrollHeight;
-		}
-	}, [logs]);
+useEffect(() => {
+    const container = logContainerRef.current;
+    if (!container) return;
+    if (autoScrollRef.current) {
+        container.scrollTop = container.scrollHeight;
+    }
+}, [logs]);
 
 	useEffect(() => {
 		const container = logContainerRef.current;

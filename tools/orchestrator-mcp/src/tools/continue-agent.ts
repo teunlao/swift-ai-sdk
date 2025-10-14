@@ -24,16 +24,23 @@ WHEN TO USE:
 - Guide stuck agent with clarification or hint
 - Request status update ("What are you doing?")
 - Provide additional context or corrections
-- Tell executor to fix bugs after validator rejection
+- **⚠️  VALIDATION LOOP: MANDATORY after validator rejects** (see below)
 - Escalate to stronger model for complex issues
 
-VALIDATION WORKFLOW:
-After validator rejects (executor status='needs_fix'), use this to tell executor: "Fix bugs from validation report at .validation/reports/..."
+🔁 VALIDATION LOOP STEP 6 (MANDATORY after rejection):
+
+After submit_validation(result="rejected") → executor status='needs_fix':
+1. YOU MUST call continue_agent(executor_id, "Fix bugs from .validation/reports/...")
+2. Executor fixes issues and creates NEW validation request
+3. YOU call request_validation(executor_id) again → NEW validation session
+4. Loop repeats until validator approves
+
+⚠️  WITHOUT continue_agent, executor stays in 'needs_fix' forever - validation loop breaks!
 
 RESULT: Returns success/failure. Use get_logs() to see agent's response.
 
 EXAMPLE:
-continue_agent(agent_id="executor-123", prompt="Fix the 4 bugs listed in validation report")`,
+continue_agent(agent_id="executor-123", prompt="Fix all 4 bugs from validation report .validation/reports/report-snake-2025-10-14.md, then create new validation request")`,
 			inputSchema: {
 				agent_id: z
 					.string()

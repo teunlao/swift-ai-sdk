@@ -32,50 +32,78 @@ const server = new McpServer(
 WHAT IT DOES:
 Manages parallel Codex executor/validator agents with formal validation workflow, status tracking, and Git worktree isolation.
 
-VALIDATION WORKFLOW (3 steps):
-1. Executor completes work → calls 'request_validation' → blocked, creates validation session (status='pending')
-2. YOU call 'assign_validator' with validation_id + validator_id → validator starts (status='in_progress')
-3. Validator reviews → calls 'submit_validation' with verdict:
-   • approved: executor='validated' (ready to merge)
-   • rejected: executor='needs_fix' (must fix bugs and re-request validation)
+## COMPLETE VALIDATION CYCLE (iterative until approved):
 
-KEY TOOLS:
-- launch_agent(role, worktree, prompt) - Start executor/validator in isolated worktree
-- request_validation(executor_id) - Executor requests review after completing work
-- assign_validator(validation_id, validator_id) - YOU assign validator to review
-- submit_validation(validation_id, result, report_path) - Validator submits verdict
+┌─────────────────────────────────────────────────────────────────┐
+│  VALIDATION LOOP - Repeats until validator approves             │
+└─────────────────────────────────────────────────────────────────┘
+
+1. launch_agent(role="executor", worktree="auto")
+   → Executor creates implementation
+
+2. Executor finishes → calls request_validation(executor_id)
+   → YOU call this MCP tool, returns validation_id
+   → Executor status: 'blocked' (waiting for review)
+
+3. launch_agent(role="validator", worktree="manual", cwd=executor_worktree)
+   → Validator works in SAME directory as executor
+
+4. YOU call assign_validator(validation_id, validator_id)
+   → Links validator to validation session
+   → Session status: 'in_progress'
+
+5. Validator reviews code → creates report
+
+6. YOU call submit_validation(validation_id, result, report_path)
+
+   IF result="rejected":
+   ├─ Executor status: 'needs_fix'
+   ├─ Validator status: 'completed'
+   ├─ Session status: 'rejected'
+   └─ → GO TO STEP 7 (fix bugs)
+
+   IF result="approved":
+   ├─ Executor status: 'validated' (ready to merge)
+   ├─ Validator status: 'completed'
+   ├─ Session status: 'approved'
+   └─ → DONE! Exit loop
+
+7. YOU call continue_agent(executor_id, "Fix bugs from report")
+   → Executor fixes issues
+   → GO BACK TO STEP 2 (request new validation)
+
+⚠️  LOOP CAN REPEAT 2, 5, 10 times - until validator approves!
+
+## MCP TOOLS YOU ORCHESTRATE:
+
+- launch_agent(role, worktree, prompt) - Start executor/validator
+- request_validation(executor_id) - Create validation session
+- assign_validator(validation_id, validator_id) - Link validator to session
+- submit_validation(validation_id, result, report_path) - Finalize with verdict
+- continue_agent(agent_id, prompt) - Send follow-up instruction to agent
 - status() - Check agent statuses and validation queue
-- get_logs(agent_id) - View agent activity and reasoning
+- get_logs(agent_id) - View agent activity
 
-AGENT STATUSES:
+## AGENT STATUSES:
+
 - running: Actively working
 - blocked: Executor waiting for validation
-- validating: Validator checking work
-- validated: Approved, ready to merge
-- needs_fix: Rejected, must fix bugs
-- completed: Job done
+- needs_fix: Rejected by validator, must fix bugs
+- validated: Approved by validator, ready to merge
+- completed: Validator finished review
 - killed: Manually terminated
 
-TYPICAL FLOW:
-1. launch_agent(role="executor", worktree="auto") → creates code with bugs
-2. Executor finishes → calls request_validation → returns validation_id
-3. launch_agent(role="validator", worktree="manual", cwd=executor_worktree)
-4. assign_validator(validation_id, validator_id) → validator starts review
-5. Validator finds bugs → submit_validation(result="rejected") → executor status='needs_fix'
-6. continue_agent(executor_id, "fix bugs") → executor fixes issues
-7. Executor calls request_validation again → new validation cycle
-8. Validator approves → submit_validation(result="approved") → executor status='validated'
+## FEATURES:
 
-FEATURES:
-- Parallel execution: Multiple agents work simultaneously without conflicts via Git worktrees
-- Real-time monitoring: Live log parsing, event tracking, background recovery
+- Iterative validation: Executor fixes → re-validates until approved
+- Parallel execution: Multiple executor/validator pairs via Git worktrees
+- Real-time monitoring: Live log parsing, event tracking
 - Persistent state: SQLite DB at ~/claude-orchestrator/orchestrator.db
-- Automatic isolation: Each agent gets own worktree + branch
 
-USE CASES:
-- Code review: Executor implements → Validator checks → Executor fixes → Approved
-- Testing: Executor creates buggy code → Validator finds bugs → Executor fixes → Passes
-- Porting: Executor ports TypeScript → Validator checks 100% parity → Approved`,
+## EXAMPLE (2 validation cycles):
+
+Cycle 1: Executor implements → Validator finds 4 bugs → REJECTED
+Cycle 2: Executor fixes 4 bugs → Validator verifies → APPROVED → merge!`,
 	}
 );
 

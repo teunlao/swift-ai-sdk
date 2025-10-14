@@ -15,7 +15,7 @@ export function createSubmitValidationTool(db: OrchestratorDB) {
     name: "submit_validation",
     schema: {
       title: "Submit Validation Result",
-      description: `Finalize a validation session with verdict. STEP 5 (FINAL) of validation workflow.
+      description: `Finalize a validation session with verdict. STEP 5 of validation workflow.
 
 WORKFLOW CONTEXT (YOU orchestrate all steps):
 Step 1: Executor agent creates .validation/requests/*.md and stops
@@ -30,13 +30,21 @@ RESULT (result='approved'):
 - Validation session → status='approved'
 - Executor → status='validated' (work approved, ready to merge)
 - Validator → status='completed' (job done)
+→ VALIDATION LOOP EXITS - Work complete!
 
 RESULT (result='rejected'):
 - Validation session → status='rejected'
-- Executor → status='needs_fix' (must fix issues and request re-validation)
+- Executor → status='needs_fix' (MUST fix bugs and re-validate)
 - Validator → status='completed'
+→ VALIDATION LOOP CONTINUES - Go to step 6!
 
-NEXT STEPS after rejection: YOU notify user, executor fixes issues, YOU call 'request_validation' again → new validation cycle starts.
+STEP 6 (MANDATORY after rejection):
+YOU call continue_agent(executor_id, "Fix bugs from .validation/reports/...")
+→ Executor fixes issues
+→ Executor calls request_validation again (NEW validation session)
+→ LOOP BACK TO STEP 2 (repeat until approved)
+
+⚠️  VALIDATION IS ITERATIVE: Cycle repeats 2, 5, 10+ times until validator approves!
 
 CRITICAL: Agents cannot call MCP tools - only YOU can. This is a destructive operation (changes agent statuses permanently).`,
       inputSchema: {

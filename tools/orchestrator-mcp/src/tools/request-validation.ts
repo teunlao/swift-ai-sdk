@@ -42,9 +42,16 @@ WORKFLOW (Multi-step process - YOU orchestrate all steps):
 4. Validator agent creates .validation/reports/*.md file and stops
 5. YOU call 'submit_validation(validation_id, result)' → Completes workflow, updates statuses
 
-WHEN TO USE: After executor agent finishes implementation and creates validation request document.
+WHEN TO USE:
+1. **Initial validation**: After executor finishes first implementation
+2. **Re-validation (LOOP)**: After executor fixes bugs from rejected validation
+   - Executor status='needs_fix' → continue_agent() → executor fixes → creates NEW request
+   - YOU call request_validation() AGAIN → creates NEW validation session
+   - Can repeat 2, 5, 10+ times until validator approves
 
-RESULT: Returns validation_id. Use this ID in 'assign_validator' next.
+⚠️  THIS TOOL IS REUSABLE: Same executor can have multiple validation sessions (one at a time).
+
+RESULT: Returns NEW validation_id. Use this ID in 'assign_validator' next.
 
 CRITICAL: Agents cannot call MCP tools - only YOU can. Agents create files, YOU orchestrate workflow.`,
       inputSchema: {
