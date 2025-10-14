@@ -97,6 +97,45 @@ disown
 }
 
 /**
+ * Continue an existing Codex agent session with a new prompt
+ */
+export async function continueCodexAgent(
+  agentId: string,
+  prompt: string
+): Promise<boolean> {
+  try {
+    const tmpDir = getAgentTmpDir(agentId);
+    const inputFile = path.join(tmpDir, "input.json");
+
+    if (!fs.existsSync(inputFile)) {
+      throw new Error(`Agent ${agentId} input file not found`);
+    }
+
+    // Create new JSON-RPC request with approval-policy and sandbox
+    const request = {
+      jsonrpc: "2.0",
+      id: Date.now(),
+      method: "tools/call",
+      params: {
+        name: "codex",
+        arguments: {
+          prompt: prompt,
+          "approval-policy": "never",
+          sandbox: "danger-full-access",
+        },
+      },
+    };
+
+    // Append to input.json (tail -f will pick it up)
+    fs.appendFileSync(inputFile, JSON.stringify(request) + "\n");
+    return true;
+  } catch (error) {
+    console.error(`Failed to continue agent ${agentId}:`, error);
+    return false;
+  }
+}
+
+/**
  * Kill a Codex agent process
  */
 export function killCodexAgent(shellId: string): boolean {

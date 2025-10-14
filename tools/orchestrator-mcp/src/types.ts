@@ -175,6 +175,46 @@ export interface GetHistoryOutput {
   sessions: HistoryEntry[];
 }
 
+export interface ContinueAgentInput {
+  agent_id: string;
+  prompt: string;
+}
+
+export interface ContinueAgentOutput {
+  [key: string]: unknown;
+  agent_id: string;
+  success: boolean;
+  message: string;
+}
+
+export interface ListWorktreeFilesInput {
+  agent_id: string;
+  pattern?: string;
+}
+
+export interface ListWorktreeFilesOutput {
+  [key: string]: unknown;
+  agent_id: string;
+  worktree: string;
+  files: Array<{
+    name: string;
+    size: number;
+    modified: string;
+  }>;
+}
+
+export interface ReadWorktreeFileInput {
+  agent_id: string;
+  file_path: string;
+}
+
+export interface ReadWorktreeFileOutput {
+  [key: string]: unknown;
+  agent_id: string;
+  file_path: string;
+  content: string;
+}
+
 // Codex output parsing types
 export interface CodexEvent {
   type: string;
