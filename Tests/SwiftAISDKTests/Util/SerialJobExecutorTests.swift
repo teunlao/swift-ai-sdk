@@ -65,26 +65,30 @@ struct SerialJobExecutorTests {
         // Start all jobs - mimic TypeScript array construction
         // In TypeScript: const promises = [run(...), run(...), run(...)]
         // Array is built synchronously, so run() calls happen in sequence
-        let promises = [
-            Task {
-                try? await executor.run {
-                    await tracker.appendExecution(1)
-                    job1Promise.resolve(())
-                }
-            },
-            Task {
-                try? await executor.run {
-                    await tracker.appendExecution(2)
-                    job2Promise.resolve(())
-                }
-            },
-            Task {
-                try? await executor.run {
-                    await tracker.appendExecution(3)
-                    job3Promise.resolve(())
-                }
-            },
-        ]
+        let promise1 = Task {
+            try? await executor.run {
+                await tracker.appendExecution(1)
+                job1Promise.resolve(())
+            }
+        }
+        await Task.yield()
+
+        let promise2 = Task {
+            try? await executor.run {
+                await tracker.appendExecution(2)
+                job2Promise.resolve(())
+            }
+        }
+        await Task.yield()
+
+        let promise3 = Task {
+            try? await executor.run {
+                await tracker.appendExecution(3)
+                job3Promise.resolve(())
+            }
+        }
+
+        let promises = [promise1, promise2, promise3]
 
         // Wait for all tasks to complete
         for task in promises {
