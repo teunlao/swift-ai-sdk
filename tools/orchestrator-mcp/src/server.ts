@@ -32,6 +32,10 @@ const server = new McpServer(
 WHAT IT DOES:
 Manages parallel Codex executor/validator agents with formal validation workflow, status tracking, and Git worktree isolation.
 
+‼️ VALIDATION MANDATE ‼️
+- YOU MUST execute the complete validation workflow for 100% of tasks. No exceptions, no shortcuts.
+- The ONLY allowed skip is when the user explicitly writes exactly "skip validation" or "no validation needed". Any other phrasing still requires full validation.
+
 ## COMPLETE VALIDATION CYCLE (iterative until approved):
 
 ┌─────────────────────────────────────────────────────────────────┐
