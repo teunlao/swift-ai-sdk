@@ -158,15 +158,22 @@ struct GenerateImageTests {
         #expect(result.warnings == expected)
     }
 
-    @Test("should call logWarnings with the correct warnings", .disabled("logWarningsObserver conflict - Task created for investigation"))
+    @Test("should call logWarnings with the correct warnings")
     func logsWarnings() async throws {
         try await LogWarningsTestLock.shared.withLock {
             let warning1: ImageGenerationWarning = .other(message: "Setting is not supported")
             let warning2: ImageGenerationWarning = .unsupportedSetting(setting: "size", details: "Size parameter not supported")
             let expected = [warning1, warning2]
 
+            guard let token = LogWarningsTestLock.currentOwnerID() else {
+                Issue.record("Missing log warnings scope token")
+                return
+            }
+
             let warningsBox = LockedBox<[ImageGenerationWarning]>()
             logWarningsObserver = { warnings in
+                // Capture warnings only for this locked scope to avoid cross-test interference.
+                guard LogWarningsTestLock.currentOwnerID() == token else { return }
                 let imageWarnings = warnings.compactMap { warning -> ImageGenerationWarning? in
                     guard case let .imageModel(imageWarning) = warning else {
                         return nil
@@ -205,8 +212,15 @@ struct GenerateImageTests {
             let warning1: ImageGenerationWarning = .other(message: "Warning from call 1")
             let warning2: ImageGenerationWarning = .other(message: "Warning from call 2")
 
+            guard let token = LogWarningsTestLock.currentOwnerID() else {
+                Issue.record("Missing log warnings scope token")
+                return
+            }
+
             let warningsBox = LockedBox<[ImageGenerationWarning]>()
             logWarningsObserver = { warnings in
+                // Capture warnings only for this locked scope to avoid cross-test interference.
+                guard LogWarningsTestLock.currentOwnerID() == token else { return }
                 let imageWarnings = warnings.compactMap { warning -> ImageGenerationWarning? in
                     guard case let .imageModel(imageWarning) = warning else {
                         return nil
@@ -256,8 +270,14 @@ struct GenerateImageTests {
     @Test("should call logWarnings with empty array when no warnings are present")
     func logsEmptyWarnings() async throws {
         try await LogWarningsTestLock.shared.withLock {
+            guard let token = LogWarningsTestLock.currentOwnerID() else {
+                Issue.record("Missing log warnings scope token")
+                return
+            }
             let warningsBox = LockedBox<[ImageGenerationWarning]>()
             logWarningsObserver = { warnings in
+                // Capture warnings only for this locked scope to avoid cross-test interference.
+                guard LogWarningsTestLock.currentOwnerID() == token else { return }
                 let imageWarnings = warnings.compactMap { warning -> ImageGenerationWarning? in
                     guard case let .imageModel(imageWarning) = warning else {
                         return nil

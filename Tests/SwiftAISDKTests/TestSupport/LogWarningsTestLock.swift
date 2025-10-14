@@ -1,5 +1,9 @@
 import Foundation
 
+private enum LogWarningsTestContext {
+    @TaskLocal static var ownerID: UUID?
+}
+
 /**
  Serializes tests that mutate `AI_SDK_LOG_WARNINGS` to avoid race conditions.
 
@@ -14,8 +18,15 @@ actor LogWarningsTestLock {
 
     func withLock<T: Sendable>(_ operation: @Sendable () async throws -> T) async rethrows -> T {
         await acquire()
+        let token = UUID()
         defer { release() }
-        return try await operation()
+        return try await LogWarningsTestContext.$ownerID.withValue(token) {
+            try await operation()
+        }
+    }
+
+    static func currentOwnerID() -> UUID? {
+        LogWarningsTestContext.ownerID
     }
 
     private func acquire() async {
