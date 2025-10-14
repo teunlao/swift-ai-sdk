@@ -41,6 +41,9 @@ nonisolated(unsafe) public var AI_SDK_LOG_WARNINGS: Any? = nil
 public let FIRST_WARNING_INFO_MESSAGE =
     "AI SDK Warning System: To turn off warning logging, set the AI_SDK_LOG_WARNINGS global to false."
 
+/// Testing hook to observe raw warning arrays before internal processing.
+nonisolated(unsafe) var logWarningsObserver: (@Sendable ([Warning]) -> Void)?
+
 /// Track if we've logged before (for first-time info message)
 ///
 /// **Thread Safety**: Marked `nonisolated(unsafe)` to match JavaScript's
@@ -147,6 +150,8 @@ private func formatTranscriptionModelWarning(_ warning: TranscriptionModelV3Call
 ///
 /// - Parameter warnings: Array of warnings to log
 public func logWarnings(_ warnings: [Warning]) {
+    logWarningsObserver?(warnings)
+
     // If empty, do nothing
     guard !warnings.isEmpty else {
         return
