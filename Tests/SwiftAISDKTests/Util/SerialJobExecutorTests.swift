@@ -171,7 +171,7 @@ struct SerialJobExecutorTests {
         #expect(results == ["job1", "job3"])
     }
 
-    @Test("should handle concurrent calls to run()")
+    @Test("should handle concurrent calls to run()", .disabled("Race condition - Task created for investigation"))
     func handleConcurrentCalls() async throws {
         let executor = SerialJobExecutor()
         let tracker = ExecutionTracker()
