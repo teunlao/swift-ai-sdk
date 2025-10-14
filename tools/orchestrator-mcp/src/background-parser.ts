@@ -69,6 +69,8 @@ export function startBackgroundParser(
 
       stream.on("end", () => {
         const lines = buffer.split("\n");
+        let eventsAdded = 0; // Track how many events we actually add to DB
+        let lastTimestamp: string | null = null;
 
         for (const line of lines) {
           if (!line.trim()) continue;
@@ -84,6 +86,7 @@ export function startBackgroundParser(
 
             const msgType = msg.type;
             const timestamp = new Date().toISOString();
+            lastTimestamp = timestamp; // Keep track of last event timestamp
 
             // === Reasoning (internal thinking) ===
             if (msgType === "agent_reasoning_delta") {
@@ -98,6 +101,7 @@ export function startBackgroundParser(
                   event_type: "reasoning",
                   content: currentReasoning.join(""),
                 });
+                eventsAdded++;
                 currentReasoning = [];
               }
               // Also add complete reasoning if present
@@ -109,6 +113,7 @@ export function startBackgroundParser(
                   event_type: "reasoning",
                   content: text,
                 });
+                eventsAdded++;
               }
             }
 
@@ -125,6 +130,7 @@ export function startBackgroundParser(
                   event_type: "message",
                   content: currentMessage.join(""),
                 });
+                eventsAdded++;
                 currentMessage = [];
               }
               // Also add complete message if present
@@ -136,6 +142,7 @@ export function startBackgroundParser(
                   event_type: "message",
                   content: text,
                 });
+                eventsAdded++;
               }
             }
 
@@ -151,6 +158,7 @@ export function startBackgroundParser(
                   event_type: "command",
                   content: cmd,
                 });
+                eventsAdded++;
               }
             }
 
@@ -166,6 +174,7 @@ export function startBackgroundParser(
                   event_type: "error",
                   content: `Exit code: ${exitCode}`,
                 });
+                eventsAdded++;
               } else if (stdout) {
                 db.addLog({
                   agent_id,
@@ -173,6 +182,7 @@ export function startBackgroundParser(
                   event_type: "output",
                   content: stdout,
                 });
+                eventsAdded++;
               }
             }
 
@@ -190,20 +200,23 @@ export function startBackgroundParser(
                     event_type: "tokens",
                     content: `Tokens: ${tokens.toLocaleString()} (cached: ${cached.toLocaleString()})`,
                   });
+                  eventsAdded++;
                 }
               }
             }
-
-            // Update last_activity and increment events_count in agents table
-            const agent = db.getAgent(agent_id);
-            if (agent) {
-              db.updateAgent(agent_id, {
-                last_activity: timestamp,
-                events_count: agent.events_count + 1,
-              });
-            }
           } catch (err) {
             // Skip invalid JSON lines
+          }
+        }
+
+        // Update agent stats ONCE after processing all lines
+        if (eventsAdded > 0 && lastTimestamp) {
+          const agent = db.getAgent(agent_id);
+          if (agent) {
+            db.updateAgent(agent_id, {
+              last_activity: lastTimestamp,
+              events_count: agent.events_count + eventsAdded,
+            });
           }
         }
 
