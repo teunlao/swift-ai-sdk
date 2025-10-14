@@ -23,6 +23,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "@swift-ai-sdk/orchestrator-db": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.20.0",
     "better-sqlite3": "^12.4.1",
     "simple-git": "^3.28.0",

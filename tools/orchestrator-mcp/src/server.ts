@@ -8,7 +8,7 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { OrchestratorDB } from "./database.js";
+import { OrchestratorDB } from "@swift-ai-sdk/orchestrator-db";
 import { createTools } from "./tools/index.js";
 import {
 	startBackgroundParser,

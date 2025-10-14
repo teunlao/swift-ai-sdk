@@ -4,13 +4,13 @@
 
 import { z } from "zod";
 import { simpleGit } from "simple-git";
-import type { OrchestratorDB } from "../database.js";
 import type {
+  OrchestratorDB,
   RequestValidationInput,
   RequestValidationOutput,
   ValidationSession,
   ValidationStatus,
-} from "../types.js";
+} from "@swift-ai-sdk/orchestrator-db";
 
 const validationId = () => `validation-${Date.now()}`;
 
@@ -35,10 +35,29 @@ export function createRequestValidationTool(db: OrchestratorDB) {
       title: "Request Validation",
       description: "Create a validation session for an executor agent",
       inputSchema: {
-        executor_id: z.string(),
-        task_id: z.string().optional(),
-        request_path: z.string().optional(),
-        summary: z.string().optional(),
+        executor_id: z
+          .string()
+          .describe(
+            "Executor agent ID that completed work and needs validation (e.g., 'executor-1760408478640'). Agent must have role='executor' and must have been launched with worktree isolation. This creates a validation session and blocks the executor until validation completes."
+          ),
+        task_id: z
+          .string()
+          .optional()
+          .describe(
+            "Optional Task Master task ID override (e.g., '4.3', '10.2'). If omitted, uses task_id from executor agent record. Used to track which task this validation is for."
+          ),
+        request_path: z
+          .string()
+          .optional()
+          .describe(
+            "Optional path to validation request document (e.g., '.validation/requests/validate-task-4.3-2025-10-14.md'). Used by validator to understand what needs to be checked. If omitted, validator should look for standard validation request in executor's worktree."
+          ),
+        summary: z
+          .string()
+          .optional()
+          .describe(
+            "Optional brief summary of work completed (e.g., 'Implemented delay utility with all tests passing'). Helps validator understand scope without reading full request. Will be included in validation session metadata."
+          ),
       },
     },
     handler: async (args: RequestValidationInput) => {

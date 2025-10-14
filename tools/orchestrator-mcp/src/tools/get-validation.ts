@@ -3,20 +3,25 @@
  */
 
 import { z } from "zod";
-import type { OrchestratorDB } from "../database.js";
 import type {
-	GetValidationInput,
-	ValidationSummaryOutput,
-} from "../types.js";
+  OrchestratorDB,
+  GetValidationInput,
+  ValidationSummaryOutput,
+} from "@swift-ai-sdk/orchestrator-db";
 
 export function createGetValidationTool(db: OrchestratorDB) {
   return {
     name: "get_validation",
     schema: {
-      title: "Get Validation",
-      description: "Retrieve validation session details",
+      title: "Get Validation Session",
+      description:
+        "Retrieve detailed information about a validation session. Shows current status, executor/validator IDs, worktree paths, request/report locations, and timestamps. Use this to monitor validation progress or check validation results after completion.",
       inputSchema: {
-        validation_id: z.string(),
+        validation_id: z
+          .string()
+          .describe(
+            "Validation session ID to inspect (e.g., 'validation-1739472000'). Returns full session metadata including status (pending/in_progress/approved/rejected), executor_id, validator_id, executor_worktree, executor_branch, request_path, report_path, and timestamps (requested_at, started_at, finished_at)."
+          ),
       },
     },
     handler: async (args: GetValidationInput) => {

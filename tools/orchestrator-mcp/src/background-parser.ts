@@ -5,7 +5,7 @@
  */
 
 import * as fs from "node:fs";
-import type { OrchestratorDB } from "./database.js";
+import type { OrchestratorDB } from "@swift-ai-sdk/orchestrator-db";
 
 interface Watcher {
   agent_id: string;

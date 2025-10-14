@@ -7,6 +7,8 @@ DerivedData/
 .swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
 .netrc
 external/
+.dist
+dist
 
 # Validation artifacts (real validation requests/reports created during work)
 # Documentation, examples, and templates ARE committed
@@ -35,7 +37,6 @@ node_modules/
 .env
 # Editor directories and files
 .idea
-.vscode
 *.suo
 *.ntvs*
 *.njsproj

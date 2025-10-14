@@ -5,8 +5,12 @@
  */
 
 import { z } from "zod";
-import type { OrchestratorDB } from "../database.js";
-import type { GetLogsInput, GetLogsOutput, LogEntry } from "../types.js";
+import type {
+  OrchestratorDB,
+  GetLogsInput,
+  GetLogsOutput,
+  LogEntry,
+} from "@swift-ai-sdk/orchestrator-db";
 
 export function createGetLogsTool(db: OrchestratorDB) {
 	return {

@@ -3,24 +3,42 @@
  */
 
 import { z } from "zod";
-import type { OrchestratorDB } from "../database.js";
 import type {
+  OrchestratorDB,
   SubmitValidationInput,
   SubmitValidationOutput,
   AgentStatus,
-} from "../types.js";
+} from "@swift-ai-sdk/orchestrator-db";
 
 export function createSubmitValidationTool(db: OrchestratorDB) {
   return {
     name: "submit_validation",
     schema: {
       title: "Submit Validation Result",
-      description: "Finalize a validation session with a verdict",
+      description:
+        "Finalize a validation session with a verdict (approved/rejected). Called by validator after verification completes. Updates both executor and validator statuses, unblocks agents, and completes the validation lifecycle. This is the FINAL step in validation workflow.",
       inputSchema: {
-        validation_id: z.string(),
-        result: z.enum(["approved", "rejected"]),
-        report_path: z.string(),
-        summary: z.string().optional(),
+        validation_id: z
+          .string()
+          .describe(
+            "Validation session ID to finalize (e.g., 'validation-1739472000'). Session must be in 'in_progress' or 'pending' status. After submit, session status becomes 'approved' or 'rejected' (final states)."
+          ),
+        result: z
+          .enum(["approved", "rejected"])
+          .describe(
+            "Validation verdict. 'approved': Implementation meets 100% upstream parity, executor status becomes 'validated', work can be merged. 'rejected': Issues found, executor status becomes 'needs_fix', executor must address problems and request re-validation."
+          ),
+        report_path: z
+          .string()
+          .describe(
+            "Path to detailed validation report document (e.g., '.validation/reports/report-task-4.3-2025-10-14.md'). Report should contain line-by-line comparison results, test coverage verification, parity assessment. Required for both approved and rejected verdicts."
+          ),
+        summary: z
+          .string()
+          .optional()
+          .describe(
+            "Optional brief summary of validation findings (e.g., 'All tests pass, API matches upstream, approved for merge' or 'Missing 3 test cases, incorrect error handling in line 45'). If omitted, uses summary from validation request."
+          ),
       },
     },
     handler: async (args: SubmitValidationInput) => {
@@ -76,26 +94,28 @@ export function createSubmitValidationTool(db: OrchestratorDB) {
           finished_at: now,
         });
 
-        const executorStatus: AgentStatus =
-          args.result === "approved" ? "validated" : "needs_fix";
+			const isApproved = args.result === "approved";
+			const executorStatus: AgentStatus = isApproved ? "validated" : "needs_fix";
 
-        const executorUpdates = {
-          status: executorStatus,
-          current_validation_id: null,
-          last_activity: now,
-          ended_at: executor.ended_at ?? now,
-        };
-        db.updateAgent(executor.id, executorUpdates);
+			const executorUpdates: Record<string, unknown> = {
+				status: executorStatus,
+				current_validation_id: null,
+				last_activity: now,
+			};
+			if (isApproved) {
+				executorUpdates.ended_at = executor.ended_at ?? now;
+			}
+			db.updateAgent(executor.id, executorUpdates as Partial<typeof executor>);
 
         let validatorStatus: AgentStatus = validator?.status ?? "running";
-        if (validator) {
-          validatorStatus = args.result === "approved" ? "completed" : "completed";
-          db.updateAgent(validator.id, {
-            status: validatorStatus,
-            current_validation_id: null,
-            last_activity: now,
-            ended_at: validator.ended_at ?? now,
-          });
+			if (validator) {
+				validatorStatus = "completed";
+				db.updateAgent(validator.id, {
+					status: validatorStatus,
+					current_validation_id: null,
+					last_activity: now,
+					ended_at: validator.ended_at ?? now,
+				});
         }
 
         const output: SubmitValidationOutput = {

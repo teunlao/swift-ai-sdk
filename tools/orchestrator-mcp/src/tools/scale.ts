@@ -3,10 +3,14 @@
  */
 
 import { z } from "zod";
-import type { OrchestratorDB } from "../database.js";
+import type {
+  OrchestratorDB,
+  ScaleInput,
+  ScaleOutput,
+  LaunchAgentOutput,
+} from "@swift-ai-sdk/orchestrator-db";
 import { createWorktree } from "../git.js";
 import { launchCodexAgent } from "../codex.js";
-import type { ScaleInput, ScaleOutput, LaunchAgentOutput } from "../types.js";
 
 export function createScaleTool(db: OrchestratorDB) {
 	return {

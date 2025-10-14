@@ -3,11 +3,14 @@
  */
 
 import { z } from "zod";
-import type { OrchestratorDB } from "../database.js";
+import type {
+  OrchestratorDB,
+  LaunchAgentInput,
+  LaunchAgentOutput,
+} from "@swift-ai-sdk/orchestrator-db";
 import { createWorktree } from "../git.js";
 import { launchCodexAgent } from "../codex.js";
 import { startBackgroundParser } from "../background-parser.js";
-import type { LaunchAgentInput, LaunchAgentOutput } from "../types.js";
 
 export function createLaunchAgentTool(db: OrchestratorDB) {
 	return {

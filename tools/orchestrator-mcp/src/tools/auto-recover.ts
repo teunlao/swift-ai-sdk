@@ -3,8 +3,11 @@
  */
 
 import { z } from "zod";
-import type { OrchestratorDB } from "../database.js";
-import type { AutoRecoverInput, AutoRecoverOutput } from "../types.js";
+import type {
+  OrchestratorDB,
+  AutoRecoverInput,
+  AutoRecoverOutput,
+} from "@swift-ai-sdk/orchestrator-db";
 
 export function createAutoRecoverTool(db: OrchestratorDB) {
 	return {

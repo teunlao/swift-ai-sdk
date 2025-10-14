@@ -3,12 +3,12 @@
  */
 
 import { z } from "zod";
-import type { OrchestratorDB } from "../database.js";
 import type {
+	OrchestratorDB,
 	StatusInput,
 	StatusOutput,
 	ValidationStatus,
-} from "../types.js";
+} from "@swift-ai-sdk/orchestrator-db";
 
 export function createStatusTool(db: OrchestratorDB) {
 	return {

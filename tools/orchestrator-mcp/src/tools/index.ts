@@ -4,7 +4,7 @@
  * Exports all MCP tools for the Orchestrator server.
  */
 
-import type { OrchestratorDB } from "../database.js";
+import type { OrchestratorDB } from "@swift-ai-sdk/orchestrator-db";
 import { createLaunchAgentTool } from "./launch-agent.js";
 import { createStatusTool } from "./status.js";
 import { createKillAgentTool } from "./kill-agent.js";

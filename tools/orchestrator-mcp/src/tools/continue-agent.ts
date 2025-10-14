@@ -3,9 +3,12 @@
  */
 
 import { z } from "zod";
-import type { OrchestratorDB } from "../database.js";
+import type {
+  OrchestratorDB,
+  ContinueAgentInput,
+  ContinueAgentOutput,
+} from "@swift-ai-sdk/orchestrator-db";
 import { continueCodexAgent } from "../codex.js";
-import type { ContinueAgentInput, ContinueAgentOutput } from "../types.js";
 
 export function createContinueAgentTool(db: OrchestratorDB) {
 	return {
@@ -52,12 +55,13 @@ export function createContinueAgentTool(db: OrchestratorDB) {
 					};
 				}
 
-				if (agent.status !== "running") {
+				const allowedStatuses = new Set(["running", "needs_fix"]);
+				if (!allowedStatuses.has(agent.status)) {
 					return {
 						content: [
 							{
 								type: "text" as const,
-								text: `Agent ${args.agent_id} is not running (status: ${agent.status})`,
+								text: `Agent ${args.agent_id} is not active (status: ${agent.status})`,
 							},
 						],
 					};

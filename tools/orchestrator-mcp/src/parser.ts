@@ -5,7 +5,7 @@
  * Based on scripts/parse-codex-output.py implementation.
  */
 
-import type { ParsedCodexOutput, LogEntry } from "./types.js";
+import type { ParsedCodexOutput, LogEntry } from "@swift-ai-sdk/orchestrator-db";
 
 export interface CodexEvent {
   type: string;

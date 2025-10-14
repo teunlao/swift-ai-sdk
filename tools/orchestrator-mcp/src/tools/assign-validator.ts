@@ -3,22 +3,31 @@
  */
 
 import { z } from "zod";
-import type { OrchestratorDB } from "../database.js";
 import type {
+  OrchestratorDB,
   AssignValidatorInput,
   AssignValidatorOutput,
   ValidationSession,
-} from "../types.js";
+} from "@swift-ai-sdk/orchestrator-db";
 
 export function createAssignValidatorTool(db: OrchestratorDB) {
   return {
     name: "assign_validator",
     schema: {
       title: "Assign Validator",
-      description: "Assign a validator agent to a validation session",
+      description:
+        "Assign a validator agent to a validation session. Links validator to executor's worktree for verification. CRITICAL: Validator must be launched in the SAME worktree as executor to access implementation files. Updates session status from 'pending' to 'in_progress'.",
       inputSchema: {
-        validation_id: z.string(),
-        validator_id: z.string(),
+        validation_id: z
+          .string()
+          .describe(
+            "Validation session ID from request_validation (e.g., 'validation-1739472000'). Session must be in 'pending' status. Once assigned, session transitions to 'in_progress' and validator is blocked from other validations."
+          ),
+        validator_id: z
+          .string()
+          .describe(
+            "Validator agent ID to assign (e.g., 'validator-1760408550123'). Agent must have role='validator' and must be launched in executor's worktree directory (matching executor_worktree from session). Validator cannot be assigned to multiple validations simultaneously."
+          ),
       },
     },
     handler: async (args: AssignValidatorInput) => {

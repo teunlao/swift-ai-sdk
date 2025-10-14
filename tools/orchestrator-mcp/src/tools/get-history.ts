@@ -3,12 +3,12 @@
  */
 
 import { z } from "zod";
-import type { OrchestratorDB } from "../database.js";
 import type {
-	GetHistoryInput,
-	GetHistoryOutput,
-	HistoryEntry,
-} from "../types.js";
+  OrchestratorDB,
+  GetHistoryInput,
+  GetHistoryOutput,
+  HistoryEntry,
+} from "@swift-ai-sdk/orchestrator-db";
 
 export function createGetHistoryTool(db: OrchestratorDB) {
 	return {

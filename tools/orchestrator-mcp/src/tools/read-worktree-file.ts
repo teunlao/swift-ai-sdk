@@ -5,11 +5,11 @@
 import { z } from "zod";
 import * as fs from "fs";
 import * as path from "path";
-import type { OrchestratorDB } from "../database.js";
 import type {
-	ReadWorktreeFileInput,
-	ReadWorktreeFileOutput,
-} from "../types.js";
+  OrchestratorDB,
+  ReadWorktreeFileInput,
+  ReadWorktreeFileOutput,
+} from "@swift-ai-sdk/orchestrator-db";
 
 export function createReadWorktreeFileTool(db: OrchestratorDB) {
 	return {
