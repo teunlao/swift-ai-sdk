@@ -42,7 +42,7 @@ COMMON SCENARIOS:
    - Use: update_agent_status(agent_id, "running")
 
 VALID STATUSES:
-- running, blocked, needs_fix, validated, completed, killed
+- running, blocked, needs_fix, validated, merged, completed, killed
 
 RESULT: Returns new agent status.`,
 			inputSchema: {
@@ -57,11 +57,12 @@ RESULT: Returns new agent status.`,
 						"blocked",
 						"needs_fix",
 						"validated",
+						"merged",
 						"completed",
 						"killed",
 					])
 					.describe(
-						"New status to set. 'running': active work. 'blocked': waiting for validation. 'needs_fix': rejected, must fix bugs. 'validated': approved, ready to merge. 'completed': job done. 'killed': manually terminated."
+						"New status to set. 'running': active work. 'blocked': waiting for validation. 'needs_fix': rejected, must fix bugs. 'validated': approved, ready to merge. 'merged': work has been merged to main. 'completed': job done. 'killed': manually terminated."
 					),
 				clear_validation: z
 					.boolean()
@@ -103,7 +104,8 @@ RESULT: Returns new agent status.`,
 				if (
 					args.status === "completed" ||
 					args.status === "killed" ||
-					args.status === "validated"
+					args.status === "validated" ||
+					args.status === "merged"
 				) {
 					updates.ended_at = agent.ended_at ?? now;
 				}
