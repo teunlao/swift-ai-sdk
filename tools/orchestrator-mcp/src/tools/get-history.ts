@@ -17,10 +17,30 @@ export function createGetHistoryTool(db: OrchestratorDB) {
 			title: "Get Agent History",
 			description: "Get historical agent sessions",
 			inputSchema: {
-				from_date: z.string().optional(),
-				to_date: z.string().optional(),
-				task_id: z.string().optional(),
-				role: z.enum(["executor", "validator"]).optional(),
+				from_date: z
+					.string()
+					.optional()
+					.describe(
+						"Start date filter in ISO 8601 format (e.g., '2025-10-14T00:00:00Z'). Returns agents started on or after this date. If omitted, no lower bound."
+					),
+				to_date: z
+					.string()
+					.optional()
+					.describe(
+						"End date filter in ISO 8601 format (e.g., '2025-10-14T23:59:59Z'). Returns agents started before or on this date. If omitted, no upper bound."
+					),
+				task_id: z
+					.string()
+					.optional()
+					.describe(
+						"Filter by specific task ID (e.g., '4.3', '10.2'). Shows all agents (completed, killed, failed) that worked on this task. Useful for task completion audit."
+					),
+				role: z
+					.enum(["executor", "validator"])
+					.optional()
+					.describe(
+						"Filter by agent role. 'executor': implementation agents. 'validator': verification agents. If omitted, returns both roles."
+					),
 			},
 		},
 		handler: async (args: GetHistoryInput) => {
@@ -50,9 +70,13 @@ export function createGetHistoryTool(db: OrchestratorDB) {
 					}
 
 					// Determine result based on status
-					let result: "success" | "validation_failed" | "killed" = "success";
+					let result: HistoryEntry["result"] = "success";
 					if (agent.status === "killed") {
 						result = "killed";
+					} else if (agent.status === "validated") {
+						result = "validated";
+					} else if (agent.status === "needs_fix") {
+						result = "needs_fix";
 					} else if (agent.status === "completed") {
 						result = "success";
 					} else {

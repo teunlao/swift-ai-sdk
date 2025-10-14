@@ -15,6 +15,10 @@ import { createAutoRecoverTool } from "./auto-recover.js";
 import { createGetLogsTool } from "./get-logs.js";
 import { createScaleTool } from "./scale.js";
 import { createGetHistoryTool } from "./get-history.js";
+import { createRequestValidationTool } from "./request-validation.js";
+import { createAssignValidatorTool } from "./assign-validator.js";
+import { createSubmitValidationTool } from "./submit-validation.js";
+import { createGetValidationTool } from "./get-validation.js";
 
 /**
  * Tool definition interface
@@ -40,5 +44,9 @@ export function createTools(db: OrchestratorDB): ToolDefinition[] {
 		createGetLogsTool(db),
 		createScaleTool(db),
 		createGetHistoryTool(db),
+		createRequestValidationTool(db),
+		createAssignValidatorTool(db),
+		createSubmitValidationTool(db),
+		createGetValidationTool(db),
 	];
 }

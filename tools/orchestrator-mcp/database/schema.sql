@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS agents (
   shell_id TEXT NOT NULL,           -- hex ID from Bash tool
   worktree TEXT,                    -- "/path/to/worktree"
   prompt TEXT,                      -- initial prompt
-  status TEXT NOT NULL DEFAULT 'running', -- "running" | "stuck" | "completed" | "killed"
+  status TEXT NOT NULL DEFAULT 'running', -- "running" | "stuck" | "completed" | "killed" | "validated" | "needs_fix"
   created_at TEXT NOT NULL,         -- ISO 8601 timestamp
   started_at TEXT,
   ended_at TEXT,
@@ -18,7 +18,8 @@ CREATE TABLE IF NOT EXISTS agents (
   files_created INTEGER DEFAULT 0,
   last_activity TEXT,
   stuck_detected INTEGER DEFAULT 0, -- boolean 0/1
-  auto_recover_attempts INTEGER DEFAULT 0
+  auto_recover_attempts INTEGER DEFAULT 0,
+  current_validation_id TEXT        -- active validation session id (nullable)
 );
 
 -- Table: agent_logs (optional, for detailed logging)
@@ -43,6 +44,28 @@ CREATE INDEX IF NOT EXISTS idx_agents_role ON agents(role);
 CREATE INDEX IF NOT EXISTS idx_agents_task_id ON agents(task_id);
 CREATE INDEX IF NOT EXISTS idx_agent_logs_agent_id ON agent_logs(agent_id);
 CREATE INDEX IF NOT EXISTS idx_agent_logs_timestamp ON agent_logs(timestamp);
+
+-- Table: validation_sessions
+CREATE TABLE IF NOT EXISTS validation_sessions (
+  id TEXT PRIMARY KEY,               -- "validation-1739472000"
+  task_id TEXT,
+  executor_id TEXT NOT NULL,
+  validator_id TEXT,
+  status TEXT NOT NULL,              -- "pending" | "in_progress" | "approved" | "rejected"
+  executor_worktree TEXT,
+  executor_branch TEXT,
+  request_path TEXT,
+  report_path TEXT,
+  summary TEXT,
+  requested_at TEXT NOT NULL,
+  started_at TEXT,
+  finished_at TEXT,
+  FOREIGN KEY (executor_id) REFERENCES agents(id),
+  FOREIGN KEY (validator_id) REFERENCES agents(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_validation_status ON validation_sessions(status);
+CREATE INDEX IF NOT EXISTS idx_validation_task ON validation_sessions(task_id);
 
 -- Insert default config
 INSERT OR IGNORE INTO config (key, value) VALUES ('auto_recover_enabled', 'false');

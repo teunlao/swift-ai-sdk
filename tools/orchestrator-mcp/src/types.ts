@@ -6,7 +6,19 @@
 export type AgentRole = "executor" | "validator";
 
 // Agent status
-export type AgentStatus = "running" | "stuck" | "completed" | "killed";
+export type AgentStatus =
+  | "running"
+  | "stuck"
+  | "completed"
+  | "killed"
+  | "validated"
+  | "needs_fix";
+
+export type ValidationStatus =
+  | "pending"
+  | "in_progress"
+  | "approved"
+  | "rejected";
 
 // Agent record in database
 export interface Agent {
@@ -27,6 +39,23 @@ export interface Agent {
   last_activity: string | null;
   stuck_detected: number; // 0 or 1 (boolean)
   auto_recover_attempts: number;
+  current_validation_id: string | null;
+}
+
+export interface ValidationSession {
+  id: string;
+  task_id: string | null;
+  executor_id: string;
+  validator_id: string | null;
+  status: ValidationStatus;
+  executor_worktree: string | null;
+  executor_branch: string | null;
+  request_path: string | null;
+  report_path: string | null;
+  summary: string | null;
+  requested_at: string;
+  started_at: string | null;
+  finished_at: string | null;
 }
 
 // Agent log entry
@@ -78,6 +107,10 @@ export interface AgentSummary {
   uptime: string;
   last_activity: string | null;
   idle_minutes: number | null;
+  validation?: {
+    id: string;
+    status: ValidationStatus;
+  };
 }
 
 export interface AgentDetailed extends AgentSummary {
@@ -96,6 +129,11 @@ export interface AgentDetailed extends AgentSummary {
 export interface StatusOutput {
   [key: string]: unknown;
   agents: AgentSummary[] | AgentDetailed[];
+}
+
+export interface ValidationSummaryOutput {
+  [key: string]: unknown;
+  session: ValidationSession;
 }
 
 export interface GetLogsInput {
@@ -171,12 +209,59 @@ export interface HistoryEntry {
   duration: string;
   status: AgentStatus;
   events: number;
-  result: "success" | "validation_failed" | "killed";
+  result: "success" | "validation_failed" | "killed" | "validated" | "needs_fix";
 }
 
 export interface GetHistoryOutput {
   [key: string]: unknown;
   sessions: HistoryEntry[];
+}
+
+export interface RequestValidationInput {
+  executor_id: string;
+  task_id?: string;
+  request_path?: string;
+  summary?: string;
+}
+
+export interface RequestValidationOutput {
+  [key: string]: unknown;
+  validation_id: string;
+  status: ValidationStatus;
+  executor_id: string;
+  executor_worktree: string | null;
+}
+
+export interface AssignValidatorInput {
+  validation_id: string;
+  validator_id: string;
+}
+
+export interface AssignValidatorOutput {
+  [key: string]: unknown;
+  validation_id: string;
+  validator_id: string;
+  status: ValidationStatus;
+  worktree: string | null;
+}
+
+export interface SubmitValidationInput {
+  validation_id: string;
+  result: "approved" | "rejected";
+  report_path: string;
+  summary?: string;
+}
+
+export interface SubmitValidationOutput {
+  [key: string]: unknown;
+  validation_id: string;
+  status: ValidationStatus;
+  executor_status: AgentStatus;
+  validator_status: AgentStatus;
+}
+
+export interface GetValidationInput {
+  validation_id: string;
 }
 
 export interface ContinueAgentInput {

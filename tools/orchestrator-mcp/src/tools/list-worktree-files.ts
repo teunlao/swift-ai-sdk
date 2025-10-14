@@ -18,8 +18,17 @@ export function createListWorktreeFilesTool(db: OrchestratorDB) {
 			title: "List Worktree Files",
 			description: "List files in an agent's worktree",
 			inputSchema: {
-				agent_id: z.string(),
-				pattern: z.string().optional(),
+				agent_id: z
+					.string()
+					.describe(
+						"Agent ID whose worktree to list (e.g., 'executor-1760408478640'). Returns files created or modified by this agent in its isolated worktree directory."
+					),
+				pattern: z
+					.string()
+					.optional()
+					.describe(
+						"File pattern filter using wildcards. Examples: '*.txt' (text files), '*.swift' (Swift files), 'Test*.swift' (test files), '*' (all files). Default: '*.txt'. Supports * (any chars) and ? (single char)."
+					),
 			},
 		},
 		handler: async (args: ListWorktreeFilesInput) => {

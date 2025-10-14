@@ -15,9 +15,22 @@ export function createScaleTool(db: OrchestratorDB) {
 			title: "Scale Agents",
 			description: "Launch multiple agents in parallel",
 			inputSchema: {
-				tasks: z.array(z.string()),
-				role: z.enum(["executor", "validator"]),
-				worktree: z.enum(["auto", "manual"]).default("auto"),
+				tasks: z
+					.array(z.string())
+					.describe(
+						"Array of task IDs to launch agents for (e.g., ['4.3', '5.1', '10.2']). Each task gets dedicated agent with isolated worktree. Agents run in parallel without conflicts. NOTE: Currently uses simple prompt 'Work on task X'; Task Master integration coming soon for full task details."
+					),
+				role: z
+					.enum(["executor", "validator"])
+					.describe(
+						"Role for all launched agents. 'executor' implements features in parallel. 'validator' checks multiple implementations simultaneously. All agents in batch use same role."
+					),
+				worktree: z
+					.enum(["auto", "manual"])
+					.default("auto")
+					.describe(
+						"Worktree mode for all agents. 'auto' (recommended for scale): creates isolated worktrees for true parallel work. 'manual': uses PROJECT_ROOT (NOT recommended for parallel - causes conflicts). Default: 'auto'."
+					),
 			},
 		},
 		handler: async (args: ScaleInput) => {
@@ -62,12 +75,13 @@ export function createScaleTool(db: OrchestratorDB) {
 						shell_id: codexResult.shellId,
 						worktree: worktreePath,
 						prompt: prompt,
-						status: "running",
-						created_at: new Date().toISOString(),
-						started_at: new Date().toISOString(),
-						ended_at: null,
-						last_activity: new Date().toISOString(),
-					});
+				status: "running",
+				created_at: new Date().toISOString(),
+				started_at: new Date().toISOString(),
+				ended_at: null,
+				last_activity: new Date().toISOString(),
+				current_validation_id: null,
+			});
 
 					return {
 						agent_id,

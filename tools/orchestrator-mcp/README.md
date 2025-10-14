@@ -36,6 +36,10 @@ npm start
 5. **auto_recover** - Enable automatic recovery
 6. **scale** - Launch multiple agents
 7. **get_history** - View execution history
+8. **request_validation** - Create validation session for executor
+9. **assign_validator** - Attach validator to executor worktree
+10. **submit_validation** - Record validation verdict
+11. **get_validation** - Inspect validation session details
 
 ## Development
 

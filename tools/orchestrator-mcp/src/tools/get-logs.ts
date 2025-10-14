@@ -15,11 +15,23 @@ export function createGetLogsTool(db: OrchestratorDB) {
 			title: "Get Agent Logs",
 			description: "Get parsed logs from a Codex agent",
 			inputSchema: {
-				agent_id: z.string(),
+				agent_id: z
+					.string()
+					.describe(
+						"Agent ID to retrieve logs from (e.g., 'executor-1760408478640'). Logs are parsed in real-time by background parser from Codex output.json."
+					),
 				filter: z
 					.enum(["reasoning", "messages", "commands", "errors", "all"])
-					.default("all"),
-				last: z.number().optional(),
+					.default("all")
+					.describe(
+						"Log event type filter. 'reasoning': thinking blocks. 'messages': user/assistant messages. 'commands': bash/tool executions. 'errors': error events. 'all': everything. Default: 'all'."
+					),
+				last: z
+					.number()
+					.optional()
+					.describe(
+						"Limit to N most recent log entries. Useful for checking latest activity without loading full history. Example: last=10 shows last 10 events. If omitted, returns all logs matching filter."
+					),
 			},
 		},
 		handler: async (args: GetLogsInput) => {

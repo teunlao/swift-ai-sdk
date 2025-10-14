@@ -14,10 +14,28 @@ export function createContinueAgentTool(db: OrchestratorDB) {
 			title: "Continue Agent",
 			description: "Send a new prompt to an existing agent session",
 			inputSchema: {
-				agent_id: z.string(),
-				prompt: z.string(),
-				model: z.string().optional(),
-				reasoning_effort: z.enum(["low", "medium", "high"]).optional(),
+				agent_id: z
+					.string()
+					.describe(
+						"Agent ID to send prompt to (e.g., 'executor-1760408478640'). Agent must be in 'running' status. Use status tool to check agent state before continuing."
+					),
+				prompt: z
+					.string()
+					.describe(
+						"Follow-up instruction or clarification for the agent. Used to guide stuck agents, provide additional context, request status update, or correct course. Example: 'Run tests again after fixing the import' or 'Check the validation report in .validation/reports/'"
+					),
+				model: z
+					.string()
+					.optional()
+					.describe(
+						"Override model for this continuation (e.g., 'claude-sonnet-4', 'o1'). Useful for escalating complex problems to more capable models. If omitted, uses agent's current model."
+					),
+				reasoning_effort: z
+					.enum(["low", "medium", "high"])
+					.optional()
+					.describe(
+						"Reasoning depth for this specific prompt. 'high' for debugging complex issues, 'medium' for standard follow-ups, 'low' for simple status checks. If omitted, uses agent's default."
+					),
 			},
 		},
 		handler: async (args: ContinueAgentInput) => {

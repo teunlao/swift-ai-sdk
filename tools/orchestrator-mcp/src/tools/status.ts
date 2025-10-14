@@ -4,7 +4,11 @@
 
 import { z } from "zod";
 import type { OrchestratorDB } from "../database.js";
-import type { StatusInput, StatusOutput } from "../types.js";
+import type {
+	StatusInput,
+	StatusOutput,
+	ValidationStatus,
+} from "../types.js";
 
 export function createStatusTool(db: OrchestratorDB) {
 	return {
@@ -13,8 +17,18 @@ export function createStatusTool(db: OrchestratorDB) {
 			title: "Get Agent Status",
 			description: "Get status of one or all agents",
 			inputSchema: {
-				agent_id: z.string().optional(),
-				format: z.enum(["summary", "detailed"]).default("summary"),
+				agent_id: z
+					.string()
+					.optional()
+					.describe(
+						"Agent ID to get status for (e.g., 'executor-1760408478640'). If omitted, returns status of all running and completed agents."
+					),
+				format: z
+					.enum(["summary", "detailed"])
+					.default("summary")
+					.describe(
+						"Output format level. 'summary' shows essential info (agent_id, task_id, status, events count, uptime, last_activity, idle_minutes). 'detailed' adds full statistics including files_created and extended metadata."
+					),
 			},
 		},
 		handler: async (args: StatusInput) => {
@@ -38,22 +52,36 @@ export function createStatusTool(db: OrchestratorDB) {
 						? Math.floor((Date.now() - new Date(agent.last_activity).getTime()) / 60000)
 						: null;
 
-					const result: StatusOutput = {
-						agents: [
-							{
-								agent_id: agent.id,
-								task_id: agent.task_id,
-								status: agent.status,
-								events: agent.events_count,
-								files_created: agent.files_created,
-								uptime: agent.started_at
-									? `${Math.floor((Date.now() - new Date(agent.started_at).getTime()) / 60000)}m`
-									: "0m",
-								last_activity: agent.last_activity,
-								idle_minutes: idleMinutes,
-							},
-						],
-					};
+				const validation = agent.current_validation_id
+					? (() => {
+						const session = db.getValidationSession(agent.current_validation_id!);
+						if (!session) {
+							return {
+								id: agent.current_validation_id!,
+								status: "pending" as ValidationStatus,
+							};
+						}
+						return { id: session.id, status: session.status };
+					})()
+					: undefined;
+
+				const result: StatusOutput = {
+					agents: [
+						{
+							agent_id: agent.id,
+							task_id: agent.task_id,
+							status: agent.status,
+							events: agent.events_count,
+							files_created: agent.files_created,
+							uptime: agent.started_at
+								? `${Math.floor((Date.now() - new Date(agent.started_at).getTime()) / 60000)}m`
+								: "0m",
+							last_activity: agent.last_activity,
+							idle_minutes: idleMinutes,
+							validation,
+						},
+					],
+				};
 
 					return {
 						content: [
@@ -68,27 +96,43 @@ export function createStatusTool(db: OrchestratorDB) {
 					// Get all agents
 					const agents = db.getAllAgents();
 
-					const result: StatusOutput = {
-						agents: agents.map((agent) => {
-							// Calculate idle time from last_activity
-							const idleMinutes = agent.last_activity
-								? Math.floor((Date.now() - new Date(agent.last_activity).getTime()) / 60000)
-								: null;
+				const result: StatusOutput = {
+					agents: agents.map((agent) => {
+						// Calculate idle time from last_activity
+						const idleMinutes = agent.last_activity
+							? Math.floor((Date.now() - new Date(agent.last_activity).getTime()) / 60000)
+							: null;
 
-							return {
-								agent_id: agent.id,
-								task_id: agent.task_id,
-								status: agent.status,
-								events: agent.events_count,
-								files_created: agent.files_created,
-								uptime: agent.started_at
-									? `${Math.floor((Date.now() - new Date(agent.started_at).getTime()) / 60000)}m`
-									: "0m",
-								last_activity: agent.last_activity,
-								idle_minutes: idleMinutes,
-							};
-						}),
-					};
+						const validation = agent.current_validation_id
+							? (() => {
+								const session = db.getValidationSession(
+									agent.current_validation_id!
+								);
+								if (!session) {
+									return {
+										id: agent.current_validation_id!,
+										status: "pending" as ValidationStatus,
+									};
+								}
+								return { id: session.id, status: session.status };
+							})()
+							: undefined;
+
+						return {
+							agent_id: agent.id,
+							task_id: agent.task_id,
+							status: agent.status,
+							events: agent.events_count,
+							files_created: agent.files_created,
+							uptime: agent.started_at
+								? `${Math.floor((Date.now() - new Date(agent.started_at).getTime()) / 60000)}m`
+								: "0m",
+							last_activity: agent.last_activity,
+							idle_minutes: idleMinutes,
+							validation,
+						};
+					}),
+				};
 
 					return {
 						content: [

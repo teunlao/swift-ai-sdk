@@ -16,13 +16,45 @@ export function createLaunchAgentTool(db: OrchestratorDB) {
 			title: "Launch Agent",
 			description: "Launch a new Codex agent in a worktree",
 			inputSchema: {
-				role: z.enum(["executor", "validator"]),
-				task_id: z.string().optional(),
-				worktree: z.enum(["auto", "manual"]),
-				prompt: z.string(),
-				cwd: z.string().optional(),
-				model: z.string().optional(),
-				reasoning_effort: z.enum(["low", "medium", "high"]).optional(),
+				role: z
+					.enum(["executor", "validator"])
+					.describe(
+						"Agent role. 'executor' implements features and writes code. 'validator' checks implementation against requirements for 100% parity."
+					),
+				task_id: z
+					.string()
+					.optional()
+					.describe(
+						"Task ID from Task Master (e.g., '4.3' or '10.2'). Used to associate agent with specific task for tracking and validation."
+					),
+				worktree: z
+					.enum(["auto", "manual"])
+					.describe(
+						"Worktree mode. 'auto' creates isolated Git worktree with unique branch for parallel work without conflicts. 'manual' uses cwd parameter for custom directory."
+					),
+				prompt: z
+					.string()
+					.describe(
+						"Initial task instruction for the agent. Should be clear, actionable command (e.g., 'Implement delay utility function from @ai-sdk/provider-utils/src/delay.ts'). Agent will execute this in Codex session."
+					),
+				cwd: z
+					.string()
+					.optional()
+					.describe(
+						"Working directory path when worktree='manual'. Absolute path where agent will execute commands. If omitted with manual mode, uses PROJECT_ROOT env var or server process cwd."
+					),
+				model: z
+					.string()
+					.optional()
+					.describe(
+						"Override model for this agent (e.g., 'claude-sonnet-4', 'gpt-4'). If omitted, uses default model from Codex configuration."
+					),
+				reasoning_effort: z
+					.enum(["low", "medium", "high"])
+					.optional()
+					.describe(
+						"Reasoning depth for agent decisions. 'low' for simple tasks, 'medium' for moderate complexity, 'high' for complex problem-solving requiring deep analysis."
+					),
 			},
 		},
 		handler: async (args: LaunchAgentInput) => {
@@ -68,12 +100,13 @@ export function createLaunchAgentTool(db: OrchestratorDB) {
 					shell_id: codexResult.shellId,
 					worktree: worktreePath,
 					prompt: args.prompt,
-					status: "running",
-					created_at: new Date().toISOString(),
-					started_at: new Date().toISOString(),
-					ended_at: null,
-					last_activity: new Date().toISOString(),
-				});
+				status: "running",
+				created_at: new Date().toISOString(),
+				started_at: new Date().toISOString(),
+				ended_at: null,
+				last_activity: new Date().toISOString(),
+				current_validation_id: null,
+			});
 
 				// Start background parser for real-time log parsing
 				startBackgroundParser(agent_id, codexResult.outputFile, db);

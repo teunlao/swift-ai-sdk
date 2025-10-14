@@ -16,8 +16,18 @@ export function createKillAgentTool(db: OrchestratorDB) {
 			title: "Kill Agent",
 			description: "Stop a running agent",
 			inputSchema: {
-				agent_id: z.string(),
-				cleanup_worktree: z.boolean().optional().default(false),
+				agent_id: z
+					.string()
+					.describe(
+						"Agent ID to stop (e.g., 'executor-1760408478640'). Terminates the Codex process, stops background parser, and updates database status to 'killed'."
+					),
+				cleanup_worktree: z
+					.boolean()
+					.optional()
+					.default(false)
+					.describe(
+						"Whether to remove the Git worktree directory after killing agent. 'true' deletes worktree and branch (useful after validation/merge). 'false' preserves worktree for manual inspection. Default: false."
+					),
 			},
 		},
 		handler: async (args: KillAgentInput) => {
@@ -33,6 +43,9 @@ export function createKillAgentTool(db: OrchestratorDB) {
 						],
 					};
 				}
+
+				const validationId = agent.current_validation_id;
+				const now = new Date().toISOString();
 
 				// Stop background parser
 				stopBackgroundParser(args.agent_id);
@@ -58,10 +71,37 @@ export function createKillAgentTool(db: OrchestratorDB) {
 					}
 				}
 
+				// Update validation session links if present
+				if (validationId) {
+					const session = db.getValidationSession(validationId);
+					if (session) {
+						if (agent.role === "executor") {
+							db.updateValidationSession(validationId, {
+								status: "rejected",
+								finished_at: now,
+							});
+							if (session.validator_id) {
+								db.updateAgent(session.validator_id, {
+									current_validation_id: null,
+									last_activity: now,
+								});
+							}
+						} else if (agent.role === "validator") {
+							db.updateValidationSession(validationId, {
+								validator_id: null,
+								status: "pending",
+								started_at: null,
+								finished_at: null,
+							});
+						}
+					}
+				}
+
 				// Update database
 				db.updateAgent(args.agent_id, {
 					status: "killed",
-					ended_at: new Date().toISOString(),
+					ended_at: now,
+					current_validation_id: null,
 				});
 
 				const result: KillAgentOutput = {

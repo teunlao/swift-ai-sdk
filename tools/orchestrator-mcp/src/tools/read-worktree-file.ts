@@ -18,8 +18,16 @@ export function createReadWorktreeFileTool(db: OrchestratorDB) {
 			title: "Read Worktree File",
 			description: "Read a file from an agent's worktree",
 			inputSchema: {
-				agent_id: z.string(),
-				file_path: z.string(),
+				agent_id: z
+					.string()
+					.describe(
+						"Agent ID whose worktree file to read (e.g., 'executor-1760408478640'). Must have an active worktree directory."
+					),
+				file_path: z
+					.string()
+					.describe(
+						"Name or relative path of file to read from agent's worktree. For security, only basename is used (directory traversal prevented). Examples: 'alpha.txt', 'Sources/Delay.swift', 'Tests/DelayTests.swift'."
+					),
 			},
 		},
 		handler: async (args: ReadWorktreeFileInput) => {
