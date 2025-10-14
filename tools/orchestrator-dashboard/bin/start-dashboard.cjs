@@ -43,6 +43,42 @@ async function ensureBuild() {
   await spawnStream(nextBin, ["build"], { cwd: dashboardDir });
 }
 
+function copyBetterSqlite3Binary() {
+  let resolved;
+  try {
+    resolved = require.resolve("better-sqlite3");
+  } catch (error) {
+    console.warn("⚠️  better-sqlite3 not found, skipping native binary copy", error?.message ?? error);
+    return;
+  }
+
+  const nativePath = path.resolve(path.dirname(resolved), "..", "build", "Release", "better_sqlite3.node");
+  if (!fs.existsSync(nativePath)) {
+    console.warn("⚠️  better-sqlite3 native binary missing at", nativePath);
+    return;
+  }
+
+  const moduleCode = process.versions.modules;
+  const bindingDirName = `node-v${moduleCode}-${process.platform}-${process.arch}`;
+
+  const targets = [
+    path.join(dashboardDir, ".next", "build", "better_sqlite3.node"),
+    path.join(dashboardDir, ".next", "build", "Release", "better_sqlite3.node"),
+    path.join(dashboardDir, ".next", "lib", "binding", bindingDirName, "better_sqlite3.node"),
+    path.join(dashboardDir, ".next", "standalone", "node_modules", "better-sqlite3", "build", "Release", "better_sqlite3.node"),
+    path.join(dashboardDir, ".next", "standalone", "node_modules", "better-sqlite3", "lib", "binding", bindingDirName, "better_sqlite3.node"),
+  ];
+
+  for (const target of targets) {
+    try {
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.copyFileSync(nativePath, target);
+    } catch (error) {
+      console.warn("⚠️  Failed to copy better-sqlite3 binary to", target, error?.message ?? error);
+    }
+  }
+}
+
 function openBrowser(url) {
   const platform = process.platform;
   let command;
@@ -66,12 +102,36 @@ function openBrowser(url) {
   opener.unref();
 }
 
+async function killPortProcess(port) {
+  const { execSync } = require("node:child_process");
+  try {
+    const command = process.platform === "win32"
+      ? `netstat -ano | findstr :${port}`
+      : `lsof -ti:${port}`;
+
+    const pid = execSync(command, { encoding: "utf-8" }).trim();
+    if (pid) {
+      console.log(`⚠️  Port ${port} is in use by PID ${pid}, killing it...`);
+      const killCmd = process.platform === "win32" ? `taskkill /PID ${pid} /F` : `kill -9 ${pid}`;
+      execSync(killCmd);
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      console.log(`✅ Killed process on port ${port}`);
+    }
+  } catch (error) {
+    // Port is free or command failed
+  }
+}
+
 async function main() {
+  let server;
   try {
     await ensureBuild();
+    copyBetterSqlite3Binary();
+
+    await killPortProcess(port);
 
     console.log(`🚀 Starting dashboard on http://${host}:${port}`);
-    const server = spawn(nextBin, ["start", "-p", port, "--hostname", host], {
+    server = spawn(nextBin, ["start", "-p", port, "--hostname", host], {
       cwd: dashboardDir,
       stdio: "inherit",
     });
@@ -88,15 +148,58 @@ async function main() {
       }
     });
 
-    const shutdown = () => {
-      server.kill("SIGINT");
+    let shuttingDown = false;
+    const forwardExit = (code = 0) => {
+      if (!shuttingDown) {
+        process.exit(code);
+      }
     };
 
-    process.on("SIGINT", shutdown);
-    process.on("SIGTERM", shutdown);
+    const requestShutdown = (signal) => {
+      if (shuttingDown) return;
+      shuttingDown = true;
+      console.log(`\n🛑 Received ${signal}, shutting down dashboard...`);
+
+      if (!server || server.exitCode !== null) {
+        forwardExit(server?.exitCode ?? 0);
+        return;
+      }
+
+      const timeout = setTimeout(() => {
+        console.warn("⚠️ Dashboard did not exit in time, forcing shutdown.");
+        try {
+          server.kill("SIGKILL");
+        } catch {
+          // ignore
+        }
+        forwardExit(1);
+      }, 5000);
+
+      server.once("exit", (code) => {
+        clearTimeout(timeout);
+        forwardExit(code ?? 0);
+      });
+
+      try {
+        const sent = server.kill(signal);
+        if (!sent) {
+          server.kill("SIGKILL");
+        }
+      } catch (error) {
+        console.warn("⚠️ Failed to forward signal:", error?.message ?? error);
+        forwardExit(1);
+      }
+    };
+
+    process.once("SIGINT", () => requestShutdown("SIGINT"));
+    process.once("SIGTERM", () => requestShutdown("SIGTERM"));
 
     server.on("exit", (code) => {
-      process.exit(code ?? 0);
+      forwardExit(code ?? 0);
+    });
+    server.on("error", (error) => {
+      console.error("❌ Dashboard process error:", error?.message ?? error);
+      forwardExit(1);
     });
   } catch (error) {
     console.error("❌ Dashboard failed:", error?.message ?? error);

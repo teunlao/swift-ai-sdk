@@ -2,15 +2,15 @@
  * Scale Tool
  */
 
-import { z } from "zod";
 import type {
-  OrchestratorDB,
-  ScaleInput,
-  ScaleOutput,
-  LaunchAgentOutput,
+	LaunchAgentOutput,
+	OrchestratorDB,
+	ScaleInput,
+	ScaleOutput,
 } from "@swift-ai-sdk/orchestrator-db";
-import { createWorktree } from "../git.js";
+import { z } from "zod";
 import { launchCodexAgent } from "../codex.js";
+import { createWorktree } from "../git.js";
 
 export function createScaleTool(db: OrchestratorDB) {
 	return {
@@ -22,18 +22,18 @@ export function createScaleTool(db: OrchestratorDB) {
 				tasks: z
 					.array(z.string())
 					.describe(
-						"Array of task IDs to launch agents for (e.g., ['4.3', '5.1', '10.2']). Each task gets dedicated agent with isolated worktree. Agents run in parallel without conflicts. NOTE: Currently uses simple prompt 'Work on task X'; Task Master integration coming soon for full task details."
+						"Array of task IDs to launch agents for (e.g., ['4.3', '5.1', '10.2']). Each task gets dedicated agent with isolated worktree. Agents run in parallel without conflicts. NOTE: Currently uses simple prompt 'Work on task X'; Task Master integration coming soon for full task details.",
 					),
 				role: z
 					.enum(["executor", "validator"])
 					.describe(
-						"Role for all launched agents. 'executor' implements features in parallel. 'validator' checks multiple implementations simultaneously. All agents in batch use same role."
+						"Role for all launched agents. 'executor' implements features in parallel. 'validator' checks multiple implementations simultaneously. All agents in batch use same role.",
 					),
 				worktree: z
 					.enum(["auto", "manual"])
 					.default("auto")
 					.describe(
-						"Worktree mode for all agents. 'auto' (recommended for scale): creates isolated worktrees for true parallel work. 'manual': uses PROJECT_ROOT (NOT recommended for parallel - causes conflicts). Default: 'auto'."
+						"Worktree mode for all agents. 'auto' (recommended for scale): creates isolated worktrees for true parallel work. 'manual': uses PROJECT_ROOT (NOT recommended for parallel - causes conflicts). Default: 'auto'.",
 					),
 			},
 		},
@@ -68,7 +68,7 @@ export function createScaleTool(db: OrchestratorDB) {
 						agent_id,
 						prompt,
 						worktreePath,
-						args.role
+						args.role,
 					);
 
 					// Store in database
@@ -79,13 +79,13 @@ export function createScaleTool(db: OrchestratorDB) {
 						shell_id: codexResult.shellId,
 						worktree: worktreePath,
 						prompt: prompt,
-				status: "running",
-				created_at: new Date().toISOString(),
-				started_at: new Date().toISOString(),
-				ended_at: null,
-				last_activity: new Date().toISOString(),
-				current_validation_id: null,
-			});
+						status: "running",
+						created_at: new Date().toISOString(),
+						started_at: new Date().toISOString(),
+						ended_at: null,
+						last_activity: new Date().toISOString(),
+						current_validation_id: null,
+					});
 
 					return {
 						agent_id,
@@ -94,7 +94,7 @@ export function createScaleTool(db: OrchestratorDB) {
 						status: "running" as const,
 						task_id,
 					};
-				})
+				}),
 			);
 
 			// Process results
@@ -103,7 +103,7 @@ export function createScaleTool(db: OrchestratorDB) {
 					launched.push(result.value);
 				} else {
 					failed.push({
-						task_id: args.tasks[index],
+						task_id: args.tasks[index] ?? "unknown",
 						error:
 							result.reason instanceof Error
 								? result.reason.message

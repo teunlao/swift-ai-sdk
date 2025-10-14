@@ -13,7 +13,8 @@
 	"scripts": {
 		"build": "npm run build --workspaces",
 		"lint": "echo 'No lint configured'",
-		"test": "npm run test --workspaces"
+		"test": "npm run test --workspaces",
+		"dashboard": "orchestrator-dashboard"
 	},
 	"devDependencies": {
 		"@types/node": "^24.7.2"

@@ -8,25 +8,28 @@
 - [ ] Update docs with UI/SSE plan.
 
 ### Phase 1 · Shared Services
-- [ ] Implement realtime bus (publish on agent/validation/log updates).
-- [ ] Expose SSE helper in MCP layer and smoke-test.
+- [x] Implement realtime data stream (SSE polling of agents/validations snapshot).
+- [x] Expose SSE helper in dashboard API (`/api/events`).
 
 ### Phase 2 · Dashboard Backend (Next.js)
-- [ ] Scaffold Next.js app in `tools/orchestrator-dashboard` with workspace alias.
-- [ ] API routes: `/api/agents`, `/api/agents/[id]`, `/api/agents/[id]/logs`, `/api/validations`.
+- [x] Scaffold Next.js app in `tools/orchestrator-dashboard` with workspace alias.
+- [x] API routes: `/api/agents`, `/api/agents/[id]`, `/api/agents/[id]/logs`, `/api/validations`.
 - [ ] POST action routes: request/assign/submit validation (bridge to MCP).
-- [ ] SSE endpoint `/api/events` streaming realtime updates.
-- [ ] Configuration loader + CLI entry (`npx orchestrator-dashboard`).
+- [x] SSE endpoint `/api/events` streaming realtime updates.
+- [x] Configuration loader + CLI entry (`npx orchestrator-dashboard`).
 
 ### Phase 3 · Dashboard UI
-- [ ] Global layout with navigation + status bar.
-- [ ] Agents overview page (filters, sorting, live metrics).
-- [ ] Agent detail view (overview, live logs, worktree browser, validation info).
-- [ ] Validation center page with actions.
+- [x] Global layout with navigation and status header.
+- [x] Agents tab (filters, metrics, live updates).
+- [ ] Agent detail view
+  - [x] Overview, validation history, per-agent logs
+  - [ ] Worktree browser, validation actions
+- [x] Validation tab with queue overview.
+- [x] Logs tab with per-agent stream.
 - [ ] Settings panel (DB path, SSE status, auth toggles).
 
 ### Phase 4 · Tooling & Distribution
-- [ ] Root scripts (`npm run dashboard`, build/start equivalents).
+- [x] Root scripts (`pnpm dashboard`) and CLI shim.
 - [ ] Package & publish CLI shim for `npx orchestrator-dashboard`.
 - [ ] Update orchestrator README with dashboard section.
 

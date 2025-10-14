@@ -9,15 +9,13 @@
   "mcpServers": {
     "orchestrator": {
       "command": "node",
-      "args": ["/Users/teunlao/projects/public/swift-ai-sdk/tools/orchestrator-mcp/dist/server.js"],
-      "env": {
-        "PROJECT_ROOT": "/Users/teunlao/projects/public/swift-ai-sdk",
-        "DATABASE_PATH": "/Users/teunlao/projects/public/swift-ai-sdk/tools/orchestrator-mcp/orchestrator.db"
-      }
+      "args": ["/Users/teunlao/projects/public/swift-ai-sdk/tools/orchestrator-mcp/dist/server.js"]
     }
   }
 }
 ```
+
+**База данных:** автоматически создается в `~/claude-orchestrator/orchestrator.db` (фиксированный путь, без env переменных)
 
 ## 2. После регистрации будут доступны команды:
 

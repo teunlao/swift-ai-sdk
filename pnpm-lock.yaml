@@ -20,6 +20,12 @@ importers:
       '@swift-ai-sdk/orchestrator-db':
         specifier: workspace:*
         version: link:../orchestrator-db
+      better-sqlite3:
+        specifier: ^12.4.1
+        version: 12.4.1
+      clsx:
+        specifier: 2.1.1
+        version: 2.1.1
       next:
         specifier: ^15.5.5
         version: 15.5.5(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
@@ -39,6 +45,9 @@ importers:
       '@tailwindcss/postcss':
         specifier: 4.1.14
         version: 4.1.14
+      '@types/better-sqlite3':
+        specifier: ^7.6.13
+        version: 7.6.13
       '@types/react':
         specifier: ^19
         version: 19.2.2
@@ -501,6 +510,10 @@ packages:
 
   client-only@0.0.1:
     resolution: {integrity: sha512-IV3Ou0jSMzZrd3pZ48nLkT9DA7Ag1pnPzaiQhpW7c3RbcqqzvzzVu+L8gfqMp/8IM2MQtSiqaCxrrcfu8I8rMA==}
+
+  clsx@2.1.1:
+    resolution: {integrity: sha512-eYm0QWBtUrBWZWG0d386OGAw16Z995PiOVo2B7bjWSbHedGl5e0ZWaq65kOGgUSNesEIDkB9ISbTg/JK9dhCZA==}
+    engines: {node: '>=6'}
 
   content-disposition@1.0.0:
     resolution: {integrity: sha512-Au9nRL8VNUut/XSzbQA38+M78dzP4D+eqg3gfJHMIHHYa3bg067xj1KxMUWj+VULbiZMowKngFFbKczUrNJ1mg==}
@@ -1521,6 +1534,8 @@ snapshots:
   chownr@3.0.0: {}
 
   client-only@0.0.1: {}
+
+  clsx@2.1.1: {}
 
   content-disposition@1.0.0:
     dependencies:
