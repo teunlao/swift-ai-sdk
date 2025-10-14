@@ -136,21 +136,6 @@ launch_agent(role='executor', worktree='auto', prompt='...')
 → Agent starts working
 
 **STEP 2: MONITOR Executor Until Completion**
-```bash
-# Use Bash with loop and sleep to monitor:
-while true; do
-  # Check status
-  status(agent_id=executor_id)
-  # If idle_minutes > 1, agent probably finished
-  # Check logs for final message
-  get_logs(agent_id=executor_id, last=5)
-  # Sleep 30 seconds before next check
-  sleep 30
-done
-```
-→ **CRITICAL**: Use Bash sleep in loop, NOT just waiting passively!
-→ Stop loop when `idle_minutes > 1` and final message visible
-→ Then proceed to STEP 3 immediately
 
 **STEP 3: IMMEDIATELY Call request_validation() - DON'T WAIT FOR USER!**
 ```
@@ -209,12 +194,28 @@ submit_validation(
 → **DO THIS AS SOON AS VALIDATOR FINISHES, NOT WHEN USER ASKS!**
 
 **STEP 8: If Approved - Merge; If Rejected - Continue Executor**
-```
-# If approved:
-# 1. Merge executor branch to main
-# 2. Cleanup worktree
 
-# If rejected:
+**If APPROVED:**
+```bash
+# 1. Commit changes in executor's worktree
+cd /path/to/executor-worktree
+git add .
+git commit -m "feat: descriptive message
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>"
+
+# 2. Merge executor branch to main
+cd /main/repo/path
+git merge agent/executor-TIMESTAMP --no-edit
+
+# 3. Cleanup worktree
+kill_agent(executor_id, cleanup_worktree=true)
+```
+
+**If REJECTED:**
+```
 continue_agent(executor_id, 'Fix bugs from validation report at .validation/reports/...')
 # Then GO BACK TO STEP 2 and repeat cycle!
 ```
