@@ -33,7 +33,7 @@ export function createScaleTool(db: OrchestratorDB) {
 					.enum(["auto", "manual"])
 					.default("auto")
 					.describe(
-						"Worktree mode for all agents. 'auto' (recommended for scale): creates isolated worktrees for true parallel work. 'manual': uses PROJECT_ROOT (NOT recommended for parallel - causes conflicts). Default: 'auto'.",
+						"Worktree mode for all agents. 'auto': creates isolated worktrees for parallel work (DEFAULT for executors). 'manual': uses PROJECT_ROOT (only if user explicitly requests). Default: 'auto'.",
 					),
 			},
 		},

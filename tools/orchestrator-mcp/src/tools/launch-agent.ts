@@ -28,14 +28,20 @@ WHEN TO USE:
 - Launch multiple agents in parallel for simultaneous work on independent tasks
 
 WORKTREE MODES:
-- 'auto': Creates isolated Git worktree + unique branch (RECOMMENDED for parallel work)
-  → No conflicts between agents, each has own directory
+- 'auto': Creates isolated Git worktree + unique branch
+  → Each agent gets own directory, no conflicts
 - 'manual': Uses existing directory via cwd parameter
-  → For validators checking executor's work in same worktree
+  → Validator works in executor's worktree to access files
 
 ROLES:
 - executor: Implements features, writes code, creates tests, fixes bugs
 - validator: Reviews code, finds bugs, checks requirements, verifies parity
+
+⚠️  DEFAULT BEHAVIOR (unless user explicitly requests otherwise):
+- **Executors:** ALWAYS use worktree="auto" → creates NEW isolated worktree
+- **Validators:** ALWAYS use worktree="manual" with executor's worktree → works in SAME directory as executor being validated
+
+ONLY use different mode if user explicitly specifies it!
 
 RESULT: Returns agent_id + shell_id. Use these for status(), get_logs(), continue_agent(), kill_agent().
 
