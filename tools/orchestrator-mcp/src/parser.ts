@@ -2,6 +2,7 @@
  * Codex Output Parser
  *
  * Parses Codex MCP output and extracts useful information.
+ * Based on scripts/parse-codex-output.py implementation.
  */
 
 import type { ParsedCodexOutput, LogEntry } from "./types.js";
@@ -141,100 +142,161 @@ function calculateStuckScore(events: CodexEvent[]): number {
 }
 
 /**
- * Extract logs from Codex output
+ * Extract logs from Codex output with delta merging
+ *
+ * Based on Python's merge_deltas() implementation.
  */
 export function extractLogs(
   output: string,
-  filter: "reasoning" | "commands" | "errors" | "stuck" | "all" = "all",
+  filter: "reasoning" | "messages" | "commands" | "errors" | "all" = "all",
   lastN?: number
 ): LogEntry[] {
   const lines = output.trim().split("\n");
   const logs: LogEntry[] = [];
 
-  let lineNumber = 0;
+  // Accumulators for delta events
+  let currentReasoning: string[] = [];
+  let currentMessage: string[] = [];
 
   for (const line of lines) {
-    lineNumber++;
     if (!line.trim()) continue;
 
     try {
       const json = JSON.parse(line);
 
-      if (json.result && json.result.content) {
-        for (const item of json.result.content) {
-          if (item.type === "text" && item.text) {
-            const event = inferEventType(item.text);
-            const logEntry: LogEntry = {
-              type: event.type as "reasoning" | "command" | "error",
-              timestamp: new Date().toISOString(), // TODO: extract real timestamp
-              content: item.text,
-              line_number: lineNumber,
-            };
+      // Parse only codex/event messages
+      if (json.method !== "codex/event") continue;
 
-            // Apply filter
-            if (filter === "all" || filter === event.type) {
-              logs.push(logEntry);
-            } else if (filter === "stuck" && event.type === "reasoning") {
-              logs.push(logEntry);
-            }
+      const msg = json.params?.msg;
+      if (!msg) continue;
+
+      const msgType = msg.type;
+
+      // === Reasoning (internal thinking) ===
+      if (msgType === "agent_reasoning_delta") {
+        const delta = msg.delta || "";
+        currentReasoning.push(delta);
+      } else if (msgType === "agent_reasoning") {
+        // Finalize: merge all deltas
+        if (currentReasoning.length > 0) {
+          logs.push({
+            type: "reasoning",
+            content: currentReasoning.join(""),
+            timestamp: new Date().toISOString(),
+          });
+          currentReasoning = [];
+        }
+        // Also add complete reasoning if present
+        const text = msg.text || "";
+        if (text) {
+          logs.push({
+            type: "reasoning",
+            content: text,
+            timestamp: new Date().toISOString(),
+          });
+        }
+      }
+
+      // === Messages (final answers to user) ===
+      else if (msgType === "agent_message_delta") {
+        const delta = msg.delta || "";
+        currentMessage.push(delta);
+      } else if (msgType === "agent_message") {
+        // Finalize: merge all deltas
+        if (currentMessage.length > 0) {
+          logs.push({
+            type: "message",
+            content: currentMessage.join(""),
+            timestamp: new Date().toISOString(),
+          });
+          currentMessage = [];
+        }
+        // Also add complete message if present
+        const text = msg.text || msg.message || "";
+        if (text) {
+          logs.push({
+            type: "message",
+            content: text,
+            timestamp: new Date().toISOString(),
+          });
+        }
+      }
+
+      // === Commands ===
+      else if (msgType === "exec_command_begin") {
+        const cmd = Array.isArray(msg.command)
+          ? msg.command.join(" ")
+          : msg.command || "";
+        if (cmd) {
+          logs.push({
+            type: "command",
+            content: cmd,
+            timestamp: new Date().toISOString(),
+          });
+        }
+      }
+
+      // === Command output and errors ===
+      else if (msgType === "exec_command_end") {
+        const exitCode = msg.exit_code || 0;
+        const stdout = (msg.stdout || "").substring(0, 200); // First 200 chars
+
+        if (exitCode !== 0) {
+          logs.push({
+            type: "error",
+            content: `Exit code: ${exitCode}`,
+            timestamp: new Date().toISOString(),
+          });
+        } else if (stdout) {
+          logs.push({
+            type: "output",
+            content: stdout,
+            timestamp: new Date().toISOString(),
+          });
+        }
+      }
+
+      // === Token count ===
+      else if (msgType === "token_count") {
+        const info = msg.info;
+        if (info) {
+          const total = info.total_token_usage || {};
+          const tokens = total.total_tokens || 0;
+          const cached = total.cached_input_tokens || 0;
+          if (tokens > 0) {
+            logs.push({
+              type: "tokens",
+              content: `Tokens: ${tokens.toLocaleString()} (cached: ${cached.toLocaleString()})`,
+              timestamp: new Date().toISOString(),
+            });
           }
         }
       }
-
-      if (json.error) {
-        const logEntry: LogEntry = {
-          type: "error",
-          timestamp: new Date().toISOString(),
-          content: json.error.message || JSON.stringify(json.error),
-          line_number: lineNumber,
-        };
-
-        if (filter === "all" || filter === "errors") {
-          logs.push(logEntry);
-        }
-      }
     } catch {
+      // Skip invalid JSON lines
       continue;
     }
   }
 
-  // Return last N logs if specified
+  // Apply filter
+  let filtered = logs;
+  if (filter !== "all") {
+    const typeMap: Record<string, string> = {
+      reasoning: "reasoning",
+      messages: "message",
+      commands: "command",
+      errors: "error",
+    };
+    const targetType = typeMap[filter];
+    if (targetType) {
+      filtered = logs.filter((log) => log.type === targetType);
+    }
+  }
+
+  // Apply lastN
   if (lastN && lastN > 0) {
-    return logs.slice(-lastN);
+    filtered = filtered.slice(-lastN);
   }
 
-  return logs;
-}
-
-/**
- * Infer event type from content
- */
-function inferEventType(content: string): { type: string } {
-  const lower = content.toLowerCase();
-
-  if (
-    lower.includes("reasoning") ||
-    lower.includes("thinking") ||
-    lower.includes("analyzing")
-  ) {
-    return { type: "reasoning" };
-  }
-
-  if (
-    lower.includes("command") ||
-    lower.includes("bash") ||
-    lower.includes("executing")
-  ) {
-    return { type: "commands" };
-  }
-
-  if (lower.includes("error") || lower.includes("failed")) {
-    return { type: "errors" };
-  }
-
-  if (lower.includes("patch") || lower.includes("diff")) {
-    return { type: "patch" };
-  }
-
-  return { type: "reasoning" }; // Default
+  return filtered;
 }

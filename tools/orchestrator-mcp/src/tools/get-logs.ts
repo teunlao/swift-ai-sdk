@@ -17,7 +17,7 @@ export function createGetLogsTool(db: OrchestratorDB) {
 			inputSchema: {
 				agent_id: z.string(),
 				filter: z
-					.enum(["reasoning", "commands", "errors", "stuck", "all"])
+					.enum(["reasoning", "messages", "commands", "errors", "all"])
 					.default("all"),
 				last: z.number().optional(),
 			},

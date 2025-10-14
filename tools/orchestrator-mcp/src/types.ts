@@ -96,12 +96,12 @@ export interface StatusOutput {
 
 export interface GetLogsInput {
   agent_id: string;
-  filter: "reasoning" | "commands" | "errors" | "stuck" | "all";
+  filter: "reasoning" | "messages" | "commands" | "errors" | "all";
   last?: number;
 }
 
 export interface LogEntry {
-  type: "reasoning" | "command" | "error";
+  type: "reasoning" | "message" | "command" | "output" | "error" | "tokens";
   timestamp: string;
   content: string;
   line_number?: number;
