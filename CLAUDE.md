@@ -128,6 +128,8 @@ Validator agent workflow:
 ### Orchestrator Workflow (Your Role)
 **🚨 YOU MUST ACTIVELY MONITOR AND EXECUTE THIS WORKFLOW - NOT PASSIVE!**
 
+**NON-NEGOTIABLE VALIDATION RULE:** Execute the full validation workflow for 100% of tasks—every single one. The ONLY time you may skip validation is when the user explicitly says exactly `skip validation` or `no validation needed`. Any other wording still requires full validation, regardless of urgency or perceived scope.
+
 **STEP 1: Launch Executor**
 ```
 launch_agent(role='executor', worktree='auto', prompt='...')
@@ -226,6 +228,7 @@ continue_agent(executor_id, 'Fix bugs from validation report at .validation/repo
 3. **IMMEDIATELY call MCP tools** when agent finishes (request_validation, submit_validation)
 4. **DON'T ASK USER "what next?"** - you know the workflow, execute it!
 5. **Validation is iterative** - rejected → fix → re-validate → repeat until approved
+6. **Validation never skipped** - follow the mandate above unless the user literally says `skip validation` or `no validation needed`
 
 **⚠️ WORKTREE MODE - MANDATORY DEFAULTS:**
 
