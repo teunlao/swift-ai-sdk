@@ -23,6 +23,7 @@ mcp__taskmaster__set_task_status --id=4.3 --status=done # Mark done
 Task Master                     # Task management
 plan/executor-guide.md          # Executor workflow
 plan/validation-workflow.md     # Validation process
+plan/orchestrator-automation.md # Flow files & automation rules
 plan/principles.md              # Porting rules
 ```
 
@@ -33,7 +34,7 @@ plan/principles.md              # Porting rules
 ```
 swift-ai-sdk/
 ├── .sessions/                   # Session contexts (gitignored)
-├── .validation/                 # Validation artifacts (gitignored)
+├── .orchestrator/               # Automation artifacts (gitignored)
 ├── Package.swift                # SwiftPM manifest (3 targets)
 ├── Sources/
 │   ├── AISDKProvider/          # Foundation (78 files, ~210 tests)
@@ -89,41 +90,36 @@ external/vercel-ai-sdk/packages/
 ## Roles & Workflow
 
 ### Executor Role
-**Implement features, write tests, validate, commit only when approved.**
+**Implement features, write tests, maintain `.orchestrator` artifacts.**
 
-1. Find next task: `mcp__taskmaster__next_task`
-2. **Mark in-progress**: `mcp__taskmaster__set_task_status --id=X --status=in-progress`
-3. Find TypeScript in `external/vercel-ai-sdk/packages/`
-4. Port to appropriate Swift package
-5. Port ALL upstream tests
-6. Run `swift build && swift test` (must pass 100%)
-7. Create validation request in `.validation/requests/validate-TASK-YYYY-MM-DD.md`
-8. **Request validation review** (coordinate with validator)
-9. Wait for validator approval (✅ APPROVED)
-10. **Mark done ONLY after approval**: `set_task_status --status=done`
-11. **Commit ONLY when user requests explicitly**
+1. Find next task: `mcp__taskmaster__next_task`.
+2. **Mark in-progress**: `mcp__taskmaster__set_task_status --id=X --status=in-progress`.
+3. Port the matching TypeScript sources and ALL tests.
+4. Run `swift build && swift test` (must pass 100%).
+5. Create Markdown request in `.orchestrator/requests/validate-<task>-<iteration>-<timestamp>.md`.
+6. Update `.orchestrator/flow/<executor-id>.json` with `status="ready_for_validation"`, `request.ready = true`, `request.path` set to the new file.
+7. If blocked, set `status="needs_input"` and add `blockers`; skip creating a request until unblocked.
+8. **Stop** — automation will launch the validator; wait for approval before marking the task done.
 
 **🚨 CRITICAL Rules**:
-- ❌ **NEVER TOUCH OTHER AGENTS' WORK** — Only edit files in your task scope
-- ❌ Never commit without explicit user permission
-- ❌ Never mark `done` before validator approval
-- ✅ Request validation review after completing implementation
+- ❌ **NEVER TOUCH OTHER AGENTS' WORK** — Only edit files in your task scope.
+- ✅ Keep flow JSON valid/minified whenever you progress the work.
+- ❌ Do not call MCP tools; the orchestrator handles validation automatically.
+- ❌ Never commit or mark `done` before approval or explicit user permission.
 
 ### Validator Role
-**Review executor work for 100% upstream parity.**
+**Review executor work, produce `.orchestrator` report, keep flow state accurate.**
 
-**Manual validation**:
-1. Read validation request from `.validation/requests/`
-2. Compare Swift vs TypeScript source line-by-line
-3. Verify API/behavior parity, test coverage
-4. Run tests, check for regressions
-5. Generate report in `.validation/reports/`
-6. Document verdict: ✅ APPROVED / ⚠️ ISSUES / ❌ REJECTED
+1. Automation launches you in the executor worktree (manual mode) with context from the flow file; read `.orchestrator/requests/…` and `.orchestrator/flow/<executor-id>.json`.
+2. Compare Swift vs TypeScript line-by-line, run tests, verify parity.
+3. Write report in `.orchestrator/reports/validate-<task>-<iteration>-<timestamp>-report.md`.
+4. Update `.orchestrator/flow/<validator-id>.json` with summary, `report.path`, and `report.result` (`approved`/`rejected`).
+5. **Stop** — automation finalizes the validation loop and prompts the executor if fixes are needed.
 
 **Documentation**:
-- 📘 `plan/validation-workflow.md` — Complete process
-- 🚀 `.validation/QUICKSTART.md` — Quick start
-- 📋 `plan/validator-guide.md` — Manual checklist
+- 📘 `plan/validation-workflow.md` — Automation & fallback process
+- 🤖 `plan/orchestrator-automation.md` — Flow schema & naming conventions
+- 📋 `plan/validator-guide.md` — Validator checklist
 
 ---
 
@@ -164,11 +160,10 @@ Port every test case from `.test.ts` to Swift Testing:
 
 ```bash
 swift build && swift test           # Must pass
-# Create validation request
-# Request validation review
+# Create .orchestrator/requests/... entry & update flow JSON (status=ready_for_validation)
+# Automation will launch validator and handle the cycle
 ```
-
-See `.validation/QUICKSTART.md` for template.
+See `plan/orchestrator-automation.md` for templates and flow schema.
 
 ---
 
@@ -230,7 +225,7 @@ swift build && swift test
 cat .sessions/README.md
 
 # Validation
-cat .validation/QUICKSTART.md
+cat plan/orchestrator-automation.md
 
 # UTC timestamp
 date -u +"%Y-%m-%dT%H:%M:%SZ"
@@ -247,21 +242,20 @@ date -u +"%Y-%m-%dT%H:%M:%SZ"
 - [ ] Upstream reference in file header
 - [ ] Adaptations documented
 - [ ] `swift build` succeeds
-- [ ] Validation request created
-- [ ] Validation review requested
+- [ ] `.orchestrator/requests/...` created with summary
+- [ ] `.orchestrator/flow/<executor-id>.json` updated (status=ready_for_validation)
 
 ---
 
 ## Key Principles
 
 1. **🚨 NEVER TOUCH OTHER AGENTS' WORK** — Only edit your task files. Multiple agents work in parallel.
-2. **Read first, code second** — Check upstream, then plan
-3. **Mark in-progress at start** — Update status before coding
-4. **Test everything** — 100% coverage required
-5. **Request validation review** — After completing implementation
-6. **Mark done ONLY after validation** — Wait for approval
-7. **Never commit without permission** — Explicit user request required
-8. **100% parity** — Match TypeScript exactly
+2. **Automation owns the loop** — Executors/validators must maintain `.orchestrator/` artifacts; the watcher handles validation.
+3. **Flow JSON is authoritative** — Keep it valid/minified; use `status` (`working`, `ready_for_validation`, `needs_input`, etc.) accurately.
+4. **Test everything** — 100% upstream parity and test coverage are mandatory.
+5. **Mark done ONLY after validation** — Wait for automation to approve or explicitly document blockers.
+6. **Never commit without permission** — Explicit user request required.
+7. **Worktree defaults** — Executors on `auto`, validators on `manual` within executor worktree.
 
 ---
 
@@ -280,10 +274,11 @@ date -u +"%Y-%m-%dT%H:%M:%SZ"
 - `design-decisions.md` — Documented deviations
 - `tests.md` — Testing approach
 
-### Validation
-- `.validation/QUICKSTART.md` — Usage guide
-- `.validation/requests/EXAMPLE-*.md` — Templates
-- `.validation/reports/EXAMPLE-*.md` — Examples
+### Validation Automation
+- `plan/orchestrator-automation.md` — Flow schema & naming
+- `plan/validation-workflow.md` — Automation + fallback process
+- `.claude/agents/validator.md` — Validator prompt definition
+- `.orchestrator/` (gitignored) — Runtime requests/reports/flow files
 
 ### Session Contexts
 - `.sessions/README.md` — Context guide
@@ -303,17 +298,17 @@ date -u +"%Y-%m-%dT%H:%M:%SZ"
 
 ### For Executors
 - 🚨 **Only edit your task files** — If other files fail, STOP and report
-- 🚨 **Never commit temp dirs** — `.sessions/`, `.validation/` are gitignored
+- 🚨 **Never commit temp dirs** — `.sessions/`, `.orchestrator/` are gitignored
+- 🤖 **Trust automation** — Update flow/request files; manual MCP calls only for overrides
 - ✅ Mark `in-progress` at start, `done` only after approval
 - ✅ Port ALL tests, add upstream references
 - ✅ Save session context for multi-session work
-- ✅ Request validation review after implementation
 - ❌ Don't skip tests or commit without permission
 
 ### For Validators
-- ✅ Follow validation workflow (`.validation/QUICKSTART.md`)
+- ✅ Follow automation prompts and update `.orchestrator/flow/<validator-id>.json`
 - ✅ Check line-by-line parity, verify all tests ported
-- ✅ Generate detailed reports
+- ✅ Produce detailed reports in `.orchestrator/reports/`
 - ❌ Don't accept "close enough"
 
 ---
@@ -341,12 +336,12 @@ mcp__taskmaster__add_task title: "..." description: "..." details: "..."
 mcp__taskmaster__set_task_status id: "1.2" status: "done"
 ```
 
-**Integration**: Task Master for management, `.sessions/` for contexts, `.validation/` for validation.
+**Integration**: Task Master for management, `.sessions/` for contexts, `.orchestrator/` for automation artifacts.
 
 **Files**: `.taskmaster/` gitignored.
 
 ---
 
-**Remember**: Every line must match upstream. Request validation review for 100% parity.
+**Remember**: Every line must match upstream. Keep `.orchestrator/flow` accurate so automation can enforce 100% parity.
 
-*Last updated: 2025-10-13*
+*Last updated: 2025-10-14*
