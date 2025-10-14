@@ -126,19 +126,130 @@ Validator agent workflow:
 - ❌ Do NOT call MCP tools (agents can't - only orchestrator can)
 
 ### Orchestrator Workflow (Your Role)
-**YOU manage the full validation lifecycle using MCP tools:**
+**🚨 YOU MUST ACTIVELY MONITOR AND EXECUTE THIS WORKFLOW - NOT PASSIVE!**
 
+**STEP 1: Launch Executor**
 ```
-1. Launch executor agent via launch_agent(role='executor', worktree='auto')
-2. Wait for executor to create .validation/requests/*.md
-3. Call request_validation(executor_id) → creates validation session
-4. Launch validator agent via launch_agent(role='validator', worktree='manual', cwd=executor_worktree)
-5. Call assign_validator(validation_id, validator_id) → links them
-6. Wait for validator to create .validation/reports/*.md
-7. Call submit_validation(validation_id, result='approved/rejected') → updates statuses
-8. If approved: merge executor branch, cleanup worktree
-9. If rejected: notify user, executor must fix issues
+launch_agent(role='executor', worktree='auto', prompt='...')
 ```
+→ Returns `agent_id` (e.g., executor-1760461163346)
+→ Agent starts working
+
+**STEP 2: MONITOR Executor Until Completion**
+```bash
+# Use Bash with loop and sleep to monitor:
+while true; do
+  # Check status
+  status(agent_id=executor_id)
+  # If idle_minutes > 1, agent probably finished
+  # Check logs for final message
+  get_logs(agent_id=executor_id, last=5)
+  # Sleep 30 seconds before next check
+  sleep 30
+done
+```
+→ **CRITICAL**: Use Bash sleep in loop, NOT just waiting passively!
+→ Stop loop when `idle_minutes > 1` and final message visible
+→ Then proceed to STEP 3 immediately
+
+**STEP 3: IMMEDIATELY Call request_validation() - DON'T WAIT FOR USER!**
+```
+request_validation(executor_id=executor_id, summary='...')
+```
+→ Returns `validation_id`
+→ Executor status → 'blocked'
+→ **DO THIS AS SOON AS EXECUTOR FINISHES, NOT WHEN USER ASKS!**
+
+**STEP 4: Launch Validator in Executor's Worktree**
+```
+# Get executor's worktree from status() or validation session
+launch_agent(
+  role='validator',
+  worktree='manual',
+  cwd='/path/to/executor-worktree',
+  prompt='Validate executor work...'
+)
+```
+→ Returns `validator_id`
+
+**STEP 5: Assign Validator to Validation Session**
+```
+assign_validator(validation_id=validation_id, validator_id=validator_id)
+```
+→ Links validator to session
+→ Session status → 'in_progress'
+
+**STEP 6: MONITOR Validator Until Completion**
+```bash
+# Use Bash with loop and sleep to monitor:
+while true; do
+  # Check status
+  status(agent_id=validator_id)
+  # If idle_minutes > 1, validator probably finished
+  # Check logs for final message
+  get_logs(agent_id=validator_id, last=5)
+  # Sleep 30 seconds before next check
+  sleep 30
+done
+```
+→ **CRITICAL**: Use Bash sleep in loop, NOT just waiting passively!
+→ Stop loop when `idle_minutes > 1` and validation report created
+→ Then proceed to STEP 7 immediately
+
+**STEP 7: IMMEDIATELY Call submit_validation() - DON'T WAIT FOR USER!**
+```
+submit_validation(
+  validation_id=validation_id,
+  result='approved' or 'rejected',
+  report_path='.validation/reports/...'
+)
+```
+→ If approved: executor status → 'validated', ready to merge
+→ If rejected: executor status → 'needs_fix', must fix bugs
+→ **DO THIS AS SOON AS VALIDATOR FINISHES, NOT WHEN USER ASKS!**
+
+**STEP 8: If Approved - Merge; If Rejected - Continue Executor**
+```
+# If approved:
+# 1. Merge executor branch to main
+# 2. Cleanup worktree
+
+# If rejected:
+continue_agent(executor_id, 'Fix bugs from validation report at .validation/reports/...')
+# Then GO BACK TO STEP 2 and repeat cycle!
+```
+
+**🚨 CRITICAL RULES:**
+1. **YOU ACTIVELY DRIVE THE WORKFLOW** - don't wait for user commands after each step
+2. **MONITOR agents continuously** - check status/logs every 30-60s until completion
+3. **IMMEDIATELY call MCP tools** when agent finishes (request_validation, submit_validation)
+4. **DON'T ASK USER "what next?"** - you know the workflow, execute it!
+5. **Validation is iterative** - rejected → fix → re-validate → repeat until approved
+
+**⚠️ WORKTREE MODE - MANDATORY DEFAULTS:**
+
+**ALWAYS use these modes unless user EXPLICITLY requests otherwise:**
+
+- **Executors:** `worktree="auto"` (creates isolated Git worktree + unique branch)
+  - ✅ Use for: ALL executor tasks (Swift porting, bug fixes, features, tooling, docs, ANY code changes)
+  - ✅ Isolation prevents conflicts between parallel agents
+  - ❌ NEVER use `manual` unless user explicitly says "use manual mode"
+
+- **Validators:** `worktree="manual"` + `cwd=executor_worktree` (works in executor's directory)
+  - ✅ Use for: ALL validator tasks (must access executor's files)
+  - ✅ Validator needs same directory to review executor's work
+  - ❌ NEVER use `auto` for validators (creates separate worktree, can't access executor files)
+
+**Examples of user requests that DO NOT override defaults:**
+- "fix the CSS" → executor with `worktree="auto"` ✅
+- "update the dashboard" → executor with `worktree="auto"` ✅
+- "make this change" → executor with `worktree="auto"` ✅
+- "попроси агента сделать X" → executor with `worktree="auto"` ✅
+
+**Only override if user says:**
+- "use manual mode" → executor with `worktree="manual"` ✅
+- "work in main directory" → executor with `worktree="manual"` ✅
+- "don't create worktree" → executor with `worktree="manual"` ✅
 
 **Key point**: Agents create files, YOU orchestrate workflow with MCP commands.
 
