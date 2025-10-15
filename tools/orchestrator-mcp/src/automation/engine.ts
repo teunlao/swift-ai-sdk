@@ -370,7 +370,12 @@ export class AutomationEngine {
             });
             this.validatorToExecutor.set(existingId, executor.id);
             // Nudge validator to process new request
-            await continueCodexAgent(existingId, prompt, v.model ?? undefined, v.reasoning_effort ?? undefined);
+            const validatorRegistration = this.agents.get(existingId);
+            await continueCodexAgent(existingId, prompt, {
+              cwd: v.worktree ?? validatorRegistration?.worktreePath ?? registered.worktreePath,
+              model: v.model ?? undefined,
+              reasoningEffort: v.reasoning_effort ?? undefined,
+            });
             return { validatorId: existingId, reused: true };
           }
         }
@@ -525,12 +530,12 @@ export class AutomationEngine {
   ): Promise<void> {
     const fixPrompt = `Validation report ${context.reportPath} lists required fixes. Address every issue, rerun tests, and produce a new validation request for iteration ${context.iteration + 1}. Update the flow file status to ready_for_validation when finished.`;
 
-    const success = await continueCodexAgent(
-      executor.id,
-      fixPrompt,
-      executor.model ?? undefined,
-      executor.reasoning_effort ?? undefined,
-    );
+    const executorRegistration = this.agents.get(executor.id);
+    const success = await continueCodexAgent(executor.id, fixPrompt, {
+      cwd: executor.worktree ?? executorRegistration?.worktreePath,
+      model: executor.model ?? undefined,
+      reasoningEffort: executor.reasoning_effort ?? undefined,
+    });
 
     if (success) {
       this.db.updateAgent(executor.id, {
