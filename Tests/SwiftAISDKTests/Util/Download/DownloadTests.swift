@@ -19,23 +19,50 @@ import Testing
 @Suite("Download Tests")
 struct DownloadTests {
     @Test("download should successfully download data from URL")
+    @MainActor
     func testDownloadSuccess() async throws {
-        // Use a reliable test endpoint (example.com always returns HTML)
-        let url = URL(string: "https://example.com")!
+        let url = URL(string: "https://example.com/success")!
+        let expectedBody = "<html>ok</html>".data(using: .utf8)!
+        let contentType = "text/html; charset=utf-8"
+
+        let response = HTTPURLResponse(
+            url: url,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: ["Content-Type": contentType]
+        )!
+
+        let teardown = try registerMock(for: url) { request in
+            #expect(request.url == url)
+            return (response, expectedBody)
+        }
+        defer { teardown() }
 
         let result = try await download(url: url)
 
         // Verify we got data
-        #expect(result.data.count > 0)
+        #expect(result.data == expectedBody)
 
         // Verify media type contains text/html
-        #expect(result.mediaType?.contains("text/html") == true)
+        #expect(result.mediaType == contentType)
     }
 
     @Test("download should throw DownloadError when response is not ok (404)")
+    @MainActor
     func testDownload404Error() async throws {
-        // This URL should return 404
-        let url = URL(string: "https://httpbin.org/status/404")!
+        let url = URL(string: "https://example.com/not-found")!
+        let response = HTTPURLResponse(
+            url: url,
+            statusCode: 404,
+            httpVersion: nil,
+            headerFields: nil
+        )!
+
+        let teardown = try registerMock(for: url) { request in
+            #expect(request.url == url)
+            return (response, Data())
+        }
+        defer { teardown() }
 
         do {
             _ = try await download(url: url)
@@ -49,9 +76,21 @@ struct DownloadTests {
     }
 
     @Test("download should throw DownloadError when response is not ok (500)")
+    @MainActor
     func testDownload500Error() async throws {
-        // This URL should return 500
-        let url = URL(string: "https://httpbin.org/status/500")!
+        let url = URL(string: "https://example.com/server-error")!
+        let response = HTTPURLResponse(
+            url: url,
+            statusCode: 500,
+            httpVersion: nil,
+            headerFields: nil
+        )!
+
+        let teardown = try registerMock(for: url) { request in
+            #expect(request.url == url)
+            return (response, Data())
+        }
+        defer { teardown() }
 
         do {
             _ = try await download(url: url)
@@ -65,24 +104,108 @@ struct DownloadTests {
     }
 
     @Test("download should include User-Agent header")
+    @MainActor
     func testDownloadUserAgentHeader() async throws {
-        // NOTE: This test verifies that download() calls withUserAgentSuffix correctly.
-        // In the upstream TypeScript tests, this uses a test server to verify the header.
-        // For now, we verify through code inspection and integration testing.
-        //
-        // The download() function calls:
-        //   withUserAgentSuffix([:], "ai-sdk/\(VERSION)", getRuntimeEnvironmentUserAgent())
-        //
-        // This test simply verifies download works with a real URL.
-        // Full header verification would require a test server infrastructure.
+        let url = URL(string: "https://example.com/user-agent")!
+        let expectedBody = Data("ok".utf8)
+        let response = HTTPURLResponse(
+            url: url,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: nil
+        )!
 
-        let url = URL(string: "https://example.com")!
+        let teardown = try registerMock(for: url) { request in
+            #expect(request.url == url)
+            let header = request.value(forHTTPHeaderField: "User-Agent")
+            #expect(header?.contains("ai-sdk/") == true)
+            return (response, expectedBody)
+        }
+        defer { teardown() }
+
         let result = try await download(url: url)
+        #expect(result.data == expectedBody)
+    }
 
-        // Verify we got data (proves the User-Agent header didn't cause issues)
-        #expect(result.data.count > 0)
+    // MARK: - Helpers
 
-        // TODO: Implement test server for full upstream parity
-        // Upstream test uses @ai-sdk/test-server to verify User-Agent header
+    @MainActor
+    private func registerMock(
+        for url: URL,
+        handler: @escaping (URLRequest) throws -> (HTTPURLResponse, Data)
+    ) throws -> () -> Void {
+        MockURLProtocol.install(handler: handler, for: url)
+        guard URLProtocol.registerClass(MockURLProtocol.self) else {
+            throw DownloadTestError.registrationFailed
+        }
+        return {
+            URLProtocol.unregisterClass(MockURLProtocol.self)
+            MockURLProtocol.removeHandler(for: url)
+        }
+    }
+
+    private enum DownloadTestError: Error {
+        case registrationFailed
+    }
+}
+
+@MainActor
+private final class MockURLProtocol: URLProtocol {
+    nonisolated(unsafe) private static let handlerLock = NSLock()
+    nonisolated(unsafe) private static var handlers: [String: (URLRequest) throws -> (HTTPURLResponse, Data)] = [:]
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        guard let url = request.url?.absoluteString else { return false }
+        return currentHandler(for: url) != nil
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        guard
+            let url = request.url?.absoluteString,
+            let handler = MockURLProtocol.currentHandler(for: url)
+        else {
+            client?.urlProtocol(
+                self,
+                didFailWithError: URLError(.unknown)
+            )
+            return
+        }
+
+        do {
+            let (response, data) = try handler(request)
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: data)
+            client?.urlProtocolDidFinishLoading(self)
+        } catch {
+            client?.urlProtocol(self, didFailWithError: error)
+        }
+    }
+
+    override func stopLoading() {
+        // Nothing to do
+    }
+
+    @MainActor
+    static func install(handler: @escaping (URLRequest) throws -> (HTTPURLResponse, Data), for url: URL) {
+        handlerLock.lock()
+        handlers[url.absoluteString] = handler
+        handlerLock.unlock()
+    }
+
+    @MainActor
+    static func removeHandler(for url: URL) {
+        handlerLock.lock()
+        handlers.removeValue(forKey: url.absoluteString)
+        handlerLock.unlock()
+    }
+
+    nonisolated(unsafe) private static func currentHandler(for url: String) -> ((URLRequest) throws -> (HTTPURLResponse, Data))? {
+        handlerLock.lock()
+        defer { handlerLock.unlock() }
+        return handlers[url]
     }
 }

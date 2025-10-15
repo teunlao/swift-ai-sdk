@@ -29,8 +29,8 @@ public func download(url: URL) async throws -> (data: Data, mediaType: String?) 
         )
 
         // Set User-Agent header from the headers dictionary
-        if let userAgentValue = userAgent["User-Agent"] {
-            request.setValue(userAgentValue, forHTTPHeaderField: "User-Agent")
+        for (headerName, headerValue) in userAgent {
+            request.setValue(headerValue, forHTTPHeaderField: headerName)
         }
 
         // Perform the download
