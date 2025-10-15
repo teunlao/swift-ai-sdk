@@ -199,7 +199,7 @@ function cleanupZombieProcesses() {
  * Execute test command and return structured result
  * @returns Promise<{ status: 'passed'|'failed'|'timeout', duration: number, failedTests: Array, lastOutput: string[], totalTests: number }>
  */
-function executeTest(command, timeoutMs = 10000) {
+function executeTest(command, timeoutMs = 6000) {
     return new Promise((resolve) => {
         const startTime = Date.now();
 
@@ -366,7 +366,7 @@ function printTestResult(result) {
 /**
  * Run tests once with detailed output
  */
-async function runTests(command, timeoutMs = 10000) {
+async function runTests(command, timeoutMs = 6000) {
     cleanupZombieProcesses();
 
     console.log(`🧪 Running: ${command}`);
@@ -486,19 +486,49 @@ async function verifyCulprits(culprits, baseTimeout, config) {
  * Smart binary search to find timeout culprits
  * Only searches when tests timeout, not when they fail
  */
-async function smartBinarySearch(tests, allTestsCount, baseTimeout, config, depth = 0) {
+async function smartBinarySearch(tests, allTestsCount, baseTimeout, config, depth = 0, runs = 1) {
     const indent = '  '.repeat(depth);
-    console.log(`${indent}🔍 Testing ${tests.length} tests (depth ${depth})...`);
+    console.log(`${indent}🔍 Testing ${tests.length} tests (depth ${depth}, ${runs} run${runs > 1 ? 's' : ''})...`);
 
-    // Adaptive timeout based on test count ratio
-    const timeoutRatio = Math.max(tests.length / allTestsCount, 0.2);
-    const timeout = Math.max(Math.floor(baseTimeout * timeoutRatio), 2000);
-    console.log(`${indent}⏱️  Timeout: ${timeout}ms (${(timeoutRatio * 100).toFixed(1)}% of base)`);
-
-    cleanupZombieProcesses();
+    // Use fixed timeout for all groups
+    const timeout = baseTimeout;
+    console.log(`${indent}⏱️  Timeout: ${timeout}ms`);
 
     const command = buildCommand(tests, tests, config);
-    const result = await executeTest(command, timeout);
+
+    // Run multiple times to detect race conditions
+    let hasTimeout = false;
+    let hasFailed = false;
+    let lastResult = null;
+
+    for (let i = 1; i <= runs; i++) {
+        if (runs > 1) {
+            console.log(`${indent}  Run ${i}/${runs}...`);
+        }
+        cleanupZombieProcesses();
+
+        const result = await executeTest(command, timeout);
+        lastResult = result;
+
+        if (result.status === 'timeout') {
+            hasTimeout = true;
+            if (runs > 1) {
+                console.log(`${indent}  ⏱️  TIMEOUT on run ${i}`);
+            }
+        } else if (result.status === 'failed') {
+            hasFailed = true;
+            if (runs > 1) {
+                console.log(`${indent}  ❌ FAILED on run ${i}`);
+            }
+        } else {
+            if (runs > 1) {
+                console.log(`${indent}  ✅ PASSED on run ${i}`);
+            }
+        }
+    }
+
+    // Determine overall result
+    const result = hasTimeout ? { status: 'timeout' } : (hasFailed ? { status: 'failed' } : lastResult);
 
     // If passed, no culprits here
     if (result.status === 'passed') {
@@ -529,8 +559,8 @@ async function smartBinarySearch(tests, allTestsCount, baseTimeout, config, dept
     console.log(`${indent}➗ Splitting into [0..${mid-1}] and [${mid}..${tests.length-1}]\n`);
 
     // Search both halves
-    const leftCulprits = await smartBinarySearch(left, allTestsCount, baseTimeout, config, depth + 1);
-    const rightCulprits = await smartBinarySearch(right, allTestsCount, baseTimeout, config, depth + 1);
+    const leftCulprits = await smartBinarySearch(left, allTestsCount, baseTimeout, config, depth + 1, runs);
+    const rightCulprits = await smartBinarySearch(right, allTestsCount, baseTimeout, config, depth + 1, runs);
 
     return [...leftCulprits, ...rightCulprits];
 }
@@ -538,11 +568,14 @@ async function smartBinarySearch(tests, allTestsCount, baseTimeout, config, dept
 /**
  * Run smart timeout culprit detection
  */
-async function runSmart(allTests, config, baseTimeout) {
+async function runSmart(allTests, config, baseTimeout, runs = 1) {
     console.log('🧠 SMART MODE: Binary search for timeout culprits');
     console.log('━'.repeat(60));
     console.log(`Total tests:    ${allTests.length}`);
     console.log(`Base timeout:   ${baseTimeout}ms`);
+    if (runs > 1) {
+        console.log(`Runs per group: ${runs}`);
+    }
     console.log('━'.repeat(60) + '\n');
 
     // First, run all tests to see if there's a timeout
@@ -563,17 +596,27 @@ async function runSmart(allTests, config, baseTimeout) {
         process.exit(1);
     }
 
-    // Timeout detected - start binary search
+    // Timeout detected - start binary search by splitting in half
     console.log('\n⏱️  TIMEOUT detected! Starting binary search...\n');
     console.log('━'.repeat(60) + '\n');
 
-    const potentialCulprits = await smartBinarySearch(allTests, allTests.length, baseTimeout, config);
+    // Split initial set in half (skip re-running all tests)
+    const mid = Math.floor(allTests.length / 2);
+    const left = allTests.slice(0, mid);
+    const right = allTests.slice(mid);
+
+    console.log(`🔍 Splitting ${allTests.length} tests into [0..${mid-1}] and [${mid}..${allTests.length-1}]\n`);
+
+    // Search both halves
+    const leftCulprits = await smartBinarySearch(left, allTests.length, baseTimeout, config, 1, runs);
+    const rightCulprits = await smartBinarySearch(right, allTests.length, baseTimeout, config, 1, runs);
+    const potentialCulprits = [...leftCulprits, ...rightCulprits];
 
     if (potentialCulprits.length === 0) {
         console.log('━'.repeat(60));
         console.log('🎯 SMART SEARCH RESULTS');
         console.log('━'.repeat(60));
-        console.log('⚠️  No specific culprits found - timeout may be environmental');
+        console.log('⚠️  No specific culprits found - timeout too aggressive for test volume');
         console.log('━'.repeat(60) + '\n');
         process.exit(0);
     }
@@ -744,7 +787,7 @@ Options:
   --smart              Smart binary search for timeout culprits (adaptive timeout)
   --exclude <pattern>  Exclude tests matching pattern (can be used multiple times)
   --include <pattern>  Include only tests matching pattern (can be used multiple times)
-  --timeout <ms>       Override timeout in milliseconds (default: 10000)
+  --timeout <ms>       Override timeout in milliseconds (default: 6000)
   --init               Generate default config file
   --list               List all available tests
   --dry-run            Show what would be run without executing
@@ -762,7 +805,7 @@ Examples:
   ./test-runner.js --runs 3
 
   # Smart binary search for timeout culprits
-  ./test-runner.js --smart --timeout 10000
+  ./test-runner.js --smart --timeout 6000
 
   # Exclude specific tests without config
   ./test-runner.js --exclude "SwiftAISDKTests.EmbedTests/*" --exclude "SwiftAISDKTests.EmbedManyTests/*"
@@ -827,17 +870,17 @@ Examples:
 
     const allTests = getAllTests();
     const filteredTests = filterTests(allTests, config);
-    const timeout = config.timeout || 10000;
-
-    // Check for smart mode
-    if (args.includes('--smart')) {
-        await runSmart(filteredTests.length > 0 ? filteredTests : allTests, config, timeout);
-        return;
-    }
+    const timeout = config.timeout || 6000;
 
     // Get number of runs
     const runsIndex = args.indexOf('--runs');
     const runs = runsIndex !== -1 ? parseInt(args[runsIndex + 1]) : 1;
+
+    // Check for smart mode
+    if (args.includes('--smart')) {
+        await runSmart(filteredTests.length > 0 ? filteredTests : allTests, config, timeout, runs);
+        return;
+    }
 
     if (runs > 1) {
         // Multi-run mode
@@ -847,7 +890,7 @@ Examples:
         console.log(`Total tests:    ${allTests.length}`);
         console.log(`Selected tests: ${filteredTests.length}`);
         console.log(`Runs:           ${runs}`);
-        console.log(`Timeout:        ${config.timeout || 10000}ms`);
+        console.log(`Timeout:        ${config.timeout || 6000}ms`);
         console.log('━'.repeat(50) + '\n');
 
         const command = buildCommand(filteredTests, allTests, config);
