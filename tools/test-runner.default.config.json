@@ -1,0 +1,7 @@
+{
+  "$comment": "DEFAULT CONFIG: Run ALL tests (used when no --config specified)",
+  "mode": "all",
+  "parallel": false,
+  "verbose": false,
+  "timeout": 10000
+}

@@ -1,10 +1,11 @@
 {
-  "$comment": "Swift Test Runner - Default config (exclude problematic tests)",
+  "$comment": "Exclude Embed tests (use when debugging race conditions)",
   "mode": "exclude",
   "exclude": [
     "SwiftAISDKTests.EmbedManyTests/*",
     "SwiftAISDKTests.EmbedTests/*"
   ],
   "parallel": false,
-  "verbose": false
+  "verbose": false,
+  "timeout": 10000
 }

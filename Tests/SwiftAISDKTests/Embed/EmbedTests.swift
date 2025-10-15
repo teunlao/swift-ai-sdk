@@ -276,7 +276,7 @@ private actor HeadersCapture {
     }
 
     func get() -> [String: String]? {
-        headers
+        return headers
     }
 }
 

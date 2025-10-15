@@ -33,7 +33,7 @@ struct EmbedManyTests {
             supportsParallelCalls: false,
             maxEmbeddingsPerCall: 1
         ) { options in
-            let startIndex = callCounter.next()
+            let startIndex = await callCounter.next()
             await events.append("start-\(startIndex)")
             try await Task.sleep(nanoseconds: 5_000_000)
             await events.append("end-\(startIndex)")
@@ -72,7 +72,7 @@ struct EmbedManyTests {
             supportsParallelCalls: true,
             maxEmbeddingsPerCall: 1
         ) { options in
-            let startIndex = callCounter.next()
+            let startIndex = await callCounter.next()
             await events.append("start-\(startIndex)")
             try await Task.sleep(nanoseconds: 5_000_000)
             await events.append("end-\(startIndex)")
@@ -108,7 +108,7 @@ struct EmbedManyTests {
             supportsParallelCalls: true,
             maxEmbeddingsPerCall: 1
         ) { options in
-            let startIndex = callCounter.next()
+            let startIndex = await callCounter.next()
             await events.append("start-\(startIndex)")
             try await Task.sleep(nanoseconds: 5_000_000)
             await events.append("end-\(startIndex)")
@@ -183,7 +183,7 @@ struct EmbedManyTests {
             supportsParallelCalls: false,
             maxEmbeddingsPerCall: 1
         ) { _ in
-            let index = callCounter.next()
+            let index = await callCounter.next()
             return EmbeddingModelV3DoEmbedResult(
                 embeddings: [dummyEmbeddings[index]],
                 response: EmbeddingModelV3ResponseInfo(
@@ -228,7 +228,7 @@ struct EmbedManyTests {
             supportsParallelCalls: false,
             maxEmbeddingsPerCall: 2
         ) { _ in
-            let index = callCounter.next()
+            let index = await callCounter.next()
             return EmbeddingModelV3DoEmbedResult(
                 embeddings: index == 0
                     ? Array(dummyEmbeddings.prefix(2)) : Array(dummyEmbeddings.suffix(1)),
@@ -299,7 +299,7 @@ struct EmbedManyTests {
             supportsParallelCalls: false,
             maxEmbeddingsPerCall: 1
         ) { _ in
-            let index = callCounter.next()
+            let index = await callCounter.next()
 
             let metadata: ProviderMetadata = [
                 "gateway": [
@@ -357,7 +357,7 @@ struct EmbedManyTests {
             supportsParallelCalls: false,
             maxEmbeddingsPerCall: 2
         ) { _ in
-            let index = callCounter.next()
+            let index = await callCounter.next()
             return EmbeddingModelV3DoEmbedResult(
                 embeddings: index == 0
                     ? Array(dummyEmbeddings.prefix(2)) : Array(dummyEmbeddings.suffix(1)),
@@ -547,13 +547,10 @@ private actor EventRecorder {
     }
 }
 
-private final class CallCounter: @unchecked Sendable {
+private actor CallCounter {
     private var value = 0
-    private let lock = NSLock()
 
     func next() -> Int {
-        lock.lock()
-        defer { lock.unlock() }
         let current = value
         value += 1
         return current
