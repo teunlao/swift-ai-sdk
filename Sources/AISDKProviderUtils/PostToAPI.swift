@@ -182,7 +182,7 @@ public func postToAPI<T>(
         // Add headers with User-Agent
         let headersWithUA = withUserAgentSuffix(
             headers ?? [:],
-            "ai-sdk/provider-utils/\(VERSION)",
+            "ai-sdk/provider-utils/\(PROVIDER_UTILS_VERSION)",
             getRuntimeEnvironmentUserAgent()
         )
 

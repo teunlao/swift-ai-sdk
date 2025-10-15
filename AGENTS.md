@@ -8,19 +8,8 @@ Port **Vercel AI SDK** from TypeScript to Swift with **100% upstream parity**.
 
 ---
 
-## Quick Start
-
-**📋 Task Management:**
-```bash
-mcp__taskmaster__next_task                              # Find next task
-mcp__taskmaster__get_task --id=4.3                      # Get details
-mcp__taskmaster__get_tasks --status=pending             # List pending
-mcp__taskmaster__set_task_status --id=4.3 --status=done # Mark done
-```
-
 **📚 Read first:**
 ```bash
-Task Master                     # Task management
 plan/executor-guide.md          # Executor workflow
 plan/validation-workflow.md     # Validation process
 plan/orchestrator-automation.md # Flow files & automation rules
@@ -88,18 +77,6 @@ external/vercel-ai-sdk/packages/
 ---
 
 ## Roles & Workflow
-
-### Executor Role
-**Implement features, write tests, maintain `.orchestrator` artifacts.**
-
-1. Find next task: `mcp__taskmaster__next_task`.
-2. **Mark in-progress**: `mcp__taskmaster__set_task_status --id=X --status=in-progress`.
-3. Port the matching TypeScript sources and ALL tests.
-4. Run `swift build && swift test` (must pass 100%).
-5. Create Markdown request in `.orchestrator/requests/validate-<task>-<iteration>-<timestamp>.md`.
-6. Update `.orchestrator/flow/<executor-id>.json` with `status="ready_for_validation"`, `request.ready = true`, `request.path` set to the new file.
-7. If blocked, set `status="needs_input"` and add `blockers`; skip creating a request until unblocked.
-8. **Stop** — automation will launch the validator; wait for approval before marking the task done.
 
 **🚨 CRITICAL Rules**:
 - ❌ **NEVER TOUCH OTHER AGENTS' WORK** — Only edit files in your task scope.
@@ -310,35 +287,6 @@ date -u +"%Y-%m-%dT%H:%M:%SZ"
 - ✅ Check line-by-line parity, verify all tests ported
 - ✅ Produce detailed reports in `.orchestrator/reports/`
 - ❌ Don't accept "close enough"
-
----
-
-## Task Management (Optional)
-
-**Task Master AI** available as optional tracker.
-
-### Manual Tools
-- `get_tasks`, `get_task`, `next_task` — view tasks
-- `set_task_status` — change status
-- `add_task`, `add_subtask` — with explicit fields
-- `remove_task`, `remove_subtask`
-- `add_dependency`, `remove_dependency`, `validate_dependencies`
-
-### AI Tools
-- `update_task`, `update_subtask` — require `prompt` parameter
-- `expand_task`, `parse-prd` — AI generation
-- Tools with `--research` flag
-
-**Basic Usage**:
-```bash
-mcp__taskmaster__next_task
-mcp__taskmaster__add_task title: "..." description: "..." details: "..."
-mcp__taskmaster__set_task_status id: "1.2" status: "done"
-```
-
-**Integration**: Task Master for management, `.sessions/` for contexts, `.orchestrator/` for automation artifacts.
-
-**Files**: `.taskmaster/` gitignored.
 
 ---
 
