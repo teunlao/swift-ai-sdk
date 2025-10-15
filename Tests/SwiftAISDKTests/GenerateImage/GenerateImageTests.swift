@@ -706,6 +706,33 @@ struct GenerateImageTests {
         #expect(providerValue?.images == expectedValue?.images)
         #expect(providerValue?.additionalData == expectedValue?.additionalData)
     }
+
+    @Test("experimental_generateImage forwards to generateImage")
+    func experimentalAliasForwards() async throws {
+        let result: DefaultGenerateImageResult = try await experimental_generateImage(
+            model: MockImageModelV3(
+                doGenerate: { _ in
+                    self.createMockResponse(
+                        images: .base64([self.pngBase64]),
+                        timestamp: self.testDate,
+                        modelId: "alias-model",
+                        headers: [:]
+                    )
+                }
+            ),
+            prompt: prompt
+        )
+
+        #expect(result.images.count == 1)
+        #expect(result.image.base64 == pngBase64)
+        #expect(result.responses == [
+            ImageModelResponseMetadata(
+                timestamp: testDate,
+                modelId: "alias-model",
+                headers: [:]
+            )
+        ])
+    }
 }
 
 private actor SingleValueBox<Value: Sendable> {
