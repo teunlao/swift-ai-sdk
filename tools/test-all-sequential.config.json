@@ -1,6 +1,0 @@
-{
-  "$comment": "Run ALL tests sequentially (not parallel) to detect hangs",
-  "mode": "all",
-  "parallel": false,
-  "verbose": false
-}

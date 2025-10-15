@@ -24,7 +24,7 @@ final class Box<T>: @unchecked Sendable {
     }
 }
 
-@Suite("LogWarnings Tests")
+@Suite("LogWarnings Tests", .serialized)
 struct LogWarningsTests {
 
     // MARK: - Synchronization

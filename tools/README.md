@@ -378,3 +378,8 @@ tools/config-ci.json
 ## License
 
 MIT
+
+
+Проблемыне тесты
+  1. ✅ CreateUIMessageStreamResponseTests - 841ms (индивидуально)
+  2. ✅ CreateUIMessageStreamTests - 872ms (индивидуально)

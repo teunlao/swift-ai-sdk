@@ -1,7 +1,7 @@
 {
-  "$comment": "DEFAULT CONFIG: Run ALL tests (used when no --config specified)",
-  "mode": "all",
-  "parallel": false,
-  "verbose": false,
-  "timeout": 6000
+	"$schema": "test-runner.schema.json",
+	"mode": "exclude",
+	"parallel": true,
+	"verbose": false,
+	"count": 20
 }

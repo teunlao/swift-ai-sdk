@@ -14,6 +14,38 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
+/// Thread-safe wrapper for first warning state using NSLock
+private final class FirstWarningState: @unchecked Sendable {
+    private var hasLogged = false
+    private let lock = NSLock()
+
+    func checkAndSet() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+
+        if !hasLogged {
+            hasLogged = true
+            return true
+        }
+        return false
+    }
+
+    func reset() {
+        lock.lock()
+        defer { lock.unlock() }
+        hasLogged = false
+    }
+}
+
+/// Global lock for synchronizing access to all mutable state
+private let globalWarningsLock = NSLock()
+
+/// Storage for observer hook - protected by globalWarningsLock
+private nonisolated(unsafe) var _logWarningsObserver: (@Sendable ([Warning]) -> Void)?
+
+/// Storage for logger config - protected by globalWarningsLock
+private nonisolated(unsafe) var _AI_SDK_LOG_WARNINGS: Any? = nil
+
 /// Union type for all warning types
 public enum Warning: Sendable, Equatable {
     case languageModel(LanguageModelV3CallWarning)
@@ -32,23 +64,41 @@ public typealias LogWarningsFunction = @Sendable ([Warning]) -> Void
 /// - Custom `LogWarningsFunction` for custom handling
 /// - `nil` or other values for default console logging
 ///
-/// **Thread Safety**: Marked `nonisolated(unsafe)` to match JavaScript's
-/// global mutable state. Users are responsible for synchronization if
-/// mutating from multiple threads.
-nonisolated(unsafe) public var AI_SDK_LOG_WARNINGS: Any? = nil
+/// **Thread Safety**: Protected by NSLock for safe concurrent access
+nonisolated(unsafe) public var AI_SDK_LOG_WARNINGS: Any? {
+    get {
+        globalWarningsLock.lock()
+        defer { globalWarningsLock.unlock() }
+        return _AI_SDK_LOG_WARNINGS
+    }
+    set {
+        globalWarningsLock.lock()
+        defer { globalWarningsLock.unlock() }
+        _AI_SDK_LOG_WARNINGS = newValue
+    }
+}
 
 /// Information message displayed on first warning
 public let FIRST_WARNING_INFO_MESSAGE =
     "AI SDK Warning System: To turn off warning logging, set the AI_SDK_LOG_WARNINGS global to false."
 
 /// Testing hook to observe raw warning arrays before internal processing.
-nonisolated(unsafe) var logWarningsObserver: (@Sendable ([Warning]) -> Void)?
+/// Thread-safe via lock-protected storage
+nonisolated(unsafe) var logWarningsObserver: (@Sendable ([Warning]) -> Void)? {
+    get {
+        globalWarningsLock.lock()
+        defer { globalWarningsLock.unlock() }
+        return _logWarningsObserver
+    }
+    set {
+        globalWarningsLock.lock()
+        defer { globalWarningsLock.unlock() }
+        _logWarningsObserver = newValue
+    }
+}
 
-/// Track if we've logged before (for first-time info message)
-///
-/// **Thread Safety**: Marked `nonisolated(unsafe)` to match JavaScript's
-/// module-level mutable state. Users are responsible for synchronization.
-nonisolated(unsafe) private var hasLoggedBefore = false
+/// Thread-safe state for tracking first warning
+private let firstWarningState = FirstWarningState()
 
 /// Format a warning into a human-readable string
 private func formatWarning(_ warning: Warning) -> String {
@@ -150,13 +200,16 @@ private func formatTranscriptionModelWarning(_ warning: TranscriptionModelV3Call
 ///
 /// - Parameter warnings: Array of warnings to log
 public func logWarnings(_ warnings: [Warning]) {
-    logWarningsObserver?(warnings)
+    // Thread-safe access to logWarningsObserver
+    let observer = logWarningsObserver
+    observer?(warnings)
 
     // If empty, do nothing
     guard !warnings.isEmpty else {
         return
     }
 
+    // Thread-safe access to AI_SDK_LOG_WARNINGS
     let logger = AI_SDK_LOG_WARNINGS
 
     // If explicitly disabled
@@ -172,9 +225,10 @@ public func logWarnings(_ warnings: [Warning]) {
 
     // Default behavior: log to console
 
-    // Display information note on first call
-    if !hasLoggedBefore {
-        hasLoggedBefore = true
+    // Display information note on first call (thread-safe with NSLock)
+    let shouldPrintInfo = firstWarningState.checkAndSet()
+
+    if shouldPrintInfo {
         print(FIRST_WARNING_INFO_MESSAGE)
     }
 
@@ -189,5 +243,5 @@ public func logWarnings(_ warnings: [Warning]) {
 /// Resets the `hasLoggedBefore` flag to allow testing
 /// first-call behavior multiple times.
 public func resetLogWarningsState() {
-    hasLoggedBefore = false
+    firstWarningState.reset()
 }

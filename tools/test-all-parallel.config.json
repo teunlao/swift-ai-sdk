@@ -1,6 +1,0 @@
-{
-  "$comment": "Run ALL tests in parallel mode",
-  "mode": "all",
-  "parallel": true,
-  "verbose": false
-}

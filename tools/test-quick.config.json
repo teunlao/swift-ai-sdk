@@ -1,7 +1,0 @@
-{
-  "$comment": "Quick test config - first 100 tests",
-  "mode": "first",
-  "count": 100,
-  "parallel": true,
-  "verbose": false
-}

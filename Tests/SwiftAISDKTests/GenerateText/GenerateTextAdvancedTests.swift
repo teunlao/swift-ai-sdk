@@ -10,7 +10,7 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-@Suite("GenerateText Advanced Tests")
+@Suite("GenerateText Advanced Tests", .serialized)
 struct GenerateTextAdvancedTests {
     private let testUsage = LanguageModelUsage(
         inputTokens: 3,
