@@ -438,6 +438,51 @@ function listTests() {
 }
 
 /**
+ * Verify individual culprits by running them alone
+ * Returns classified results: broken, race, slow
+ */
+async function verifyCulprits(culprits, baseTimeout, config) {
+    const results = {
+        broken: [],      // Failed individually
+        race: [],        // Passed individually, timeout in group
+        slow: []         // Timeout individually
+    };
+
+    console.log('🔬 VERIFYING CULPRITS INDIVIDUALLY...\n');
+
+    for (const test of culprits) {
+        console.log(`  Testing: ${test}`);
+        cleanupZombieProcesses();
+
+        const command = buildCommand([test], [test], config);
+        const result = await executeTest(command, baseTimeout);
+
+        if (result.status === 'failed') {
+            console.log(`    ❌ FAILED individually (broken test)\n`);
+            results.broken.push({
+                test,
+                duration: result.duration,
+                failures: result.failedTests
+            });
+        } else if (result.status === 'timeout') {
+            console.log(`    ⏱️  TIMEOUT individually (slow test)\n`);
+            results.slow.push({
+                test,
+                duration: result.duration
+            });
+        } else {
+            console.log(`    ✅ PASSED individually (race condition culprit!)\n`);
+            results.race.push({
+                test,
+                duration: result.duration
+            });
+        }
+    }
+
+    return results;
+}
+
+/**
  * Smart binary search to find timeout culprits
  * Only searches when tests timeout, not when they fail
  */
@@ -455,23 +500,22 @@ async function smartBinarySearch(tests, allTestsCount, baseTimeout, config, dept
     const command = buildCommand(tests, tests, config);
     const result = await executeTest(command, timeout);
 
-    // If passed or failed (not timeout), no culprits here
+    // If passed, no culprits here
     if (result.status === 'passed') {
         console.log(`${indent}✅ This group PASSED - no culprits\n`);
         return [];
     }
 
-    if (result.status === 'failed') {
-        console.log(`${indent}❌ This group FAILED (not timeout) - not searching\n`);
-        return [];
+    // Timeout or Failed - continue searching
+    if (result.status === 'timeout') {
+        console.log(`${indent}⏱️  This group TIMEOUT!\n`);
+    } else {
+        console.log(`${indent}❌ This group FAILED - continuing search...\n`);
     }
 
-    // Timeout detected
-    console.log(`${indent}⏱️  This group TIMEOUT!\n`);
-
-    // If group is small (1-5 tests), return all as culprits
+    // If group is small (1-5 tests), return all as potential culprits
     if (tests.length <= 5) {
-        console.log(`${indent}🎯 Found ${tests.length} culprit(s):\n`);
+        console.log(`${indent}🎯 Found ${tests.length} potential culprit(s):\n`);
         tests.forEach(test => console.log(`${indent}  - ${test}`));
         console.log('');
         return tests;
@@ -523,27 +567,86 @@ async function runSmart(allTests, config, baseTimeout) {
     console.log('\n⏱️  TIMEOUT detected! Starting binary search...\n');
     console.log('━'.repeat(60) + '\n');
 
-    const culprits = await smartBinarySearch(allTests, allTests.length, baseTimeout, config);
+    const potentialCulprits = await smartBinarySearch(allTests, allTests.length, baseTimeout, config);
 
-    // Print final results
+    if (potentialCulprits.length === 0) {
+        console.log('━'.repeat(60));
+        console.log('🎯 SMART SEARCH RESULTS');
+        console.log('━'.repeat(60));
+        console.log('⚠️  No specific culprits found - timeout may be environmental');
+        console.log('━'.repeat(60) + '\n');
+        process.exit(0);
+    }
+
+    // Verify each culprit individually
+    console.log('━'.repeat(60) + '\n');
+    const verified = await verifyCulprits(potentialCulprits, baseTimeout, config);
+
+    // Print smart categorized results
     console.log('━'.repeat(60));
     console.log('🎯 SMART SEARCH RESULTS');
     console.log('━'.repeat(60));
 
-    if (culprits.length === 0) {
-        console.log('⚠️  No specific culprits found - timeout may be environmental');
-    } else {
-        console.log(`Found ${culprits.length} test(s) causing timeout:\n`);
-        culprits.forEach((test, i) => {
-            console.log(`${i + 1}. ${test}`);
+    let hasIssues = false;
+
+    // Race condition culprits (most important!)
+    if (verified.race.length > 0) {
+        hasIssues = true;
+        console.log('\n⏱️  RACE CONDITION CULPRITS (pass alone, timeout together):');
+        console.log('   These tests cause deadlock/timeout when run with full suite\n');
+        verified.race.forEach((item, i) => {
+            console.log(`${i + 1}. ${item.test}`);
+            console.log(`   ✅ Passes individually in ${item.duration}ms`);
         });
         console.log('');
-        console.log('💡 These tests together cause timeout/deadlock');
-        console.log('💡 Try running them individually to confirm');
+    }
+
+    // Broken tests
+    if (verified.broken.length > 0) {
+        hasIssues = true;
+        console.log('\n🐛 BROKEN TESTS (fail individually):');
+        console.log('   These tests are simply broken, not race conditions\n');
+        verified.broken.forEach((item, i) => {
+            console.log(`${i + 1}. ${item.test}`);
+            console.log(`   ❌ Failed in ${item.duration}ms`);
+            if (item.failures.length > 0) {
+                console.log(`   Issue: ${item.failures[0].name}`);
+            }
+        });
+        console.log('');
+    }
+
+    // Slow tests
+    if (verified.slow.length > 0) {
+        hasIssues = true;
+        console.log('\n🐌 SLOW TESTS (timeout individually):');
+        console.log('   These tests are just too slow, not race conditions\n');
+        verified.slow.forEach((item, i) => {
+            console.log(`${i + 1}. ${item.test}`);
+            console.log(`   ⏱️  Timeout after ${item.duration}ms`);
+        });
+        console.log('');
+    }
+
+    // Summary
+    if (!hasIssues) {
+        console.log('⚠️  No issues found after verification');
+    } else {
+        console.log('💡 RECOMMENDATIONS:');
+        if (verified.race.length > 0) {
+            console.log('   • Fix race condition culprits first (most critical)');
+            console.log('   • Look for shared state, deadlocks, or async coordination issues');
+        }
+        if (verified.broken.length > 0) {
+            console.log('   • Fix broken tests (simple assertion failures)');
+        }
+        if (verified.slow.length > 0) {
+            console.log('   • Optimize slow tests or increase timeout');
+        }
     }
 
     console.log('━'.repeat(60) + '\n');
-    process.exit(culprits.length > 0 ? 1 : 0);
+    process.exit(hasIssues ? 1 : 0);
 }
 
 /**
