@@ -164,7 +164,9 @@ public struct ConsumeStreamOptions: Sendable {
 
  Full UI message types will be introduced in Block R (UI Integration).
  */
-public protocol UIMessage: Sendable {}
+public protocol UIMessage: Sendable {
+    associatedtype Metadata: Sendable = JSONValue
+}
 
 /// Chunk emitted by a UI message stream.
 public struct UIMessageStreamChunk<Message: UIMessage>: Sendable {
