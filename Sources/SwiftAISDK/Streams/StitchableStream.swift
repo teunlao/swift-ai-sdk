@@ -127,7 +127,6 @@ actor StitchableStreamController<Element: Sendable> {
         }
 
         pendingStreams.append(stream)
-        print("DEBUG enqueue pending count:", pendingStreams.count)
         resolveWaiters()
     }
 
@@ -173,10 +172,9 @@ actor StitchableStreamController<Element: Sendable> {
             do {
                 var iterator = stream.makeAsyncIterator()
                 while let value = try await iterator.next() {
-                    print("DEBUG pump yielding", value)
                     continuation?.yield(value)
                     if isTerminated {
-                        break
+                        return
                     }
                 }
             } catch {
@@ -196,12 +194,10 @@ actor StitchableStreamController<Element: Sendable> {
 
             if let first = pendingStreams.first {
                 pendingStreams.removeFirst()
-                print("DEBUG nextStream returning pending stream, count now:", pendingStreams.count)
                 return first
             }
 
             if isClosed {
-                print("DEBUG nextStream closed with no pending streams")
                 finishIfNeeded()
                 return nil
             }
@@ -209,7 +205,6 @@ actor StitchableStreamController<Element: Sendable> {
             await withCheckedContinuation { continuation in
                 waiters.append(continuation)
             }
-            print("DEBUG nextStream resumed from waiter, pending count:", pendingStreams.count)
         }
     }
 

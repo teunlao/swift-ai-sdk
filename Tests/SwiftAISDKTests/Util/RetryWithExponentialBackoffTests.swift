@@ -33,6 +33,7 @@
 
 import Foundation
 import Testing
+
 @testable import AISDKProvider
 @testable import AISDKProviderUtils
 @testable import SwiftAISDK
@@ -213,7 +214,7 @@ struct RetryWithExponentialBackoffTests {
                     requestBodyValues: [:],
                     responseHeaders: [
                         "retry-after-ms": "invalid",
-                        "retry-after": "not-a-number"
+                        "retry-after": "not-a-number",
                     ],
                     isRetryable: true,
                     data: nil
@@ -254,13 +255,13 @@ struct RetryWithExponentialBackoffTests {
                     statusCode: 429,
                     responseHeaders: [
                         "retry-after-ms": String(delayMs),
-                        "x-request-id": "req_123456"
+                        "x-request-id": "req_123456",
                     ],
                     isRetryable: true,
                     data: JSONValue.object([
                         "error": .object([
                             "type": .string("rate_limit_error"),
-                            "message": .string("Rate limit exceeded")
+                            "message": .string("Rate limit exceeded"),
                         ])
                     ])
                 )
@@ -295,7 +296,7 @@ struct RetryWithExponentialBackoffTests {
                     statusCode: 429,
                     responseHeaders: [
                         "retry-after": String(delaySeconds),
-                        "x-request-id": "req_abcdef123456"
+                        "x-request-id": "req_abcdef123456",
                     ],
                     isRetryable: true,
                     data: JSONValue.object([
@@ -303,7 +304,7 @@ struct RetryWithExponentialBackoffTests {
                             "message": .string("Rate limit reached for requests"),
                             "type": .string("requests"),
                             "param": .null,
-                            "code": .string("rate_limit_exceeded")
+                            "code": .string("rate_limit_exceeded"),
                         ])
                     ])
                 )
@@ -393,8 +394,8 @@ struct RetryWithExponentialBackoffTests {
                     requestBodyValues: [:],
                     statusCode: 429,
                     responseHeaders: [
-                        "retry-after-ms": "3",     // Should use this (3ms)
-                        "retry-after": "10"        // Should ignore (10 seconds)
+                        "retry-after-ms": "3",  // Should use this (3ms)
+                        "retry-after": "10",  // Should ignore (10 seconds)
                     ],
                     isRetryable: true,
                     data: nil

@@ -6,10 +6,10 @@ import Foundation
  Port of `@ai-sdk/ai/src/text-stream/pipe-text-stream-to-response.ts`.
 
  **Adaptations**:
- - TypeScript writes to Node's `ServerResponse` using a `ReadableStream<Uint8Array>`. The Swift
-   port targets the `StreamTextResponseWriter` abstraction and encodes chunks to UTF-8 `Data`
-   before writing.
- - Headers are normalised to lowercase to mirror Node's `ServerResponse` behaviour.
+ - TypeScript writes to Node's `ServerResponse` with a `ReadableStream<Uint8Array>`. The Swift
+   implementation targets the `StreamTextResponseWriter` abstraction and encodes text chunks to
+   UTF-8 `Data` before writing.
+ - Headers are normalised to lowercase to match Node's header behaviour.
  */
 public func pipeTextStreamToResponse(
     response: any StreamTextResponseWriter,

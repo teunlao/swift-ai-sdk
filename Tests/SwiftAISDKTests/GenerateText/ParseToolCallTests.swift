@@ -1,12 +1,13 @@
+import AISDKProvider
+import AISDKProviderUtils
+import Foundation
 /**
  Tests for parseToolCall helper.
 
  Port of `@ai-sdk/ai/src/generate-text/parse-tool-call.test.ts`.
  */
 import Testing
-import Foundation
-import AISDKProvider
-import AISDKProviderUtils
+
 @testable import SwiftAISDK
 
 /**
@@ -29,15 +30,17 @@ struct ParseToolCallTests {
             ),
             tools: [
                 "testTool": tool(
-                    inputSchema: FlexibleSchema(jsonSchema(.object([
-                        "type": .string("object"),
-                        "properties": .object([
-                            "param1": .object(["type": .string("string")]),
-                            "param2": .object(["type": .string("number")])
-                        ]),
-                        "required": .array([.string("param1"), .string("param2")]),
-                        "additionalProperties": .bool(false)
-                    ])))
+                    inputSchema: FlexibleSchema(
+                        jsonSchema(
+                            .object([
+                                "type": .string("object"),
+                                "properties": .object([
+                                    "param1": .object(["type": .string("string")]),
+                                    "param2": .object(["type": .string("number")]),
+                                ]),
+                                "required": .array([.string("param1"), .string("param2")]),
+                                "additionalProperties": .bool(false),
+                            ])))
                 )
             ],
             repairToolCall: nil,
@@ -53,10 +56,12 @@ struct ParseToolCallTests {
 
         #expect(staticCall.toolCallId == "123")
         #expect(staticCall.toolName == "testTool")
-        #expect(staticCall.input == JSONValue.object([
-            "param1": .string("test"),
-            "param2": .number(42)
-        ]))
+        #expect(
+            staticCall.input
+                == JSONValue.object([
+                    "param1": .string("test"),
+                    "param2": .number(42),
+                ]))
         #expect(staticCall.providerExecuted == nil)
         #expect(staticCall.providerMetadata == nil)
     }
@@ -76,15 +81,17 @@ struct ParseToolCallTests {
             ),
             tools: [
                 "testTool": tool(
-                    inputSchema: FlexibleSchema(jsonSchema(.object([
-                        "type": .string("object"),
-                        "properties": .object([
-                            "param1": .object(["type": .string("string")]),
-                            "param2": .object(["type": .string("number")])
-                        ]),
-                        "required": .array([.string("param1"), .string("param2")]),
-                        "additionalProperties": .bool(false)
-                    ])))
+                    inputSchema: FlexibleSchema(
+                        jsonSchema(
+                            .object([
+                                "type": .string("object"),
+                                "properties": .object([
+                                    "param1": .object(["type": .string("string")]),
+                                    "param2": .object(["type": .string("number")]),
+                                ]),
+                                "required": .array([.string("param1"), .string("param2")]),
+                                "additionalProperties": .bool(false),
+                            ])))
                 )
             ],
             repairToolCall: nil,
@@ -100,7 +107,8 @@ struct ParseToolCallTests {
 
         #expect(staticCall.toolCallId == "123")
         #expect(staticCall.toolName == "testTool")
-        #expect(staticCall.providerMetadata?["testProvider"]?["signature"] == JSONValue.string("sig"))
+        #expect(
+            staticCall.providerMetadata?["testProvider"]?["signature"] == JSONValue.string("sig"))
     }
 
     @Test("should successfully process empty tool calls for tools that have no inputSchema")
@@ -113,11 +121,13 @@ struct ParseToolCallTests {
             ),
             tools: [
                 "testTool": tool(
-                    inputSchema: FlexibleSchema(jsonSchema(.object([
-                        "type": .string("object"),
-                        "properties": .object([:]),
-                        "additionalProperties": .bool(false)
-                    ])))
+                    inputSchema: FlexibleSchema(
+                        jsonSchema(
+                            .object([
+                                "type": .string("object"),
+                                "properties": .object([:]),
+                                "additionalProperties": .bool(false),
+                            ])))
                 )
             ],
             repairToolCall: nil,
@@ -144,11 +154,13 @@ struct ParseToolCallTests {
             ),
             tools: [
                 "testTool": tool(
-                    inputSchema: FlexibleSchema(jsonSchema(.object([
-                        "type": .string("object"),
-                        "properties": .object([:]),
-                        "additionalProperties": .bool(false)
-                    ])))
+                    inputSchema: FlexibleSchema(
+                        jsonSchema(
+                            .object([
+                                "type": .string("object"),
+                                "properties": .object([:]),
+                                "additionalProperties": .bool(false),
+                            ])))
                 )
             ],
             repairToolCall: nil,
@@ -204,15 +216,17 @@ struct ParseToolCallTests {
             ),
             tools: [
                 "testTool": tool(
-                    inputSchema: FlexibleSchema(jsonSchema(.object([
-                        "type": .string("object"),
-                        "properties": .object([
-                            "param1": .object(["type": .string("string")]),
-                            "param2": .object(["type": .string("number")])
-                        ]),
-                        "required": .array([.string("param1"), .string("param2")]),
-                        "additionalProperties": .bool(false)
-                    ])))
+                    inputSchema: FlexibleSchema(
+                        jsonSchema(
+                            .object([
+                                "type": .string("object"),
+                                "properties": .object([
+                                    "param1": .object(["type": .string("string")]),
+                                    "param2": .object(["type": .string("number")]),
+                                ]),
+                                "required": .array([.string("param1"), .string("param2")]),
+                                "additionalProperties": .bool(false),
+                            ])))
                 )
             ],
             repairToolCall: nil,
@@ -242,19 +256,21 @@ struct ParseToolCallTests {
             toolCall: LanguageModelV3ToolCall(
                 toolCallId: "123",
                 toolName: "testTool",
-                input: #"{"param1": "test"}"# // Missing required param2
+                input: #"{"param1": "test"}"#  // Missing required param2
             ),
             tools: [
                 "testTool": tool(
-                    inputSchema: FlexibleSchema(jsonSchema(.object([
-                        "type": .string("object"),
-                        "properties": .object([
-                            "param1": .object(["type": .string("string")]),
-                            "param2": .object(["type": .string("number")])
-                        ]),
-                        "required": .array([.string("param1"), .string("param2")]),
-                        "additionalProperties": .bool(false)
-                    ])))
+                    inputSchema: FlexibleSchema(
+                        jsonSchema(
+                            .object([
+                                "type": .string("object"),
+                                "properties": .object([
+                                    "param1": .object(["type": .string("string")]),
+                                    "param2": .object(["type": .string("number")]),
+                                ]),
+                                "required": .array([.string("param1"), .string("param2")]),
+                                "additionalProperties": .bool(false),
+                            ])))
                 )
             ],
             repairToolCall: nil,
@@ -273,9 +289,11 @@ struct ParseToolCallTests {
         #expect(InvalidToolInputError.isInstance(dynamicCall.error!))
 
         // Verify parsed input (partial object)
-        #expect(dynamicCall.input == .object([
-            "param1": .string("test")
-        ]))
+        #expect(
+            dynamicCall.input
+                == .object([
+                    "param1": .string("test")
+                ]))
     }
 
     // MARK: - Tool Call Repair Tests
@@ -315,19 +333,21 @@ struct ParseToolCallTests {
             toolCall: LanguageModelV3ToolCall(
                 toolCallId: "123",
                 toolName: "testTool",
-                input: "invalid json" // This will trigger repair
+                input: "invalid json"  // This will trigger repair
             ),
             tools: [
                 "testTool": tool(
-                    inputSchema: FlexibleSchema(jsonSchema(.object([
-                        "type": .string("object"),
-                        "properties": .object([
-                            "param1": .object(["type": .string("string")]),
-                            "param2": .object(["type": .string("number")])
-                        ]),
-                        "required": .array([.string("param1"), .string("param2")]),
-                        "additionalProperties": .bool(false)
-                    ])))
+                    inputSchema: FlexibleSchema(
+                        jsonSchema(
+                            .object([
+                                "type": .string("object"),
+                                "properties": .object([
+                                    "param1": .object(["type": .string("string")]),
+                                    "param2": .object(["type": .string("number")]),
+                                ]),
+                                "required": .array([.string("param1"), .string("param2")]),
+                                "additionalProperties": .bool(false),
+                            ])))
                 )
             ],
             repairToolCall: repairFunction,
@@ -355,16 +375,18 @@ struct ParseToolCallTests {
             return
         }
 
-        #expect(staticCall.input == JSONValue.object([
-            "param1": .string("test"),
-            "param2": .number(42)
-        ]))
+        #expect(
+            staticCall.input
+                == JSONValue.object([
+                    "param1": .string("test"),
+                    "param2": .number(42),
+                ]))
     }
 
     @Test("should return invalid dynamic call if tool call repair returns nil")
     func testReturnsInvalidDynamicCallIfRepairReturnsNil() async throws {
         let repairFunction: ToolCallRepairFunction = { _ in
-            return nil // Repair not possible
+            return nil  // Repair not possible
         }
 
         let result = await parseToolCall(
@@ -375,15 +397,17 @@ struct ParseToolCallTests {
             ),
             tools: [
                 "testTool": tool(
-                    inputSchema: FlexibleSchema(jsonSchema(.object([
-                        "type": .string("object"),
-                        "properties": .object([
-                            "param1": .object(["type": .string("string")]),
-                            "param2": .object(["type": .string("number")])
-                        ]),
-                        "required": .array([.string("param1"), .string("param2")]),
-                        "additionalProperties": .bool(false)
-                    ])))
+                    inputSchema: FlexibleSchema(
+                        jsonSchema(
+                            .object([
+                                "type": .string("object"),
+                                "properties": .object([
+                                    "param1": .object(["type": .string("string")]),
+                                    "param2": .object(["type": .string("number")]),
+                                ]),
+                                "required": .array([.string("param1"), .string("param2")]),
+                                "additionalProperties": .bool(false),
+                            ])))
                 )
             ],
             repairToolCall: repairFunction,
@@ -418,15 +442,17 @@ struct ParseToolCallTests {
             ),
             tools: [
                 "testTool": tool(
-                    inputSchema: FlexibleSchema(jsonSchema(.object([
-                        "type": .string("object"),
-                        "properties": .object([
-                            "param1": .object(["type": .string("string")]),
-                            "param2": .object(["type": .string("number")])
-                        ]),
-                        "required": .array([.string("param1"), .string("param2")]),
-                        "additionalProperties": .bool(false)
-                    ])))
+                    inputSchema: FlexibleSchema(
+                        jsonSchema(
+                            .object([
+                                "type": .string("object"),
+                                "properties": .object([
+                                    "param1": .object(["type": .string("string")]),
+                                    "param2": .object(["type": .string("number")]),
+                                ]),
+                                "required": .array([.string("param1"), .string("param2")]),
+                                "additionalProperties": .bool(false),
+                            ])))
                 )
             ],
             repairToolCall: repairFunction,
@@ -456,15 +482,17 @@ struct ParseToolCallTests {
             ),
             tools: [
                 "testTool": dynamicTool(
-                    inputSchema: FlexibleSchema(jsonSchema(.object([
-                        "type": .string("object"),
-                        "properties": .object([
-                            "param1": .object(["type": .string("string")]),
-                            "param2": .object(["type": .string("number")])
-                        ]),
-                        "required": .array([.string("param1"), .string("param2")]),
-                        "additionalProperties": .bool(false)
-                    ]))),
+                    inputSchema: FlexibleSchema(
+                        jsonSchema(
+                            .object([
+                                "type": .string("object"),
+                                "properties": .object([
+                                    "param1": .object(["type": .string("string")]),
+                                    "param2": .object(["type": .string("number")]),
+                                ]),
+                                "required": .array([.string("param1"), .string("param2")]),
+                                "additionalProperties": .bool(false),
+                            ]))),
                     execute: { _, _ in .value(.string("result")) }
                 )
             ],
@@ -482,9 +510,11 @@ struct ParseToolCallTests {
         #expect(dynamicCall.invalid == false)
         #expect(dynamicCall.toolCallId == "123")
         #expect(dynamicCall.toolName == "testTool")
-        #expect(dynamicCall.input == JSONValue.object([
-            "param1": .string("test"),
-            "param2": .number(42)
-        ]))
+        #expect(
+            dynamicCall.input
+                == JSONValue.object([
+                    "param1": .string("test"),
+                    "param2": .number(42),
+                ]))
     }
 }

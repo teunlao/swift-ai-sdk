@@ -14,8 +14,9 @@
  similar to `@ai-sdk/test-server`.
  */
 
-import Testing
 import Foundation
+import Testing
+
 @testable import SwiftAISDK
 
 @Suite("MCPTransport")
@@ -62,8 +63,8 @@ struct MCPTransportTests {
     @Test("deserializeMessage parses valid JSON-RPC request")
     func testDeserializeRequest() throws {
         let json = """
-        {"jsonrpc":"2.0","id":"1","method":"test","params":{}}
-        """
+            {"jsonrpc":"2.0","id":"1","method":"test","params":{}}
+            """
 
         let message = try deserializeMessage(json)
 
@@ -83,8 +84,8 @@ struct MCPTransportTests {
     @Test("deserializeMessage parses valid JSON-RPC response")
     func testDeserializeResponse() throws {
         let json = """
-        {"jsonrpc":"2.0","id":"1","result":{"ok":true}}
-        """
+            {"jsonrpc":"2.0","id":"1","result":{"ok":true}}
+            """
 
         let message = try deserializeMessage(json)
 
@@ -96,7 +97,8 @@ struct MCPTransportTests {
                 Issue.record("Expected string ID")
             }
             if case .object(let obj) = response.result,
-               case .bool(let ok) = obj["ok"] {
+                case .bool(let ok) = obj["ok"]
+            {
                 #expect(ok == true)
             } else {
                 Issue.record("Expected object result with ok=true")
@@ -109,8 +111,8 @@ struct MCPTransportTests {
     @Test("deserializeMessage parses valid JSON-RPC error")
     func testDeserializeError() throws {
         let json = """
-        {"jsonrpc":"2.0","id":"1","error":{"code":-32601,"message":"Method not found"}}
-        """
+            {"jsonrpc":"2.0","id":"1","error":{"code":-32601,"message":"Method not found"}}
+            """
 
         let message = try deserializeMessage(json)
 
@@ -125,8 +127,8 @@ struct MCPTransportTests {
     @Test("deserializeMessage parses notification")
     func testDeserializeNotification() throws {
         let json = """
-        {"jsonrpc":"2.0","method":"notify","params":{}}
-        """
+            {"jsonrpc":"2.0","method":"notify","params":{}}
+            """
 
         let message = try deserializeMessage(json)
 

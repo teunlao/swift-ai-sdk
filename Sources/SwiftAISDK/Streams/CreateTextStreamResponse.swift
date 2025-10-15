@@ -6,10 +6,9 @@ import Foundation
  Port of `@ai-sdk/ai/src/text-stream/create-text-stream-response.ts`.
 
  **Adaptations**:
- - TypeScript returns a `Response` whose body is a `ReadableStream<Uint8Array>` produced by
-   piping the text stream through `TextEncoderStream`. The Swift port models this with the
-   existing `TextStreamResponse` placeholder that carries an `AsyncThrowingStream<String, Error>`
-   and metadata mirroring `ResponseInit`.
+ - TypeScript produces a `Response` whose body is a `ReadableStream<Uint8Array>` created via
+   `TextEncoderStream`. The Swift port surfaces the placeholder `TextStreamResponse` wrapper that
+   carries an `AsyncThrowingStream<String, Error>` together with metadata mirroring `ResponseInit`.
  - Headers are represented as `[String: String]` while preserving case-insensitive semantics.
  */
 public func createTextStreamResponse(

@@ -7,9 +7,9 @@
  a real MCP server connection.
  */
 
-import Foundation
 import AISDKProvider
 import AISDKProviderUtils
+import Foundation
 
 /// Default tools provided by the mock transport
 private let defaultTools: [MCPTool] = [
@@ -20,7 +20,7 @@ private let defaultTools: [MCPTool] = [
             "type": .string("object"),
             "properties": .object([
                 "foo": .object(["type": .string("string")])
-            ])
+            ]),
         ])
     ),
     MCPTool(
@@ -29,15 +29,13 @@ private let defaultTools: [MCPTool] = [
         inputSchema: .object([
             "type": .string("object")
         ])
-    )
+    ),
 ]
 
-/**
- Mock MCP transport for testing.
-
- Simulates an MCP server by responding to standard MCP requests
- (initialize, tools/list, tools/call) with configurable responses.
- */
+/// Mock MCP transport for testing.
+///
+/// Simulates an MCP server by responding to standard MCP requests
+/// (initialize, tools/list, tools/call) with configurable responses.
 public final class MockMCPTransport: MCPTransport, @unchecked Sendable {
     private let tools: [MCPTool]
     private let failOnInvalidToolParams: Bool
@@ -62,11 +60,12 @@ public final class MockMCPTransport: MCPTransport, @unchecked Sendable {
 
     public func start() async throws {
         if sendError {
-            onerror?(NSError(
-                domain: "UnknownError",
-                code: -1,
-                userInfo: [NSLocalizedDescriptionKey: "Unknown error"]
-            ))
+            onerror?(
+                NSError(
+                    domain: "UnknownError",
+                    code: -1,
+                    userInfo: [NSLocalizedDescriptionKey: "Unknown error"]
+                ))
         }
     }
 
@@ -91,28 +90,32 @@ public final class MockMCPTransport: MCPTransport, @unchecked Sendable {
         switch request.method {
         case "initialize":
             try await delay(10)
-            let result = initializeResult ?? .object([
-                "protocolVersion": .string("2025-06-18"),
-                "serverInfo": .object([
-                    "name": .string("mock-mcp-server"),
-                    "version": .string("1.0.0")
-                ]),
-                "capabilities": .object(
-                    tools.isEmpty ? [:] : ["tools": .object([:])]
-                )
-            ])
+            let result =
+                initializeResult
+                ?? .object([
+                    "protocolVersion": .string("2025-06-18"),
+                    "serverInfo": .object([
+                        "name": .string("mock-mcp-server"),
+                        "version": .string("1.0.0"),
+                    ]),
+                    "capabilities": .object(
+                        tools.isEmpty ? [:] : ["tools": .object([:])]
+                    ),
+                ])
             onmessage?(.response(JSONRPCResponse(id: request.id, result: result)))
 
         case "tools/list":
             try await delay(10)
             if tools.isEmpty {
-                onmessage?(.error(JSONRPCError(
-                    id: request.id,
-                    error: JSONRPCErrorObject(
-                        code: -32000,
-                        message: "Method not supported"
-                    )
-                )))
+                onmessage?(
+                    .error(
+                        JSONRPCError(
+                            id: request.id,
+                            error: JSONRPCErrorObject(
+                                code: -32000,
+                                message: "Method not supported"
+                            )
+                        )))
                 return
             }
 
@@ -120,7 +123,7 @@ public final class MockMCPTransport: MCPTransport, @unchecked Sendable {
             let toolsArray: [JSONValue] = tools.map { tool in
                 var toolDict: [String: JSONValue] = [
                     "name": .string(tool.name),
-                    "inputSchema": tool.inputSchema
+                    "inputSchema": tool.inputSchema,
                 ]
                 if let description = tool.description {
                     toolDict["description"] = .string(description)
@@ -128,10 +131,12 @@ public final class MockMCPTransport: MCPTransport, @unchecked Sendable {
                 return .object(toolDict)
             }
 
-            onmessage?(.response(JSONRPCResponse(
-                id: request.id,
-                result: .object(["tools": .array(toolsArray)])
-            )))
+            onmessage?(
+                .response(
+                    JSONRPCResponse(
+                        id: request.id,
+                        result: .object(["tools": .array(toolsArray)])
+                    )))
 
         case "tools/call":
             try await delay(10)
@@ -159,19 +164,23 @@ public final class MockMCPTransport: MCPTransport, @unchecked Sendable {
         try await handleToolCallWithName(toolName, request: request, arguments: arguments)
     }
 
-    private func handleToolCallWithName(_ toolName: String, request: JSONRPCRequest, arguments: JSONValue?) async throws {
+    private func handleToolCallWithName(
+        _ toolName: String, request: JSONRPCRequest, arguments: JSONValue?
+    ) async throws {
         guard let tool = tools.first(where: { $0.name == toolName }) else {
-            onmessage?(.error(JSONRPCError(
-                id: request.id,
-                error: JSONRPCErrorObject(
-                    code: -32601,
-                    message: "Tool \(toolName) not found",
-                    data: .object([
-                        "availableTools": .array(tools.map { .string($0.name) }),
-                        "requestedTool": .string(toolName)
-                    ])
-                )
-            )))
+            onmessage?(
+                .error(
+                    JSONRPCError(
+                        id: request.id,
+                        error: JSONRPCErrorObject(
+                            code: -32601,
+                            message: "Tool \(toolName) not found",
+                            data: .object([
+                                "availableTools": .array(tools.map { .string($0.name) }),
+                                "requestedTool": .string(toolName),
+                            ])
+                        )
+                    )))
             return
         }
 
@@ -180,7 +189,8 @@ public final class MockMCPTransport: MCPTransport, @unchecked Sendable {
             if let args = arguments {
                 let encoder = JSONEncoder()
                 if let data = try? encoder.encode(args),
-                   let str = String(data: data, encoding: .utf8) {
+                    let str = String(data: data, encoding: .utf8)
+                {
                     argumentsStr = str
                 } else {
                     argumentsStr = "null"
@@ -189,31 +199,35 @@ public final class MockMCPTransport: MCPTransport, @unchecked Sendable {
                 argumentsStr = "null"
             }
 
-            onmessage?(.error(JSONRPCError(
-                id: request.id,
-                error: JSONRPCErrorObject(
-                    code: -32602,
-                    message: "Invalid tool inputSchema: \(argumentsStr)",
-                    data: .object([
-                        "expectedSchema": tool.inputSchema,
-                        "receivedArguments": arguments ?? .null
-                    ])
-                )
-            )))
+            onmessage?(
+                .error(
+                    JSONRPCError(
+                        id: request.id,
+                        error: JSONRPCErrorObject(
+                            code: -32602,
+                            message: "Invalid tool inputSchema: \(argumentsStr)",
+                            data: .object([
+                                "expectedSchema": tool.inputSchema,
+                                "receivedArguments": arguments ?? .null,
+                            ])
+                        )
+                    )))
             return
         }
 
-        onmessage?(.response(JSONRPCResponse(
-            id: request.id,
-            result: .object([
-                "content": .array([
-                    .object([
-                        "type": .string("text"),
-                        "text": .string("Mock tool call result")
+        onmessage?(
+            .response(
+                JSONRPCResponse(
+                    id: request.id,
+                    result: .object([
+                        "content": .array([
+                            .object([
+                                "type": .string("text"),
+                                "text": .string("Mock tool call result"),
+                            ])
+                        ])
                     ])
-                ])
-            ])
-        )))
+                )))
     }
 }
 
