@@ -1,0 +1,10 @@
+{
+  "$comment": "Swift Test Runner - Default config (exclude problematic tests)",
+  "mode": "exclude",
+  "exclude": [
+    "SwiftAISDKTests.EmbedManyTests/*",
+    "SwiftAISDKTests.EmbedTests/*"
+  ],
+  "parallel": false,
+  "verbose": false
+}

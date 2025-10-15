@@ -1,0 +1,10 @@
+{
+  "$comment": "Test only the problematic tests that cause hanging",
+  "mode": "include",
+  "include": [
+    "SwiftAISDKTests.EmbedManyTests/*",
+    "SwiftAISDKTests.EmbedTests/*"
+  ],
+  "parallel": false,
+  "verbose": false
+}

@@ -197,20 +197,26 @@ public struct UIMessageStreamOptions<Message: UIMessageConvertible>: Sendable {
     }
 }
 
+/// Callback invoked when an SSE stream copy should be consumed.
+public typealias UIMessageStreamConsumer = @Sendable (AsyncThrowingStream<String, Error>) async throws -> Void
+
 /// Initialisation parameters for UI message responses.
 public struct UIMessageStreamResponseInit: Sendable {
     public var headers: [String: String]?
     public var status: Int?
     public var statusText: String?
+    public var consumeSSEStream: UIMessageStreamConsumer?
 
     public init(
         headers: [String: String]? = nil,
         status: Int? = nil,
-        statusText: String? = nil
+        statusText: String? = nil,
+        consumeSSEStream: UIMessageStreamConsumer? = nil
     ) {
         self.headers = headers
         self.status = status
         self.statusText = statusText
+        self.consumeSSEStream = consumeSSEStream
     }
 }
 
@@ -251,11 +257,11 @@ public protocol StreamTextResponseWriter: AnyObject, Sendable {
 
 /// UI message stream response placeholder.
 public struct UIMessageStreamResponse<Message: UIMessageConvertible>: Sendable {
-    public let stream: AsyncThrowingStream<UIMessageStreamChunk<Message>, Error>
+    public let stream: AsyncThrowingStream<String, Error>
     public let options: StreamTextUIResponseOptions<Message>?
 
     public init(
-        stream: AsyncThrowingStream<UIMessageStreamChunk<Message>, Error>,
+        stream: AsyncThrowingStream<String, Error>,
         options: StreamTextUIResponseOptions<Message>? = nil
     ) {
         self.stream = stream

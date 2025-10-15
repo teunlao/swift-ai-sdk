@@ -22,3 +22,12 @@ func collectStream<Element: Sendable>(
     return values
 }
 
+func consumeStream<Element: Sendable>(
+    stream: AsyncThrowingStream<Element, Error>
+) async {
+    var iterator = stream.makeAsyncIterator()
+    while let _ = try? await iterator.next() {
+        // Just drain the stream
+    }
+}
+
