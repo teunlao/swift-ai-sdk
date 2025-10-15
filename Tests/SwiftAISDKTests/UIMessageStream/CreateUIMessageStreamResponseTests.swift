@@ -22,14 +22,14 @@ struct CreateUIMessageStreamResponseTests {
         )
 
         let headers = response.options?.responseInit?.headers?.lowercasedKeys()
-        #expect(headers == [
-            "Custom-Header": "test",
-            "content-type": "text/event-stream",
-            "cache-control": "no-cache",
-            "connection": "keep-alive",
-            "x-vercel-ai-ui-message-stream": "v1",
-            "x-accel-buffering": "no"
-        ])
+        // Check headers individually (Dictionary order not guaranteed)
+        #expect(headers?["custom-header"] == "test")
+        #expect(headers?["content-type"] == "text/event-stream")
+        #expect(headers?["cache-control"] == "no-cache")
+        #expect(headers?["connection"] == "keep-alive")
+        #expect(headers?["x-vercel-ai-ui-message-stream"] == "v1")
+        #expect(headers?["x-accel-buffering"] == "no")
+        #expect(headers?.count == 6)
         #expect(response.options?.responseInit?.status == 200)
         #expect(response.options?.responseInit?.statusText == "OK")
 
@@ -66,6 +66,7 @@ struct CreateUIMessageStreamResponseTests {
         ])
 
         let consumerFlag = BoolFlag()
+        let consumerDone = AsyncSignal()
 
         let response = createUIMessageStreamResponse(
             stream: stream,
@@ -75,6 +76,7 @@ struct CreateUIMessageStreamResponseTests {
                         await consumerFlag.set(true)
                         let values: [String] = try await collectStream(stream)
                         await recorder.append(contentsOf: values)
+                        await consumerDone.signal()
                     }
                 )
             )
@@ -89,7 +91,8 @@ struct CreateUIMessageStreamResponseTests {
             "data: [DONE]\n\n"
         ])
 
-        try? await Task.sleep(nanoseconds: 5_000_000)
+        // Wait for consumer to finish (reliable synchronization)
+        await consumerDone.wait()
         let consumed = await recorder.items()
         #expect(consumed == responseChunks)
     }
@@ -135,6 +138,7 @@ struct CreateUIMessageStreamResponseTests {
         ])
 
         let consumedRecorder = StringRecorder()
+        let consumerDone = AsyncSignal()
 
         let response = createUIMessageStreamResponse(
             stream: stream,
@@ -144,6 +148,7 @@ struct CreateUIMessageStreamResponseTests {
                         try await stream.consume { chunk in
                             await consumedRecorder.append(contentsOf: [chunk])
                         }
+                        await consumerDone.signal()
                     }
                 )
             )
@@ -154,6 +159,9 @@ struct CreateUIMessageStreamResponseTests {
             "data: {\"delta\":\"sync-test\",\"id\":\"1\",\"type\":\"text-delta\"}\n\n",
             "data: [DONE]\n\n"
         ])
+
+        // Wait for consumer to finish (reliable synchronization)
+        await consumerDone.wait()
         let consumedValues = await consumedRecorder.items()
         #expect(consumedValues == chunks)
     }

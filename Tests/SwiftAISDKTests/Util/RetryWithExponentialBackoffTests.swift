@@ -416,15 +416,16 @@ struct RetryWithExponentialBackoffTests {
     @Test("should handle retry-after header with HTTP date format")
     func handleRetryAfterHTTPDateFormat() async throws {
         let tracker = CallTracker()
-        let delayMs = 100  // 100ms delay
+        let delayMs = 300  // 300ms delay for stability in parallel test runs
 
         let fn: @Sendable () async throws -> [String: String] = {
             await tracker.increment()
             let count = await tracker.callCount
 
             if count == 1 {
-                // Create future date
-                let futureDate = Date().addingTimeInterval(Double(delayMs) / 1000.0)
+                // Create future date with ceiling to avoid rounding issues
+                let delaySeconds = ceil(Double(delayMs) / 1000.0 * 10) / 10  // Round up to 0.1s
+                let futureDate = Date().addingTimeInterval(delaySeconds)
                 let formatter = DateFormatter()
                 formatter.locale = Locale(identifier: "en_US_POSIX")
                 formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
