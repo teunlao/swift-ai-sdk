@@ -6,7 +6,7 @@ import Foundation
  Port of `@ai-sdk/ai/src/ui-message-stream/ui-message-stream-writer.ts`.
  */
 public protocol UIMessageStreamWriter: Sendable {
-    associatedtype Message: UIMessage
+    associatedtype Message: UIMessageConvertible
 
     /// Appends a chunk to the current UI message stream.
     func write(_ part: InferUIMessageChunk<Message>)

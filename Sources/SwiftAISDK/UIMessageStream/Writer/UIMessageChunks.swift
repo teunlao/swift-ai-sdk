@@ -41,7 +41,7 @@ public struct DataUIMessageChunk: Sendable, Equatable {
 }
 
 /// Union of all UI message stream chunks.
-public enum UIMessageChunk<MessageMetadata: Sendable>: Sendable {
+public enum UIMessageChunk<MessageMetadata: Sendable & Equatable>: Sendable, Equatable {
     case textStart(id: String, providerMetadata: ProviderMetadata?)
     case textDelta(id: String, delta: String, providerMetadata: ProviderMetadata?)
     case textEnd(id: String, providerMetadata: ProviderMetadata?)
@@ -176,7 +176,7 @@ public func isDataUIMessageChunk<MessageMetadata: Sendable>(
 }
 
 /// Convenience alias that mirrors the upstream `InferUIMessageChunk`.
-public typealias InferUIMessageChunk<Message: UIMessage> = UIMessageChunk<Message.Metadata>
+public typealias InferUIMessageChunk<Message: UIMessageConvertible> = AnyUIMessageChunk
 
 /// Default chunk type using untyped JSON metadata.
 public typealias AnyUIMessageChunk = UIMessageChunk<JSONValue>

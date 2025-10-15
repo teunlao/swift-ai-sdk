@@ -96,7 +96,7 @@ public protocol StreamTextResult: Sendable {
      - Parameter options: Stream customisation options.
      - Returns: Async stream of UI message chunks.
      */
-    func toUIMessageStream<Message: UIMessage>(
+    func toUIMessageStream<Message: UIMessageConvertible>(
         options: UIMessageStreamOptions<Message>?
     ) -> AsyncThrowingStream<UIMessageStreamChunk<Message>, Error>
 
@@ -107,7 +107,7 @@ public protocol StreamTextResult: Sendable {
        - response: Target response writer.
        - options: Response and stream configuration.
      */
-    func pipeUIMessageStreamToResponse<Message: UIMessage>(
+    func pipeUIMessageStreamToResponse<Message: UIMessageConvertible>(
         _ response: any StreamTextResponseWriter,
         options: StreamTextUIResponseOptions<Message>?
     )
@@ -130,7 +130,7 @@ public protocol StreamTextResult: Sendable {
      - Parameter options: Response and stream configuration.
      - Returns: Response object containing chunk stream and metadata.
      */
-    func toUIMessageStreamResponse<Message: UIMessage>(
+    func toUIMessageStreamResponse<Message: UIMessageConvertible>(
         options: StreamTextUIResponseOptions<Message>?
     ) -> UIMessageStreamResponse<Message>
 
@@ -159,52 +159,11 @@ public struct ConsumeStreamOptions: Sendable {
 
 // MARK: - UI Stream Placeholders
 
-/**
- Placeholder protocol for UI messages.
-
- Full UI message types will be introduced in Block R (UI Integration).
- */
-public protocol UIMessage: Sendable {
-    associatedtype Metadata: Sendable = JSONValue
-}
-
 /// Chunk emitted by a UI message stream.
-public struct UIMessageStreamChunk<Message: UIMessage>: Sendable {
-    public let message: Message
-    public let metadata: JSONValue?
-
-    public init(message: Message, metadata: JSONValue? = nil) {
-        self.message = message
-        self.metadata = metadata
-    }
-}
-
-/// Event delivered when the UI message stream finishes.
-public struct UIMessageStreamFinishEvent<Message: UIMessage>: Sendable {
-    public let messages: [Message]
-    public let isContinuation: Bool
-    public let isAborted: Bool
-    public let responseMessage: Message
-
-    public init(
-        messages: [Message],
-        isContinuation: Bool,
-        isAborted: Bool,
-        responseMessage: Message
-    ) {
-        self.messages = messages
-        self.isContinuation = isContinuation
-        self.isAborted = isAborted
-        self.responseMessage = responseMessage
-    }
-}
-
-/// Callback executed when the UI message stream finishes.
-public typealias UIMessageStreamOnFinishCallback<Message: UIMessage> =
-    @Sendable (UIMessageStreamFinishEvent<Message>) async -> Void
+public typealias UIMessageStreamChunk<Message: UIMessageConvertible> = InferUIMessageChunk<Message>
 
 /// Options for constructing a UI message stream.
-public struct UIMessageStreamOptions<Message: UIMessage>: Sendable {
+public struct UIMessageStreamOptions<Message: UIMessageConvertible>: Sendable {
     public var originalMessages: [Message]?
     public var generateMessageId: (@Sendable () -> String)?
     public var onFinish: UIMessageStreamOnFinishCallback<Message>?
@@ -256,7 +215,7 @@ public struct UIMessageStreamResponseInit: Sendable {
 }
 
 /// Combined options for creating UI message stream responses.
-public struct StreamTextUIResponseOptions<Message: UIMessage>: Sendable {
+public struct StreamTextUIResponseOptions<Message: UIMessageConvertible>: Sendable {
     public var responseInit: UIMessageStreamResponseInit?
     public var streamOptions: UIMessageStreamOptions<Message>?
 
@@ -291,7 +250,7 @@ public protocol StreamTextResponseWriter: AnyObject, Sendable {
 }
 
 /// UI message stream response placeholder.
-public struct UIMessageStreamResponse<Message: UIMessage>: Sendable {
+public struct UIMessageStreamResponse<Message: UIMessageConvertible>: Sendable {
     public let stream: AsyncThrowingStream<UIMessageStreamChunk<Message>, Error>
     public let options: StreamTextUIResponseOptions<Message>?
 

@@ -185,21 +185,31 @@ struct SerialJobExecutorTests {
         let job2 = DelayedPromise<Void>()
         let job3 = DelayedPromise<Void>()
 
-        // Queue run() calls synchronously via async lets so submission order matches TypeScript semantics.
-        async let firstJob: Void = executor.run {
-            await tracker.appendStart(1)
-            try await job1.task.value
-            await tracker.appendExecution(1)
+        // Queue run() calls using Tasks, yielding between submissions to preserve ordering.
+        let firstJob = Task {
+            try await executor.run {
+                await tracker.appendStart(1)
+                try await job1.task.value
+                await tracker.appendExecution(1)
+            }
         }
-        async let secondJob: Void = executor.run {
-            await tracker.appendStart(2)
-            try await job2.task.value
-            await tracker.appendExecution(2)
+        try await Task.sleep(nanoseconds: 200_000)
+
+        let secondJob = Task {
+            try await executor.run {
+                await tracker.appendStart(2)
+                try await job2.task.value
+                await tracker.appendExecution(2)
+            }
         }
-        async let thirdJob: Void = executor.run {
-            await tracker.appendStart(3)
-            try await job3.task.value
-            await tracker.appendExecution(3)
+        try await Task.sleep(nanoseconds: 200_000)
+
+        let thirdJob = Task {
+            try await executor.run {
+                await tracker.appendStart(3)
+                try await job3.task.value
+                await tracker.appendExecution(3)
+            }
         }
 
         // Resolve jobs in reverse order to verify execution order is maintained
@@ -208,9 +218,9 @@ struct SerialJobExecutorTests {
         job1.resolve(())
 
         // Wait for all jobs to complete
-        try await firstJob
-        try await secondJob
-        try await thirdJob
+        try await firstJob.value
+        try await secondJob.value
+        try await thirdJob.value
 
         // Verify that jobs were queued in the order they were submitted
         let startOrder = await tracker.startOrder
