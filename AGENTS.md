@@ -78,6 +78,17 @@ external/vercel-ai-sdk/packages/
 
 ---
 
+## ⚠️ Git Worktree Usage (IMPORTANT)
+
+- Always switch into the dedicated worktree directory (`cd ../swift-ai-sdk-task-<id>`) **before** editing anything.  
+- Keep both repositories clean: the main tree must stay untouched (`git status` clean), and every change should appear only inside the worktree.  
+- When using tools such as `apply_patch`, explicitly set `workdir`; otherwise they default to the main repo and your edits will leak onto `main`.  
+- Temporary scratch files belong only inside the worktree and must be removed before finishing the task.  
+- Before starting a new task, sync the worktree to the correct commit (e.g., `b40920d4…`) and re-clone `external/` references—fresh worktrees do not include them automatically.  
+- Any stray change in the main repo blocks other agents and violates the “leave others’ work alone” rule—avoid it at all costs.
+
+---
+
 ## Roles & Workflow
 
 **🚨 CRITICAL Rules**:
