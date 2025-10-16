@@ -963,29 +963,27 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
                             }
 
                         case let .toolResult(result):
+                            await toolNameStore.set(result.toolCallId, name: nil)
                             let resolvedDynamic = await resolvedDynamicFlag(for: result.toolCallId)
-                            continuation.yield(.toolOutputAvailable(
-                                toolCallId: result.toolCallId,
-                                output: result.output,
-                                providerExecuted: result.providerExecuted,
-                                dynamic: resolvedDynamic,
-                                preliminary: result.preliminary
+                            continuation.yield(makeToolOutputAvailableChunk(
+                                result: result,
+                                dynamic: resolvedDynamic
                             ))
 
                         case let .toolError(error):
+                            await toolNameStore.set(error.toolCallId, name: nil)
                             let resolvedDynamic = await resolvedDynamicFlag(for: error.toolCallId)
-                            let errorText = mapErrorMessage(error.error)
-                            continuation.yield(.toolOutputError(
-                                toolCallId: error.toolCallId,
-                                errorText: errorText,
-                                providerExecuted: error.providerExecuted,
-                                dynamic: resolvedDynamic
+                            continuation.yield(makeToolOutputErrorChunk(
+                                error: error,
+                                dynamic: resolvedDynamic,
+                                mapErrorMessage: mapErrorMessage
                             ))
 
                         case let .toolApprovalRequest(request):
                             continuation.yield(.toolApprovalRequest(approvalId: request.approvalId, toolCallId: request.toolCall.toolCallId))
 
                         case let .toolOutputDenied(denied):
+                            await toolNameStore.set(denied.toolCallId, name: nil)
                             continuation.yield(.toolOutputDenied(toolCallId: denied.toolCallId))
 
                         case .startStep:
@@ -1210,23 +1208,22 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
 
         case let .toolCall(toolCall):
             state.toolNamesByCallId[toolCall.toolCallId] = toolCall.toolName
-            state.currentToolCalls.append(toolCall)
             state.recordedContent.append(.toolCall(toolCall, providerMetadata: toolCall.providerMetadata))
 
         case let .toolResult(result):
             guard !result.isPreliminary else { break }
-            state.currentToolOutputs.append(.result(result))
             state.recordedContent.append(.toolResult(result, providerMetadata: result.providerMetadata))
+            state.toolNamesByCallId.removeValue(forKey: result.toolCallId)
 
         case let .toolError(errorValue):
-            state.currentToolOutputs.append(.error(errorValue))
             state.recordedContent.append(.toolError(errorValue, providerMetadata: nil))
+            state.toolNamesByCallId.removeValue(forKey: errorValue.toolCallId)
 
         case let .toolApprovalRequest(request):
             state.recordedContent.append(.toolApprovalRequest(request))
 
-        case .toolOutputDenied:
-            break
+        case let .toolOutputDenied(denied):
+            state.toolNamesByCallId.removeValue(forKey: denied.toolCallId)
 
         case let .finishStep(response, usage, finishReason, providerMetadata):
             await completeStep(
@@ -1374,6 +1371,8 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
              .toolInputStart,
              .toolInputDelta,
              .toolResult,
+             .toolError,
+             .toolOutputDenied,
              .raw:
             return true
         default:
@@ -1746,6 +1745,7 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
                     var stepResponseModelId = stepModel.modelId
                     var activeText = ""
                     var stepToolCalls: [TypedToolCall] = []
+                    var stepToolOutputs: [ToolOutput] = []
                     var activeToolCallNames: [String: String] = [:]
 
                     func startStepIfNeeded() {
@@ -1842,8 +1842,16 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
                                 continuation.yield(.toolCall(toolCall))
                             case let .toolResult(result):
                                 continuation.yield(.toolResult(result))
+                                if result.isPreliminary != true {
+                                    let toolOutput = ToolOutput.result(result)
+                                    stepToolOutputs.append(toolOutput)
+                                }
+                                state.toolNamesByCallId.removeValue(forKey: result.toolCallId)
                             case let .toolError(error):
                                 continuation.yield(.toolError(error))
+                                let toolOutput = ToolOutput.error(error)
+                                stepToolOutputs.append(toolOutput)
+                                state.toolNamesByCallId.removeValue(forKey: error.toolCallId)
                             case let .toolApprovalRequest(request):
                                 continuation.yield(.toolApprovalRequest(request))
                             case let .source(source):
@@ -2206,6 +2214,32 @@ private func makeAttributeValue(_ value: Int?) -> ResolvableAttributeValue? {
 private func makeDoubleAttributeValue(_ value: Double?) -> ResolvableAttributeValue? {
     guard let value else { return nil }
     return .value(.double(value))
+}
+
+private func makeToolOutputAvailableChunk(
+    result: TypedToolResult,
+    dynamic: Bool?
+) -> AnyUIMessageChunk {
+    .toolOutputAvailable(
+        toolCallId: result.toolCallId,
+        output: result.output,
+        providerExecuted: result.providerExecuted,
+        dynamic: dynamic,
+        preliminary: result.preliminary
+    )
+}
+
+private func makeToolOutputErrorChunk(
+    error: TypedToolError,
+    dynamic: Bool?,
+    mapErrorMessage: (Any?) -> String
+) -> AnyUIMessageChunk {
+    .toolOutputError(
+        toolCallId: error.toolCallId,
+        errorText: mapErrorMessage(error.error),
+        providerExecuted: error.providerExecuted,
+        dynamic: dynamic
+    )
 }
 
 private func serializeToolCallsForTelemetry(_ toolCalls: [TypedToolCall]) -> String? {
