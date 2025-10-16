@@ -1,5 +1,6 @@
 # ⚠️ Ответы пользователю всегда на русском языке.
 
+<!-- Please write all AGENTS.md updates in English. -->
 # Swift AI SDK - Agent Guide
 
 ## Project Mission
@@ -86,73 +87,6 @@ external/vercel-ai-sdk/packages/
 - Temporary scratch files belong only inside the worktree and must be removed before finishing the task.  
 - Before starting a new task, sync the worktree to the correct commit (e.g., `b40920d4…`) and re-clone `external/` references—fresh worktrees do not include them automatically.  
 - Any stray change in the main repo blocks other agents and violates the “leave others’ work alone” rule—avoid it at all costs.
-
----
-
-## Roles & Workflow
-
-**🚨 CRITICAL Rules**:
-- ❌ **NEVER TOUCH OTHER AGENTS' WORK** — Only edit files in your task scope.
-- ✅ Keep flow JSON valid/minified whenever you progress the work.
-- ❌ Never commit or mark `done` before approval or explicit user permission.
-
-### Validator Role
-**Review executor work, produce `.orchestrator` report, keep flow state accurate.**
-
-1. Automation launches you in the executor worktree (manual mode) with context from the flow file; read `.orchestrator/requests/…` and `.orchestrator/flow/<executor-id>.json`.
-2. Compare Swift vs TypeScript line-by-line, run tests, verify parity.
-3. Write report in `.orchestrator/reports/validate-<task>-<iteration>-<timestamp>-report.md`.
-4. Update `.orchestrator/flow/<validator-id>.json` with summary, `report.path`, and `report.result` (`approved`/`rejected`).
-5. **Stop** — automation finalizes the validation loop and prompts the executor if fixes are needed.
-
-**Documentation**:
-- 📘 `plan/validation-workflow.md` — Automation & fallback process
-- 🤖 `plan/orchestrator-automation.md` — Flow schema & naming conventions
-- 📋 `plan/validator-guide.md` — Validator checklist
-
----
-
-## Implementation Workflow
-
-### 1. Find Upstream Code
-```bash
-cat external/vercel-ai-sdk/packages/provider-utils/src/delay.ts
-cat external/vercel-ai-sdk/packages/provider-utils/src/delay.test.ts
-```
-
-### 2. Implement in Swift
-
-**File naming** (match upstream package):
-```
-TS:   external/.../packages/provider-utils/src/delay.ts
-Swift: Sources/AISDKProviderUtils/Delay.swift
-Test:  Tests/AISDKProviderUtilsTests/DelayTests.swift
-```
-
-**⚠️ Header required**:
-```swift
-/**
- Brief description.
-
- Port of `@ai-sdk/provider-utils/src/delay.ts`.
- */
-```
-
-### 3. Port ALL Tests
-
-Port every test case from `.test.ts` to Swift Testing:
-- Same test names (camelCase)
-- Same test data and edge cases
-- **100% coverage required**
-
-### 4. Verify & Validate
-
-```bash
-swift build && swift test           # Must pass
-# Create .orchestrator/requests/... entry & update flow JSON (status=ready_for_validation)
-# Automation will launch validator and handle the cycle
-```
-See `plan/orchestrator-automation.md` for templates and flow schema.
 
 ---
 
@@ -327,6 +261,7 @@ Config files in `tools/`:
 
 ### Working in Git Worktrees
 
+- ⚠️ apply_patch is forbidden inside worktrees: it edits files in the main repository and bypasses the task branch. Use shell commands with explicit cd/paths instead.
 - Fresh worktrees do **not** include the upstream reference under `external/`. After creating a worktree, recreate the reference with:
   ```bash
   git clone https://github.com/vercel/ai external/vercel-ai-sdk
@@ -335,6 +270,8 @@ Config files in `tools/`:
   ```
 - Keep the worktree on the correct Swift AI SDK commit (`b40920d4876a213194e0d16d9899abbb61ad9cab` as of 2025-10-16). Use `git status` regularly to ensure you stay aligned.
 - Avoid editing shared upstream files inside the cloned reference; treat it as read-only.
+- When a worktree is no longer needed, remove it with Git to keep metadata clean: `git worktree remove <path>` (do not `rm -rf` manually).
+- As soon as you switch into a task-specific worktree branch, immediately update the corresponding Taskmaster task status to `in-progress`.
 
 ---
 

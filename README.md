@@ -3,6 +3,8 @@
 > ⚠️ **WORK IN PROGRESS** ⚠️
 >
 > **This project is currently under active development and is NOT production-ready.**
+
+<!-- Branch isolation check: temporary comment for Task 10.1 experiment -->
 >
 > - ❌ **NOT functional yet** - Core functionality is still being implemented
 > - ❌ **NOT stable** - APIs will change without notice

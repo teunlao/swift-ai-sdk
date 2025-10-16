@@ -1,0 +1,66 @@
+## Roles & Workflow
+
+**🚨 CRITICAL Rules**:
+- ❌ **NEVER TOUCH OTHER AGENTS' WORK** — Only edit files in your task scope.
+- ✅ Keep flow JSON valid/minified whenever you progress the work.
+- ❌ Never commit or mark `done` before approval or explicit user permission.
+
+### Validator Role
+**Review executor work, produce `.orchestrator` report, keep flow state accurate.**
+
+1. Automation launches you in the executor worktree (manual mode) with context from the flow file; read `.orchestrator/requests/…` and `.orchestrator/flow/<executor-id>.json`.
+2. Compare Swift vs TypeScript line-by-line, run tests, verify parity.
+3. Write report in `.orchestrator/reports/validate-<task>-<iteration>-<timestamp>-report.md`.
+4. Update `.orchestrator/flow/<validator-id>.json` with summary, `report.path`, and `report.result` (`approved`/`rejected`).
+5. **Stop** — automation finalizes the validation loop and prompts the executor if fixes are needed.
+
+**Documentation**:
+- 📘 `plan/validation-workflow.md` — Automation & fallback process
+- 🤖 `plan/orchestrator-automation.md` — Flow schema & naming conventions
+- 📋 `plan/validator-guide.md` — Validator checklist
+
+---
+
+## Implementation Workflow
+
+### 1. Find Upstream Code
+```bash
+cat external/vercel-ai-sdk/packages/provider-utils/src/delay.ts
+cat external/vercel-ai-sdk/packages/provider-utils/src/delay.test.ts
+```
+
+### 2. Implement in Swift
+
+**File naming** (match upstream package):
+```
+TS:   external/.../packages/provider-utils/src/delay.ts
+Swift: Sources/AISDKProviderUtils/Delay.swift
+Test:  Tests/AISDKProviderUtilsTests/DelayTests.swift
+```
+
+**⚠️ Header required**:
+```swift
+/**
+ Brief description.
+
+ Port of `@ai-sdk/provider-utils/src/delay.ts`.
+ */
+```
+
+### 3. Port ALL Tests
+
+Port every test case from `.test.ts` to Swift Testing:
+- Same test names (camelCase)
+- Same test data and edge cases
+- **100% coverage required**
+
+### 4. Verify & Validate
+
+```bash
+swift build && swift test           # Must pass
+# Create .orchestrator/requests/... entry & update flow JSON (status=ready_for_validation)
+# Automation will launch validator and handle the cycle
+```
+See `plan/orchestrator-automation.md` for templates and flow schema.
+
+---
