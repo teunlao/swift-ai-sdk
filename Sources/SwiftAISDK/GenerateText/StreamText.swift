@@ -533,6 +533,7 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
     private let closeStream: @Sendable () -> Void
     private let terminateStream: @Sendable () -> Void
     private var baseStream: AsyncIterableStream<EnrichedStreamPart<PartialOutputValue>>
+    private var baseStreamFanout: AsyncThrowingStreamFanout<EnrichedStreamPart<PartialOutputValue>>
 
     private let output: Output.Specification<OutputValue, PartialOutputValue>?
     private let includeRawChunks: Bool
@@ -625,7 +626,9 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
                 continuation.finish()
             }
         )
+        self.baseStreamFanout = AsyncThrowingStreamFanout(source: self.baseStream.asAsyncThrowingStream())
         self.baseStream = makeBaseStream()
+        self.baseStreamFanout = AsyncThrowingStreamFanout(source: self.baseStream.asAsyncThrowingStream())
 
         Task { [weak self] in
             guard let self else { return }
@@ -773,7 +776,7 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
     }
 
     public var textStream: AsyncThrowingStream<String, Error> {
-        let stream = teeBaseStream()
+        let stream = subscribeToBaseStream()
 
         return AsyncThrowingStream { continuation in
             Task {
@@ -792,7 +795,7 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
     }
 
     public var fullStream: AsyncThrowingStream<TextStreamPart, Error> {
-        let stream = teeBaseStream()
+        let stream = subscribeToBaseStream()
 
         return AsyncThrowingStream { continuation in
             Task {
@@ -815,7 +818,7 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
             }
         }
 
-        let stream = teeBaseStream()
+        let stream = subscribeToBaseStream()
 
         return AsyncThrowingStream { continuation in
             Task {
@@ -867,7 +870,7 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
             return message
         }
 
-        let baseStream = teeBaseStream()
+        let baseStream = subscribeToBaseStream()
         let toolNameStore = StreamTextToolNameStore()
 
         func resolvedDynamicFlag(for id: String) async -> Bool? {
@@ -1367,12 +1370,10 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
         continuation.finish()
     }
 
-    private func teeBaseStream() -> AsyncThrowingStream<
+    private func subscribeToBaseStream() -> AsyncThrowingStream<
         EnrichedStreamPart<PartialOutputValue>, Error
     > {
-        let (primary, secondary) = teeAsyncThrowingStream(baseStream.asAsyncThrowingStream())
-        baseStream = createAsyncIterableStream(source: secondary)
-        return primary
+        baseStreamFanout.makeStream()
     }
 
     private func makeBaseStream() -> AsyncIterableStream<EnrichedStreamPart<PartialOutputValue>> {
@@ -1837,14 +1838,13 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
 
                     do {
                         for try await part in streamWithToolResults {
-                            if let abortSignal = self.settings.abortSignal, abortSignal() {
+                            if let abortSignal = self.settings.abortSignal,
+                               abortSignal() {
                                 if let onAbort = self.onAbort {
                                     await onAbort(StreamTextOnAbortEvent(steps: self.state.recordedSteps))
                                 }
                                 continuation.yield(.abort)
-                                continuation.finish()
-                                doStreamSpan.end()
-                                return
+                                break  // still flush finishStep after loop
                             }
 
                             if case let .streamStart(warnings) = part {
@@ -2374,6 +2374,158 @@ private extension Date {
 extension DefaultStreamTextResult: @unchecked Sendable {}
 
 // Generic stream helpers
+
+private final class AsyncThrowingStreamFanout<Element: Sendable>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuations: [UUID: AsyncThrowingStream<Element, Error>.Continuation] = [:]
+    private var pendingBuffer: [Element] = []
+    private var finished = false
+    private var finishError: Error?
+    private lazy var pumpTask: Task<Void, Never> = {
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                for try await value in self.source {
+                                        self.broadcast(value)
+                }
+                                self.finish(error: nil)
+            } catch is CancellationError {
+                                self.finish(error: nil)
+            } catch {
+                                self.finish(error: error)
+            }
+        }
+    }()
+    private let source: AsyncThrowingStream<Element, Error>
+
+    init(source: AsyncThrowingStream<Element, Error>) {
+        self.source = source
+        _ = pumpTask
+    }
+
+    deinit {
+        pumpTask.cancel()
+    }
+
+    func makeStream() -> AsyncThrowingStream<Element, Error> {
+        AsyncThrowingStream { continuation in
+            let id = UUID()
+            let registration = self.registerContinuation(id: id, continuation: continuation)
+            
+            for value in registration.buffer {
+                                continuation.yield(value)
+            }
+
+            if registration.isFinished {
+                                if let error = registration.error {
+                    continuation.finish(throwing: error)
+                } else {
+                    continuation.finish()
+                }
+                return
+            }
+
+            continuation.onTermination = { termination in
+                switch termination {
+                case .cancelled, .finished:
+                                        self.removeContinuation(id: id)
+                @unknown default:
+                                        self.removeContinuation(id: id)
+                }
+            }
+        }
+    }
+
+    private func registerContinuation(
+        id: UUID,
+        continuation: AsyncThrowingStream<Element, Error>.Continuation
+    ) -> (buffer: [Element], isFinished: Bool, error: Error?) {
+        lock.lock()
+        if finished {
+            let buffer = pendingBuffer
+            pendingBuffer.removeAll()
+            let error = finishError
+            lock.unlock()
+            return (buffer, true, error)
+        }
+
+        continuations[id] = continuation
+        let buffer = pendingBuffer
+        pendingBuffer.removeAll()
+        lock.unlock()
+
+        return (buffer, false, nil)
+    }
+
+    private func removeContinuation(id: UUID) {
+        lock.lock()
+        continuations[id] = nil
+        lock.unlock()
+    }
+
+    private func broadcast(_ value: Element) {
+        var continuationsSnapshot: [AsyncThrowingStream<Element, Error>.Continuation] = []
+
+        lock.lock()
+        if finished {
+            lock.unlock()
+            return
+        }
+
+        if continuations.isEmpty {
+            pendingBuffer.append(value)
+            lock.unlock()
+                        return
+        }
+
+        continuationsSnapshot = Array(continuations.values)
+        lock.unlock()
+
+        for continuation in continuationsSnapshot {
+            continuation.yield(value)
+        }
+            }
+
+    private func finish(error: Error?) {
+        let continuationsSnapshot = markFinished(with: error)
+        if continuationsSnapshot.isEmpty {
+            return
+        }
+        let buffer = consumePendingBuffer()
+        for continuation in continuationsSnapshot {
+            for value in buffer {
+                continuation.yield(value)
+            }
+            if let error {
+                continuation.finish(throwing: error)
+            } else {
+                continuation.finish()
+            }
+        }
+    }
+
+    private func markFinished(with error: Error?) -> [AsyncThrowingStream<Element, Error>.Continuation] {
+        lock.lock()
+        if finished {
+            lock.unlock()
+            return []
+        }
+        finished = true
+        finishError = error
+        let snapshot = Array(continuations.values)
+        continuations.removeAll()
+        lock.unlock()
+        return snapshot
+    }
+
+    private func consumePendingBuffer() -> [Element] {
+        lock.lock()
+        let buffer = pendingBuffer
+        pendingBuffer.removeAll()
+        lock.unlock()
+        return buffer
+    }
+}
 
 extension AsyncIterableStream {
     func map<T>(_ transform: @escaping @Sendable (Element) -> T) -> AsyncIterableStream<T> {
