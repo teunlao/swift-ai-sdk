@@ -239,7 +239,8 @@ public func runToolsTransformation(
                                 input: input,
                                 output: toolResultChunk.result,
                                 providerExecuted: toolResultChunk.providerExecuted,
-                                preliminary: toolResultChunk.preliminary
+                                preliminary: toolResultChunk.preliminary,
+                                providerMetadata: toolResultChunk.providerMetadata
                             )
                             emit(.toolResult(typedResult))
                         }
@@ -389,7 +390,8 @@ private func makeProviderToolResult(
     input: JSONValue,
     output: JSONValue,
     providerExecuted: Bool?,
-    preliminary: Bool?
+    preliminary: Bool?,
+    providerMetadata: ProviderMetadata?
 ) -> TypedToolResult {
     if let storedCall {
         switch storedCall {
@@ -401,7 +403,8 @@ private func makeProviderToolResult(
                     input: call.input,
                     output: output,
                     providerExecuted: providerExecuted,
-                    preliminary: preliminary
+                    preliminary: preliminary,
+                    providerMetadata: providerMetadata
                 )
             )
         case .dynamic(let call):
@@ -412,7 +415,8 @@ private func makeProviderToolResult(
                     input: call.input,
                     output: output,
                     providerExecuted: providerExecuted,
-                    preliminary: preliminary
+                    preliminary: preliminary,
+                    providerMetadata: providerMetadata
                 )
             )
         }
@@ -425,7 +429,8 @@ private func makeProviderToolResult(
             input: input,
             output: output,
             providerExecuted: providerExecuted,
-            preliminary: preliminary
+            preliminary: preliminary,
+            providerMetadata: providerMetadata
         )
     )
 }
