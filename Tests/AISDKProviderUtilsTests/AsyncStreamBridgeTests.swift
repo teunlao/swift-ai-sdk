@@ -90,7 +90,7 @@ struct AsyncStreamBridgeTests {
     }
 
     @Test("convertResponseStreamToArray returns empty array for missing body")
-    func responseStreamToArrayHandlesEmptyBody() async throws {
+    func responseStreamToArrayHandlesEmptyBody() async {
         let response = makeResponse(body: .none)
         await #expect(throws: ResponseStreamConversionError.missingBody) {
             _ = try await convertResponseStreamToArray(response)

@@ -238,6 +238,8 @@ node tools/test-runner.js --smart --config test-runner.default.config.json --run
 - ✅ **Stability analysis**: Shows which tests fail sometimes vs always
 - ✅ **Clean reporting**: Groups by suite, shows patterns
 
+> 💡 **Tip**: Run `swift build` once before invoking `node tools/test-runner.js ...`. A warm build keeps the first iteration fast and prevents false timeouts from cold compilation.
+
 **Output Analysis**:
 ```
 🎯 Smart Mode Analysis (3 runs)
@@ -311,6 +313,17 @@ Config files in `tools/`:
 5. **Mark done ONLY after validation** — Wait for automation to approve or explicitly document blockers.
 6. **Never commit without permission** — Explicit user request required.
 7. **Worktree defaults** — Executors on `auto`, validators on `manual` within executor worktree.
+
+### Working in Git Worktrees
+
+- Fresh worktrees do **not** include the upstream reference under `external/`. After creating a worktree, recreate the reference with:
+  ```bash
+  git clone https://github.com/vercel/ai external/vercel-ai-sdk
+  cd external/vercel-ai-sdk
+  git checkout 77db222ee  # upstream reference commit
+  ```
+- Keep the worktree on the correct Swift AI SDK commit (`b40920d4876a213194e0d16d9899abbb61ad9cab` as of 2025-10-16). Use `git status` regularly to ensure you stay aligned.
+- Avoid editing shared upstream files inside the cloned reference; treat it as read-only.
 
 ---
 

@@ -17,70 +17,157 @@ public func convertResponseStreamToArray(
             return []
         }
 
-        guard let string = String(data: data, encoding: .utf8) else {
-            throw ResponseStreamConversionError.invalidUTF8
-        }
-
-        return [string]
+        return [decodeReplacingInvalidUTF8(Array(data))]
 
     case .stream(let stream):
-        var buffer = Data()
+        var buffer: [UInt8] = []
         var decodedChunks: [String] = []
 
-        func drainBuffer(allowPartial: Bool) throws {
+        func drainBuffer(allowPartial: Bool) {
+            var chunk = ""
+
             while !buffer.isEmpty {
-                if let string = String(data: buffer, encoding: .utf8) {
-                    decodedChunks.append(string)
-                    buffer.removeAll(keepingCapacity: false)
+                let lead = buffer[0]
+
+                if lead < 0x80 {
+                    chunk.unicodeScalars.append(UnicodeScalar(lead))
+                    buffer.removeFirst()
                     continue
                 }
 
-                if !allowPartial {
-                    throw ResponseStreamConversionError.invalidUTF8
+                let (expectedLength, validation) = expectedSequenceLength(for: lead)
+
+                guard expectedLength > 0 else {
+                    chunk.append("\u{FFFD}")
+                    buffer.removeFirst()
+                    continue
                 }
 
-                var end = buffer.count - 1
-                var decoded = false
-
-                while end > 0 {
-                    if let string = String(data: buffer.prefix(end), encoding: .utf8) {
-                        decodedChunks.append(string)
-                        buffer.removeFirst(end)
-                        decoded = true
+                if buffer.count < expectedLength {
+                    if allowPartial {
+                        break
+                    } else {
+                        chunk.append("\u{FFFD}")
+                        buffer.removeAll(keepingCapacity: false)
                         break
                     }
-                    end -= 1
                 }
 
-                if !decoded {
-                    break
+                let continuation = buffer[1..<expectedLength]
+                guard validation(continuation) else {
+                    chunk.append("\u{FFFD}")
+                    buffer.removeFirst()
+                    continue
                 }
+
+                if let scalar = decodeScalar(from: buffer.prefix(expectedLength)) {
+                    chunk.unicodeScalars.append(scalar)
+                    buffer.removeFirst(expectedLength)
+                } else {
+                    chunk.append("\u{FFFD}")
+                    buffer.removeFirst()
+                }
+            }
+
+            if !chunk.isEmpty {
+                decodedChunks.append(chunk)
             }
         }
 
-        for try await chunk in stream {
-            buffer.append(chunk)
-            try drainBuffer(allowPartial: true)
+        do {
+            for try await chunk in stream {
+                buffer.append(contentsOf: chunk)
+                drainBuffer(allowPartial: true)
+            }
+        } catch {
+            throw error
         }
 
-        if !buffer.isEmpty {
-            try drainBuffer(allowPartial: false)
-        }
+        drainBuffer(allowPartial: false)
 
         return decodedChunks
     }
 }
 
-public enum ResponseStreamConversionError: Error, LocalizedError {
+enum ResponseStreamConversionError: Error {
     case missingBody
-    case invalidUTF8
+}
 
-    public var errorDescription: String? {
-        switch self {
-        case .missingBody:
-            return "convertResponseStreamToArray expected a response body but found none."
-        case .invalidUTF8:
-            return "Response stream contained bytes that were not valid UTF-8."
+private func expectedSequenceLength(for lead: UInt8) -> (Int, (ArraySlice<UInt8>) -> Bool) {
+    switch lead {
+    case 0xC2...0xDF:
+        return (2, { bytes in
+            guard let first = bytes.first else { return false }
+            return first & 0xC0 == 0x80
+        })
+    case 0xE0:
+        return (3, { bytes in
+            guard bytes.count >= 2 else { return false }
+            let b1 = bytes[bytes.startIndex]
+            let b2 = bytes[bytes.startIndex + 1]
+            return (0xA0...0xBF).contains(b1) && (b2 & 0xC0 == 0x80)
+        })
+    case 0xE1...0xEC, 0xEE...0xEF:
+        return (3, { bytes in
+            guard bytes.count >= 2 else { return false }
+            return bytes.allSatisfy { $0 & 0xC0 == 0x80 }
+        })
+    case 0xED:
+        return (3, { bytes in
+            guard bytes.count >= 2 else { return false }
+            let b1 = bytes[bytes.startIndex]
+            let b2 = bytes[bytes.startIndex + 1]
+            return (0x80...0x9F).contains(b1) && (b2 & 0xC0 == 0x80)
+        })
+    case 0xF0:
+        return (4, { bytes in
+            guard bytes.count >= 3 else { return false }
+            let b1 = bytes[bytes.startIndex]
+            return (0x90...0xBF).contains(b1) && bytes.dropFirst().allSatisfy { $0 & 0xC0 == 0x80 }
+        })
+    case 0xF1...0xF3:
+        return (4, { bytes in
+            guard bytes.count >= 3 else { return false }
+            return bytes.allSatisfy { $0 & 0xC0 == 0x80 }
+        })
+    case 0xF4:
+        return (4, { bytes in
+            guard bytes.count >= 3 else { return false }
+            let b1 = bytes[bytes.startIndex]
+            return (0x80...0x8F).contains(b1) && bytes.dropFirst().allSatisfy { $0 & 0xC0 == 0x80 }
+        })
+    default:
+        return (0, { _ in false })
+    }
+}
+
+private func decodeScalar(from bytes: ArraySlice<UInt8>) -> UnicodeScalar? {
+    var iterator = bytes.makeIterator()
+    var scalarDecoder = UTF8()
+
+    switch scalarDecoder.decode(&iterator) {
+    case .scalarValue(let scalar):
+        return scalar
+    case .emptyInput, .error:
+        return nil
+    }
+}
+
+private func decodeReplacingInvalidUTF8(_ bytes: [UInt8]) -> String {
+    var iterator = bytes.makeIterator()
+    var scalarDecoder = UTF8()
+    var result = ""
+
+    decoding: while true {
+        switch scalarDecoder.decode(&iterator) {
+        case .scalarValue(let scalar):
+            result.unicodeScalars.append(scalar)
+        case .emptyInput:
+            break decoding
+        case .error:
+            result.append("\u{FFFD}")
         }
     }
+
+    return result
 }
