@@ -56,7 +56,7 @@ public func isJSONArray(_ value: Any?) -> Bool {
         return false
     }
 
-    if let array = value as? [JSONValue] {
+    if let array = value as? JSONArray {
         return array.allSatisfy(isJSONValue)
     }
 
@@ -90,7 +90,7 @@ public func isJSONObject(_ value: Any?) -> Bool {
         return false
     }
 
-    if let dictionary = value as? [String: JSONValue] {
+    if let dictionary = value as? JSONObject {
         return dictionary.values.allSatisfy(isJSONValue)
     }
 

@@ -1,5 +1,11 @@
 import Foundation
 
+/**
+ A JSON value can be a string, number, boolean, object, array, or null.
+ JSON values can be serialized and deserialized by the JSONSerialization APIs.
+
+ Port of `@ai-sdk/provider/src/json-value/json-value.ts`.
+ */
 public enum JSONValue: Equatable, Sendable, Codable {
     case null
     case bool(Bool)
@@ -40,6 +46,12 @@ public enum JSONValue: Equatable, Sendable, Codable {
     }
 }
 
+/// Alias representing a JSON object. Port of `JSONObject` from upstream JSON value types.
+public typealias JSONObject = [String: JSONValue]
+
+/// Alias representing a JSON array. Port of `JSONArray` from upstream JSON value types.
+public typealias JSONArray = [JSONValue]
+
 extension JSONValue: ExpressibleByNilLiteral {
     public init(nilLiteral: ()) { self = .null }
 }
@@ -69,4 +81,3 @@ extension JSONValue: ExpressibleByDictionaryLiteral {
         self = .object(Dictionary(uniqueKeysWithValues: elements))
     }
 }
-

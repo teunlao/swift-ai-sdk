@@ -2,6 +2,21 @@ import Foundation
 import Testing
 @testable import AISDKProvider
 
+@Test func jsonTypeAliasesInterop() {
+    let object: JSONObject = [
+        "key": .string("value"),
+        "nested": .object(["inner": .number(1)])
+    ]
+    #expect(isJSONObject(object))
+
+    let array: JSONArray = [
+        .string("entry"),
+        .object(["flag": .bool(true)]),
+        .null
+    ]
+    #expect(isJSONArray(array))
+}
+
 @Test func isJSONValueAcceptsPrimitiveAndNull() {
     #expect(isJSONValue(nil))
     #expect(isJSONValue(NSNull()))
