@@ -128,6 +128,19 @@ struct ParsePartialJsonTests {
         }
     }
 
+    @Test("should repair partial object prefix")
+    func testPartialObjectPrefix() async {
+        let result = await parsePartialJson("{ ")
+
+        #expect(result.state == .repairedParse)
+
+        if case .object(let dict) = result.value {
+            #expect(dict.isEmpty)
+        } else {
+            Issue.record("Expected empty object")
+        }
+    }
+
     @Test("should handle valid complex JSON")
     func testValidComplexJSON() async {
         let validJson = """
