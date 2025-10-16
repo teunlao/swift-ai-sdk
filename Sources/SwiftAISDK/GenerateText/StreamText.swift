@@ -540,6 +540,7 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
     private let download: DownloadFunction?
     private let experimentalContext: JSONValue?
     private let transforms: [StreamTextTransform]
+    private let callHeaders: [String: String]
     private let state = StreamPipelineState()
 
     init(
@@ -570,6 +571,10 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
         self.baseModel = baseModel
         self.output = output
         self.includeRawChunks = includeRawChunks
+        let headersWithUserAgent = withUserAgentSuffix(settings.headers ?? [:], "ai/\(VERSION)")
+        var normalizedSettings = settings
+        normalizedSettings.headers = headersWithUserAgent
+
         self.tools = tools
         self.onChunk = onChunk
         self.onError = onError
@@ -579,7 +584,7 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
         self.internalOptions = internalOptions
         self.model = model
         self.telemetry = telemetry
-        self.settings = settings
+        self.settings = normalizedSettings
         self.prompt = prompt
         self.toolChoice = toolChoice
         self.stopConditions = stopConditions
@@ -590,6 +595,7 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
         self.download = download
         self.experimentalContext = experimentalContext
         self.transforms = transforms
+        self.callHeaders = headersWithUserAgent
 
         let stitchable: StitchableStream<TextStreamPart> = createStitchableStream()
         self.stitchable = stitchable
@@ -1613,7 +1619,7 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
             toolChoice: toolPreparation.toolChoice,
             includeRawChunks: includeRawChunks,
             abortSignal: settings.abortSignal,
-            headers: settings.headers,
+            headers: callHeaders,
             providerOptions: providerOptions
         )
 
