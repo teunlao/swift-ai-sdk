@@ -160,6 +160,7 @@ private final class StreamPipelineState: @unchecked Sendable {
     var activeReasoningContent: [String: ActiveReasoningContent] = [:]
     var toolNamesByCallId: [String: String] = [:]
     var rootSpan: (any Span)?
+    var baseTelemetryAttributes: Attributes = [:]
     var stepFinish: DelayedPromise<Void>?
     var currentToolCalls: [TypedToolCall] = []
     var currentToolOutputs: [ToolOutput] = []
@@ -1301,6 +1302,22 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
             )
         }
 
+        if let rootSpan = state.rootSpan {
+            if let finishAttributes = try? await selectTelemetryAttributes(
+                telemetry: telemetry,
+                attributes: buildStreamFinishTelemetryAttributes(
+                    telemetry: telemetry,
+                    finishReason: finishReason,
+                    finalStep: finalStep,
+                    totalUsage: totalUsage
+                )
+            ) {
+                rootSpan.setAttributes(finishAttributes)
+            }
+            rootSpan.end()
+            state.rootSpan = nil
+        }
+
         continuation.finish()
     }
 
@@ -1451,108 +1468,144 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
                 seed: settings.seed
             )
 
-            let standardizedPrompt = try standardizePrompt(prompt)
-            let initialMessages = standardizedPrompt.messages
+            let telemetryCallSettings = CallSettings(
+                maxOutputTokens: preparedCallSettings.maxOutputTokens,
+                temperature: preparedCallSettings.temperature,
+                topP: preparedCallSettings.topP,
+                topK: preparedCallSettings.topK,
+                presencePenalty: preparedCallSettings.presencePenalty,
+                frequencyPenalty: preparedCallSettings.frequencyPenalty,
+                stopSequences: preparedCallSettings.stopSequences,
+                seed: preparedCallSettings.seed,
+                maxRetries: preparedRetries.maxRetries
+            )
+
+            let baseTelemetryAttributes = getBaseTelemetryAttributes(
+                model: TelemetryModelInfo(modelId: model.modelId, provider: model.provider),
+                settings: telemetryCallSettings,
+                telemetry: telemetry,
+                headers: callHeaders
+            )
+
+            state.baseTelemetryAttributes = baseTelemetryAttributes
 
             let tracer = getTracer(
                 isEnabled: telemetry?.isEnabled ?? false,
                 tracer: telemetry?.tracer
             )
 
-            var responseMessages: [ResponseMessage] = []
-            var accumulatedUsage = LanguageModelUsage()
+            let outerAttributes = try await selectTelemetryAttributes(
+                telemetry: telemetry,
+                attributes: buildStreamOuterTelemetryAttributes(
+                    telemetry: telemetry,
+                    baseAttributes: baseTelemetryAttributes
+                )
+            )
 
-            var initialResponseMessages: [ResponseMessage] = []
+            try await recordSpan(
+                name: "ai.streamText",
+                tracer: tracer,
+                attributes: outerAttributes,
+                fn: { span in
+                self.state.rootSpan = span
 
-            let approvals = collectToolApprovals(messages: initialMessages)
+                let standardizedPrompt = try standardizePrompt(self.prompt)
+                let initialMessages = standardizedPrompt.messages
 
-            if !approvals.approvedToolApprovals.isEmpty || !approvals.deniedToolApprovals.isEmpty {
-                var approvalTask: Task<[ContentPart], Never>?
+                var responseMessages: [ResponseMessage] = []
+                var accumulatedUsage = LanguageModelUsage()
+                var initialResponseMessages: [ResponseMessage] = []
 
-                let approvalStream = createAsyncIterableStream(
-                    source: AsyncThrowingStream<TextStreamPart, Error>(bufferingPolicy: .unbounded) { continuation in
-                        approvalTask = Task { [weak self] in
-                            guard let self else {
-                                continuation.finish()
-                                return []
-                            }
+                let approvals = collectToolApprovals(messages: initialMessages)
 
-                            var content: [ContentPart] = []
+                if !approvals.approvedToolApprovals.isEmpty || !approvals.deniedToolApprovals.isEmpty {
+                    var approvalTask: Task<[ContentPart], Never>?
 
-                            for denied in approvals.deniedToolApprovals {
-                                let deniedEvent = ToolOutputDenied(
-                                    toolCallId: denied.toolCall.toolCallId,
-                                    toolName: denied.toolCall.toolName,
-                                    providerExecuted: denied.toolCall.providerExecuted
-                                )
-                                continuation.yield(.toolOutputDenied(deniedEvent))
-                                content.append(makeExecutionDeniedContent(denied))
-                            }
+                    let approvalStream = createAsyncIterableStream(
+                        source: AsyncThrowingStream<TextStreamPart, Error>(bufferingPolicy: .unbounded) { continuation in
+                            approvalTask = Task { [weak self] in
+                                guard let self else {
+                                    continuation.finish()
+                                    return []
+                                }
 
-                            if !approvals.approvedToolApprovals.isEmpty {
-                                await withTaskGroup(of: ToolOutput?.self) { group in
-                                    for approved in approvals.approvedToolApprovals {
-                                        group.addTask {
-                                            await executeToolCall(
-                                                toolCall: approved.toolCall,
-                                                tools: self.tools,
-                                                tracer: tracer,
-                                                telemetry: self.telemetry,
-                                                messages: initialMessages,
-                                                abortSignal: self.settings.abortSignal,
-                                                experimentalContext: self.experimentalContext,
-                                                onPreliminaryToolResult: { result in
-                                                    continuation.yield(.toolResult(result))
-                                                }
-                                            )
+                                var content: [ContentPart] = []
+
+                                for denied in approvals.deniedToolApprovals {
+                                    let deniedEvent = ToolOutputDenied(
+                                        toolCallId: denied.toolCall.toolCallId,
+                                        toolName: denied.toolCall.toolName,
+                                        providerExecuted: denied.toolCall.providerExecuted
+                                    )
+                                    continuation.yield(.toolOutputDenied(deniedEvent))
+                                    content.append(makeExecutionDeniedContent(denied))
+                                }
+
+                                if !approvals.approvedToolApprovals.isEmpty {
+                                    await withTaskGroup(of: ToolOutput?.self) { group in
+                                        for approved in approvals.approvedToolApprovals {
+                                            group.addTask {
+                                                await executeToolCall(
+                                                    toolCall: approved.toolCall,
+                                                    tools: self.tools,
+                                                    tracer: tracer,
+                                                    telemetry: self.telemetry,
+                                                    messages: initialMessages,
+                                                    abortSignal: self.settings.abortSignal,
+                                                    experimentalContext: self.experimentalContext,
+                                                    onPreliminaryToolResult: { result in
+                                                        continuation.yield(.toolResult(result))
+                                                    }
+                                                )
+                                            }
                                         }
-                                    }
 
-                                    for await output in group {
-                                        guard let output else { continue }
+                                        for await output in group {
+                                            guard let output else { continue }
 
-                                        switch output {
-                                        case .result(let result):
-                                            continuation.yield(.toolResult(result))
-                                        case .error(let error):
-                                            continuation.yield(.toolError(error))
+                                            switch output {
+                                            case .result(let result):
+                                                continuation.yield(.toolResult(result))
+                                            case .error(let error):
+                                                continuation.yield(.toolError(error))
+                                            }
+
+                                            content.append(toolOutputToContentPart(output))
                                         }
-
-                                        content.append(toolOutputToContentPart(output))
                                     }
                                 }
+
+                                continuation.finish()
+                                return content
                             }
-
-                            continuation.finish()
-                            return content
                         }
+                    )
+
+                    try await self.addStream(approvalStream)
+
+                    let approvalContent = await approvalTask?.value ?? []
+                    if !approvalContent.isEmpty {
+                        let modelMessages = toResponseMessages(content: approvalContent, tools: self.tools)
+                        let approvalResponses = convertModelMessagesToResponseMessages(modelMessages)
+                        initialResponseMessages.append(contentsOf: approvalResponses)
                     }
-                )
-
-                try await addStream(approvalStream)
-
-                let approvalContent = await approvalTask?.value ?? []
-                if !approvalContent.isEmpty {
-                    let modelMessages = toResponseMessages(content: approvalContent, tools: tools)
-                    let approvalResponses = convertModelMessagesToResponseMessages(modelMessages)
-                    initialResponseMessages.append(contentsOf: approvalResponses)
                 }
-            }
 
-            responseMessages = initialResponseMessages
+                responseMessages = initialResponseMessages
 
-            state.recordedResponseMessages = []
+                self.state.recordedResponseMessages = []
 
-            try await executeStep(
-                stepNumber: 0,
-                standardizedPrompt: standardizedPrompt,
-                initialMessages: initialMessages,
-                responseMessages: &responseMessages,
-                accumulatedUsage: &accumulatedUsage,
-                retries: preparedRetries,
-                preparedCallSettings: preparedCallSettings,
-                tracer: tracer
-            )
+                try await self.executeStep(
+                    stepNumber: 0,
+                    standardizedPrompt: standardizedPrompt,
+                    initialMessages: initialMessages,
+                    responseMessages: &responseMessages,
+                    accumulatedUsage: &accumulatedUsage,
+                    retries: preparedRetries,
+                    preparedCallSettings: preparedCallSettings,
+                    tracer: tracer
+                )
+            }, endWhenDone: false)
         } catch {
             await emitStreamError(error)
         }
@@ -1906,6 +1959,7 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
         finishReasonPromise.reject(error)
         totalUsagePromise.reject(error)
         stepsPromise.reject(error)
+        state.rootSpan = nil
 
         await onError(StreamTextOnErrorEvent(error: error))
     }
@@ -1957,3 +2011,51 @@ extension AsyncIterableStream {
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 extension DefaultStreamTextResult: @unchecked Sendable {}
+
+private func buildStreamOuterTelemetryAttributes(
+    telemetry: TelemetrySettings?,
+    baseAttributes: Attributes
+) -> [String: ResolvableAttributeValue?] {
+    var attributes: [String: ResolvableAttributeValue?] = [:]
+
+    for (key, value) in assembleOperationName(operationId: "ai.streamText", telemetry: telemetry) {
+        attributes[key] = .value(value)
+    }
+
+    for (key, value) in baseAttributes {
+        attributes[key] = .value(value)
+    }
+
+    return attributes
+}
+
+private func buildStreamFinishTelemetryAttributes(
+    telemetry: TelemetrySettings?,
+    finishReason: FinishReason,
+    finalStep: StepResult,
+    totalUsage: LanguageModelUsage
+) -> [String: ResolvableAttributeValue?] {
+    var attributes: [String: ResolvableAttributeValue?] = [:]
+
+    attributes["ai.response.finishReason"] = .value(.string(finishReason.rawValue))
+
+    attributes["ai.response.text"] = .output {
+        guard !finalStep.text.isEmpty else {
+            return nil
+        }
+        return .string(finalStep.text)
+    }
+
+    attributes["ai.usage.inputTokens"] = makeAttributeValue(totalUsage.inputTokens)
+    attributes["ai.usage.outputTokens"] = makeAttributeValue(totalUsage.outputTokens)
+    attributes["ai.usage.totalTokens"] = makeAttributeValue(totalUsage.totalTokens)
+    attributes["ai.usage.reasoningTokens"] = makeAttributeValue(totalUsage.reasoningTokens)
+    attributes["ai.usage.cachedInputTokens"] = makeAttributeValue(totalUsage.cachedInputTokens)
+
+    return attributes
+}
+
+private func makeAttributeValue(_ value: Int?) -> ResolvableAttributeValue? {
+    guard let value else { return nil }
+    return .value(.int(value))
+}
