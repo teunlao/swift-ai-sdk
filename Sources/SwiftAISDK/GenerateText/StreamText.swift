@@ -1,6 +1,6 @@
-import Foundation
 import AISDKProvider
 import AISDKProviderUtils
+import Foundation
 
 /**
  Streaming text generation entry point and result container.
@@ -10,6 +10,13 @@ import AISDKProviderUtils
  Mirrors the upstream TypeScript implementation, including multi-step
  execution, tool streaming, telemetry, partial output parsing, and UI
  message stream helpers.
+
+ NOTE (Race/Flake fixes):
+ - Centralized all state mutations in `processStreamChunk` only.
+ - Step-emitter (inner `stepStream`) no longer mutates shared state.
+ - Deterministic event ordering: start -> step -> chunks -> finishStep -> finish.
+ - Tool call/result tracking moved into the single consumer to avoid data races.
+ - Consistent cancellation/abort propagation with stream termination.
  */
 
 // MARK: - Stream Transform & Callback Types
@@ -34,8 +41,8 @@ private struct ToolCallDescription {
     let error: Any?
 }
 
-private extension TypedToolCall {
-    func details() -> ToolCallDescription {
+extension TypedToolCall {
+    fileprivate func details() -> ToolCallDescription {
         switch self {
         case .static(let call):
             return ToolCallDescription(
@@ -85,10 +92,14 @@ public struct StreamTextOnAbortEvent: Sendable {
     public let steps: [StepResult]
 }
 
-public typealias StreamTextOnErrorCallback = @Sendable (_ event: StreamTextOnErrorEvent) async -> Void
-public typealias StreamTextOnChunkCallback = @Sendable (_ event: StreamTextOnChunkEvent) async -> Void
-public typealias StreamTextOnFinishCallback = @Sendable (_ event: StreamTextOnFinishEvent) async -> Void
-public typealias StreamTextOnAbortCallback = @Sendable (_ event: StreamTextOnAbortEvent) async -> Void
+public typealias StreamTextOnErrorCallback = @Sendable (_ event: StreamTextOnErrorEvent) async ->
+    Void
+public typealias StreamTextOnChunkCallback = @Sendable (_ event: StreamTextOnChunkEvent) async ->
+    Void
+public typealias StreamTextOnFinishCallback = @Sendable (_ event: StreamTextOnFinishEvent) async ->
+    Void
+public typealias StreamTextOnAbortCallback = @Sendable (_ event: StreamTextOnAbortEvent) async ->
+    Void
 public typealias StreamTextOnStepFinishCallback = @Sendable (_ stepResult: StepResult) async -> Void
 
 // MARK: - Internal Options
@@ -148,6 +159,11 @@ private struct ActiveReasoningContent: Sendable {
     var providerMetadata: ProviderMetadata?
 }
 
+/// Centralized pipeline state.
+///
+/// IMPORTANT:
+///  - Mutated only from `processStreamChunk` + step finalization paths.
+///  - Do not write to this state from step-emitter tasks.
 private final class StreamPipelineState: @unchecked Sendable {
     var recordedContent: [ContentPart] = []
     var recordedResponseMessages: [ResponseMessage] = []
@@ -156,14 +172,21 @@ private final class StreamPipelineState: @unchecked Sendable {
     var recordedRequest: LanguageModelRequestMetadata = LanguageModelRequestMetadata()
     var recordedWarnings: [CallWarning] = []
     var recordedSteps: [StepResult] = []
+
     var activeTextContent: [String: ActiveTextContent] = [:]
     var activeReasoningContent: [String: ActiveReasoningContent] = [:]
+
     var toolNamesByCallId: [String: String] = [:]
+
     var rootSpan: (any Span)?
     var baseTelemetryAttributes: Attributes = [:]
     var stepFinish: DelayedPromise<Void>?
+
+    // Accumulate tool calls/results produced during the current step
     var currentToolCalls: [TypedToolCall] = []
     var currentToolOutputs: [ToolOutput] = []
+
+    // Snapshot of last step tool calls/results not executed by provider (client-side)
     var lastClientToolCalls: [TypedToolCall] = []
     var lastClientToolOutputs: [ToolOutput] = []
 
@@ -212,6 +235,7 @@ private func convertModelMessagesToResponseMessages(
         }
     }
 }
+
 private func convertResponseMessagesToModelMessages(
     _ messages: [ResponseMessage]
 ) -> [ModelMessage] {
@@ -254,7 +278,7 @@ private func makeExecutionDeniedContent(_ approval: CollectedToolApproval) -> Co
 
     let payload = JSONValue.object([
         "type": .string("execution-denied"),
-        "reason": reasonValue
+        "reason": reasonValue,
     ])
 
     switch approval.toolCall {
@@ -290,15 +314,13 @@ private func toolOutputToContentPart(_ output: ToolOutput) -> ContentPart {
     }
 }
 
-
-private extension TypedToolResult {
-    var isPreliminary: Bool {
+extension TypedToolResult {
+    fileprivate var isPreliminary: Bool {
         preliminary == true
     }
 }
 
-
-// MARK: - Helpers
+// MARK: - Helpers (partial-output transform)
 
 private func createOutputTransformStream<OutputValue: Sendable, PartialOutput: Sendable>(
     stream: AsyncIterableStream<TextStreamPart>,
@@ -337,7 +359,8 @@ private func createOutputTransformStream<OutputValue: Sendable, PartialOutput: S
 
                     continuation.yield(
                         EnrichedStreamPart(
-                            part: .textDelta(id: textID, text: currentChunkText, providerMetadata: nil),
+                            part: .textDelta(
+                                id: textID, text: currentChunkText, providerMetadata: nil),
                             partialOutput: partial
                         )
                     )
@@ -355,7 +378,6 @@ private func createOutputTransformStream<OutputValue: Sendable, PartialOutput: S
                                 continuation.yield(.init(part: part, partialOutput: nil))
                                 continue
                             }
-
                             continuation.yield(.init(part: part, partialOutput: nil))
 
                         case let .textDelta(id, text, _):
@@ -447,7 +469,8 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
 
     guard (prompt == nil) || (messages == nil) else {
         throw InvalidPromptError(
-            prompt: "Prompt(system: \(system ?? "nil"), prompt: \(prompt ?? "nil"), messages: provided)",
+            prompt:
+                "Prompt(system: \(system ?? "nil"), prompt: \(prompt ?? "nil"), messages: provided)",
             message: "Provide either `prompt` or `messages`, not both."
         )
     }
@@ -496,7 +519,9 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
 // MARK: - DefaultStreamTextResult (partial implementation)
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputValue: Sendable>: StreamTextResult {
+public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputValue: Sendable>:
+    StreamTextResult
+{
     public typealias PartialOutput = PartialOutputValue
 
     private let totalUsagePromise = DelayedPromise<LanguageModelUsage>()
@@ -607,7 +632,6 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
             await self.runStreamPipeline()
         }
     }
-
 
     // MARK: - StreamTextResult
 
@@ -844,12 +868,12 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
         }
 
         let baseStream = teeBaseStream()
-
         let toolNameStore = StreamTextToolNameStore()
 
         func resolvedDynamicFlag(for id: String) async -> Bool? {
             guard let toolName = await toolNameStore.toolName(for: id),
-                  let tool = tools?[toolName] else {
+                let tool = tools?[toolName]
+            else {
                 return nil
             }
             if tool.type == .some(.dynamic) {
@@ -870,7 +894,8 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
                             continuation.yield(.textStart(id: id, providerMetadata: metadata))
 
                         case let .textDelta(id, text, metadata):
-                            continuation.yield(.textDelta(id: id, delta: text, providerMetadata: metadata))
+                            continuation.yield(
+                                .textDelta(id: id, delta: text, providerMetadata: metadata))
 
                         case let .textEnd(id, metadata):
                             continuation.yield(.textEnd(id: id, providerMetadata: metadata))
@@ -880,37 +905,42 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
 
                         case let .reasoningDelta(id, text, metadata):
                             if streamOptions.sendReasoning {
-                                continuation.yield(.reasoningDelta(id: id, delta: text, providerMetadata: metadata))
+                                continuation.yield(
+                                    .reasoningDelta(id: id, delta: text, providerMetadata: metadata)
+                                )
                             }
 
                         case let .reasoningEnd(id, metadata):
                             continuation.yield(.reasoningEnd(id: id, providerMetadata: metadata))
 
                         case let .file(file):
-                            continuation.yield(.file(
-                                url: "data:\(file.mediaType);base64,\(file.base64)",
-                                mediaType: file.mediaType,
-                                providerMetadata: nil
-                            ))
+                            continuation.yield(
+                                .file(
+                                    url: "data:\(file.mediaType);base64,\(file.base64)",
+                                    mediaType: file.mediaType,
+                                    providerMetadata: nil
+                                ))
 
                         case let .source(source):
                             guard streamOptions.sendSources else { break }
                             switch source {
                             case let .url(id, url, title, providerMetadata):
-                                continuation.yield(.sourceUrl(
-                                    sourceId: id,
-                                    url: url,
-                                    title: title,
-                                    providerMetadata: providerMetadata
-                                ))
+                                continuation.yield(
+                                    .sourceUrl(
+                                        sourceId: id,
+                                        url: url,
+                                        title: title,
+                                        providerMetadata: providerMetadata
+                                    ))
                             case let .document(id, mediaType, title, filename, providerMetadata):
-                                continuation.yield(.sourceDocument(
-                                    sourceId: id,
-                                    mediaType: mediaType,
-                                    title: title,
-                                    filename: filename,
-                                    providerMetadata: providerMetadata
-                                ))
+                                continuation.yield(
+                                    .sourceDocument(
+                                        sourceId: id,
+                                        mediaType: mediaType,
+                                        title: title,
+                                        filename: filename,
+                                        providerMetadata: providerMetadata
+                                    ))
                             }
 
                         case let .toolInputStart(id, toolName, _, providerExecuted, dynamic):
@@ -921,15 +951,17 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
                             } else {
                                 resolvedDynamic = await resolvedDynamicFlag(for: id)
                             }
-                            continuation.yield(.toolInputStart(
-                                toolCallId: id,
-                                toolName: toolName,
-                                providerExecuted: providerExecuted,
-                                dynamic: resolvedDynamic
-                            ))
+                            continuation.yield(
+                                .toolInputStart(
+                                    toolCallId: id,
+                                    toolName: toolName,
+                                    providerExecuted: providerExecuted,
+                                    dynamic: resolvedDynamic
+                                ))
 
                         case let .toolInputDelta(id, delta, _):
-                            continuation.yield(.toolInputDelta(toolCallId: id, inputTextDelta: delta))
+                            continuation.yield(
+                                .toolInputDelta(toolCallId: id, inputTextDelta: delta))
 
                         case let .toolInputEnd(id, _):
                             await toolNameStore.set(id, name: nil)
@@ -942,45 +974,52 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
                             if details.invalid {
                                 let errorText = mapErrorMessage(details.error)
 
-                                continuation.yield(.toolInputError(
-                                    toolCallId: details.toolCallId,
-                                    toolName: details.toolName,
-                                    input: details.input,
-                                    providerExecuted: details.providerExecuted,
-                                    providerMetadata: details.providerMetadata,
-                                    dynamic: resolvedDynamic,
-                                    errorText: errorText
-                                ))
+                                continuation.yield(
+                                    .toolInputError(
+                                        toolCallId: details.toolCallId,
+                                        toolName: details.toolName,
+                                        input: details.input,
+                                        providerExecuted: details.providerExecuted,
+                                        providerMetadata: details.providerMetadata,
+                                        dynamic: resolvedDynamic,
+                                        errorText: errorText
+                                    ))
                             } else {
-                                continuation.yield(.toolInputAvailable(
-                                    toolCallId: details.toolCallId,
-                                    toolName: details.toolName,
-                                    input: details.input,
-                                    providerExecuted: details.providerExecuted,
-                                    providerMetadata: details.providerMetadata,
-                                    dynamic: resolvedDynamic
-                                ))
+                                continuation.yield(
+                                    .toolInputAvailable(
+                                        toolCallId: details.toolCallId,
+                                        toolName: details.toolName,
+                                        input: details.input,
+                                        providerExecuted: details.providerExecuted,
+                                        providerMetadata: details.providerMetadata,
+                                        dynamic: resolvedDynamic
+                                    ))
                             }
 
                         case let .toolResult(result):
                             await toolNameStore.set(result.toolCallId, name: nil)
                             let resolvedDynamic = await resolvedDynamicFlag(for: result.toolCallId)
-                            continuation.yield(makeToolOutputAvailableChunk(
-                                result: result,
-                                dynamic: resolvedDynamic
-                            ))
+                            continuation.yield(
+                                makeToolOutputAvailableChunk(
+                                    result: result,
+                                    dynamic: resolvedDynamic
+                                ))
 
                         case let .toolError(error):
                             await toolNameStore.set(error.toolCallId, name: nil)
                             let resolvedDynamic = await resolvedDynamicFlag(for: error.toolCallId)
-                            continuation.yield(makeToolOutputErrorChunk(
-                                error: error,
-                                dynamic: resolvedDynamic,
-                                mapErrorMessage: mapErrorMessage
-                            ))
+                            continuation.yield(
+                                makeToolOutputErrorChunk(
+                                    error: error,
+                                    dynamic: resolvedDynamic,
+                                    mapErrorMessage: mapErrorMessage
+                                ))
 
                         case let .toolApprovalRequest(request):
-                            continuation.yield(.toolApprovalRequest(approvalId: request.approvalId, toolCallId: request.toolCall.toolCallId))
+                            continuation.yield(
+                                .toolApprovalRequest(
+                                    approvalId: request.approvalId,
+                                    toolCallId: request.toolCall.toolCallId))
 
                         case let .toolOutputDenied(denied):
                             await toolNameStore.set(denied.toolCallId, name: nil)
@@ -994,10 +1033,11 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
 
                         case .start:
                             if streamOptions.sendStart {
-                                continuation.yield(.start(
-                                    messageId: responseMessageId,
-                                    messageMetadata: metadataValue
-                                ))
+                                continuation.yield(
+                                    .start(
+                                        messageId: responseMessageId,
+                                        messageMetadata: metadataValue
+                                    ))
                             }
 
                         case .finish:
@@ -1100,8 +1140,10 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
 
     private func processStreamChunk(
         _ chunk: EnrichedStreamPart<PartialOutputValue>,
-        continuation: AsyncThrowingStream<EnrichedStreamPart<PartialOutputValue>, Error>.Continuation
+        continuation: AsyncThrowingStream<EnrichedStreamPart<PartialOutputValue>, Error>
+            .Continuation
     ) async {
+        // Fan-out to consumers
         continuation.yield(chunk)
 
         let part = chunk.part
@@ -1127,7 +1169,8 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
 
         case let .textStart(id, metadata):
             let index = state.recordedContent.count
-            state.activeTextContent[id] = ActiveTextContent(index: index, text: "", providerMetadata: metadata)
+            state.activeTextContent[id] = ActiveTextContent(
+                index: index, text: "", providerMetadata: metadata)
             state.recordedContent.append(.text(text: "", providerMetadata: metadata))
 
         case let .textDelta(id, delta, metadata):
@@ -1144,7 +1187,8 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
                 active.providerMetadata = metadata
             }
             state.activeTextContent[id] = active
-            state.recordedContent[active.index] = .text(text: active.text, providerMetadata: active.providerMetadata)
+            state.recordedContent[active.index] = .text(
+                text: active.text, providerMetadata: active.providerMetadata)
 
         case let .textEnd(id, metadata):
             guard var active = state.activeTextContent[id] else {
@@ -1159,12 +1203,14 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
                 active.providerMetadata = metadata
             }
             state.activeTextContent.removeValue(forKey: id)
-            state.recordedContent[active.index] = .text(text: active.text, providerMetadata: active.providerMetadata)
+            state.recordedContent[active.index] = .text(
+                text: active.text, providerMetadata: active.providerMetadata)
 
         case let .reasoningStart(id, metadata):
             let index = state.recordedContent.count
             let reasoning = ReasoningOutput(text: "", providerMetadata: metadata)
-            state.activeReasoningContent[id] = ActiveReasoningContent(index: index, text: "", providerMetadata: metadata)
+            state.activeReasoningContent[id] = ActiveReasoningContent(
+                index: index, text: "", providerMetadata: metadata)
             state.recordedContent.append(.reasoning(reasoning))
 
         case let .reasoningDelta(id, delta, metadata):
@@ -1181,7 +1227,8 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
                 active.providerMetadata = metadata
             }
             state.activeReasoningContent[id] = active
-            let reasoning = ReasoningOutput(text: active.text, providerMetadata: active.providerMetadata)
+            let reasoning = ReasoningOutput(
+                text: active.text, providerMetadata: active.providerMetadata)
             state.recordedContent[active.index] = .reasoning(reasoning)
 
         case let .reasoningEnd(id, metadata):
@@ -1197,7 +1244,8 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
                 active.providerMetadata = metadata
             }
             state.activeReasoningContent.removeValue(forKey: id)
-            let reasoning = ReasoningOutput(text: active.text, providerMetadata: active.providerMetadata)
+            let reasoning = ReasoningOutput(
+                text: active.text, providerMetadata: active.providerMetadata)
             state.recordedContent[active.index] = .reasoning(reasoning)
 
         case let .file(file):
@@ -1207,17 +1255,24 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
             state.recordedContent.append(.source(type: "source", source: source))
 
         case let .toolCall(toolCall):
+            // Centralized collection of calls for step-continuation logic
             state.toolNamesByCallId[toolCall.toolCallId] = toolCall.toolName
-            state.recordedContent.append(.toolCall(toolCall, providerMetadata: toolCall.providerMetadata))
+            state.recordedContent.append(
+                .toolCall(toolCall, providerMetadata: toolCall.providerMetadata))
+            state.currentToolCalls.append(toolCall)
 
         case let .toolResult(result):
+            // Ignore preliminary to stabilize client continuation checks
             guard !result.isPreliminary else { break }
-            state.recordedContent.append(.toolResult(result, providerMetadata: result.providerMetadata))
+            state.recordedContent.append(
+                .toolResult(result, providerMetadata: result.providerMetadata))
             state.toolNamesByCallId.removeValue(forKey: result.toolCallId)
+            state.currentToolOutputs.append(.result(result))
 
         case let .toolError(errorValue):
             state.recordedContent.append(.toolError(errorValue, providerMetadata: nil))
             state.toolNamesByCallId.removeValue(forKey: errorValue.toolCallId)
+            state.currentToolOutputs.append(.error(errorValue))
 
         case let .toolApprovalRequest(request):
             state.recordedContent.append(.toolApprovalRequest(request))
@@ -1253,18 +1308,19 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
             }
 
         case .start,
-             .abort,
-             .raw:
+            .abort,
+            .raw:
             break
-
         }
     }
 
     private func finishProcessedStream(
-        continuation: AsyncThrowingStream<EnrichedStreamPart<PartialOutputValue>, Error>.Continuation
+        continuation: AsyncThrowingStream<EnrichedStreamPart<PartialOutputValue>, Error>
+            .Continuation
     ) async {
         if state.recordedSteps.isEmpty {
-            let error = NoOutputGeneratedError(message: "No output generated. Check the stream for errors.")
+            let error = NoOutputGeneratedError(
+                message: "No output generated. Check the stream for errors.")
             finishReasonPromise.reject(error)
             totalUsagePromise.reject(error)
             stepsPromise.reject(error)
@@ -1311,7 +1367,9 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
         continuation.finish()
     }
 
-    private func teeBaseStream() -> AsyncThrowingStream<EnrichedStreamPart<PartialOutputValue>, Error> {
+    private func teeBaseStream() -> AsyncThrowingStream<
+        EnrichedStreamPart<PartialOutputValue>, Error
+    > {
         let (primary, secondary) = teeAsyncThrowingStream(baseStream.asAsyncThrowingStream())
         baseStream = createAsyncIterableStream(source: secondary)
         return primary
@@ -1338,7 +1396,8 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
         )
 
         return createAsyncIterableStream(
-            source: AsyncThrowingStream<EnrichedStreamPart<PartialOutputValue>, Error> { continuation in
+            source: AsyncThrowingStream<EnrichedStreamPart<PartialOutputValue>, Error> {
+                continuation in
                 _ = Task { [weak self] in
                     guard let self else {
                         continuation.finish()
@@ -1365,15 +1424,15 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
     private func shouldInvokeOnChunk(part: TextStreamPart) -> Bool {
         switch part {
         case .textDelta,
-             .reasoningDelta,
-             .source,
-             .toolCall,
-             .toolInputStart,
-             .toolInputDelta,
-             .toolResult,
-             .toolError,
-             .toolOutputDenied,
-             .raw:
+            .reasoningDelta,
+            .source,
+            .toolCall,
+            .toolInputStart,
+            .toolInputDelta,
+            .toolResult,
+            .toolError,
+            .toolOutputDenied,
+            .raw:
             return true
         default:
             return false
@@ -1382,7 +1441,8 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
 
     private func emitConsistencyError(
         message: String,
-        continuation: AsyncThrowingStream<EnrichedStreamPart<PartialOutputValue>, Error>.Continuation
+        continuation: AsyncThrowingStream<EnrichedStreamPart<PartialOutputValue>, Error>
+            .Continuation
     ) {
         let errorPart = StreamTextConsistencyError(message: message)
         continuation.yield(
@@ -1398,7 +1458,8 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
         usage: LanguageModelUsage,
         finishReason: FinishReason,
         providerMetadata: ProviderMetadata?,
-        continuation: AsyncThrowingStream<EnrichedStreamPart<PartialOutputValue>, Error>.Continuation
+        continuation: AsyncThrowingStream<EnrichedStreamPart<PartialOutputValue>, Error>
+            .Continuation
     ) async {
         let contentSnapshot = state.recordedContent
         let stepModelMessages = toResponseMessages(
@@ -1428,6 +1489,7 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
         state.recordedSteps.append(stepResult)
         state.recordedResponseMessages.append(contentsOf: responseMessages)
 
+        // FIX: compute client-side tool activity deterministically from centralized state
         let clientToolCalls = state.currentToolCalls.filter { $0.providerExecuted != true }
         let clientToolOutputs = state.currentToolOutputs.filter { $0.providerExecuted != true }
         state.lastClientToolCalls = clientToolCalls
@@ -1499,109 +1561,120 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
                 tracer: tracer,
                 attributes: outerAttributes,
                 fn: { span in
-                self.state.rootSpan = span
+                    self.state.rootSpan = span
 
-                let standardizedPrompt = try standardizePrompt(self.prompt)
-                let initialMessages = standardizedPrompt.messages
+                    let standardizedPrompt = try standardizePrompt(self.prompt)
+                    let initialMessages = standardizedPrompt.messages
 
-                var responseMessages: [ResponseMessage] = []
-                var accumulatedUsage = LanguageModelUsage()
-                var initialResponseMessages: [ResponseMessage] = []
+                    var responseMessages: [ResponseMessage] = []
+                    var accumulatedUsage = LanguageModelUsage()
+                    var initialResponseMessages: [ResponseMessage] = []
 
-                let approvals = collectToolApprovals(messages: initialMessages)
+                    let approvals = collectToolApprovals(messages: initialMessages)
 
-                if !approvals.approvedToolApprovals.isEmpty || !approvals.deniedToolApprovals.isEmpty {
-                    var approvalTask: Task<[ContentPart], Never>?
+                    if !approvals.approvedToolApprovals.isEmpty
+                        || !approvals.deniedToolApprovals.isEmpty
+                    {
+                        var approvalTask: Task<[ContentPart], Never>?
 
-                    let approvalStream = createAsyncIterableStream(
-                        source: AsyncThrowingStream<TextStreamPart, Error>(bufferingPolicy: .unbounded) { continuation in
-                            approvalTask = Task { [weak self] in
-                                guard let self else {
-                                    continuation.finish()
-                                    return []
-                                }
+                        let approvalStream = createAsyncIterableStream(
+                            source: AsyncThrowingStream<TextStreamPart, Error>(
+                                bufferingPolicy: .unbounded
+                            ) { continuation in
+                                approvalTask = Task { [weak self] in
+                                    guard let self else {
+                                        continuation.finish()
+                                        return []
+                                    }
 
-                                var content: [ContentPart] = []
+                                    var content: [ContentPart] = []
 
-                                for denied in approvals.deniedToolApprovals {
-                                    let deniedEvent = ToolOutputDenied(
-                                        toolCallId: denied.toolCall.toolCallId,
-                                        toolName: denied.toolCall.toolName,
-                                        providerExecuted: denied.toolCall.providerExecuted
-                                    )
-                                    continuation.yield(.toolOutputDenied(deniedEvent))
-                                    content.append(makeExecutionDeniedContent(denied))
-                                }
+                                    for denied in approvals.deniedToolApprovals {
+                                        let deniedEvent = ToolOutputDenied(
+                                            toolCallId: denied.toolCall.toolCallId,
+                                            toolName: denied.toolCall.toolName,
+                                            providerExecuted: denied.toolCall.providerExecuted
+                                        )
+                                        continuation.yield(.toolOutputDenied(deniedEvent))
+                                        content.append(makeExecutionDeniedContent(denied))
+                                    }
 
-                                if !approvals.approvedToolApprovals.isEmpty {
-                                    await withTaskGroup(of: ToolOutput?.self) { group in
-                                        for approved in approvals.approvedToolApprovals {
-                                            group.addTask {
-                                                await executeToolCall(
-                                                    toolCall: approved.toolCall,
-                                                    tools: self.tools,
-                                                    tracer: tracer,
-                                                    telemetry: self.telemetry,
-                                                    messages: initialMessages,
-                                                    abortSignal: self.settings.abortSignal,
-                                                    experimentalContext: self.experimentalContext,
-                                                    onPreliminaryToolResult: { result in
-                                                        continuation.yield(.toolResult(result))
-                                                    }
-                                                )
-                                            }
-                                        }
-
-                                        for await output in group {
-                                            guard let output else { continue }
-
-                                            switch output {
-                                            case .result(let result):
-                                                continuation.yield(.toolResult(result))
-                                            case .error(let error):
-                                                continuation.yield(.toolError(error))
+                                    if !approvals.approvedToolApprovals.isEmpty {
+                                        await withTaskGroup(of: ToolOutput?.self) { group in
+                                            for approved in approvals.approvedToolApprovals {
+                                                group.addTask {
+                                                    await executeToolCall(
+                                                        toolCall: approved.toolCall,
+                                                        tools: self.tools,
+                                                        tracer: tracer,
+                                                        telemetry: self.telemetry,
+                                                        messages: initialMessages,
+                                                        abortSignal: self.settings.abortSignal,
+                                                        experimentalContext: self
+                                                            .experimentalContext,
+                                                        onPreliminaryToolResult: { result in
+                                                            continuation.yield(.toolResult(result))
+                                                        }
+                                                    )
+                                                }
                                             }
 
-                                            content.append(toolOutputToContentPart(output))
+                                            for await output in group {
+                                                guard let output else { continue }
+
+                                                switch output {
+                                                case .result(let result):
+                                                    continuation.yield(.toolResult(result))
+                                                case .error(let error):
+                                                    continuation.yield(.toolError(error))
+                                                }
+
+                                                content.append(toolOutputToContentPart(output))
+                                            }
                                         }
                                     }
+
+                                    continuation.finish()
+                                    return content
                                 }
-
-                                continuation.finish()
-                                return content
                             }
+                        )
+
+                        try await self.addStream(approvalStream)
+
+                        let approvalContent = await approvalTask?.value ?? []
+                        if !approvalContent.isEmpty {
+                            let modelMessages = toResponseMessages(
+                                content: approvalContent, tools: self.tools)
+                            let approvalResponses = convertModelMessagesToResponseMessages(
+                                modelMessages)
+                            initialResponseMessages.append(contentsOf: approvalResponses)
                         }
-                    )
-
-                    try await self.addStream(approvalStream)
-
-                    let approvalContent = await approvalTask?.value ?? []
-                    if !approvalContent.isEmpty {
-                        let modelMessages = toResponseMessages(content: approvalContent, tools: self.tools)
-                        let approvalResponses = convertModelMessagesToResponseMessages(modelMessages)
-                        initialResponseMessages.append(contentsOf: approvalResponses)
                     }
-                }
 
-                responseMessages = initialResponseMessages
+                    responseMessages = initialResponseMessages
 
-                self.state.recordedResponseMessages = []
+                    self.state.recordedResponseMessages = []
 
-                try await self.executeStep(
-                    stepNumber: 0,
-                    standardizedPrompt: standardizedPrompt,
-                    initialMessages: initialMessages,
-                    responseMessages: &responseMessages,
-                    accumulatedUsage: &accumulatedUsage,
-                    retries: preparedRetries,
-                    preparedCallSettings: preparedCallSettings,
-                    tracer: tracer
-                )
-            }, endWhenDone: false)
+                    try await self.executeStep(
+                        stepNumber: 0,
+                        standardizedPrompt: standardizedPrompt,
+                        initialMessages: initialMessages,
+                        responseMessages: &responseMessages,
+                        accumulatedUsage: &accumulatedUsage,
+                        retries: preparedRetries,
+                        preparedCallSettings: preparedCallSettings,
+                        tracer: tracer
+                    )
+                }, endWhenDone: false)
         } catch {
             await emitStreamError(error)
         }
     }
+
+    // MARK: - Step Execution
+
+
 
     private func executeStep(
         stepNumber: Int,
@@ -1784,18 +1857,24 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
                             switch part {
                             case let .textStart(id, providerMetadata):
                                 continuation.yield(.textStart(id: id, providerMetadata: providerMetadata))
+
                             case let .textDelta(id, delta, providerMetadata):
                                 guard !delta.isEmpty else { continue }
                                 continuation.yield(.textDelta(id: id, text: delta, providerMetadata: providerMetadata))
                                 activeText += delta
+
                             case let .textEnd(id, providerMetadata):
                                 continuation.yield(.textEnd(id: id, providerMetadata: providerMetadata))
+
                             case let .reasoningStart(id, providerMetadata):
                                 continuation.yield(.reasoningStart(id: id, providerMetadata: providerMetadata))
+
                             case let .reasoningDelta(id, delta, providerMetadata):
                                 continuation.yield(.reasoningDelta(id: id, text: delta, providerMetadata: providerMetadata))
+
                             case let .reasoningEnd(id, providerMetadata):
                                 continuation.yield(.reasoningEnd(id: id, providerMetadata: providerMetadata))
+
                             case let .toolInputStart(id, toolName, providerMetadata, providerExecuted):
                                 activeToolCallNames[id] = toolName
                                 if let tool = self.tools?[toolName],
@@ -1819,6 +1898,7 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
                                     providerExecuted: providerExecuted,
                                     dynamic: dynamicFlag
                                 ))
+
                             case let .toolInputDelta(id, delta, providerMetadata):
                                 if let toolName = activeToolCallNames[id],
                                    let tool = self.tools?[toolName],
@@ -1833,31 +1913,35 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
                                     try await onInputDelta(options)
                                 }
                                 continuation.yield(.toolInputDelta(id: id, delta: delta, providerMetadata: providerMetadata))
+
                             case let .toolInputEnd(id, providerMetadata):
                                 activeToolCallNames.removeValue(forKey: id)
                                 continuation.yield(.toolInputEnd(id: id, providerMetadata: providerMetadata))
+
                             case let .toolCall(toolCall):
                                 activeToolCallNames[toolCall.toolCallId] = toolCall.toolName
                                 stepToolCalls.append(toolCall)
                                 continuation.yield(.toolCall(toolCall))
+
                             case let .toolResult(result):
                                 continuation.yield(.toolResult(result))
                                 if result.isPreliminary != true {
-                                    let toolOutput = ToolOutput.result(result)
-                                    stepToolOutputs.append(toolOutput)
+                                    stepToolOutputs.append(.result(result))
                                 }
-                                state.toolNamesByCallId.removeValue(forKey: result.toolCallId)
+
                             case let .toolError(error):
                                 continuation.yield(.toolError(error))
-                                let toolOutput = ToolOutput.error(error)
-                                stepToolOutputs.append(toolOutput)
-                                state.toolNamesByCallId.removeValue(forKey: error.toolCallId)
+                                stepToolOutputs.append(.error(error))
+
                             case let .toolApprovalRequest(request):
                                 continuation.yield(.toolApprovalRequest(request))
+
                             case let .source(source):
                                 continuation.yield(.source(source))
+
                             case let .file(file):
                                 continuation.yield(.file(file))
+
                             case let .finish(finishReason, usage, providerMetadata):
                                 stepFinishReason = finishReason
                                 stepUsage = usage
@@ -1873,17 +1957,21 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
                                 }
                                 doStreamSpan.addEvent("ai.stream.finish", attributes: nil)
                                 doStreamSpan.setAttributes(finishMetrics)
+
                             case let .responseMetadata(id, timestamp, modelId):
                                 if let id { stepResponseId = id }
                                 if let timestamp { stepResponseTimestamp = timestamp }
                                 if let modelId { stepResponseModelId = modelId }
+
                             case let .raw(rawValue):
                                 if includeRawChunks {
                                     continuation.yield(.raw(rawValue: rawValue))
                                 }
+
                             case let .error(error):
                                 continuation.yield(.error(error))
                                 stepFinishReason = .error
+
                             default:
                                 break
                             }
@@ -1923,8 +2011,8 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
                         }
 
                         doStreamSpan.end()
-
                         continuation.finish()
+
                     } catch {
                         doStreamSpan.end()
                         continuation.finish(throwing: error)
@@ -2021,42 +2109,7 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
     }
 }
 
-extension AsyncIterableStream {
-    func map<T>(_ transform: @escaping @Sendable (Element) -> T) -> AsyncIterableStream<T> {
-        createAsyncIterableStream(
-            source: AsyncThrowingStream<T, Error> { continuation in
-                Task {
-                    do {
-                        for try await value in self {
-                            continuation.yield(transform(value))
-                        }
-                        continuation.finish()
-                    } catch {
-                        continuation.finish(throwing: error)
-                    }
-                }
-            }
-        )
-    }
-
-    func asAsyncThrowingStream() -> AsyncThrowingStream<Element, Error> {
-        AsyncThrowingStream { continuation in
-            Task {
-                do {
-                    for try await value in self {
-                        continuation.yield(value)
-                    }
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
-                }
-            }
-        }
-    }
-}
-
-@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-extension DefaultStreamTextResult: @unchecked Sendable {}
+// ---- Телеметрия и вспомогательные функции ----
 
 private func buildStreamInnerTelemetryAttributes(
     telemetry: TelemetrySettings?,
@@ -2313,5 +2366,45 @@ private struct ToolCallTelemetrySummary: Encodable {
 private extension Date {
     var iso8601String: String {
         ISO8601DateFormatter().string(from: self)
+    }
+}
+
+// Keep Sendability explicitly
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+extension DefaultStreamTextResult: @unchecked Sendable {}
+
+// Generic stream helpers
+
+extension AsyncIterableStream {
+    func map<T>(_ transform: @escaping @Sendable (Element) -> T) -> AsyncIterableStream<T> {
+        createAsyncIterableStream(
+            source: AsyncThrowingStream<T, Error> { continuation in
+                Task {
+                    do {
+                        for try await value in self {
+                            continuation.yield(transform(value))
+                        }
+                        continuation.finish()
+                    } catch {
+                        continuation.finish(throwing: error)
+                    }
+                }
+            }
+        )
+    }
+
+    func asAsyncThrowingStream() -> AsyncThrowingStream<Element, Error> {
+        AsyncThrowingStream { continuation in
+            Task {
+                do {
+                    for try await value in self {
+                        continuation.yield(value)
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+        }
     }
 }
