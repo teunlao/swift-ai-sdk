@@ -33,13 +33,20 @@ import AISDKProviderUtils
  - Stream consumption helpers
  - Response piping (pipeTextStreamToResponse, toTextStreamResponse)
 
- ⏳ **TODO: Multi-Step & Tools (Phase 4)**
- - Tool execution and streaming
- - Multi-step execution with stop conditions
- - Tool results tracking
- - Step iteration
+ ✅ **Phase 4: Tool Support (Completed)**
+ - toolCalls: [TypedToolCall] property
+ - staticToolCalls: [StaticToolCall] filtering
+ - dynamicToolCalls: [DynamicToolCall] filtering
+ - toolResults: [TypedToolResult] property
+ - staticToolResults: [StaticToolResult] filtering
+ - dynamicToolResults: [DynamicToolResult] filtering
+ - Tool call/result tracking in content
+ - Tool event processing in stream pipeline
 
  ⏳ **TODO: Advanced Features (Phase 5)**
+ - Multi-step execution with stop conditions
+ - Automatic tool execution
+ - Step iteration
  - Telemetry support
  - Transforms pipeline
  - UI message streams
@@ -96,6 +103,11 @@ private actor StreamStateV2 {
     var responseTimestamp: Date = Date()
     var responseModelId: String = ""
     var providerMetadata: ProviderMetadata?
+
+    // Tool tracking
+    var recordedToolCalls: [TypedToolCall] = []
+    var recordedToolResults: [TypedToolResult] = []
+    var toolNamesByCallId: [String: String] = [:]
 
     struct ActiveTextContent {
         var index: Int
@@ -263,6 +275,32 @@ private actor StreamStateV2 {
 
     func getProviderMetadata() -> ProviderMetadata? {
         providerMetadata
+    }
+
+    // Tool management
+    func addToolCall(_ toolCall: TypedToolCall) {
+        recordedToolCalls.append(toolCall)
+        recordedContent.append(.toolCall(toolCall, providerMetadata: toolCall.providerMetadata))
+        toolNamesByCallId[toolCall.toolCallId] = toolCall.toolName
+    }
+
+    func addToolResult(_ result: TypedToolResult) {
+        recordedToolResults.append(result)
+        recordedContent.append(.toolResult(result, providerMetadata: result.providerMetadata))
+        toolNamesByCallId.removeValue(forKey: result.toolCallId)
+    }
+
+    func addToolError(_ error: TypedToolError) {
+        recordedContent.append(.toolError(error, providerMetadata: nil))
+        toolNamesByCallId.removeValue(forKey: error.toolCallId)
+    }
+
+    func getToolCalls() -> [TypedToolCall] {
+        recordedToolCalls
+    }
+
+    func getToolResults() -> [TypedToolResult] {
+        recordedToolResults
     }
 }
 
@@ -458,6 +496,66 @@ public final class DefaultStreamTextResultV2: Sendable {
         }
     }
 
+    public var toolCalls: [TypedToolCall] {
+        get async throws {
+            await state.getToolCalls()
+        }
+    }
+
+    public var staticToolCalls: [StaticToolCall] {
+        get async throws {
+            let calls = await state.getToolCalls()
+            return calls.compactMap { call in
+                if case .static(let staticCall) = call {
+                    return staticCall
+                }
+                return nil
+            }
+        }
+    }
+
+    public var dynamicToolCalls: [DynamicToolCall] {
+        get async throws {
+            let calls = await state.getToolCalls()
+            return calls.compactMap { call in
+                if case .dynamic(let dynamicCall) = call {
+                    return dynamicCall
+                }
+                return nil
+            }
+        }
+    }
+
+    public var toolResults: [TypedToolResult] {
+        get async throws {
+            await state.getToolResults()
+        }
+    }
+
+    public var staticToolResults: [StaticToolResult] {
+        get async throws {
+            let results = await state.getToolResults()
+            return results.compactMap { result in
+                if case .static(let staticResult) = result {
+                    return staticResult
+                }
+                return nil
+            }
+        }
+    }
+
+    public var dynamicToolResults: [DynamicToolResult] {
+        get async throws {
+            let results = await state.getToolResults()
+            return results.compactMap { result in
+                if case .dynamic(let dynamicResult) = result {
+                    return dynamicResult
+                }
+                return nil
+            }
+        }
+    }
+
     public var fullStream: AsyncThrowingStream<TextStreamPart, Error> {
         AsyncThrowingStream { continuation in
             Task { [weak self] in
@@ -633,7 +731,7 @@ public final class DefaultStreamTextResultV2: Sendable {
 
     private func shouldInvokeOnChunk(_ part: TextStreamPart) -> Bool {
         switch part {
-        case .textDelta, .reasoningDelta, .source, .file:
+        case .textDelta, .reasoningDelta, .source, .file, .toolCall, .toolResult:
             return true
         default:
             return false
@@ -698,10 +796,67 @@ public final class DefaultStreamTextResultV2: Sendable {
             return .file(generatedFile)
         case .source(let source):
             return .source(source)
+        case .toolCall(let toolCall):
+            // Convert LanguageModelV3ToolCall to TypedToolCall
+            // Parse the input JSON string to JSONValue
+            let inputJSON: JSONValue
+            if let data = toolCall.input.data(using: .utf8),
+               let parsed = try? JSONDecoder().decode(JSONValue.self, from: data) {
+                inputJSON = parsed
+            } else {
+                inputJSON = .null
+            }
+
+            let typedToolCall = TypedToolCall.static(StaticToolCall(
+                toolCallId: toolCall.toolCallId,
+                toolName: toolCall.toolName,
+                input: inputJSON,
+                providerExecuted: toolCall.providerExecuted,
+                providerMetadata: toolCall.providerMetadata
+            ))
+            return .toolCall(typedToolCall)
+        case .toolResult(let result):
+            // Convert LanguageModelV3ToolResult to TypedToolResult
+            // For Phase 4, we use .null for input since we don't track the original call input here
+            // The output is the result from the tool execution
+            let typedToolResult = TypedToolResult.static(StaticToolResult(
+                toolCallId: result.toolCallId,
+                toolName: result.toolName,
+                input: .null,  // Would need to track corresponding call to fill this
+                output: result.result,
+                providerExecuted: result.providerExecuted,
+                preliminary: result.preliminary,
+                providerMetadata: result.providerMetadata
+            ))
+            return .toolResult(typedToolResult)
         case .finish(let reason, let usage, _):
             return .finish(finishReason: reason, totalUsage: usage)
         default:
             return .start // Placeholder for unsupported parts
+        }
+    }
+
+    private func convertToJSONValue(_ value: Any) -> JSONValue {
+        if let string = value as? String {
+            return .string(string)
+        } else if let number = value as? Double {
+            return .number(number)
+        } else if let number = value as? Int {
+            return .number(Double(number))
+        } else if let bool = value as? Bool {
+            return .bool(bool)
+        } else if let array = value as? [Any] {
+            return .array(array.map { convertToJSONValue($0) })
+        } else if let dict = value as? [String: Any] {
+            var object: [String: JSONValue] = [:]
+            for (key, val) in dict {
+                object[key] = convertToJSONValue(val)
+            }
+            return .object(object)
+        } else if value is NSNull {
+            return .null
+        } else {
+            return .null
         }
     }
 
@@ -731,6 +886,15 @@ public final class DefaultStreamTextResultV2: Sendable {
 
         case .source(let source):
             await state.addSource(source)
+
+        case .toolCall(let toolCall):
+            await state.addToolCall(toolCall)
+
+        case .toolResult(let result):
+            await state.addToolResult(result)
+
+        case .toolError(let error):
+            await state.addToolError(error)
 
         case .finish(let reason, let usage):
             await state.setFinishReason(reason)
