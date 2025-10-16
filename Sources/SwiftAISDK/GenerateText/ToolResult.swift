@@ -39,13 +39,17 @@ public struct StaticToolResult: Sendable {
     /// Whether this is a preliminary result (for streaming tool execution).
     public let preliminary: Bool?
 
+    /// Provider-specific metadata for the tool result.
+    public let providerMetadata: ProviderMetadata?
+
     public init(
         toolCallId: String,
         toolName: String,
         input: JSONValue,
         output: JSONValue,
         providerExecuted: Bool? = nil,
-        preliminary: Bool? = nil
+        preliminary: Bool? = nil,
+        providerMetadata: ProviderMetadata? = nil
     ) {
         self.toolCallId = toolCallId
         self.toolName = toolName
@@ -54,6 +58,7 @@ public struct StaticToolResult: Sendable {
         self.providerExecuted = providerExecuted
         self.dynamic = false
         self.preliminary = preliminary
+        self.providerMetadata = providerMetadata
     }
 }
 
@@ -85,13 +90,17 @@ public struct DynamicToolResult: Sendable {
     /// Whether this is a preliminary result (for streaming tool execution).
     public let preliminary: Bool?
 
+    /// Provider-specific metadata for the tool result.
+    public let providerMetadata: ProviderMetadata?
+
     public init(
         toolCallId: String,
         toolName: String,
         input: JSONValue,
         output: JSONValue,
         providerExecuted: Bool? = nil,
-        preliminary: Bool? = nil
+        preliminary: Bool? = nil,
+        providerMetadata: ProviderMetadata? = nil
     ) {
         self.toolCallId = toolCallId
         self.toolName = toolName
@@ -99,6 +108,7 @@ public struct DynamicToolResult: Sendable {
         self.output = output
         self.providerExecuted = providerExecuted
         self.preliminary = preliminary
+        self.providerMetadata = providerMetadata
     }
 }
 
@@ -163,6 +173,14 @@ public enum TypedToolResult: Sendable {
         switch self {
         case .static(let result): return result.preliminary
         case .dynamic(let result): return result.preliminary
+        }
+    }
+
+    /// Provider-specific metadata for the tool result.
+    public var providerMetadata: ProviderMetadata? {
+        switch self {
+        case .static(let result): return result.providerMetadata
+        case .dynamic(let result): return result.providerMetadata
         }
     }
 }

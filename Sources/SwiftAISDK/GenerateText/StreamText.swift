@@ -284,7 +284,7 @@ private func makeExecutionDeniedContent(_ approval: CollectedToolApproval) -> Co
 private func toolOutputToContentPart(_ output: ToolOutput) -> ContentPart {
     switch output {
     case .result(let result):
-        return .toolResult(result, providerMetadata: nil)
+        return .toolResult(result, providerMetadata: result.providerMetadata)
     case .error(let error):
         return .toolError(error, providerMetadata: nil)
     }
@@ -293,21 +293,7 @@ private func toolOutputToContentPart(_ output: ToolOutput) -> ContentPart {
 
 private extension TypedToolResult {
     var isPreliminary: Bool {
-        switch self {
-        case .static(let result):
-            return result.preliminary == true
-        case .dynamic(let result):
-            return result.preliminary == true
-        }
-    }
-
-    var providerMetadata: ProviderMetadata? {
-        switch self {
-        case .static:
-            return nil
-        case .dynamic:
-            return nil
-        }
+        preliminary == true
     }
 }
 
