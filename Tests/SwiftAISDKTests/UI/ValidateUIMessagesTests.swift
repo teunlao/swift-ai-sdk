@@ -11,7 +11,7 @@ struct ValidateUIMessagesTests {
     @Test("throws when messages parameter is nil")
     func throwsWhenMessagesNil() async {
         do {
-            _ = try await validateUIMessages(messages: nil as Any?)
+            let _: [UIMessage] = try await validateUIMessages(messages: nil as Any?)
             Issue.record("Expected validateUIMessages to throw")
         } catch {
             #expect(InvalidArgumentError.isInstance(error))
@@ -21,10 +21,25 @@ struct ValidateUIMessagesTests {
     @Test("throws when messages parameter is NSNull")
     func throwsWhenMessagesNull() async {
         do {
-            _ = try await validateUIMessages(messages: NSNull())
+            let _: [UIMessage] = try await validateUIMessages(messages: NSNull())
             Issue.record("Expected validateUIMessages to throw")
         } catch {
             #expect(InvalidArgumentError.isInstance(error))
+        }
+    }
+
+    @Test("throws when parts field missing")
+    func throwsWhenPartsMissing() async {
+        do {
+            let _: [UIMessage] = try await validateUIMessages(messages: [
+                [
+                    "id": "1",
+                    "role": "user"
+                ]
+            ])
+            Issue.record("Expected validateUIMessages to throw")
+        } catch {
+            #expect(TypeValidationError.isInstance(error))
         }
     }
 
@@ -32,7 +47,7 @@ struct ValidateUIMessagesTests {
 
     @Test("validates metadata without schema")
     func validatesMetadataWithoutSchema() async throws {
-        let messages = try await validateUIMessages(messages: [
+        let messages: [UIMessage] = try await validateUIMessages(messages: [
             [
                 "id": "1",
                 "role": "user",
@@ -66,7 +81,7 @@ struct ValidateUIMessagesTests {
             ])
         ))
 
-        let messages = try await validateUIMessages(
+        let messages: [UIMessage] = try await validateUIMessages(
             messages: [
                 [
                     "id": "1",
@@ -104,7 +119,7 @@ struct ValidateUIMessagesTests {
         ))
 
         do {
-            _ = try await validateUIMessages(
+            let _: [UIMessage] = try await validateUIMessages(
                 messages: [
                     [
                         "id": "1",
@@ -125,7 +140,7 @@ struct ValidateUIMessagesTests {
 
     @Test("validates text provider metadata")
     func validatesTextProviderMetadata() async throws {
-        let messages = try await validateUIMessages(messages: [
+        let messages: [UIMessage] = try await validateUIMessages(messages: [
             [
                 "id": "1",
                 "role": "user",
@@ -171,7 +186,7 @@ struct ValidateUIMessagesTests {
 
     @Test("validates user text message")
     func validatesTextPart() async throws {
-        let messages = try await validateUIMessages(messages: [
+        let messages: [UIMessage] = try await validateUIMessages(messages: [
             [
                 "id": "1",
                 "role": "user",
@@ -193,7 +208,7 @@ struct ValidateUIMessagesTests {
 
     @Test("validates reasoning part")
     func validatesReasoningPart() async throws {
-        let messages = try await validateUIMessages(messages: [
+        let messages: [UIMessage] = try await validateUIMessages(messages: [
             [
                 "id": "1",
                 "role": "assistant",
@@ -215,7 +230,7 @@ struct ValidateUIMessagesTests {
 
     @Test("validates source url part")
     func validatesSourceUrlPart() async throws {
-        let messages = try await validateUIMessages(messages: [
+        let messages: [UIMessage] = try await validateUIMessages(messages: [
             [
                 "id": "1",
                 "role": "assistant",
@@ -251,7 +266,7 @@ struct ValidateUIMessagesTests {
 
     @Test("validates source document part")
     func validatesSourceDocumentPart() async throws {
-        let messages = try await validateUIMessages(messages: [
+        let messages: [UIMessage] = try await validateUIMessages(messages: [
             [
                 "id": "1",
                 "role": "assistant",
@@ -289,7 +304,7 @@ struct ValidateUIMessagesTests {
 
     @Test("validates file part")
     func validatesFilePart() async throws {
-        let messages = try await validateUIMessages(messages: [
+        let messages: [UIMessage] = try await validateUIMessages(messages: [
             [
                 "id": "1",
                 "role": "assistant",
@@ -324,7 +339,7 @@ struct ValidateUIMessagesTests {
 
     @Test("validates step-start part")
     func validatesStepStartPart() async throws {
-        let messages = try await validateUIMessages(messages: [
+        let messages: [UIMessage] = try await validateUIMessages(messages: [
             [
                 "id": "1",
                 "role": "assistant",
@@ -371,7 +386,7 @@ struct ValidateUIMessagesTests {
             ))
         ]
 
-        let messages = try await validateUIMessages(
+        let messages: [UIMessage] = try await validateUIMessages(
             messages: [
                 [
                     "id": "1",
@@ -414,7 +429,7 @@ struct ValidateUIMessagesTests {
         ]
 
         do {
-            _ = try await validateUIMessages(
+            let _: [UIMessage] = try await validateUIMessages(
                 messages: [
                     [
                         "id": "1",
@@ -435,7 +450,7 @@ struct ValidateUIMessagesTests {
     @Test("throws when data schema missing")
     func throwsWhenDataSchemaMissing() async {
         do {
-            _ = try await validateUIMessages(
+            let _: [UIMessage] = try await validateUIMessages(
                 messages: [
                     [
                         "id": "1",
@@ -459,7 +474,7 @@ struct ValidateUIMessagesTests {
 
     @Test("validates dynamic tool part input-streaming")
     func validatesDynamicToolInputStreaming() async throws {
-        let messages = try await validateUIMessages(messages: [
+        let messages: [UIMessage] = try await validateUIMessages(messages: [
             [
                 "id": "1",
                 "role": "assistant",
@@ -504,7 +519,7 @@ struct ValidateUIMessagesTests {
             "provider": ["meta": .string("value")]
         ]
 
-        let messages = try await validateUIMessages(messages: [
+        let messages: [UIMessage] = try await validateUIMessages(messages: [
             [
                 "id": "1",
                 "role": "assistant",
@@ -552,7 +567,7 @@ struct ValidateUIMessagesTests {
             "provider": ["meta": .string("value")]
         ]
 
-        let messages = try await validateUIMessages(messages: [
+        let messages: [UIMessage] = try await validateUIMessages(messages: [
             [
                 "id": "1",
                 "role": "assistant",
@@ -596,13 +611,148 @@ struct ValidateUIMessagesTests {
         ])
     }
 
+    @Test("throws when dynamic tool output-available missing output")
+    func throwsDynamicToolMissingOutput() async {
+        do {
+            let _: [UIMessage] = try await validateUIMessages(messages: [
+                [
+                    "id": "1",
+                    "role": "assistant",
+                    "parts": [
+                        [
+                            "type": "dynamic-tool",
+                            "toolName": "foo",
+                            "toolCallId": "1",
+                            "state": "output-available",
+                            "input": ["foo": "bar"]
+                        ]
+                    ]
+                ]
+            ])
+            Issue.record("Expected validateUIMessages to throw")
+        } catch {
+            #expect(TypeValidationError.isInstance(error))
+        }
+    }
+
+    @Test("throws when dynamic tool output-error missing errorText")
+    func throwsDynamicToolMissingErrorText() async {
+        do {
+            let _: [UIMessage] = try await validateUIMessages(messages: [
+                [
+                    "id": "1",
+                    "role": "assistant",
+                    "parts": [
+                        [
+                            "type": "dynamic-tool",
+                            "toolName": "foo",
+                            "toolCallId": "1",
+                            "state": "output-error",
+                            "input": ["foo": "bar"]
+                        ]
+                    ]
+                ]
+            ])
+            Issue.record("Expected validateUIMessages to throw")
+        } catch {
+            #expect(TypeValidationError.isInstance(error))
+        }
+    }
+
+    @Test("allows empty dynamic tool errorText")
+    func allowsEmptyDynamicToolErrorText() async throws {
+        let messages: [UIMessage] = try await validateUIMessages(messages: [
+            [
+                "id": "1",
+                "role": "assistant",
+                "parts": [
+                    [
+                        "type": "dynamic-tool",
+                        "toolName": "foo",
+                        "toolCallId": "1",
+                        "state": "output-error",
+                        "input": ["foo": "bar"],
+                        "errorText": ""
+                    ]
+                ]
+            ]
+        ])
+
+        #expect(messages == [
+            UIMessage(
+                id: "1",
+                role: .assistant,
+                metadata: nil,
+                parts: [
+                    .dynamicTool(
+                        UIDynamicToolUIPart(
+                            toolName: "foo",
+                            toolCallId: "1",
+                            state: .outputError,
+                            input: .object(["foo": .string("bar")]),
+                            output: nil,
+                            errorText: "",
+                            callProviderMetadata: nil,
+                            preliminary: nil
+                        )
+                    )
+                ]
+            )
+        ])
+    }
+
+    @Test("strips unsupported dynamic tool fields")
+    func stripsUnsupportedDynamicToolFields() async throws {
+        let messages: [UIMessage] = try await validateUIMessages(messages: [
+            [
+                "id": "1",
+                "role": "assistant",
+                "parts": [
+                    [
+                        "type": "dynamic-tool",
+                        "toolName": "foo",
+                        "toolCallId": "1",
+                        "state": "input-streaming",
+                        "input": ["foo": "bar"],
+                        "callProviderMetadata": [
+                            "provider": ["meta": "value"]
+                        ],
+                        "preliminary": true
+                    ]
+                ]
+            ]
+        ])
+
+        #expect(messages == [
+            UIMessage(
+                id: "1",
+                role: .assistant,
+                metadata: nil,
+                parts: [
+                    .dynamicTool(
+                        UIDynamicToolUIPart(
+                            toolName: "foo",
+                            toolCallId: "1",
+                            state: .inputStreaming,
+                            input: .object(["foo": .string("bar")]),
+                            output: nil,
+                            errorText: nil,
+                            callProviderMetadata: nil,
+                            preliminary: nil
+                        )
+                    )
+                ]
+            )
+        ])
+    }
+
     @Test("validates dynamic tool part output-error")
     func validatesDynamicToolOutputError() async throws {
         let metadata: ProviderMetadata = [
             "provider": ["meta": .string("value")]
         ]
 
-        let messages = try await validateUIMessages(messages: [
+        let messages: [UIMessage] = try await validateUIMessages(messages: [
             [
                 "id": "1",
                 "role": "assistant",
@@ -649,7 +799,7 @@ struct ValidateUIMessagesTests {
 
     @Test("validates tool part input-streaming")
     func validatesToolInputStreaming() async throws {
-        let messages = try await validateUIMessages(messages: [
+        let messages: [UIMessage] = try await validateUIMessages(messages: [
             [
                 "id": "1",
                 "role": "assistant",
@@ -691,9 +841,57 @@ struct ValidateUIMessagesTests {
         ])
     }
 
+    @Test("strips unsupported tool fields in input-streaming")
+    func stripsUnsupportedToolFieldsInInputStreaming() async throws {
+        let messages: [UIMessage] = try await validateUIMessages(messages: [
+            [
+                "id": "1",
+                "role": "assistant",
+                "parts": [
+                    [
+                        "type": "tool-foo",
+                        "toolCallId": "1",
+                        "state": "input-streaming",
+                        "input": ["foo": "bar"],
+                        "callProviderMetadata": [
+                            "provider": ["meta": "value"]
+                        ],
+                        "preliminary": true,
+                        "rawInput": ["raw": true]
+                    ]
+                ]
+            ]
+        ])
+
+        #expect(messages == [
+            UIMessage(
+                id: "1",
+                role: .assistant,
+                metadata: nil,
+                parts: [
+                    .tool(
+                        UIToolUIPart(
+                            toolName: "foo",
+                            toolCallId: "1",
+                            state: .inputStreaming,
+                            input: .object(["foo": .string("bar")]),
+                            output: nil,
+                            rawInput: nil,
+                            errorText: nil,
+                            providerExecuted: nil,
+                            callProviderMetadata: nil,
+                            preliminary: nil,
+                            approval: nil
+                        )
+                    )
+                ]
+            )
+        ])
+    }
+
     @Test("validates tool part input-available")
     func validatesToolInputAvailable() async throws {
-        let messages = try await validateUIMessages(messages: [
+        let messages: [UIMessage] = try await validateUIMessages(messages: [
             [
                 "id": "1",
                 "role": "assistant",
@@ -733,7 +931,7 @@ struct ValidateUIMessagesTests {
 
     @Test("validates tool part output-available")
     func validatesToolOutputAvailable() async throws {
-        let messages = try await validateUIMessages(messages: [
+        let messages: [UIMessage] = try await validateUIMessages(messages: [
             [
                 "id": "1",
                 "role": "assistant",
@@ -772,9 +970,56 @@ struct ValidateUIMessagesTests {
         ))
     }
 
+    @Test("throws when tool output-available missing output")
+    func throwsToolMissingOutput() async {
+        do {
+            let _: [UIMessage] = try await validateUIMessages(messages: [
+                [
+                    "id": "1",
+                    "role": "assistant",
+                    "parts": [
+                        [
+                            "type": "tool-foo",
+                            "toolCallId": "1",
+                            "state": "output-available",
+                            "input": ["foo": "bar"]
+                        ]
+                    ]
+                ]
+            ])
+            Issue.record("Expected validateUIMessages to throw")
+        } catch {
+            #expect(TypeValidationError.isInstance(error))
+        }
+    }
+
+    @Test("throws when tool approval present in input-available")
+    func throwsToolUnexpectedApproval() async {
+        do {
+            let _: [UIMessage] = try await validateUIMessages(messages: [
+                [
+                    "id": "1",
+                    "role": "assistant",
+                    "parts": [
+                        [
+                            "type": "tool-foo",
+                            "toolCallId": "1",
+                            "state": "input-available",
+                            "input": ["foo": "bar"],
+                            "approval": ["id": "appr", "approved": true]
+                        ]
+                    ]
+                ]
+            ])
+            Issue.record("Expected validateUIMessages to throw")
+        } catch {
+            #expect(TypeValidationError.isInstance(error))
+        }
+    }
+
     @Test("validates tool part output-error")
     func validatesToolOutputError() async throws {
-        let messages = try await validateUIMessages(messages: [
+        let messages: [UIMessage] = try await validateUIMessages(messages: [
             [
                 "id": "1",
                 "role": "assistant",
@@ -813,6 +1058,190 @@ struct ValidateUIMessagesTests {
         ))
     }
 
+    @Test("allows empty tool errorText")
+    func allowsEmptyToolErrorText() async throws {
+        let messages: [UIMessage] = try await validateUIMessages(messages: [
+            [
+                "id": "1",
+                "role": "assistant",
+                "parts": [
+                    [
+                        "type": "tool-foo",
+                        "toolCallId": "1",
+                        "state": "output-error",
+                        "input": ["foo": "bar"],
+                        "errorText": "",
+                        "providerExecuted": true
+                    ]
+                ]
+            ]
+        ])
+
+        guard let part = messages.first?.parts.first else {
+            Issue.record("Expected tool part")
+            return
+        }
+
+        #expect(part == .tool(
+            UIToolUIPart(
+                toolName: "foo",
+                toolCallId: "1",
+                state: .outputError,
+                input: .object(["foo": .string("bar")]),
+                output: nil,
+                rawInput: nil,
+                errorText: "",
+                providerExecuted: true,
+                callProviderMetadata: nil,
+                preliminary: nil,
+                approval: nil
+            )
+        ))
+    }
+
+    @Test("retains tool rawInput in output-error")
+    func retainsToolRawInputInOutputError() async throws {
+        let messages: [UIMessage] = try await validateUIMessages(messages: [
+            [
+                "id": "1",
+                "role": "assistant",
+                "parts": [
+                    [
+                        "type": "tool-foo",
+                        "toolCallId": "1",
+                        "state": "output-error",
+                        "input": ["foo": "bar"],
+                        "rawInput": ["raw": true],
+                        "errorText": "Tool execution failed"
+                    ]
+                ]
+            ]
+        ])
+
+        guard let part = messages.first?.parts.first else {
+            Issue.record("Expected tool part")
+            return
+        }
+
+        #expect(part == .tool(
+            UIToolUIPart(
+                toolName: "foo",
+                toolCallId: "1",
+                state: .outputError,
+                input: .object(["foo": .string("bar")]),
+                output: nil,
+                rawInput: .object(["raw": .bool(true)]),
+                errorText: "Tool execution failed",
+                providerExecuted: nil,
+                callProviderMetadata: nil,
+                preliminary: nil,
+                approval: nil
+            )
+        ))
+    }
+
+    @Test("strips unsupported tool fields in output-denied")
+    func stripsUnsupportedToolFieldsInOutputDenied() async throws {
+        let messages: [UIMessage] = try await validateUIMessages(messages: [
+            [
+                "id": "1",
+                "role": "assistant",
+                "parts": [
+                    [
+                        "type": "tool-foo",
+                        "toolCallId": "1",
+                        "state": "output-denied",
+                        "input": ["foo": "bar"],
+                        "rawInput": ["unexpected": true],
+                        "preliminary": true,
+                        "callProviderMetadata": [
+                            "provider": ["meta": "value"]
+                        ],
+                        "approval": [
+                            "id": "approval",
+                            "approved": false
+                        ]
+                    ]
+                ]
+            ]
+        ])
+
+        guard let part = messages.first?.parts.first else {
+            Issue.record("Expected tool part")
+            return
+        }
+
+        let expectedMetadata: ProviderMetadata = [
+            "provider": ["meta": .string("value")]
+        ]
+
+        #expect(part == .tool(
+            UIToolUIPart(
+                toolName: "foo",
+                toolCallId: "1",
+                state: .outputDenied,
+                input: .object(["foo": .string("bar")]),
+                output: nil,
+                rawInput: nil,
+                errorText: nil,
+                providerExecuted: nil,
+                callProviderMetadata: expectedMetadata,
+                preliminary: nil,
+                approval: UIToolApproval(id: "approval", approved: false, reason: nil)
+            )
+        ))
+    }
+
+    @Test("does not validate tool input schema for approval states")
+    func doesNotValidateToolInputSchemaForApprovalStates() async throws {
+        let tool = Tool(
+            inputSchema: stringFooSchema(),
+            outputSchema: nil
+        )
+
+        let messages: [UIMessage] = try await validateUIMessages(
+            messages: [
+                [
+                    "id": "1",
+                    "role": "assistant",
+                    "parts": [
+                        [
+                            "type": "tool-foo",
+                            "toolCallId": "1",
+                            "state": "approval-requested",
+                            "input": ["foo": 123],
+                            "approval": [
+                                "id": "request-id"
+                            ]
+                        ]
+                    ]
+                ]
+            ],
+            tools: ["foo": tool]
+        )
+
+        guard let part = messages.first?.parts.first else {
+            Issue.record("Expected tool part")
+            return
+        }
+
+        #expect(part == .tool(
+            UIToolUIPart(
+                toolName: "foo",
+                toolCallId: "1",
+                state: .approvalRequested,
+                input: .object(["foo": .number(123)]),
+                output: nil,
+                rawInput: nil,
+                errorText: nil,
+                providerExecuted: nil,
+                callProviderMetadata: nil,
+                preliminary: nil,
+                approval: UIToolApproval(id: "request-id", approved: nil, reason: nil)
+            )
+        ))
+    }
+
     // MARK: - Tool schema validation
 
     @Test("validates tool input with schema")
@@ -822,7 +1251,7 @@ struct ValidateUIMessagesTests {
             outputSchema: nil
         )
 
-        let messages = try await validateUIMessages(
+        let messages: [UIMessage] = try await validateUIMessages(
             messages: [
                 [
                     "id": "1",
@@ -860,7 +1289,7 @@ struct ValidateUIMessagesTests {
             ))
         )
 
-        let messages = try await validateUIMessages(
+        let messages: [UIMessage] = try await validateUIMessages(
             messages: [
                 [
                     "id": "1",
@@ -890,7 +1319,7 @@ struct ValidateUIMessagesTests {
         )
 
         do {
-            _ = try await validateUIMessages(
+            let _: [UIMessage] = try await validateUIMessages(
                 messages: [
                     [
                         "id": "1",
@@ -930,7 +1359,7 @@ struct ValidateUIMessagesTests {
         )
 
         do {
-            _ = try await validateUIMessages(
+            let _: [UIMessage] = try await validateUIMessages(
                 messages: [
                     [
                         "id": "1",
@@ -961,7 +1390,7 @@ struct ValidateUIMessagesTests {
             outputSchema: nil
         )
 
-        let messages = try await validateUIMessages(
+        let messages: [UIMessage] = try await validateUIMessages(
             messages: [
                 [
                     "id": "1",
@@ -990,7 +1419,7 @@ struct ValidateUIMessagesTests {
 struct SafeValidateUIMessagesTests {
     @Test("returns success for valid messages")
     func returnsSuccess() async {
-        let result = await safeValidateUIMessages(
+        let result: SafeValidateUIMessagesResult<UIMessage> = await safeValidateUIMessages(
             messages: [
                 [
                     "id": "1",
@@ -1015,7 +1444,7 @@ struct SafeValidateUIMessagesTests {
 
     @Test("returns failure when metadata validation fails")
     func returnsFailureForMetadata() async {
-        let result = await safeValidateUIMessages(
+        let result: SafeValidateUIMessagesResult<UIMessage> = await safeValidateUIMessages(
             messages: [
                 [
                     "id": "1",
@@ -1049,7 +1478,7 @@ struct SafeValidateUIMessagesTests {
             outputSchema: nil
         )
 
-        let result = await safeValidateUIMessages(
+        let result: SafeValidateUIMessagesResult<UIMessage> = await safeValidateUIMessages(
             messages: [
                 [
                     "id": "1",
@@ -1073,7 +1502,7 @@ struct SafeValidateUIMessagesTests {
 
     @Test("returns failure when data schema missing")
     func returnsFailureForMissingDataSchema() async {
-        let result = await safeValidateUIMessages(
+        let result: SafeValidateUIMessagesResult<UIMessage> = await safeValidateUIMessages(
             messages: [
                 [
                     "id": "1",
@@ -1094,7 +1523,8 @@ struct SafeValidateUIMessagesTests {
 
     @Test("returns failure for invalid message structure")
     func returnsFailureForInvalidStructure() async {
-        let result = await safeValidateUIMessages(messages: [
+        let result: SafeValidateUIMessagesResult<UIMessage> = await safeValidateUIMessages(
+            messages: [
             ["role": "user"] as [String: Any]
         ])
 

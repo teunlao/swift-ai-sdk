@@ -91,7 +91,8 @@ struct EmbedManyTests {
         )
 
         let recorded = await events.snapshot()
-        #expect(recorded.prefix(3) == ["start-0", "start-1", "start-2"])
+        #expect(recorded.count == 6)
+        #expect(Set(recorded.prefix(3)) == Set(["start-0", "start-1", "start-2"]))
         #expect(Set(recorded.suffix(3)) == Set(["end-0", "end-1", "end-2"]))
         // When parallelized, order may vary - check all embeddings are present
         let actualSet = Set(result.embeddings.map { String(describing: $0) })
