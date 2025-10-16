@@ -87,6 +87,8 @@ external/vercel-ai-sdk/packages/
 - Temporary scratch files belong only inside the worktree and must be removed before finishing the task.  
 - Before starting a new task, sync the worktree to the correct commit (e.g., `b40920d4…`) and re-clone `external/` references—fresh worktrees do not include them automatically.  
 - Any stray change in the main repo blocks other agents and violates the “leave others’ work alone” rule—avoid it at all costs.
+- Worktree branches are **completely isolated** from `main`; you cannot damage the primary branch from inside a task worktree. Treat it as a sandbox and push through every change without hesitation, even when the implementation is invasive.
+- Executors must deliver **100% upstream parity** for their task. Partial ports, temporary shortcuts, or abandoning work midway are never acceptable—finish the job no matter how long it takes or how complex it becomes. Validators will block incomplete work, so finish the port before asking for review.
 
 ---
 
