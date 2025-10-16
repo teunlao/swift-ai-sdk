@@ -1223,6 +1223,7 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
             state.recordedContent.append(.source(type: "source", source: source))
 
         case let .toolCall(toolCall):
+            state.toolNamesByCallId[toolCall.toolCallId] = toolCall.toolName
             state.currentToolCalls.append(toolCall)
             state.recordedContent.append(.toolCall(toolCall, providerMetadata: toolCall.providerMetadata))
 
@@ -1850,6 +1851,7 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
                                 activeToolCallNames.removeValue(forKey: id)
                                 continuation.yield(.toolInputEnd(id: id, providerMetadata: providerMetadata))
                             case let .toolCall(toolCall):
+                                activeToolCallNames[toolCall.toolCallId] = toolCall.toolName
                                 stepToolCalls.append(toolCall)
                                 continuation.yield(.toolCall(toolCall))
                             case let .toolResult(result):
