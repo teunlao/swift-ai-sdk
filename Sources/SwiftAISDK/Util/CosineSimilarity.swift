@@ -37,7 +37,7 @@ public func cosineSimilarity(vector1: [Double], vector2: [Double]) throws -> Dou
     if vector1.count != vector2.count {
         throw InvalidArgumentError(
             parameter: "vector1,vector2",
-            value: .object([
+            value: JSONValue.object([
                 "vector1Length": .number(Double(vector1.count)),
                 "vector2Length": .number(Double(vector2.count))
             ]),

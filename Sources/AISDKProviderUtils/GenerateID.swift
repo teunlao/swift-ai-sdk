@@ -51,8 +51,7 @@ public func createIDGenerator(
     // Check that the separator is not part of the alphabet (otherwise prefix checking can fail randomly)
     if alphabet.contains(separator) {
         throw InvalidArgumentError(
-            parameter: "separator",
-            value: .string(separator),
+            argument: "separator",
             message: "The separator \"\(separator)\" must not be part of the alphabet \"\(alphabet)\"."
         )
     }

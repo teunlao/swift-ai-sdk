@@ -48,7 +48,7 @@ public func prepareRetries(
         if maxRetries < 0 {
             throw InvalidArgumentError(
                 parameter: "maxRetries",
-                value: .number(Double(maxRetries)),
+                value: JSONValue.number(Double(maxRetries)),
                 message: "maxRetries must be >= 0"
             )
         }

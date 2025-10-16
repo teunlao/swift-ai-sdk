@@ -18,7 +18,6 @@ struct CosineSimilarityTests {
 
         let result = try cosineSimilarity(vector1: vector1, vector2: vector2)
 
-        // Test against pre-calculated value
         #expect(abs(result - 0.9746318461970762) < 0.00001)
     }
 
@@ -29,7 +28,6 @@ struct CosineSimilarityTests {
 
         let result = try cosineSimilarity(vector1: vector1, vector2: vector2)
 
-        // Test against pre-calculated value
         #expect(abs(result - (-1.0)) < 0.00001)
     }
 
@@ -38,8 +36,17 @@ struct CosineSimilarityTests {
         let vector1 = [1.0, 2.0, 3.0]
         let vector2 = [4.0, 5.0]
 
-        #expect(throws: InvalidArgumentError.self) {
-            try cosineSimilarity(vector1: vector1, vector2: vector2)
+        do {
+            _ = try cosineSimilarity(vector1: vector1, vector2: vector2)
+            Issue.record("Expected InvalidArgumentError to be thrown")
+        } catch {
+            guard let error = error as? InvalidArgumentError else {
+                Issue.record("Expected InvalidArgumentError, got \(type(of: error))")
+                return
+            }
+            if error.parameter != "vector1,vector2" {
+                Issue.record("Expected parameter to be vector1,vector2 but was \(error.parameter)")
+            }
         }
     }
 
