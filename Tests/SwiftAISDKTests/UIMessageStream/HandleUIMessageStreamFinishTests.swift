@@ -51,7 +51,7 @@ struct HandleUIMessageStreamFinishTests {
         let resultStream = handleUIMessageStreamFinish(
             stream: stream,
             messageId: "msg-123",
-            originalMessages: [],
+            originalMessages: [UIMessage](),
             onFinish: nil,
             onError: { capturedErrors.append($0.localizedDescription) }
         )
@@ -76,7 +76,7 @@ struct HandleUIMessageStreamFinishTests {
         let resultStream = handleUIMessageStreamFinish(
             stream: stream,
             messageId: "injected-123",
-            originalMessages: [],
+            originalMessages: [UIMessage](),
             onFinish: nil,
             onError: { _ in }
         )
@@ -153,7 +153,7 @@ struct HandleUIMessageStreamFinishTests {
             handleUIMessageStreamFinish(
                 stream: stream,
                 messageId: "msg-789",
-                originalMessages: [],
+                originalMessages: [UIMessage](),
                 onFinish: { event in finishEvents.append(event) },
                 onError: { _ in }
             )
@@ -344,7 +344,7 @@ struct HandleUIMessageStreamFinishTests {
             handleUIMessageStreamFinish(
                 stream: stream,
                 messageId: "msg-multiple-abort",
-                originalMessages: [],
+                originalMessages: [UIMessage](),
                 onFinish: { events.append($0) },
                 onError: { _ in }
             )
@@ -369,7 +369,7 @@ struct HandleUIMessageStreamFinishTests {
         let resultStream = handleUIMessageStreamFinish(
             stream: stream,
             messageId: "msg-1",
-            originalMessages: [],
+            originalMessages: [UIMessage](),
             onFinish: { event in events.append(event) },
             onError: { _ in }
         )

@@ -11,8 +11,8 @@ public enum ResponseMessageIdentifier {
     case generator(IDGenerator)
 }
 
-public func getResponseUIMessageId(
-    originalMessages: [UIMessage]?,
+public func getResponseUIMessageId<Message: UIMessageConvertible>(
+    originalMessages: [Message]?,
     responseMessageId: ResponseMessageIdentifier
 ) -> String? {
     guard let originalMessages else {
@@ -31,8 +31,8 @@ public func getResponseUIMessageId(
     return lastMessage.id
 }
 
-public func getResponseUIMessageId(
-    originalMessages: [UIMessage]?,
+public func getResponseUIMessageId<Message: UIMessageConvertible>(
+    originalMessages: [Message]?,
     responseMessageId: String
 ) -> String? {
     getResponseUIMessageId(
@@ -41,8 +41,8 @@ public func getResponseUIMessageId(
     )
 }
 
-public func getResponseUIMessageId(
-    originalMessages: [UIMessage]?,
+public func getResponseUIMessageId<Message: UIMessageConvertible>(
+    originalMessages: [Message]?,
     responseMessageId: @escaping IDGenerator
 ) -> String? {
     getResponseUIMessageId(
@@ -50,4 +50,3 @@ public func getResponseUIMessageId(
         responseMessageId: .generator(responseMessageId)
     )
 }
-

@@ -60,3 +60,4 @@ orchestrator.db-journal
 
 # Internal notes and experiments (not for commits)
 .info/
+worktrees/

@@ -8,7 +8,10 @@ struct GetResponseUIMessageIDTests {
 
     @Test("should return nil when originalMessages is nil")
     func returnsNilWhenOriginalMessagesNil() {
-        let result = getResponseUIMessageId(originalMessages: nil, responseMessageId: generator)
+        let result = getResponseUIMessageId(
+            originalMessages: (nil as [UIMessage]?),
+            responseMessageId: generator
+        )
         #expect(result == nil)
     }
 
@@ -45,7 +48,7 @@ struct GetResponseUIMessageIDTests {
     @Test("should generate new id when messages array is empty")
     func generatesNewIdWhenMessagesEmpty() {
         let result = getResponseUIMessageId(
-            originalMessages: [],
+            originalMessages: [UIMessage](),
             responseMessageId: generator
         )
 
@@ -55,7 +58,7 @@ struct GetResponseUIMessageIDTests {
     @Test("should use the responseMessageId when it is a string")
     func usesLiteralResponseMessageId() {
         let result = getResponseUIMessageId(
-            originalMessages: [],
+            originalMessages: [UIMessage](),
             responseMessageId: "response-id"
         )
 

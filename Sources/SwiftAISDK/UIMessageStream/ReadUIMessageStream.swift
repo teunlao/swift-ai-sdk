@@ -3,22 +3,22 @@ import AISDKProvider
 import AISDKProviderUtils
 
 /**
- Reads a UI message stream and yields intermediate `UIMessage` snapshots.
+ Reads a UI message stream and yields intermediate `Message` snapshots.
 
  Port of `@ai-sdk/ai/src/ui-message-stream/read-ui-message-stream.ts`.
  */
-public func readUIMessageStream(
-    message: UIMessage? = nil,
+public func readUIMessageStream<Message: UIMessageConvertible>(
+    message: Message? = nil,
     stream: AsyncThrowingStream<AnyUIMessageChunk, Error>,
     terminateOnError: Bool = false,
     onError: (@Sendable (Error) -> Void)? = nil
-) -> AsyncIterableStream<UIMessage> {
+) -> AsyncIterableStream<Message> {
     let state = createStreamingUIMessageState(
         lastMessage: message,
         messageId: message?.id ?? ""
     )
 
-    let output = AsyncThrowingStream<UIMessage, Error> { continuation in
+    let output = AsyncThrowingStream<Message, Error> { continuation in
         let controller = ReadUIMessageStreamController(
             state: state,
             continuation: continuation,
@@ -33,19 +33,19 @@ public func readUIMessageStream(
 
 // MARK: - Controller
 
-private final class ReadUIMessageStreamController {
-    private let state: StreamingUIMessageState<UIMessage>
+private final class ReadUIMessageStreamController<Message: UIMessageConvertible>: @unchecked Sendable {
+    private let state: StreamingUIMessageState<Message>
     private let terminateOnError: Bool
     private let errorHandler: (@Sendable (Error) -> Void)?
     private let lock = NSLock()
 
-    private var continuation: AsyncThrowingStream<UIMessage, Error>.Continuation?
+    private var continuation: AsyncThrowingStream<Message, Error>.Continuation?
     private var hasErrored = false
     private var consumeTask: Task<Void, Never>?
 
     init(
-        state: StreamingUIMessageState<UIMessage>,
-        continuation: AsyncThrowingStream<UIMessage, Error>.Continuation,
+        state: StreamingUIMessageState<Message>,
+        continuation: AsyncThrowingStream<Message, Error>.Continuation,
         terminateOnError: Bool,
         onError: (@Sendable (Error) -> Void)?
     ) {
@@ -142,5 +142,3 @@ private final class ReadUIMessageStreamController {
         task?.cancel()
     }
 }
-
-extension ReadUIMessageStreamController: @unchecked Sendable {}

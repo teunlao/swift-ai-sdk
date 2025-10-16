@@ -7,16 +7,16 @@ import AISDKProviderUtils
 
  Port of `@ai-sdk/ai/src/ui-message-stream/handle-ui-message-stream-finish.ts`.
  */
-public func handleUIMessageStreamFinish(
+public func handleUIMessageStreamFinish<Message: UIMessageConvertible>(
     stream: AsyncThrowingStream<AnyUIMessageChunk, Error>,
     messageId: String?,
-    originalMessages: [UIMessage] = [],
-    onFinish: UIMessageStreamOnFinishCallback<UIMessage>?,
+    originalMessages: [Message] = [],
+    onFinish: UIMessageStreamOnFinishCallback<Message>?,
     onError: @escaping ErrorHandler
 ) -> AsyncThrowingStream<AnyUIMessageChunk, Error> {
     var mutableMessageId = messageId
 
-    var lastAssistantMessage: UIMessage? = originalMessages.last?.role == .assistant
+    var lastAssistantMessage: Message? = originalMessages.last?.role == .assistant
         ? originalMessages.last?.clone()
         : nil
 
@@ -65,7 +65,7 @@ public func handleUIMessageStreamFinish(
         messageId: mutableMessageId ?? ""
     )
 
-    let runUpdateMessageJob: @Sendable (_ job: @escaping StreamingUIMessageJob<UIMessage>) async throws -> Void = { job in
+    let runUpdateMessageJob: @Sendable (_ job: @escaping StreamingUIMessageJob<Message>) async throws -> Void = { job in
         try await job(StreamingUIMessageJobContext(state: state, write: {}))
     }
 
@@ -109,19 +109,19 @@ public func handleUIMessageStreamFinish(
 
 // MARK: - Finish Helpers
 
-private actor FinishInvoker {
+private actor FinishInvoker<Message: UIMessageConvertible> {
     private var called = false
-    private let onFinish: UIMessageStreamOnFinishCallback<UIMessage>
-    private let state: StreamingUIMessageState<UIMessage>
-    private let originalMessages: [UIMessage]
-    private let lastAssistantMessage: UIMessage?
+    private let onFinish: UIMessageStreamOnFinishCallback<Message>
+    private let state: StreamingUIMessageState<Message>
+    private let originalMessages: [Message]
+    private let lastAssistantMessage: Message?
     private let isAborted: @Sendable () async -> Bool
 
     init(
-        onFinish: @escaping UIMessageStreamOnFinishCallback<UIMessage>,
-        state: StreamingUIMessageState<UIMessage>,
-        originalMessages: [UIMessage],
-        lastAssistantMessage: UIMessage?,
+        onFinish: @escaping UIMessageStreamOnFinishCallback<Message>,
+        state: StreamingUIMessageState<Message>,
+        originalMessages: [Message],
+        lastAssistantMessage: Message?,
         isAborted: @escaping @Sendable () async -> Bool
     ) {
         self.onFinish = onFinish

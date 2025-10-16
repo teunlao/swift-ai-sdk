@@ -7,16 +7,16 @@ import AISDKProviderUtils
 
  Port of `@ai-sdk/ai/src/ui-message-stream/create-ui-message-stream.ts`.
  */
-public func createUIMessageStream(
-    execute: @escaping @Sendable (_ writer: DefaultUIMessageStreamWriter) async throws -> Void,
+public func createUIMessageStream<Message: UIMessageConvertible>(
+    execute: @escaping @Sendable (_ writer: DefaultUIMessageStreamWriter<Message>) async throws -> Void,
     onError mapError: @escaping @Sendable (Error) -> String = { AISDKProvider.getErrorMessage($0) },
-    originalMessages: [UIMessage]? = nil,
-    onFinish: UIMessageStreamOnFinishCallback<UIMessage>? = nil,
+    originalMessages: [Message]? = nil,
+    onFinish: UIMessageStreamOnFinishCallback<Message>? = nil,
     generateId: @escaping IDGenerator = generateID
 ) -> AsyncThrowingStream<AnyUIMessageChunk, Error> {
     let state = UIMessageStreamState(errorMapper: mapError)
     let rawStream = state.makeStream()
-    let writer = DefaultUIMessageStreamWriter(state: state, errorMapper: mapError)
+    let writer = DefaultUIMessageStreamWriter<Message>(state: state, errorMapper: mapError)
 
     Task {
         do {
@@ -47,8 +47,8 @@ public func createUIMessageStream(
 /**
  Default writer implementation exposed to the execution closure.
  */
-public struct DefaultUIMessageStreamWriter: UIMessageStreamWriter {
-    public typealias Message = UIMessage
+public struct DefaultUIMessageStreamWriter<MessageType: UIMessageConvertible>: UIMessageStreamWriter {
+    public typealias Message = MessageType
 
     private let state: UIMessageStreamState
     private let errorMapper: @Sendable (Error) -> String

@@ -17,8 +17,8 @@ struct ReadUIMessageStreamTests {
             .finish(messageMetadata: nil)
         ])
 
-        let sequence = readUIMessageStream(stream: stream)
-        let messages = try await collectAsyncSequence(sequence)
+        let sequence: AsyncIterableStream<UIMessage> = readUIMessageStream(stream: stream)
+        let messages: [UIMessage] = try await collectAsyncSequence(sequence)
 
         #expect(messages.count == 5)
         #expect(messages[0] == UIMessage(
@@ -54,13 +54,13 @@ struct ReadUIMessageStreamTests {
             .error(errorText: "Test error message")
         ])
 
-        let sequence = readUIMessageStream(
+        let sequence: AsyncIterableStream<UIMessage> = readUIMessageStream(
             stream: stream,
             terminateOnError: true
         )
 
         do {
-            _ = try await collectAsyncSequence(sequence)
+            let _: [UIMessage] = try await collectAsyncSequence(sequence)
             Issue.record("Expected readUIMessageStream to throw")
         } catch {
             #expect(String(describing: error) == "Test error message")

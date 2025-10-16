@@ -1,3 +1,5 @@
+# ⚠️ Ответы пользователю всегда на русском языке.
+
 # Swift AI SDK - Agent Guide
 
 ## Project Mission
@@ -81,7 +83,6 @@ external/vercel-ai-sdk/packages/
 **🚨 CRITICAL Rules**:
 - ❌ **NEVER TOUCH OTHER AGENTS' WORK** — Only edit files in your task scope.
 - ✅ Keep flow JSON valid/minified whenever you progress the work.
-- ❌ Do not call MCP tools; the orchestrator handles validation automatically.
 - ❌ Never commit or mark `done` before approval or explicit user permission.
 
 ### Validator Role
@@ -210,6 +211,83 @@ date -u +"%Y-%m-%dT%H:%M:%SZ"
 
 ---
 
+## Testing & Race Condition Detection
+
+### Smart Test Runner
+
+**Location**: `tools/test-runner.js`
+
+**Purpose**: Detect hanging tests, race conditions, and flaky test behavior through multi-run analysis.
+
+#### Smart Mode (`--smart`)
+
+Runs tests multiple times to identify race conditions and unstable tests:
+
+```bash
+# Run smart mode with 3 iterations and 5s timeout
+node tools/test-runner.js --smart --runs 3 --timeout 5000
+
+# Analyze specific config
+node tools/test-runner.js --smart --config test-runner.default.config.json --runs 5
+```
+
+**Smart Mode Features**:
+- ✅ **Multi-run analysis**: Runs test suite N times to catch intermittent failures
+- ✅ **Timeout detection**: Identifies tests that hang (race conditions)
+- ✅ **Culprit identification**: Binary search to isolate problematic tests
+- ✅ **Stability analysis**: Shows which tests fail sometimes vs always
+- ✅ **Clean reporting**: Groups by suite, shows patterns
+
+**Output Analysis**:
+```
+🎯 Smart Mode Analysis (3 runs)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Run 1: ⏱️  TIMEOUT after 5000ms
+Run 2: ⏱️  TIMEOUT after 5000ms
+Run 3: ✅ PASSED (763 tests)
+
+⚠️ Culprits Found: 2 tests/groups causing timeouts
+  - SwiftAISDKTests.CreateUIMessageStreamTests/*
+  - SwiftAISDKTests.HandleUIMessageStreamFinishTests/*
+```
+
+#### Standard Modes
+
+**Exclude mode** (default):
+```bash
+# Run all tests EXCEPT listed patterns
+node tools/test-runner.js --config test-runner.default.config.json
+```
+
+**Include mode**:
+```bash
+# Run ONLY specific tests
+node tools/test-runner.js --config test-suspicious.config.json
+```
+
+**Options**:
+- `--list` — Show all available tests
+- `--dry-run` — Preview what will run without executing
+- `--cache` — Use cached test list (faster, use only if tests haven't changed)
+- `--timeout <ms>` — Timeout per run (default: 15000)
+- `--runs <n>` — Number of iterations for smart mode (default: 3)
+
+#### Configuration
+
+Config files in `tools/`:
+- `test-runner.default.config.json` — Run all tests (exclude mode)
+- See `tools/README.md` for full documentation
+
+**When to Use**:
+- 🔍 **After adding async/concurrent code** — Verify no race conditions introduced
+- 🐛 **Flaky test debugging** — Use `--smart` to reproduce intermittent failures
+- ⏱️ **Timeout investigation** — Smart mode identifies which tests hang
+- ✅ **Pre-commit validation** — Quick sanity check with default config
+
+**See**: `tools/README.md` for detailed documentation and examples.
+
+---
+
 ## Pre-Completion Checklist
 
 - [ ] Public API matches upstream
@@ -291,5 +369,9 @@ date -u +"%Y-%m-%dT%H:%M:%SZ"
 ---
 
 **Remember**: Every line must match upstream. Keep `.orchestrator/flow` accurate so automation can enforce 100% parity.
+
+
+# MCP Usage
+Для запуска MCP к примур taskmaster.get_tasks используем для MCP taskmaster
 
 *Last updated: 2025-10-14*

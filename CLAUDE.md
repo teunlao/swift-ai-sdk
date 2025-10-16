@@ -10,17 +10,8 @@ Port **Vercel AI SDK** from TypeScript to Swift with **100% upstream parity**.
 
 ## Quick Start
 
-**📋 Task Management:**
-```bash
-mcp__taskmaster__next_task                              # Find next task
-mcp__taskmaster__get_task --id=4.3                      # Get details
-mcp__taskmaster__get_tasks --status=pending             # List pending
-mcp__taskmaster__set_task_status --id=4.3 --status=done # Mark done
-```
-
 **📚 Read first:**
 ```bash
-.taskmaster/CLAUDE.md           # Task Master guide
 plan/executor-guide.md          # Executor workflow
 plan/validation-workflow.md     # Validation process
 plan/orchestrator-automation.md # Flow files, naming, automation rules
@@ -84,8 +75,6 @@ external/vercel-ai-sdk/packages/
 └── ai/              → Sources/SwiftAISDK/
 ```
 
-**EventSource Parser**: `external/eventsource-parser/` → `Sources/EventSourceParser/`
-
 ---
 
 ## Roles & Workflow
@@ -106,12 +95,6 @@ Executor agents launch with a system prompt that enforces `.orchestrator/` disci
 7. If blocked, set `status = "needs_input"` and add `blockers` describing the issue instead of creating a request.
 8. **Stop.** Automation triggers validation automatically.
 
-**🚨 CRITICAL Rules for Executor Agents**:
-- ❌ **NEVER TOUCH OTHER AGENTS' WORK** — stay within task scope.
-- ✅ Keep flow JSON valid, minified, and up to date after every meaningful change.
-- ❌ Do NOT invoke MCP tools yourself; the orchestrator drives the loop.
-- ❌ Do NOT launch validators manually.
-
 ### Validator Role (Codex Agent)
 **Review implementation, create automation-compliant report.**
 
@@ -126,7 +109,6 @@ Validator agents also receive a system prompt:
 **🚨 CRITICAL Rules for Validator Agents**:
 - ✅ Always operate in the executor's worktree; never create new branches/worktrees.
 - ✅ Document outcome via flow JSON and report file; use severity labels inside the report.
-- ❌ Do NOT call MCP tools; automation handles status updates.
 - ❌ Approve only when parity is 100%.
 
 ### Orchestrator Workflow (Your Role)
@@ -276,6 +258,83 @@ date -u +"%Y-%m-%dT%H:%M:%SZ"
 
 ---
 
+## Testing & Race Condition Detection
+
+### Smart Test Runner
+
+**Location**: `tools/test-runner.js`
+
+**Purpose**: Detect hanging tests, race conditions, and flaky test behavior through multi-run analysis.
+
+#### Smart Mode (`--smart`)
+
+Runs tests multiple times to identify race conditions and unstable tests:
+
+```bash
+# Run smart mode with 3 iterations and 5s timeout
+node tools/test-runner.js --smart --runs 3 --timeout 5000
+
+# Analyze specific config
+node tools/test-runner.js --smart --config test-runner.default.config.json --runs 5
+```
+
+**Smart Mode Features**:
+- ✅ **Multi-run analysis**: Runs test suite N times to catch intermittent failures
+- ✅ **Timeout detection**: Identifies tests that hang (race conditions)
+- ✅ **Culprit identification**: Binary search to isolate problematic tests
+- ✅ **Stability analysis**: Shows which tests fail sometimes vs always
+- ✅ **Clean reporting**: Groups by suite, shows patterns
+
+**Output Analysis**:
+```
+🎯 Smart Mode Analysis (3 runs)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Run 1: ⏱️  TIMEOUT after 5000ms
+Run 2: ⏱️  TIMEOUT after 5000ms
+Run 3: ✅ PASSED (763 tests)
+
+⚠️ Culprits Found: 2 tests/groups causing timeouts
+  - SwiftAISDKTests.CreateUIMessageStreamTests/*
+  - SwiftAISDKTests.HandleUIMessageStreamFinishTests/*
+```
+
+#### Standard Modes
+
+**Exclude mode** (default):
+```bash
+# Run all tests EXCEPT listed patterns
+node tools/test-runner.js --config test-runner.default.config.json
+```
+
+**Include mode**:
+```bash
+# Run ONLY specific tests
+node tools/test-runner.js --config test-suspicious.config.json
+```
+
+**Options**:
+- `--list` — Show all available tests
+- `--dry-run` — Preview what will run without executing
+- `--cache` — Use cached test list (faster, use only if tests haven't changed)
+- `--timeout <ms>` — Timeout per run (default: 15000)
+- `--runs <n>` — Number of iterations for smart mode (default: 3)
+
+#### Configuration
+
+Config files in `tools/`:
+- `test-runner.default.config.json` — Run all tests (exclude mode)
+- See `tools/README.md` for full documentation
+
+**When to Use**:
+- 🔍 **After adding async/concurrent code** — Verify no race conditions introduced
+- 🐛 **Flaky test debugging** — Use `--smart` to reproduce intermittent failures
+- ⏱️ **Timeout investigation** — Smart mode identifies which tests hang
+- ✅ **Pre-commit validation** — Quick sanity check with default config
+
+**See**: `tools/README.md` for detailed documentation and examples.
+
+---
+
 ## Pre-Completion Checklist
 
 - [ ] Public API matches upstream
@@ -347,10 +406,6 @@ date -u +"%Y-%m-%dT%H:%M:%SZ"
 
 ---
 
-## Task Management (Optional)
-
-**Task Master AI** available as optional tracker.
-
 ### Manual Tools
 - `get_tasks`, `get_task`, `next_task` — view tasks
 - `set_task_status` — change status
@@ -362,13 +417,6 @@ date -u +"%Y-%m-%dT%H:%M:%SZ"
 - `update_task`, `update_subtask` — require `prompt` parameter
 - `expand_task`, `parse-prd` — AI generation
 - Tools with `--research` flag
-
-**Basic Usage**:
-```bash
-mcp__taskmaster__next_task
-mcp__taskmaster__add_task title: "..." description: "..." details: "..."
-mcp__taskmaster__set_task_status id: "1.2" status: "done"
-```
 
 **Integration**: Task Master for management, `.sessions/` for contexts, `.orchestrator/` for automation artifacts.
 
