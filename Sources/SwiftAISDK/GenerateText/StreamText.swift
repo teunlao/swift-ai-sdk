@@ -1811,6 +1811,16 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
                                 continuation.yield(.reasoningEnd(id: id, providerMetadata: providerMetadata))
                             case let .toolInputStart(id, toolName, providerMetadata, providerExecuted):
                                 activeToolCallNames[id] = toolName
+                                if let tool = self.tools?[toolName],
+                                   let onInputStart = tool.onInputStart {
+                                    let options = ToolCallOptions(
+                                        toolCallId: id,
+                                        messages: stepInputMessages,
+                                        abortSignal: self.settings.abortSignal,
+                                        experimentalContext: self.experimentalContext
+                                    )
+                                    try await onInputStart(options)
+                                }
                                 let dynamicFlag: Bool? = {
                                     guard let tool = self.tools?[toolName] else { return nil }
                                     return tool.type == .dynamic ? true : nil
@@ -1823,6 +1833,18 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
                                     dynamic: dynamicFlag
                                 ))
                             case let .toolInputDelta(id, delta, providerMetadata):
+                                if let toolName = activeToolCallNames[id],
+                                   let tool = self.tools?[toolName],
+                                   let onInputDelta = tool.onInputDelta {
+                                    let options = ToolCallDeltaOptions(
+                                        inputTextDelta: delta,
+                                        toolCallId: id,
+                                        messages: stepInputMessages,
+                                        abortSignal: self.settings.abortSignal,
+                                        experimentalContext: self.experimentalContext
+                                    )
+                                    try await onInputDelta(options)
+                                }
                                 continuation.yield(.toolInputDelta(id: id, delta: delta, providerMetadata: providerMetadata))
                             case let .toolInputEnd(id, providerMetadata):
                                 activeToolCallNames.removeValue(forKey: id)
