@@ -24,6 +24,43 @@ public struct StreamTextTransformOptions: Sendable {
     }
 }
 
+private struct ToolCallDescription {
+    let toolCallId: String
+    let toolName: String
+    let input: JSONValue
+    let providerExecuted: Bool?
+    let providerMetadata: ProviderMetadata?
+    let invalid: Bool
+    let error: Any?
+}
+
+private extension TypedToolCall {
+    func details() -> ToolCallDescription {
+        switch self {
+        case .static(let call):
+            return ToolCallDescription(
+                toolCallId: call.toolCallId,
+                toolName: call.toolName,
+                input: call.input,
+                providerExecuted: call.providerExecuted,
+                providerMetadata: call.providerMetadata,
+                invalid: call.invalid ?? false,
+                error: nil
+            )
+        case .dynamic(let call):
+            return ToolCallDescription(
+                toolCallId: call.toolCallId,
+                toolName: call.toolName,
+                input: call.input,
+                providerExecuted: call.providerExecuted,
+                providerMetadata: call.providerMetadata,
+                invalid: call.invalid ?? false,
+                error: call.error
+            )
+        }
+    }
+}
+
 public typealias StreamTextTransform = @Sendable (
     _ stream: AsyncIterableStream<TextStreamPart>,
     _ options: StreamTextTransformOptions
@@ -83,6 +120,22 @@ struct EnrichedStreamPart<PartialOutput: Sendable>: Sendable {
     let partialOutput: PartialOutput?
 }
 
+private actor StreamTextToolNameStore {
+    private var names: [String: String] = [:]
+
+    func set(_ id: String, name: String?) {
+        if let name {
+            names[id] = name
+        } else {
+            names[id] = nil
+        }
+    }
+
+    func toolName(for id: String) -> String? {
+        names[id]
+    }
+}
+
 private struct ActiveTextContent: Sendable {
     var index: Int
     var text: String
@@ -108,6 +161,10 @@ private final class StreamPipelineState: @unchecked Sendable {
     var toolNamesByCallId: [String: String] = [:]
     var rootSpan: (any Span)?
     var stepFinish: DelayedPromise<Void>?
+    var currentToolCalls: [TypedToolCall] = []
+    var currentToolOutputs: [ToolOutput] = []
+    var lastClientToolCalls: [TypedToolCall] = []
+    var lastClientToolOutputs: [ToolOutput] = []
 
     func resetForNewStep(request: LanguageModelRequestMetadata, warnings: [CallWarning]) {
         recordedContent = []
@@ -115,6 +172,8 @@ private final class StreamPipelineState: @unchecked Sendable {
         activeReasoningContent = [:]
         recordedRequest = request
         recordedWarnings = warnings
+        currentToolCalls = []
+        currentToolOutputs = []
     }
 }
 
@@ -146,6 +205,84 @@ private func convertModelMessagesToResponseMessages(
         }
     }
 }
+private func convertResponseMessagesToModelMessages(
+    _ messages: [ResponseMessage]
+) -> [ModelMessage] {
+    messages.map { message in
+        switch message {
+        case .assistant(let assistant):
+            return .assistant(assistant)
+        case .tool(let tool):
+            return .tool(tool)
+        }
+    }
+}
+
+private func makeRequestMetadata(
+    from info: LanguageModelV3RequestInfo?
+) -> LanguageModelRequestMetadata {
+    guard let body = info?.body else {
+        return LanguageModelRequestMetadata()
+    }
+
+    let json = jsonValue(fromAny: body)
+    return LanguageModelRequestMetadata(body: json)
+}
+
+private func jsonValue(fromAny value: Any) -> JSONValue? {
+    if let json = value as? JSONValue {
+        return json
+    }
+
+    return try? jsonValue(from: value)
+}
+
+private func makeExecutionDeniedContent(_ approval: CollectedToolApproval) -> ContentPart {
+    let reasonValue: JSONValue
+    if let reason = approval.approvalResponse.reason {
+        reasonValue = .string(reason)
+    } else {
+        reasonValue = .null
+    }
+
+    let payload = JSONValue.object([
+        "type": .string("execution-denied"),
+        "reason": reasonValue
+    ])
+
+    switch approval.toolCall {
+    case .static(let call):
+        let result = StaticToolResult(
+            toolCallId: call.toolCallId,
+            toolName: call.toolName,
+            input: call.input,
+            output: payload,
+            providerExecuted: call.providerExecuted,
+            preliminary: nil
+        )
+        return .toolResult(.static(result), providerMetadata: call.providerMetadata)
+    case .dynamic(let call):
+        let result = DynamicToolResult(
+            toolCallId: call.toolCallId,
+            toolName: call.toolName,
+            input: call.input,
+            output: payload,
+            providerExecuted: call.providerExecuted,
+            preliminary: nil
+        )
+        return .toolResult(.dynamic(result), providerMetadata: call.providerMetadata)
+    }
+}
+
+private func toolOutputToContentPart(_ output: ToolOutput) -> ContentPart {
+    switch output {
+    case .result(let result):
+        return .toolResult(result, providerMetadata: nil)
+    case .error(let error):
+        return .toolError(error, providerMetadata: nil)
+    }
+}
+
 
 private extension TypedToolResult {
     var isPreliminary: Bool {
@@ -365,6 +502,7 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
 
 // MARK: - DefaultStreamTextResult (partial implementation)
 
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputValue: Sendable>: StreamTextResult {
     public typealias PartialOutput = PartialOutputValue
 
@@ -376,7 +514,7 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
     private let addStream: @Sendable (AsyncIterableStream<TextStreamPart>) async throws -> Void
     private let closeStream: @Sendable () -> Void
     private let terminateStream: @Sendable () -> Void
-    private lazy var baseStream: AsyncIterableStream<EnrichedStreamPart<PartialOutputValue>> = makeBaseStream()
+    private var baseStream: AsyncIterableStream<EnrichedStreamPart<PartialOutputValue>>
 
     private let output: Output.Specification<OutputValue, PartialOutputValue>?
     private let includeRawChunks: Bool
@@ -458,6 +596,12 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
         self.addStream = stitchable.addStream
         self.closeStream = stitchable.close
         self.terminateStream = stitchable.terminate
+        self.baseStream = createAsyncIterableStream(
+            source: AsyncThrowingStream { continuation in
+                continuation.finish()
+            }
+        )
+        self.baseStream = makeBaseStream()
 
         Task { [weak self] in
             guard let self else { return }
@@ -606,11 +750,13 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
     }
 
     public var textStream: AsyncThrowingStream<String, Error> {
-        AsyncThrowingStream { continuation in
+        let stream = teeBaseStream()
+
+        return AsyncThrowingStream { continuation in
             Task {
                 do {
-                    for try await part in baseStream.asAsyncThrowingStream() {
-                        if case let .textDelta(_, text, _) = part.part {
+                    for try await part in stream {
+                        if case let .textDelta(_, text, _) = part.part, !text.isEmpty {
                             continuation.yield(text)
                         }
                     }
@@ -623,10 +769,12 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
     }
 
     public var fullStream: AsyncThrowingStream<TextStreamPart, Error> {
-        AsyncThrowingStream { continuation in
+        let stream = teeBaseStream()
+
+        return AsyncThrowingStream { continuation in
             Task {
                 do {
-                    for try await part in baseStream.asAsyncThrowingStream() {
+                    for try await part in stream {
                         continuation.yield(part.part)
                     }
                     continuation.finish()
@@ -644,10 +792,12 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
             }
         }
 
+        let stream = teeBaseStream()
+
         return AsyncThrowingStream { continuation in
             Task {
                 do {
-                    for try await part in baseStream.asAsyncThrowingStream() {
+                    for try await part in stream {
                         if let partial = part.partialOutput {
                             continuation.yield(partial)
                         }
@@ -667,21 +817,250 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
     public func toUIMessageStream<Message: UIMessageConvertible>(
         options: UIMessageStreamOptions<Message>?
     ) -> AsyncThrowingStream<UIMessageStreamChunk<Message>, Error> {
-        AsyncThrowingStream { continuation in
-            continuation.finish()
+        let streamOptions = options ?? UIMessageStreamOptions<Message>()
+        let responseMessageId: String?
+        if let generator = streamOptions.generateMessageId {
+            responseMessageId = getResponseUIMessageId(
+                originalMessages: streamOptions.originalMessages,
+                responseMessageId: generator
+            )
+        } else {
+            responseMessageId = nil
         }
+
+        func mapErrorMessage(_ value: Any?) -> String {
+            if let error = value as? Error {
+                return streamOptions.onError?(error) ?? AISDKProvider.getErrorMessage(error)
+            }
+            let message = AISDKProvider.getErrorMessage(value)
+            if let onError = streamOptions.onError {
+                let synthetic = NSError(
+                    domain: "ai.streamText",
+                    code: 0,
+                    userInfo: [NSLocalizedDescriptionKey: message]
+                )
+                return onError(synthetic)
+            }
+            return message
+        }
+
+        let baseStream = teeBaseStream()
+
+        let toolNameStore = StreamTextToolNameStore()
+
+        func resolvedDynamicFlag(for id: String) async -> Bool? {
+            guard let toolName = await toolNameStore.toolName(for: id),
+                  let tool = tools?[toolName] else {
+                return nil
+            }
+            if tool.type == .some(.dynamic) {
+                return true
+            }
+            return nil
+        }
+
+        let chunkStream = AsyncThrowingStream<AnyUIMessageChunk, Error> { continuation in
+            Task {
+                do {
+                    for try await enriched in baseStream {
+                        let part = enriched.part
+                        let metadataValue = streamOptions.messageMetadata?(part)
+
+                        switch part {
+                        case let .textStart(id, metadata):
+                            continuation.yield(.textStart(id: id, providerMetadata: metadata))
+
+                        case let .textDelta(id, text, metadata):
+                            continuation.yield(.textDelta(id: id, delta: text, providerMetadata: metadata))
+
+                        case let .textEnd(id, metadata):
+                            continuation.yield(.textEnd(id: id, providerMetadata: metadata))
+
+                        case let .reasoningStart(id, metadata):
+                            continuation.yield(.reasoningStart(id: id, providerMetadata: metadata))
+
+                        case let .reasoningDelta(id, text, metadata):
+                            if streamOptions.sendReasoning {
+                                continuation.yield(.reasoningDelta(id: id, delta: text, providerMetadata: metadata))
+                            }
+
+                        case let .reasoningEnd(id, metadata):
+                            continuation.yield(.reasoningEnd(id: id, providerMetadata: metadata))
+
+                        case let .file(file):
+                            continuation.yield(.file(
+                                url: "data:\(file.mediaType);base64,\(file.base64)",
+                                mediaType: file.mediaType,
+                                providerMetadata: nil
+                            ))
+
+                        case let .source(source):
+                            guard streamOptions.sendSources else { break }
+                            switch source {
+                            case let .url(id, url, title, providerMetadata):
+                                continuation.yield(.sourceUrl(
+                                    sourceId: id,
+                                    url: url,
+                                    title: title,
+                                    providerMetadata: providerMetadata
+                                ))
+                            case let .document(id, mediaType, title, filename, providerMetadata):
+                                continuation.yield(.sourceDocument(
+                                    sourceId: id,
+                                    mediaType: mediaType,
+                                    title: title,
+                                    filename: filename,
+                                    providerMetadata: providerMetadata
+                                ))
+                            }
+
+                        case let .toolInputStart(id, toolName, _, providerExecuted, dynamic):
+                            await toolNameStore.set(id, name: toolName)
+                            let resolvedDynamic: Bool?
+                            if let dynamic {
+                                resolvedDynamic = dynamic
+                            } else {
+                                resolvedDynamic = await resolvedDynamicFlag(for: id)
+                            }
+                            continuation.yield(.toolInputStart(
+                                toolCallId: id,
+                                toolName: toolName,
+                                providerExecuted: providerExecuted,
+                                dynamic: resolvedDynamic
+                            ))
+
+                        case let .toolInputDelta(id, delta, _):
+                            continuation.yield(.toolInputDelta(toolCallId: id, inputTextDelta: delta))
+
+                        case let .toolInputEnd(id, _):
+                            await toolNameStore.set(id, name: nil)
+
+                        case let .toolCall(toolCall):
+                            let details = toolCall.details()
+                            await toolNameStore.set(details.toolCallId, name: details.toolName)
+                            let resolvedDynamic = await resolvedDynamicFlag(for: details.toolCallId)
+
+                            if details.invalid {
+                                let errorText = mapErrorMessage(details.error)
+
+                                continuation.yield(.toolInputError(
+                                    toolCallId: details.toolCallId,
+                                    toolName: details.toolName,
+                                    input: details.input,
+                                    providerExecuted: details.providerExecuted,
+                                    providerMetadata: details.providerMetadata,
+                                    dynamic: resolvedDynamic,
+                                    errorText: errorText
+                                ))
+                            } else {
+                                continuation.yield(.toolInputAvailable(
+                                    toolCallId: details.toolCallId,
+                                    toolName: details.toolName,
+                                    input: details.input,
+                                    providerExecuted: details.providerExecuted,
+                                    providerMetadata: details.providerMetadata,
+                                    dynamic: resolvedDynamic
+                                ))
+                            }
+
+                        case let .toolResult(result):
+                            let resolvedDynamic = await resolvedDynamicFlag(for: result.toolCallId)
+                            continuation.yield(.toolOutputAvailable(
+                                toolCallId: result.toolCallId,
+                                output: result.output,
+                                providerExecuted: result.providerExecuted,
+                                dynamic: resolvedDynamic,
+                                preliminary: result.preliminary
+                            ))
+
+                        case let .toolError(error):
+                            let resolvedDynamic = await resolvedDynamicFlag(for: error.toolCallId)
+                            let errorText = mapErrorMessage(error.error)
+                            continuation.yield(.toolOutputError(
+                                toolCallId: error.toolCallId,
+                                errorText: errorText,
+                                providerExecuted: error.providerExecuted,
+                                dynamic: resolvedDynamic
+                            ))
+
+                        case let .toolApprovalRequest(request):
+                            continuation.yield(.toolApprovalRequest(approvalId: request.approvalId, toolCallId: request.toolCall.toolCallId))
+
+                        case let .toolOutputDenied(denied):
+                            continuation.yield(.toolOutputDenied(toolCallId: denied.toolCallId))
+
+                        case .startStep:
+                            continuation.yield(.startStep)
+
+                        case .finishStep:
+                            continuation.yield(.finishStep)
+
+                        case .start:
+                            if streamOptions.sendStart {
+                                continuation.yield(.start(
+                                    messageId: responseMessageId,
+                                    messageMetadata: metadataValue
+                                ))
+                            }
+
+                        case .finish:
+                            if streamOptions.sendFinish {
+                                continuation.yield(.finish(messageMetadata: metadataValue))
+                            }
+
+                        case .abort:
+                            continuation.yield(.abort)
+
+                        case let .error(error):
+                            let errorText = mapErrorMessage(error)
+                            continuation.yield(.error(errorText: errorText))
+
+                        case .raw:
+                            break
+                        }
+
+                        if let metadataValue = metadataValue {
+                            switch part {
+                            case .start where !streamOptions.sendStart:
+                                continuation.yield(.messageMetadata(metadataValue))
+                            case .finish where !streamOptions.sendFinish:
+                                continuation.yield(.messageMetadata(metadataValue))
+                            case .start, .finish:
+                                break
+                            default:
+                                continuation.yield(.messageMetadata(metadataValue))
+                            }
+                        }
+                    }
+
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+        }
+
+        let handledStream = handleUIMessageStreamFinish(
+            stream: chunkStream,
+            messageId: responseMessageId,
+            originalMessages: streamOptions.originalMessages ?? [],
+            onFinish: streamOptions.onFinish,
+            onError: { error in
+                _ = streamOptions.onError?(error)
+            }
+        )
+
+        return handledStream
     }
 
     public func pipeUIMessageStreamToResponse<Message: UIMessageConvertible>(
         _ response: any StreamTextResponseWriter,
         options: StreamTextUIResponseOptions<Message>?
     ) {
-        let emptyStream = AsyncThrowingStream<AnyUIMessageChunk, Error> { continuation in
-            continuation.finish()
-        }
+        let stream = toUIMessageStream(options: options?.streamOptions)
         SwiftAISDK.pipeUIMessageStreamToResponse(
             response: response,
-            stream: emptyStream,
+            stream: stream,
             options: options
         )
     }
@@ -702,10 +1081,9 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
     public func toUIMessageStreamResponse<Message: UIMessageConvertible>(
         options: StreamTextUIResponseOptions<Message>?
     ) -> UIMessageStreamResponse<Message> {
-        SwiftAISDK.createUIMessageStreamResponse(
-            stream: AsyncThrowingStream<AnyUIMessageChunk, Error> { continuation in
-                continuation.finish()
-            },
+        let stream = toUIMessageStream(options: options?.streamOptions)
+        return SwiftAISDK.createUIMessageStreamResponse(
+            stream: stream,
             options: options
         )
     }
@@ -832,13 +1210,16 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
             state.recordedContent.append(.source(type: "source", source: source))
 
         case let .toolCall(toolCall):
+            state.currentToolCalls.append(toolCall)
             state.recordedContent.append(.toolCall(toolCall, providerMetadata: toolCall.providerMetadata))
 
         case let .toolResult(result):
             guard !result.isPreliminary else { break }
+            state.currentToolOutputs.append(.result(result))
             state.recordedContent.append(.toolResult(result, providerMetadata: result.providerMetadata))
 
         case let .toolError(errorValue):
+            state.currentToolOutputs.append(.error(errorValue))
             state.recordedContent.append(.toolError(errorValue, providerMetadata: nil))
 
         case let .toolApprovalRequest(request):
@@ -861,9 +1242,17 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
             state.recordedTotalUsage = totalUsage
 
         case let .error(errorValue):
-            let wrapped = wrapGatewayError(errorValue) ?? errorValue
+            let wrapped = wrapGatewayError(errorValue)
             if let error = wrapped as? Error {
                 await onError(StreamTextOnErrorEvent(error: error))
+            } else {
+                let message = AISDKProvider.getErrorMessage(wrapped ?? errorValue)
+                let fallback = NSError(
+                    domain: "ai.streamText",
+                    code: 0,
+                    userInfo: [NSLocalizedDescriptionKey: message]
+                )
+                await onError(StreamTextOnErrorEvent(error: fallback))
             }
 
         case .start,
@@ -871,8 +1260,6 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
              .raw:
             break
 
-        default:
-            break
         }
     }
 
@@ -908,22 +1295,38 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
             )
         }
 
-        if let onStepFinish {
-            await onStepFinish(finalStep)
-        }
-
         continuation.finish()
     }
 
+    private func teeBaseStream() -> AsyncThrowingStream<EnrichedStreamPart<PartialOutputValue>, Error> {
+        let (primary, secondary) = teeAsyncThrowingStream(baseStream.asAsyncThrowingStream())
+        baseStream = createAsyncIterableStream(source: secondary)
+        return primary
+    }
+
     private func makeBaseStream() -> AsyncIterableStream<EnrichedStreamPart<PartialOutputValue>> {
+        var transformedStream = stitchable.stream
+
+        if !transforms.isEmpty {
+            for transform in transforms {
+                transformedStream = transform(
+                    transformedStream,
+                    StreamTextTransformOptions(
+                        tools: tools,
+                        stopStream: terminateStream
+                    )
+                )
+            }
+        }
+
         let outputStream = createOutputTransformStream(
-            stream: stitchable.stream,
+            stream: transformedStream,
             output: output
         )
 
         return createAsyncIterableStream(
             source: AsyncThrowingStream<EnrichedStreamPart<PartialOutputValue>, Error> { continuation in
-                Task { [weak self] in
+                _ = Task { [weak self] in
                     guard let self else {
                         continuation.finish()
                         return
@@ -1009,6 +1412,14 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
         logWarnings(warnings)
         state.recordedSteps.append(stepResult)
         state.recordedResponseMessages.append(contentsOf: responseMessages)
+
+        let clientToolCalls = state.currentToolCalls.filter { $0.providerExecuted != true }
+        let clientToolOutputs = state.currentToolOutputs.filter { $0.providerExecuted != true }
+        state.lastClientToolCalls = clientToolCalls
+        state.lastClientToolOutputs = clientToolOutputs
+        state.currentToolCalls = []
+        state.currentToolOutputs = []
+
         state.stepFinish?.resolve(())
 
         if let onStepFinish {
@@ -1018,7 +1429,7 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
 
     private func runStreamPipeline() async {
         do {
-            let retries = try prepareRetries(
+            let preparedRetries = try prepareRetries(
                 maxRetries: settings.maxRetries,
                 abortSignal: settings.abortSignal
             )
@@ -1035,152 +1446,440 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
             )
 
             let standardizedPrompt = try standardizePrompt(prompt)
-            let supportedUrls = try await model.supportedUrls
-            let promptForModel = try await convertToLanguageModelPrompt(
-                prompt: standardizedPrompt,
-                supportedUrls: supportedUrls,
-                download: download
+            let initialMessages = standardizedPrompt.messages
+
+            let tracer = getTracer(
+                isEnabled: telemetry?.isEnabled ?? false,
+                tracer: telemetry?.tracer
             )
 
-            let responseFormat = try await output?.responseFormat()
+            var responseMessages: [ResponseMessage] = []
+            var accumulatedUsage = LanguageModelUsage()
 
-            let callOptions = LanguageModelV3CallOptions(
-                prompt: promptForModel,
-                maxOutputTokens: preparedCallSettings.maxOutputTokens,
-                temperature: preparedCallSettings.temperature,
-                stopSequences: preparedCallSettings.stopSequences,
-                topP: preparedCallSettings.topP,
-                topK: preparedCallSettings.topK,
-                presencePenalty: preparedCallSettings.presencePenalty,
-                frequencyPenalty: preparedCallSettings.frequencyPenalty,
-                responseFormat: responseFormat,
-                seed: preparedCallSettings.seed,
-                includeRawChunks: includeRawChunks,
-                abortSignal: settings.abortSignal,
-                headers: settings.headers,
-                providerOptions: providerOptions
-            )
+            var initialResponseMessages: [ResponseMessage] = []
 
-            let result = try await retries.retry.call {
-                try await self.model.doStream(options: callOptions)
-            }
+            let approvals = collectToolApprovals(messages: initialMessages)
 
-            let stream = buildTextStream(from: result)
+            if !approvals.approvedToolApprovals.isEmpty || !approvals.deniedToolApprovals.isEmpty {
+                var approvalTask: Task<[ContentPart], Never>?
 
-            var transformed = stream
-            for transform in transforms {
-                transformed = transform(
-                    transformed,
-                    StreamTextTransformOptions(
-                        tools: tools,
-                        stopStream: { [weak self] in self?.terminateStream() }
-                    )
+                let approvalStream = createAsyncIterableStream(
+                    source: AsyncThrowingStream<TextStreamPart, Error>(bufferingPolicy: .unbounded) { continuation in
+                        approvalTask = Task { [weak self] in
+                            guard let self else {
+                                continuation.finish()
+                                return []
+                            }
+
+                            var content: [ContentPart] = []
+
+                            for denied in approvals.deniedToolApprovals {
+                                let deniedEvent = ToolOutputDenied(
+                                    toolCallId: denied.toolCall.toolCallId,
+                                    toolName: denied.toolCall.toolName,
+                                    providerExecuted: denied.toolCall.providerExecuted
+                                )
+                                continuation.yield(.toolOutputDenied(deniedEvent))
+                                content.append(makeExecutionDeniedContent(denied))
+                            }
+
+                            if !approvals.approvedToolApprovals.isEmpty {
+                                await withTaskGroup(of: ToolOutput?.self) { group in
+                                    for approved in approvals.approvedToolApprovals {
+                                        group.addTask {
+                                            await executeToolCall(
+                                                toolCall: approved.toolCall,
+                                                tools: self.tools,
+                                                tracer: tracer,
+                                                telemetry: self.telemetry,
+                                                messages: initialMessages,
+                                                abortSignal: self.settings.abortSignal,
+                                                experimentalContext: self.experimentalContext,
+                                                onPreliminaryToolResult: { result in
+                                                    continuation.yield(.toolResult(result))
+                                                }
+                                            )
+                                        }
+                                    }
+
+                                    for await output in group {
+                                        guard let output else { continue }
+
+                                        switch output {
+                                        case .result(let result):
+                                            continuation.yield(.toolResult(result))
+                                        case .error(let error):
+                                            continuation.yield(.toolError(error))
+                                        }
+
+                                        content.append(toolOutputToContentPart(output))
+                                    }
+                                }
+                            }
+
+                            continuation.finish()
+                            return content
+                        }
+                    }
                 )
+
+                try await addStream(approvalStream)
+
+                let approvalContent = await approvalTask?.value ?? []
+                if !approvalContent.isEmpty {
+                    let modelMessages = toResponseMessages(content: approvalContent, tools: tools)
+                    let approvalResponses = convertModelMessagesToResponseMessages(modelMessages)
+                    initialResponseMessages.append(contentsOf: approvalResponses)
+                }
             }
 
-            try await addStream(transformed)
-            closeStream()
+            responseMessages = initialResponseMessages
+
+            state.recordedResponseMessages = []
+
+            try await executeStep(
+                stepNumber: 0,
+                standardizedPrompt: standardizedPrompt,
+                initialMessages: initialMessages,
+                responseMessages: &responseMessages,
+                accumulatedUsage: &accumulatedUsage,
+                retries: preparedRetries,
+                preparedCallSettings: preparedCallSettings,
+                tracer: tracer
+            )
         } catch {
             await emitStreamError(error)
         }
     }
 
-    private func buildTextStream(
-        from result: LanguageModelV3StreamResult
-    ) -> AsyncIterableStream<TextStreamPart> {
-        createAsyncIterableStream(
-            source: AsyncThrowingStream<TextStreamPart, Error> { continuation in
-                Task { [weak self] in
+    private func executeStep(
+        stepNumber: Int,
+        standardizedPrompt: StandardizedPrompt,
+        initialMessages: [ModelMessage],
+        responseMessages: inout [ResponseMessage],
+        accumulatedUsage: inout LanguageModelUsage,
+        retries: PreparedRetries,
+        preparedCallSettings: PreparedCallSettings,
+        tracer: any Tracer
+    ) async throws {
+        let responseModelMessages = convertResponseMessagesToModelMessages(responseMessages)
+        let stepInputMessages = initialMessages + responseModelMessages
+
+        let prepareOptions = PrepareStepOptions(
+            steps: state.recordedSteps,
+            stepNumber: stepNumber,
+            model: baseModel,
+            messages: stepInputMessages
+        )
+
+        let prepareResult = try await prepareStep?(prepareOptions)
+
+        let stepModelSource = prepareResult?.model ?? baseModel
+        let stepModel = try resolveLanguageModel(stepModelSource)
+
+        let stepSystem = prepareResult?.system ?? standardizedPrompt.system
+        let stepMessages = prepareResult?.messages ?? stepInputMessages
+        let stepToolChoice = prepareResult?.toolChoice ?? toolChoice
+        let stepActiveTools = prepareResult?.activeTools ?? activeTools
+
+        let stepPrompt = StandardizedPrompt(system: stepSystem, messages: stepMessages)
+        let supportedUrls = try await stepModel.supportedUrls
+        let promptForModel = try await convertToLanguageModelPrompt(
+            prompt: stepPrompt,
+            supportedUrls: supportedUrls,
+            download: download
+        )
+
+        let toolPreparation = try await prepareToolsAndToolChoice(
+            tools: tools,
+            toolChoice: stepToolChoice,
+            activeTools: stepActiveTools
+        )
+
+        let responseFormat = try await output?.responseFormat()
+
+        let callOptions = LanguageModelV3CallOptions(
+            prompt: promptForModel,
+            maxOutputTokens: preparedCallSettings.maxOutputTokens,
+            temperature: preparedCallSettings.temperature,
+            stopSequences: preparedCallSettings.stopSequences,
+            topP: preparedCallSettings.topP,
+            topK: preparedCallSettings.topK,
+            presencePenalty: preparedCallSettings.presencePenalty,
+            frequencyPenalty: preparedCallSettings.frequencyPenalty,
+            responseFormat: responseFormat,
+            seed: preparedCallSettings.seed,
+            tools: toolPreparation.tools,
+            toolChoice: toolPreparation.toolChoice,
+            includeRawChunks: includeRawChunks,
+            abortSignal: settings.abortSignal,
+            headers: settings.headers,
+            providerOptions: providerOptions
+        )
+
+        let streamResult = try await retries.retry.call {
+            try await stepModel.doStream(options: callOptions)
+        }
+
+        let streamWithToolResults = runToolsTransformation(
+            tools: tools,
+            generatorStream: streamResult.stream,
+            tracer: tracer,
+            telemetry: telemetry,
+            system: stepSystem,
+            messages: stepMessages,
+            abortSignal: settings.abortSignal,
+            repairToolCall: repairToolCall,
+            experimentalContext: experimentalContext,
+            generateId: internalOptions.generateId
+        )
+
+        state.stepFinish = DelayedPromise<Void>()
+        state.recordedResponseMessages = responseMessages
+        state.currentToolCalls = []
+        state.currentToolOutputs = []
+        state.lastClientToolCalls = []
+        state.lastClientToolOutputs = []
+
+        let requestMetadata = makeRequestMetadata(from: streamResult.request)
+
+        let stepStream = createAsyncIterableStream(
+            source: AsyncThrowingStream<TextStreamPart, Error>(bufferingPolicy: .unbounded) { continuation in
+                _ = Task { [weak self] in
                     guard let self else {
                         continuation.finish()
                         return
                     }
 
-                    var collectedWarnings: [CallWarning] = []
-                    var finishReason: FinishReason = .unknown
-                    var totalUsage = LanguageModelUsage()
-                    var providerMetadata: ProviderMetadata?
+                    continuation.yield(.start)
+
+                    var pendingWarnings: [CallWarning] = []
+                    var firstChunk = true
+                    var stepFinishReason: FinishReason = .unknown
+                    var stepUsage = LanguageModelUsage()
+                    var stepProviderMetadata: ProviderMetadata?
+                    var stepResponseId = self.internalOptions.generateId()
+                    var stepResponseTimestamp = self.internalOptions.currentDate()
+                    var stepResponseModelId = stepModel.modelId
 
                     do {
-                        for try await chunk in result.stream {
-                            switch chunk {
-                            case let .streamStart(warnings):
-                                collectedWarnings = warnings
-                            case let .finish(reason, usage, metadata):
-                                finishReason = reason
-                                totalUsage = usage
-                                providerMetadata = metadata
-                            default:
-                                break
+                        for try await part in streamWithToolResults {
+                            if let abortSignal = self.settings.abortSignal, abortSignal() {
+                                if let onAbort = self.onAbort {
+                                    await onAbort(StreamTextOnAbortEvent(steps: self.state.recordedSteps))
+                                }
+                                continuation.yield(.abort)
+                                continuation.finish()
+                                return
                             }
 
-                            guard let part = self.mapStreamPart(chunk, includeRawChunks: self.includeRawChunks) else {
+                            switch part {
+                            case .streamStart(let warnings):
+                                pendingWarnings = warnings
                                 continue
+                            case let .textStart(id, providerMetadata):
+                                if firstChunk {
+                                    firstChunk = false
+                                    continuation.yield(.startStep(request: requestMetadata, warnings: pendingWarnings))
+                                }
+                                continuation.yield(.textStart(id: id, providerMetadata: providerMetadata))
+                            case let .textDelta(id, delta, providerMetadata):
+                                if firstChunk {
+                                    firstChunk = false
+                                    continuation.yield(.startStep(request: requestMetadata, warnings: pendingWarnings))
+                                }
+                                continuation.yield(.textDelta(id: id, text: delta, providerMetadata: providerMetadata))
+                            case let .textEnd(id, providerMetadata):
+                                if firstChunk {
+                                    firstChunk = false
+                                    continuation.yield(.startStep(request: requestMetadata, warnings: pendingWarnings))
+                                }
+                                continuation.yield(.textEnd(id: id, providerMetadata: providerMetadata))
+                            case let .reasoningStart(id, providerMetadata):
+                                if firstChunk {
+                                    firstChunk = false
+                                    continuation.yield(.startStep(request: requestMetadata, warnings: pendingWarnings))
+                                }
+                                continuation.yield(.reasoningStart(id: id, providerMetadata: providerMetadata))
+                            case let .reasoningDelta(id, delta, providerMetadata):
+                                if firstChunk {
+                                    firstChunk = false
+                                    continuation.yield(.startStep(request: requestMetadata, warnings: pendingWarnings))
+                                }
+                                continuation.yield(.reasoningDelta(id: id, text: delta, providerMetadata: providerMetadata))
+                            case let .reasoningEnd(id, providerMetadata):
+                                if firstChunk {
+                                    firstChunk = false
+                                    continuation.yield(.startStep(request: requestMetadata, warnings: pendingWarnings))
+                                }
+                                continuation.yield(.reasoningEnd(id: id, providerMetadata: providerMetadata))
+                            case let .toolInputStart(id, toolName, providerMetadata, providerExecuted):
+                                if firstChunk {
+                                    firstChunk = false
+                                    continuation.yield(.startStep(request: requestMetadata, warnings: pendingWarnings))
+                                }
+                                let dynamicFlag: Bool? = {
+                                    guard let tool = self.tools?[toolName] else { return nil }
+                                    return tool.type == .dynamic ? true : nil
+                                }()
+                                continuation.yield(.toolInputStart(
+                                    id: id,
+                                    toolName: toolName,
+                                    providerMetadata: providerMetadata,
+                                    providerExecuted: providerExecuted,
+                                    dynamic: dynamicFlag
+                                ))
+                            case let .toolInputDelta(id, delta, providerMetadata):
+                                if firstChunk {
+                                    firstChunk = false
+                                    continuation.yield(.startStep(request: requestMetadata, warnings: pendingWarnings))
+                                }
+                                continuation.yield(.toolInputDelta(id: id, delta: delta, providerMetadata: providerMetadata))
+                            case let .toolInputEnd(id, providerMetadata):
+                                if firstChunk {
+                                    firstChunk = false
+                                    continuation.yield(.startStep(request: requestMetadata, warnings: pendingWarnings))
+                                }
+                                continuation.yield(.toolInputEnd(id: id, providerMetadata: providerMetadata))
+                            case let .toolCall(toolCall):
+                                if firstChunk {
+                                    firstChunk = false
+                                    continuation.yield(.startStep(request: requestMetadata, warnings: pendingWarnings))
+                                }
+                                continuation.yield(.toolCall(toolCall))
+                            case let .toolResult(result):
+                                if firstChunk {
+                                    firstChunk = false
+                                    continuation.yield(.startStep(request: requestMetadata, warnings: pendingWarnings))
+                                }
+                                continuation.yield(.toolResult(result))
+                            case let .toolError(error):
+                                if firstChunk {
+                                    firstChunk = false
+                                    continuation.yield(.startStep(request: requestMetadata, warnings: pendingWarnings))
+                                }
+                                continuation.yield(.toolError(error))
+                            case let .toolApprovalRequest(request):
+                                if firstChunk {
+                                    firstChunk = false
+                                    continuation.yield(.startStep(request: requestMetadata, warnings: pendingWarnings))
+                                }
+                                continuation.yield(.toolApprovalRequest(request))
+                            case let .source(source):
+                                if firstChunk {
+                                    firstChunk = false
+                                    continuation.yield(.startStep(request: requestMetadata, warnings: pendingWarnings))
+                                }
+                                continuation.yield(.source(source))
+                            case let .file(file):
+                                if firstChunk {
+                                    firstChunk = false
+                                    continuation.yield(.startStep(request: requestMetadata, warnings: pendingWarnings))
+                                }
+                                continuation.yield(.file(file))
+                            case let .finish(finishReason, usage, providerMetadata):
+                                stepFinishReason = finishReason
+                                stepUsage = usage
+                                stepProviderMetadata = providerMetadata
+                            case let .responseMetadata(id, timestamp, modelId):
+                                if let id { stepResponseId = id }
+                                if let timestamp { stepResponseTimestamp = timestamp }
+                                if let modelId { stepResponseModelId = modelId }
+                            case let .raw(rawValue):
+                                if includeRawChunks {
+                                    if firstChunk {
+                                        firstChunk = false
+                                        continuation.yield(.startStep(request: requestMetadata, warnings: pendingWarnings))
+                                    }
+                                    continuation.yield(.raw(rawValue: rawValue))
+                                }
+                            case let .error(error):
+                                if firstChunk {
+                                    firstChunk = false
+                                    continuation.yield(.startStep(request: requestMetadata, warnings: pendingWarnings))
+                                }
+                                continuation.yield(.error(error))
                             }
-
-                            continuation.yield(part)
                         }
 
-                        continuation.finish()
+                        if firstChunk {
+                            continuation.yield(.startStep(request: requestMetadata, warnings: pendingWarnings))
+                        }
 
-                        await self.finalizeStream(
-                            finishReason: finishReason,
-                            totalUsage: totalUsage,
-                            warnings: collectedWarnings,
-                            providerMetadata: providerMetadata,
-                            responseInfo: result.response
+                        let responseMetadata = LanguageModelResponseMetadata(
+                            id: stepResponseId,
+                            timestamp: stepResponseTimestamp,
+                            modelId: stepResponseModelId,
+                            headers: streamResult.response?.headers
                         )
+
+                        continuation.yield(.finishStep(
+                            response: responseMetadata,
+                            usage: stepUsage,
+                            finishReason: stepFinishReason,
+                            providerMetadata: stepProviderMetadata
+                        ))
+
+                        continuation.finish()
                     } catch {
                         continuation.finish(throwing: error)
-                        await self.emitStreamError(error)
                     }
                 }
             }
         )
-    }
 
-    private func finalizeStream(
-        finishReason: FinishReason,
-        totalUsage: LanguageModelUsage,
-        warnings: [CallWarning],
-        providerMetadata: ProviderMetadata?,
-        responseInfo: LanguageModelV3StreamResponseInfo?
-    ) async {
-        let stepResult = DefaultStepResult(
-            content: [],
-            finishReason: finishReason,
-            usage: totalUsage,
-            warnings: warnings,
-            request: LanguageModelRequestMetadata(),
-            response: StepResultResponse(
-                id: internalOptions.generateId(),
-                timestamp: internalOptions.currentDate(),
-                modelId: model.modelId,
-                headers: responseInfo?.headers,
-                messages: [],
-                body: nil
-            ),
-            providerMetadata: providerMetadata
+        try await addStream(stepStream)
+        if let stepFinish = state.stepFinish {
+            _ = try await stepFinish.task.value
+        }
+
+        responseMessages = state.recordedResponseMessages
+
+        guard let stepResult = state.recordedSteps.last else {
+            return
+        }
+
+        accumulatedUsage = addLanguageModelUsage(accumulatedUsage, stepResult.usage)
+
+        let clientToolCalls = state.lastClientToolCalls
+        let clientToolOutputs = state.lastClientToolOutputs
+
+        let shouldContinue: Bool
+        if !clientToolCalls.isEmpty,
+           clientToolOutputs.count == clientToolCalls.count {
+            let stopMet = await isStopConditionMet(
+                stopConditions: stopConditions,
+                steps: state.recordedSteps
+            )
+            shouldContinue = !stopMet
+        } else {
+            shouldContinue = false
+        }
+
+        if shouldContinue {
+            try await executeStep(
+                stepNumber: stepNumber + 1,
+                standardizedPrompt: standardizedPrompt,
+                initialMessages: initialMessages,
+                responseMessages: &responseMessages,
+                accumulatedUsage: &accumulatedUsage,
+                retries: retries,
+                preparedCallSettings: preparedCallSettings,
+                tracer: tracer
+            )
+            return
+        }
+
+        let finishReason = stepResult.finishReason
+        let finishStream = createAsyncIterableStream(
+            source: AsyncThrowingStream<TextStreamPart, Error> { continuation in
+                continuation.yield(.finish(finishReason: finishReason, totalUsage: accumulatedUsage))
+                continuation.finish()
+            }
         )
 
-        stepsPromise.resolve([stepResult])
-        finishReasonPromise.resolve(finishReason)
-        totalUsagePromise.resolve(totalUsage)
-
-        if let onFinish {
-            await onFinish(
-                StreamTextOnFinishEvent(
-                    finishReason: finishReason,
-                    totalUsage: totalUsage,
-                    finalStep: stepResult,
-                    steps: [stepResult]
-                )
-            )
-        }
-
-        if let onStepFinish {
-            await onStepFinish(stepResult)
-        }
+        try await addStream(finishStream)
+        closeStream()
     }
 
     private func emitStreamError(_ error: Error) async {
@@ -1203,46 +1902,6 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
         stepsPromise.reject(error)
 
         await onError(StreamTextOnErrorEvent(error: error))
-    }
-
-    private func mapStreamPart(
-        _ part: LanguageModelV3StreamPart,
-        includeRawChunks: Bool
-    ) -> TextStreamPart? {
-        switch part {
-        case let .textStart(id, metadata):
-            return .textStart(id: id, providerMetadata: metadata)
-        case let .textDelta(id, delta, metadata):
-            return .textDelta(id: id, text: delta, providerMetadata: metadata)
-        case let .textEnd(id, metadata):
-            return .textEnd(id: id, providerMetadata: metadata)
-        case let .reasoningStart(id, metadata):
-            return .reasoningStart(id: id, providerMetadata: metadata)
-        case let .reasoningDelta(id, delta, metadata):
-            return .reasoningDelta(id: id, text: delta, providerMetadata: metadata)
-        case let .reasoningEnd(id, metadata):
-            return .reasoningEnd(id: id, providerMetadata: metadata)
-        case let .streamStart(warnings):
-            return .startStep(request: LanguageModelRequestMetadata(), warnings: warnings)
-        case let .finish(reason, usage, _):
-            return .finish(finishReason: reason, totalUsage: usage)
-        case let .raw(rawValue) where includeRawChunks:
-            return .raw(rawValue: rawValue)
-        case .raw:
-            return nil
-        case let .error(errorValue):
-            return .error(JSONValueError(value: errorValue))
-        default:
-            return nil
-        }
-    }
-
-    private struct JSONValueError: Error, CustomStringConvertible {
-        let value: JSONValue
-
-        var description: String {
-            "JSON error: \(value)"
-        }
     }
 
     private var finalStep: StepResult {
@@ -1290,4 +1949,5 @@ extension AsyncIterableStream {
     }
 }
 
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 extension DefaultStreamTextResult: @unchecked Sendable {}
