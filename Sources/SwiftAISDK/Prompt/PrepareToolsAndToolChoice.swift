@@ -68,6 +68,7 @@ public func prepareToolsAndToolChoice(
             guard let id = tool.id else {
                 throw InvalidArgumentError(
                     parameter: "tools[\(name)]",
+                    value: JSONValue.string(String(describing: tool)),
                     message: "Provider-defined tool must have 'id' field"
                 )
             }

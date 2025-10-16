@@ -63,37 +63,37 @@ struct PrepareCallSettingsTests {
 
     @Test("should throw InvalidArgumentError if maxOutputTokens is less than 1")
     func maxOutputTokensTooSmall() {
-        #expect(throws: InvalidArgumentError.self) {
+        #expect(throws: SwiftAISDK.InvalidArgumentError.self) {
             try prepareCallSettings(maxOutputTokens: 0)
         }
 
         do {
             _ = try prepareCallSettings(maxOutputTokens: 0)
             Issue.record("Expected InvalidArgumentError to be thrown")
-        } catch let error as InvalidArgumentError {
+        } catch let error as SwiftAISDK.InvalidArgumentError {
             #expect(error.parameter == "maxOutputTokens")
-            #expect(error.value == .number(0))
+            #expect(error.value == JSONValue.number(0))
             #expect(error.message == "Invalid argument for parameter maxOutputTokens: maxOutputTokens must be >= 1")
         } catch {
-            Issue.record("Expected InvalidArgumentError, got \(type(of: error))")
+            Issue.record("Expected SwiftAISDK.InvalidArgumentError, got \(type(of: error))")
         }
     }
 
     @Test("should throw InvalidArgumentError if maxOutputTokens is negative")
     func maxOutputTokensNegative() {
-        #expect(throws: InvalidArgumentError.self) {
+        #expect(throws: SwiftAISDK.InvalidArgumentError.self) {
             try prepareCallSettings(maxOutputTokens: -5)
         }
 
         do {
             _ = try prepareCallSettings(maxOutputTokens: -5)
             Issue.record("Expected InvalidArgumentError to be thrown")
-        } catch let error as InvalidArgumentError {
+        } catch let error as SwiftAISDK.InvalidArgumentError {
             #expect(error.parameter == "maxOutputTokens")
-            #expect(error.value == .number(-5))
+            #expect(error.value == JSONValue.number(-5))
             #expect(error.message == "Invalid argument for parameter maxOutputTokens: maxOutputTokens must be >= 1")
         } catch {
-            Issue.record("Expected InvalidArgumentError, got \(type(of: error))")
+            Issue.record("Expected SwiftAISDK.InvalidArgumentError, got \(type(of: error))")
         }
     }
 

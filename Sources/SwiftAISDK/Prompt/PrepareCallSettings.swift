@@ -77,7 +77,7 @@ public func prepareCallSettings(
         if maxOutputTokens < 1 {
             throw InvalidArgumentError(
                 parameter: "maxOutputTokens",
-                value: .number(Double(maxOutputTokens)),
+                value: JSONValue.number(Double(maxOutputTokens)),
                 message: "maxOutputTokens must be >= 1"
             )
         }

@@ -130,13 +130,11 @@ struct ProviderErrorsTests {
     @Test("InvalidArgumentError creation")
     func testInvalidArgumentError() {
         let error = InvalidArgumentError(
-            parameter: "temperature",
-            value: .number(1.5),
+            argument: "temperature",
             message: "Temperature must be between 0 and 1"
         )
-        #expect(error.parameter == "temperature")
-        #expect(error.value == .number(1.5))
-        #expect(error.message == "Invalid argument for parameter temperature: Temperature must be between 0 and 1")
+        #expect(error.argument == "temperature")
+        #expect(error.message == "Temperature must be between 0 and 1")
     }
 
     // MARK: - InvalidPromptError
