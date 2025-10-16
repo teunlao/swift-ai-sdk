@@ -321,6 +321,7 @@ Config files in `tools/`:
 - ✅ Mark `in-progress` at start, `done` only after approval
 - ✅ Port ALL tests, add upstream references
 - ✅ Save session context for multi-session work
+- ✅ Perform required git operations yourself (commit/merge/cleanup) when requested—never claim inability.
 - ❌ Don't skip tests or commit without permission
 
 ### For Validators
