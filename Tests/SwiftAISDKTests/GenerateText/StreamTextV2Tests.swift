@@ -102,7 +102,7 @@ struct StreamTextV2BasicTests {
         )
 
         var collected: [String] = []
-        for try await chunk in result.textStream {
+        for try await chunk in await result.textStream {
             collected.append(chunk)
         }
 
@@ -132,7 +132,7 @@ struct StreamTextV2BasicTests {
         )
 
         var collected: [String] = []
-        for try await chunk in result.textStream {
+        for try await chunk in await result.textStream {
             collected.append(chunk)
         }
 
@@ -149,7 +149,7 @@ struct StreamTextV2BasicTests {
         )
 
         // Consume stream first
-        for try await _ in result.textStream {}
+        for try await _ in await result.textStream {}
 
         // Then check accumulated text
         let fullText = try await result.text
@@ -166,7 +166,7 @@ struct StreamTextV2BasicTests {
         )
 
         // Consume stream
-        for try await _ in result.textStream {}
+        for try await _ in await result.textStream {}
 
         let reason = try await result.finishReason
         #expect(reason == .stop)
@@ -182,7 +182,7 @@ struct StreamTextV2BasicTests {
         )
 
         // Consume stream
-        for try await _ in result.textStream {}
+        for try await _ in await result.textStream {}
 
         let usage = try await result.usage
         #expect(usage.inputTokens == 3)
@@ -214,7 +214,7 @@ struct StreamTextV2FullStreamTests {
         )
 
         var parts: [TextStreamPart] = []
-        for try await part in result.fullStream {
+        for try await part in await result.fullStream {
             parts.append(part)
         }
 
@@ -232,7 +232,7 @@ struct StreamTextV2FullStreamTests {
         )
 
         // Consume stream
-        for try await _ in result.textStream {}
+        for try await _ in await result.textStream {}
 
         let content = try await result.content
         #expect(content.count > 0)
@@ -270,7 +270,7 @@ struct StreamTextV2ReasoningTests {
         )
 
         // Consume stream
-        for try await _ in result.fullStream {}
+        for try await _ in await result.fullStream {}
 
         let reasoning = try await result.reasoning
         #expect(reasoning.count == 1)
@@ -294,7 +294,7 @@ struct StreamTextV2ReasoningTests {
         )
 
         // Consume stream
-        for try await _ in result.fullStream {}
+        for try await _ in await result.fullStream {}
 
         let reasoningText = try await result.reasoningText
         #expect(reasoningText == "Thinking")
@@ -310,7 +310,7 @@ struct StreamTextV2ReasoningTests {
         )
 
         // Consume stream
-        for try await _ in result.textStream {}
+        for try await _ in await result.textStream {}
 
         let reasoningText = try await result.reasoningText
         #expect(reasoningText == nil)
@@ -340,7 +340,7 @@ struct StreamTextV2FilesSourcesTests {
         )
 
         // Consume stream
-        for try await _ in result.fullStream {}
+        for try await _ in await result.fullStream {}
 
         let files = try await result.files
         #expect(files.count == 1)
@@ -369,7 +369,7 @@ struct StreamTextV2FilesSourcesTests {
         )
 
         // Consume stream
-        for try await _ in result.fullStream {}
+        for try await _ in await result.fullStream {}
 
         let sources = try await result.sources
         #expect(sources.count == 1)
@@ -421,7 +421,7 @@ struct StreamTextV2CallbacksTests {
         )
 
         // Consume stream
-        for try await _ in result.textStream {}
+        for try await _ in await result.textStream {}
 
         // Should have received chunk callbacks
         let count = await state.getChunkCount()
@@ -442,7 +442,7 @@ struct StreamTextV2CallbacksTests {
         )
 
         // Consume stream
-        for try await _ in result.textStream {}
+        for try await _ in await result.textStream {}
 
         let finished = await state.isFinishCalled()
         let reason = await state.getReason()
@@ -468,7 +468,7 @@ struct StreamTextV2CallbacksTests {
         )
 
         do {
-            for try await _ in result.textStream {}
+            for try await _ in await result.textStream {}
             Issue.record("Expected error to be thrown")
         } catch {
             // Expected
@@ -492,7 +492,7 @@ struct StreamTextV2StepsTests {
         )
 
         // Consume stream
-        for try await _ in result.textStream {}
+        for try await _ in await result.textStream {}
 
         let steps = try await result.steps
         #expect(steps.count == 1)
@@ -513,7 +513,7 @@ struct StreamTextV2StepsTests {
         )
 
         // Consume stream
-        for try await _ in result.textStream {}
+        for try await _ in await result.textStream {}
 
         let request = try await result.request
         // Request metadata exists
@@ -530,7 +530,7 @@ struct StreamTextV2StepsTests {
         )
 
         // Consume stream
-        for try await _ in result.textStream {}
+        for try await _ in await result.textStream {}
 
         let response = try await result.response
         #expect(!response.id.isEmpty)
@@ -547,7 +547,7 @@ struct StreamTextV2StepsTests {
         )
 
         // Consume stream
-        for try await _ in result.textStream {}
+        for try await _ in await result.textStream {}
 
         let warnings = try await result.warnings
         // Warnings array exists (may be empty)
@@ -583,7 +583,7 @@ struct StreamTextV2ToolSupportTests {
         )
 
         // Consume stream
-        for try await _ in result.fullStream {}
+        for try await _ in await result.fullStream {}
 
         let toolCalls = try await result.toolCalls
         #expect(toolCalls.count == 1)
@@ -630,7 +630,7 @@ struct StreamTextV2ToolSupportTests {
         )
 
         // Consume stream
-        for try await _ in result.fullStream {}
+        for try await _ in await result.fullStream {}
 
         let toolResults = try await result.toolResults
         #expect(toolResults.count == 1)
@@ -666,7 +666,7 @@ struct StreamTextV2ToolSupportTests {
         )
 
         // Consume stream
-        for try await _ in result.fullStream {}
+        for try await _ in await result.fullStream {}
 
         let staticCalls = try await result.staticToolCalls
         #expect(staticCalls.count == 1)
@@ -698,7 +698,7 @@ struct StreamTextV2ToolSupportTests {
         )
 
         // Consume stream
-        for try await _ in result.fullStream {}
+        for try await _ in await result.fullStream {}
 
         // Since we convert everything to static for now, test static instead
         let staticCalls = try await result.staticToolCalls
@@ -727,7 +727,7 @@ struct StreamTextV2RaceConditionTests {
                 group.addTask {
                     var collected: [String] = []
                     do {
-                        for try await chunk in result.textStream {
+                        for try await chunk in await result.textStream {
                             collected.append(chunk)
                         }
                     } catch {
@@ -760,7 +760,7 @@ struct StreamTextV2RaceConditionTests {
 
         // Consume stream in background
         Task {
-            for try await _ in result.textStream {}
+            for try await _ in await result.textStream {}
         }
 
         // Try to access properties concurrently while stream is running

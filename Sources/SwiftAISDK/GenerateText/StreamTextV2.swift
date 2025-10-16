@@ -61,22 +61,51 @@ import AISDKProviderUtils
 
 // MARK: - Thread-Safe State Management
 
-/// Buffer for fullStream parts (thread-safe)
-private actor StreamPartsBuffer {
-    private var parts: [TextStreamPart] = []
-    private var isFinalized = false
+/// Hub for multicasting stream parts with replay support (thread-safe)
+private actor StreamHub {
+    private var buffer: [TextStreamPart] = []
+    private var continuations: [AsyncThrowingStream<TextStreamPart, Error>.Continuation] = []
+    private var finished = false
+    private var finishError: Error?
 
-    func append(_ part: TextStreamPart) {
-        guard !isFinalized else { return }
-        parts.append(part)
+    func subscribe() -> AsyncThrowingStream<TextStreamPart, Error> {
+        AsyncThrowingStream { continuation in
+            // Replay buffered parts
+            for part in buffer {
+                continuation.yield(part)
+            }
+            if finished {
+                if let err = finishError {
+                    continuation.finish(throwing: err)
+                } else {
+                    continuation.finish()
+                }
+                return
+            }
+            continuations.append(continuation)
+        }
     }
 
-    func finalize() {
-        isFinalized = true
+    func publish(_ part: TextStreamPart) {
+        guard !finished else { return }
+        buffer.append(part)
+        for c in continuations {
+            c.yield(part)
+        }
     }
 
-    func getAllParts() -> [TextStreamPart] {
-        parts
+    func finish(_ error: Error? = nil) {
+        guard !finished else { return }
+        finished = true
+        finishError = error
+        for c in continuations {
+            if let error {
+                c.finish(throwing: error)
+            } else {
+                c.finish()
+            }
+        }
+        continuations.removeAll()
     }
 }
 
@@ -240,13 +269,14 @@ private actor StreamStateV2 {
     func finalizeStep(
         finishReason: FinishReason,
         usage: LanguageModelUsage,
-        providerMetadata: ProviderMetadata?
+        providerMetadata: ProviderMetadata?,
+        headers: [String: String]?
     ) -> StepResult {
         let response = StepResultResponse(
             id: responseId,
             timestamp: responseTimestamp,
             modelId: responseModelId,
-            headers: nil,
+            headers: headers,
             messages: [],
             body: nil
         )
@@ -329,7 +359,7 @@ public struct StreamTextV2InternalOptions: Sendable {
 // MARK: - Result Type
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-public final class DefaultStreamTextResultV2: Sendable {
+public final class DefaultStreamTextResultV2 {
 
     private let state = StreamStateV2()
     private let model: any LanguageModelV3
@@ -344,8 +374,12 @@ public final class DefaultStreamTextResultV2: Sendable {
     private let contentPromise = DelayedPromise<[ContentPart]>()
     private let stepsPromise = DelayedPromise<[StepResult]>()
 
-    // Stream parts buffer for fullStream
-    private let streamPartsBuffer = StreamPartsBuffer()
+    // Hub for multicasting stream parts
+    private let hub = StreamHub()
+
+    // Pipeline management
+    private var pipelineTask: Task<Void, Never>?
+    private let pipelineLock = NSLock()
 
     // Callbacks
     private let onChunk: StreamTextOnChunkCallback?
@@ -368,11 +402,25 @@ public final class DefaultStreamTextResultV2: Sendable {
         self.onChunk = onChunk
         self.onFinish = onFinish
         self.onError = onError
+    }
 
-        // Start pipeline asynchronously
-        Task { [weak self] in
+    // MARK: - Pipeline Management
+
+    private func ensurePipelineStartedOnce() {
+        if pipelineTask != nil { return }
+        pipelineLock.lock()
+        defer { pipelineLock.unlock() }
+        if pipelineTask != nil { return }
+        pipelineTask = Task { [weak self] in
             guard let self else { return }
-            await self.runPipeline()
+            do {
+                try await self.processStream { part in
+                    await self.hub.publish(part)
+                }
+                await self.hub.finish(nil)
+            } catch {
+                await self.hub.finish(error)
+            }
         }
     }
 
@@ -380,18 +428,21 @@ public final class DefaultStreamTextResultV2: Sendable {
 
     public var text: String {
         get async throws {
-            try await textPromise.task.value
+            ensurePipelineStartedOnce()
+            return try await textPromise.task.value
         }
     }
 
     public var content: [ContentPart] {
         get async throws {
-            try await contentPromise.task.value
+            ensurePipelineStartedOnce()
+            return try await contentPromise.task.value
         }
     }
 
     public var reasoning: [ReasoningOutput] {
         get async throws {
+            ensurePipelineStartedOnce()
             let content = try await contentPromise.task.value
             return content.compactMap { part in
                 if case .reasoning(let reasoning) = part {
@@ -404,6 +455,7 @@ public final class DefaultStreamTextResultV2: Sendable {
 
     public var reasoningText: String? {
         get async throws {
+            ensurePipelineStartedOnce()
             let reasoningParts = try await reasoning
             guard !reasoningParts.isEmpty else { return nil }
             return reasoningParts.map { $0.text }.joined(separator: "\n")
@@ -412,6 +464,7 @@ public final class DefaultStreamTextResultV2: Sendable {
 
     public var files: [GeneratedFile] {
         get async throws {
+            ensurePipelineStartedOnce()
             let content = try await contentPromise.task.value
             return content.compactMap { part in
                 if case .file(let file, _) = part {
@@ -424,6 +477,7 @@ public final class DefaultStreamTextResultV2: Sendable {
 
     public var sources: [Source] {
         get async throws {
+            ensurePipelineStartedOnce()
             let content = try await contentPromise.task.value
             return content.compactMap { part in
                 if case .source(_, let source) = part {
@@ -436,32 +490,37 @@ public final class DefaultStreamTextResultV2: Sendable {
 
     public var finishReason: FinishReason {
         get async throws {
-            try await finishReasonPromise.task.value
+            ensurePipelineStartedOnce()
+            return try await finishReasonPromise.task.value
         }
     }
 
     public var usage: LanguageModelUsage {
         get async throws {
-            try await usagePromise.task.value
+            ensurePipelineStartedOnce()
+            return try await usagePromise.task.value
         }
     }
 
     public var totalUsage: LanguageModelUsage {
         get async throws {
+            ensurePipelineStartedOnce()
             // For single-step, totalUsage == usage
             // In future multi-step support, this will accumulate
-            try await usagePromise.task.value
+            return try await usagePromise.task.value
         }
     }
 
     public var steps: [StepResult] {
         get async throws {
-            try await stepsPromise.task.value
+            ensurePipelineStartedOnce()
+            return try await stepsPromise.task.value
         }
     }
 
     public var request: LanguageModelRequestMetadata {
         get async throws {
+            ensurePipelineStartedOnce()
             let steps = try await stepsPromise.task.value
             guard let lastStep = steps.last else {
                 return LanguageModelRequestMetadata()
@@ -472,6 +531,7 @@ public final class DefaultStreamTextResultV2: Sendable {
 
     public var response: StepResultResponse {
         get async throws {
+            ensurePipelineStartedOnce()
             let steps = try await stepsPromise.task.value
             guard let lastStep = steps.last else {
                 throw NoOutputGeneratedError(message: "No output generated")
@@ -482,12 +542,14 @@ public final class DefaultStreamTextResultV2: Sendable {
 
     public var providerMetadata: ProviderMetadata? {
         get async throws {
-            await state.getProviderMetadata()
+            ensurePipelineStartedOnce()
+            return await state.getProviderMetadata()
         }
     }
 
     public var warnings: [CallWarning]? {
         get async throws {
+            ensurePipelineStartedOnce()
             let steps = try await stepsPromise.task.value
             guard let lastStep = steps.last else {
                 return nil
@@ -498,12 +560,14 @@ public final class DefaultStreamTextResultV2: Sendable {
 
     public var toolCalls: [TypedToolCall] {
         get async throws {
-            await state.getToolCalls()
+            ensurePipelineStartedOnce()
+            return await state.getToolCalls()
         }
     }
 
     public var staticToolCalls: [StaticToolCall] {
         get async throws {
+            ensurePipelineStartedOnce()
             let calls = await state.getToolCalls()
             return calls.compactMap { call in
                 if case .static(let staticCall) = call {
@@ -516,6 +580,7 @@ public final class DefaultStreamTextResultV2: Sendable {
 
     public var dynamicToolCalls: [DynamicToolCall] {
         get async throws {
+            ensurePipelineStartedOnce()
             let calls = await state.getToolCalls()
             return calls.compactMap { call in
                 if case .dynamic(let dynamicCall) = call {
@@ -528,12 +593,14 @@ public final class DefaultStreamTextResultV2: Sendable {
 
     public var toolResults: [TypedToolResult] {
         get async throws {
-            await state.getToolResults()
+            ensurePipelineStartedOnce()
+            return await state.getToolResults()
         }
     }
 
     public var staticToolResults: [StaticToolResult] {
         get async throws {
+            ensurePipelineStartedOnce()
             let results = await state.getToolResults()
             return results.compactMap { result in
                 if case .static(let staticResult) = result {
@@ -546,6 +613,7 @@ public final class DefaultStreamTextResultV2: Sendable {
 
     public var dynamicToolResults: [DynamicToolResult] {
         get async throws {
+            ensurePipelineStartedOnce()
             let results = await state.getToolResults()
             return results.compactMap { result in
                 if case .dynamic(let dynamicResult) = result {
@@ -557,42 +625,28 @@ public final class DefaultStreamTextResultV2: Sendable {
     }
 
     public var fullStream: AsyncThrowingStream<TextStreamPart, Error> {
-        AsyncThrowingStream { continuation in
-            Task { [weak self] in
-                guard let self else {
-                    continuation.finish()
-                    return
-                }
-
-                do {
-                    try await self.processStream { part in
-                        continuation.yield(part)
-                    }
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
-                }
-            }
+        get async {
+            ensurePipelineStartedOnce()
+            return await hub.subscribe()
         }
     }
 
     public var textStream: AsyncThrowingStream<String, Error> {
-        AsyncThrowingStream { continuation in
-            Task { [weak self] in
-                guard let self else {
-                    continuation.finish()
-                    return
-                }
-
-                do {
-                    try await self.processStream { part in
-                        if case .textDelta(_, let delta, _) = part, !delta.isEmpty {
-                            continuation.yield(delta)
+        get async {
+            ensurePipelineStartedOnce()
+            let base = await hub.subscribe()
+            return AsyncThrowingStream { continuation in
+                Task {
+                    do {
+                        for try await part in base {
+                            if case .textDelta(_, let delta, _) = part, !delta.isEmpty {
+                                continuation.yield(delta)
+                            }
                         }
+                        continuation.finish()
+                    } catch {
+                        continuation.finish(throwing: error)
                     }
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
                 }
             }
         }
@@ -600,12 +654,7 @@ public final class DefaultStreamTextResultV2: Sendable {
 
     // MARK: - Pipeline
 
-    private func runPipeline() async {
-        // Pipeline is driven by stream consumption
-        // This is here for future expansion
-    }
-
-    private func processStream(onPart: @escaping @Sendable (TextStreamPart) -> Void) async throws {
+    private func processStream(onPart: @escaping @Sendable (TextStreamPart) async -> Void) async throws {
         do {
             let standardized = try standardizePrompt(self.prompt)
             let supportedUrls = try await self.model.supportedUrls
@@ -651,6 +700,7 @@ public final class DefaultStreamTextResultV2: Sendable {
             let responseId = self.internalOptions.generateId()
             let responseTimestamp = self.internalOptions.currentDate()
             let responseModelId = self.model.modelId
+            let responseHeaders = streamResult.response?.headers
             await self.state.setResponseMetadata(
                 id: responseId,
                 timestamp: responseTimestamp,
@@ -662,26 +712,31 @@ public final class DefaultStreamTextResultV2: Sendable {
                 // Check abort signal
                 if let abortSignal = self.settings.abortSignal, abortSignal() {
                     await self.state.markFinished()
-                    await self.streamPartsBuffer.finalize()
-                    return
+                    let cancelError = CancellationError()
+                    await self.onError(StreamTextOnErrorEvent(error: cancelError))
+                    self.textPromise.reject(cancelError)
+                    self.contentPromise.reject(cancelError)
+                    self.finishReasonPromise.reject(cancelError)
+                    self.usagePromise.reject(cancelError)
+                    self.stepsPromise.reject(cancelError)
+                    throw cancelError
                 }
 
                 // Convert to TextStreamPart and process
-                let textStreamPart = convertToTextStreamPart(part)
-                await processStreamPart(textStreamPart)
-                await streamPartsBuffer.append(textStreamPart)
+                if let textStreamPart = convertToTextStreamPart(part) {
+                    await processStreamPart(textStreamPart)
 
-                // Invoke onChunk callback
-                if shouldInvokeOnChunk(textStreamPart), let onChunk = self.onChunk {
-                    await onChunk(StreamTextOnChunkEvent(chunk: textStreamPart))
+                    // Invoke onChunk callback
+                    if shouldInvokeOnChunk(textStreamPart), let onChunk = self.onChunk {
+                        await onChunk(StreamTextOnChunkEvent(chunk: textStreamPart))
+                    }
+
+                    await onPart(textStreamPart)
                 }
-
-                onPart(textStreamPart)
             }
 
             // Finalize step
             await self.state.markFinished()
-            await self.streamPartsBuffer.finalize()
 
             let finalText = await self.state.getText()
             let finalContent = await self.state.getContent()
@@ -693,7 +748,8 @@ public final class DefaultStreamTextResultV2: Sendable {
             let stepResult = await self.state.finalizeStep(
                 finishReason: finalReason,
                 usage: finalUsage,
-                providerMetadata: finalProviderMetadata
+                providerMetadata: finalProviderMetadata,
+                headers: responseHeaders
             )
 
             let steps = await self.state.getSteps()
@@ -741,34 +797,37 @@ public final class DefaultStreamTextResultV2: Sendable {
     // MARK: - Stream Consumption and Response Helpers
 
     public func consumeStream(options: ConsumeStreamOptions?) async {
-        await SwiftAISDK.consumeStream(stream: fullStream, onError: options?.onError)
+        let stream = await fullStream
+        await SwiftAISDK.consumeStream(stream: stream, onError: options?.onError)
     }
 
     public func pipeTextStreamToResponse(
         _ response: any StreamTextResponseWriter,
         init initOptions: TextStreamResponseInit?
-    ) {
+    ) async {
+        let stream = await textStream
         SwiftAISDK.pipeTextStreamToResponse(
             response: response,
             status: initOptions?.status,
             statusText: initOptions?.statusText,
             headers: initOptions?.headers,
-            textStream: textStream
+            textStream: stream
         )
     }
 
     public func toTextStreamResponse(
         init initOptions: TextStreamResponseInit?
-    ) -> TextStreamResponse {
-        SwiftAISDK.createTextStreamResponse(
+    ) async -> TextStreamResponse {
+        let stream = await textStream
+        return SwiftAISDK.createTextStreamResponse(
             status: initOptions?.status,
             statusText: initOptions?.statusText,
             headers: initOptions?.headers,
-            textStream: textStream
+            textStream: stream
         )
     }
 
-    private func convertToTextStreamPart(_ part: LanguageModelV3StreamPart) -> TextStreamPart {
+    private func convertToTextStreamPart(_ part: LanguageModelV3StreamPart) -> TextStreamPart? {
         switch part {
         case .streamStart:
             return .start
@@ -829,10 +888,20 @@ public final class DefaultStreamTextResultV2: Sendable {
                 providerMetadata: result.providerMetadata
             ))
             return .toolResult(typedToolResult)
-        case .finish(let reason, let usage, _):
+        case .finish(let reason, let usage, let metadata):
+            // Capture provider metadata from finish event
+            if let metadata {
+                Task {
+                    await self.state.setProviderMetadata(metadata)
+                }
+            }
             return .finish(finishReason: reason, totalUsage: usage)
+        case .responseMetadata, .error:
+            // Ignore metadata and error events (handled separately)
+            return nil
         default:
-            return .start // Placeholder for unsupported parts
+            // Ignore unsupported events
+            return nil
         }
     }
 
@@ -958,5 +1027,6 @@ public func streamTextV2(
     )
 }
 
+// @unchecked Sendable: Callbacks may not be Sendable, but pipeline management ensures thread-safety
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 extension DefaultStreamTextResultV2: @unchecked Sendable {}
