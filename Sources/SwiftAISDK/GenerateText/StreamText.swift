@@ -178,6 +178,12 @@ private final class StreamPipelineState: @unchecked Sendable {
     }
 }
 
+private struct StreamDoStreamResult {
+    let result: LanguageModelV3StreamResult
+    let doStreamSpan: any Span
+    let startTimestampMs: Double
+}
+
 private struct StreamTextConsistencyError: LocalizedError, CustomStringConvertible, Sendable {
     let message: String
 
@@ -1676,9 +1682,40 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
             providerOptions: providerOptions
         )
 
-        let streamResult = try await retries.retry.call {
-            try await stepModel.doStream(options: callOptions)
+        let innerTelemetryAttributes = try await selectTelemetryAttributes(
+            telemetry: telemetry,
+            attributes: buildStreamInnerTelemetryAttributes(
+                telemetry: telemetry,
+                baseAttributes: state.baseTelemetryAttributes,
+                prompt: promptForModel,
+                tools: toolPreparation.tools,
+                toolChoice: toolPreparation.toolChoice,
+                settings: preparedCallSettings,
+                model: stepModel
+            )
+        )
+
+        let doStreamAttempt = try await retries.retry.call {
+            try await recordSpan(
+                name: "ai.streamText.doStream",
+                tracer: tracer,
+                attributes: innerTelemetryAttributes,
+                fn: { span in
+                    let startTimestampMs = self.internalOptions.now()
+                    let result = try await stepModel.doStream(options: callOptions)
+                    return StreamDoStreamResult(
+                        result: result,
+                        doStreamSpan: span,
+                        startTimestampMs: startTimestampMs
+                    )
+                },
+                endWhenDone: false
+            )
         }
+
+        let streamResult = doStreamAttempt.result
+        let doStreamSpan = doStreamAttempt.doStreamSpan
+        let startTimestampMs = doStreamAttempt.startTimestampMs
 
         let streamWithToolResults = runToolsTransformation(
             tools: tools,
@@ -1713,13 +1750,30 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
                     continuation.yield(.start)
 
                     var pendingWarnings: [CallWarning] = []
-                    var firstChunk = true
+                    var stepFirstChunk = true
                     var stepFinishReason: FinishReason = .unknown
                     var stepUsage = LanguageModelUsage()
                     var stepProviderMetadata: ProviderMetadata?
                     var stepResponseId = self.internalOptions.generateId()
                     var stepResponseTimestamp = self.internalOptions.currentDate()
                     var stepResponseModelId = stepModel.modelId
+                    var activeText = ""
+                    var stepToolCalls: [TypedToolCall] = []
+                    var activeToolCallNames: [String: String] = [:]
+
+                    func startStepIfNeeded() {
+                        guard stepFirstChunk else { return }
+                        stepFirstChunk = false
+
+                        let msToFirstChunk = self.internalOptions.now() - startTimestampMs
+                        let msAttributes: Attributes = [
+                            "ai.response.msToFirstChunk": .double(msToFirstChunk)
+                        ]
+                        doStreamSpan.addEvent("ai.stream.firstChunk", attributes: msAttributes)
+                        doStreamSpan.setAttributes(msAttributes)
+
+                        continuation.yield(.startStep(request: requestMetadata, warnings: pendingWarnings))
+                    }
 
                     do {
                         for try await part in streamWithToolResults {
@@ -1729,54 +1783,34 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
                                 }
                                 continuation.yield(.abort)
                                 continuation.finish()
+                                doStreamSpan.end()
                                 return
                             }
 
-                            switch part {
-                            case .streamStart(let warnings):
+                            if case let .streamStart(warnings) = part {
                                 pendingWarnings = warnings
                                 continue
+                            }
+
+                            startStepIfNeeded()
+
+                            switch part {
                             case let .textStart(id, providerMetadata):
-                                if firstChunk {
-                                    firstChunk = false
-                                    continuation.yield(.startStep(request: requestMetadata, warnings: pendingWarnings))
-                                }
                                 continuation.yield(.textStart(id: id, providerMetadata: providerMetadata))
                             case let .textDelta(id, delta, providerMetadata):
-                                if firstChunk {
-                                    firstChunk = false
-                                    continuation.yield(.startStep(request: requestMetadata, warnings: pendingWarnings))
-                                }
+                                guard !delta.isEmpty else { continue }
                                 continuation.yield(.textDelta(id: id, text: delta, providerMetadata: providerMetadata))
+                                activeText += delta
                             case let .textEnd(id, providerMetadata):
-                                if firstChunk {
-                                    firstChunk = false
-                                    continuation.yield(.startStep(request: requestMetadata, warnings: pendingWarnings))
-                                }
                                 continuation.yield(.textEnd(id: id, providerMetadata: providerMetadata))
                             case let .reasoningStart(id, providerMetadata):
-                                if firstChunk {
-                                    firstChunk = false
-                                    continuation.yield(.startStep(request: requestMetadata, warnings: pendingWarnings))
-                                }
                                 continuation.yield(.reasoningStart(id: id, providerMetadata: providerMetadata))
                             case let .reasoningDelta(id, delta, providerMetadata):
-                                if firstChunk {
-                                    firstChunk = false
-                                    continuation.yield(.startStep(request: requestMetadata, warnings: pendingWarnings))
-                                }
                                 continuation.yield(.reasoningDelta(id: id, text: delta, providerMetadata: providerMetadata))
                             case let .reasoningEnd(id, providerMetadata):
-                                if firstChunk {
-                                    firstChunk = false
-                                    continuation.yield(.startStep(request: requestMetadata, warnings: pendingWarnings))
-                                }
                                 continuation.yield(.reasoningEnd(id: id, providerMetadata: providerMetadata))
                             case let .toolInputStart(id, toolName, providerMetadata, providerExecuted):
-                                if firstChunk {
-                                    firstChunk = false
-                                    continuation.yield(.startStep(request: requestMetadata, warnings: pendingWarnings))
-                                }
+                                activeToolCallNames[id] = toolName
                                 let dynamicFlag: Bool? = {
                                     guard let tool = self.tools?[toolName] else { return nil }
                                     return tool.type == .dynamic ? true : nil
@@ -1789,79 +1823,55 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
                                     dynamic: dynamicFlag
                                 ))
                             case let .toolInputDelta(id, delta, providerMetadata):
-                                if firstChunk {
-                                    firstChunk = false
-                                    continuation.yield(.startStep(request: requestMetadata, warnings: pendingWarnings))
-                                }
                                 continuation.yield(.toolInputDelta(id: id, delta: delta, providerMetadata: providerMetadata))
                             case let .toolInputEnd(id, providerMetadata):
-                                if firstChunk {
-                                    firstChunk = false
-                                    continuation.yield(.startStep(request: requestMetadata, warnings: pendingWarnings))
-                                }
+                                activeToolCallNames.removeValue(forKey: id)
                                 continuation.yield(.toolInputEnd(id: id, providerMetadata: providerMetadata))
                             case let .toolCall(toolCall):
-                                if firstChunk {
-                                    firstChunk = false
-                                    continuation.yield(.startStep(request: requestMetadata, warnings: pendingWarnings))
-                                }
+                                stepToolCalls.append(toolCall)
                                 continuation.yield(.toolCall(toolCall))
                             case let .toolResult(result):
-                                if firstChunk {
-                                    firstChunk = false
-                                    continuation.yield(.startStep(request: requestMetadata, warnings: pendingWarnings))
-                                }
                                 continuation.yield(.toolResult(result))
                             case let .toolError(error):
-                                if firstChunk {
-                                    firstChunk = false
-                                    continuation.yield(.startStep(request: requestMetadata, warnings: pendingWarnings))
-                                }
                                 continuation.yield(.toolError(error))
                             case let .toolApprovalRequest(request):
-                                if firstChunk {
-                                    firstChunk = false
-                                    continuation.yield(.startStep(request: requestMetadata, warnings: pendingWarnings))
-                                }
                                 continuation.yield(.toolApprovalRequest(request))
                             case let .source(source):
-                                if firstChunk {
-                                    firstChunk = false
-                                    continuation.yield(.startStep(request: requestMetadata, warnings: pendingWarnings))
-                                }
                                 continuation.yield(.source(source))
                             case let .file(file):
-                                if firstChunk {
-                                    firstChunk = false
-                                    continuation.yield(.startStep(request: requestMetadata, warnings: pendingWarnings))
-                                }
                                 continuation.yield(.file(file))
                             case let .finish(finishReason, usage, providerMetadata):
                                 stepFinishReason = finishReason
                                 stepUsage = usage
                                 stepProviderMetadata = providerMetadata
+                                let msToFinish = max(self.internalOptions.now() - startTimestampMs, 0)
+                                var finishMetrics: Attributes = [
+                                    "ai.response.msToFinish": .double(msToFinish)
+                                ]
+                                if msToFinish > 0,
+                                   let outputTokens = stepUsage.outputTokens {
+                                    let avg = (1000.0 * Double(outputTokens)) / msToFinish
+                                    finishMetrics["ai.response.avgOutputTokensPerSecond"] = .double(avg)
+                                }
+                                doStreamSpan.addEvent("ai.stream.finish", attributes: nil)
+                                doStreamSpan.setAttributes(finishMetrics)
                             case let .responseMetadata(id, timestamp, modelId):
                                 if let id { stepResponseId = id }
                                 if let timestamp { stepResponseTimestamp = timestamp }
                                 if let modelId { stepResponseModelId = modelId }
                             case let .raw(rawValue):
                                 if includeRawChunks {
-                                    if firstChunk {
-                                        firstChunk = false
-                                        continuation.yield(.startStep(request: requestMetadata, warnings: pendingWarnings))
-                                    }
                                     continuation.yield(.raw(rawValue: rawValue))
                                 }
                             case let .error(error):
-                                if firstChunk {
-                                    firstChunk = false
-                                    continuation.yield(.startStep(request: requestMetadata, warnings: pendingWarnings))
-                                }
                                 continuation.yield(.error(error))
+                                stepFinishReason = .error
+                            default:
+                                break
                             }
                         }
 
-                        if firstChunk {
+                        if stepFirstChunk {
                             continuation.yield(.startStep(request: requestMetadata, warnings: pendingWarnings))
                         }
 
@@ -1879,8 +1889,26 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
                             providerMetadata: stepProviderMetadata
                         ))
 
+                        if let streamFinishAttributes = try? await selectTelemetryAttributes(
+                            telemetry: self.telemetry,
+                            attributes: buildStreamDoStreamFinishAttributes(
+                                telemetry: self.telemetry,
+                                finishReason: stepFinishReason,
+                                activeText: activeText,
+                                toolCallsJSON: serializeToolCallsForTelemetry(stepToolCalls),
+                                response: responseMetadata,
+                                providerMetadata: stepProviderMetadata,
+                                usage: stepUsage
+                            )
+                        ) {
+                            doStreamSpan.setAttributes(streamFinishAttributes)
+                        }
+
+                        doStreamSpan.end()
+
                         continuation.finish()
                     } catch {
+                        doStreamSpan.end()
                         continuation.finish(throwing: error)
                     }
                 }
@@ -2012,6 +2040,64 @@ extension AsyncIterableStream {
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 extension DefaultStreamTextResult: @unchecked Sendable {}
 
+private func buildStreamInnerTelemetryAttributes(
+    telemetry: TelemetrySettings?,
+    baseAttributes: Attributes,
+    prompt: LanguageModelV3Prompt,
+    tools: [LanguageModelV3Tool]?,
+    toolChoice: LanguageModelV3ToolChoice?,
+    settings: PreparedCallSettings,
+    model: any LanguageModelV3
+) -> [String: ResolvableAttributeValue?] {
+    var attributes: [String: ResolvableAttributeValue?] = [:]
+
+    for (key, value) in assembleOperationName(operationId: "ai.streamText.doStream", telemetry: telemetry) {
+        attributes[key] = .value(value)
+    }
+
+    for (key, value) in baseAttributes {
+        attributes[key] = .value(value)
+    }
+
+    attributes["ai.model.provider"] = .value(.string(model.provider))
+    attributes["ai.model.id"] = .value(.string(model.modelId))
+
+    attributes["ai.prompt.messages"] = .input {
+        guard let serialized = try? stringifyForTelemetry(prompt) else {
+            return nil
+        }
+        return .string(serialized)
+    }
+
+    attributes["ai.prompt.tools"] = .input {
+        guard let encoded = encodeToolsForTelemetry(tools) else {
+            return nil
+        }
+        return .string(encoded)
+    }
+
+    attributes["ai.prompt.toolChoice"] = .input {
+        guard let encoded = encodeToolChoiceForTelemetry(toolChoice) else {
+            return nil
+        }
+        return .string(encoded)
+    }
+
+    attributes["gen_ai.system"] = .value(.string(model.provider))
+    attributes["gen_ai.request.model"] = .value(.string(model.modelId))
+    attributes["gen_ai.request.frequency_penalty"] = makeDoubleAttributeValue(settings.frequencyPenalty)
+    attributes["gen_ai.request.max_tokens"] = makeAttributeValue(settings.maxOutputTokens)
+    attributes["gen_ai.request.presence_penalty"] = makeDoubleAttributeValue(settings.presencePenalty)
+    if let stopSequences = settings.stopSequences {
+        attributes["gen_ai.request.stop_sequences"] = .value(.stringArray(stopSequences))
+    }
+    attributes["gen_ai.request.temperature"] = makeDoubleAttributeValue(settings.temperature)
+    attributes["gen_ai.request.top_k"] = makeAttributeValue(settings.topK)
+    attributes["gen_ai.request.top_p"] = makeDoubleAttributeValue(settings.topP)
+
+    return attributes
+}
+
 private func buildStreamOuterTelemetryAttributes(
     telemetry: TelemetrySettings?,
     baseAttributes: Attributes
@@ -2055,7 +2141,133 @@ private func buildStreamFinishTelemetryAttributes(
     return attributes
 }
 
+private func buildStreamDoStreamFinishAttributes(
+    telemetry: TelemetrySettings?,
+    finishReason: FinishReason,
+    activeText: String,
+    toolCallsJSON: String?,
+    response: LanguageModelResponseMetadata,
+    providerMetadata: ProviderMetadata?,
+    usage: LanguageModelUsage
+) -> [String: ResolvableAttributeValue?] {
+    var attributes: [String: ResolvableAttributeValue?] = [:]
+
+    attributes["ai.response.finishReason"] = .value(.string(finishReason.rawValue))
+
+    attributes["ai.response.text"] = .output {
+        guard !activeText.isEmpty else { return nil }
+        return .string(activeText)
+    }
+
+    attributes["ai.response.toolCalls"] = .output {
+        guard let toolCallsJSON else { return nil }
+        return .string(toolCallsJSON)
+    }
+
+    attributes["ai.response.id"] = .value(.string(response.id))
+    attributes["ai.response.model"] = .value(.string(response.modelId))
+    attributes["ai.response.timestamp"] = .value(.string(response.timestamp.iso8601String))
+
+    attributes["ai.response.providerMetadata"] = .output {
+        guard let metadataString = jsonString(from: providerMetadata) else { return nil }
+        return .string(metadataString)
+    }
+
+    attributes["ai.usage.inputTokens"] = makeAttributeValue(usage.inputTokens)
+    attributes["ai.usage.outputTokens"] = makeAttributeValue(usage.outputTokens)
+    attributes["ai.usage.totalTokens"] = makeAttributeValue(usage.totalTokens)
+    attributes["ai.usage.reasoningTokens"] = makeAttributeValue(usage.reasoningTokens)
+    attributes["ai.usage.cachedInputTokens"] = makeAttributeValue(usage.cachedInputTokens)
+
+    attributes["gen_ai.response.finish_reasons"] = .value(.stringArray([finishReason.rawValue]))
+    attributes["gen_ai.response.id"] = .value(.string(response.id))
+    attributes["gen_ai.response.model"] = .value(.string(response.modelId))
+    attributes["gen_ai.usage.input_tokens"] = makeAttributeValue(usage.inputTokens)
+    attributes["gen_ai.usage.output_tokens"] = makeAttributeValue(usage.outputTokens)
+
+    return attributes
+}
+
 private func makeAttributeValue(_ value: Int?) -> ResolvableAttributeValue? {
     guard let value else { return nil }
     return .value(.int(value))
+}
+
+private func makeDoubleAttributeValue(_ value: Double?) -> ResolvableAttributeValue? {
+    guard let value else { return nil }
+    return .value(.double(value))
+}
+
+private func serializeToolCallsForTelemetry(_ toolCalls: [TypedToolCall]) -> String? {
+    guard !toolCalls.isEmpty else { return nil }
+    let summaries = toolCalls.map { ToolCallTelemetrySummary(call: $0) }
+    return encodeToJSONString(summaries)
+}
+
+private func encodeToolsForTelemetry(_ tools: [LanguageModelV3Tool]?) -> String? {
+    guard let tools else { return nil }
+    return encodeToJSONString(tools)
+}
+
+private func encodeToolChoiceForTelemetry(_ toolChoice: LanguageModelV3ToolChoice?) -> String? {
+    guard let toolChoice else { return nil }
+    return encodeToJSONString(toolChoice)
+}
+
+private func jsonString(from providerMetadata: ProviderMetadata?) -> String? {
+    guard let providerMetadata else { return nil }
+    return encodeToJSONString(providerMetadata)
+}
+
+private func encodeToJSONString<T: Encodable>(_ value: T) -> String? {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+    guard let data = try? encoder.encode(value) else {
+        return nil
+    }
+    return String(data: data, encoding: .utf8)
+}
+
+private struct ToolCallTelemetrySummary: Encodable {
+    let toolCallId: String
+    let toolName: String
+    let input: JSONValue
+    let providerExecuted: Bool?
+    let providerMetadata: ProviderMetadata?
+    let dynamic: Bool?
+    let invalid: Bool?
+    let errorText: String?
+
+    init(call: TypedToolCall) {
+        switch call {
+        case .static(let staticCall):
+            toolCallId = staticCall.toolCallId
+            toolName = staticCall.toolName
+            input = staticCall.input
+            providerExecuted = staticCall.providerExecuted
+            providerMetadata = staticCall.providerMetadata
+            dynamic = false
+            invalid = staticCall.invalid
+            errorText = nil
+        case .dynamic(let dynamicCall):
+            toolCallId = dynamicCall.toolCallId
+            toolName = dynamicCall.toolName
+            input = dynamicCall.input
+            providerExecuted = dynamicCall.providerExecuted
+            providerMetadata = dynamicCall.providerMetadata
+            dynamic = true
+            invalid = dynamicCall.invalid
+            if let error = dynamicCall.error {
+                errorText = String(describing: error)
+            } else {
+                errorText = nil
+            }
+        }
+    }
+}
+
+private extension Date {
+    var iso8601String: String {
+        ISO8601DateFormatter().string(from: self)
+    }
 }
