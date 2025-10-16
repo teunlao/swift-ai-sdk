@@ -71,7 +71,7 @@ struct PostToAPITests {
                 ]
             )!
 
-            return (mockData, httpResponse)
+            return FetchResponse(body: .data(mockData), urlResponse: httpResponse)
         }
 
         let result = try await postJsonToAPI(
@@ -121,7 +121,7 @@ struct PostToAPITests {
                 headerFields: [:]
             )!
 
-            return (errorData, httpResponse)
+            return FetchResponse(body: .data(errorData), urlResponse: httpResponse)
         }
 
         await #expect(throws: APICallError.self) {
@@ -205,7 +205,7 @@ struct PostToAPITests {
                 headerFields: [:]
             )!
 
-            return (mockData, httpResponse)
+            return FetchResponse(body: .data(mockData), urlResponse: httpResponse)
         }
 
         _ = try await postJsonToAPI(
@@ -237,7 +237,7 @@ struct PostToAPITests {
                 headerFields: [:]
             )!
 
-            return (invalidJSON, httpResponse)
+            return FetchResponse(body: .data(invalidJSON), urlResponse: httpResponse)
         }
 
         await #expect(throws: APICallError.self) {
@@ -249,6 +249,39 @@ struct PostToAPITests {
                 fetch: mockFetch
             )
         }
+    }
+
+    @Test("should handle streaming success bodies")
+    func shouldHandleStreamingSuccessBodies() async throws {
+        let mockRequest = MockRequest(name: "stream", value: 9)
+        let mockSuccessResponse = MockResponse(success: true, message: "streamed")
+        let encoded = try JSONEncoder().encode(mockSuccessResponse)
+
+        let stream = AsyncThrowingStream<Data, Error> { continuation in
+            continuation.yield(encoded)
+            continuation.finish()
+        }
+
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.test.com/create")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let mockFetch: FetchFunction = { _ in
+            FetchResponse(body: .stream(stream), urlResponse: httpResponse)
+        }
+
+        let result = try await postJsonToAPI(
+            url: "https://api.test.com/create",
+            body: mockRequest,
+            failedResponseHandler: createStatusCodeErrorResponseHandler(),
+            successfulResponseHandler: createJsonResponseHandler(responseSchema: mockResponseSchema()),
+            fetch: mockFetch
+        )
+
+        #expect(result.value == mockSuccessResponse)
     }
 
     @Test("should encode form data correctly")
@@ -274,7 +307,7 @@ struct PostToAPITests {
                 headerFields: [:]
             )!
 
-            return (mockData, httpResponse)
+            return FetchResponse(body: .data(mockData), urlResponse: httpResponse)
         }
 
         let result = try await postFormDataToAPI(

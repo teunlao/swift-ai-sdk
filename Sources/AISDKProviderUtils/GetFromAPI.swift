@@ -38,7 +38,7 @@ public func getFromAPI<T>(
     isAborted: (@Sendable () -> Bool)? = nil,
     fetch: FetchFunction? = nil
 ) async throws -> ResponseHandlerResult<T> {
-    let fetchImpl = fetch ?? getDefaultFetch()
+    let fetchImpl = fetch ?? defaultFetchFunction()
 
     do {
         // Prepare request
@@ -70,9 +70,9 @@ public func getFromAPI<T>(
         }
 
         // Execute request
-        let (data, urlResponse) = try await fetchImpl(request)
+        let fetchResponse = try await fetchImpl(request)
 
-        guard let httpResponse = urlResponse as? HTTPURLResponse else {
+        guard let httpResponse = fetchResponse.urlResponse as? HTTPURLResponse else {
             throw APICallError(
                 message: "Invalid response type",
                 url: url,
@@ -86,7 +86,7 @@ public func getFromAPI<T>(
         let providerResponse = ProviderHTTPResponse(
             url: requestURL,
             httpResponse: httpResponse,
-            body: .data(data)
+            body: fetchResponse.body
         )
 
         // Handle non-2xx responses
@@ -153,9 +153,3 @@ public func getFromAPI<T>(
     }
 }
 
-/// Default fetch function using shared URLSession (private helper)
-private func getDefaultFetch() -> FetchFunction {
-    { request in
-        try await URLSession.shared.data(for: request)
-    }
-}
