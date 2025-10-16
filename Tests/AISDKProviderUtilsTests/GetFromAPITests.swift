@@ -55,7 +55,7 @@ struct GetFromAPITests {
                 ]
             )!
 
-            return (mockData, httpResponse)
+            return FetchResponse(body: .data(mockData), urlResponse: httpResponse)
         }
 
         let result = try await getFromAPI(
@@ -95,7 +95,7 @@ struct GetFromAPITests {
                 headerFields: [:]
             )!
 
-            return (errorData, httpResponse)
+            return FetchResponse(body: .data(errorData), urlResponse: httpResponse)
         }
 
         await #expect(throws: APICallError.self) {
@@ -171,7 +171,7 @@ struct GetFromAPITests {
                 headerFields: [:]
             )!
 
-            return (mockData, httpResponse)
+            return FetchResponse(body: .data(mockData), urlResponse: httpResponse)
         }
 
         // Note: In Swift, we don't have "undefined" - nil values are simply not added
@@ -204,7 +204,7 @@ struct GetFromAPITests {
                 headerFields: [:]
             )!
 
-            return (invalidJSON, httpResponse)
+            return FetchResponse(body: .data(invalidJSON), urlResponse: httpResponse)
         }
 
         await #expect(throws: APICallError.self) {
@@ -215,6 +215,37 @@ struct GetFromAPITests {
                 fetch: mockFetch
             )
         }
+    }
+
+    @Test("should handle streaming responses")
+    func shouldHandleStreamingResponses() async throws {
+        let mockSuccessResponse = MockResponse(name: "stream", value: 7)
+        let encoded = try JSONEncoder().encode(mockSuccessResponse)
+
+        let stream = AsyncThrowingStream<Data, Error> { continuation in
+            continuation.yield(encoded)
+            continuation.finish()
+        }
+
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.test.com/data")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let mockFetch: FetchFunction = { _ in
+            FetchResponse(body: .stream(stream), urlResponse: httpResponse)
+        }
+
+        let result = try await getFromAPI(
+            url: "https://api.test.com/data",
+            failedResponseHandler: createStatusCodeErrorResponseHandler(),
+            successfulResponseHandler: createJsonResponseHandler(responseSchema: mockResponseSchema()),
+            fetch: mockFetch
+        )
+
+        #expect(result.value == mockSuccessResponse)
     }
 
     @Test("should use default fetch when not provided")
@@ -240,7 +271,7 @@ struct GetFromAPITests {
                 headerFields: [:]
             )!
 
-            return (mockData, httpResponse)
+            return FetchResponse(body: .data(mockData), urlResponse: httpResponse)
         }
 
         // Call with explicit fetch to verify the function works

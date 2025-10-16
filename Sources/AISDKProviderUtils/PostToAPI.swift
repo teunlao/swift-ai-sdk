@@ -10,16 +10,6 @@ import AISDKProvider
  handling responses with custom success/failure handlers, and proper error wrapping.
  */
 
-/// Type alias for URLSession-based fetch function (allows mocking in tests)
-public typealias FetchFunction = @Sendable (URLRequest) async throws -> (Data, URLResponse)
-
-/// Default fetch function using shared URLSession
-private func getDefaultFetch() -> FetchFunction {
-    { request in
-        try await URLSession.shared.data(for: request)
-    }
-}
-
 // MARK: - Post JSON to API
 
 /**
@@ -164,7 +154,7 @@ public func postToAPI<T>(
     isAborted: (@Sendable () -> Bool)? = nil,
     fetch: FetchFunction? = nil
 ) async throws -> ResponseHandlerResult<T> {
-    let fetchImpl = fetch ?? getDefaultFetch()
+    let fetchImpl = fetch ?? defaultFetchFunction()
 
     do {
         // Prepare request
@@ -217,9 +207,9 @@ public func postToAPI<T>(
         }
 
         // Execute request
-        let (data, urlResponse) = try await fetchImpl(request)
+        let fetchResponse = try await fetchImpl(request)
 
-        guard let httpResponse = urlResponse as? HTTPURLResponse else {
+        guard let httpResponse = fetchResponse.urlResponse as? HTTPURLResponse else {
             throw APICallError(
                 message: "Invalid response type",
                 url: url,
@@ -233,7 +223,7 @@ public func postToAPI<T>(
         let providerResponse = ProviderHTTPResponse(
             url: requestURL,
             httpResponse: httpResponse,
-            body: .data(data)
+            body: fetchResponse.body
         )
 
         // Handle non-2xx responses
