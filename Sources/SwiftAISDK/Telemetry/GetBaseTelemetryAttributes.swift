@@ -45,11 +45,10 @@ public func getBaseTelemetryAttributes(
     attributes["ai.model.provider"] = .string(model.provider)
     attributes["ai.model.id"] = .string(model.modelId)
 
-    // Settings (excluding abortSignal, headers, temperature per upstream)
+    // Settings (excluding abortSignal and headers per upstream)
     if let maxOutputTokens = settings.maxOutputTokens {
         attributes["ai.settings.maxOutputTokens"] = .int(maxOutputTokens)
     }
-    // temperature is intentionally excluded (not in upstream)
     if let topP = settings.topP {
         attributes["ai.settings.topP"] = .double(topP)
     }
