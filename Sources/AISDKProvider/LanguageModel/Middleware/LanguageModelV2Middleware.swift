@@ -6,6 +6,8 @@
  This type defines the structure for middleware that can be used to modify
  the behavior of LanguageModelV2 operations.
  */
+import Foundation
+
 public struct LanguageModelV2Middleware: Sendable {
     /**
      Middleware specification version. Use `v2` for the current version.
@@ -32,9 +34,9 @@ public struct LanguageModelV2Middleware: Sendable {
      Override the supported URLs if desired.
 
      - Parameter model: The language model instance.
-     - Returns: A dictionary mapping URL types to arrays of regular expression patterns.
+     - Returns: A dictionary mapping URL types to arrays of regular expression patterns (NSRegularExpression).
      */
-    public let overrideSupportedUrls: (@Sendable (_ model: any LanguageModelV2) async throws -> [String: [String]])?
+    public let overrideSupportedUrls: (@Sendable (_ model: any LanguageModelV2) async throws -> [String: [NSRegularExpression]])?
 
     /**
      Transforms the parameters before they are passed to the language model.
@@ -103,7 +105,7 @@ public struct LanguageModelV2Middleware: Sendable {
         middlewareVersion: String? = "v2",
         overrideProvider: (@Sendable (_ model: any LanguageModelV2) -> String)? = nil,
         overrideModelId: (@Sendable (_ model: any LanguageModelV2) -> String)? = nil,
-        overrideSupportedUrls: (@Sendable (_ model: any LanguageModelV2) async throws -> [String: [String]])? = nil,
+        overrideSupportedUrls: (@Sendable (_ model: any LanguageModelV2) async throws -> [String: [NSRegularExpression]])? = nil,
         transformParams: (@Sendable (_ type: OperationType, _ params: LanguageModelV2CallOptions, _ model: any LanguageModelV2) async throws -> LanguageModelV2CallOptions)? = nil,
         wrapGenerate: (@Sendable (
             _ doGenerate: @Sendable () async throws -> LanguageModelV2GenerateResult,
