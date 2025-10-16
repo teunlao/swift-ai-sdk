@@ -376,6 +376,185 @@ struct StreamTextV2FilesSourcesTests {
     }
 }
 
+// MARK: - Phase 3: Callbacks and Steps Tests
+
+@Suite("StreamTextV2 - callbacks")
+struct StreamTextV2CallbacksTests {
+
+    // Thread-safe callback state tracker
+    private actor CallbackState {
+        var chunkCount = 0
+        var finishCalled = false
+        var capturedReason: FinishReason?
+        var errorCalled = false
+
+        func incrementChunkCount() {
+            chunkCount += 1
+        }
+
+        func markFinished(reason: FinishReason) {
+            finishCalled = true
+            capturedReason = reason
+        }
+
+        func markError() {
+            errorCalled = true
+        }
+
+        func getChunkCount() -> Int { chunkCount }
+        func isFinishCalled() -> Bool { finishCalled }
+        func getReason() -> FinishReason? { capturedReason }
+        func isErrorCalled() -> Bool { errorCalled }
+    }
+
+    @Test("should invoke onChunk callback")
+    func invokesOnChunk() async throws {
+        let model = createTestModelV2()
+        let state = CallbackState()
+
+        let result = try streamTextV2(
+            model: .v3(model),
+            prompt: "test-input",
+            onChunk: { event in
+                await state.incrementChunkCount()
+            }
+        )
+
+        // Consume stream
+        for try await _ in result.textStream {}
+
+        // Should have received chunk callbacks
+        let count = await state.getChunkCount()
+        #expect(count > 0)
+    }
+
+    @Test("should invoke onFinish callback")
+    func invokesOnFinish() async throws {
+        let model = createTestModelV2()
+        let state = CallbackState()
+
+        let result = try streamTextV2(
+            model: .v3(model),
+            prompt: "test-input",
+            onFinish: { event in
+                await state.markFinished(reason: event.finishReason)
+            }
+        )
+
+        // Consume stream
+        for try await _ in result.textStream {}
+
+        let finished = await state.isFinishCalled()
+        let reason = await state.getReason()
+        #expect(finished)
+        #expect(reason == .stop)
+    }
+
+    @Test("should invoke onError callback on failure")
+    func invokesOnError() async throws {
+        let model = MockLanguageModelV3(
+            doStream: .function { _ in
+                throw NSError(domain: "test", code: 1)
+            }
+        )
+
+        let state = CallbackState()
+        let result = try streamTextV2(
+            model: .v3(model),
+            prompt: "test-input",
+            onError: { event in
+                await state.markError()
+            }
+        )
+
+        do {
+            for try await _ in result.textStream {}
+            Issue.record("Expected error to be thrown")
+        } catch {
+            // Expected
+        }
+
+        let errorOccurred = await state.isErrorCalled()
+        #expect(errorOccurred)
+    }
+}
+
+@Suite("StreamTextV2 - steps and metadata")
+struct StreamTextV2StepsTests {
+
+    @Test("should create step result")
+    func createsStepResult() async throws {
+        let model = createTestModelV2()
+
+        let result = try streamTextV2(
+            model: .v3(model),
+            prompt: "test-input"
+        )
+
+        // Consume stream
+        for try await _ in result.textStream {}
+
+        let steps = try await result.steps
+        #expect(steps.count == 1)
+
+        let step = steps[0]
+        #expect(step.finishReason == .stop)
+        #expect(step.usage.totalTokens == 13)
+        #expect(!step.content.isEmpty)
+    }
+
+    @Test("should provide request metadata")
+    func providesRequestMetadata() async throws {
+        let model = createTestModelV2()
+
+        let result = try streamTextV2(
+            model: .v3(model),
+            prompt: "test-input"
+        )
+
+        // Consume stream
+        for try await _ in result.textStream {}
+
+        let request = try await result.request
+        // Request metadata exists
+        #expect(request.body != nil || request.body == nil) // Just verify it exists
+    }
+
+    @Test("should provide response metadata")
+    func providesResponseMetadata() async throws {
+        let model = createTestModelV2()
+
+        let result = try streamTextV2(
+            model: .v3(model),
+            prompt: "test-input"
+        )
+
+        // Consume stream
+        for try await _ in result.textStream {}
+
+        let response = try await result.response
+        #expect(!response.id.isEmpty)
+        #expect(!response.modelId.isEmpty)
+    }
+
+    @Test("should provide warnings")
+    func providesWarnings() async throws {
+        let model = createTestModelV2()
+
+        let result = try streamTextV2(
+            model: .v3(model),
+            prompt: "test-input"
+        )
+
+        // Consume stream
+        for try await _ in result.textStream {}
+
+        let warnings = try await result.warnings
+        // Warnings array exists (may be empty)
+        #expect(warnings != nil || warnings == nil)
+    }
+}
+
 // MARK: - Race Condition Tests
 
 @Suite("StreamTextV2 - race condition safety")

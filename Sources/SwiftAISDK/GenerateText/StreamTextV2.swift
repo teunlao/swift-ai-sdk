@@ -7,11 +7,49 @@ import AISDKProviderUtils
 
  Port of `@ai-sdk/ai/src/generate-text/stream-text.ts`.
 
- Phase 1: Minimal implementation with actor-based state management.
- - textStream only
- - Single-step execution
- - No tools, no transforms, no telemetry
- - Thread-safe state via Actor
+ ## Implementation Status
+
+ ✅ **Phase 1: Core Streaming (Completed)**
+ - textStream: AsyncThrowingStream<String, Error>
+ - fullStream: AsyncThrowingStream<TextStreamPart, Error>
+ - Thread-safe actor-based state management
+ - Basic error handling
+
+ ✅ **Phase 2: Content Support (Completed)**
+ - content: [ContentPart] property
+ - text: String property
+ - reasoning: [ReasoningOutput] support
+ - reasoningText: String? property
+ - files: [GeneratedFile] support
+ - sources: [Source] support
+ - All TextStreamPart types processed
+
+ ✅ **Phase 3: Steps & Metadata (Completed)**
+ - steps: [StepResult] property
+ - request/response metadata
+ - providerMetadata support
+ - warnings support
+ - Callbacks: onChunk, onFinish, onError
+ - Stream consumption helpers
+ - Response piping (pipeTextStreamToResponse, toTextStreamResponse)
+
+ ⏳ **TODO: Multi-Step & Tools (Phase 4)**
+ - Tool execution and streaming
+ - Multi-step execution with stop conditions
+ - Tool results tracking
+ - Step iteration
+
+ ⏳ **TODO: Advanced Features (Phase 5)**
+ - Telemetry support
+ - Transforms pipeline
+ - UI message streams
+ - Additional response helpers
+
+ ## Thread-Safety Design
+
+ All mutable state is managed through `StreamStateV2` actor, ensuring
+ race-free concurrent access. No `@unchecked Sendable` classes with
+ unprotected mutable state.
  */
 
 // MARK: - Thread-Safe State Management
@@ -46,6 +84,18 @@ private actor StreamStateV2 {
     // Active content tracking
     var activeTextContent: [String: ActiveTextContent] = [:]
     var activeReasoningContent: [String: ActiveReasoningContent] = [:]
+
+    // Step tracking
+    var recordedSteps: [StepResult] = []
+    var currentStepContent: [ContentPart] = []
+    var currentStepRequest: LanguageModelRequestMetadata = LanguageModelRequestMetadata()
+    var currentStepWarnings: [CallWarning] = []
+
+    // Response metadata
+    var responseId: String = ""
+    var responseTimestamp: Date = Date()
+    var responseModelId: String = ""
+    var providerMetadata: ProviderMetadata?
 
     struct ActiveTextContent {
         var index: Int
@@ -163,6 +213,57 @@ private actor StreamStateV2 {
     func addSource(_ source: Source) {
         recordedContent.append(.source(type: "source", source: source))
     }
+
+    // Step management
+    func setResponseMetadata(id: String, timestamp: Date, modelId: String) {
+        self.responseId = id
+        self.responseTimestamp = timestamp
+        self.responseModelId = modelId
+    }
+
+    func setProviderMetadata(_ metadata: ProviderMetadata?) {
+        self.providerMetadata = metadata
+    }
+
+    func finalizeStep(
+        finishReason: FinishReason,
+        usage: LanguageModelUsage,
+        providerMetadata: ProviderMetadata?
+    ) -> StepResult {
+        let response = StepResultResponse(
+            id: responseId,
+            timestamp: responseTimestamp,
+            modelId: responseModelId,
+            headers: nil,
+            messages: [],
+            body: nil
+        )
+
+        let stepResult = DefaultStepResult(
+            content: recordedContent,
+            finishReason: finishReason,
+            usage: usage,
+            warnings: currentStepWarnings,
+            request: currentStepRequest,
+            response: response,
+            providerMetadata: providerMetadata
+        )
+
+        recordedSteps.append(stepResult)
+        return stepResult
+    }
+
+    func getSteps() -> [StepResult] {
+        recordedSteps
+    }
+
+    func getResponseMetadata() -> (id: String, timestamp: Date, modelId: String) {
+        (responseId, responseTimestamp, responseModelId)
+    }
+
+    func getProviderMetadata() -> ProviderMetadata? {
+        providerMetadata
+    }
 }
 
 // MARK: - Internal Options
@@ -203,20 +304,32 @@ public final class DefaultStreamTextResultV2: Sendable {
     private let usagePromise = DelayedPromise<LanguageModelUsage>()
     private let textPromise = DelayedPromise<String>()
     private let contentPromise = DelayedPromise<[ContentPart]>()
+    private let stepsPromise = DelayedPromise<[StepResult]>()
 
     // Stream parts buffer for fullStream
     private let streamPartsBuffer = StreamPartsBuffer()
+
+    // Callbacks
+    private let onChunk: StreamTextOnChunkCallback?
+    private let onFinish: StreamTextOnFinishCallback?
+    private let onError: StreamTextOnErrorCallback
 
     init(
         model: any LanguageModelV3,
         prompt: Prompt,
         settings: CallSettings,
-        internalOptions: StreamTextV2InternalOptions
+        internalOptions: StreamTextV2InternalOptions,
+        onChunk: StreamTextOnChunkCallback?,
+        onFinish: StreamTextOnFinishCallback?,
+        onError: @escaping StreamTextOnErrorCallback
     ) {
         self.model = model
         self.prompt = prompt
         self.settings = settings
         self.internalOptions = internalOptions
+        self.onChunk = onChunk
+        self.onFinish = onFinish
+        self.onError = onError
 
         // Start pipeline asynchronously
         Task { [weak self] in
@@ -295,6 +408,56 @@ public final class DefaultStreamTextResultV2: Sendable {
         }
     }
 
+    public var totalUsage: LanguageModelUsage {
+        get async throws {
+            // For single-step, totalUsage == usage
+            // In future multi-step support, this will accumulate
+            try await usagePromise.task.value
+        }
+    }
+
+    public var steps: [StepResult] {
+        get async throws {
+            try await stepsPromise.task.value
+        }
+    }
+
+    public var request: LanguageModelRequestMetadata {
+        get async throws {
+            let steps = try await stepsPromise.task.value
+            guard let lastStep = steps.last else {
+                return LanguageModelRequestMetadata()
+            }
+            return lastStep.request
+        }
+    }
+
+    public var response: StepResultResponse {
+        get async throws {
+            let steps = try await stepsPromise.task.value
+            guard let lastStep = steps.last else {
+                throw NoOutputGeneratedError(message: "No output generated")
+            }
+            return lastStep.response
+        }
+    }
+
+    public var providerMetadata: ProviderMetadata? {
+        get async throws {
+            await state.getProviderMetadata()
+        }
+    }
+
+    public var warnings: [CallWarning]? {
+        get async throws {
+            let steps = try await stepsPromise.task.value
+            guard let lastStep = steps.last else {
+                return nil
+            }
+            return lastStep.warnings
+        }
+    }
+
     public var fullStream: AsyncThrowingStream<TextStreamPart, Error> {
         AsyncThrowingStream { continuation in
             Task { [weak self] in
@@ -345,75 +508,166 @@ public final class DefaultStreamTextResultV2: Sendable {
     }
 
     private func processStream(onPart: @escaping @Sendable (TextStreamPart) -> Void) async throws {
-        let standardized = try standardizePrompt(self.prompt)
-        let supportedUrls = try await self.model.supportedUrls
-        let promptForModel = try await convertToLanguageModelPrompt(
-            prompt: standardized,
-            supportedUrls: supportedUrls,
-            download: nil
-        )
+        do {
+            let standardized = try standardizePrompt(self.prompt)
+            let supportedUrls = try await self.model.supportedUrls
+            let promptForModel = try await convertToLanguageModelPrompt(
+                prompt: standardized,
+                supportedUrls: supportedUrls,
+                download: nil
+            )
 
-        let preparedSettings = try prepareCallSettings(
-            maxOutputTokens: self.settings.maxOutputTokens,
-            temperature: self.settings.temperature,
-            topP: self.settings.topP,
-            topK: self.settings.topK,
-            presencePenalty: self.settings.presencePenalty,
-            frequencyPenalty: self.settings.frequencyPenalty,
-            stopSequences: self.settings.stopSequences,
-            seed: self.settings.seed
-        )
+            let preparedSettings = try prepareCallSettings(
+                maxOutputTokens: self.settings.maxOutputTokens,
+                temperature: self.settings.temperature,
+                topP: self.settings.topP,
+                topK: self.settings.topK,
+                presencePenalty: self.settings.presencePenalty,
+                frequencyPenalty: self.settings.frequencyPenalty,
+                stopSequences: self.settings.stopSequences,
+                seed: self.settings.seed
+            )
 
-        let callOptions = LanguageModelV3CallOptions(
-            prompt: promptForModel,
-            maxOutputTokens: preparedSettings.maxOutputTokens,
-            temperature: preparedSettings.temperature,
-            stopSequences: preparedSettings.stopSequences,
-            topP: preparedSettings.topP,
-            topK: preparedSettings.topK,
-            presencePenalty: preparedSettings.presencePenalty,
-            frequencyPenalty: preparedSettings.frequencyPenalty,
-            responseFormat: nil,
-            seed: preparedSettings.seed,
-            tools: nil,
-            toolChoice: nil,
-            includeRawChunks: false,
-            abortSignal: self.settings.abortSignal,
-            headers: self.settings.headers,
-            providerOptions: nil
-        )
+            let callOptions = LanguageModelV3CallOptions(
+                prompt: promptForModel,
+                maxOutputTokens: preparedSettings.maxOutputTokens,
+                temperature: preparedSettings.temperature,
+                stopSequences: preparedSettings.stopSequences,
+                topP: preparedSettings.topP,
+                topK: preparedSettings.topK,
+                presencePenalty: preparedSettings.presencePenalty,
+                frequencyPenalty: preparedSettings.frequencyPenalty,
+                responseFormat: nil,
+                seed: preparedSettings.seed,
+                tools: nil,
+                toolChoice: nil,
+                includeRawChunks: false,
+                abortSignal: self.settings.abortSignal,
+                headers: self.settings.headers,
+                providerOptions: nil
+            )
 
-        let streamResult = try await self.model.doStream(options: callOptions)
+            let streamResult = try await self.model.doStream(options: callOptions)
 
-        // Process stream parts
-        for try await part in streamResult.stream {
-            // Check abort signal
-            if let abortSignal = self.settings.abortSignal, abortSignal() {
-                await self.state.markFinished()
-                await self.streamPartsBuffer.finalize()
-                return
+            // Initialize response metadata
+            let responseId = self.internalOptions.generateId()
+            let responseTimestamp = self.internalOptions.currentDate()
+            let responseModelId = self.model.modelId
+            await self.state.setResponseMetadata(
+                id: responseId,
+                timestamp: responseTimestamp,
+                modelId: responseModelId
+            )
+
+            // Process stream parts
+            for try await part in streamResult.stream {
+                // Check abort signal
+                if let abortSignal = self.settings.abortSignal, abortSignal() {
+                    await self.state.markFinished()
+                    await self.streamPartsBuffer.finalize()
+                    return
+                }
+
+                // Convert to TextStreamPart and process
+                let textStreamPart = convertToTextStreamPart(part)
+                await processStreamPart(textStreamPart)
+                await streamPartsBuffer.append(textStreamPart)
+
+                // Invoke onChunk callback
+                if shouldInvokeOnChunk(textStreamPart), let onChunk = self.onChunk {
+                    await onChunk(StreamTextOnChunkEvent(chunk: textStreamPart))
+                }
+
+                onPart(textStreamPart)
             }
 
-            // Convert to TextStreamPart and process
-            let textStreamPart = convertToTextStreamPart(part)
-            await processStreamPart(textStreamPart)
-            await streamPartsBuffer.append(textStreamPart)
-            onPart(textStreamPart)
+            // Finalize step
+            await self.state.markFinished()
+            await self.streamPartsBuffer.finalize()
+
+            let finalText = await self.state.getText()
+            let finalContent = await self.state.getContent()
+            let finalReason = await self.state.getFinishReason() ?? .unknown
+            let finalUsage = await self.state.getUsage() ?? LanguageModelUsage()
+            let finalProviderMetadata = await self.state.getProviderMetadata()
+
+            // Create step result
+            let stepResult = await self.state.finalizeStep(
+                finishReason: finalReason,
+                usage: finalUsage,
+                providerMetadata: finalProviderMetadata
+            )
+
+            let steps = await self.state.getSteps()
+
+            // Resolve promises
+            self.textPromise.resolve(finalText)
+            self.contentPromise.resolve(finalContent)
+            self.finishReasonPromise.resolve(finalReason)
+            self.usagePromise.resolve(finalUsage)
+            self.stepsPromise.resolve(steps)
+
+            // Invoke onFinish callback
+            if let onFinish = self.onFinish {
+                await onFinish(StreamTextOnFinishEvent(
+                    finishReason: finalReason,
+                    totalUsage: finalUsage,
+                    finalStep: stepResult,
+                    steps: steps
+                ))
+            }
+        } catch {
+            // Handle errors
+            await self.onError(StreamTextOnErrorEvent(error: error))
+
+            // Reject promises
+            self.textPromise.reject(error)
+            self.contentPromise.reject(error)
+            self.finishReasonPromise.reject(error)
+            self.usagePromise.reject(error)
+            self.stepsPromise.reject(error)
+
+            throw error
         }
+    }
 
-        // Finalize
-        await self.state.markFinished()
-        await self.streamPartsBuffer.finalize()
+    private func shouldInvokeOnChunk(_ part: TextStreamPart) -> Bool {
+        switch part {
+        case .textDelta, .reasoningDelta, .source, .file:
+            return true
+        default:
+            return false
+        }
+    }
 
-        let finalText = await self.state.getText()
-        let finalContent = await self.state.getContent()
-        let finalReason = await self.state.getFinishReason() ?? .unknown
-        let finalUsage = await self.state.getUsage() ?? LanguageModelUsage()
+    // MARK: - Stream Consumption and Response Helpers
 
-        self.textPromise.resolve(finalText)
-        self.contentPromise.resolve(finalContent)
-        self.finishReasonPromise.resolve(finalReason)
-        self.usagePromise.resolve(finalUsage)
+    public func consumeStream(options: ConsumeStreamOptions?) async {
+        await SwiftAISDK.consumeStream(stream: fullStream, onError: options?.onError)
+    }
+
+    public func pipeTextStreamToResponse(
+        _ response: any StreamTextResponseWriter,
+        init initOptions: TextStreamResponseInit?
+    ) {
+        SwiftAISDK.pipeTextStreamToResponse(
+            response: response,
+            status: initOptions?.status,
+            statusText: initOptions?.statusText,
+            headers: initOptions?.headers,
+            textStream: textStream
+        )
+    }
+
+    public func toTextStreamResponse(
+        init initOptions: TextStreamResponseInit?
+    ) -> TextStreamResponse {
+        SwiftAISDK.createTextStreamResponse(
+            status: initOptions?.status,
+            statusText: initOptions?.statusText,
+            headers: initOptions?.headers,
+            textStream: textStream
+        )
     }
 
     private func convertToTextStreamPart(_ part: LanguageModelV3StreamPart) -> TextStreamPart {
@@ -496,10 +750,18 @@ public func streamTextV2(
     system: String? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
+    onChunk: StreamTextOnChunkCallback? = nil,
+    onError rawOnError: StreamTextOnErrorCallback? = nil,
+    onFinish: StreamTextOnFinishCallback? = nil,
     _internal: StreamTextV2InternalOptions = StreamTextV2InternalOptions(),
     settings: CallSettings = CallSettings()
 ) throws -> DefaultStreamTextResultV2 {
     let resolvedModel = try resolveLanguageModel(modelArg)
+
+    let defaultOnError: StreamTextOnErrorCallback = { event in
+        fputs("streamTextV2 error: \(event.error)\n", stderr)
+    }
+    let onError = rawOnError ?? defaultOnError
 
     // Validate prompt
     guard (prompt == nil) || (messages == nil) else {
@@ -525,7 +787,10 @@ public func streamTextV2(
         model: resolvedModel,
         prompt: promptInput,
         settings: settings,
-        internalOptions: _internal
+        internalOptions: _internal,
+        onChunk: onChunk,
+        onFinish: onFinish,
+        onError: onError
     )
 }
 
