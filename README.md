@@ -61,6 +61,38 @@ This SDK is organized into **3 separate SwiftPM packages** matching upstream `@a
 - `external/` – Upstream Vercel AI SDK sources (ignored by Git) for reference
 - `plan/` – Development documentation (ignored by Git)
 
+## Playground CLI
+
+The repository now contains an executable target `SwiftAISDKPlayground` that provides a lightweight CLI for manual smoke-tests against real providers.
+
+### Build & Run
+
+```bash
+swift build
+swift run playground chat --model gpt-4o-mini --prompt "Hello" --stream
+```
+
+Command options:
+
+- `-P, --provider` – provider alias (`gateway` by default)
+- `--model` – model identifier (required)
+- `--prompt` / `--input-file` / `--stdin` – prompt sources
+- `--stream` – stream deltas to stdout (macOS 12+)
+- `--json-output` – emit final result as JSON
+- `--verbose` / `--env-file` – global flags available before the subcommand
+
+### Configuration
+
+Credentials are read from environment variables and `.env` (see `.env.sample`). For gateway-based flows set:
+
+```env
+VERCEL_AI_API_KEY=your_token_here
+# optional overrides
+AI_GATEWAY_BASE_URL=https://ai-gateway.vercel.sh/v1/ai
+```
+
+If a required key is missing, the CLI reports a descriptive error. Streaming uses Server-Sent Events via `URLSession` + `EventSourceParser` and is available on macOS 12 or newer.
+
 ## Status
 **Active Development** - Core provider infrastructure is being implemented.
 

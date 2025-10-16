@@ -13,7 +13,11 @@ let package = Package(
         .library(name: "AISDKProvider", targets: ["AISDKProvider"]),
         .library(name: "AISDKProviderUtils", targets: ["AISDKProviderUtils"]),
         .library(name: "SwiftAISDK", targets: ["SwiftAISDK"]),
-        .library(name: "EventSourceParser", targets: ["EventSourceParser"]) // internal lib for SSE
+        .library(name: "EventSourceParser", targets: ["EventSourceParser"]), // internal lib for SSE
+        .executable(name: "playground", targets: ["SwiftAISDKPlayground"])
+    ],
+    dependencies: [
+        .package(url: "https://github.com/apple/swift-argument-parser", from: "1.3.0")
     ],
     targets: [
         // EventSourceParser - SSE parsing (internal utility)
@@ -34,5 +38,16 @@ let package = Package(
         // GenerateText, Registry, Middleware, Prompts, Tools, Telemetry
         .target(name: "SwiftAISDK", dependencies: ["AISDKProvider", "AISDKProviderUtils", "EventSourceParser"]),
         .testTarget(name: "SwiftAISDKTests", dependencies: ["SwiftAISDK"]),
+
+        // SwiftAISDKPlayground - CLI executable for manual testing (Playground)
+        .executableTarget(
+            name: "SwiftAISDKPlayground",
+            dependencies: [
+                "SwiftAISDK",
+                "AISDKProvider",
+                "AISDKProviderUtils",
+                .product(name: "ArgumentParser", package: "swift-argument-parser")
+            ]
+        )
     ]
 )
