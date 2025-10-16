@@ -393,24 +393,3 @@ public func generateObjectEnum(
         settings: settings
     )
 }
-
-private func encodeGenerateObjectTelemetryValue<ResultValue>(_ value: ResultValue) -> String? {
-    if let jsonValue = value as? JSONValue {
-        return encodeGenerateObjectTelemetryJSON(jsonValue)
-    }
-
-    if let converted = try? jsonValue(from: value) {
-        return encodeGenerateObjectTelemetryJSON(converted)
-    }
-
-    return nil
-}
-
-private func encodeGenerateObjectTelemetryJSON(_ value: JSONValue) -> String? {
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-    guard let data = try? encoder.encode(value) else {
-        return nil
-    }
-    return String(data: data, encoding: .utf8)
-}

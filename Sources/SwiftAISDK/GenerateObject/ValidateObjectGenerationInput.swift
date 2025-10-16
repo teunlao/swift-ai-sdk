@@ -19,6 +19,7 @@ public func validateObjectGenerationInput(
         if hasSchema {
             throw InvalidArgumentError(
                 parameter: "schema",
+                value: .null,
                 message: "Schema is not supported for no-schema output."
             )
         }
@@ -52,6 +53,7 @@ public func validateObjectGenerationInput(
         if !hasSchema {
             throw InvalidArgumentError(
                 parameter: "schema",
+                value: .null,
                 message: "Schema is required for object output."
             )
         }
@@ -69,6 +71,7 @@ public func validateObjectGenerationInput(
         if !hasSchema {
             throw InvalidArgumentError(
                 parameter: "schema",
+                value: .null,
                 message: "Element schema is required for array output."
             )
         }
@@ -86,6 +89,7 @@ public func validateObjectGenerationInput(
         if hasSchema {
             throw InvalidArgumentError(
                 parameter: "schema",
+                value: .null,
                 message: "Schema is not supported for enum output."
             )
         }
@@ -109,6 +113,7 @@ public func validateObjectGenerationInput(
         guard let enumValues, !enumValues.isEmpty else {
             throw InvalidArgumentError(
                 parameter: "enumValues",
+                value: .null,
                 message: "Enum values are required for enum output."
             )
         }
