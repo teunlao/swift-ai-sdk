@@ -171,7 +171,7 @@ public func extractReasoningMiddleware(options: ExtractReasoningOptions) -> Lang
             let state = ReasoningExtractionState()
 
             let transformedStream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
-                Task {
+                let task = Task {
                     var delayedTextStart: LanguageModelV3StreamPart?
 
                     do {
@@ -305,8 +305,17 @@ public func extractReasoningMiddleware(options: ExtractReasoningOptions) -> Lang
                         }
 
                         continuation.finish()
+                    } catch is CancellationError {
+                        // Silent cancellation: consumer closed early
                     } catch {
                         continuation.finish(throwing: error)
+                    }
+                }
+
+                // Ensure background task is cancelled if consumer stops early
+                continuation.onTermination = { termination in
+                    if case .cancelled = termination {
+                        task.cancel()
                     }
                 }
             }
