@@ -83,8 +83,9 @@ private func buildSSEStream(
     from chunkStream: AsyncThrowingStream<AnyUIMessageChunk, Error>,
     consumer: UIMessageStreamConsumer?
 ) -> AsyncThrowingStream<String, Error> {
+    // Convert UI chunks → JSON → SSE
     let jsonStream = AsyncThrowingStream<JSONValue, Error> { continuation in
-        Task {
+        let task = Task {
             do {
                 for try await chunk in chunkStream {
                     continuation.yield(encodeUIMessageChunkToJSON(chunk))
@@ -94,25 +95,48 @@ private func buildSSEStream(
                 continuation.finish(throwing: error)
             }
         }
-    }
-
-    let sseStream = JsonToSSETransformStream().transform(stream: jsonStream)
-
-    guard let consumer else {
-        return sseStream
-    }
-
-    let (primary, secondary) = teeAsyncThrowingStream(sseStream)
-
-    Task {
-        do {
-            try await consumer(secondary)
-        } catch {
-            // Ignore consumer errors to mirror upstream behaviour.
+        continuation.onTermination = { termination in
+            if case .cancelled = termination { task.cancel() }
         }
     }
 
-    return primary
+    let sseBase = JsonToSSETransformStream().transform(stream: jsonStream)
+
+    guard let consumer else {
+        return sseBase
+    }
+
+    // Tie consumer lifetime to the returned stream to avoid leaked tasks.
+    return AsyncThrowingStream { continuation in
+        // Split base stream into producer (to caller) and consumer branch.
+        let (producer, secondary) = teeAsyncThrowingStream(sseBase)
+
+        // Kick off consumer immediately, as upstream.
+        let consumerTask = Task {
+            do {
+                try await consumer(secondary)
+            } catch {
+                // Ignore consumer errors to mirror upstream behaviour.
+            }
+        }
+
+        // Forward producer to the caller; cancel consumer when caller cancels.
+        let forwardTask = Task {
+            do {
+                for try await chunk in producer {
+                    continuation.yield(chunk)
+                }
+                continuation.finish()
+            } catch {
+                continuation.finish(throwing: error)
+            }
+        }
+
+        continuation.onTermination = { termination in
+            consumerTask.cancel()
+            forwardTask.cancel()
+        }
+    }
 }
 
 private extension Dictionary where Key == String, Value == String {

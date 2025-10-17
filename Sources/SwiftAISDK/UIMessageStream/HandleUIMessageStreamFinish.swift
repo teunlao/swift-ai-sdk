@@ -84,7 +84,7 @@ public func handleUIMessageStreamFinish<Message: UIMessageConvertible>(
     )
 
     return AsyncThrowingStream { continuation in
-        Task {
+        let task = Task {
             do {
                 for try await chunk in processedStream {
                     continuation.yield(chunk)
@@ -99,9 +99,8 @@ public func handleUIMessageStreamFinish<Message: UIMessageConvertible>(
 
         continuation.onTermination = { termination in
             if case .cancelled = termination {
-                Task {
-                    await finishInvoker.callIfNeeded()
-                }
+                task.cancel()
+                Task { await finishInvoker.callIfNeeded() }
             }
         }
     }

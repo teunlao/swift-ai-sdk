@@ -28,6 +28,7 @@ actor StreamTextV2Actor {
     private var recordedSteps: [StepResult] = []
     private var accumulatedUsage: LanguageModelUsage = LanguageModelUsage()
     private var recordedFinishReason: FinishReason? = nil
+    private var externalStopRequested = false
 
     private let totalUsagePromise: DelayedPromise<LanguageModelUsage>
     private let finishReasonPromise: DelayedPromise<FinishReason>
@@ -61,6 +62,12 @@ actor StreamTextV2Actor {
         return await fullBroadcaster.register()
     }
 
+    // External request to stop the current and subsequent provider streams.
+    // This mirrors the upstream `stopStream` hook used by transforms.
+    func requestStop() async {
+        externalStopRequested = true
+    }
+
     private func ensureStarted() async {
         guard !started else { return }
         started = true
@@ -71,6 +78,7 @@ actor StreamTextV2Actor {
         do {
             try await consumeProviderStream(stream: source, emitStartStep: true)
             while !terminated {
+                if externalStopRequested { break }
                 let shouldStop = await isStopConditionMet(
                     stopConditions: stopConditions, steps: recordedSteps)
                 if shouldStop { break }
@@ -105,6 +113,7 @@ actor StreamTextV2Actor {
         capturedWarnings = []
         openTextIds.removeAll()
         openReasoningIds.removeAll()
+        if externalStopRequested { return }
 
         // Per-step framing is emitted after we have seen `.streamStart(warnings)`
         // to ensure warnings are populated. If provider skips `.streamStart`,
@@ -113,6 +122,7 @@ actor StreamTextV2Actor {
         var didEmitStartStep = false
         var sawStreamStart = false
         for try await part in stream {
+            if externalStopRequested { break }
             switch part {
             case .streamStart(let warnings):
                 capturedWarnings = warnings
@@ -345,7 +355,9 @@ actor StreamTextV2Actor {
                     providerMetadata: providerMetadata)
                 recordedSteps.append(stepResult)
                 accumulatedUsage = addLanguageModelUsage(accumulatedUsage, usage)
-                finishReasonPromise.resolve(finishReason)
+                // Do not resolve `finishReasonPromise` here; session-level finish
+                // will resolve it with the last step's reason to mirror upstream.
+                // Keep the last seen reason in `recordedFinishReason`.
                 recordedFinishReason = finishReason
             case .raw(let raw):
                 if !didEmitStartStep {
@@ -413,10 +425,12 @@ actor StreamTextV2Actor {
                 providerMetadata: providerMetadata)
             recordedSteps.append(stepResult)
             accumulatedUsage = addLanguageModelUsage(accumulatedUsage, usage)
-            finishReasonPromise.resolve(finishReason)
+            recordedFinishReason = finishReason
         }
         totalUsagePromise.resolve(accumulatedUsage)
         stepsPromise.resolve(recordedSteps)
+        // Resolve finish reason with the last recorded one (or unknown if none).
+        finishReasonPromise.resolve(recordedFinishReason ?? .unknown)
         onTerminate?()
         onTerminate = nil
     }

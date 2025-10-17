@@ -145,7 +145,10 @@ public final class DefaultStreamTextV2Result<OutputValue: Sendable, PartialOutpu
 
         // Convert to AsyncIterableStream for transforms
         let iterable = createAsyncIterableStream(source: baseStream)
-        let options = StreamTextTransformOptions(tools: nil, stopStream: { })
+        let options = StreamTextTransformOptions(
+            tools: nil,
+            stopStream: { Task { await self.actor.requestStop() } }
+        )
         let transformed = transforms.reduce(iterable) { acc, t in t(acc, options) }
 
         // Convert back to AsyncThrowingStream for public API

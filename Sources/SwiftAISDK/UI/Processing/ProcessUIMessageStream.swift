@@ -91,7 +91,7 @@ public func processUIMessageStream<Message: UIMessageConvertible>(
     onData: (@Sendable (DataUIPart) -> Void)? = nil
 ) -> AsyncThrowingStream<AnyUIMessageChunk, Error> {
     return AsyncThrowingStream { continuation in
-        Task {
+        let task = Task {
             do {
                 for try await chunk in stream {
                     try await runUpdateMessageJob { context in
@@ -111,7 +111,14 @@ public func processUIMessageStream<Message: UIMessageConvertible>(
 
                 continuation.finish()
             } catch {
-                    continuation.finish(throwing: error)
+                continuation.finish(throwing: error)
+            }
+        }
+
+        // Ensure upstream processing halts promptly when the consumer cancels.
+        continuation.onTermination = { termination in
+            if case .cancelled = termination {
+                task.cancel()
             }
         }
     }
