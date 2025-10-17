@@ -155,3 +155,110 @@ Tests:
 - Zero observed race timeouts across 10× runs with 10s cap, warm build.
 - All V2 tests pass; V1 tests remain unaffected until we flip the feature flag.
 
+---
+
+## Immediate Next Actions (Concrete TODO)
+
+This section turns open items into precise code tasks with file paths and expected effects. Each item lands with exactly one small test (executor adds), and must not regress previous tests.
+
+1) Emit final `.finish` for the whole session (not just `finishStep`).
+- Why: Upstream emits a terminal `finish(TextStreamPart)` after the last step; some ordering tests expect it.
+- Where: `Sources/SwiftAISDK/GenerateTextV2/StreamTextV2Actor.swift`
+  - In `finishAll(...)` before finishing broadcasters, send `fullBroadcaster.send(.finish(totalUsage: accumulatedUsage, providerMetadata: nil))` (shape from V1/Vercel upstream).
+  - Ensure this executes only once (guarded by `terminated`).
+- Tests: Extend “fullStream emits framing and text events in order (V2)” to assert the last chunk is `.finish` (executor adds/updates single test only).
+
+2) Move `start`/`startStep` emission after provider `.streamStart(warnings)` so `startStep.warnings` is populated.
+- Where: `consumeProviderStream(..., emitStartStep: Bool)`.
+  - Current: emits `.start` + `.startStep(..., warnings: [])` before the loop.
+  - Target: buffer until the first `.streamStart(warnings)` and then emit:
+    - `.start` (once per session) → `.startStep(request: recordedRequest, warnings: capturedWarnings)`.
+  - Edge case: If provider never sends `.streamStart`, still emit `.start`/`.startStep` with empty warnings on first content part.
+- Tests: “startStep carries warnings”; use synthetic stream that sends `streamStart([warning])` before text.
+
+3) Keep frame order strict on `.finish(finishReason, usage, providerMetadata)` from provider.
+- Where: same method as (2).
+  - Ensure `.textEnd` is sent for all open text IDs before `.finishStep`.
+  - Immediately after `.finishStep`, update `recordedSteps`, `accumulatedUsage`, and resolve `finishReasonPromise`.
+  - Do not finish broadcasters here; let `finishAll` emit terminal `.finish` once the multi‑step loop decides to stop.
+
+4) Aggregate `totalUsage` across steps and resolve once at session end.
+- Where: `finishAll(...)` in the actor.
+  - Already resolves `totalUsagePromise` with `accumulatedUsage`. Keep this behavior.
+  - Ensure `run()` calls `finishAll(...)` exactly once after step loop terminates.
+
+5) UI stream error mapping cleanup.
+- Where: `Sources/SwiftAISDK/GenerateTextV2/StreamTextV2.swift` in `toUIMessageStream(...)`.
+  - Remove the unused-result warning by directly returning `mapErrorMessage(error)` in `onError:` closure (already done) and keep it as is; no functional change needed beyond confirming.
+
+6) Multi‑step prompt continuity (basic text-only path).
+- Where: `run()` after first `consumeProviderStream`.
+  - Already builds `responseMessages → nextMessages → LanguageModelV3Prompt` and calls `model.doStream` again.
+  - Add TODO markers for future tool/media support; for now ensure next iteration’s `setInitialRequest(...)` is called and subsequent `consumeProviderStream(..., emitStartStep: true)` produces a new `startStep` framing.
+
+7) Cancellation and idempotent finish.
+- Where: `ensureStarted()`/`finishAll(...)`.
+  - Keep `terminated` guard; add a comment that cancellation paths must call `finishAll` and never finish broadcasters directly elsewhere.
+  - Verify `onTerminate` is invoked exactly once and then nulled.
+
+8) Telemetry/warnings logging hook (scaffold).
+- Where: V2 actor `run()` and when emitting `start`/`finish`.
+  - Add scaffolding comments for integrating `getTracer()` and `logWarnings` later (Milestone 7). No-op for now to avoid scope creep.
+
+---
+
+## Event Contract Reference (Upstream Parity)
+
+For a single-step, text-only generation the expected `fullStream` order:
+- `.start`
+- `.startStep(request, warnings)`
+- `.textStart(id)`
+- `.textDelta(id, "...")` × N
+- `.textEnd(id)`
+- `.finishStep(response, usage, finishReason)`
+- `.finish(totalUsage)`
+
+For 2 steps (stopWhen(stepCountIs(2))):
+- Step 1: same framing as above through `.finishStep`
+- Step 2: same framing as above through `.finishStep`
+- Session terminal: `.finish(totalUsage = usage1 + usage2)`
+
+Notes:
+- `.start` is session-wide and emitted once.
+- `.finish` is session-wide and emitted once, after the last `.finishStep`.
+- Warnings belong to `.startStep.warnings` for each step based on the immediately preceding provider `.streamStart`.
+
+---
+
+## Test Roadmap (Incremental, one test per step)
+
+Order to add tests (each added only after the previous is stable across 5–10 runs):
+1) textStream raw deltas (done).
+2) fullStream framing order with final `.finish` (update existing V2 order test).
+3) startStep carries warnings from `.streamStart`.
+4) two steps with `stopWhen(stepCountIs(2))`, correct `.finish(totalUsage)`.
+5) UI message stream: onFinish invoked once with correct flags (no continuation, no abort) and injected messageId when provided.
+6) Transform: single uppercasing transform; ensure ordering and once-only application.
+7) Late subscriber replay: both subscribers see identical history including terminal `.finish`.
+8) Cancellation: cancelling consumer doesn’t deadlock producer; actor emits terminal exactly once.
+
+Each test must target ≤100ms runtime and avoid sleeps; simulate provider events deterministically.
+
+---
+
+## Invariants & Guards (Checklist)
+
+- Single terminal path guarded by `terminated` flag.
+- Broadcasters: send history before terminal to new subscribers; terminal is idempotent.
+- No `.startStep` with empty warnings if provider sends `.streamStart(warnings)` first.
+- On provider `.finish`: close any open text spans before `.finishStep`.
+- `finishAll` is the only place that calls `.finish` on broadcasters and resolves `totalUsagePromise`/`stepsPromise`.
+
+---
+
+## Mapping Gaps (To be addressed by later milestones)
+
+- Reasoning/files/sources/tool streaming content → UI chunks parity (Milestones 5–7).
+- Full telemetry: `stringifyForTelemetry`, request/response headers, log warnings once (Milestone 7).
+- Prompt conversion with downloads/supportedUrls for rich content (beyond plain text).
+

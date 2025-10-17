@@ -318,7 +318,7 @@ public final class DefaultStreamTextV2Result<OutputValue: Sendable, PartialOutpu
             messageId: responseMessageId,
             originalMessages: streamOptions.originalMessages ?? [],
             onFinish: streamOptions.onFinish,
-            onError: { error in mapErrorMessage(error) }
+            onError: { error in _ = mapErrorMessage(error) }
         )
 
         return handled
