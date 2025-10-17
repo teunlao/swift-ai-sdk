@@ -420,4 +420,94 @@ struct StreamTextV2BasicTests {
         #expect(usage.totalTokens == defaultUsage.totalTokens)
         #expect(finish == .stop)
     }
+
+    @Test("fullStream emits file and source events (V2)")
+    func fullStreamFileAndSourceV2() async throws {
+        let data = Data([0x01, 0x02, 0x03])
+        let parts: [LanguageModelV3StreamPart] = [
+            .streamStart(warnings: []),
+            .responseMetadata(id: "id-0", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
+            .file(LanguageModelV3File(mediaType: "application/octet-stream", data: .binary(data))),
+            .source(.url(id: "s1", url: "https://example.com", title: "t", providerMetadata: nil)),
+            .finish(
+                finishReason: .stop,
+                usage: defaultUsage,
+                providerMetadata: nil
+            )
+        ]
+
+        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
+            for p in parts { c.yield(p) }
+            c.finish()
+        }
+
+        let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
+        let result: DefaultStreamTextV2Result<JSONValue, JSONValue> = try streamTextV2(
+            model: .v3(model),
+            prompt: "hello"
+        )
+
+        let chunks = try await convertReadableStreamToArray(result.fullStream)
+        var sawFile = false
+        var sawSource = false
+        for chunk in chunks {
+            switch chunk {
+            case .file(let f):
+                #expect(f.mediaType == "application/octet-stream")
+                #expect(!f.data.isEmpty)
+                sawFile = true
+            case .source(let src):
+                switch src {
+                case .url(_, let url, _, _): #expect(url == "https://example.com")
+                default: Issue.record("unexpected source type")
+                }
+                sawSource = true
+            default:
+                break
+            }
+        }
+        #expect(sawFile && sawSource)
+    }
+
+    @Test("onChunk and onFinish callbacks are invoked (V2)")
+    func onChunkAndOnFinishCallbacksV2() async throws {
+        actor Counter { var n = 0; func inc() { n += 1 }; func get() -> Int { n } }
+        actor Flag { var v = false; func set() { v = true }; func get() -> Bool { v } }
+        let parts: [LanguageModelV3StreamPart] = [
+            .streamStart(warnings: []),
+            .responseMetadata(id: "id-0", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
+            .textStart(id: "1", providerMetadata: nil),
+            .textDelta(id: "1", delta: "Hi", providerMetadata: nil),
+            .textEnd(id: "1", providerMetadata: nil),
+            .finish(
+                finishReason: .stop,
+                usage: defaultUsage,
+                providerMetadata: nil
+            )
+        ]
+
+        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
+            for p in parts { c.yield(p) }
+            c.finish()
+        }
+        let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
+
+        let counter = Counter()
+        let finished = Flag()
+
+        let result: DefaultStreamTextV2Result<JSONValue, JSONValue> = try streamTextV2(
+            model: .v3(model),
+            prompt: "hello",
+            onChunk: { _ in Task { await counter.inc() } },
+            onFinish: { _, _, _, _ in Task { await finished.set() } }
+        )
+
+        _ = try await convertReadableStreamToArray(result.fullStream)
+        // Accessing finishReason forces finish promises to resolve
+        _ = try await result.finishReason
+        // Give observer task a tick to deliver onFinish
+        await Task.yield(); await Task.yield()
+        #expect(await counter.get() > 0)
+        #expect(await finished.get())
+    }
 }

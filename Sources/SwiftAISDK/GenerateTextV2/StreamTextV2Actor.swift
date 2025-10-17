@@ -163,6 +163,10 @@ actor StreamTextV2Actor {
                     await fullBroadcaster.send(
                         .startStep(request: recordedRequest, warnings: warnings)
                     )
+                    if !warnings.isEmpty {
+                        // Surface warnings early for observers
+                        logWarnings(warnings.map { .languageModel($0) })
+                    }
                 }
             case let .responseMetadata(id, modelId, timestamp):
                 capturedResponseId = id ?? capturedResponseId
@@ -423,6 +427,11 @@ actor StreamTextV2Actor {
                 // will resolve it with the last step's reason to mirror upstream.
                 // Keep the last seen reason in `recordedFinishReason`.
                 recordedFinishReason = finishReason
+            case .file(let file):
+                let genFile = toGeneratedFile(file)
+                await fullBroadcaster.send(.file(genFile))
+            case .source(let source):
+                await fullBroadcaster.send(.source(source))
             case .raw(let raw):
                 if !didEmitStartStep {
                     if !framingEmitted {
@@ -505,6 +514,17 @@ actor StreamTextV2Actor {
         onTerminate = nil
     }
 
+    // MARK: - Conversions
+
+    private func toGeneratedFile(_ file: LanguageModelV3File) -> GeneratedFile {
+        switch file.data {
+        case .base64(let b64):
+            return DefaultGeneratedFileWithType(base64: b64, mediaType: file.mediaType)
+        case .binary(let data):
+            return DefaultGeneratedFileWithType(data: data, mediaType: file.mediaType)
+        }
+    }
+
     func setOnTerminate(_ cb: @escaping @Sendable () -> Void) { onTerminate = cb }
     func setInitialRequest(_ info: LanguageModelV3RequestInfo?) {
         guard let body = info?.body else { return }
@@ -512,6 +532,10 @@ actor StreamTextV2Actor {
             recordedRequest = LanguageModelRequestMetadata(body: value)
         }
     }
+
+    // Observability helpers for consumers that need step snapshots.
+    func getRecordedSteps() -> [StepResult] { recordedSteps }
+    func getLastStep() -> StepResult? { recordedSteps.last }
 
     private func convertModelMessagesToResponseMessagesV2(_ messages: [ModelMessage])
         -> [ResponseMessage]

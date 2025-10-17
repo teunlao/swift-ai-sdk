@@ -1,15 +1,36 @@
-import Foundation
 import AISDKProvider
 import AISDKProviderUtils
+import Foundation
 
 // MARK: - Public API (Milestone 1)
+
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+public typealias StreamTextOnChunk = @Sendable (TextStreamPart) -> Void
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+public typealias StreamTextOnError = @Sendable (Error) -> Void
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+public typealias StreamTextOnStepFinish = @Sendable (StepResult) -> Void
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+public typealias StreamTextOnFinish = @Sendable (
+    _ finalStep: StepResult,
+    _ steps: [StepResult],
+    _ totalUsage: LanguageModelUsage,
+    _ finishReason: FinishReason
+) -> Void
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+public typealias StreamTextOnAbort = @Sendable (_ steps: [StepResult]) -> Void
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 public func streamTextV2<OutputValue: Sendable, PartialOutputValue: Sendable>(
     model modelArg: LanguageModel,
     prompt: String,
     experimentalTransform transforms: [StreamTextTransform] = [],
-    stopWhen stopConditions: [StopCondition] = [stepCountIs(1)]
+    stopWhen stopConditions: [StopCondition] = [stepCountIs(1)],
+    onChunk: StreamTextOnChunk? = nil,
+    onStepFinish: StreamTextOnStepFinish? = nil,
+    onFinish: StreamTextOnFinish? = nil,
+    onAbort: StreamTextOnAbort? = nil,
+    onError: StreamTextOnError? = nil
 ) throws -> DefaultStreamTextV2Result<OutputValue, PartialOutputValue> {
     // Resolve LanguageModel to a v3 model; for milestone 1 only v3 path is supported.
     _ = try resolveLanguageModel(modelArg)
@@ -19,13 +40,21 @@ public func streamTextV2<OutputValue: Sendable, PartialOutputValue: Sendable>(
         system: nil,
         messages: [.user(UserModelMessage(content: .text(prompt), providerOptions: nil))],
         experimentalTransform: transforms,
-        stopWhen: stopConditions
+        stopWhen: stopConditions,
+        onChunk: onChunk,
+        onStepFinish: onStepFinish,
+        onFinish: onFinish,
+        onAbort: onAbort,
+        onError: onError
     )
 }
 
 // MARK: - Result Type (Milestone 1)
 
-public final class DefaultStreamTextV2Result<OutputValue: Sendable, PartialOutputValue: Sendable>: Sendable {
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+public final class DefaultStreamTextV2Result<OutputValue: Sendable, PartialOutputValue: Sendable>:
+    @unchecked Sendable
+{
     public typealias Output = OutputValue
     public typealias PartialOutput = PartialOutputValue
 
@@ -35,7 +64,10 @@ public final class DefaultStreamTextV2Result<OutputValue: Sendable, PartialOutpu
     private let totalUsagePromise = DelayedPromise<LanguageModelUsage>()
     private let finishReasonPromise = DelayedPromise<FinishReason>()
     private let stepsPromise = DelayedPromise<[StepResult]>()
+    private var observerTask: Task<Void, Never>? = nil
+    private var onFinishTask: Task<Void, Never>? = nil
 
+    @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
     init(
         baseModel: LanguageModel,
         model: any LanguageModelV3,
@@ -43,7 +75,12 @@ public final class DefaultStreamTextV2Result<OutputValue: Sendable, PartialOutpu
         transforms: [StreamTextTransform],
         stopConditions: [StopCondition],
         initialMessages: [ModelMessage],
-        system: String?
+        system: String?,
+        onChunk: StreamTextOnChunk?,
+        onStepFinish: StreamTextOnStepFinish? = nil,
+        onFinish: StreamTextOnFinish? = nil,
+        onAbort: StreamTextOnAbort? = nil,
+        onError: StreamTextOnError? = nil
     ) {
         self.stopConditions = stopConditions.isEmpty ? [stepCountIs(1)] : stopConditions
         self.actor = StreamTextV2Actor(
@@ -57,7 +94,46 @@ public final class DefaultStreamTextV2Result<OutputValue: Sendable, PartialOutpu
             stepsPromise: stepsPromise
         )
         self.transforms = transforms
-        _ = self.actor // keep strong reference
+        _ = self.actor  // keep strong reference
+
+        if onChunk != nil || onStepFinish != nil || onAbort != nil || onError != nil {
+            self.observerTask = Task { [actor] in
+                let stream = await actor.fullStream()
+                do {
+                    for try await part in stream {
+                        if let onChunk {
+                            switch part {
+                            case .textDelta, .reasoningDelta, .source, .toolCall,
+                                 .toolInputStart, .toolInputDelta, .toolResult, .raw:
+                                onChunk(part)
+                            default:
+                                break
+                            }
+                        }
+                        if let onStepFinish, case .finishStep = part, let last = await actor.getLastStep() {
+                            onStepFinish(last)
+                        }
+                        if let onAbort, case .abort = part {
+                            onAbort(await actor.getRecordedSteps())
+                        }
+                    }
+                } catch {
+                    if let onError { onError(error) }
+                }
+            }
+        }
+
+        if let onFinish {
+            self.onFinishTask = Task {
+                do {
+                    async let reason = finishReasonPromise.task.value
+                    async let usage = totalUsagePromise.task.value
+                    async let stepList = stepsPromise.task.value
+                    let (r, u, s) = try await (reason, usage, stepList)
+                    if let final = s.last { onFinish(final, s, u, r) }
+                } catch { }
+            }
+        }
     }
 
     // Internal: forward provider request info into actor state
@@ -313,6 +389,8 @@ public final class DefaultStreamTextV2Result<OutputValue: Sendable, PartialOutpu
     /// This mirrors the upstream `stopStream` hook and is useful for
     /// transforms or consumers that want to abort further steps.
     public func stop() {
+        observerTask?.cancel()
+        onFinishTask?.cancel()
         Task { await actor.requestStop() }
     }
 
@@ -354,26 +432,30 @@ public final class DefaultStreamTextV2Result<OutputValue: Sendable, PartialOutpu
 
 // MARK: - Overload: system/messages prompt (Upstream parity)
 
-/**
- Creates a V2 text stream using an initial system/message prompt, matching the upstream stream-text.ts
- surface. This overload allows callers to pass structured messages instead of a simple text prompt.
-
- - Parameters:
-   - model: The language model to use.
-   - system: Optional system instruction to prepend to the prompt.
-   - messages: Initial conversation messages (required; must be non-empty).
-   - experimentalTransform: Transforms applied to the full stream (map/tee semantics).
-   - stopWhen: Stop conditions to halt multi-step generation.
-
- - Returns: DefaultStreamTextV2Result exposing text/full/UI streams and accessors.
- */
+/// Creates a V2 text stream using an initial system/message prompt, matching the upstream stream-text.ts
+/// surface. This overload allows callers to pass structured messages instead of a simple text prompt.
+///
+/// - Parameters:
+///   - model: The language model to use.
+///   - system: Optional system instruction to prepend to the prompt.
+///   - messages: Initial conversation messages (required; must be non-empty).
+///   - experimentalTransform: Transforms applied to the full stream (map/tee semantics).
+///   - stopWhen: Stop conditions to halt multi-step generation.
+///
+/// - Returns: DefaultStreamTextV2Result exposing text/full/UI streams and accessors.
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 public func streamTextV2<OutputValue: Sendable, PartialOutputValue: Sendable>(
     model modelArg: LanguageModel,
     system: String?,
     messages initialMessages: [ModelMessage],
     experimentalTransform transforms: [StreamTextTransform] = [],
-    stopWhen stopConditions: [StopCondition] = [stepCountIs(1)]
+    stopWhen stopConditions: [StopCondition] = [stepCountIs(1)],
+    onChunk: StreamTextOnChunk? = nil,
+    onStepFinish: StreamTextOnStepFinish? = nil,
+    onFinish: StreamTextOnFinish? = nil,
+    onAbort: StreamTextOnAbort? = nil,
+    onError: StreamTextOnError? = nil
 ) throws -> DefaultStreamTextV2Result<OutputValue, PartialOutputValue> {
     // Resolve LanguageModel to a v3 model.
     let resolved: any LanguageModelV3 = try resolveLanguageModel(modelArg)
@@ -381,7 +463,8 @@ public func streamTextV2<OutputValue: Sendable, PartialOutputValue: Sendable>(
     // Bridge provider async stream acquisition without blocking the caller.
     // We will build the provider prompt inside the task using supportedUrls
     // and the full `convertToLanguageModelPrompt` pipeline.
-    let (bridgeStream, continuation) = AsyncThrowingStream.makeStream(of: LanguageModelV3StreamPart.self)
+    let (bridgeStream, continuation) = AsyncThrowingStream.makeStream(
+        of: LanguageModelV3StreamPart.self)
 
     let result = DefaultStreamTextV2Result<OutputValue, PartialOutputValue>(
         baseModel: modelArg,
@@ -390,7 +473,8 @@ public func streamTextV2<OutputValue: Sendable, PartialOutputValue: Sendable>(
         transforms: transforms,
         stopConditions: stopConditions,
         initialMessages: initialMessages,
-        system: system
+        system: system,
+        onChunk: onChunk
     )
 
     // Start producer task to fetch provider stream and forward its parts.
@@ -425,22 +509,25 @@ public func streamTextV2<OutputValue: Sendable, PartialOutputValue: Sendable>(
 }
 // MARK: - Overload: Prompt object
 
-/**
- Starts a V2 text stream from a `Prompt` value (system + prompt/messages),
- matching the upstream ergonomics while using the full prompt conversion path.
-
- - Parameters:
-   - model: The language model to use
-   - prompt: A prompt value containing system and content/messages
-   - experimentalTransform: Optional transforms
-   - stopWhen: Stop conditions to halt multi-step generation
- */
+/// Starts a V2 text stream from a `Prompt` value (system + prompt/messages),
+/// matching the upstream ergonomics while using the full prompt conversion path.
+///
+/// - Parameters:
+///   - model: The language model to use
+///   - prompt: A prompt value containing system and content/messages
+///   - experimentalTransform: Optional transforms
+///   - stopWhen: Stop conditions to halt multi-step generation
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 public func streamTextV2<OutputValue: Sendable, PartialOutputValue: Sendable>(
     model: LanguageModel,
     prompt: Prompt,
     experimentalTransform transforms: [StreamTextTransform] = [],
-    stopWhen stopConditions: [StopCondition] = [stepCountIs(1)]
+    stopWhen stopConditions: [StopCondition] = [stepCountIs(1)],
+    onChunk: StreamTextOnChunk? = nil,
+    onStepFinish: StreamTextOnStepFinish? = nil,
+    onFinish: StreamTextOnFinish? = nil,
+    onAbort: StreamTextOnAbort? = nil,
+    onError: StreamTextOnError? = nil
 ) throws -> DefaultStreamTextV2Result<OutputValue, PartialOutputValue> {
     let standardized = try standardizePrompt(prompt)
     return try streamTextV2(
@@ -448,6 +535,11 @@ public func streamTextV2<OutputValue: Sendable, PartialOutputValue: Sendable>(
         system: standardized.system,
         messages: standardized.messages,
         experimentalTransform: transforms,
-        stopWhen: stopConditions
+        stopWhen: stopConditions,
+        onChunk: onChunk,
+        onStepFinish: onStepFinish,
+        onFinish: onFinish,
+        onAbort: onAbort,
+        onError: onError
     )
 }
