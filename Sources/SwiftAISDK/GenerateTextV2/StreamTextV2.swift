@@ -8,7 +8,8 @@ import AISDKProviderUtils
 public func streamTextV2<OutputValue: Sendable, PartialOutputValue: Sendable>(
     model modelArg: LanguageModel,
     prompt: String,
-    experimentalTransform transforms: [StreamTextTransform] = []
+    experimentalTransform transforms: [StreamTextTransform] = [],
+    stopWhen stopConditions: [StopCondition] = [stepCountIs(1)]
 ) throws -> DefaultStreamTextV2Result<OutputValue, PartialOutputValue> {
     // Resolve LanguageModel to a v3 model; for milestone 1 only v3 path is supported.
     let resolved: any LanguageModelV3 = try resolveLanguageModel(modelArg)
@@ -30,7 +31,8 @@ public func streamTextV2<OutputValue: Sendable, PartialOutputValue: Sendable>(
         baseModel: modelArg,
         model: resolved,
         providerStream: bridgeStream,
-        transforms: transforms
+        transforms: transforms,
+        stopConditions: stopConditions
     )
 
     // Start producer task to fetch provider stream and forward its parts.
@@ -62,6 +64,7 @@ public final class DefaultStreamTextV2Result<OutputValue: Sendable, PartialOutpu
 
     private let actor: StreamTextV2Actor
     private let transforms: [StreamTextTransform]
+    private let stopConditions: [StopCondition]
     private let totalUsagePromise = DelayedPromise<LanguageModelUsage>()
     private let finishReasonPromise = DelayedPromise<FinishReason>()
     private let stepsPromise = DelayedPromise<[StepResult]>()
@@ -70,8 +73,10 @@ public final class DefaultStreamTextV2Result<OutputValue: Sendable, PartialOutpu
         baseModel: LanguageModel,
         model: any LanguageModelV3,
         providerStream: AsyncThrowingStream<LanguageModelV3StreamPart, Error>,
-        transforms: [StreamTextTransform]
+        transforms: [StreamTextTransform],
+        stopConditions: [StopCondition]
     ) {
+        self.stopConditions = stopConditions.isEmpty ? [stepCountIs(1)] : stopConditions
         self.actor = StreamTextV2Actor(
             source: providerStream,
             totalUsagePromise: totalUsagePromise,

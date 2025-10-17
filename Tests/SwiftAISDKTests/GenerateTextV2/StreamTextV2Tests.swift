@@ -50,6 +50,42 @@ struct StreamTextV2BasicTests {
         #expect(chunks == ["Hello", " ", "World", "!"])
     }
 
+    @Test("stopWhen stepCountIs(1) yields one step (V2)")
+    func stopWhenSingleStepV2() async throws {
+        let parts: [LanguageModelV3StreamPart] = [
+            .streamStart(warnings: []),
+            .responseMetadata(id: "id-1", modelId: "mock", timestamp: Date(timeIntervalSince1970: 0)),
+            .textStart(id: "1", providerMetadata: nil),
+            .textDelta(id: "1", delta: "A", providerMetadata: nil),
+            .textEnd(id: "1", providerMetadata: nil),
+            .finish(
+                finishReason: .stop,
+                usage: defaultUsage,
+                providerMetadata: nil
+            )
+        ]
+
+        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
+            for p in parts { c.yield(p) }
+            c.finish()
+        }
+
+        let model = MockLanguageModelV3(
+            doStream: .singleValue(LanguageModelV3StreamResult(stream: stream))
+        )
+
+        let result: DefaultStreamTextV2Result<JSONValue, JSONValue> = try streamTextV2(
+            model: .v3(model),
+            prompt: "hello",
+            stopWhen: [stepCountIs(1)]
+        )
+
+        _ = try await convertReadableStreamToArray(result.fullStream)
+        let steps = try await result.steps
+        #expect(steps.count == 1)
+        #expect((try await result.text) == "A")
+    }
+
     @Test("fullStream emits tool input events in order (V2)")
     func fullStreamToolInputOrderV2() async throws {
         let parts: [LanguageModelV3StreamPart] = [
