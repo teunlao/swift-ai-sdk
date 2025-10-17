@@ -159,40 +159,6 @@ date -u +"%Y-%m-%dT%H:%M:%SZ"
 
 ---
 
-## Testing & Race Condition Detection
-
-### StreamText Test Discipline
-- Every `swift test` run must set an explicit timeout ≤10s (≤15s only for the first build after major changes).
-- Target runtime for each `StreamTextTests` case is ≤100ms; treat slower runs as regressions to debug, not reasons to raise timeouts.
-- The warm full-suite target is ≤3s wall clock; profile and fix bottlenecks or race conditions instead of increasing suite timeouts.
-- Use logging/instrumentation to diagnose hangs and remove the diagnostics before landing.
-
-### Smart Test Runner
-
-**Location**: `tools/test-runner.js`
-
-**Purpose**: Detect hanging tests, race conditions, and flaky test behavior through multi-run analysis.
-
-#### Smart Mode (`--smart`)
-
-Runs tests multiple times to identify race conditions and unstable tests:
-
-```bash
-# Run smart mode with 3 iterations and 5s timeout
-node tools/test-runner.js --smart --runs 3 --timeout 5000
-
-# Analyze specific config
-node tools/test-runner.js --smart --config test-runner.default.config.json --runs 5
-```
-
-**Smart Mode Features**:
-- ✅ **Multi-run analysis**: Runs test suite N times to catch intermittent failures
-- ✅ **Timeout detection**: Identifies tests that hang (race conditions)
-- ✅ **Culprit identification**: Binary search to isolate problematic tests
-- ✅ **Stability analysis**: Shows which tests fail sometimes vs always
-- ✅ **Clean reporting**: Groups by suite, shows patterns
-
-> 💡 **Tip**: Run `swift build` once before invoking `node tools/test-runner.js ...`. A warm build keeps the first iteration fast and prevents false timeouts from cold compilation.
 
 **Output Analysis**:
 ```
@@ -340,6 +306,95 @@ Config files in `tools/`:
 ---
 
 **Remember**: Every line must match upstream. Keep `.orchestrator/flow` accurate so automation can enforce 100% parity.
+
+---
+
+## Immediate Answer Policy (Non‑Negotiable)
+
+The following rules override hesitation and dithering. When a user asks a question, you answer it — immediately, directly, and concretely.
+
+- Answer now, not later. Do not stall. Do not defer.
+- Lead with the answer in the very next message — no preambles unless strictly required by the tools policy.
+- If information is missing, ask the single most critical clarifying question AND provide your best current answer/assumption in the same message.
+- Never say “I can’t” before attempting a concise, good‑faith answer based on available context and documented constraints.
+- Respect user language. In this project, user‑facing replies are in Russian by default (except AGENTS.md updates, which must be in English).
+- If a tool run is needed, state what you will run in one short sentence, run it, and still give an immediate, actionable interim answer.
+- No meta‑apologies to pad time. Keep answers crisp, specific, and useful.
+- Don’t repeat the question back. Extract and answer the core.
+- Provide numbers, concrete paths, commands, or code when appropriate — not abstractions.
+- If you must refuse (policy), do it briefly and offer the closest allowed alternative answer.
+
+Equivalent formulations (choose one and apply consistently):
+1) “When asked, answer directly. Clarify only if essential, but answer first.”
+2) “Every question receives an immediate, on‑point answer — no detours.”
+3) “Your next message must contain the answer. Explanations are secondary.”
+4) “Do not narrate your process; deliver the result, then optionally a 1‑sentence context.”
+5) “If uncertain, state your best assumption, mark it, and proceed with the answer.”
+6) “One clarifying question max; include a provisional answer meanwhile.”
+7) “If the answer depends on code, show the exact diff/commands.”
+8) “If the answer depends on policy, cite the rule and give the compliant alternative.”
+9) “If the user demands speed, compress to bullet points with the lead fact first.”
+10) “Never hide behind tooling limits; provide the closest actionable guidance.”
+
+Do / Don’t
+- Do put the conclusion in the first line.
+- Do translate requirements into concrete steps, filenames, and line references when relevant.
+- Do keep answers under 10 lines by default, unless the task explicitly requires detail.
+- Don’t ask serial follow‑ups before offering any answer.
+- Don’t restate the entire context; extract only what’s needed.
+- Don’t hedge with generic caveats; if a caveat matters, make it one line and continue.
+
+Escalation rules
+- If you need to browse, say “Running web search for X…”, run it, then answer. No idle waiting.
+- If you need to patch files, say “Patching Y…”, apply the patch, then summarize the result.
+- If a blocker occurs, state “Blocker: <cause>. Workaround: <step 1, step 2>.” and proceed if possible.
+
+Reliability rules
+- Prefer idempotent, single‑terminal execution in code changes; avoid race‑prone patterns.
+- Ensure any background task is cancelled on stream termination.
+- When in doubt, choose the path that yields a verifiable answer fastest.
+
+Remember:
+- Immediate, direct answers are mandatory.
+- Clarity beats verbosity; specificity beats generalities.
+- The user asked — you answer. Now.
+
+---
+
+## Code Line Quota Compliance (Strict)
+
+When a user specifies an explicit code line quota (e.g., “write 200–300 lines”), you MUST deliver at least that many added lines of code in the next change set. This section defines mandatory rules for quota requests.
+
+- Hard requirement: Meet or exceed the requested added‑line count (N). No exceptions.
+- Counting method: Use Git diff additions (not net). We measure with `git diff --numstat` and sum the first column (added lines) across modified files in this patch.
+- Evidence: In your final message, include a per‑file numstat summary and the total added lines; do not round or estimate.
+- Code quality: Added lines must be meaningful (compilable scaffolding, implementations, or tests). Avoid “padding” via empty lines or mechanical comments.
+- Comments ratio: At least 80% of added lines should be executable code or data structures. Comments are allowed, but not as filler.
+- Build integrity: The project must build after your changes (`swift build`), unless the user explicitly allows non‑building drafts.
+- Scope coherence: Distribute lines across logically related files; prefer vertical slices (API + actor + tests) over random scatter.
+- No retroactive claims: Never state a quota (e.g., “+220 lines”) without verifying the actual diff. Always measure after edits.
+- Single delivery: If the user asked for “in one go,” produce the entire quota in one patch rather than incremental drips.
+- Tests: Unless told otherwise, tests count toward the quota and are encouraged to validate behavior and prevent regressions.
+- Style compliance: Follow repository and AGENTS.md style rules; do not bypass linters/formatters. No license headers unless requested.
+- Forbidden padding: Do not add dead code, duplicated blocks, or unused symbols purely to hit the count.
+- If constraints block exact parity: Provide compiling stubs with TODO markers and follow‑up tasks — but still hit N added lines.
+- Transparency on trade‑offs: If you must add scaffolding over full logic due to time/scope, say so explicitly and mark extension points.
+- Resilience: Prefer idempotent, race‑free patterns and actor isolation; cancel background tasks on stream termination.
+
+Procedure for quota requests
+1) Plan briefly (files + responsibilities) — max 3 bullets.
+2) Implement and ensure the build is green.
+3) Run `git diff --numstat` and paste the exact added‑line totals in the final message.
+4) Call out any deviations (e.g., temporary stubs) and list next steps.
+
+Examples (apply, don’t quote):
+- “Requested: ≥200 lines. Added: 236 lines across 4 files. Build: OK. Summary: …”
+- “Requested: 300 lines. Added: 312 (tests included). Next: fill TODOs in X/Y.”
+
+Non‑compliance is unacceptable:
+- Do not under‑deliver line counts.
+- Do not misreport totals.
+- Do not claim quotas that the diff does not show.
 
 
 # MCP Usage

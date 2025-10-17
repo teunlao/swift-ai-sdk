@@ -18,7 +18,10 @@ public func createUIMessageStream<Message: UIMessageConvertible>(
     let rawStream = state.makeStream()
     let writer = DefaultUIMessageStreamWriter<Message>(state: state, errorMapper: mapError)
 
-    Task {
+    // Tie the execution task lifetime to the resulting stream to avoid leaked tasks
+    // when consumers cancel early. This mirrors the upstream behavior where
+    // the web stream controller owns the producer.
+    let executeTask = Task {
         do {
             try await execute(writer)
         } catch {
@@ -39,7 +42,24 @@ public func createUIMessageStream<Message: UIMessageConvertible>(
         onError: finishHandler
     )
 
-    return handledStream
+    // Wrap and forward handledStream while ensuring executeTask is cancelled on termination.
+    return AsyncThrowingStream { continuation in
+        let forwardTask = Task {
+            do {
+                for try await chunk in handledStream {
+                    continuation.yield(chunk)
+                }
+                continuation.finish()
+            } catch {
+                continuation.finish(throwing: error)
+            }
+        }
+
+        continuation.onTermination = { _ in
+            executeTask.cancel()
+            forwardTask.cancel()
+        }
+    }
 }
 
 // MARK: - Writer

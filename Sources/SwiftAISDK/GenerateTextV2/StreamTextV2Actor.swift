@@ -6,6 +6,7 @@ actor StreamTextV2Actor {
     private let source: AsyncThrowingStream<LanguageModelV3StreamPart, Error>
     private let model: any LanguageModelV3
     private var initialMessages: [ModelMessage]
+    private let initialSystem: String?
     private let stopConditions: [StopCondition]
 
     private let textBroadcaster = AsyncStreamBroadcaster<String>()
@@ -29,6 +30,9 @@ actor StreamTextV2Actor {
     private var accumulatedUsage: LanguageModelUsage = LanguageModelUsage()
     private var recordedFinishReason: FinishReason? = nil
     private var externalStopRequested = false
+    // Tool tracking for the current step
+    private var activeToolInputs: [String: JSONValue] = [:] // toolCallId -> parsed input
+    private var activeToolNames: [String: String] = [:]     // toolCallId -> tool name
 
     private let totalUsagePromise: DelayedPromise<LanguageModelUsage>
     private let finishReasonPromise: DelayedPromise<FinishReason>
@@ -38,6 +42,7 @@ actor StreamTextV2Actor {
         source: AsyncThrowingStream<LanguageModelV3StreamPart, Error>,
         model: any LanguageModelV3,
         initialMessages: [ModelMessage],
+        system: String?,
         stopConditions: [StopCondition],
         totalUsagePromise: DelayedPromise<LanguageModelUsage>,
         finishReasonPromise: DelayedPromise<FinishReason>,
@@ -46,6 +51,7 @@ actor StreamTextV2Actor {
         self.source = source
         self.model = model
         self.initialMessages = initialMessages
+        self.initialSystem = system
         self.stopConditions = stopConditions
         self.totalUsagePromise = totalUsagePromise
         self.finishReasonPromise = finishReasonPromise
@@ -83,13 +89,13 @@ actor StreamTextV2Actor {
                     stopConditions: stopConditions, steps: recordedSteps)
                 if shouldStop { break }
                 guard let last = recordedSteps.last else { break }
+                // Build next step prompt: initial messages + assistant response
                 let responseMessages = convertModelMessagesToResponseMessagesV2(
-                    toResponseMessages(content: last.content, tools: nil))
+                    toResponseMessages(content: last.content, tools: nil)
+                )
                 let nextMessages =
                     initialMessages + convertResponseMessagesToModelMessagesV2(responseMessages)
-                let lmPrompt: LanguageModelV3Prompt = nextMessages.compactMap {
-                    try? convertToLanguageModelMessage(message: $0, downloadedAssets: [:])
-                }
+                let lmPrompt = try await buildLanguageModelPrompt(messages: nextMessages)
                 let options = LanguageModelV3CallOptions(prompt: lmPrompt)
                 let result = try await model.doStream(options: options)
                 setInitialRequest(result.request)
@@ -104,6 +110,25 @@ actor StreamTextV2Actor {
         }
     }
 
+    // MARK: - Prompt Construction (Upstream parity)
+
+    /// Builds a provider prompt using the full conversion pipeline:
+    /// - Captures the initial system prompt
+    /// - Uses `convertToLanguageModelPrompt` to map content parts and assets
+    /// - Respects provider `supportedUrls` (URLs left as references when supported)
+    /// - Parameter messages: Conversation messages to include (system is injected automatically)
+    /// - Returns: A LanguageModelV3Prompt ready for `doStream`
+    private func buildLanguageModelPrompt(messages: [ModelMessage]) async throws -> LanguageModelV3Prompt {
+        let standardized = StandardizedPrompt(system: initialSystem, messages: messages)
+        let supported = try await model.supportedUrls
+        let prompt = try await convertToLanguageModelPrompt(
+            prompt: standardized,
+            supportedUrls: supported,
+            download: nil
+        )
+        return prompt
+    }
+
     private func consumeProviderStream(
         stream: AsyncThrowingStream<LanguageModelV3StreamPart, Error>,
         emitStartStep: Bool
@@ -113,6 +138,8 @@ actor StreamTextV2Actor {
         capturedWarnings = []
         openTextIds.removeAll()
         openReasoningIds.removeAll()
+        activeToolInputs.removeAll()
+        activeToolNames.removeAll()
         if externalStopRequested { return }
 
         // Per-step framing is emitted after we have seen `.streamStart(warnings)`
@@ -323,6 +350,43 @@ actor StreamTextV2Actor {
                 }
                 await fullBroadcaster.send(
                     .toolInputEnd(id: id, providerMetadata: providerMetadata))
+            case .toolCall(let call):
+                // Parse JSON input (best-effort); fall back to raw string
+                let parsed = await safeParseJSON(ParseJSONOptions(text: call.input))
+                let inputValue: JSONValue
+                switch parsed {
+                case .success(let v, _): inputValue = v
+                case .failure:
+                    inputValue = .string(call.input)
+                }
+                activeToolInputs[call.toolCallId] = inputValue
+                activeToolNames[call.toolCallId] = call.toolName
+                let typed = TypedToolCall.dynamic(
+                    DynamicToolCall(
+                        toolCallId: call.toolCallId,
+                        toolName: call.toolName,
+                        input: inputValue,
+                        providerExecuted: call.providerExecuted,
+                        providerMetadata: call.providerMetadata,
+                        invalid: false,
+                        error: nil
+                    )
+                )
+                await fullBroadcaster.send(.toolCall(typed))
+            case .toolResult(let result):
+                let input = activeToolInputs[result.toolCallId] ?? .null
+                let typed: TypedToolResult = .dynamic(
+                    DynamicToolResult(
+                        toolCallId: result.toolCallId,
+                        toolName: result.toolName,
+                        input: input,
+                        output: result.result,
+                        providerExecuted: result.providerExecuted,
+                        preliminary: result.preliminary,
+                        providerMetadata: result.providerMetadata
+                    )
+                )
+                await fullBroadcaster.send(.toolResult(typed))
             case let .finish(finishReason, usage, providerMetadata):
                 for id in openTextIds {
                     await fullBroadcaster.send(.textEnd(id: id, providerMetadata: nil))
@@ -407,9 +471,15 @@ actor StreamTextV2Actor {
             await textBroadcaster.finish(error: error)
             await fullBroadcaster.finish(error: error)
         } else {
-            // Success path: emit session-level `.finish` before closing the broadcasters.
+            // Success path: optionally emit `.abort` if an external stop was requested,
+            // then emit session-level `.finish` before closing the broadcasters.
+            if externalStopRequested {
+                await fullBroadcaster.send(.abort)
+            }
             let finalReason = recordedFinishReason ?? .unknown
-            await fullBroadcaster.send(.finish(finishReason: finalReason, totalUsage: accumulatedUsage))
+            await fullBroadcaster.send(
+                .finish(finishReason: finalReason, totalUsage: accumulatedUsage)
+            )
             await textBroadcaster.finish()
             await fullBroadcaster.finish()
         }

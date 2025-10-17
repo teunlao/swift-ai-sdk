@@ -12,59 +12,15 @@ public func streamTextV2<OutputValue: Sendable, PartialOutputValue: Sendable>(
     stopWhen stopConditions: [StopCondition] = [stepCountIs(1)]
 ) throws -> DefaultStreamTextV2Result<OutputValue, PartialOutputValue> {
     // Resolve LanguageModel to a v3 model; for milestone 1 only v3 path is supported.
-    let resolved: any LanguageModelV3 = try resolveLanguageModel(modelArg)
+    _ = try resolveLanguageModel(modelArg)
 
-    let options = LanguageModelV3CallOptions(
-        prompt: [
-            .user(
-                content: [.text(LanguageModelV3TextPart(text: prompt))],
-                providerOptions: nil
-            )
-        ]
+    return try streamTextV2(
+        model: modelArg,
+        system: nil,
+        messages: [.user(UserModelMessage(content: .text(prompt), providerOptions: nil))],
+        experimentalTransform: transforms,
+        stopWhen: stopConditions
     )
-
-    // Bridge provider async stream acquisition without blocking the caller.
-    let (bridgeStream, continuation) = AsyncThrowingStream.makeStream(of: LanguageModelV3StreamPart.self)
-
-    // Create result first so we can forward request info into the actor
-    // Build initial messages for step orchestration (single user text for now)
-    let initialMessages: [ModelMessage] = [
-        .user(
-            UserModelMessage(
-                content: .text(prompt),
-                providerOptions: nil
-            )
-        )
-    ]
-
-    let result = DefaultStreamTextV2Result<OutputValue, PartialOutputValue>(
-        baseModel: modelArg,
-        model: resolved,
-        providerStream: bridgeStream,
-        transforms: transforms,
-        stopConditions: stopConditions,
-        initialMessages: initialMessages
-    )
-
-    // Start producer task to fetch provider stream and forward its parts.
-    let providerTask = Task {
-        do {
-            let providerResult = try await resolved.doStream(options: options)
-            await result._setRequestInfo(providerResult.request)
-            for try await part in providerResult.stream {
-                continuation.yield(part)
-            }
-            continuation.finish()
-        } catch {
-            continuation.finish(throwing: error)
-        }
-    }
-    continuation.onTermination = { _ in providerTask.cancel() }
-
-    // Allow actor to cancel provider task on early finish
-    Task { await result._setProviderCancel { providerTask.cancel() } }
-
-    return result
 }
 
 // MARK: - Result Type (Milestone 1)
@@ -86,13 +42,15 @@ public final class DefaultStreamTextV2Result<OutputValue: Sendable, PartialOutpu
         providerStream: AsyncThrowingStream<LanguageModelV3StreamPart, Error>,
         transforms: [StreamTextTransform],
         stopConditions: [StopCondition],
-        initialMessages: [ModelMessage]
+        initialMessages: [ModelMessage],
+        system: String?
     ) {
         self.stopConditions = stopConditions.isEmpty ? [stepCountIs(1)] : stopConditions
         self.actor = StreamTextV2Actor(
             source: providerStream,
             model: model,
             initialMessages: initialMessages,
+            system: system,
             stopConditions: self.stopConditions,
             totalUsagePromise: totalUsagePromise,
             finishReasonPromise: finishReasonPromise,
@@ -348,6 +306,148 @@ public final class DefaultStreamTextV2Result<OutputValue: Sendable, PartialOutpu
             options: options
         )
     }
+
+    // MARK: - Control
+
+    /// Requests to stop the underlying stream as soon as possible.
+    /// This mirrors the upstream `stopStream` hook and is useful for
+    /// transforms or consumers that want to abort further steps.
+    public func stop() {
+        Task { await actor.requestStop() }
+    }
+
+    // MARK: - Convenience
+
+    /// Returns the full stream as an AsyncIterableStream wrapper, which is sometimes
+    /// more ergonomic for consumers that want a cancellable async sequence abstraction.
+    public var fullStreamIterable: AsyncIterableStream<TextStreamPart> {
+        createAsyncIterableStream(source: fullStream)
+    }
+
+    /// Returns the text delta stream wrapped as `AsyncIterableStream`.
+    public var textStreamIterable: AsyncIterableStream<String> {
+        createAsyncIterableStream(source: textStream)
+    }
+
+    /// Reads the entire `textStream` and returns the concatenated text.
+    /// This is a convenience for simple, non-streaming use-cases.
+    public func readAllText() async throws -> String {
+        var buffer = ""
+        for try await delta in textStream {
+            buffer += delta
+        }
+        return buffer
+    }
+
+    /// Collects the entire `fullStream` into an in-memory array.
+    /// Useful for tests or debugging to assert on precise event ordering.
+    public func collectFullStream() async throws -> [TextStreamPart] {
+        var parts: [TextStreamPart] = []
+        for try await part in fullStream {
+            parts.append(part)
+        }
+        return parts
+    }
 }
 
 // MARK: - Helpers (none needed for milestone 1)
+
+// MARK: - Overload: system/messages prompt (Upstream parity)
+
+/**
+ Creates a V2 text stream using an initial system/message prompt, matching the upstream stream-text.ts
+ surface. This overload allows callers to pass structured messages instead of a simple text prompt.
+
+ - Parameters:
+   - model: The language model to use.
+   - system: Optional system instruction to prepend to the prompt.
+   - messages: Initial conversation messages (required; must be non-empty).
+   - experimentalTransform: Transforms applied to the full stream (map/tee semantics).
+   - stopWhen: Stop conditions to halt multi-step generation.
+
+ - Returns: DefaultStreamTextV2Result exposing text/full/UI streams and accessors.
+ */
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+public func streamTextV2<OutputValue: Sendable, PartialOutputValue: Sendable>(
+    model modelArg: LanguageModel,
+    system: String?,
+    messages initialMessages: [ModelMessage],
+    experimentalTransform transforms: [StreamTextTransform] = [],
+    stopWhen stopConditions: [StopCondition] = [stepCountIs(1)]
+) throws -> DefaultStreamTextV2Result<OutputValue, PartialOutputValue> {
+    // Resolve LanguageModel to a v3 model.
+    let resolved: any LanguageModelV3 = try resolveLanguageModel(modelArg)
+
+    // Bridge provider async stream acquisition without blocking the caller.
+    // We will build the provider prompt inside the task using supportedUrls
+    // and the full `convertToLanguageModelPrompt` pipeline.
+    let (bridgeStream, continuation) = AsyncThrowingStream.makeStream(of: LanguageModelV3StreamPart.self)
+
+    let result = DefaultStreamTextV2Result<OutputValue, PartialOutputValue>(
+        baseModel: modelArg,
+        model: resolved,
+        providerStream: bridgeStream,
+        transforms: transforms,
+        stopConditions: stopConditions,
+        initialMessages: initialMessages,
+        system: system
+    )
+
+    // Start producer task to fetch provider stream and forward its parts.
+    let providerTask = Task {
+        do {
+            // Build the provider prompt via full conversion path (upstream parity)
+            let standardized = StandardizedPrompt(system: system, messages: initialMessages)
+            let supported = try await resolved.supportedUrls
+            let lmPrompt = try await convertToLanguageModelPrompt(
+                prompt: standardized,
+                supportedUrls: supported,
+                download: nil
+            )
+            let options = LanguageModelV3CallOptions(prompt: lmPrompt)
+
+            let providerResult = try await resolved.doStream(options: options)
+            await result._setRequestInfo(providerResult.request)
+            for try await part in providerResult.stream {
+                continuation.yield(part)
+            }
+            continuation.finish()
+        } catch {
+            continuation.finish(throwing: error)
+        }
+    }
+    continuation.onTermination = { _ in providerTask.cancel() }
+
+    // Allow actor to cancel provider task on early finish
+    Task { await result._setProviderCancel { providerTask.cancel() } }
+
+    return result
+}
+// MARK: - Overload: Prompt object
+
+/**
+ Starts a V2 text stream from a `Prompt` value (system + prompt/messages),
+ matching the upstream ergonomics while using the full prompt conversion path.
+
+ - Parameters:
+   - model: The language model to use
+   - prompt: A prompt value containing system and content/messages
+   - experimentalTransform: Optional transforms
+   - stopWhen: Stop conditions to halt multi-step generation
+ */
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+public func streamTextV2<OutputValue: Sendable, PartialOutputValue: Sendable>(
+    model: LanguageModel,
+    prompt: Prompt,
+    experimentalTransform transforms: [StreamTextTransform] = [],
+    stopWhen stopConditions: [StopCondition] = [stepCountIs(1)]
+) throws -> DefaultStreamTextV2Result<OutputValue, PartialOutputValue> {
+    let standardized = try standardizePrompt(prompt)
+    return try streamTextV2(
+        model: model,
+        system: standardized.system,
+        messages: standardized.messages,
+        experimentalTransform: transforms,
+        stopWhen: stopConditions
+    )
+}
