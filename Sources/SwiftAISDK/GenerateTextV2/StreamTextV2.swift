@@ -428,8 +428,8 @@ public final class DefaultStreamTextV2Result<OutputValue: Sendable, PartialOutpu
     /// This mirrors the upstream `stopStream` hook and is useful for
     /// transforms or consumers that want to abort further steps.
     public func stop() {
-        observerTask?.cancel()
-        onFinishTask?.cancel()
+        // Do not cancel observer/onFinish tasks here — they must remain alive
+        // to deliver `.abort` and `.finish` callbacks deterministically.
         Task { await actor.requestStop() }
     }
 

@@ -30,6 +30,7 @@ actor StreamTextV2Actor {
     private var accumulatedUsage: LanguageModelUsage = LanguageModelUsage()
     private var recordedFinishReason: FinishReason? = nil
     private var externalStopRequested = false
+    private var abortEmitted = false
     // Tool tracking for the current step
     private var activeToolInputs: [String: JSONValue] = [:] // toolCallId -> parsed input
     private var activeToolNames: [String: String] = [:]     // toolCallId -> tool name
@@ -72,6 +73,12 @@ actor StreamTextV2Actor {
     // This mirrors the upstream `stopStream` hook used by transforms.
     func requestStop() async {
         externalStopRequested = true
+        // Emit `.abort` immediately to notify consumers, but keep streams open
+        // until the provider finishes so we can still publish a final `.finish`.
+        if !terminated && !abortEmitted {
+            abortEmitted = true
+            await fullBroadcaster.send(.abort)
+        }
     }
 
     private func ensureStarted() async {
@@ -506,7 +513,8 @@ actor StreamTextV2Actor {
         } else {
             // Success path: optionally emit `.abort` if an external stop was requested,
             // then emit session-level `.finish` before closing the broadcasters.
-            if externalStopRequested {
+            if externalStopRequested && !abortEmitted {
+                abortEmitted = true
                 await fullBroadcaster.send(.abort)
             }
             let finalReason = recordedFinishReason ?? .unknown
