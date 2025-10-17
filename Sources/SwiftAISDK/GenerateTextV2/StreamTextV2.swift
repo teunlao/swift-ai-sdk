@@ -27,12 +27,23 @@ public func streamTextV2<OutputValue: Sendable, PartialOutputValue: Sendable>(
     let (bridgeStream, continuation) = AsyncThrowingStream.makeStream(of: LanguageModelV3StreamPart.self)
 
     // Create result first so we can forward request info into the actor
+    // Build initial messages for step orchestration (single user text for now)
+    let initialMessages: [ModelMessage] = [
+        .user(
+            UserModelMessage(
+                content: .text(prompt),
+                providerOptions: nil
+            )
+        )
+    ]
+
     let result = DefaultStreamTextV2Result<OutputValue, PartialOutputValue>(
         baseModel: modelArg,
         model: resolved,
         providerStream: bridgeStream,
         transforms: transforms,
-        stopConditions: stopConditions
+        stopConditions: stopConditions,
+        initialMessages: initialMessages
     )
 
     // Start producer task to fetch provider stream and forward its parts.
@@ -74,11 +85,15 @@ public final class DefaultStreamTextV2Result<OutputValue: Sendable, PartialOutpu
         model: any LanguageModelV3,
         providerStream: AsyncThrowingStream<LanguageModelV3StreamPart, Error>,
         transforms: [StreamTextTransform],
-        stopConditions: [StopCondition]
+        stopConditions: [StopCondition],
+        initialMessages: [ModelMessage]
     ) {
         self.stopConditions = stopConditions.isEmpty ? [stepCountIs(1)] : stopConditions
         self.actor = StreamTextV2Actor(
             source: providerStream,
+            model: model,
+            initialMessages: initialMessages,
+            stopConditions: self.stopConditions,
             totalUsagePromise: totalUsagePromise,
             finishReasonPromise: finishReasonPromise,
             stepsPromise: stepsPromise
