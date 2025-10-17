@@ -4,8 +4,8 @@
  * Race Finder - Find race conditions by removing test suites from end
  *
  * Strategy:
- * 1. Run all tests 3 times
- * 2. If timeout: remove 5 suites from end, test 3 times
+ * 1. Run all tests N times (default: 3, configurable via --runs)
+ * 2. If timeout: remove 5 suites from end, test N times
  * 3. Keep removing by 5 until timeout disappears
  * 4. Add back one by one to find exact culprit
  */
@@ -131,15 +131,18 @@ function executeTest(suites, timeoutMs) {
 }
 
 /**
- * Run tests 3 times and check if any timeout
+ * Run tests N times and check if any timeout
+ * @param {string[]} suites - Test suites to run
+ * @param {number} timeoutMs - Timeout in milliseconds
+ * @param {number} runs - Number of times to run tests (default: 3)
  */
-async function runThreeTimes(suites, timeoutMs) {
+async function runMultipleTimes(suites, timeoutMs, runs = 3) {
     let timeoutCount = 0;
     let passedCount = 0;
     let failedCount = 0;
 
-    for (let i = 1; i <= 3; i++) {
-        console.log(`  Run ${i}/3...`);
+    for (let i = 1; i <= runs; i++) {
+        console.log(`  Run ${i}/${runs}...`);
         cleanupZombies();
 
         const result = await executeTest(suites, timeoutMs);
@@ -166,25 +169,29 @@ async function runThreeTimes(suites, timeoutMs) {
 
 /**
  * Main race finder algorithm
+ * @param {string[]} allSuites - All test suites
+ * @param {number} timeoutMs - Timeout in milliseconds
+ * @param {number} runs - Number of times to run tests
  */
-async function findRace(allSuites, timeoutMs) {
+async function findRace(allSuites, timeoutMs, runs = 3) {
     console.log('\n🏁 RACE FINDER');
     console.log('━'.repeat(60));
     console.log(`Total suites: ${allSuites.length}`);
     console.log(`Timeout:      ${timeoutMs}ms`);
+    console.log(`Runs:         ${runs}`);
     console.log(`Strategy:     Remove from END until timeout disappears`);
     console.log('━'.repeat(60) + '\n');
 
-    // Step 1: Run all tests 3 times
-    console.log(`📊 Running ALL ${allSuites.length} suites (3 times)...\n`);
-    const initialResult = await runThreeTimes(allSuites, timeoutMs);
+    // Step 1: Run all tests N times
+    console.log(`📊 Running ALL ${allSuites.length} suites (${runs} times)...\n`);
+    const initialResult = await runMultipleTimes(allSuites, timeoutMs, runs);
 
     if (!initialResult.hasTimeout) {
         console.log('\n✅ No timeout detected - all tests pass!\n');
         return [];
     }
 
-    console.log(`\n⏱️  TIMEOUT detected (${initialResult.timeoutCount}/3 runs)!`);
+    console.log(`\n⏱️  TIMEOUT detected (${initialResult.timeoutCount}/${runs} runs)!`);
     console.log('Starting removal from END...\n');
 
     // Step 2: Remove from end by 5 until timeout disappears
@@ -207,7 +214,7 @@ async function findRace(allSuites, timeoutMs) {
         console.log(`   Removed range: [${currentSuites.length}..${allSuites.length - 1}]`);
         console.log(`━`.repeat(60) + '\n');
 
-        const result = await runThreeTimes(currentSuites, timeoutMs);
+        const result = await runMultipleTimes(currentSuites, timeoutMs, runs);
 
         if (!result.hasTimeout) {
             console.log(`\n✅ Timeout disappeared! Last safe count: ${currentSuites.length} suites\n`);
@@ -215,7 +222,7 @@ async function findRace(allSuites, timeoutMs) {
             break;
         }
 
-        console.log(`\n⏱️  Still timing out (${result.timeoutCount}/3 runs), removing more...\n`);
+        console.log(`\n⏱️  Still timing out (${result.timeoutCount}/${runs} runs), removing more...\n`);
     }
 
     // Step 3: Find exact culprit(s)
@@ -250,10 +257,10 @@ async function findRace(allSuites, timeoutMs) {
         console.log(`Total suites: ${testSuites.length} (base ${baseSuites.length} + 1 suspect)`);
         console.log(`━`.repeat(60) + '\n');
 
-        const result = await runThreeTimes(testSuites, timeoutMs);
+        const result = await runMultipleTimes(testSuites, timeoutMs, runs);
 
         if (result.hasTimeout) {
-            console.log(`\n🎯 CULPRIT FOUND: ${suspects[i]} (timeout ${result.timeoutCount}/3 runs)\n`);
+            console.log(`\n🎯 CULPRIT FOUND: ${suspects[i]} (timeout ${result.timeoutCount}/${runs} runs)\n`);
             culprits.push(suspects[i]);
         } else {
             console.log(`\n✅ Not a culprit: ${suspects[i]}\n`);
@@ -341,24 +348,25 @@ async function main() {
 Race Finder - Detect race conditions by removing tests from end
 
 Usage:
-  node race-finder.js [--timeout <ms>] [--exclude <pattern>...]
+  node race-finder.js [--timeout <ms>] [--runs <n>] [--exclude <pattern>...]
 
 Options:
   --timeout <ms>        Timeout in milliseconds (default: 4000)
+  --runs <n>            Number of times to run each test (default: 3)
   --exclude <pattern>   Exclude test suites matching pattern (can be used multiple times)
                         Supports wildcards: * for any characters
   --help, -h            Show this help
 
 How it works:
-  1. Run all tests 3 times
-  2. If timeout: remove 5 suites from end, test 3 times
+  1. Run all tests N times
+  2. If timeout: remove 5 suites from end, test N times
   3. Keep removing by 5 until timeout disappears
   4. Add back one by one to find exact culprit
 
 Examples:
-  node race-finder.js --timeout 5000
+  node race-finder.js --timeout 5000 --runs 5
   node race-finder.js --exclude SwiftAISDKTests.CreateUIMessageStreamTests
-  node race-finder.js --exclude "*UIMessageStream*" --exclude "*SerialJobExecutor*"
+  node race-finder.js --runs 10 --exclude "*UIMessageStream*" --exclude "*SerialJobExecutor*"
         `);
         return;
     }
@@ -366,6 +374,10 @@ Examples:
     // Parse timeout
     const timeoutIndex = args.indexOf('--timeout');
     const timeoutMs = timeoutIndex !== -1 ? parseInt(args[timeoutIndex + 1]) : 4000;
+
+    // Parse runs
+    const runsIndex = args.indexOf('--runs');
+    const runs = runsIndex !== -1 ? parseInt(args[runsIndex + 1]) : 3;
 
     // Parse exclude patterns
     const excludePatterns = [];
@@ -379,7 +391,7 @@ Examples:
     const allSuites = getAllTestSuites(excludePatterns);
     console.log(`✅ Found ${allSuites.length} test suites\n`);
 
-    const culprits = await findRace(allSuites, timeoutMs);
+    const culprits = await findRace(allSuites, timeoutMs, runs);
 
     const duration = Date.now() - startTime;
     const minutes = Math.floor(duration / 60000);

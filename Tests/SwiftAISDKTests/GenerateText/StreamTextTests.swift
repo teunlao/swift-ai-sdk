@@ -1,8 +1,9 @@
-// import Foundation
-// import Testing
-// @testable import SwiftAISDK
 // import AISDKProvider
 // import AISDKProviderUtils
+// import Foundation
+// import Testing
+
+// @testable import SwiftAISDK
 
 // @Suite("StreamText – textStream basic")
 // struct StreamTextBasicTests {
@@ -19,7 +20,8 @@
 //         // Arrange: mock streaming model that emits a single text block
 //         let parts: [LanguageModelV3StreamPart] = [
 //             .streamStart(warnings: []),
-//             .responseMetadata(id: "id-0", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
+//             .responseMetadata(
+//                 id: "id-0", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
 //             .textStart(id: "1", providerMetadata: nil),
 //             .textDelta(id: "1", delta: "Hello", providerMetadata: nil),
 //             .textDelta(id: "1", delta: " ", providerMetadata: nil),
@@ -30,7 +32,7 @@
 //                 finishReason: .stop,
 //                 usage: defaultUsage,
 //                 providerMetadata: ["provider": ["key": .string("value")]]
-//             )
+//             ),
 //         ]
 
 //         let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in

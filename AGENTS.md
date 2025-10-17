@@ -161,6 +161,12 @@ date -u +"%Y-%m-%dT%H:%M:%SZ"
 
 ## Testing & Race Condition Detection
 
+### StreamText Test Discipline
+- Every `swift test` run must set an explicit timeout ≤10s (≤15s only for the first build after major changes).
+- Target runtime for each `StreamTextTests` case is ≤100ms; treat slower runs as regressions to debug, not reasons to raise timeouts.
+- The warm full-suite target is ≤3s wall clock; profile and fix bottlenecks or race conditions instead of increasing suite timeouts.
+- Use logging/instrumentation to diagnose hangs and remove the diagnostics before landing.
+
 ### Smart Test Runner
 
 **Location**: `tools/test-runner.js`

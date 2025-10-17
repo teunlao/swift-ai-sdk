@@ -3,6 +3,7 @@ import Testing
 @testable import AISDKProviderUtils
 @testable import SwiftAISDK
 
-@Test func example() async throws {
-    // Write your test here and use APIs like `#expect(...)` to check expected conditions.
+// Keep a trivial synchronous test to avoid async scheduling artifacts.
+@Test func example() {
+    #expect(true)
 }
