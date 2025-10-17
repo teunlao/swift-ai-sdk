@@ -148,4 +148,45 @@ struct StreamTextV2BasicTests {
         #expect(isFinishStep(chunks[7]))
         #expect(isFinish(chunks[8]))
     }
+
+    @Test("accessors return final values after finish (V2)")
+    func accessorsAfterFinishV2() async throws {
+        let parts: [LanguageModelV3StreamPart] = [
+            .streamStart(warnings: []),
+            .responseMetadata(id: "id-xyz", modelId: "mock-model", timestamp: Date(timeIntervalSince1970: 0)),
+            .textStart(id: "1", providerMetadata: nil),
+            .textDelta(id: "1", delta: "Hi", providerMetadata: nil),
+            .textEnd(id: "1", providerMetadata: nil),
+            .finish(
+                finishReason: .stop,
+                usage: defaultUsage,
+                providerMetadata: nil
+            )
+        ]
+
+        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+            for part in parts { continuation.yield(part) }
+            continuation.finish()
+        }
+
+        let model = MockLanguageModelV3(
+            doStream: .singleValue(LanguageModelV3StreamResult(stream: stream))
+        )
+
+        let result: DefaultStreamTextV2Result<JSONValue, JSONValue> = try streamTextV2(
+            model: .v3(model),
+            prompt: "hello"
+        )
+
+        // Drain streams to completion, then check properties
+        _ = try await convertReadableStreamToArray(result.textStream)
+
+        let text = try await result.text
+        let usage = try await result.usage
+        let finish = try await result.finishReason
+
+        #expect(text == "Hi")
+        #expect(usage.totalTokens == defaultUsage.totalTokens)
+        #expect(finish == .stop)
+    }
 }

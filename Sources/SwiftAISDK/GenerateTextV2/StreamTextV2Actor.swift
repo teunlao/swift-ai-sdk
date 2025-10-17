@@ -18,8 +18,25 @@ actor StreamTextV2Actor {
     private var capturedTimestamp: Date?
     private var openTextIds = Set<String>()
 
-    init(source: AsyncThrowingStream<LanguageModelV3StreamPart, Error>) {
+    // Aggregation for step/content
+    private var aggregatedText: String = ""
+    private var recordedRequest: LanguageModelRequestMetadata = LanguageModelRequestMetadata()
+
+    // Completion sinks (promises owned by result)
+    private let totalUsagePromise: DelayedPromise<LanguageModelUsage>
+    private let finishReasonPromise: DelayedPromise<FinishReason>
+    private let stepsPromise: DelayedPromise<[StepResult]>
+
+    init(
+        source: AsyncThrowingStream<LanguageModelV3StreamPart, Error>,
+        totalUsagePromise: DelayedPromise<LanguageModelUsage>,
+        finishReasonPromise: DelayedPromise<FinishReason>,
+        stepsPromise: DelayedPromise<[StepResult]>
+    ) {
         self.source = source
+        self.totalUsagePromise = totalUsagePromise
+        self.finishReasonPromise = finishReasonPromise
+        self.stepsPromise = stepsPromise
     }
 
     func textStream() async -> AsyncThrowingStream<String, Error> {
@@ -69,6 +86,7 @@ actor StreamTextV2Actor {
                             await fullBroadcaster.send(.textStart(id: id, providerMetadata: providerMetadata))
                         }
                         await fullBroadcaster.send(.textDelta(id: id, text: delta, providerMetadata: providerMetadata))
+                        aggregatedText.append(delta)
 
                     case let .textEnd(id, providerMetadata):
                         openTextIds.remove(id)
@@ -101,6 +119,33 @@ actor StreamTextV2Actor {
                         await textBroadcaster.finish()
                         await fullBroadcaster.finish()
 
+                        // Resolve promises with final step snapshot
+                        let contentParts: [ContentPart] = aggregatedText.isEmpty
+                            ? []
+                            : [.text(text: aggregatedText, providerMetadata: nil)]
+
+                        // Build response messages from content using shared util
+                        let modelMessages = toResponseMessages(content: contentParts, tools: nil)
+                        let responseMessages = convertModelMessagesToResponseMessagesV2(modelMessages)
+
+                        let stepResult = DefaultStepResult(
+                            content: contentParts,
+                            finishReason: finishReason,
+                            usage: usage,
+                            warnings: capturedWarnings,
+                            request: recordedRequest,
+                            response: StepResultResponse(
+                                from: response,
+                                messages: responseMessages,
+                                body: nil
+                            ),
+                            providerMetadata: providerMetadata
+                        )
+
+                        finishReasonPromise.resolve(finishReason)
+                        totalUsagePromise.resolve(usage)
+                        stepsPromise.resolve([stepResult])
+
                     case .error(let err):
                         await textBroadcaster.finish(error: StreamTextV2Error.providerError(err))
                         await fullBroadcaster.finish(error: StreamTextV2Error.providerError(err))
@@ -119,6 +164,30 @@ actor StreamTextV2Actor {
             } catch {
                 await textBroadcaster.finish(error: error)
                 await fullBroadcaster.finish(error: error)
+            }
+        }
+    }
+
+    // Set initial request info from provider (optional)
+    func setInitialRequest(_ info: LanguageModelV3RequestInfo?) {
+        guard let body = info?.body else { return }
+        if let value = try? jsonValue(from: body) {
+            recordedRequest = LanguageModelRequestMetadata(body: value)
+        }
+    }
+
+    // Local conversion of model messages to response messages (assistant/tool only)
+    private func convertModelMessagesToResponseMessagesV2(
+        _ messages: [ModelMessage]
+    ) -> [ResponseMessage] {
+        messages.compactMap { message in
+            switch message {
+            case .assistant(let assistant):
+                return .assistant(assistant)
+            case .tool(let tool):
+                return .tool(tool)
+            case .system, .user:
+                return nil
             }
         }
     }
