@@ -34,7 +34,7 @@ public func streamTextV2<OutputValue: Sendable, PartialOutputValue: Sendable>(
     )
 
     // Start producer task to fetch provider stream and forward its parts.
-    Task {
+    let providerTask = Task {
         do {
             let providerResult = try await resolved.doStream(options: options)
             await result._setRequestInfo(providerResult.request)
@@ -46,6 +46,10 @@ public func streamTextV2<OutputValue: Sendable, PartialOutputValue: Sendable>(
             continuation.finish(throwing: error)
         }
     }
+    continuation.onTermination = { _ in providerTask.cancel() }
+
+    // Allow actor to cancel provider task on early finish
+    Task { await result._setProviderCancel { providerTask.cancel() } }
 
     return result
 }
@@ -83,10 +87,15 @@ public final class DefaultStreamTextV2Result<OutputValue: Sendable, PartialOutpu
         await actor.setInitialRequest(info)
     }
 
+    // Internal: install provider cancel callback so actor can cancel upstream if it finishes earlier
+    func _setProviderCancel(_ cancel: @escaping @Sendable () -> Void) async {
+        await actor.setOnTerminate(cancel)
+    }
+
     public var textStream: AsyncThrowingStream<String, Error> {
         // Bridge async actor method into a non-async property via forwarding stream
         AsyncThrowingStream { continuation in
-            Task {
+            let task = Task {
                 let inner = await actor.textStream()
                 do {
                     for try await value in inner {
@@ -97,19 +106,21 @@ public final class DefaultStreamTextV2Result<OutputValue: Sendable, PartialOutpu
                     continuation.finish(throwing: error)
                 }
             }
+            continuation.onTermination = { _ in task.cancel() }
         }
     }
 
     public var fullStream: AsyncThrowingStream<TextStreamPart, Error> {
         // Build base full stream from actor
         let baseStream = AsyncThrowingStream<TextStreamPart, Error> { continuation in
-            Task {
+            let task = Task {
                 let inner = await actor.fullStream()
                 do {
                     for try await value in inner { continuation.yield(value) }
                     continuation.finish()
                 } catch { continuation.finish(throwing: error) }
             }
+            continuation.onTermination = { _ in task.cancel() }
         }
 
         // Convert to AsyncIterableStream for transforms
@@ -119,12 +130,13 @@ public final class DefaultStreamTextV2Result<OutputValue: Sendable, PartialOutpu
 
         // Convert back to AsyncThrowingStream for public API
         return AsyncThrowingStream { continuation in
-            Task {
+            let task = Task {
                 do {
                     for try await part in transformed { continuation.yield(part) }
                     continuation.finish()
                 } catch { continuation.finish(throwing: error) }
             }
+            continuation.onTermination = { _ in task.cancel() }
         }
     }
 

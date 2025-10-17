@@ -50,6 +50,54 @@ struct StreamTextV2BasicTests {
         #expect(chunks == ["Hello", " ", "World", "!"])
     }
 
+    @Test("fullStream emits tool input events in order (V2)")
+    func fullStreamToolInputOrderV2() async throws {
+        let parts: [LanguageModelV3StreamPart] = [
+            .streamStart(warnings: []),
+            .responseMetadata(id: "id-0", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
+            .toolInputStart(id: "tool-1", toolName: "search", providerMetadata: nil, providerExecuted: false),
+            .toolInputDelta(id: "tool-1", delta: "{\"q\":\"hi\"}", providerMetadata: nil),
+            .toolInputEnd(id: "tool-1", providerMetadata: nil),
+            .finish(
+                finishReason: .stop,
+                usage: defaultUsage,
+                providerMetadata: nil
+            )
+        ]
+
+        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+            for part in parts { continuation.yield(part) }
+            continuation.finish()
+        }
+
+        let model = MockLanguageModelV3(
+            doStream: .singleValue(LanguageModelV3StreamResult(stream: stream))
+        )
+
+        let result: DefaultStreamTextV2Result<JSONValue, JSONValue> = try streamTextV2(
+            model: .v3(model),
+            prompt: "hello"
+        )
+
+        let chunks = try await convertReadableStreamToArray(result.fullStream)
+
+        func isStart(_ p: TextStreamPart) -> Bool { if case .start = p { return true } else { return false } }
+        func isStartStep(_ p: TextStreamPart) -> Bool { if case .startStep = p { return true } else { return false } }
+        func isToolStart(_ p: TextStreamPart) -> Bool { if case .toolInputStart = p { return true } else { return false } }
+        func toolDelta(_ p: TextStreamPart) -> String? { if case let .toolInputDelta(_, d, _) = p { return d } else { return nil } }
+        func isToolEnd(_ p: TextStreamPart) -> Bool { if case .toolInputEnd = p { return true } else { return false } }
+        func isFinishStep(_ p: TextStreamPart) -> Bool { if case .finishStep = p { return true } else { return false } }
+        func isFinish(_ p: TextStreamPart) -> Bool { if case .finish = p { return true } else { return false } }
+
+        #expect(isStart(chunks[0]))
+        #expect(isStartStep(chunks[1]))
+        #expect(isToolStart(chunks[2]))
+        #expect(toolDelta(chunks[3]) == "{\"q\":\"hi\"}")
+        #expect(isToolEnd(chunks[4]))
+        #expect(isFinishStep(chunks[5]))
+        #expect(isFinish(chunks[6]))
+    }
+
     @Test("fullStream with empty provider emits framing only (V2)")
     func fullStreamEmptyEmitsFramingOnlyV2() async throws {
         let parts: [LanguageModelV3StreamPart] = [

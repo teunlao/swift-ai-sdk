@@ -10,6 +10,7 @@ actor StreamTextV2Actor {
     private let fullBroadcaster = AsyncStreamBroadcaster<TextStreamPart>()
     private var started = false
     private var framingEmitted = false
+    private var terminated = false
 
     // Captured metadata/state for framing
     private var capturedWarnings: [LanguageModelV3CallWarning] = []
@@ -26,6 +27,7 @@ actor StreamTextV2Actor {
     private let totalUsagePromise: DelayedPromise<LanguageModelUsage>
     private let finishReasonPromise: DelayedPromise<FinishReason>
     private let stepsPromise: DelayedPromise<[StepResult]>
+    private var onTerminate: (@Sendable () -> Void)? = nil
 
     init(
         source: AsyncThrowingStream<LanguageModelV3StreamPart, Error>,
@@ -56,116 +58,160 @@ actor StreamTextV2Actor {
     private func ensureStarted() async {
         guard !started else { return }
         started = true
+        Task { [weak self] in
+            await self?.run()
+        }
+    }
 
-        Task { [textBroadcaster, fullBroadcaster, source] in
-            do {
-                for try await part in source {
-                    switch part {
-                    case .streamStart(let warnings):
-                        capturedWarnings = warnings
-                        if !framingEmitted {
-                            framingEmitted = true
-                            await fullBroadcaster.send(.start)
-                            let requestMeta = LanguageModelRequestMetadata(body: nil)
-                            await fullBroadcaster.send(.startStep(request: requestMeta, warnings: warnings))
-                        }
+    // Run the provider stream consumption inside actor isolation to avoid data races.
+    private func run() async {
+        do {
+            for try await part in source {
+                switch part {
+                case .streamStart(let warnings):
+                    capturedWarnings = warnings
+                    if !framingEmitted {
+                        framingEmitted = true
+                        await fullBroadcaster.send(.start)
+                        let requestMeta = LanguageModelRequestMetadata(body: nil)
+                        await fullBroadcaster.send(.startStep(request: requestMeta, warnings: warnings))
+                    }
 
-                    case let .responseMetadata(id, modelId, timestamp):
-                        capturedResponseId = id ?? capturedResponseId
-                        capturedModelId = modelId ?? capturedModelId
-                        capturedTimestamp = timestamp ?? capturedTimestamp
+                case let .responseMetadata(id, modelId, timestamp):
+                    capturedResponseId = id ?? capturedResponseId
+                    capturedModelId = modelId ?? capturedModelId
+                    capturedTimestamp = timestamp ?? capturedTimestamp
 
-                    case let .textStart(id, providerMetadata):
+                case let .textStart(id, providerMetadata):
+                    openTextIds.insert(id)
+                    await fullBroadcaster.send(.textStart(id: id, providerMetadata: providerMetadata))
+
+                case let .textDelta(id, delta, providerMetadata):
+                    await textBroadcaster.send(delta)
+                    if !openTextIds.contains(id) {
                         openTextIds.insert(id)
                         await fullBroadcaster.send(.textStart(id: id, providerMetadata: providerMetadata))
+                    }
+                    await fullBroadcaster.send(.textDelta(id: id, text: delta, providerMetadata: providerMetadata))
+                    aggregatedText.append(delta)
 
-                    case let .textDelta(id, delta, providerMetadata):
-                        await textBroadcaster.send(delta)
-                        if !openTextIds.contains(id) {
-                            openTextIds.insert(id)
-                            await fullBroadcaster.send(.textStart(id: id, providerMetadata: providerMetadata))
-                        }
-                        await fullBroadcaster.send(.textDelta(id: id, text: delta, providerMetadata: providerMetadata))
-                        aggregatedText.append(delta)
+                case let .textEnd(id, providerMetadata):
+                    openTextIds.remove(id)
+                    await fullBroadcaster.send(.textEnd(id: id, providerMetadata: providerMetadata))
 
-                    case let .textEnd(id, providerMetadata):
-                        openTextIds.remove(id)
-                        await fullBroadcaster.send(.textEnd(id: id, providerMetadata: providerMetadata))
-
-                    case let .finish(finishReason, usage, providerMetadata):
-                        // Close any remaining open text ids
-                        for id in openTextIds {
-                            await fullBroadcaster.send(.textEnd(id: id, providerMetadata: nil))
-                        }
-                        openTextIds.removeAll()
-
-                        let response = LanguageModelResponseMetadata(
-                            id: capturedResponseId ?? "unknown",
-                            timestamp: capturedTimestamp ?? Date(timeIntervalSince1970: 0),
-                            modelId: capturedModelId ?? "unknown",
-                            headers: nil
+                // Tool input streaming
+                case let .toolInputStart(id, toolName, providerMetadata, providerExecuted):
+                    await fullBroadcaster.send(
+                        .toolInputStart(
+                            id: id,
+                            toolName: toolName,
+                            providerMetadata: providerMetadata,
+                            providerExecuted: providerExecuted,
+                            dynamic: nil
                         )
+                    )
 
-                        await fullBroadcaster.send(
-                            .finishStep(
-                                response: response,
-                                usage: usage,
-                                finishReason: finishReason,
-                                providerMetadata: providerMetadata
-                            )
-                        )
-                        await fullBroadcaster.send(.finish(finishReason: finishReason, totalUsage: usage))
+                case let .toolInputDelta(id, delta, providerMetadata):
+                    await fullBroadcaster.send(.toolInputDelta(id: id, delta: delta, providerMetadata: providerMetadata))
 
-                        await textBroadcaster.finish()
-                        await fullBroadcaster.finish()
+                case let .toolInputEnd(id, providerMetadata):
+                    await fullBroadcaster.send(.toolInputEnd(id: id, providerMetadata: providerMetadata))
 
-                        // Resolve promises with final step snapshot
-                        let contentParts: [ContentPart] = aggregatedText.isEmpty
-                            ? []
-                            : [.text(text: aggregatedText, providerMetadata: nil)]
+                case let .finish(finishReason, usage, providerMetadata):
+                    // Close any remaining open text ids
+                    for id in openTextIds {
+                        await fullBroadcaster.send(.textEnd(id: id, providerMetadata: nil))
+                    }
+                    openTextIds.removeAll()
 
-                        // Build response messages from content using shared util
-                        let modelMessages = toResponseMessages(content: contentParts, tools: nil)
-                        let responseMessages = convertModelMessagesToResponseMessagesV2(modelMessages)
+                    let response = LanguageModelResponseMetadata(
+                        id: capturedResponseId ?? "unknown",
+                        timestamp: capturedTimestamp ?? Date(timeIntervalSince1970: 0),
+                        modelId: capturedModelId ?? "unknown",
+                        headers: nil
+                    )
 
-                        let stepResult = DefaultStepResult(
-                            content: contentParts,
-                            finishReason: finishReason,
+                    await fullBroadcaster.send(
+                        .finishStep(
+                            response: response,
                             usage: usage,
-                            warnings: capturedWarnings,
-                            request: recordedRequest,
-                            response: StepResultResponse(
-                                from: response,
-                                messages: responseMessages,
-                                body: nil
-                            ),
+                            finishReason: finishReason,
                             providerMetadata: providerMetadata
                         )
+                    )
+                    await fullBroadcaster.send(.finish(finishReason: finishReason, totalUsage: usage))
 
-                        finishReasonPromise.resolve(finishReason)
-                        totalUsagePromise.resolve(usage)
-                        stepsPromise.resolve([stepResult])
+                    // Resolve and finish once
+                    await finishAll(
+                        response: response,
+                        usage: usage,
+                        finishReason: finishReason,
+                        providerMetadata: providerMetadata
+                    )
 
-                    case .error(let err):
-                        await textBroadcaster.finish(error: StreamTextV2Error.providerError(err))
-                        await fullBroadcaster.finish(error: StreamTextV2Error.providerError(err))
+                case .error(let err):
+                    await textBroadcaster.finish(error: StreamTextV2Error.providerError(err))
+                    await fullBroadcaster.finish(error: StreamTextV2Error.providerError(err))
 
-                    default:
-                        break
-                    }
+                default:
+                    break
                 }
-                // If provider ended without explicit .finish, still close the broadcasters
-                await textBroadcaster.finish()
-                await fullBroadcaster.finish()
-            } catch is CancellationError {
-                // Consumer cancellation will cancel our task via onTermination of subscribers; just close.
-                await textBroadcaster.finish()
-                await fullBroadcaster.finish()
-            } catch {
-                await textBroadcaster.finish(error: error)
-                await fullBroadcaster.finish(error: error)
             }
+            // If provider ended without explicit .finish, still close
+            await finishAll(response: nil, usage: nil, finishReason: nil, providerMetadata: nil)
+        } catch is CancellationError {
+            await finishAll(response: nil, usage: nil, finishReason: nil, providerMetadata: nil)
+        } catch {
+            await finishAll(response: nil, usage: nil, finishReason: nil, providerMetadata: nil, error: error)
         }
+    }
+
+    // Idempotent finisher for both broadcasters and promises
+    private func finishAll(
+        response: LanguageModelResponseMetadata?,
+        usage: LanguageModelUsage?,
+        finishReason: FinishReason?,
+        providerMetadata: ProviderMetadata?,
+        error: Error? = nil
+    ) async {
+        guard !terminated else { return }
+        terminated = true
+
+        if let error {
+            await textBroadcaster.finish(error: error)
+            await fullBroadcaster.finish(error: error)
+        } else {
+            await textBroadcaster.finish()
+            await fullBroadcaster.finish()
+        }
+
+        if let usage, let finishReason, let resp = response {
+            let contentParts: [ContentPart] = aggregatedText.isEmpty
+                ? []
+                : [.text(text: aggregatedText, providerMetadata: nil)]
+            let modelMessages = toResponseMessages(content: contentParts, tools: nil)
+            let responseMessages = convertModelMessagesToResponseMessagesV2(modelMessages)
+            let stepResult = DefaultStepResult(
+                content: contentParts,
+                finishReason: finishReason,
+                usage: usage,
+                warnings: capturedWarnings,
+                request: recordedRequest,
+                response: StepResultResponse(from: resp, messages: responseMessages, body: nil),
+                providerMetadata: providerMetadata
+            )
+            finishReasonPromise.resolve(finishReason)
+            totalUsagePromise.resolve(usage)
+            stepsPromise.resolve([stepResult])
+        }
+
+        onTerminate?()
+        onTerminate = nil
+    }
+
+    // Install/replace termination callback (set by result)
+    func setOnTerminate(_ cb: @escaping @Sendable () -> Void) {
+        onTerminate = cb
     }
 
     // Set initial request info from provider (optional)
