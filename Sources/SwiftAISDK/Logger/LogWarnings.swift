@@ -48,6 +48,7 @@ private nonisolated(unsafe) var _logWarningsObservers: [(@Sendable ([Warning]) -
 
 /// Storage for logger config - protected by globalWarningsLock
 private nonisolated(unsafe) var _AI_SDK_LOG_WARNINGS: Any? = nil
+private nonisolated(unsafe) var _warningsLoggingDisabledForProcess: Bool = false
 
 /// Union type for all warning types
 public enum Warning: Sendable, Equatable {
@@ -222,8 +223,17 @@ public func logWarnings(_ warnings: [Warning]) {
         return
     }
 
-    // Thread-safe access to AI_SDK_LOG_WARNINGS
-    let logger = AI_SDK_LOG_WARNINGS
+    // Thread-safe access to disable flag and logger configuration
+    let logger: Any?
+    let loggingDisabled: Bool
+    globalWarningsLock.lock()
+    loggingDisabled = _warningsLoggingDisabledForProcess
+    logger = _AI_SDK_LOG_WARNINGS
+    globalWarningsLock.unlock()
+
+    if loggingDisabled {
+        return
+    }
 
     // If explicitly disabled
     if let loggerBool = logger as? Bool, loggerBool == false {
@@ -257,4 +267,10 @@ public func logWarnings(_ warnings: [Warning]) {
 /// first-call behavior multiple times.
 public func resetLogWarningsState() {
     firstWarningState.reset()
+}
+
+public func setWarningsLoggingDisabledForTests(_ disabled: Bool) {
+    globalWarningsLock.lock()
+    _warningsLoggingDisabledForProcess = disabled
+    globalWarningsLock.unlock()
 }
