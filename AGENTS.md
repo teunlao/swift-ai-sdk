@@ -361,6 +361,22 @@ Remember:
 
 ---
 
+## Test Failure Policy (Absolute)
+
+- If any test fails, drop everything and fix it immediately.
+- Applies to red, flaky, intermittent, timeouts, and hangs — ALL are failures.
+- No deferrals allowed: never write “fix later” or similar. Keep working until green.
+- Continue until the full suite is green, regardless of duration.
+- Never disable/skip tests to get green unless upstream explicitly requires it.
+- Do not hide races by increasing timeouts; remove the root cause.
+- Prefer single‑terminal, idempotent flows; cancel background tasks on stream end.
+- When using callbacks/streams, use a single observer and ensure proper cancellation.
+- Validate with repeated runs (e.g., 5–10) when flakiness is suspected.
+- Evidence on completion: list previously failing suites and show rerun stability.
+- No “done” status until all tests pass consistently under the agreed runner settings.
+
+---
+
 ## Code Line Quota Compliance (Strict)
 
 When a user specifies an explicit code line quota (e.g., “write 200–300 lines”), you MUST deliver at least that many added lines of code in the next change set. This section defines mandatory rules for quota requests.

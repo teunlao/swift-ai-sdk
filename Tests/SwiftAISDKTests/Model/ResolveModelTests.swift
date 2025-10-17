@@ -69,11 +69,11 @@ struct ResolveLanguageModelTests {
 
     @Test("when a string is provided and global provider is not set - should throw error")
     func throwsWhenNoGlobalProvider() async throws {
-        // Ensure no global provider is set
         globalDefaultProvider = nil
-
-        #expect(throws: NoSuchProviderError.self) {
-            try resolveLanguageModel(.string("test-model-id"))
+        try await withGlobalProviderDisabled {
+            #expect(throws: NoSuchProviderError.self) {
+                try resolveLanguageModel(.string("test-model-id"))
+            }
         }
     }
 

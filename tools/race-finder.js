@@ -87,16 +87,50 @@ function cleanupZombies() {
 function extractFailureInfo(stdout, stderr) {
     const lines = [];
 
-    // Look for test failures in stdout
-    const failureMatches = stdout.match(/✗.*?\n.*?(\n|$)/gs) || [];
-    if (failureMatches.length > 0) {
+    // Look for Swift Testing failures (✘ symbol)
+    const swiftFailureMatches = stdout.match(/✘ Test "([^"]+)" failed.*?(\n|$)/g) || [];
+    if (swiftFailureMatches.length > 0) {
+        lines.push('Failed tests:');
+        swiftFailureMatches.slice(0, 5).forEach(match => {
+            // Extract test name
+            const testNameMatch = match.match(/✘ Test "([^"]+)"/);
+            if (testNameMatch) {
+                lines.push(`  • ${testNameMatch[1]}`);
+            }
+        });
+        if (swiftFailureMatches.length > 5) {
+            lines.push(`  ... and ${swiftFailureMatches.length - 5} more`);
+        }
+    }
+
+    // Look for XCTest failures (✗ symbol)
+    const xctestFailureMatches = stdout.match(/✗.*?\n.*?(\n|$)/gs) || [];
+    if (xctestFailureMatches.length > 0 && swiftFailureMatches.length === 0) {
         lines.push('Test failures:');
-        failureMatches.slice(0, 3).forEach(match => {
+        xctestFailureMatches.slice(0, 3).forEach(match => {
             lines.push('  ' + match.trim().replace(/\n/g, '\n  '));
         });
-        if (failureMatches.length > 3) {
-            lines.push(`  ... and ${failureMatches.length - 3} more failures`);
+        if (xctestFailureMatches.length > 3) {
+            lines.push(`  ... and ${xctestFailureMatches.length - 3} more`);
         }
+    }
+
+    // Look for failure summary line
+    const summaryMatch = stdout.match(/✘ Test run with (\d+) tests? failed.*?with (\d+) issues?/);
+    if (summaryMatch) {
+        lines.push(`Total: ${summaryMatch[2]} issue(s) in ${summaryMatch[1]} tests`);
+    }
+
+    // Look for Suite failures
+    const suiteFailures = stdout.match(/✘ Suite "([^"]+)" failed/g) || [];
+    if (suiteFailures.length > 0) {
+        lines.push('Failed suites:');
+        suiteFailures.slice(0, 3).forEach(match => {
+            const suiteMatch = match.match(/✘ Suite "([^"]+)"/);
+            if (suiteMatch) {
+                lines.push(`  • ${suiteMatch[1]}`);
+            }
+        });
     }
 
     // Look for error messages
@@ -117,8 +151,8 @@ function extractFailureInfo(stdout, stderr) {
 
     // If no specific error found, provide generic message
     if (lines.length === 0) {
-        // Try to find failed test count
-        const failedMatch = stdout.match(/(\d+) failed/);
+        // Try to find failed test count (fallback)
+        const failedMatch = stdout.match(/(\d+) (test|tests) failed/);
         if (failedMatch) {
             return `${failedMatch[1]} test(s) failed`;
         }
@@ -151,6 +185,9 @@ function executeTest(suites, timeoutMs, parallel = false) {
             shell: false
         });
 
+        // Track current process for cleanup on Ctrl+C
+        currentTestProcess = child;
+
         let timedOut = false;
         const timer = setTimeout(() => {
             timedOut = true;
@@ -171,6 +208,7 @@ function executeTest(suites, timeoutMs, parallel = false) {
 
         child.on('exit', (code) => {
             clearTimeout(timer);
+            currentTestProcess = null; // Clear reference
             const duration = Date.now() - startTime;
 
             if (timedOut) {
@@ -178,8 +216,12 @@ function executeTest(suites, timeoutMs, parallel = false) {
                 return;
             }
 
-            const passed = output.includes('passed');
-            if (passed) {
+            // Check exit code (0 = success, non-zero = failure)
+            // Also check for final result line from Swift Testing
+            const hasFinalFailure = /✘ Test run with \d+ tests? failed/.test(output) ||
+                                   /✘ Suite .* failed/.test(output);
+
+            if (code === 0 && !hasFinalFailure) {
                 resolve({ status: 'passed', duration });
             } else {
                 // Extract failure details from output
@@ -195,6 +237,7 @@ function executeTest(suites, timeoutMs, parallel = false) {
 
         child.on('error', (err) => {
             clearTimeout(timer);
+            currentTestProcess = null; // Clear reference
             resolve({
                 status: 'failed',
                 duration: Date.now() - startTime,
@@ -432,6 +475,36 @@ function killAllSwiftProcesses() {
         console.log('✅ No Swift processes found to kill\n');
     }
 }
+
+/**
+ * Cleanup and exit handler
+ */
+let currentTestProcess = null;
+
+function cleanupAndExit(signal) {
+    console.log(`\n\n⚠️  Received ${signal} - cleaning up...\n`);
+
+    // Kill current test process if running
+    if (currentTestProcess) {
+        try {
+            currentTestProcess.kill('SIGKILL');
+            console.log('🛑 Killed running test process\n');
+        } catch (e) {
+            // Process may have already exited
+        }
+    }
+
+    // Cleanup all Swift processes
+    console.log('🧹 Cleaning up all Swift processes...\n');
+    cleanupZombies();
+
+    console.log('✅ Cleanup complete. Exiting.\n');
+    process.exit(130); // Standard exit code for SIGINT
+}
+
+// Register signal handlers
+process.on('SIGINT', () => cleanupAndExit('SIGINT (Ctrl+C)'));
+process.on('SIGTERM', () => cleanupAndExit('SIGTERM'));
 
 /**
  * Main

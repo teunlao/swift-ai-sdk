@@ -96,7 +96,7 @@ public final class DefaultStreamTextV2Result<OutputValue: Sendable, PartialOutpu
         self.transforms = transforms
         _ = self.actor  // keep strong reference
 
-        if onChunk != nil || onStepFinish != nil || onAbort != nil || onError != nil {
+        if onChunk != nil || onStepFinish != nil || onAbort != nil || onError != nil || onFinish != nil {
             self.observerTask = Task { [actor] in
                 let stream = await actor.fullStream()
                 do {
@@ -115,6 +115,20 @@ public final class DefaultStreamTextV2Result<OutputValue: Sendable, PartialOutpu
                         }
                         if let onAbort, case .abort = part {
                             onAbort(await actor.getRecordedSteps())
+                        }
+                        if let onFinish, case .finish = part {
+                            // Promises already resolved before `.finish` is published by the actor.
+                            // Await them here to deliver `onFinish` deterministically from the stream observer.
+                            do {
+                                async let reason = finishReasonPromise.task.value
+                                async let usage = totalUsagePromise.task.value
+                                async let stepList = stepsPromise.task.value
+                                let (r, u, s) = try await (reason, usage, stepList)
+                                if let final = s.last { onFinish(final, s, u, r) }
+                            } catch {
+                                // If promises failed, surface via onError if present.
+                                if let onError { onError(error) }
+                            }
                         }
                     }
                 } catch {
@@ -195,6 +209,31 @@ public final class DefaultStreamTextV2Result<OutputValue: Sendable, PartialOutpu
             }
             continuation.onTermination = { _ in task.cancel() }
         }
+    }
+
+    // MARK: - Convenience collectors (useful for tests and simple consumers)
+
+    /// Collects all text deltas from `textStream` into a single concatenated string.
+    public func collectText() async throws -> String {
+        var buffer = ""
+        for try await chunk in textStream { buffer.append(chunk) }
+        return buffer
+    }
+
+    /// Waits for stream completion and returns the final tuple (finalStep, steps, totalUsage, finishReason).
+    /// Promises are awaited directly to avoid any ordering races with `.finish` event delivery.
+    public func waitForFinish() async throws -> (
+        finalStep: StepResult,
+        steps: [StepResult],
+        totalUsage: LanguageModelUsage,
+        finishReason: FinishReason
+    ) {
+        async let reason = finishReasonPromise.task.value
+        async let usage = totalUsagePromise.task.value
+        async let stepList = stepsPromise.task.value
+        let (r, u, s) = try await (reason, usage, stepList)
+        guard let last = s.last else { throw NoOutputGeneratedError() }
+        return (last, s, u, r)
     }
 
     // MARK: - Accessors (Milestone 3)
@@ -474,7 +513,11 @@ public func streamTextV2<OutputValue: Sendable, PartialOutputValue: Sendable>(
         stopConditions: stopConditions,
         initialMessages: initialMessages,
         system: system,
-        onChunk: onChunk
+        onChunk: onChunk,
+        onStepFinish: onStepFinish,
+        onFinish: onFinish,
+        onAbort: onAbort,
+        onError: onError
     )
 
     // Start producer task to fetch provider stream and forward its parts.

@@ -475,6 +475,30 @@ actor StreamTextV2Actor {
     ) async {
         guard !terminated else { return }
         terminated = true
+        // If the provider supplied a tail step via `response/usage/finishReason`,
+        // record it before resolving the promises or emitting the terminal `.finish`.
+        if let usage, let finishReason, let resp = response {
+            let contentParts: [ContentPart] =
+                aggregatedText.isEmpty ? [] : [.text(text: aggregatedText, providerMetadata: nil)]
+            let modelMessages = toResponseMessages(content: contentParts, tools: nil)
+            let responseMessages = convertModelMessagesToResponseMessagesV2(modelMessages)
+            let stepResult = DefaultStepResult(
+                content: contentParts, finishReason: finishReason, usage: usage,
+                warnings: capturedWarnings, request: recordedRequest,
+                response: StepResultResponse(from: resp, messages: responseMessages, body: nil),
+                providerMetadata: providerMetadata)
+            recordedSteps.append(stepResult)
+            accumulatedUsage = addLanguageModelUsage(accumulatedUsage, usage)
+            recordedFinishReason = finishReason
+        }
+        // Resolve promises BEFORE publishing the terminal `.finish` event.
+        // This guarantees observers that await promises in response to `.finish`
+        // can read stable values without timing races.
+        totalUsagePromise.resolve(accumulatedUsage)
+        stepsPromise.resolve(recordedSteps)
+        // Resolve finish reason with the last recorded one (or unknown if none).
+        finishReasonPromise.resolve(recordedFinishReason ?? .unknown)
+
         if let error {
             // Error path: finish streams with the error, do not emit terminal `.finish` part.
             await textBroadcaster.finish(error: error)
@@ -492,24 +516,6 @@ actor StreamTextV2Actor {
             await textBroadcaster.finish()
             await fullBroadcaster.finish()
         }
-        if let usage, let finishReason, let resp = response {
-            let contentParts: [ContentPart] =
-                aggregatedText.isEmpty ? [] : [.text(text: aggregatedText, providerMetadata: nil)]
-            let modelMessages = toResponseMessages(content: contentParts, tools: nil)
-            let responseMessages = convertModelMessagesToResponseMessagesV2(modelMessages)
-            let stepResult = DefaultStepResult(
-                content: contentParts, finishReason: finishReason, usage: usage,
-                warnings: capturedWarnings, request: recordedRequest,
-                response: StepResultResponse(from: resp, messages: responseMessages, body: nil),
-                providerMetadata: providerMetadata)
-            recordedSteps.append(stepResult)
-            accumulatedUsage = addLanguageModelUsage(accumulatedUsage, usage)
-            recordedFinishReason = finishReason
-        }
-        totalUsagePromise.resolve(accumulatedUsage)
-        stepsPromise.resolve(recordedSteps)
-        // Resolve finish reason with the last recorded one (or unknown if none).
-        finishReasonPromise.resolve(recordedFinishReason ?? .unknown)
         onTerminate?()
         onTerminate = nil
     }

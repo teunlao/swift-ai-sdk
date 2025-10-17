@@ -137,6 +137,37 @@ private final class EmbeddingModelV2ToV3Adapter<VALUE: Sendable>: EmbeddingModel
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 nonisolated(unsafe) public var globalDefaultProvider: (any ProviderV3)? = nil
 
+/**
+ Test-only switch to disable usage of `globalDefaultProvider` for string model resolution.
+
+ When `true`, `resolveLanguageModel(.string(_))` and `resolveEmbeddingModel(.string(_))`
+ behave as if no global provider is set, regardless of the actual global state.
+ This helps eliminate flaky cross-suite interference when tests run in parallel.
+
+ Default: `false`. Do not enable in production code.
+ */
+// Task-local switch to disable usage of `globalDefaultProvider` for string model resolution.
+// Default is `false`. Used by tests to avoid cross-suite interference under parallel execution.
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+enum _ResolveModelContext {
+    @TaskLocal static var disableGlobalProvider: Bool = false
+}
+
+// Kept for backward-compat toggling in rare cases; prefer task-local helpers below.
+nonisolated(unsafe) public var disableGlobalProviderForStringResolution: Bool = false
+
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+@discardableResult
+public func withGlobalProviderDisabled<T>(_ operation: () throws -> T) rethrows -> T {
+    try _ResolveModelContext.$disableGlobalProvider.withValue(true) { try operation() }
+}
+
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+@discardableResult
+public func withGlobalProviderDisabled<T>(operation: () async throws -> T) async rethrows -> T {
+    try await _ResolveModelContext.$disableGlobalProvider.withValue(true) { try await operation() }
+}
+
 // MARK: - Resolution Functions
 
 /**
@@ -160,7 +191,8 @@ public func resolveLanguageModel(_ model: LanguageModel) throws -> any LanguageM
     switch model {
     case .string(let id):
         // Resolve string ID using global provider
-        guard let provider = globalDefaultProvider else {
+        let disabled = disableGlobalProviderForStringResolution || _ResolveModelContext.disableGlobalProvider
+        guard !disabled, let provider = globalDefaultProvider else {
             // TypeScript uses gateway as fallback, but we require explicit provider setup
             throw NoSuchProviderError(
                 modelId: id,
@@ -203,7 +235,8 @@ public func resolveEmbeddingModel<VALUE: Sendable>(_ model: EmbeddingModel<VALUE
     switch model {
     case .string(let id):
         // Resolve string ID using global provider
-        guard let provider = globalDefaultProvider else {
+        let disabled = disableGlobalProviderForStringResolution || _ResolveModelContext.disableGlobalProvider
+        guard !disabled, let provider = globalDefaultProvider else {
             // TypeScript uses gateway as fallback, but we require explicit provider setup
             throw NoSuchProviderError(
                 modelId: id,
