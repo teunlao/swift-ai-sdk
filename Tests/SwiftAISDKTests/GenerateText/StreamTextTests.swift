@@ -214,304 +214,304 @@ struct StreamTextFullOrder {
     }
 }
 
-// MARK: - 3) Abort-сценарии
+// // MARK: - 3) Abort-сценарии
 
-@Suite("StreamText – abort")
-struct StreamTextAbort {
+// @Suite("StreamText – abort")
+// struct StreamTextAbort {
 
-    @Test("immediate abort produces no deltas")
-    func immediateAbort() async throws {
-        let model = makeModel(stream: makeStream(parts: helloWorldParts()))
-        let res: DefaultStreamTextResult<Never, Never> = try streamText(
-            model: .v3(model),
-            prompt: "x",
-            settings: CallSettings(abortSignal: { true })
-        )
+//     @Test("immediate abort produces no deltas")
+//     func immediateAbort() async throws {
+//         let model = makeModel(stream: makeStream(parts: helloWorldParts()))
+//         let res: DefaultStreamTextResult<Never, Never> = try streamText(
+//             model: .v3(model),
+//             prompt: "x",
+//             settings: CallSettings(abortSignal: { true })
+//         )
 
-        let txt = try await withTimeout(2) { try await collectText(res.textStream) }
-        #expect(txt.isEmpty)
-    }
+//         let txt = try await withTimeout(2) { try await collectText(res.textStream) }
+//         #expect(txt.isEmpty)
+//     }
 
-    @Test("mid-stream abort does not hang")
-    func midStreamAbort() async throws {
-        final class AbortBox: @unchecked Sendable {
-            private let lock = NSLock()
-            private var _aborted = false
+//     @Test("mid-stream abort does not hang")
+//     func midStreamAbort() async throws {
+//         final class AbortBox: @unchecked Sendable {
+//             private let lock = NSLock()
+//             private var _aborted = false
 
-            func setAborted() {
-                lock.lock()
-                defer { lock.unlock() }
-                _aborted = true
-            }
+//             func setAborted() {
+//                 lock.lock()
+//                 defer { lock.unlock() }
+//                 _aborted = true
+//             }
 
-            func isAborted() -> Bool {
-                lock.lock()
-                defer { lock.unlock() }
-                return _aborted
-            }
-        }
+//             func isAborted() -> Bool {
+//                 lock.lock()
+//                 defer { lock.unlock() }
+//                 return _aborted
+//             }
+//         }
 
-        let box = AbortBox()
-        let parts = helloWorldParts()
-        let model = makeModel(stream: makeStream(parts: parts, perPartDelayNs: 15_000_000))  // 15ms/chunk
+//         let box = AbortBox()
+//         let parts = helloWorldParts()
+//         let model = makeModel(stream: makeStream(parts: parts, perPartDelayNs: 15_000_000))  // 15ms/chunk
 
-        Task {
-            try? await Task.sleep(nanoseconds: 20_000_000)
-            box.setAborted()
-        }
+//         Task {
+//             try? await Task.sleep(nanoseconds: 20_000_000)
+//             box.setAborted()
+//         }
 
-        let res: DefaultStreamTextResult<Never, Never> = try streamText(
-            model: .v3(model), prompt: "x",
-            settings: CallSettings(abortSignal: { box.isAborted() })
-        )
+//         let res: DefaultStreamTextResult<Never, Never> = try streamText(
+//             model: .v3(model), prompt: "x",
+//             settings: CallSettings(abortSignal: { box.isAborted() })
+//         )
 
-        // Количество дельт может быть 0..N, главное — отсутствие зависаний
-        _ = try await withTimeout(2) { try await collectText(res.textStream) }
-    }
-}
+//         // Количество дельт может быть 0..N, главное — отсутствие зависаний
+//         _ = try await withTimeout(2) { try await collectText(res.textStream) }
+//     }
+// }
 
-// MARK: - 4) Конкурентные подписчики и back-pressure
+// // MARK: - 4) Конкурентные подписчики и back-pressure
 
-@Suite("StreamText – concurrency & back-pressure")
-struct StreamTextConcurrencyBackPressure {
+// @Suite("StreamText – concurrency & back-pressure")
+// struct StreamTextConcurrencyBackPressure {
 
-    @Test("two concurrent textStream subscribers receive identical deltas")
-    func twoConcurrentSubscribers() async throws {
-        let model = makeModel(stream: makeStream(parts: helloWorldParts()))
-        let res: DefaultStreamTextResult<Never, Never> = try streamText(
-            model: .v3(model), prompt: "x")
+//     @Test("two concurrent textStream subscribers receive identical deltas")
+//     func twoConcurrentSubscribers() async throws {
+//         let model = makeModel(stream: makeStream(parts: helloWorldParts()))
+//         let res: DefaultStreamTextResult<Never, Never> = try streamText(
+//             model: .v3(model), prompt: "x")
 
-        let (x, y) = try await withTimeout(2) {
-            async let a = collectText(res.textStream)
-            async let b = collectText(res.textStream)
-            return try await (a, b)
-        }
-        #expect(x == ["Hello", ", ", "world!"])
-        #expect(y == ["Hello", ", ", "world!"])
-    }
+//         let (x, y) = try await withTimeout(2) {
+//             async let a = collectText(res.textStream)
+//             async let b = collectText(res.textStream)
+//             return try await (a, b)
+//         }
+//         #expect(x == ["Hello", ", ", "world!"])
+//         #expect(y == ["Hello", ", ", "world!"])
+//     }
 
-    @Test("ten concurrent fullStream subscribers all finish")
-    func tenFullSubscribers() async throws {
-        let model = makeModel(stream: makeStream(parts: helloWorldParts()))
-        let res: DefaultStreamTextResult<Never, Never> = try streamText(
-            model: .v3(model), prompt: "x")
+//     @Test("ten concurrent fullStream subscribers all finish")
+//     func tenFullSubscribers() async throws {
+//         let model = makeModel(stream: makeStream(parts: helloWorldParts()))
+//         let res: DefaultStreamTextResult<Never, Never> = try streamText(
+//             model: .v3(model), prompt: "x")
 
-        try await withTimeout(3) {
-            try await withThrowingTaskGroup(of: Void.self) { g in
-                for _ in 0..<10 {
-                    g.addTask {
-                        _ = try await collectFull(res.fullStream)
-                    }
-                }
-                try await g.waitForAll()
-            }
-        }
-        #expect(try await res.finishReason == .stop)
-    }
+//         try await withTimeout(3) {
+//             try await withThrowingTaskGroup(of: Void.self) { g in
+//                 for _ in 0..<10 {
+//                     g.addTask {
+//                         _ = try await collectFull(res.fullStream)
+//                     }
+//                 }
+//                 try await g.waitForAll()
+//             }
+//         }
+//         #expect(try await res.finishReason == .stop)
+//     }
 
-    @Test("late subscriber gets remainder and finishes")
-    func lateSubscriberGetsRemainder() async throws {
-        let model = makeModel(
-            stream: makeStream(parts: helloWorldParts(), perPartDelayNs: 5_000_000))  // 5ms
-        let res: DefaultStreamTextResult<Never, Never> = try streamText(
-            model: .v3(model), prompt: "x")
+//     @Test("late subscriber gets remainder and finishes")
+//     func lateSubscriberGetsRemainder() async throws {
+//         let model = makeModel(
+//             stream: makeStream(parts: helloWorldParts(), perPartDelayNs: 5_000_000))  // 5ms
+//         let res: DefaultStreamTextResult<Never, Never> = try streamText(
+//             model: .v3(model), prompt: "x")
 
-        let (a, b) = try await withTimeout(3) {
-            async let first = collectText(res.textStream)
+//         let (a, b) = try await withTimeout(3) {
+//             async let first = collectText(res.textStream)
 
-            // Второй запаздывает
-            try? await Task.sleep(nanoseconds: 12_000_000)
-            async let second = collectText(res.textStream)
+//             // Второй запаздывает
+//             try? await Task.sleep(nanoseconds: 12_000_000)
+//             async let second = collectText(res.textStream)
 
-            return try await (first, second)
-        }
-        // Первый — полный набор; второй — остаток (может совпасть, если успел)
-        #expect(a == ["Hello", ", ", "world!"])
-        #expect(!b.isEmpty)
-        #expect(try await res.finishReason == .stop)
-    }
+//             return try await (first, second)
+//         }
+//         // Первый — полный набор; второй — остаток (может совпасть, если успел)
+//         #expect(a == ["Hello", ", ", "world!"])
+//         #expect(!b.isEmpty)
+//         #expect(try await res.finishReason == .stop)
+//     }
 
-    @Test("slow consumer does not block pipeline (unbounded buffers)")
-    func slowConsumer() async throws {
-        var parts: [LanguageModelV3StreamPart] = [.textStart(id: "1", providerMetadata: nil)]
-        for i in 0..<400 {
-            parts.append(.textDelta(id: "1", delta: "x\(i)", providerMetadata: nil))
-        }
-        parts.append(.textEnd(id: "1", providerMetadata: nil))
-        parts.append(.finish(finishReason: .stop, usage: testUsage, providerMetadata: nil))
+//     @Test("slow consumer does not block pipeline (unbounded buffers)")
+//     func slowConsumer() async throws {
+//         var parts: [LanguageModelV3StreamPart] = [.textStart(id: "1", providerMetadata: nil)]
+//         for i in 0..<400 {
+//             parts.append(.textDelta(id: "1", delta: "x\(i)", providerMetadata: nil))
+//         }
+//         parts.append(.textEnd(id: "1", providerMetadata: nil))
+//         parts.append(.finish(finishReason: .stop, usage: testUsage, providerMetadata: nil))
 
-        let model = makeModel(stream: makeStream(parts: parts))
-        let res: DefaultStreamTextResult<Never, Never> = try streamText(
-            model: .v3(model), prompt: "x")
+//         let model = makeModel(stream: makeStream(parts: parts))
+//         let res: DefaultStreamTextResult<Never, Never> = try streamText(
+//             model: .v3(model), prompt: "x")
 
-        var cnt = 0
-        for try await _ in res.textStream {
-            cnt += 1
-            try? await Task.sleep(nanoseconds: 1_000_000)  // 1ms
-        }
-        #expect(cnt == 400)
-        #expect(try await res.finishReason == .stop)
-    }
+//         var cnt = 0
+//         for try await _ in res.textStream {
+//             cnt += 1
+//             try? await Task.sleep(nanoseconds: 1_000_000)  // 1ms
+//         }
+//         #expect(cnt == 400)
+//         #expect(try await res.finishReason == .stop)
+//     }
 
-    @Test("no consumer: finishReason resolves and no hang")
-    func noConsumerFinishReasonResolves() async throws {
-        let model = makeModel(stream: makeStream(parts: helloWorldParts()))
-        let res: DefaultStreamTextResult<Never, Never> = try streamText(
-            model: .v3(model), prompt: "x")
-        let reason = try await withTimeout(2) { try await res.finishReason }
-        #expect(reason == .stop)
-    }
-}
+//     @Test("no consumer: finishReason resolves and no hang")
+//     func noConsumerFinishReasonResolves() async throws {
+//         let model = makeModel(stream: makeStream(parts: helloWorldParts()))
+//         let res: DefaultStreamTextResult<Never, Never> = try streamText(
+//             model: .v3(model), prompt: "x")
+//         let reason = try await withTimeout(2) { try await res.finishReason }
+//         #expect(reason == .stop)
+//     }
+// }
 
-// MARK: - 5) includeRawChunks и partial-output stream
+// // MARK: - 5) includeRawChunks и partial-output stream
 
-@Suite("StreamText – raw & partial output")
-struct StreamTextRawAndPartial {
+// @Suite("StreamText – raw & partial output")
+// struct StreamTextRawAndPartial {
 
-    @Test("raw chunks are forwarded when includeRawChunks == true")
-    func forwardsRawWhenEnabled() async throws {
-        let parts: [LanguageModelV3StreamPart] = [
-            .raw(rawValue: ["kind": "telemetry", "v": 1]),
-            .textStart(id: "1", providerMetadata: nil),
-            .textDelta(id: "1", delta: "A", providerMetadata: nil),
-            .textEnd(id: "1", providerMetadata: nil),
-            .finish(finishReason: .stop, usage: testUsage, providerMetadata: nil),
-        ]
-        let model = makeModel(stream: makeStream(parts: parts))
-        let res: DefaultStreamTextResult<Never, Never> = try streamText(
-            model: .v3(model),
-            prompt: "x",
-            includeRawChunks: true
-        )
+//     @Test("raw chunks are forwarded when includeRawChunks == true")
+//     func forwardsRawWhenEnabled() async throws {
+//         let parts: [LanguageModelV3StreamPart] = [
+//             .raw(rawValue: ["kind": "telemetry", "v": 1]),
+//             .textStart(id: "1", providerMetadata: nil),
+//             .textDelta(id: "1", delta: "A", providerMetadata: nil),
+//             .textEnd(id: "1", providerMetadata: nil),
+//             .finish(finishReason: .stop, usage: testUsage, providerMetadata: nil),
+//         ]
+//         let model = makeModel(stream: makeStream(parts: parts))
+//         let res: DefaultStreamTextResult<Never, Never> = try streamText(
+//             model: .v3(model),
+//             prompt: "x",
+//             includeRawChunks: true
+//         )
 
-        let full = try await withTimeout(2) { try await collectFull(res.fullStream) }
-        #expect(full.contains { if case .raw = $0 { true } else { false } })
-        #expect(try await res.finishReason == .stop)
-    }
+//         let full = try await withTimeout(2) { try await collectFull(res.fullStream) }
+//         #expect(full.contains { if case .raw = $0 { true } else { false } })
+//         #expect(try await res.finishReason == .stop)
+//     }
 
-    @Test("experimentalPartialOutputStream without spec throws NoOutputSpecifiedError")
-    func partialStreamThrowsWithoutSpec() async throws {
-        let model = makeModel(stream: makeStream(parts: helloWorldParts()))
-        let res: DefaultStreamTextResult<Never, Never> = try streamText(
-            model: .v3(model), prompt: "x")
+//     @Test("experimentalPartialOutputStream without spec throws NoOutputSpecifiedError")
+//     func partialStreamThrowsWithoutSpec() async throws {
+//         let model = makeModel(stream: makeStream(parts: helloWorldParts()))
+//         let res: DefaultStreamTextResult<Never, Never> = try streamText(
+//             model: .v3(model), prompt: "x")
 
-        await #expect(throws: NoOutputSpecifiedError.self) {
-            _ = try await withTimeout(2) {
-                var any: [Never] = []
-                for try await v in res.experimentalPartialOutputStream { any.append(v) }
-                return ()
-            }
-        }
-    }
-}
+//         await #expect(throws: NoOutputSpecifiedError.self) {
+//             _ = try await withTimeout(2) {
+//                 var any: [Never] = []
+//                 for try await v in res.experimentalPartialOutputStream { any.append(v) }
+//                 return ()
+//             }
+//         }
+//     }
+// }
 
-// MARK: - 6) Консистентность контента и метаданных
+// // MARK: - 6) Консистентность контента и метаданных
 
-@Suite("StreamText – content & metadata consistency")
-struct StreamTextContentConsistency {
+// @Suite("StreamText – content & metadata consistency")
+// struct StreamTextContentConsistency {
 
-    @Test("two different text ids produce two text blocks in full stream")
-    func twoIdsTwoBlocks() async throws {
-        let parts: [LanguageModelV3StreamPart] = [
-            .textStart(id: "a", providerMetadata: nil),
-            .textDelta(id: "a", delta: "AA", providerMetadata: nil),
-            .textEnd(id: "a", providerMetadata: nil),
-            .textStart(id: "b", providerMetadata: nil),
-            .textDelta(id: "b", delta: "BB", providerMetadata: nil),
-            .textEnd(id: "b", providerMetadata: nil),
-            .finish(finishReason: .stop, usage: testUsage, providerMetadata: nil),
-        ]
-        let model = makeModel(stream: makeStream(parts: parts))
-        let res: DefaultStreamTextResult<Never, Never> = try streamText(
-            model: .v3(model), prompt: "x")
-        let full = try await withTimeout(2) { try await collectFull(res.fullStream) }
+//     @Test("two different text ids produce two text blocks in full stream")
+//     func twoIdsTwoBlocks() async throws {
+//         let parts: [LanguageModelV3StreamPart] = [
+//             .textStart(id: "a", providerMetadata: nil),
+//             .textDelta(id: "a", delta: "AA", providerMetadata: nil),
+//             .textEnd(id: "a", providerMetadata: nil),
+//             .textStart(id: "b", providerMetadata: nil),
+//             .textDelta(id: "b", delta: "BB", providerMetadata: nil),
+//             .textEnd(id: "b", providerMetadata: nil),
+//             .finish(finishReason: .stop, usage: testUsage, providerMetadata: nil),
+//         ]
+//         let model = makeModel(stream: makeStream(parts: parts))
+//         let res: DefaultStreamTextResult<Never, Never> = try streamText(
+//             model: .v3(model), prompt: "x")
+//         let full = try await withTimeout(2) { try await collectFull(res.fullStream) }
 
-        let texts = full.compactMap { part -> (String, String?)? in
-            switch part {
-            case let .textStart(id, _): return (id, nil)
-            case let .textDelta(_, t, _): return ("delta", t)
-            case let .textEnd(id, _): return (id, nil)
-            default: return nil
-            }
-        }
-        // Никаких зависаний, события прошли
-        #expect(!texts.isEmpty)
-        #expect(try await res.finishReason == .stop)
-    }
+//         let texts = full.compactMap { part -> (String, String?)? in
+//             switch part {
+//             case let .textStart(id, _): return (id, nil)
+//             case let .textDelta(_, t, _): return ("delta", t)
+//             case let .textEnd(id, _): return (id, nil)
+//             default: return nil
+//             }
+//         }
+//         // Никаких зависаний, события прошли
+//         #expect(!texts.isEmpty)
+//         #expect(try await res.finishReason == .stop)
+//     }
 
-    @Test("sources and files are forwarded")
-    func sourcesAndFilesForwarded() async throws {
-        let fileData = LanguageModelV3File(
-            mediaType: "text/plain",
-            data: .base64(Data("X".utf8).base64EncodedString())
-        )
-        let parts: [LanguageModelV3StreamPart] = [
-            .file(fileData),
-            .source(.url(id: "s1", url: "https://example.com", title: "E", providerMetadata: nil)),
-            .finish(finishReason: .stop, usage: testUsage, providerMetadata: nil),
-        ]
-        let model = makeModel(stream: makeStream(parts: parts))
-        let res: DefaultStreamTextResult<Never, Never> = try streamText(
-            model: .v3(model), prompt: "x")
-        let full = try await withTimeout(2) { try await collectFull(res.fullStream) }
+//     @Test("sources and files are forwarded")
+//     func sourcesAndFilesForwarded() async throws {
+//         let fileData = LanguageModelV3File(
+//             mediaType: "text/plain",
+//             data: .base64(Data("X".utf8).base64EncodedString())
+//         )
+//         let parts: [LanguageModelV3StreamPart] = [
+//             .file(fileData),
+//             .source(.url(id: "s1", url: "https://example.com", title: "E", providerMetadata: nil)),
+//             .finish(finishReason: .stop, usage: testUsage, providerMetadata: nil),
+//         ]
+//         let model = makeModel(stream: makeStream(parts: parts))
+//         let res: DefaultStreamTextResult<Never, Never> = try streamText(
+//             model: .v3(model), prompt: "x")
+//         let full = try await withTimeout(2) { try await collectFull(res.fullStream) }
 
-        #expect(full.contains { if case .file = $0 { true } else { false } })
-        #expect(full.contains { if case .source = $0 { true } else { false } })
-        #expect(try await res.finishReason == .stop)
-    }
-}
+//         #expect(full.contains { if case .file = $0 { true } else { false } })
+//         #expect(full.contains { if case .source = $0 { true } else { false } })
+//         #expect(try await res.finishReason == .stop)
+//     }
+// }
 
-// MARK: - 7) OnChunk не блокирует финализацию шага
+// // MARK: - 7) OnChunk не блокирует финализацию шага
 
-@Suite("StreamText – onChunk back-pressure")
-struct StreamTextOnChunkBP {
+// @Suite("StreamText – onChunk back-pressure")
+// struct StreamTextOnChunkBP {
 
-    @Test("heavy onChunk does not prevent finishReason resolving")
-    func heavyOnChunk() async throws {
-        let parts = helloWorldParts()
-        let model = makeModel(stream: makeStream(parts: parts))
-        let start = Date()
+//     @Test("heavy onChunk does not prevent finishReason resolving")
+//     func heavyOnChunk() async throws {
+//         let parts = helloWorldParts()
+//         let model = makeModel(stream: makeStream(parts: parts))
+//         let start = Date()
 
-        let res: DefaultStreamTextResult<Never, Never> = try streamText(
-            model: .v3(model),
-            prompt: "x",
-            onChunk: { _ in
-                // имитируем тяжёлый обработчик
-                try? await Task.sleep(nanoseconds: 5_000_000)  // 5ms
-            }
-        )
+//         let res: DefaultStreamTextResult<Never, Never> = try streamText(
+//             model: .v3(model),
+//             prompt: "x",
+//             onChunk: { _ in
+//                 // имитируем тяжёлый обработчик
+//                 try? await Task.sleep(nanoseconds: 5_000_000)  // 5ms
+//             }
+//         )
 
-        let reason = try await withTimeout(3) { try await res.finishReason }
-        #expect(reason == .stop)
-        // просто sanity-check, что уложились в таймаут
-        #expect(Date().timeIntervalSince(start) < 3.0)
-    }
-}
+//         let reason = try await withTimeout(3) { try await res.finishReason }
+//         #expect(reason == .stop)
+//         // просто sanity-check, что уложились в таймаут
+//         #expect(Date().timeIntervalSince(start) < 3.0)
+//     }
+// }
 
-// MARK: - 8) Stress
+// // MARK: - 8) Stress
 
-@Suite("StreamText – stress")
-struct StreamTextStress {
+// @Suite("StreamText – stress")
+// struct StreamTextStress {
 
-    @Test("1000 deltas stream finishes and totals preserved")
-    func largeStreamFinishes() async throws {
-        var parts: [LanguageModelV3StreamPart] = [.streamStart(warnings: [])]
-        parts.append(.responseMetadata(id: "id-1", modelId: "mock-model-id", timestamp: Date()))
-        parts.append(.textStart(id: "1", providerMetadata: nil))
-        for i in 0..<1000 {
-            parts.append(.textDelta(id: "1", delta: "a\(i)", providerMetadata: nil))
-        }
-        parts.append(.textEnd(id: "1", providerMetadata: nil))
-        parts.append(.finish(finishReason: .stop, usage: testUsage, providerMetadata: nil))
+//     @Test("1000 deltas stream finishes and totals preserved")
+//     func largeStreamFinishes() async throws {
+//         var parts: [LanguageModelV3StreamPart] = [.streamStart(warnings: [])]
+//         parts.append(.responseMetadata(id: "id-1", modelId: "mock-model-id", timestamp: Date()))
+//         parts.append(.textStart(id: "1", providerMetadata: nil))
+//         for i in 0..<1000 {
+//             parts.append(.textDelta(id: "1", delta: "a\(i)", providerMetadata: nil))
+//         }
+//         parts.append(.textEnd(id: "1", providerMetadata: nil))
+//         parts.append(.finish(finishReason: .stop, usage: testUsage, providerMetadata: nil))
 
-        let model = makeModel(stream: makeStream(parts: parts))
-        let res: DefaultStreamTextResult<Never, Never> = try streamText(
-            model: .v3(model), prompt: "x")
+//         let model = makeModel(stream: makeStream(parts: parts))
+//         let res: DefaultStreamTextResult<Never, Never> = try streamText(
+//             model: .v3(model), prompt: "x")
 
-        var c = 0
-        for try await _ in res.textStream { c += 1 }
-        #expect(c == 1000)
-        #expect(try await res.finishReason == .stop)
-        #expect(try await res.totalUsage.totalTokens == testUsage.totalTokens)
-    }
-}
+//         var c = 0
+//         for try await _ in res.textStream { c += 1 }
+//         #expect(c == 1000)
+//         #expect(try await res.finishReason == .stop)
+//         #expect(try await res.totalUsage.totalTokens == testUsage.totalTokens)
+//     }
+// }

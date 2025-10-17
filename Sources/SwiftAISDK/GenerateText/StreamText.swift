@@ -534,6 +534,8 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
     private let terminateStream: @Sendable () -> Void
     private var baseStream: AsyncIterableStream<EnrichedStreamPart<PartialOutputValue>>
     private var baseStreamFanout: AsyncThrowingStreamFanout<EnrichedStreamPart<PartialOutputValue>>
+    private let fanoutLock = NSLock()
+    private var fanoutReady = false
 
     private let output: Output.Specification<OutputValue, PartialOutputValue>?
     private let includeRawChunks: Bool
@@ -621,19 +623,32 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
         self.addStream = stitchable.addStream
         self.closeStream = stitchable.close
         self.terminateStream = stitchable.terminate
-        self.baseStream = createAsyncIterableStream(
-            source: AsyncThrowingStream { continuation in
+
+        // FIX: Create dummy stream/fanout to satisfy init, replace with real in Task
+        let dummyStream = createAsyncIterableStream(
+            source: AsyncThrowingStream<EnrichedStreamPart<PartialOutputValue>, Error> { continuation in
                 continuation.finish()
             }
         )
-        self.baseStreamFanout = AsyncThrowingStreamFanout(source: self.baseStream.asAsyncThrowingStream())
-        self.baseStream = makeBaseStream()
-        self.baseStreamFanout = AsyncThrowingStreamFanout(source: self.baseStream.asAsyncThrowingStream())
+        self.baseStream = dummyStream
+        self.baseStreamFanout = AsyncThrowingStreamFanout(source: dummyStream.asAsyncThrowingStream())
 
         Task { [weak self] in
             guard let self else { return }
+            // Replace with real baseStream/fanout before any events
+            self.setupRealBaseStream()
             await self.runStreamPipeline()
         }
+    }
+
+    // MARK: - Setup
+
+    private func setupRealBaseStream() {
+        fanoutLock.lock()
+        baseStream = makeBaseStream()
+        baseStreamFanout = AsyncThrowingStreamFanout(source: baseStream.asAsyncThrowingStream())
+        fanoutReady = true
+        fanoutLock.unlock()
     }
 
     // MARK: - StreamTextResult
@@ -1373,7 +1388,17 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
     private func subscribeToBaseStream() -> AsyncThrowingStream<
         EnrichedStreamPart<PartialOutputValue>, Error
     > {
-        baseStreamFanout.makeStream()
+        // Wait for real fanout to be ready
+        while true {
+            fanoutLock.lock()
+            if fanoutReady {
+                let fanout = baseStreamFanout
+                fanoutLock.unlock()
+                return fanout.makeStream()
+            }
+            fanoutLock.unlock()
+            Thread.sleep(forTimeInterval: 0.001)  // 1ms spin-wait
+        }
     }
 
     private func makeBaseStream() -> AsyncIterableStream<EnrichedStreamPart<PartialOutputValue>> {
