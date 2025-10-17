@@ -27,14 +27,26 @@ public func transformTextToUIMessageStream(
                 continuation.yield(.finish(messageMetadata: nil))
                 continuation.finish()
             } catch is CancellationError {
-                continuation.finish()
+                // Consumer cancelled: do not attempt to finish again to avoid
+                // re-entrancy via onTermination. Simply exit the task.
             } catch {
+                // Propagate real errors to the consumer.
                 continuation.finish(throwing: error)
             }
         }
 
-        continuation.onTermination = { _ in
-            task.cancel()
+        continuation.onTermination = { termination in
+            // Cancel producer only if the consumer actively cancelled.
+            // If termination is .finished, the task has either already
+            // completed or will complete naturally after finish().
+            switch termination {
+            case .cancelled:
+                task.cancel()
+            case .finished:
+                break
+            @unknown default:
+                break
+            }
         }
     }
 }

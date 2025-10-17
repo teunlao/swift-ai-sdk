@@ -128,13 +128,16 @@ private final class WrappedLanguageModel: LanguageModelV3, @unchecked Sendable {
             type: .generate
         )
 
-        // Create closures for doGenerate and doStream
+        // Capture base model in local immutable to avoid retaining self
+        let base = self.baseModel
+
+        // Create closures for doGenerate and doStream (sendable, no self capture)
         let doGenerateClosure: @Sendable () async throws -> LanguageModelV3GenerateResult = {
-            try await self.baseModel.doGenerate(options: transformedOptions)
+            try await base.doGenerate(options: transformedOptions)
         }
 
         let doStreamClosure: @Sendable () async throws -> LanguageModelV3StreamResult = {
-            try await self.baseModel.doStream(options: transformedOptions)
+            try await base.doStream(options: transformedOptions)
         }
 
         // If middleware provides wrapGenerate, use it; otherwise call directly
@@ -159,13 +162,16 @@ private final class WrappedLanguageModel: LanguageModelV3, @unchecked Sendable {
             type: .stream
         )
 
-        // Create closures for doGenerate and doStream
+        // Capture base model in local immutable to avoid retaining self
+        let base = self.baseModel
+
+        // Create closures for doGenerate and doStream (sendable, no self capture)
         let doGenerateClosure: @Sendable () async throws -> LanguageModelV3GenerateResult = {
-            try await self.baseModel.doGenerate(options: transformedOptions)
+            try await base.doGenerate(options: transformedOptions)
         }
 
         let doStreamClosure: @Sendable () async throws -> LanguageModelV3StreamResult = {
-            try await self.baseModel.doStream(options: transformedOptions)
+            try await base.doStream(options: transformedOptions)
         }
 
         // If middleware provides wrapStream, use it; otherwise call directly
