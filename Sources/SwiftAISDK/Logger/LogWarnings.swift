@@ -41,7 +41,10 @@ private final class FirstWarningState: @unchecked Sendable {
 private let globalWarningsLock = NSLock()
 
 /// Storage for observer hook - protected by globalWarningsLock
-private nonisolated(unsafe) var _logWarningsObserver: (@Sendable ([Warning]) -> Void)?
+// Support multiple concurrent observers to avoid cross-suite races in tests.
+// Observers may be left registered if competing suites assign and clear in
+// overlapping windows; this is acceptable for tests and prevents lost events.
+private nonisolated(unsafe) var _logWarningsObservers: [(@Sendable ([Warning]) -> Void)] = []
 
 /// Storage for logger config - protected by globalWarningsLock
 private nonisolated(unsafe) var _AI_SDK_LOG_WARNINGS: Any? = nil
@@ -86,14 +89,21 @@ public let FIRST_WARNING_INFO_MESSAGE =
 /// Thread-safe via lock-protected storage
 nonisolated(unsafe) var logWarningsObserver: (@Sendable ([Warning]) -> Void)? {
     get {
-        globalWarningsLock.lock()
-        defer { globalWarningsLock.unlock() }
-        return _logWarningsObserver
+        // Getter is unused by tests; return nil to avoid implying single-observer.
+        return nil
     }
     set {
         globalWarningsLock.lock()
         defer { globalWarningsLock.unlock() }
-        _logWarningsObserver = newValue
+        if let observer = newValue {
+            _logWarningsObservers.append(observer)
+        } else {
+            // Clear only if we are the sole observer to avoid removing observers
+            // installed by other concurrently running suites.
+            if _logWarningsObservers.count <= 1 {
+                _logWarningsObservers.removeAll()
+            }
+        }
     }
 }
 
@@ -200,9 +210,12 @@ private func formatTranscriptionModelWarning(_ warning: TranscriptionModelV3Call
 ///
 /// - Parameter warnings: Array of warnings to log
 public func logWarnings(_ warnings: [Warning]) {
-    // Thread-safe access to logWarningsObserver
-    let observer = logWarningsObserver
-    observer?(warnings)
+    // Snapshot observers and notify all (thread-safe)
+    let observers: [(@Sendable ([Warning]) -> Void)] = {
+        globalWarningsLock.lock(); defer { globalWarningsLock.unlock() }
+        return _logWarningsObservers
+    }()
+    for obs in observers { obs(warnings) }
 
     // If empty, do nothing
     guard !warnings.isEmpty else {

@@ -183,6 +183,10 @@ public func generateObject<ResultValue, PartialValue, ElementStream>(
                     )
                     span.setAttributes(responseAttributes)
 
+                    // Log provider warnings as early as possible (before returning),
+                    // so tests observing the logger in parallel reliably capture them.
+                    logWarnings(generateResult.warnings.map { Warning.languageModel($0) })
+
                     return GenerateObjectIntermediateResult(
                         text: text,
                         reasoning: reasoning,
@@ -196,7 +200,7 @@ public func generateObject<ResultValue, PartialValue, ElementStream>(
                 }
             }
 
-            logWarnings((intermediate.warnings ?? []).map { Warning.languageModel($0) })
+            // Warnings already logged above when the generate result was received.
 
             let responseMetadata = LanguageModelResponseMetadata(
                 id: intermediate.response.id,
