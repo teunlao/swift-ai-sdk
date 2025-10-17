@@ -146,11 +146,12 @@ struct ResolveEmbeddingModelTests {
 
     @Test("when a string is provided and global provider is not set - should throw error")
     func throwsWhenNoGlobalProvider() async throws {
-        // Ensure no global provider is set
+        // Ensure no global provider is set and isolate from parallel suites
         globalDefaultProvider = nil
-
-        #expect(throws: NoSuchProviderError.self) {
-            let _: any EmbeddingModelV3<String> = try resolveEmbeddingModel(.string("test-model-id"))
+        try await withGlobalProviderDisabled {
+            #expect(throws: NoSuchProviderError.self) {
+                let _: any EmbeddingModelV3<String> = try resolveEmbeddingModel(.string("test-model-id"))
+            }
         }
     }
 

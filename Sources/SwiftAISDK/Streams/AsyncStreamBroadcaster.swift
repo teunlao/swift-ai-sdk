@@ -64,11 +64,22 @@ actor AsyncStreamBroadcaster<Element: Sendable> {
         _ continuation: AsyncThrowingStream<Element, Error>.Continuation,
         id: UUID
     ) {
-        // Replay entire buffer so late subscribers see full history.
-        for element in buffer {
-            continuation.yield(element)
+        // Capture snapshot length for deterministic replay without losing events
+        // that may arrive while we are yielding the buffer.
+        let replayCount = buffer.count
+
+        // Register first so any elements appended after the snapshot are delivered live.
+        continuations[id] = continuation
+
+        // Replay the snapshot [0 ..< replayCount]. Elements appended after the snapshot
+        // will be forwarded by `send(_:)` thanks to the registration above.
+        if replayCount > 0 {
+            for i in 0..<replayCount {
+                continuation.yield(buffer[i])
+            }
         }
 
+        // If the broadcaster is already terminal, finish the continuation now.
         if let terminalState {
             switch terminalState {
             case .finished:
@@ -76,10 +87,7 @@ actor AsyncStreamBroadcaster<Element: Sendable> {
             case .failed(let error):
                 continuation.finish(throwing: error)
             }
-            return
         }
-
-        continuations[id] = continuation
     }
 
     private func removeContinuation(id: UUID) {
