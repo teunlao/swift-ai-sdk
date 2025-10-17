@@ -5,6 +5,7 @@
  *
  * Strategy:
  * 1. Run all tests N times (default: 3, configurable via --runs)
+ *    Optionally in parallel (--parallel) to trigger race conditions
  * 2. If timeout: remove 5 suites from end, test N times
  * 3. Keep removing by 5 until timeout disappears
  * 4. Add back one by one to find exact culprit
@@ -78,13 +79,69 @@ function cleanupZombies() {
 }
 
 /**
- * Execute test command with timeout
+ * Extract failure information from test output
+ * @param {string} stdout - Standard output from test run
+ * @param {string} stderr - Error output from test run
+ * @returns {string} Formatted failure information
  */
-function executeTest(suites, timeoutMs) {
+function extractFailureInfo(stdout, stderr) {
+    const lines = [];
+
+    // Look for test failures in stdout
+    const failureMatches = stdout.match(/✗.*?\n.*?(\n|$)/gs) || [];
+    if (failureMatches.length > 0) {
+        lines.push('Test failures:');
+        failureMatches.slice(0, 3).forEach(match => {
+            lines.push('  ' + match.trim().replace(/\n/g, '\n  '));
+        });
+        if (failureMatches.length > 3) {
+            lines.push(`  ... and ${failureMatches.length - 3} more failures`);
+        }
+    }
+
+    // Look for error messages
+    const errorMatch = stdout.match(/error:.*?(\n|$)/i);
+    if (errorMatch) {
+        lines.push('Error: ' + errorMatch[0].trim());
+    }
+
+    // Check stderr for compilation or runtime errors
+    if (stderr && !stderr.includes('Building')) {
+        const stderrLines = stderr.split('\n').filter(line =>
+            line.trim() && !line.includes('Building') && !line.includes('Compiling')
+        );
+        if (stderrLines.length > 0) {
+            lines.push('stderr: ' + stderrLines.slice(0, 2).join('; '));
+        }
+    }
+
+    // If no specific error found, provide generic message
+    if (lines.length === 0) {
+        // Try to find failed test count
+        const failedMatch = stdout.match(/(\d+) failed/);
+        if (failedMatch) {
+            return `${failedMatch[1]} test(s) failed`;
+        }
+        return 'Tests failed (no specific error details available)';
+    }
+
+    return lines.join('\n');
+}
+
+/**
+ * Execute test command with timeout
+ * @param {string[]} suites - Test suites to run
+ * @param {number} timeoutMs - Timeout in milliseconds
+ * @param {boolean} parallel - Run tests in parallel
+ */
+function executeTest(suites, timeoutMs, parallel = false) {
     return new Promise((resolve) => {
         const startTime = Date.now();
 
         const args = ['test'];
+        if (parallel) {
+            args.push('--parallel');
+        }
         suites.forEach(suite => {
             args.push('--filter', suite);
         });
@@ -102,15 +159,17 @@ function executeTest(suites, timeoutMs) {
         }, timeoutMs);
 
         let output = '';
+        let errorOutput = '';
+
         child.stdout.on('data', (data) => {
             output += data.toString();
         });
 
-        child.stderr.on('data', () => {
-            // Ignore build output
+        child.stderr.on('data', (data) => {
+            errorOutput += data.toString();
         });
 
-        child.on('exit', () => {
+        child.on('exit', (code) => {
             clearTimeout(timer);
             const duration = Date.now() - startTime;
 
@@ -120,12 +179,27 @@ function executeTest(suites, timeoutMs) {
             }
 
             const passed = output.includes('passed');
-            resolve({ status: passed ? 'passed' : 'failed', duration });
+            if (passed) {
+                resolve({ status: 'passed', duration });
+            } else {
+                // Extract failure details from output
+                const failureInfo = extractFailureInfo(output, errorOutput);
+                resolve({
+                    status: 'failed',
+                    duration,
+                    exitCode: code,
+                    error: failureInfo
+                });
+            }
         });
 
-        child.on('error', () => {
+        child.on('error', (err) => {
             clearTimeout(timer);
-            resolve({ status: 'failed', duration: Date.now() - startTime });
+            resolve({
+                status: 'failed',
+                duration: Date.now() - startTime,
+                error: `Process error: ${err.message}`
+            });
         });
     });
 }
@@ -135,8 +209,9 @@ function executeTest(suites, timeoutMs) {
  * @param {string[]} suites - Test suites to run
  * @param {number} timeoutMs - Timeout in milliseconds
  * @param {number} runs - Number of times to run tests (default: 3)
+ * @param {boolean} parallel - Run tests in parallel
  */
-async function runMultipleTimes(suites, timeoutMs, runs = 3) {
+async function runMultipleTimes(suites, timeoutMs, runs = 3, parallel = false) {
     let timeoutCount = 0;
     let passedCount = 0;
     let failedCount = 0;
@@ -145,7 +220,7 @@ async function runMultipleTimes(suites, timeoutMs, runs = 3) {
         console.log(`  Run ${i}/${runs}...`);
         cleanupZombies();
 
-        const result = await executeTest(suites, timeoutMs);
+        const result = await executeTest(suites, timeoutMs, parallel);
 
         if (result.status === 'timeout') {
             timeoutCount++;
@@ -156,6 +231,16 @@ async function runMultipleTimes(suites, timeoutMs, runs = 3) {
         } else {
             failedCount++;
             console.log(`    ❌ FAILED (${result.duration}ms)`);
+            if (result.error) {
+                // Indent error details
+                const errorLines = result.error.split('\n');
+                errorLines.forEach(line => {
+                    console.log(`       ${line}`);
+                });
+            }
+            if (result.exitCode !== undefined && result.exitCode !== 0) {
+                console.log(`       Exit code: ${result.exitCode}`);
+            }
         }
     }
 
@@ -172,27 +257,42 @@ async function runMultipleTimes(suites, timeoutMs, runs = 3) {
  * @param {string[]} allSuites - All test suites
  * @param {number} timeoutMs - Timeout in milliseconds
  * @param {number} runs - Number of times to run tests
+ * @param {boolean} parallel - Run tests in parallel
  */
-async function findRace(allSuites, timeoutMs, runs = 3) {
+async function findRace(allSuites, timeoutMs, runs = 3, parallel = false) {
     console.log('\n🏁 RACE FINDER');
     console.log('━'.repeat(60));
     console.log(`Total suites: ${allSuites.length}`);
     console.log(`Timeout:      ${timeoutMs}ms`);
     console.log(`Runs:         ${runs}`);
+    console.log(`Parallel:     ${parallel ? 'YES' : 'NO'}`);
     console.log(`Strategy:     Remove from END until timeout disappears`);
     console.log('━'.repeat(60) + '\n');
 
     // Step 1: Run all tests N times
     console.log(`📊 Running ALL ${allSuites.length} suites (${runs} times)...\n`);
-    const initialResult = await runMultipleTimes(allSuites, timeoutMs, runs);
+    const initialResult = await runMultipleTimes(allSuites, timeoutMs, runs, parallel);
 
-    if (!initialResult.hasTimeout) {
-        console.log('\n✅ No timeout detected - all tests pass!\n');
+    // Show summary of initial run
+    console.log('\n📈 Initial Run Summary:');
+    console.log(`   ✅ Passed:  ${initialResult.passedCount}/${runs}`);
+    console.log(`   ❌ Failed:  ${initialResult.failedCount}/${runs}`);
+    console.log(`   ⏱️  Timeout: ${initialResult.timeoutCount}/${runs}\n`);
+
+    if (!initialResult.hasTimeout && initialResult.failedCount === 0) {
+        console.log('✅ All tests passed - no issues detected!\n');
         return [];
     }
 
-    console.log(`\n⏱️  TIMEOUT detected (${initialResult.timeoutCount}/${runs} runs)!`);
-    console.log('Starting removal from END...\n');
+    if (initialResult.failedCount > 0 && !initialResult.hasTimeout) {
+        console.log('⚠️  Tests are FAILING (not timing out)');
+        console.log('   This tool is designed to find race conditions causing TIMEOUTS.');
+        console.log('   Please fix test failures first, then re-run to find race conditions.\n');
+        return [];
+    }
+
+    console.log(`⏱️  TIMEOUT detected (${initialResult.timeoutCount}/${runs} runs)!`);
+    console.log('Starting removal from END to isolate the culprit...\n');
 
     // Step 2: Remove from end by 5 until timeout disappears
     let removed = 0;
@@ -214,7 +314,7 @@ async function findRace(allSuites, timeoutMs, runs = 3) {
         console.log(`   Removed range: [${currentSuites.length}..${allSuites.length - 1}]`);
         console.log(`━`.repeat(60) + '\n');
 
-        const result = await runMultipleTimes(currentSuites, timeoutMs, runs);
+        const result = await runMultipleTimes(currentSuites, timeoutMs, runs, parallel);
 
         if (!result.hasTimeout) {
             console.log(`\n✅ Timeout disappeared! Last safe count: ${currentSuites.length} suites\n`);
@@ -257,7 +357,7 @@ async function findRace(allSuites, timeoutMs, runs = 3) {
         console.log(`Total suites: ${testSuites.length} (base ${baseSuites.length} + 1 suspect)`);
         console.log(`━`.repeat(60) + '\n');
 
-        const result = await runMultipleTimes(testSuites, timeoutMs, runs);
+        const result = await runMultipleTimes(testSuites, timeoutMs, runs, parallel);
 
         if (result.hasTimeout) {
             console.log(`\n🎯 CULPRIT FOUND: ${suspects[i]} (timeout ${result.timeoutCount}/${runs} runs)\n`);
@@ -348,25 +448,26 @@ async function main() {
 Race Finder - Detect race conditions by removing tests from end
 
 Usage:
-  node race-finder.js [--timeout <ms>] [--runs <n>] [--exclude <pattern>...]
+  node race-finder.js [--timeout <ms>] [--runs <n>] [--parallel] [--exclude <pattern>...]
 
 Options:
   --timeout <ms>        Timeout in milliseconds (default: 4000)
   --runs <n>            Number of times to run each test (default: 3)
+  --parallel            Run tests in parallel (helps trigger race conditions)
   --exclude <pattern>   Exclude test suites matching pattern (can be used multiple times)
                         Supports wildcards: * for any characters
   --help, -h            Show this help
 
 How it works:
-  1. Run all tests N times
+  1. Run all tests N times (optionally in parallel)
   2. If timeout: remove 5 suites from end, test N times
   3. Keep removing by 5 until timeout disappears
   4. Add back one by one to find exact culprit
 
 Examples:
-  node race-finder.js --timeout 5000 --runs 5
+  node race-finder.js --timeout 5000 --runs 5 --parallel
   node race-finder.js --exclude SwiftAISDKTests.CreateUIMessageStreamTests
-  node race-finder.js --runs 10 --exclude "*UIMessageStream*" --exclude "*SerialJobExecutor*"
+  node race-finder.js --runs 10 --parallel --exclude "*UIMessageStream*" --exclude "*SerialJobExecutor*"
         `);
         return;
     }
@@ -378,6 +479,9 @@ Examples:
     // Parse runs
     const runsIndex = args.indexOf('--runs');
     const runs = runsIndex !== -1 ? parseInt(args[runsIndex + 1]) : 3;
+
+    // Parse parallel flag
+    const parallel = args.includes('--parallel');
 
     // Parse exclude patterns
     const excludePatterns = [];
@@ -391,7 +495,7 @@ Examples:
     const allSuites = getAllTestSuites(excludePatterns);
     console.log(`✅ Found ${allSuites.length} test suites\n`);
 
-    const culprits = await findRace(allSuites, timeoutMs, runs);
+    const culprits = await findRace(allSuites, timeoutMs, runs, parallel);
 
     const duration = Date.now() - startTime;
     const minutes = Math.floor(duration / 60000);

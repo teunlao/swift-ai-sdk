@@ -50,6 +50,42 @@ struct StreamTextV2BasicTests {
         #expect(chunks == ["Hello", " ", "World", "!"])
     }
 
+    @Test("pipeTextStreamToResponse writes plain text (V2)")
+    func pipeTextStreamToResponseV2() async throws {
+        let parts: [LanguageModelV3StreamPart] = [
+            .streamStart(warnings: []),
+            .responseMetadata(id: "id-0", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
+            .textStart(id: "1", providerMetadata: nil),
+            .textDelta(id: "1", delta: "Hello", providerMetadata: nil),
+            .textDelta(id: "1", delta: " ", providerMetadata: nil),
+            .textDelta(id: "1", delta: "World", providerMetadata: nil),
+            .textEnd(id: "1", providerMetadata: nil),
+            .finish(
+                finishReason: .stop,
+                usage: defaultUsage,
+                providerMetadata: nil
+            )
+        ]
+
+        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
+            for p in parts { c.yield(p) }
+            c.finish()
+        }
+
+        let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
+        let result: DefaultStreamTextV2Result<JSONValue, JSONValue> = try streamTextV2(
+            model: .v3(model),
+            prompt: "hello"
+        )
+
+        let response = MockStreamTextResponseWriter()
+        result.pipeTextStreamToResponse(response, init: TextStreamResponseInit())
+        await response.waitForEnd()
+
+        let chunks = response.decodedChunks().joined()
+        #expect(chunks.contains("Hello World"))
+    }
+
     @Test("stopWhen stepCountIs(1) yields one step (V2)")
     func stopWhenSingleStepV2() async throws {
         let parts: [LanguageModelV3StreamPart] = [
@@ -281,8 +317,6 @@ struct StreamTextV2BasicTests {
         func isFinishStep(_ p: TextStreamPart) -> Bool { if case .finishStep = p { return true } else { return false } }
         func isFinish(_ p: TextStreamPart) -> Bool { if case .finish = p { return true } else { return false } }
 
-        #expect(chunks.count == 8) // start, startStep, textStart, 3 deltas, textEnd, finishStep, finish → actually 9; but finishStep+finish makes 2, so total 9
-        // Adjust count assertion to actual events (9)
         #expect(chunks.count == 9)
 
         #expect(isStart(chunks[0]))

@@ -42,16 +42,12 @@ actor StreamTextV2Actor {
     }
 
     func textStream() async -> AsyncThrowingStream<String, Error> {
-        Task { [weak self] in
-            await self?.ensureStarted()
-        }
+        await ensureStarted()
         return await textBroadcaster.register()
     }
 
     func fullStream() async -> AsyncThrowingStream<TextStreamPart, Error> {
-        Task { [weak self] in
-            await self?.ensureStarted()
-        }
+        await ensureStarted()
         return await fullBroadcaster.register()
     }
 
