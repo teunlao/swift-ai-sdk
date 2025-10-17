@@ -7,7 +7,8 @@ import AISDKProviderUtils
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 public func streamTextV2<OutputValue: Sendable, PartialOutputValue: Sendable>(
     model modelArg: LanguageModel,
-    prompt: String
+    prompt: String,
+    experimentalTransform transforms: [StreamTextTransform] = []
 ) throws -> DefaultStreamTextV2Result<OutputValue, PartialOutputValue> {
     // Resolve LanguageModel to a v3 model; for milestone 1 only v3 path is supported.
     let resolved: any LanguageModelV3 = try resolveLanguageModel(modelArg)
@@ -28,7 +29,8 @@ public func streamTextV2<OutputValue: Sendable, PartialOutputValue: Sendable>(
     let result = DefaultStreamTextV2Result<OutputValue, PartialOutputValue>(
         baseModel: modelArg,
         model: resolved,
-        providerStream: bridgeStream
+        providerStream: bridgeStream,
+        transforms: transforms
     )
 
     // Start producer task to fetch provider stream and forward its parts.
@@ -55,6 +57,7 @@ public final class DefaultStreamTextV2Result<OutputValue: Sendable, PartialOutpu
     public typealias PartialOutput = PartialOutputValue
 
     private let actor: StreamTextV2Actor
+    private let transforms: [StreamTextTransform]
     private let totalUsagePromise = DelayedPromise<LanguageModelUsage>()
     private let finishReasonPromise = DelayedPromise<FinishReason>()
     private let stepsPromise = DelayedPromise<[StepResult]>()
@@ -62,7 +65,8 @@ public final class DefaultStreamTextV2Result<OutputValue: Sendable, PartialOutpu
     init(
         baseModel: LanguageModel,
         model: any LanguageModelV3,
-        providerStream: AsyncThrowingStream<LanguageModelV3StreamPart, Error>
+        providerStream: AsyncThrowingStream<LanguageModelV3StreamPart, Error>,
+        transforms: [StreamTextTransform]
     ) {
         self.actor = StreamTextV2Actor(
             source: providerStream,
@@ -70,6 +74,7 @@ public final class DefaultStreamTextV2Result<OutputValue: Sendable, PartialOutpu
             finishReasonPromise: finishReasonPromise,
             stepsPromise: stepsPromise
         )
+        self.transforms = transforms
         _ = self.actor // keep strong reference
     }
 
@@ -96,17 +101,29 @@ public final class DefaultStreamTextV2Result<OutputValue: Sendable, PartialOutpu
     }
 
     public var fullStream: AsyncThrowingStream<TextStreamPart, Error> {
-        AsyncThrowingStream { continuation in
+        // Build base full stream from actor
+        let baseStream = AsyncThrowingStream<TextStreamPart, Error> { continuation in
             Task {
                 let inner = await actor.fullStream()
                 do {
-                    for try await value in inner {
-                        continuation.yield(value)
-                    }
+                    for try await value in inner { continuation.yield(value) }
                     continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
-                }
+                } catch { continuation.finish(throwing: error) }
+            }
+        }
+
+        // Convert to AsyncIterableStream for transforms
+        let iterable = createAsyncIterableStream(source: baseStream)
+        let options = StreamTextTransformOptions(tools: nil, stopStream: { })
+        let transformed = transforms.reduce(iterable) { acc, t in t(acc, options) }
+
+        // Convert back to AsyncThrowingStream for public API
+        return AsyncThrowingStream { continuation in
+            Task {
+                do {
+                    for try await part in transformed { continuation.yield(part) }
+                    continuation.finish()
+                } catch { continuation.finish(throwing: error) }
             }
         }
     }

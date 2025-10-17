@@ -90,6 +90,69 @@ struct StreamTextV2BasicTests {
         #expect(isFinish(chunks[3]))
     }
 
+    @Test("transform maps textDelta to uppercased (V2)")
+    func transformMapsTextDeltaV2() async throws {
+        // Define a simple transform that uppercases textDelta parts
+        let uppercaseTransform: StreamTextTransform = { stream, _ in
+            let mapped = AsyncThrowingStream<TextStreamPart, Error> { continuation in
+                Task {
+                    do {
+                        for try await part in stream {
+                            switch part {
+                            case let .textDelta(id, text, meta):
+                                continuation.yield(.textDelta(id: id, text: text.uppercased(), providerMetadata: meta))
+                            default:
+                                continuation.yield(part)
+                            }
+                        }
+                        continuation.finish()
+                    } catch {
+                        continuation.finish(throwing: error)
+                    }
+                }
+            }
+            return createAsyncIterableStream(source: mapped)
+        }
+
+        let parts: [LanguageModelV3StreamPart] = [
+            .streamStart(warnings: []),
+            .responseMetadata(id: "id-0", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
+            .textStart(id: "1", providerMetadata: nil),
+            .textDelta(id: "1", delta: "Hello", providerMetadata: nil),
+            .textDelta(id: "1", delta: " world", providerMetadata: nil),
+            .textEnd(id: "1", providerMetadata: nil),
+            .finish(
+                finishReason: .stop,
+                usage: defaultUsage,
+                providerMetadata: nil
+            )
+        ]
+
+        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+            for part in parts { continuation.yield(part) }
+            continuation.finish()
+        }
+
+        let model = MockLanguageModelV3(
+            doStream: .singleValue(LanguageModelV3StreamResult(stream: stream))
+        )
+
+        let result: DefaultStreamTextV2Result<JSONValue, JSONValue> = try streamTextV2(
+            model: .v3(model),
+            prompt: "hello",
+            experimentalTransform: [uppercaseTransform]
+        )
+
+        let chunks = try await convertReadableStreamToArray(result.fullStream)
+
+        // Extract only textDelta strings
+        let deltas = chunks.compactMap { part -> String? in
+            if case let .textDelta(_, text, _) = part { return text } else { return nil }
+        }
+
+        #expect(deltas == ["HELLO", " WORLD"])
+    }
+
     @Test("fullStream emits framing and text events in order (V2)")
     func fullStreamFramingOrderV2() async throws {
         let parts: [LanguageModelV3StreamPart] = [
