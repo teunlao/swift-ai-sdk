@@ -260,6 +260,76 @@ public final class DefaultStreamTextV2Result<OutputValue: Sendable, PartialOutpu
             textStream: textStream
         )
     }
+
+    // MARK: - UI Message Stream (minimal V2)
+
+    public func toUIMessageStream<Message: UIMessageConvertible>(
+        options: UIMessageStreamOptions<Message>?
+    ) -> AsyncThrowingStream<AnyUIMessageChunk, Error> {
+        let streamOptions = options ?? UIMessageStreamOptions<Message>()
+
+        let responseMessageId: String?
+        if let generator = streamOptions.generateMessageId {
+            responseMessageId = getResponseUIMessageId(
+                originalMessages: streamOptions.originalMessages,
+                responseMessageId: generator
+            )
+        } else {
+            responseMessageId = nil
+        }
+
+        @Sendable func mapErrorMessage(_ value: Any?) -> String {
+            if let error = value as? Error {
+                return streamOptions.onError?(error) ?? AISDKProvider.getErrorMessage(error)
+            }
+            let message = AISDKProvider.getErrorMessage(value)
+            if let onError = streamOptions.onError {
+                let synthetic = NSError(
+                    domain: "ai.streamTextV2",
+                    code: 0,
+                    userInfo: [NSLocalizedDescriptionKey: message]
+                )
+                return onError(synthetic)
+            }
+            return message
+        }
+
+        // Start from plain text stream and transform into UI chunks
+        let base = transformTextToUIMessageStream(stream: textStream)
+
+        // Handle finish, id injection, and final onFinish
+        let handled = handleUIMessageStreamFinish(
+            stream: base,
+            messageId: responseMessageId,
+            originalMessages: streamOptions.originalMessages ?? [],
+            onFinish: streamOptions.onFinish,
+            onError: { error in mapErrorMessage(error) }
+        )
+
+        return handled
+    }
+
+    public func pipeUIMessageStreamToResponse<Message: UIMessageConvertible>(
+        _ response: any StreamTextResponseWriter,
+        options: StreamTextUIResponseOptions<Message>?
+    ) {
+        let stream = toUIMessageStream(options: options?.streamOptions)
+        SwiftAISDK.pipeUIMessageStreamToResponse(
+            response: response,
+            stream: stream,
+            options: options
+        )
+    }
+
+    public func toUIMessageStreamResponse<Message: UIMessageConvertible>(
+        options: StreamTextUIResponseOptions<Message>?
+    ) -> UIMessageStreamResponse<Message> {
+        let stream = toUIMessageStream(options: options?.streamOptions)
+        return SwiftAISDK.createUIMessageStreamResponse(
+            stream: stream,
+            options: options
+        )
+    }
 }
 
 // MARK: - Helpers (none needed for milestone 1)

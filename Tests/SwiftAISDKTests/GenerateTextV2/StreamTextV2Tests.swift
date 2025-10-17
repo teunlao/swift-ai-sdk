@@ -50,6 +50,56 @@ struct StreamTextV2BasicTests {
         #expect(chunks == ["Hello", " ", "World", "!"])
     }
 
+    @Test("toUIMessageStream emits UI chunks in order (V2)")
+    func toUIMessageStreamBasicV2() async throws {
+        let parts: [LanguageModelV3StreamPart] = [
+            .streamStart(warnings: []),
+            .responseMetadata(id: "id-0", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
+            .textStart(id: "1", providerMetadata: nil),
+            .textDelta(id: "1", delta: "Hi", providerMetadata: nil),
+            .textEnd(id: "1", providerMetadata: nil),
+            .finish(
+                finishReason: .stop,
+                usage: defaultUsage,
+                providerMetadata: nil
+            )
+        ]
+
+        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+            for part in parts { continuation.yield(part) }
+            continuation.finish()
+        }
+
+        let model = MockLanguageModelV3(
+            doStream: .singleValue(LanguageModelV3StreamResult(stream: stream))
+        )
+
+        let result: DefaultStreamTextV2Result<JSONValue, JSONValue> = try streamTextV2(
+            model: .v3(model),
+            prompt: "hello"
+        )
+
+        let chunks = try await convertReadableStreamToArray(
+            result.toUIMessageStream(options: UIMessageStreamOptions<UIMessage>())
+        )
+
+        // Expected sequence: start, startStep, textStart, textDelta("Hi"), textEnd, finishStep, finish
+        let types = chunks.map { chunk -> String in
+            switch chunk {
+            case .start: return "start"
+            case .startStep: return "startStep"
+            case .textStart: return "textStart"
+            case .textDelta: return "textDelta"
+            case .textEnd: return "textEnd"
+            case .finishStep: return "finishStep"
+            case .finish: return "finish"
+            default: return "other"
+            }
+        }
+
+        #expect(types == ["start","startStep","textStart","textDelta","textEnd","finishStep","finish"])
+    }
+
     @Test("pipeTextStreamToResponse writes plain text (V2)")
     func pipeTextStreamToResponseV2() async throws {
         let parts: [LanguageModelV3StreamPart] = [
