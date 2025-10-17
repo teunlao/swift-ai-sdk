@@ -151,6 +151,7 @@ nonisolated(unsafe) public var globalDefaultProvider: (any ProviderV3)? = nil
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 enum _ResolveModelContext {
     @TaskLocal static var disableGlobalProvider: Bool = false
+    @TaskLocal static var overrideProvider: (any ProviderV3)? = nil
 }
 
 // Kept for backward-compat toggling in rare cases; prefer task-local helpers below.
@@ -166,6 +167,18 @@ public func withGlobalProviderDisabled<T>(_ operation: () throws -> T) rethrows 
 @discardableResult
 public func withGlobalProviderDisabled<T>(operation: () async throws -> T) async rethrows -> T {
     try await _ResolveModelContext.$disableGlobalProvider.withValue(true) { try await operation() }
+}
+
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+@discardableResult
+public func withGlobalProvider<T>(_ provider: any ProviderV3, _ operation: () throws -> T) rethrows -> T {
+    try _ResolveModelContext.$overrideProvider.withValue(provider) { try operation() }
+}
+
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+@discardableResult
+public func withGlobalProvider<T>(_ provider: any ProviderV3, operation: () async throws -> T) async rethrows -> T {
+    try await _ResolveModelContext.$overrideProvider.withValue(provider) { try await operation() }
 }
 
 // MARK: - Resolution Functions
@@ -190,9 +203,10 @@ public func withGlobalProviderDisabled<T>(operation: () async throws -> T) async
 public func resolveLanguageModel(_ model: LanguageModel) throws -> any LanguageModelV3 {
     switch model {
     case .string(let id):
-        // Resolve string ID using global provider
+        // Resolve string ID using task-local override or global provider
         let disabled = disableGlobalProviderForStringResolution || _ResolveModelContext.disableGlobalProvider
-        guard !disabled, let provider = globalDefaultProvider else {
+        let provider = _ResolveModelContext.overrideProvider ?? (disabled ? nil : globalDefaultProvider)
+        guard let provider else {
             // TypeScript uses gateway as fallback, but we require explicit provider setup
             throw NoSuchProviderError(
                 modelId: id,
@@ -234,9 +248,10 @@ public func resolveLanguageModel(_ model: LanguageModel) throws -> any LanguageM
 public func resolveEmbeddingModel<VALUE: Sendable>(_ model: EmbeddingModel<VALUE>) throws -> any EmbeddingModelV3<VALUE> {
     switch model {
     case .string(let id):
-        // Resolve string ID using global provider
+        // Resolve string ID using task-local override or global provider
         let disabled = disableGlobalProviderForStringResolution || _ResolveModelContext.disableGlobalProvider
-        guard !disabled, let provider = globalDefaultProvider else {
+        let provider = _ResolveModelContext.overrideProvider ?? (disabled ? nil : globalDefaultProvider)
+        guard let provider else {
             // TypeScript uses gateway as fallback, but we require explicit provider setup
             throw NoSuchProviderError(
                 modelId: id,

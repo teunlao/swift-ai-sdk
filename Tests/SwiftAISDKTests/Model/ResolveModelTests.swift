@@ -85,16 +85,10 @@ struct ResolveLanguageModelTests {
             modelId: "actual-test-model-id"
         )
 
-        globalDefaultProvider = customProvider(
-            languageModels: ["test-model-id": mockModel]
-        )
-
-        defer {
-            // Clean up
-            globalDefaultProvider = nil
+        let provider = customProvider(languageModels: ["test-model-id": mockModel])
+        let resolvedModel = try withGlobalProvider(provider) {
+            try resolveLanguageModel(.string("test-model-id"))
         }
-
-        let resolvedModel = try resolveLanguageModel(.string("test-model-id"))
 
         #expect(resolvedModel.provider == "global-test-provider")
         #expect(resolvedModel.modelId == "actual-test-model-id")
@@ -163,16 +157,10 @@ struct ResolveEmbeddingModelTests {
             modelId: "actual-test-model-id"
         )
 
-        globalDefaultProvider = customProvider(
-            textEmbeddingModels: ["test-model-id": mockModel]
-        )
-
-        defer {
-            // Clean up
-            globalDefaultProvider = nil
+        let provider = customProvider(textEmbeddingModels: ["test-model-id": mockModel])
+        let resolvedModel: any EmbeddingModelV3<String> = try withGlobalProvider(provider) {
+            try resolveEmbeddingModel(.string("test-model-id"))
         }
-
-        let resolvedModel: any EmbeddingModelV3<String> = try resolveEmbeddingModel(.string("test-model-id"))
 
         #expect(resolvedModel.provider == "global-test-provider")
         #expect(resolvedModel.modelId == "actual-test-model-id")
