@@ -234,6 +234,32 @@ public final class DefaultStreamTextV2Result<OutputValue: Sendable, PartialOutpu
     public var providerMetadata: ProviderMetadata? {
         get async throws { try await finalStep.providerMetadata }
     }
+
+    // MARK: - Responses (V2 minimal)
+
+    public func pipeTextStreamToResponse(
+        _ response: any StreamTextResponseWriter,
+        init initOptions: TextStreamResponseInit?
+    ) {
+        SwiftAISDK.pipeTextStreamToResponse(
+            response: response,
+            status: initOptions?.status,
+            statusText: initOptions?.statusText,
+            headers: initOptions?.headers,
+            textStream: textStream
+        )
+    }
+
+    public func toTextStreamResponse(
+        init initOptions: TextStreamResponseInit?
+    ) -> TextStreamResponse {
+        SwiftAISDK.createTextStreamResponse(
+            status: initOptions?.status,
+            statusText: initOptions?.statusText,
+            headers: initOptions?.headers,
+            textStream: textStream
+        )
+    }
 }
 
 // MARK: - Helpers (none needed for milestone 1)
