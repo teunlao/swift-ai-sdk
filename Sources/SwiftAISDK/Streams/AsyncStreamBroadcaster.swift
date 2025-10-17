@@ -64,6 +64,13 @@ actor AsyncStreamBroadcaster<Element: Sendable> {
         _ continuation: AsyncThrowingStream<Element, Error>.Continuation,
         id: UUID
     ) {
+        // Always replay buffered elements first to mirror ReadableStream tee behavior.
+        // Important for late subscribers: they must see the entire history even if
+        // the broadcaster has already finished by the time they subscribe.
+        for element in buffer {
+            continuation.yield(element)
+        }
+
         if let terminalState {
             switch terminalState {
             case .finished:
@@ -72,10 +79,6 @@ actor AsyncStreamBroadcaster<Element: Sendable> {
                 continuation.finish(throwing: error)
             }
             return
-        }
-
-        for element in buffer {
-            continuation.yield(element)
         }
 
         continuations[id] = continuation

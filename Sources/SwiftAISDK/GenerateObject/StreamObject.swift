@@ -292,7 +292,10 @@ private func consumeStream<ResultValue, PartialValue, ElementStream>(
             if let timestamp { responseTimestamp = timestamp }
 
         case .textDelta(_, let delta, _):
-            await result.publish(.textDelta(delta))
+            // Accumulate raw deltas; we will emit a consolidated text chunk
+            // only when a valid partial is produced by the strategy. This
+            // matches upstream semantics where textStream surfaces the
+            // strategy-computed deltaText, not every raw provider chunk.
             accumulatedText.append(delta)
             pendingDelta.append(delta)
 
@@ -322,13 +325,25 @@ private func consumeStream<ResultValue, PartialValue, ElementStream>(
 
             latestJSON = currentJSON
             latestPartial = validationResult.partial
-            pendingDelta = ""
             isFirstDelta = false
 
+            // Publish consolidated text delta produced by the strategy
+            // (e.g., for arrays: brackets/commas; for objects: buffered raw).
+            if !validationResult.textDelta.isEmpty {
+                await result.publish(.textDelta(validationResult.textDelta))
+            }
+
+            pendingDelta = ""
+
+            // Then publish the partial object snapshot.
             await result.publish(.object(validationResult.partial))
 
         case .finish(let reason, let usageValue, let metadata):
+            // Flush any remaining buffered text that didn't result in a new
+            // partial (e.g., closing braces), so the textStream reflects the
+            // full JSON output as expected by upstream tests.
             if !pendingDelta.isEmpty {
+                await result.publish(.textDelta(pendingDelta))
                 pendingDelta = ""
             }
 
