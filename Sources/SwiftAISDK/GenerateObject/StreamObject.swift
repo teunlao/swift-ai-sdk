@@ -272,6 +272,16 @@ private func consumeStream<ResultValue, PartialValue, ElementStream>(
     var msToFirstChunkRecorded = false
 
     for try await part in stream {
+        if !msToFirstChunkRecorded {
+            msToFirstChunkRecorded = true
+            let elapsed = internalOptions.now() - execution.startTimestampMs
+            execution.span.addEvent(
+                "ai.stream.firstChunk",
+                attributes: makeStreamFirstChunkAttributes(msToFirstChunk: elapsed)
+            )
+            execution.span.setAttributes(makeStreamFirstChunkAttributes(msToFirstChunk: elapsed))
+        }
+
         switch part {
         case .streamStart(let streamWarnings):
             warnings = streamWarnings
@@ -282,6 +292,7 @@ private func consumeStream<ResultValue, PartialValue, ElementStream>(
             if let timestamp { responseTimestamp = timestamp }
 
         case .textDelta(_, let delta, _):
+            await result.publish(.textDelta(delta))
             accumulatedText.append(delta)
             pendingDelta.append(delta)
 
@@ -315,21 +326,9 @@ private func consumeStream<ResultValue, PartialValue, ElementStream>(
             isFirstDelta = false
 
             await result.publish(.object(validationResult.partial))
-            await result.publish(.textDelta(validationResult.textDelta))
-
-            if !msToFirstChunkRecorded {
-                msToFirstChunkRecorded = true
-                let elapsed = internalOptions.now() - execution.startTimestampMs
-                execution.span.addEvent(
-                    "ai.stream.firstChunk",
-                    attributes: makeStreamFirstChunkAttributes(msToFirstChunk: elapsed)
-                )
-                execution.span.setAttributes(makeStreamFirstChunkAttributes(msToFirstChunk: elapsed))
-            }
 
         case .finish(let reason, let usageValue, let metadata):
             if !pendingDelta.isEmpty {
-                await result.publish(.textDelta(pendingDelta))
                 pendingDelta = ""
             }
 
