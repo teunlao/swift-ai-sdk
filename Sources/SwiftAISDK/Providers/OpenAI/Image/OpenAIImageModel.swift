@@ -64,8 +64,9 @@ public final class OpenAIImageModel: ImageModelV3 {
 
         let providerMetadata: ImageModelV3ProviderMetadata? = metadataValue.map { ["openai": $0] }
 
+        let timestamp = config._internal?.currentDate?() ?? Date()
         let responseInfo = ImageModelV3ResponseInfo(
-            timestamp: Date(),
+            timestamp: timestamp,
             modelId: modelIdentifier.rawValue,
             headers: response.responseHeaders
         )
