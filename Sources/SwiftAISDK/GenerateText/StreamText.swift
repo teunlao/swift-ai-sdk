@@ -923,8 +923,19 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
                     providerOptions: actorConfig.providerOptions
                 )
 
-                let providerResult = try await actorConfig.preparedRetries.retry.call {
-                    try await resolvedModel.doStream(options: callOptions)
+                var doStreamAttributes = actorConfig.baseTelemetryAttributes
+                doStreamAttributes["ai.operationId"] = .string("ai.streamText.doStream")
+                doStreamAttributes["ai.model.provider"] = .string(resolvedModel.provider)
+                doStreamAttributes["ai.model.id"] = .string(resolvedModel.modelId)
+
+                let providerResult = try await recordSpan(
+                    name: "ai.streamText.doStream",
+                    tracer: actorConfig.tracer,
+                    attributes: doStreamAttributes
+                ) { _ in
+                    try await actorConfig.preparedRetries.retry.call {
+                        try await resolvedModel.doStream(options: callOptions)
+                    }
                 }
 
                 await result._setRequestInfo(providerResult.request)

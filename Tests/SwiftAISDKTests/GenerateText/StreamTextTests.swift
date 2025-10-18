@@ -229,14 +229,19 @@ struct StreamTextBasicTests {
         _ = try await result.readAllText()
         let finish = try await result.waitForFinish()
 
-        let span = try #require(tracer.spanRecords.first)
-        #expect(span.name == "ai.streamText")
-        #expect(span.attributes["ai.response.finishReason"] == .string("stop"))
-        #expect(span.attributes["ai.response.text"] == .string("Hello!"))
-                let totalTokens = try #require(defaultUsage.totalTokens)
-        #expect(span.attributes["ai.usage.totalTokens"] == .int(totalTokens))
-        #expect(span.attributes["ai.telemetry.metadata.test-key"] == .string("value"))
-        #expect(span.attributes["ai.operationId"] == .string("ai.streamText"))
+        #expect(tracer.spanRecords.count >= 2)
+        let outerSpan = try #require(tracer.spanRecords.first { $0.name == "ai.streamText" })
+        #expect(outerSpan.attributes["ai.response.finishReason"] == .string("stop"))
+        #expect(outerSpan.attributes["ai.response.text"] == .string("Hello!"))
+        let totalTokens = try #require(defaultUsage.totalTokens)
+        #expect(outerSpan.attributes["ai.usage.totalTokens"] == .int(totalTokens))
+        #expect(outerSpan.attributes["ai.telemetry.metadata.test-key"] == .string("value"))
+        #expect(outerSpan.attributes["ai.operationId"] == .string("ai.streamText"))
+
+        let innerSpan = try #require(tracer.spanRecords.first { $0.name == "ai.streamText.doStream" })
+        #expect(innerSpan.attributes["ai.model.provider"] == .string("mock-provider"))
+        #expect(innerSpan.attributes["ai.model.id"] == .string("mock-model-id"))
+
         #expect(finish.totalUsage.totalTokens == defaultUsage.totalTokens)
     }
 
