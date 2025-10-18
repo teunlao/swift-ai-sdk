@@ -86,6 +86,60 @@ struct StreamTextBasicTests {
         #expect(all == "Hi!")
     }
 
+    @Test("fallback response metadata uses internal options when provider omits response metadata")
+    func fallbackResponseMetadataUsesInternalOptions() async throws {
+        let parts: [LanguageModelV3StreamPart] = [
+            .streamStart(warnings: []),
+            .textStart(id: "step", providerMetadata: nil),
+            .textDelta(id: "step", delta: "Fallback", providerMetadata: nil),
+            .textEnd(id: "step", providerMetadata: nil),
+            .finish(
+                finishReason: .stop,
+                usage: defaultUsage,
+                providerMetadata: nil
+            )
+        ]
+
+        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+            for part in parts { continuation.yield(part) }
+            continuation.finish()
+        }
+
+        let model = MockLanguageModelV3(
+            doStream: .singleValue(LanguageModelV3StreamResult(stream: stream))
+        )
+
+        let fallbackDate = Date(timeIntervalSince1970: 123)
+        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+            model: .v3(model),
+            prompt: "hello",
+            internalOptions: StreamTextInternalOptions(
+                now: { 0 },
+                generateId: { "fallback-id" },
+                currentDate: { fallbackDate }
+            )
+        )
+
+        let emitted = try await result.collectFullStream()
+
+        let steps = try await result.steps
+        let step = try #require(steps.last)
+        #expect(step.response.id == "fallback-id")
+        #expect(step.response.timestamp == fallbackDate)
+        #expect(step.response.modelId == "mock-model-id")
+
+        if case let .finishStep(response, _, _, _) = emitted.first(where: { part in
+            if case .finishStep = part { return true } else { return false }
+        }) {
+            #expect(response.id == "fallback-id")
+            #expect(response.timestamp == fallbackDate)
+            #expect(response.modelId == "mock-model-id")
+        } else {
+            Issue.record("expected finishStep event")
+        }
+    }
+
+
     @Test("tools convert client tool calls to static variants")
     func toolsConvertClientToolCallsToStatic() async throws {
         // Arrange a simple client-executed tool call with valid JSON input and result.

@@ -51,6 +51,9 @@ struct StreamTextActorConfiguration: Sendable {
     let activeTools: [String]?
     let download: DownloadFunction?
     let responseFormatProvider: (@Sendable () async throws -> LanguageModelV3ResponseFormat?)?
+    let now: @Sendable () -> Double
+    let generateId: IDGenerator
+    let currentDate: @Sendable () -> Date
 }
 
 private func convertResponseMessagesToModelMessages(
@@ -737,7 +740,10 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
         toolChoice: toolChoice,
         activeTools: effectiveActiveTools,
         download: download,
-        responseFormatProvider: responseFormatProvider
+        responseFormatProvider: responseFormatProvider,
+        now: _internal.now,
+        generateId: _internal.generateId,
+        currentDate: _internal.currentDate
     )
 
     // Bridge provider async stream acquisition without blocking the caller.

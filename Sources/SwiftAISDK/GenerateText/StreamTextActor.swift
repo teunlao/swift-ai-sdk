@@ -462,6 +462,9 @@ actor StreamTextActor {
         openReasoningIds.removeAll()
         activeToolInputs.removeAll()
         activeToolNames.removeAll()
+        capturedResponseId = configuration.generateId()
+        capturedModelId = model.modelId
+        capturedTimestamp = configuration.currentDate()
         if externalStopRequested { return }
 
         // Per-step framing is emitted after we have seen `.streamStart(warnings)`
@@ -901,9 +904,9 @@ actor StreamTextActor {
                 finalizePendingContent()
                 await resolvePendingApprovals()
                 let response = LanguageModelResponseMetadata(
-                    id: capturedResponseId ?? "unknown",
-                    timestamp: capturedTimestamp ?? Date(timeIntervalSince1970: 0),
-                    modelId: capturedModelId ?? "unknown",
+                    id: capturedResponseId ?? configuration.generateId(),
+                    timestamp: capturedTimestamp ?? configuration.currentDate(),
+                    modelId: capturedModelId ?? model.modelId,
                     headers: nil
                 )
                 await fullBroadcaster.send(
