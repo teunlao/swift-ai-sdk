@@ -7,4 +7,4 @@
 
 /// The current version of the AISDKProviderUtils package.
 /// Used in User-Agent headers and telemetry.
-internal let PROVIDER_UTILS_VERSION: String = "0.1.0-alpha"
+internal let PROVIDER_UTILS_VERSION: String = "4.0.0-beta.16"

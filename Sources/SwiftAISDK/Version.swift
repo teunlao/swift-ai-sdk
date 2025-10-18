@@ -7,4 +7,4 @@
 import Foundation
 
 /// SDK version string (set at build time, defaults to development version)
-public let VERSION = "0.0.0-dev"
+public let VERSION = "0.0.0-test"
