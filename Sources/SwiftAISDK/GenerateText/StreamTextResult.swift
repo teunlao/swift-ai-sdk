@@ -12,6 +12,7 @@ import AISDKProviderUtils
  */
 public protocol StreamTextResult: Sendable {
     /// Structured partial output type emitted during streaming.
+    associatedtype Output: Sendable
     associatedtype PartialOutput: Sendable
 
     /// Generated content from the final step (consumes the stream).
@@ -82,6 +83,9 @@ public protocol StreamTextResult: Sendable {
 
     /// Stream of partial structured outputs.
     var experimentalPartialOutputStream: AsyncThrowingStream<PartialOutput, Error> { get }
+
+    /// Parsed structured output when `experimentalOutput` is configured.
+    var experimentalOutput: Output { get async throws }
 
     /**
      Consume the underlying stream without processing individual parts.

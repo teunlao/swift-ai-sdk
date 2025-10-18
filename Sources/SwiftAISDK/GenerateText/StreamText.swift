@@ -288,6 +288,27 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
     private var observerTask: Task<Void, Never>? = nil
     private var onFinishTask: Task<Void, Never>? = nil
 
+    private actor OutputStorage {
+        var parsed = false
+        var value: OutputValue? = nil
+
+        func shouldParse() -> Bool {
+            if parsed { return false }
+            parsed = true
+            return true
+        }
+
+        func store(_ newValue: OutputValue?) {
+            value = newValue
+        }
+
+        func snapshot() -> (parsed: Bool, value: OutputValue?) {
+            (parsed, value)
+        }
+    }
+
+    private let outputStorage = OutputStorage()
+
     @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
     init(
         baseModel: LanguageModel,
@@ -519,6 +540,18 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
         }
     }
 
+    public var experimentalOutput: OutputValue {
+        get async throws {
+            guard outputSpecification != nil else { throw NoOutputSpecifiedError() }
+            _ = try await waitForFinish()
+            let snapshot = await outputStorage.snapshot()
+            guard snapshot.parsed, let value = snapshot.value else {
+                throw NoOutputSpecifiedError()
+            }
+            return value
+        }
+    }
+
     // MARK: - Convenience collectors (useful for tests and simple consumers)
 
     /// Collects all text deltas from `textStream` into a single concatenated string.
@@ -541,6 +574,7 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
         async let stepList = stepsPromise.task.value
         let (r, u, s) = try await (reason, usage, stepList)
         guard let last = s.last else { throw NoOutputGeneratedError() }
+        try await parseOutputIfNeeded(finalStep: last, finishReason: r)
         return (last, s, u, r)
     }
 
@@ -780,6 +814,33 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
             parts.append(part)
         }
         return parts
+    }
+
+    private func parseOutputIfNeeded(finalStep: StepResult, finishReason: FinishReason) async throws {
+        guard let outputSpecification else { return }
+        let shouldParse = await outputStorage.shouldParse()
+        if !shouldParse { return }
+
+        if finishReason == .toolCalls {
+            await outputStorage.store(nil)
+            return
+        }
+
+        let responseMetadata = LanguageModelResponseMetadata(
+            id: finalStep.response.id,
+            timestamp: finalStep.response.timestamp,
+            modelId: finalStep.response.modelId,
+            headers: finalStep.response.headers
+        )
+
+        let parsed = try await outputSpecification.parseOutput(
+            text: finalStep.text,
+            response: responseMetadata,
+            usage: finalStep.usage,
+            finishReason: finishReason
+        )
+
+        await outputStorage.store(parsed)
     }
 
     private func partialRepresentation(_ value: PartialOutputValue) -> String {

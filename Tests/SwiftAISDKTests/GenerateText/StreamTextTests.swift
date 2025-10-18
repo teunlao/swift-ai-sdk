@@ -1075,6 +1075,76 @@ struct StreamTextBasicTests {
         _ = try await result.waitForFinish()
     }
 
+    @Test("experimentalOutput returns parsed text when configured")
+    func experimentalOutputReturnsParsedText() async throws {
+        let parts: [LanguageModelV3StreamPart] = [
+            .streamStart(warnings: []),
+            .responseMetadata(id: "output-id", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
+            .textStart(id: "txt", providerMetadata: nil),
+            .textDelta(id: "txt", delta: "Hello", providerMetadata: nil),
+            .textDelta(id: "txt", delta: "!", providerMetadata: nil),
+            .textEnd(id: "txt", providerMetadata: nil),
+            .finish(
+                finishReason: .stop,
+                usage: defaultUsage,
+                providerMetadata: nil
+            )
+        ]
+
+        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+            for part in parts { continuation.yield(part) }
+            continuation.finish()
+        }
+
+        let model = MockLanguageModelV3(
+            doStream: .singleValue(LanguageModelV3StreamResult(stream: stream))
+        )
+
+        let result: DefaultStreamTextResult<String, String> = try streamText(
+            model: .v3(model),
+            prompt: "hello",
+            experimentalOutput: Output.text()
+        )
+
+        _ = try await result.collectFullStream()
+        let output = try await result.experimentalOutput
+        #expect(output == "Hello!")
+    }
+
+    @Test("experimentalOutput throws when finish reason is tool-calls")
+    func experimentalOutputThrowsOnToolCalls() async throws {
+        let usage = LanguageModelV3Usage(inputTokens: 1, outputTokens: 1, totalTokens: 2, reasoningTokens: nil, cachedInputTokens: nil)
+        let parts: [LanguageModelV3StreamPart] = [
+            .streamStart(warnings: []),
+            .responseMetadata(id: "toolcalls", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
+            .finish(
+                finishReason: .toolCalls,
+                usage: usage,
+                providerMetadata: nil
+            )
+        ]
+
+        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+            for part in parts { continuation.yield(part) }
+            continuation.finish()
+        }
+
+        let model = MockLanguageModelV3(
+            doStream: .singleValue(LanguageModelV3StreamResult(stream: stream))
+        )
+
+        let result: DefaultStreamTextResult<String, String> = try streamText(
+            model: .v3(model),
+            prompt: "hello",
+            experimentalOutput: Output.text()
+        )
+
+        _ = try await result.collectFullStream()
+        await #expect(throws: NoOutputSpecifiedError.self) {
+            _ = try await result.experimentalOutput
+        }
+    }
+
     @Test("tool input callbacks are invoked before execution")
     func toolInputCallbacksInvoked() async throws {
         let parts: [LanguageModelV3StreamPart] = [
