@@ -234,17 +234,17 @@ public final class OpenAICompatibleCompletionLanguageModel: LanguageModelV3 {
         ) ?? OpenAICompatibleCompletionProviderOptions()
 
         var mergedOptions = baseOptions
-        if mergedOptions.echo == nil {
-            mergedOptions.echo = providerSpecific.echo
+        if let echo = providerSpecific.echo {
+            mergedOptions.echo = echo
         }
-        if mergedOptions.logitBias == nil {
-            mergedOptions.logitBias = providerSpecific.logitBias
+        if let logitBias = providerSpecific.logitBias {
+            mergedOptions.logitBias = logitBias
         }
-        if mergedOptions.suffix == nil {
-            mergedOptions.suffix = providerSpecific.suffix
+        if let suffix = providerSpecific.suffix {
+            mergedOptions.suffix = suffix
         }
-        if mergedOptions.user == nil {
-            mergedOptions.user = providerSpecific.user
+        if let user = providerSpecific.user {
+            mergedOptions.user = user
         }
 
         let conversion = try OpenAICompatibleCompletionPromptConverter.convert(prompt: options.prompt)
