@@ -116,6 +116,86 @@ struct StreamTextV2ApprovalIntegrationTests {
         #expect(!chunks.contains { if case .toolApprovalRequest = $0 { return true } else { return false } })
     }
 
+    @Test("fullStream streams tool error on failure (V2)")
+    func fullStreamStreamsToolErrorOnFailure() async throws {
+        let call = LanguageModelV3ToolCall(
+            toolCallId: "err",
+            toolName: "streamer",
+            input: "{}",
+            providerExecuted: false,
+            providerMetadata: nil
+        )
+        let parts: [LanguageModelV3StreamPart] = [
+            .streamStart(warnings: []),
+            .responseMetadata(id: "id-0", modelId: "mock", timestamp: Date(timeIntervalSince1970: 0)),
+            .toolCall(call),
+            .finish(
+                finishReason: .toolCalls,
+                usage: LanguageModelV3Usage(inputTokens: 1, outputTokens: 1, totalTokens: 2),
+                providerMetadata: nil
+            )
+        ]
+        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+            parts.forEach { continuation.yield($0) }
+            continuation.finish()
+        }
+        let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
+
+        struct ToolStreamFailure: Error {}
+
+        let tools: ToolSet = [
+            "streamer": tool(
+                description: "Streaming tool",
+                inputSchema: FlexibleSchema(jsonSchema(.object([:]))),
+                needsApproval: .always,
+                execute: { _, _ in
+                    let (stream, continuation) = AsyncThrowingStream<JSONValue, Error>.makeStream()
+                    Task {
+                        continuation.yield(.string("chunk"))
+                        continuation.finish(throwing: ToolStreamFailure())
+                    }
+                    return .stream(stream)
+                }
+            )
+        ]
+
+        let result: DefaultStreamTextV2Result<JSONValue, JSONValue> = try streamTextV2(
+            model: .v3(model),
+            prompt: "hi",
+            tools: tools,
+            experimentalApprove: { _ in .approve }
+        )
+
+        let chunks = try await result.collectFullStream()
+        let prelimCount = chunks.filter { chunk in
+            if case let .toolResult(res) = chunk {
+                switch res {
+                case .static(let info): return info.preliminary == true && info.toolCallId == "err"
+                case .dynamic(let info): return info.preliminary == true && info.toolCallId == "err"
+                }
+            }
+            return false
+        }.count
+        let sawToolError = chunks.contains { chunk in
+            if case let .toolError(error) = chunk {
+                return error.toolCallId == "err"
+            }
+            return false
+        }
+        let sawFinalResult = chunks.contains { chunk in
+            if case let .toolResult(res) = chunk {
+                switch res {
+                case .static(let info): return info.toolCallId == "err" && info.preliminary != true
+                case .dynamic(let info): return info.toolCallId == "err" && info.preliminary != true
+                }
+            }
+            return false
+        }
+        #expect(prelimCount == 1)
+        #expect(sawToolError)
+        #expect(!sawFinalResult)
+    }
+
     @Test("fullStream denies tool when resolver denies (V2)")
     func fullStreamDeniesToolWhenResolverDenies() async throws {
         let call = LanguageModelV3ToolCall(
