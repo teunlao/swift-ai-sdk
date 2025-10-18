@@ -58,6 +58,50 @@ struct StreamTextV2LoggingTests {
         #expect(logs.allSatisfy { $0.hasPrefix("[test]") })
     }
 
+    @Test("log stream marks preliminary tool results")
+    func logStreamMarksPreliminaryToolResults() async throws {
+        let prelim = TypedToolResult.static(StaticToolResult(
+            toolCallId: "c1",
+            toolName: "streamer",
+            input: .null,
+            output: .string("chunk"),
+            providerExecuted: false,
+            preliminary: true
+        ))
+        let final = TypedToolResult.static(StaticToolResult(
+            toolCallId: "c1",
+            toolName: "streamer",
+            input: .null,
+            output: .string("done"),
+            providerExecuted: false,
+            preliminary: false
+        ))
+
+        let parts: [TextStreamPart] = [
+            .start,
+            .startStep(request: LanguageModelRequestMetadata(body: nil), warnings: []),
+            .toolCall(.static(StaticToolCall(
+                toolCallId: "c1",
+                toolName: "streamer",
+                input: .null,
+                providerExecuted: false,
+                providerMetadata: nil
+            ))),
+            .toolResult(prelim),
+            .toolResult(final),
+            .finish(finishReason: .stop, totalUsage: LanguageModelUsage())
+        ]
+
+        let stream = AsyncThrowingStream<TextStreamPart, Error> { continuation in
+            parts.forEach { continuation.yield($0) }
+            continuation.finish()
+        }
+
+        let logs = try await convertReadableStreamToArray(makeStreamTextV2LogStream(from: stream))
+        #expect(logs.contains { $0.contains("tool-result (prelim) streamer [c1]") })
+        #expect(logs.contains { $0.contains("tool-result streamer [c1]") && !$0.contains("(prelim)") })
+    }
+
     // @Test("log stream includes tool events (V2)")
     // func logStreamIncludesToolEvents() async throws {
     //     // Build a synthetic full stream with tool events

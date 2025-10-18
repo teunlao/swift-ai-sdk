@@ -225,4 +225,41 @@ struct StreamTextV2SSEEncodingTests {
         #expect(lines.contains { $0.contains("\"type\":\"tool-approval-request\"") })
         #expect(lines.contains { $0.contains("\"type\":\"tool-output-denied\"") })
     }
+
+    @Test("SSE encoder marks preliminary tool results")
+    func sseEncoderMarksPreliminaryResults() async throws {
+        let prelim = TypedToolResult.static(StaticToolResult(
+            toolCallId: "c1",
+            toolName: "streamer",
+            input: .null,
+            output: .string("chunk"),
+            providerExecuted: false,
+            preliminary: true
+        ))
+        let final = TypedToolResult.static(StaticToolResult(
+            toolCallId: "c1",
+            toolName: "streamer",
+            input: .null,
+            output: .string("done"),
+            providerExecuted: false,
+            preliminary: false
+        ))
+
+        let parts: [TextStreamPart] = [
+            .start,
+            .startStep(request: LanguageModelRequestMetadata(body: nil), warnings: []),
+            .toolResult(prelim),
+            .toolResult(final),
+            .finish(finishReason: .stop, totalUsage: defaultUsage)
+        ]
+
+        let stream = AsyncThrowingStream<TextStreamPart, Error> { continuation in
+            parts.forEach { continuation.yield($0) }
+            continuation.finish()
+        }
+
+        let lines = try await convertReadableStreamToArray(makeStreamTextV2SSEStream(from: stream))
+        #expect(lines.contains { $0.contains("\"type\":\"tool-result\"") && $0.contains("\"preliminary\":true") })
+        #expect(lines.contains { $0.contains("\"type\":\"tool-result\"") && $0.contains("\"preliminary\":false") })
+    }
 }
