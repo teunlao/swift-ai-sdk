@@ -12,9 +12,11 @@ struct PlaygroundConfiguration {
     let keys: ProviderKeys
     let defaultProvider: String
     let baseURLOverrides: [String: URL]
+    let environment: PlaygroundEnvironment
 
     init(environment: PlaygroundEnvironment, defaultProvider: String = "gateway") {
         self.defaultProvider = defaultProvider
+        self.environment = environment
         self.keys = ProviderKeys(
             gateway: environment["VERCEL_AI_API_KEY"] ?? environment["AI_GATEWAY_API_KEY"],
             openAI: environment["OPENAI_API_KEY"],

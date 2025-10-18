@@ -70,6 +70,8 @@ The repository now contains an executable target `SwiftAISDKPlayground` that pro
 ```bash
 swift build
 swift run playground chat --model gpt-4o-mini --prompt "Hello" --stream
+# direct call to OpenAI provider
+swift run playground chat --provider openai --model gpt-4o-mini --prompt "Привет" --stream
 ```
 
 Command options:
@@ -89,6 +91,16 @@ Credentials are read from environment variables and `.env` (see `.env.sample`). 
 VERCEL_AI_API_KEY=your_token_here
 # optional overrides
 AI_GATEWAY_BASE_URL=https://ai-gateway.vercel.sh/v1/ai
+```
+
+For direct OpenAI access provide:
+
+```env
+OPENAI_API_KEY=sk-...
+# optional overrides
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_ORGANIZATION=org-id
+OPENAI_PROJECT=project-id
 ```
 
 If a required key is missing, the CLI reports a descriptive error. Streaming uses Server-Sent Events via `URLSession` + `EventSourceParser` and is available on macOS 12 or newer.
