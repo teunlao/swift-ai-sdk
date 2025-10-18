@@ -24,6 +24,7 @@ public typealias StreamTextOnAbort = @Sendable (_ steps: [StepResult]) -> Void
 public func streamTextV2<OutputValue: Sendable, PartialOutputValue: Sendable>(
     model modelArg: LanguageModel,
     prompt: String,
+    tools: ToolSet? = nil,
     experimentalTransform transforms: [StreamTextTransform] = [],
     stopWhen stopConditions: [StopCondition] = [stepCountIs(1)],
     onChunk: StreamTextOnChunk? = nil,
@@ -39,6 +40,7 @@ public func streamTextV2<OutputValue: Sendable, PartialOutputValue: Sendable>(
         model: modelArg,
         system: nil,
         messages: [.user(UserModelMessage(content: .text(prompt), providerOptions: nil))],
+        tools: tools,
         experimentalTransform: transforms,
         stopWhen: stopConditions,
         onChunk: onChunk,
@@ -61,6 +63,7 @@ public final class DefaultStreamTextV2Result<OutputValue: Sendable, PartialOutpu
     private let actor: StreamTextV2Actor
     private let transforms: [StreamTextTransform]
     private let stopConditions: [StopCondition]
+    private let tools: ToolSet?
     private let totalUsagePromise = DelayedPromise<LanguageModelUsage>()
     private let finishReasonPromise = DelayedPromise<FinishReason>()
     private let stepsPromise = DelayedPromise<[StepResult]>()
@@ -76,6 +79,7 @@ public final class DefaultStreamTextV2Result<OutputValue: Sendable, PartialOutpu
         stopConditions: [StopCondition],
         initialMessages: [ModelMessage],
         system: String?,
+        tools: ToolSet?,
         onChunk: StreamTextOnChunk?,
         onStepFinish: StreamTextOnStepFinish? = nil,
         onFinish: StreamTextOnFinish? = nil,
@@ -89,12 +93,13 @@ public final class DefaultStreamTextV2Result<OutputValue: Sendable, PartialOutpu
             initialMessages: initialMessages,
             system: system,
             stopConditions: self.stopConditions,
-            tools: nil,
+            tools: tools,
             totalUsagePromise: totalUsagePromise,
             finishReasonPromise: finishReasonPromise,
             stepsPromise: stepsPromise
         )
         self.transforms = transforms
+        self.tools = tools
         _ = self.actor  // keep strong reference
 
         if onChunk != nil || onStepFinish != nil || onAbort != nil || onError != nil || onFinish != nil {
@@ -195,7 +200,7 @@ public final class DefaultStreamTextV2Result<OutputValue: Sendable, PartialOutpu
         // Convert to AsyncIterableStream for transforms
         let iterable = createAsyncIterableStream(source: baseStream)
         let options = StreamTextTransformOptions(
-            tools: nil,
+            tools: tools,
             stopStream: { Task { await self.actor.requestStop() } }
         )
         let transformed = transforms.reduce(iterable) { acc, t in t(acc, options) }
@@ -493,6 +498,7 @@ public func streamTextV2<OutputValue: Sendable, PartialOutputValue: Sendable>(
     model modelArg: LanguageModel,
     system: String?,
     messages initialMessages: [ModelMessage],
+    tools: ToolSet? = nil,
     experimentalTransform transforms: [StreamTextTransform] = [],
     stopWhen stopConditions: [StopCondition] = [stepCountIs(1)],
     onChunk: StreamTextOnChunk? = nil,
@@ -518,6 +524,7 @@ public func streamTextV2<OutputValue: Sendable, PartialOutputValue: Sendable>(
         stopConditions: stopConditions,
         initialMessages: initialMessages,
         system: system,
+        tools: tools,
         onChunk: onChunk,
         onStepFinish: onStepFinish,
         onFinish: onFinish,
@@ -569,6 +576,7 @@ public func streamTextV2<OutputValue: Sendable, PartialOutputValue: Sendable>(
 public func streamTextV2<OutputValue: Sendable, PartialOutputValue: Sendable>(
     model: LanguageModel,
     prompt: Prompt,
+    tools: ToolSet? = nil,
     experimentalTransform transforms: [StreamTextTransform] = [],
     stopWhen stopConditions: [StopCondition] = [stepCountIs(1)],
     onChunk: StreamTextOnChunk? = nil,
@@ -582,6 +590,7 @@ public func streamTextV2<OutputValue: Sendable, PartialOutputValue: Sendable>(
         model: model,
         system: standardized.system,
         messages: standardized.messages,
+        tools: tools,
         experimentalTransform: transforms,
         stopWhen: stopConditions,
         onChunk: onChunk,

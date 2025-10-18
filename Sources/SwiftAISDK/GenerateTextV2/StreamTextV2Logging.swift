@@ -48,6 +48,7 @@ public func makeStreamTextV2LogStream(
             let encoder = StreamTextV2LogEncoder(options: options)
             do {
                 for try await event in eventStream {
+                    if Task.isCancelled { break }
                     for line in encoder.encode(event: event) {
                         continuation.yield(line)
                     }

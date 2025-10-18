@@ -27,6 +27,7 @@ public func makeStreamTextV2EventStream(
             let encoder = StreamTextV2EventEncoder()
             do {
                 for try await part in stream {
+                    if Task.isCancelled { break }
                     for event in encoder.encode(part: part) {
                         continuation.yield(event)
                     }

@@ -55,6 +55,98 @@ struct StreamTextV2BasicTests {
         #expect(chunks == ["Hello", " ", "World", "!"])
     }
 
+    @Test("tools convert client tool calls to static variants (V2)")
+    func toolsConvertClientToolCallsToStaticV2() async throws {
+        // Arrange a simple client-executed tool call with valid JSON input and result.
+        let usage = LanguageModelV3Usage(
+            inputTokens: 1, outputTokens: 1, totalTokens: 2, reasoningTokens: nil, cachedInputTokens: nil
+        )
+
+        let parts: [LanguageModelV3StreamPart] = [
+            .streamStart(warnings: []),
+            .responseMetadata(id: "step-1", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
+            .toolCall(LanguageModelV3ToolCall(
+                toolCallId: "call-1",
+                toolName: "search",
+                input: "{\"q\":\"swift\"}",
+                providerExecuted: false,
+                providerMetadata: nil
+            )),
+            .toolResult(LanguageModelV3ToolResult(
+                toolCallId: "call-1",
+                toolName: "search",
+                result: .object(["items": .array([.string("result")])]),
+                isError: nil,
+                providerExecuted: false,
+                preliminary: false,
+                providerMetadata: nil
+            )),
+            .finish(finishReason: .stop, usage: usage, providerMetadata: nil),
+        ]
+
+        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
+            for p in parts { c.yield(p) }
+            c.finish()
+        }
+
+        let model = MockLanguageModelV3(
+            doStream: .singleValue(LanguageModelV3StreamResult(stream: stream))
+        )
+
+        // Provide a ToolSet with a matching tool name, so call/result become static.
+        let tools: ToolSet = [
+            "search": Tool(
+                description: "Search tool",
+                inputSchema: FlexibleSchema(
+                    jsonSchema(
+                        .object([
+                            "properties": .object([:]),
+                            "additionalProperties": .bool(true)
+                        ])
+                    )
+                )
+            )
+        ]
+
+        let result: DefaultStreamTextV2Result<JSONValue, JSONValue> = try streamTextV2(
+            model: .v3(model),
+            prompt: "hello",
+            tools: tools
+        )
+
+        // Act: collect full stream to inspect emitted parts and then accessors.
+        let partsOut = try await result.collectFullStream()
+
+        // Assert: toolCall and toolResult are static when ToolSet contains the tool.
+        let tc = partsOut.first { if case .toolCall = $0 { return true } else { return false } }
+        #expect(tc != nil)
+        if case let .toolCall(typed)? = tc {
+            switch typed {
+            case .static(let s):
+                #expect(s.toolName == "search")
+                #expect(s.dynamic == false)
+            default: Issue.record("expected static tool call")
+            }
+        }
+
+        let tr = partsOut.first { if case .toolResult = $0 { return true } else { return false } }
+        #expect(tr != nil)
+        if case let .toolResult(typed)? = tr {
+            switch typed {
+            case .static(let s):
+                #expect(s.toolName == "search")
+                #expect(s.dynamic == false)
+                #expect(s.preliminary != true)
+            default: Issue.record("expected static tool result")
+            }
+        }
+
+        // Accessors reflect static variants as well.
+        let step = try await result.steps.last
+        #expect((try await result.staticToolCalls).count == 1)
+        #expect((try await result.staticToolResults).count == 1)
+        #expect(step?.finishReason == .stop)
+    }
     @Test("toUIMessageStream emits UI chunks in order (V2)")
     func toUIMessageStreamBasicV2() async throws {
         let parts: [LanguageModelV3StreamPart] = [
