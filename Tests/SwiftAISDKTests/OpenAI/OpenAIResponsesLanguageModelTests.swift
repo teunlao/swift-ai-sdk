@@ -1973,4 +1973,185 @@ struct OpenAIResponsesLanguageModelTests {
         }
     }
 
+
+    @Test("doStream emits computer use results")
+    func testDoStreamEmitsComputerUseResults() async throws {
+        func chunk(_ value: Any) -> String {
+            let data = try! JSONSerialization.data(withJSONObject: value)
+            let encoded = String(data: data, encoding: .utf8)!
+            return "data:\(encoded)\n\n"
+        }
+
+        let chunks: [String] = [
+            chunk([
+                "type": "response.output_item.added",
+                "output_index": 0,
+                "item": [
+                    "id": "computer_call",
+                    "type": "computer_call",
+                    "status": "in_progress"
+                ]
+            ]),
+            chunk([
+                "type": "response.output_item.done",
+                "output_index": 0,
+                "item": [
+                    "id": "computer_call",
+                    "type": "computer_call",
+                    "status": "completed"
+                ]
+            ]),
+            chunk([
+                "type": "response.completed",
+                "response": [
+                    "id": "resp_computer",
+                    "object": "response",
+                    "created_at": 1_742_100_000.0,
+                    "status": "completed",
+                    "usage": [
+                        "input_tokens": 2,
+                        "output_tokens": 1,
+                        "total_tokens": 3
+                    ]
+                ]
+            ]),
+            "data: [DONE]\n\n"
+        ]
+
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.openai.com/v1/responses")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "text/event-stream"]
+        )!
+
+        let fetch: FetchFunction = { _ in
+            let stream = AsyncThrowingStream<Data, Error> { continuation in
+                for string in chunks {
+                    continuation.yield(Data(string.utf8))
+                }
+                continuation.finish()
+            }
+            return FetchResponse(body: .stream(stream), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let tool = LanguageModelV3Tool.providerDefined(.init(id: "openai.computer_use", name: "computer_use", args: [:]))
+
+        let streamResult = try await model.doStream(
+            options: LanguageModelV3CallOptions(
+                prompt: samplePrompt,
+                tools: [tool]
+            )
+        )
+
+        var parts: [LanguageModelV3StreamPart] = []
+        for try await part in streamResult.stream {
+            parts.append(part)
+        }
+
+        #expect(parts.contains { part in
+            if case .toolInputStart(let id, let name, _, let executed) = part {
+                return id == "computer_call" && name == "computer_use" && executed == true
+            }
+            return false
+        })
+
+        #expect(parts.contains { part in
+            if case .toolInputEnd(let id, _) = part { return id == "computer_call" }
+            return false
+        })
+
+        #expect(parts.contains { part in
+            if case .toolCall(let call) = part {
+                return call.toolCallId == "computer_call" && call.toolName == "computer_use" && call.providerExecuted == true
+            }
+            return false
+        })
+
+        #expect(parts.contains { part in
+            if case .toolResult(let result) = part {
+                if result.toolCallId == "computer_call" && result.toolName == "computer_use" && result.providerExecuted == true {
+                    if case .object(let payload) = result.result {
+                        return payload["type"] == .string("computer_use_tool_result")
+                    }
+                }
+            }
+            return false
+        })
+    }
+
+    @Test("doGenerate forwards previousResponseId and metadata")
+    func testDoGeneratePreviousResponseId() async throws {
+        actor BodyCapture {
+            var data: Data?
+            func store(_ body: Data?) { data = body }
+            func current() -> Data? { data }
+        }
+
+        let capture = BodyCapture()
+
+        let responseJSON: [String: Any] = [
+            "id": "resp_prev",
+            "created_at": 1_742_200_000.0,
+            "model": "gpt-4o",
+            "output": [],
+            "service_tier": "default",
+            "usage": ["input_tokens": 2, "output_tokens": 1, "total_tokens": 3],
+            "warnings": [],
+            "incomplete_details": ["reason": NSNull()],
+            "finish_reason": NSNull(),
+            "error": NSNull()
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let fetch: FetchFunction = { request in
+            await capture.store(request.httpBody)
+            let httpResponse = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: samplePrompt,
+                providerOptions: [
+                    "openai": [
+                        "previousResponseId": .string("resp_old"),
+                        "metadata": .object(["context": .string("test")]),
+                        "serviceTier": .string("priority"),
+                        "user": .string("test-user")
+                    ]
+                ]
+            )
+        )
+
+        guard let json = decodeRequestBody(await capture.current()) else {
+            Issue.record("Missing request body for previousResponseId test")
+            return
+        }
+
+        #expect(json["previous_response_id"] as? String == "resp_old")
+        if let metadata = json["metadata"] as? [String: Any] {
+            #expect(metadata["context"] as? String == "test")
+        } else {
+            Issue.record("Expected metadata in request")
+        }
+        #expect(json["service_tier"] as? String == "priority")
+        #expect(json["user"] as? String == "test-user")
+    }
+
 }
