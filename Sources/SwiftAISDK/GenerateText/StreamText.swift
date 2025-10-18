@@ -814,6 +814,7 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
             tracer: actorConfig.tracer,
             attributes: outerSpanAttributes
         ) { span in
+            var activeDoStreamSpan: (any Span)? = nil
             do {
                 var responseMessagesHistory: [ResponseMessage] = []
                 let approvals = collectToolApprovals(messages: normalizedMessages)
@@ -923,23 +924,60 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
                     providerOptions: actorConfig.providerOptions
                 )
 
-                var doStreamAttributes = actorConfig.baseTelemetryAttributes
-                doStreamAttributes["ai.operationId"] = .string("ai.streamText.doStream")
-                doStreamAttributes["ai.model.provider"] = .string(resolvedModel.provider)
-                doStreamAttributes["ai.model.id"] = .string(resolvedModel.modelId)
+                let doStreamAttributeInputs = buildStreamTextDoStreamTelemetryAttributes(
+                    telemetry: actorConfig.telemetry,
+                    baseAttributes: actorConfig.baseTelemetryAttributes,
+                    prompt: lmPrompt,
+                    tools: toolPreparation.tools,
+                    toolChoice: toolPreparation.toolChoice,
+                    settings: actorConfig.callSettings,
+                    model: resolvedModel
+                )
 
-                let providerResult = try await recordSpan(
-                    name: "ai.streamText.doStream",
-                    tracer: actorConfig.tracer,
-                    attributes: doStreamAttributes
-                ) { _ in
-                    try await actorConfig.preparedRetries.retry.call {
-                        try await resolvedModel.doStream(options: callOptions)
-                    }
+                let resolvedDoStreamAttributes: Attributes
+                do {
+                    resolvedDoStreamAttributes = try await selectTelemetryAttributes(
+                        telemetry: actorConfig.telemetry,
+                        attributes: doStreamAttributeInputs
+                    )
+                } catch {
+                    resolvedDoStreamAttributes = resolvedAttributesFromValues(doStreamAttributeInputs)
                 }
 
+                let (providerResult, doStreamSpanAny, doStreamStartTimestamp): (LanguageModelV3StreamResult, any Span, Double) = try await recordSpan(
+                    name: "ai.streamText.doStream",
+                    tracer: actorConfig.tracer,
+                    attributes: resolvedDoStreamAttributes,
+                    fn: { span in
+                        let startTimestamp = actorConfig.now()
+                        let result = try await actorConfig.preparedRetries.retry.call {
+                            try await resolvedModel.doStream(options: callOptions)
+                        }
+                        return (result, span, startTimestamp)
+                    },
+                    endWhenDone: false
+                )
+
+                let doStreamSpan = doStreamSpanAny
+                activeDoStreamSpan = doStreamSpan
+                defer { doStreamSpan.end() }
+
                 await result._setRequestInfo(providerResult.request)
+
+                var sawFirstChunk = false
                 for try await part in providerResult.stream {
+                    if !sawFirstChunk {
+                        switch part {
+                        case .streamStart:
+                            break
+                        default:
+                            sawFirstChunk = true
+                            let elapsed = max(actorConfig.now() - doStreamStartTimestamp, 0)
+                            let firstAttrs: Attributes = ["ai.response.msToFirstChunk": .double(elapsed)]
+                            doStreamSpan.addEvent("ai.stream.firstChunk", attributes: firstAttrs)
+                            doStreamSpan.setAttributes(firstAttrs)
+                        }
+                    }
                     continuation.yield(part)
                 }
                 continuation.finish()
@@ -961,7 +999,19 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
                     resolvedRootAttributes = resolvedAttributesFromValues(rootAttributeInputs)
                 }
                 span.setAttributes(resolvedRootAttributes)
+
+                let msToFinish = max(actorConfig.now() - doStreamStartTimestamp, 0)
+                var finishAttrs: Attributes = ["ai.response.msToFinish": .double(msToFinish)]
+                if let outputTokens = finish.totalUsage.outputTokens, msToFinish > 0 {
+                    let avg = (1000.0 * Double(outputTokens)) / msToFinish
+                    finishAttrs["ai.response.avgOutputTokensPerSecond"] = .double(avg)
+                }
+                doStreamSpan.addEvent("ai.stream.finish", attributes: finishAttrs)
+                doStreamSpan.setAttributes(finishAttrs)
             } catch {
+                if let span = activeDoStreamSpan {
+                    recordErrorOnSpan(span, error: error)
+                }
                 continuation.finish(throwing: error)
                 throw error
             }
@@ -996,6 +1046,77 @@ private func buildStreamTextOuterTelemetryAttributes(
             return nil
         }
         return .string(summary)
+    }
+
+    return attributes
+}
+
+private func buildStreamTextDoStreamTelemetryAttributes(
+    telemetry: TelemetrySettings?,
+    baseAttributes: Attributes,
+    prompt: LanguageModelV3Prompt,
+    tools: [LanguageModelV3Tool]?,
+    toolChoice: LanguageModelV3ToolChoice?,
+    settings: PreparedCallSettings,
+    model: any LanguageModelV3
+) -> [String: ResolvableAttributeValue?] {
+    var attributes: [String: ResolvableAttributeValue?] = [:]
+
+    for (key, value) in assembleOperationName(operationId: "ai.streamText.doStream", telemetry: telemetry) {
+        attributes[key] = .value(value)
+    }
+
+    for (key, value) in baseAttributes {
+        attributes[key] = .value(value)
+    }
+
+    attributes["ai.model.provider"] = .value(.string(model.provider))
+    attributes["ai.model.id"] = .value(.string(model.modelId))
+
+    attributes["ai.prompt.messages"] = .input {
+        guard let serialized = try? stringifyForTelemetry(prompt) else {
+            return nil
+        }
+        return .string(serialized)
+    }
+
+    attributes["ai.prompt.tools"] = .input {
+        guard let encoded = encodeToolsForTelemetry(tools) else {
+            return nil
+        }
+        return .string(encoded)
+    }
+
+    attributes["ai.prompt.toolChoice"] = .input {
+        guard let encoded = encodeToolChoiceForTelemetry(toolChoice) else {
+            return nil
+        }
+        return .string(encoded)
+    }
+
+    attributes["gen_ai.system"] = .value(.string(model.provider))
+    attributes["gen_ai.request.model"] = .value(.string(model.modelId))
+
+    if let frequencyPenalty = settings.frequencyPenalty {
+        attributes["gen_ai.request.frequency_penalty"] = .value(.double(frequencyPenalty))
+    }
+    if let maxTokens = settings.maxOutputTokens {
+        attributes["gen_ai.request.max_tokens"] = .value(.int(maxTokens))
+    }
+    if let presencePenalty = settings.presencePenalty {
+        attributes["gen_ai.request.presence_penalty"] = .value(.double(presencePenalty))
+    }
+    if let stopSequences = settings.stopSequences, !stopSequences.isEmpty {
+        attributes["gen_ai.request.stop_sequences"] = .value(.stringArray(stopSequences))
+    }
+    if let temperature = settings.temperature {
+        attributes["gen_ai.request.temperature"] = .value(.double(temperature))
+    }
+    if let topK = settings.topK {
+        attributes["gen_ai.request.top_k"] = .value(.int(topK))
+    }
+    if let topP = settings.topP {
+        attributes["gen_ai.request.top_p"] = .value(.double(topP))
     }
 
     return attributes
@@ -1045,6 +1166,16 @@ private func buildStreamTextRootTelemetryAttributes(
     return attributes
 }
 
+private func encodeToolsForTelemetry(_ tools: [LanguageModelV3Tool]?) -> String? {
+    guard let tools else { return nil }
+    return jsonString(from: tools)
+}
+
+private func encodeToolChoiceForTelemetry(_ toolChoice: LanguageModelV3ToolChoice?) -> String? {
+    guard let toolChoice else { return nil }
+    return jsonString(from: toolChoice)
+}
+
 private func encodeToolCallsForTelemetry(_ toolCalls: [TypedToolCall]) -> String? {
     guard !toolCalls.isEmpty else { return nil }
 
@@ -1076,6 +1207,15 @@ private func encodeToolCallsForTelemetry(_ toolCalls: [TypedToolCall]) -> String
 private func providerMetadataToJSON(_ metadata: ProviderMetadata) -> JSONValue {
     let nested = metadata.mapValues { JSONValue.object($0) }
     return .object(nested)
+}
+
+private func jsonString<T: Encodable>(from value: T) -> String? {
+    let encoder = JSONEncoder()
+    encoder.dateEncodingStrategy = .iso8601
+    guard let data = try? encoder.encode(value) else {
+        return nil
+    }
+    return String(data: data, encoding: .utf8)
 }
 
 private func jsonString(from jsonValue: JSONValue) -> String? {

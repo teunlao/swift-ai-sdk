@@ -1,3 +1,19 @@
+
+private final class LockedValue<Value>: @unchecked Sendable {
+    private var value: Value
+    private let lock = NSLock()
+
+    init(initial: Value) {
+        self.value = initial
+    }
+
+    func withValue<R>(_ body: (inout Value) -> R) -> R {
+        lock.lock()
+        defer { lock.unlock() }
+        return body(&value)
+    }
+}
+
 import Foundation
 import Testing
 @testable import SwiftAISDK
@@ -180,6 +196,111 @@ struct StreamTextBasicTests {
         _ = try await result.waitForFinish()
 
         #expect(tracer.spanRecords.isEmpty)
+    }
+
+    @Test("telemetry records first chunk timing")
+    func telemetryRecordsFirstChunkTiming() async throws {
+        let parts: [LanguageModelV3StreamPart] = [
+            .streamStart(warnings: []),
+            .textDelta(id: "1", delta: "First", providerMetadata: nil),
+            .textEnd(id: "1", providerMetadata: nil),
+            .finish(
+                finishReason: .stop,
+                usage: defaultUsage,
+                providerMetadata: nil
+            )
+        ]
+
+        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+            for part in parts { continuation.yield(part) }
+            continuation.finish()
+        }
+
+        let model = MockLanguageModelV3(
+            doStream: .singleValue(LanguageModelV3StreamResult(stream: stream))
+        )
+
+        let tracer = MockTracer()
+        let telemetry = TelemetrySettings(isEnabled: true, tracer: tracer)
+        let nowValues: [Double] = [0.0, 123.0, 200.0]
+        let nowValuesShared = LockedValue(initial: 0)
+        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+            model: .v3(model),
+            prompt: "hello",
+            experimentalTelemetry: telemetry,
+            internalOptions: StreamTextInternalOptions(
+                now: {
+                    let index = nowValuesShared.withValue { value -> Int in
+                        let current = value
+                        value = min(current + 1, nowValues.count - 1)
+                        return current
+                    }
+                    return nowValues[index]
+                },
+                generateId: { "firstchunk-span" }
+            )
+        )
+
+        _ = try await result.readAllText()
+        _ = try await result.waitForFinish()
+
+        let doStreamSpan = try #require(tracer.spanRecords.first { $0.name == "ai.streamText.doStream" })
+        let firstEvent = try #require(doStreamSpan.events.first { $0.name == "ai.stream.firstChunk" })
+        #expect(firstEvent.attributes?["ai.response.msToFirstChunk"] == .double(123.0))
+        #expect(doStreamSpan.attributes["ai.response.msToFirstChunk"] == .double(123.0))
+    }
+
+    @Test("telemetry records finish timing and speed")
+    func telemetryRecordsFinishTiming() async throws {
+        let parts: [LanguageModelV3StreamPart] = [
+            .streamStart(warnings: []),
+            .textDelta(id: "1", delta: "Speed", providerMetadata: nil),
+            .textEnd(id: "1", providerMetadata: nil),
+            .finish(
+                finishReason: .stop,
+                usage: LanguageModelV3Usage(inputTokens: 1, outputTokens: 4, totalTokens: 5, reasoningTokens: nil, cachedInputTokens: nil),
+                providerMetadata: nil
+            )
+        ]
+
+        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+            for part in parts { continuation.yield(part) }
+            continuation.finish()
+        }
+
+        let model = MockLanguageModelV3(
+            doStream: .singleValue(LanguageModelV3StreamResult(stream: stream))
+        )
+
+        let tracer = MockTracer()
+        let telemetry = TelemetrySettings(isEnabled: true, tracer: tracer)
+        let nowValues: [Double] = [0.0, 10.0, 210.0]
+        let nowValuesShared = LockedValue(initial: 0)
+        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+            model: .v3(model),
+            prompt: "hello",
+            experimentalTelemetry: telemetry,
+            internalOptions: StreamTextInternalOptions(
+                now: {
+                    let index = nowValuesShared.withValue { value -> Int in
+                        let current = value
+                        value = min(current + 1, nowValues.count - 1)
+                        return current
+                    }
+                    return nowValues[index]
+                },
+                generateId: { "finish-span" }
+            )
+        )
+
+        _ = try await result.readAllText()
+        _ = try await result.waitForFinish()
+
+        let doStreamSpan = try #require(tracer.spanRecords.first { $0.name == "ai.streamText.doStream" })
+        let finishEvent = try #require(doStreamSpan.events.first { $0.name == "ai.stream.finish" })
+        #expect(finishEvent.attributes?["ai.response.msToFinish"] == .double(210.0))
+        #expect(doStreamSpan.attributes["ai.response.msToFinish"] == .double(210.0))
+        #expect(doStreamSpan.attributes["ai.response.avgOutputTokensPerSecond"] == .double(1000.0 * 4.0 / 210.0))
     }
 
     @Test("telemetry records spans when enabled")
