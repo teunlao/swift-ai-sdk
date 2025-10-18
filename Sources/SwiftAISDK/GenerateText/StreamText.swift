@@ -57,6 +57,72 @@ struct StreamTextActorConfiguration: Sendable {
     let telemetry: TelemetrySettings?
     let tracer: any Tracer
     let baseTelemetryAttributes: Attributes
+    let baseModel: LanguageModel
+    let prepareStep: PrepareStepFunction?
+}
+
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+struct StreamTextStepPreparation {
+    let modelArg: LanguageModel
+    let resolvedModel: any LanguageModelV3
+    let system: String?
+    let messages: [ModelMessage]
+    let toolChoice: ToolChoice?
+    let activeTools: [String]?
+}
+
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+private func makeStreamTextStepPreparation(
+    prepareStep: PrepareStepFunction?,
+    baseModel: LanguageModel,
+    defaultResolvedModel: any LanguageModelV3,
+    steps: [StepResult],
+    stepNumber: Int,
+    inputMessages: [ModelMessage]
+) async throws -> StreamTextStepPreparation {
+    var modelArg = baseModel
+    var resolvedModel: any LanguageModelV3 = defaultResolvedModel
+    var systemOverride: String? = nil
+    var messages = inputMessages
+    var toolChoice: ToolChoice? = nil
+    var activeTools: [String]? = nil
+
+    if let prepareStep {
+        let options = PrepareStepOptions(
+            steps: steps,
+            stepNumber: stepNumber,
+            model: baseModel,
+            messages: inputMessages
+        )
+
+        if let result = try await prepareStep(options) {
+            if let newModel = result.model {
+                modelArg = newModel
+                resolvedModel = try resolveLanguageModel(newModel)
+            }
+            if let system = result.system {
+                systemOverride = system
+            }
+            if let overrideMessages = result.messages {
+                messages = overrideMessages
+            }
+            if let overrideToolChoice = result.toolChoice {
+                toolChoice = overrideToolChoice
+            }
+            if let overrideActiveTools = result.activeTools {
+                activeTools = overrideActiveTools
+            }
+        }
+    }
+
+    return StreamTextStepPreparation(
+        modelArg: modelArg,
+        resolvedModel: resolvedModel,
+        system: systemOverride,
+        messages: messages,
+        toolChoice: toolChoice,
+        activeTools: activeTools
+    )
 }
 
 private func convertResponseMessagesToModelMessages(
@@ -112,6 +178,7 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
     experimentalTransform transforms: [StreamTextTransform] = [],
     experimentalDownload download: DownloadFunction? = nil,
     experimentalRepairToolCall repairToolCall: ToolCallRepairFunction? = nil,
+    prepareStep: PrepareStepFunction? = nil,
     experimentalContext: JSONValue? = nil,
     includeRawChunks: Bool = false,
     stopWhen stopConditions: [StopCondition] = [stepCountIs(1)],
@@ -141,6 +208,7 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
         experimentalTransform: transforms,
         experimentalDownload: download,
         experimentalRepairToolCall: repairToolCall,
+        prepareStep: prepareStep,
         experimentalContext: experimentalContext,
         includeRawChunks: includeRawChunks,
         stopWhen: stopConditions,
@@ -683,6 +751,7 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
     experimentalTransform transforms: [StreamTextTransform] = [],
     experimentalDownload download: DownloadFunction? = nil,
     experimentalRepairToolCall repairToolCall: ToolCallRepairFunction? = nil,
+    prepareStep: PrepareStepFunction? = nil,
     experimentalContext: JSONValue? = nil,
     includeRawChunks: Bool = false,
     stopWhen stopConditions: [StopCondition] = [stepCountIs(1)],
@@ -700,7 +769,7 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
     _ = experimentalContext
 
     _ = _internal
-    let resolvedModel = try resolveLanguageModel(modelArg)
+    let defaultResolvedModel = try resolveLanguageModel(modelArg)
     let standardizedPrompt = StandardizedPrompt(system: system, messages: initialMessages)
     let normalizedMessages = standardizedPrompt.messages
     let effectiveActiveTools = activeTools ?? experimentalActiveTools
@@ -735,7 +804,7 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
     )
 
     let baseTelemetryAttributes = getBaseTelemetryAttributes(
-        model: TelemetryModelInfo(modelId: resolvedModel.modelId, provider: resolvedModel.provider),
+        model: TelemetryModelInfo(modelId: defaultResolvedModel.modelId, provider: defaultResolvedModel.provider),
         settings: telemetryCallSettings,
         telemetry: telemetry,
         headers: headersWithUserAgent
@@ -764,7 +833,9 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
         currentDate: _internal.currentDate,
         telemetry: telemetry,
         tracer: tracer,
-        baseTelemetryAttributes: baseTelemetryAttributes
+        baseTelemetryAttributes: baseTelemetryAttributes,
+        baseModel: modelArg,
+        prepareStep: prepareStep
     )
 
     // Bridge provider async stream acquisition without blocking the caller.
@@ -774,7 +845,7 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
 
     let result = DefaultStreamTextResult<OutputValue, PartialOutputValue>(
         baseModel: modelArg,
-        model: resolvedModel,
+        model: defaultResolvedModel,
         providerStream: bridgeStream,
         transforms: transforms,
         stopConditions: stopConditions,
@@ -885,12 +956,21 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
                     conversationMessages = normalizedMessages + convertResponseMessagesToModelMessages(responseMessagesHistory)
                 }
 
-                let promptForProvider = StandardizedPrompt(
-                    system: standardizedPrompt.system,
-                    messages: conversationMessages
+                let stepPreparation = try await makeStreamTextStepPreparation(
+                    prepareStep: prepareStep,
+                    baseModel: modelArg,
+                    defaultResolvedModel: defaultResolvedModel,
+                    steps: [],
+                    stepNumber: 0,
+                    inputMessages: conversationMessages
                 )
 
-                let supported = try await resolvedModel.supportedUrls
+                let promptForProvider = StandardizedPrompt(
+                    system: stepPreparation.system ?? standardizedPrompt.system,
+                    messages: stepPreparation.messages
+                )
+
+                let supported = try await stepPreparation.resolvedModel.supportedUrls
                 let lmPrompt = try await convertToLanguageModelPrompt(
                     prompt: promptForProvider,
                     supportedUrls: supported,
@@ -899,8 +979,8 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
 
                 let toolPreparation = try await prepareToolsAndToolChoice(
                     tools: tools,
-                    toolChoice: toolChoice,
-                    activeTools: effectiveActiveTools
+                    toolChoice: stepPreparation.toolChoice ?? toolChoice,
+                    activeTools: stepPreparation.activeTools ?? effectiveActiveTools
                 )
 
                 let responseFormat = try await actorConfig.responseFormatProvider?()
@@ -931,7 +1011,7 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
                     tools: toolPreparation.tools,
                     toolChoice: toolPreparation.toolChoice,
                     settings: actorConfig.callSettings,
-                    model: resolvedModel
+                    model: stepPreparation.resolvedModel
                 )
 
                 let resolvedDoStreamAttributes: Attributes
@@ -951,7 +1031,7 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
                     fn: { span in
                         let startTimestamp = actorConfig.now()
                         let result = try await actorConfig.preparedRetries.retry.call {
-                            try await resolvedModel.doStream(options: callOptions)
+                            try await stepPreparation.resolvedModel.doStream(options: callOptions)
                         }
                         return (result, span, startTimestamp)
                     },
@@ -1295,6 +1375,7 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
     experimentalTransform transforms: [StreamTextTransform] = [],
     experimentalDownload download: DownloadFunction? = nil,
     experimentalRepairToolCall repairToolCall: ToolCallRepairFunction? = nil,
+    prepareStep: PrepareStepFunction? = nil,
     experimentalContext: JSONValue? = nil,
     includeRawChunks: Bool = false,
     stopWhen stopConditions: [StopCondition] = [stepCountIs(1)],
@@ -1322,6 +1403,7 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
         experimentalTransform: transforms,
         experimentalDownload: download,
         experimentalRepairToolCall: repairToolCall,
+        prepareStep: prepareStep,
         experimentalContext: experimentalContext,
         includeRawChunks: includeRawChunks,
         stopWhen: stopConditions,
