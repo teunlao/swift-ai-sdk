@@ -5,6 +5,14 @@ import AISDKProviderUtils
 public struct OpenAIWebSearchPreviewArgs: Sendable, Equatable {
     public let searchContextSize: String?
     public let userLocation: OpenAIWebSearchArgs.UserLocation?
+
+    public init(
+        searchContextSize: String? = nil,
+        userLocation: OpenAIWebSearchArgs.UserLocation? = nil
+    ) {
+        self.searchContextSize = searchContextSize
+        self.userLocation = userLocation
+    }
 }
 
 private let webSearchPreviewArgsJSONSchema: JSONValue = .object([
@@ -72,7 +80,7 @@ public let openaiWebSearchPreviewArgsSchema = FlexibleSchema<OpenAIWebSearchPrev
                             return .failure(error: TypeValidationError.wrap(value: typeValue, cause: error))
                         }
                     }
-                    func stringValue(_ key: String) throws -> String? {
+                    func optionalString(_ key: String) throws -> String? {
                         guard let value = locationObject[key], value != .null else { return nil }
                         guard case .string(let string) = value else {
                             let error = SchemaValidationIssuesError(vendor: "openai", issues: "userLocation.\(key) must be a string")
@@ -81,10 +89,10 @@ public let openaiWebSearchPreviewArgsSchema = FlexibleSchema<OpenAIWebSearchPrev
                         return string
                     }
                     userLocation = OpenAIWebSearchArgs.UserLocation(
-                        country: try stringValue("country"),
-                        city: try stringValue("city"),
-                        region: try stringValue("region"),
-                        timezone: try stringValue("timezone")
+                        country: try optionalString("country"),
+                        city: try optionalString("city"),
+                        region: try optionalString("region"),
+                        timezone: try optionalString("timezone")
                     )
                 }
 
@@ -103,3 +111,48 @@ public let openaiWebSearchPreviewArgsSchema = FlexibleSchema<OpenAIWebSearchPrev
         }
     )
 )
+
+private let webSearchPreviewInputJSONSchema: JSONValue = .object([
+    "type": .string("object"),
+    "additionalProperties": .bool(true)
+])
+
+public let openaiWebSearchPreviewToolFactory = createProviderDefinedToolFactory(
+    id: "openai.web_search_preview",
+    name: "web_search_preview",
+    inputSchema: FlexibleSchema(jsonSchema(webSearchPreviewInputJSONSchema))
+) { (args: OpenAIWebSearchPreviewArgs) in
+    var options = ProviderDefinedToolFactoryOptions()
+    options.args = encodeOpenAIWebSearchPreviewArgs(args)
+    return options
+}
+
+private func encodeOpenAIWebSearchPreviewArgs(_ args: OpenAIWebSearchPreviewArgs) -> [String: JSONValue] {
+    var payload: [String: JSONValue] = [:]
+    if let size = args.searchContextSize {
+        payload["searchContextSize"] = .string(size)
+    }
+    if let location = args.userLocation {
+        payload["userLocation"] = makeUserLocationJSON(location)
+    }
+    return payload
+}
+
+private func makeUserLocationJSON(_ location: OpenAIWebSearchArgs.UserLocation) -> JSONValue {
+    var payload: [String: JSONValue] = [
+        "type": .string("approximate")
+    ]
+    if let country = location.country {
+        payload["country"] = .string(country)
+    }
+    if let city = location.city {
+        payload["city"] = .string(city)
+    }
+    if let region = location.region {
+        payload["region"] = .string(region)
+    }
+    if let timezone = location.timezone {
+        payload["timezone"] = .string(timezone)
+    }
+    return .object(payload)
+}

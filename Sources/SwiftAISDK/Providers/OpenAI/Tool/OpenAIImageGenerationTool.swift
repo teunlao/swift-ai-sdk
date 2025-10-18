@@ -6,6 +6,11 @@ public struct OpenAIImageGenerationArgs: Sendable, Equatable {
     public struct InputImageMask: Sendable, Equatable {
         public let fileId: String?
         public let imageUrl: String?
+
+        public init(fileId: String? = nil, imageUrl: String? = nil) {
+            self.fileId = fileId
+            self.imageUrl = imageUrl
+        }
     }
 
     public let background: String?
@@ -18,6 +23,30 @@ public struct OpenAIImageGenerationArgs: Sendable, Equatable {
     public let partialImages: Int?
     public let quality: String?
     public let size: String?
+
+    public init(
+        background: String? = nil,
+        inputFidelity: String? = nil,
+        inputImageMask: InputImageMask? = nil,
+        model: String? = nil,
+        moderation: String? = nil,
+        outputCompression: Int? = nil,
+        outputFormat: String? = nil,
+        partialImages: Int? = nil,
+        quality: String? = nil,
+        size: String? = nil
+    ) {
+        self.background = background
+        self.inputFidelity = inputFidelity
+        self.inputImageMask = inputImageMask
+        self.model = model
+        self.moderation = moderation
+        self.outputCompression = outputCompression
+        self.outputFormat = outputFormat
+        self.partialImages = partialImages
+        self.quality = quality
+        self.size = size
+    }
 }
 
 private let imageGenerationArgsJSONSchema: JSONValue = .object([
@@ -158,3 +187,72 @@ public let openaiImageGenerationArgsSchema = FlexibleSchema<OpenAIImageGeneratio
         }
     )
 )
+
+private let imageGenerationInputJSONSchema: JSONValue = .object([
+    "type": .string("object"),
+    "additionalProperties": .bool(false)
+])
+
+private let imageGenerationOutputJSONSchema: JSONValue = .object([
+    "type": .string("object"),
+    "required": .array([.string("result")]),
+    "additionalProperties": .bool(false),
+    "properties": .object([
+        "result": .object(["type": .string("string")])
+    ])
+])
+
+public let openaiImageGenerationToolFactory = createProviderDefinedToolFactoryWithOutputSchema(
+    id: "openai.image_generation",
+    name: "image_generation",
+    inputSchema: FlexibleSchema(jsonSchema(imageGenerationInputJSONSchema)),
+    outputSchema: FlexibleSchema(jsonSchema(imageGenerationOutputJSONSchema))
+) { (args: OpenAIImageGenerationArgs) in
+    var options = ProviderDefinedToolFactoryWithOutputSchemaOptions()
+    options.args = encodeOpenAIImageGenerationArgs(args)
+    return options
+}
+
+private func encodeOpenAIImageGenerationArgs(_ args: OpenAIImageGenerationArgs) -> [String: JSONValue] {
+    var payload: [String: JSONValue] = [:]
+
+    if let background = args.background {
+        payload["background"] = .string(background)
+    }
+    if let fidelity = args.inputFidelity {
+        payload["inputFidelity"] = .string(fidelity)
+    }
+    if let mask = args.inputImageMask {
+        var maskPayload: [String: JSONValue] = [:]
+        if let fileId = mask.fileId {
+            maskPayload["fileId"] = .string(fileId)
+        }
+        if let imageUrl = mask.imageUrl {
+            maskPayload["imageUrl"] = .string(imageUrl)
+        }
+        payload["inputImageMask"] = .object(maskPayload)
+    }
+    if let model = args.model {
+        payload["model"] = .string(model)
+    }
+    if let moderation = args.moderation {
+        payload["moderation"] = .string(moderation)
+    }
+    if let compression = args.outputCompression {
+        payload["outputCompression"] = .number(Double(compression))
+    }
+    if let format = args.outputFormat {
+        payload["outputFormat"] = .string(format)
+    }
+    if let partial = args.partialImages {
+        payload["partialImages"] = .number(Double(partial))
+    }
+    if let quality = args.quality {
+        payload["quality"] = .string(quality)
+    }
+    if let size = args.size {
+        payload["size"] = .string(size)
+    }
+
+    return payload
+}
