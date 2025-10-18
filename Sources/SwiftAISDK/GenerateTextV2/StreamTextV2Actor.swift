@@ -31,8 +31,6 @@ actor StreamTextV2Actor {
     private var recordedResponseMessages: [ResponseMessage] = []
     private var currentToolCalls: [TypedToolCall] = []
     private var currentToolOutputs: [ToolOutput] = []
-    private var lastClientToolCalls: [TypedToolCall] = []
-    private var lastClientToolOutputs: [ToolOutput] = []
     private var recordedRequest: LanguageModelRequestMetadata = LanguageModelRequestMetadata()
     private var recordedSteps: [StepResult] = []
     private var accumulatedUsage: LanguageModelUsage = LanguageModelUsage()
@@ -102,21 +100,14 @@ actor StreamTextV2Actor {
             try await consumeProviderStream(stream: source, emitStartStep: true)
             while !terminated {
                 if externalStopRequested { break }
-                let shouldStop = await isStopConditionMet(
-                    stopConditions: stopConditions, steps: recordedSteps)
-                if shouldStop { break }
-                guard let last = recordedSteps.last else { break }
-                // Build next step prompt: initial messages + assistant response
-                let responseMessages = convertModelMessagesToResponseMessagesV2(
-                    toResponseMessages(content: last.content, tools: nil)
-                )
-                let nextMessages =
-                    initialMessages + convertResponseMessagesToModelMessagesV2(responseMessages)
+                let continueStreaming = await shouldStartAnotherStep()
+                if !continueStreaming { break }
+                let nextMessages = makeConversationMessagesForContinuation()
                 let lmPrompt = try await buildLanguageModelPrompt(messages: nextMessages)
                 let options = LanguageModelV3CallOptions(prompt: lmPrompt)
                 let result = try await model.doStream(options: options)
                 setInitialRequest(result.request)
-                try await consumeProviderStream(stream: result.stream, emitStartStep: true)
+                        try await consumeProviderStream(stream: result.stream, emitStartStep: true)
             }
             await finishAll(response: nil, usage: nil, finishReason: nil, providerMetadata: nil)
         } catch is CancellationError {
@@ -125,6 +116,26 @@ actor StreamTextV2Actor {
             await finishAll(
                 response: nil, usage: nil, finishReason: nil, providerMetadata: nil, error: error)
         }
+    }
+
+    private func shouldStartAnotherStep() async -> Bool {
+        guard let lastStep = recordedSteps.last else { return false }
+        guard lastStep.finishReason == .toolCalls else { return false }
+        let clientToolCalls = clientToolCalls(in: lastStep)
+        if clientToolCalls.isEmpty { return false }
+        let clientToolOutputs = clientToolOutputs(in: lastStep)
+        if clientToolOutputs.count != clientToolCalls.count { return false }
+        let stopMet = await isStopConditionMet(stopConditions: stopConditions, steps: recordedSteps)
+        return !stopMet
+    }
+
+    private func makeConversationMessagesForContinuation() -> [ModelMessage] {
+        if recordedResponseMessages.isEmpty {
+            return initialMessages
+        }
+        let responseMessages = recordedResponseMessages
+        let converted = convertResponseMessagesToModelMessagesV2(responseMessages)
+        return initialMessages + converted
     }
 
     // MARK: - Prompt Construction (Upstream parity)
@@ -466,34 +477,49 @@ actor StreamTextV2Actor {
                 await fullBroadcaster.send(
                     .toolInputEnd(id: id, providerMetadata: providerMetadata))
             case .toolCall(let call):
-                // Parse JSON input (best-effort); fall back to raw string
                 let parsed = await safeParseJSON(ParseJSONOptions(text: call.input))
                 let inputValue: JSONValue
+                let parseError: Error?
                 switch parsed {
-                case .success(let v, _): inputValue = v
-                case .failure:
+                case .success(let value, _):
+                    inputValue = value
+                    parseError = nil
+                case .failure(let error, _):
                     inputValue = .string(call.input)
+                    parseError = error
                 }
                 activeToolInputs[call.toolCallId] = inputValue
                 activeToolNames[call.toolCallId] = call.toolName
-                let typed = TypedToolCall.dynamic(
-                    DynamicToolCall(
+                let typed: TypedToolCall
+                if parseError == nil, tools?[call.toolName] != nil {
+                    let staticCall = StaticToolCall(
+                        toolCallId: call.toolCallId,
+                        toolName: call.toolName,
+                        input: inputValue,
+                        providerExecuted: call.providerExecuted,
+                        providerMetadata: call.providerMetadata
+                    )
+                    typed = .static(staticCall)
+                } else {
+                    let dynamicCall = DynamicToolCall(
                         toolCallId: call.toolCallId,
                         toolName: call.toolName,
                         input: inputValue,
                         providerExecuted: call.providerExecuted,
                         providerMetadata: call.providerMetadata,
-                        invalid: false,
-                        error: nil
+                        invalid: parseError == nil ? nil : true,
+                        error: parseError
                     )
-                )
+                    typed = .dynamic(dynamicCall)
+                }
                 recordedContent.append(.toolCall(typed, providerMetadata: call.providerMetadata))
                 currentToolCalls.append(typed)
                 await fullBroadcaster.send(.toolCall(typed))
             case .toolResult(let result):
                 let input = activeToolInputs[result.toolCallId] ?? .null
-                let typed: TypedToolResult = .dynamic(
-                    DynamicToolResult(
+                let typed: TypedToolResult
+                if tools?[result.toolName] != nil {
+                    let staticResult = StaticToolResult(
                         toolCallId: result.toolCallId,
                         toolName: result.toolName,
                         input: input,
@@ -502,7 +528,19 @@ actor StreamTextV2Actor {
                         preliminary: result.preliminary,
                         providerMetadata: result.providerMetadata
                     )
-                )
+                    typed = .static(staticResult)
+                } else {
+                    let dynamicResult = DynamicToolResult(
+                        toolCallId: result.toolCallId,
+                        toolName: result.toolName,
+                        input: input,
+                        output: result.result,
+                        providerExecuted: result.providerExecuted,
+                        preliminary: result.preliminary,
+                        providerMetadata: result.providerMetadata
+                    )
+                    typed = .dynamic(dynamicResult)
+                }
                 let isPreliminary = result.preliminary == true
                 await fullBroadcaster.send(.toolResult(typed))
                 if !isPreliminary {
@@ -559,10 +597,6 @@ actor StreamTextV2Actor {
                 recordedSteps.append(stepResult)
                 recordedResponseMessages.append(contentsOf: responseMessages)
                 accumulatedUsage = addLanguageModelUsage(accumulatedUsage, usage)
-                let clientToolCalls = currentToolCalls.filter { $0.providerExecuted != true }
-                let clientToolOutputs = currentToolOutputs.filter { $0.providerExecuted != true }
-                lastClientToolCalls = clientToolCalls
-                lastClientToolOutputs = clientToolOutputs
                 currentToolCalls.removeAll()
                 currentToolOutputs.removeAll()
                 // Do not resolve `finishReasonPromise` here; session-level finish
@@ -635,10 +669,6 @@ actor StreamTextV2Actor {
             recordedSteps.append(stepResult)
             recordedResponseMessages.append(contentsOf: responseMessages)
             accumulatedUsage = addLanguageModelUsage(accumulatedUsage, usage)
-            let clientToolCalls = currentToolCalls.filter { $0.providerExecuted != true }
-            let clientToolOutputs = currentToolOutputs.filter { $0.providerExecuted != true }
-            lastClientToolCalls = clientToolCalls
-            lastClientToolOutputs = clientToolOutputs
             currentToolCalls.removeAll()
             currentToolOutputs.removeAll()
             recordedFinishReason = finishReason
@@ -671,6 +701,14 @@ actor StreamTextV2Actor {
         }
         onTerminate?()
         onTerminate = nil
+    }
+
+    private func clientToolCalls(in step: StepResult) -> [TypedToolCall] {
+        step.toolCalls.filter { $0.providerExecuted != true }
+    }
+
+    private func clientToolOutputs(in step: StepResult) -> [TypedToolResult] {
+        step.toolResults.filter { $0.providerExecuted != true }
     }
 
     private func finalizePendingContent() {

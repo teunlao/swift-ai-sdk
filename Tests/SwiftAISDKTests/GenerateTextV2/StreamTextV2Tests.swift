@@ -41,9 +41,14 @@ struct StreamTextV2BasicTests {
             doStream: .singleValue(LanguageModelV3StreamResult(stream: stream))
         )
 
+        let stopCondition: SwiftAISDK.StopCondition = { steps in
+            return steps.count == 3
+        }
+
         let result: DefaultStreamTextV2Result<JSONValue, JSONValue> = try streamTextV2(
             model: .v3(model),
-            prompt: "hello"
+            prompt: "hello",
+            stopWhen: [stopCondition]
         )
 
         let chunks = try await convertReadableStreamToArray(result.textStream)
@@ -76,7 +81,8 @@ struct StreamTextV2BasicTests {
 
         let result: DefaultStreamTextV2Result<JSONValue, JSONValue> = try streamTextV2(
             model: .v3(model),
-            prompt: "hello"
+            prompt: "hello",
+            stopWhen: [stepCountIs(3)]
         )
 
         let chunks = try await convertReadableStreamToArray(
@@ -510,4 +516,122 @@ struct StreamTextV2BasicTests {
         #expect(await counter.get() > 0)
         #expect(await finished.get())
     }
+    @Test("tool-calls finish triggers continuation when client outputs provided (V2)")
+    func toolCallsFinishTriggersContinuationV2() async throws {
+        let usage = LanguageModelV3Usage(inputTokens: 2, outputTokens: 2, totalTokens: 4, reasoningTokens: nil, cachedInputTokens: nil)
+
+        let stepOneParts: [LanguageModelV3StreamPart] = [
+            .streamStart(warnings: []),
+            .responseMetadata(id: "step-1", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
+            .toolCall(LanguageModelV3ToolCall(
+                toolCallId: "call-1",
+                toolName: "search",
+                input: "{\"q\":\"swift\"}",
+                providerExecuted: false,
+                providerMetadata: nil
+            )),
+            .toolResult(LanguageModelV3ToolResult(
+                toolCallId: "call-1",
+                toolName: "search",
+                result: [.string("result")],
+                isError: nil,
+                providerExecuted: false,
+                preliminary: false,
+                providerMetadata: nil
+            )),
+            .finish(finishReason: .toolCalls, usage: usage, providerMetadata: nil)
+        ]
+
+        let stepTwoParts: [LanguageModelV3StreamPart] = [
+            .streamStart(warnings: []),
+            .responseMetadata(id: "step-2", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 1)),
+            .textStart(id: "t-1", providerMetadata: nil),
+            .textDelta(id: "t-1", delta: "Done", providerMetadata: nil),
+            .textEnd(id: "t-1", providerMetadata: nil),
+            .finish(finishReason: .stop, usage: usage, providerMetadata: nil)
+        ]
+
+        let stream1 = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+            for part in stepOneParts { continuation.yield(part) }
+            continuation.finish()
+        }
+        let stream2 = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+            for part in stepTwoParts { continuation.yield(part) }
+            continuation.finish()
+        }
+
+        let model = MockLanguageModelV3(
+            doStream: .array([
+                LanguageModelV3StreamResult(stream: stream1),
+                LanguageModelV3StreamResult(stream: stream2)
+            ])
+        )
+
+        let result: DefaultStreamTextV2Result<JSONValue, JSONValue> = try streamTextV2(
+            model: .v3(model),
+            prompt: "hello",
+            stopWhen: [stepCountIs(3)]
+        )
+
+        let deltas = try await convertReadableStreamToArray(result.textStream)
+        #expect(deltas == ["Done"])
+
+        let steps = try await result.steps
+        #expect(steps.count == 2)
+        #expect(steps.first?.finishReason == .toolCalls)
+        #expect(steps.last?.finishReason == .stop)
+        #expect(model.doStreamCalls.count == 2)
+        #expect((try await result.finishReason) == .stop)
+    }
+
+    @Test("invalid tool-call JSON marks dynamic call as invalid (V2)")
+    func invalidToolCallJsonMarksDynamicV2() async throws {
+        let usage = LanguageModelV3Usage(inputTokens: 1, outputTokens: 1, totalTokens: 2, reasoningTokens: nil, cachedInputTokens: nil)
+        let parts: [LanguageModelV3StreamPart] = [
+            .streamStart(warnings: []),
+            .responseMetadata(id: "id-invalid", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
+            .toolCall(LanguageModelV3ToolCall(
+                toolCallId: "call-invalid",
+                toolName: "search",
+                input: "{invalid",
+                providerExecuted: false,
+                providerMetadata: nil
+            )),
+            .textStart(id: "t-err", providerMetadata: nil),
+            .textDelta(id: "t-err", delta: "partial", providerMetadata: nil),
+            .textEnd(id: "t-err", providerMetadata: nil),
+            .finish(finishReason: .stop, usage: usage, providerMetadata: nil)
+        ]
+
+        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+            for part in parts { continuation.yield(part) }
+            continuation.finish()
+        }
+
+        let model = MockLanguageModelV3(
+            doStream: .singleValue(LanguageModelV3StreamResult(stream: stream))
+        )
+
+        let result: DefaultStreamTextV2Result<JSONValue, JSONValue> = try streamTextV2(
+            model: .v3(model),
+            prompt: "hello"
+        )
+
+        let chunks = try await convertReadableStreamToArray(result.fullStream)
+        let toolCallPart = chunks.first { part in
+            if case .toolCall = part { return true }
+            return false
+        }
+        #expect(toolCallPart != nil)
+        if let part = toolCallPart, case let .toolCall(typed) = part {
+            switch typed {
+            case .dynamic(let dynamicCall):
+                #expect(dynamicCall.invalid == true)
+                #expect(dynamicCall.error != nil)
+            default:
+                Issue.record("expected dynamic tool call")
+            }
+        }
+    }
+
 }

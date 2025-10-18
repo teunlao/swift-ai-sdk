@@ -6,6 +6,9 @@ This document tracks the Swift port of `packages/ai/src/generate-text/stream-tex
 - **Stream runtime**  
   - `StreamTextV2.swift` – public API (`streamTextV2` overloads, `DefaultStreamTextV2Result` accessors, `consumeStream`, `pipeTextStreamToResponse`, `toTextStreamResponse`).  
   - `StreamTextV2Actor.swift` – core actor handling provider streams, multi-step logic, stop/abort flow, tool handling, usage aggregation.  
+    - Step result aggregation now mirrors upstream (text/reasoning/tool/file/source) and feeds ResponseMessage history for parity.
+    - Multi-step continuation honours finishReason `tool-calls`, stop conditions, and rebuilds prompts from conversation + tool outputs.
+    - Tool call/result events emit static vs dynamic variants (with JSON parsing fallback + invalid tagging) ready for ToolSet-aware flow.
   - `StreamTextV2EventRecorder.swift` – diagnostic recorder for tests (replay, counters, ordering checks).
 - **Event & SSE utilities**  
   - `StreamTextV2Events.swift` – high-level event stream (`StreamTextV2Event`) and summariser (`summarizeStreamTextV2Events`).  
