@@ -49,27 +49,52 @@ private final class StreamTextSSEEncoder {
         case .startStep:
             return [encode(event: ["type": "start-step"])]
 
-        case .finishStep:
-            return [encode(event: ["type": "finish-step"])]
+        case let .finishStep(response, usage, finishReason, metadata):
+            var payload: [String: Any] = [
+                "type": "finish-step",
+                "finishReason": finishReason.rawValue,
+                "usage": usageDictionary(usage)
+            ]
+            if let responseData = try? JSONEncoder().encode(response),
+               let json = try? JSONSerialization.jsonObject(with: responseData) as? [String: Any] {
+                payload["response"] = json
+            }
+            if let meta = providerMetadataDictionary(metadata) { payload["providerMetadata"] = meta }
+            return [encode(event: payload)]
 
         case .abort:
             finishedEmitted = true
             return [encode(event: ["type": "abort"])]
 
-        case let .textStart(id, _):
-            return [encode(event: ["type": "text-start", "id": id])]
+        case let .textStart(id, providerMetadata):
+            var payload: [String: Any] = ["type": "text-start", "id": id]
+            if let meta = providerMetadataDictionary(providerMetadata) { payload["providerMetadata"] = meta }
+            return [encode(event: payload)]
 
-        case let .textDelta(id, delta, _):
-            return [encode(event: ["type": "text-delta", "id": id, "delta": delta])]
+        case let .textDelta(id, delta, providerMetadata):
+            var payload: [String: Any] = ["type": "text-delta", "id": id, "delta": delta]
+            if let meta = providerMetadataDictionary(providerMetadata) { payload["providerMetadata"] = meta }
+            return [encode(event: payload)]
 
-        case let .textEnd(id, _):
-            return [encode(event: ["type": "text-end", "id": id])]
+        case let .textEnd(id, providerMetadata):
+            var payload: [String: Any] = ["type": "text-end", "id": id]
+            if let meta = providerMetadataDictionary(providerMetadata) { payload["providerMetadata"] = meta }
+            return [encode(event: payload)]
 
-        case let .reasoningDelta(id, text, _):
-            return [encode(event: ["type": "reasoning-delta", "id": id, "delta": text])]
+        case let .reasoningStart(id, providerMetadata):
+            var payload: [String: Any] = ["type": "reasoning-start", "id": id]
+            if let meta = providerMetadataDictionary(providerMetadata) { payload["providerMetadata"] = meta }
+            return [encode(event: payload)]
 
-        case .reasoningStart, .reasoningEnd:
-            return []
+        case let .reasoningEnd(id, providerMetadata):
+            var payload: [String: Any] = ["type": "reasoning-end", "id": id]
+            if let meta = providerMetadataDictionary(providerMetadata) { payload["providerMetadata"] = meta }
+            return [encode(event: payload)]
+
+        case let .reasoningDelta(id, text, providerMetadata):
+            var payload: [String: Any] = ["type": "reasoning-delta", "id": id, "delta": text]
+            if let meta = providerMetadataDictionary(providerMetadata) { payload["providerMetadata"] = meta }
+            return [encode(event: payload)]
 
         case let .toolCall(call):
             return encodeToolCall(call)
@@ -215,6 +240,17 @@ private final class StreamTextSSEEncoder {
         if let reasoning = usage.reasoningTokens { dict["reasoningTokens"] = reasoning }
         if let cached = usage.cachedInputTokens { dict["cachedInputTokens"] = cached }
         return dict
+    }
+
+    private func providerMetadataDictionary(_ metadata: ProviderMetadata?) -> [String: Any]? {
+        guard let metadata else { return nil }
+        var result: [String: Any] = [:]
+        for (provider, values) in metadata {
+            var obj: [String: Any] = [:]
+            for (k, v) in values { obj[k] = toJSONAny(v) }
+            result[provider] = obj
+        }
+        return result
     }
 
     private func encode(event payload: [String: Any]) -> String {

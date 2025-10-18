@@ -1339,4 +1339,64 @@ struct StreamTextBasicTests {
         #expect(hasToolResult)
     }
 
+    @Test("onStepFinish is invoked exactly once per step")
+    func onStepFinishInvokedOnce() async throws {
+        let parts: [LanguageModelV3StreamPart] = [
+            .streamStart(warnings: []),
+            .responseMetadata(id: "step-1", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
+            .textStart(id: "t", providerMetadata: nil),
+            .textDelta(id: "t", delta: "x", providerMetadata: nil),
+            .textEnd(id: "t", providerMetadata: nil),
+            .finish(finishReason: .stop, usage: defaultUsage, providerMetadata: nil)
+        ]
+
+        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
+            parts.forEach { c.yield($0) }
+            c.finish()
+        }
+        let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
+
+        let calls = LockedValue(initial: 0)
+        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+            model: .v3(model),
+            prompt: "hi",
+            onStepFinish: { _ in calls.withValue { $0 += 1 } }
+        )
+
+        _ = try await result.collectFullStream()
+        _ = try await result.waitForFinish()
+
+        #expect(calls.withValue { $0 } == 1)
+    }
+
+    @Test("onFinish is invoked exactly once")
+    func onFinishInvokedExactlyOnce() async throws {
+        let usage = LanguageModelV3Usage(inputTokens: 1, outputTokens: 1, totalTokens: 2, reasoningTokens: nil, cachedInputTokens: nil)
+        let parts: [LanguageModelV3StreamPart] = [
+            .streamStart(warnings: []),
+            .responseMetadata(id: "fin-1", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
+            .textStart(id: "t", providerMetadata: nil),
+            .textDelta(id: "t", delta: "ok", providerMetadata: nil),
+            .textEnd(id: "t", providerMetadata: nil),
+            .finish(finishReason: .stop, usage: usage, providerMetadata: nil)
+        ]
+
+        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
+            parts.forEach { c.yield($0) }
+            c.finish()
+        }
+        let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
+
+        let calls = LockedValue(initial: 0)
+        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+            model: .v3(model),
+            prompt: "hi",
+            onFinish: { _, _, _, _ in calls.withValue { $0 += 1 } }
+        )
+
+        _ = try await result.collectFullStream()
+        _ = try await result.waitForFinish()
+        #expect(calls.withValue { $0 } == 1)
+    }
+
 }

@@ -351,6 +351,7 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
 
         if onChunk != nil || onStepFinish != nil || onAbort != nil || onError != nil || onFinish != nil {
             self.observerTask = Task { [actor] in
+                var deliveredFinishSteps = 0
                 let stream = await actor.fullStream()
                 do {
                     for try await part in stream {
@@ -363,26 +364,18 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
                                 break
                             }
                         }
-                        if let onStepFinish, case .finishStep = part, let last = await actor.getLastStep() {
-                            onStepFinish(last)
+                        if let onStepFinish, case .finishStep = part {
+                            let steps = await actor.getRecordedSteps()
+                            // Deliver onStepFinish at-most-once per recorded step
+                            if steps.count == deliveredFinishSteps + 1, let last = steps.last {
+                                deliveredFinishSteps = steps.count
+                                onStepFinish(last)
+                            }
                         }
                         if let onAbort, case .abort = part {
                             onAbort(await actor.getRecordedSteps())
                         }
-                        if let onFinish, case .finish = part {
-                            // Promises already resolved before `.finish` is published by the actor.
-                            // Await them here to deliver `onFinish` deterministically from the stream observer.
-                            do {
-                                async let reason = finishReasonPromise.task.value
-                                async let usage = totalUsagePromise.task.value
-                                async let stepList = stepsPromise.task.value
-                                let (r, u, s) = try await (reason, usage, stepList)
-                                if let final = s.last { onFinish(final, s, u, r) }
-                            } catch {
-                                // If promises failed, surface via onError if present.
-                                if let onError { onError(error) }
-                            }
-                        }
+                        // onFinish is delivered by dedicated onFinishTask after promises resolve
                     }
                 } catch {
                     if let onError { onError(error) }

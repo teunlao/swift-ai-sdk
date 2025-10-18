@@ -112,4 +112,87 @@ struct StreamTextSSEIntegrationTests {
         #expect(types.contains("tool-input-end"))
         #expect(types.contains("tool-result"))
     }
+
+    @Test("SSE includes finish-step payload and finish usage when enabled")
+    func sseIncludesFinishStepAndUsage() async throws {
+        let request = LanguageModelRequestMetadata(body: .object(["prompt": .string("hi")] ))
+        let response = LanguageModelResponseMetadata(
+            id: "resp",
+            timestamp: Date(timeIntervalSince1970: 0),
+            modelId: "mock-model",
+            headers: ["x-id": "123"]
+        )
+        let usage = LanguageModelUsage(inputTokens: 2, outputTokens: 4, totalTokens: 6)
+        let providerMetadata: ProviderMetadata = ["mock": ["latency": .number(12)]]
+
+        let parts: [TextStreamPart] = [
+            .start,
+            .startStep(request: request, warnings: []),
+            .finishStep(response: response, usage: usage, finishReason: .stop, providerMetadata: providerMetadata),
+            .finish(finishReason: .stop, totalUsage: usage)
+        ]
+
+        let stream = AsyncThrowingStream<TextStreamPart, Error> { c in
+            parts.forEach { c.yield($0) }
+            c.finish()
+        }
+
+        let events = try await decodeEvents(convertReadableStreamToArray(makeStreamTextSSEStream(from: stream, includeUsage: true)))
+        let finishStep = try #require(events.first(where: { $0["type"] as? String == "finish-step" }))
+        let resp = try #require(finishStep["response"] as? NSDictionary)
+        #expect(resp["id"] as? String == "resp")
+        let usageObj = try #require(finishStep["usage"] as? NSDictionary)
+        #expect(usageObj["totalTokens"] as? Int == 6)
+        let metaObj = try #require(finishStep["providerMetadata"] as? NSDictionary)
+        #expect(metaObj["mock"] != nil)
+
+        let finish = try #require(events.first(where: { $0["type"] as? String == "finish" }))
+        let total = try #require(finish["usage"] as? NSDictionary)
+        #expect(total["outputTokens"] as? Int == 4)
+    }
+
+    @Test("SSE includes reasoning start/delta/end with providerMetadata")
+    func sseIncludesReasoningBlocks() async throws {
+        let meta: ProviderMetadata = ["prov": ["trace": .string("r1")]]
+        let parts: [TextStreamPart] = [
+            .reasoningStart(id: "r", providerMetadata: meta),
+            .reasoningDelta(id: "r", text: "think", providerMetadata: meta),
+            .reasoningEnd(id: "r", providerMetadata: meta),
+            .finish(finishReason: .stop, totalUsage: LanguageModelUsage())
+        ]
+        let stream = AsyncThrowingStream<TextStreamPart, Error> { c in
+            parts.forEach { c.yield($0) }
+            c.finish()
+        }
+
+        let events = try await decodeEvents(convertReadableStreamToArray(makeStreamTextSSEStream(from: stream)))
+        let start = try #require(events.first(where: { $0["type"] as? String == "reasoning-start" }))
+        let delta = try #require(events.first(where: { $0["type"] as? String == "reasoning-delta" }))
+        let end = try #require(events.first(where: { $0["type"] as? String == "reasoning-end" }))
+        #expect((start["providerMetadata"] as? NSDictionary)?["prov"] != nil)
+        #expect(delta["delta"] as? String == "think")
+        #expect((end["providerMetadata"] as? NSDictionary)?["prov"] != nil)
+    }
+
+    @Test("SSE includes providerMetadata for text blocks")
+    func sseIncludesTextProviderMetadata() async throws {
+        let meta: ProviderMetadata = ["prov": ["m": .string("x")]]
+        let parts: [TextStreamPart] = [
+            .textStart(id: "t", providerMetadata: meta),
+            .textDelta(id: "t", text: "A", providerMetadata: meta),
+            .textEnd(id: "t", providerMetadata: meta),
+            .finish(finishReason: .stop, totalUsage: LanguageModelUsage())
+        ]
+        let stream = AsyncThrowingStream<TextStreamPart, Error> { c in
+            parts.forEach { c.yield($0) }
+            c.finish()
+        }
+        let events = try await decodeEvents(convertReadableStreamToArray(makeStreamTextSSEStream(from: stream)))
+        let start = try #require(events.first(where: { $0["type"] as? String == "text-start" }))
+        let delta = try #require(events.first(where: { $0["type"] as? String == "text-delta" }))
+        let end = try #require(events.first(where: { $0["type"] as? String == "text-end" }))
+        #expect((start["providerMetadata"] as? NSDictionary)?["prov"] != nil)
+        #expect((delta["providerMetadata"] as? NSDictionary)?["prov"] != nil)
+        #expect((end["providerMetadata"] as? NSDictionary)?["prov"] != nil)
+    }
 }
