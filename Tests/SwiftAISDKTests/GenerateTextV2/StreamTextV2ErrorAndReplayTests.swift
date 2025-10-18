@@ -185,4 +185,44 @@ struct StreamTextV2SSEEncodingTests {
         for try await payload in sseStream { payloads.append(payload) }
         #expect(!payloads.contains(where: { $0.contains("\"usage\"") }))
     }
+
+    @Test("SSE encoder emits tool events (error/approval/denied)")
+    func sseEncoderEmitsToolEvents() async throws {
+        let call = TypedToolCall.dynamic(DynamicToolCall(
+            toolCallId: "c1",
+            toolName: "search",
+            input: .object(["q": .string("hi")]),
+            providerExecuted: false,
+            providerMetadata: nil,
+            invalid: nil,
+            error: nil
+        ))
+        let toolErr = TypedToolError.dynamic(DynamicToolError(
+            toolCallId: "c1",
+            toolName: "search",
+            input: .null,
+            error: NSError(domain: "x", code: 1),
+            providerExecuted: false
+        ))
+        let approval = ToolApprovalRequestOutput(approvalId: "a1", toolCall: call)
+        let denied = ToolOutputDenied(toolCallId: "c1", toolName: "search")
+
+        let parts: [TextStreamPart] = [
+            .start,
+            .startStep(request: LanguageModelRequestMetadata(body: nil), warnings: []),
+            .toolError(toolErr),
+            .toolApprovalRequest(approval),
+            .toolOutputDenied(denied),
+            .finish(finishReason: .stop, totalUsage: defaultUsage)
+        ]
+        let stream = AsyncThrowingStream<TextStreamPart, Error> { c in
+            parts.forEach { c.yield($0) }
+            c.finish()
+        }
+        let sse = makeStreamTextV2SSEStream(from: stream)
+        let lines = try await convertReadableStreamToArray(sse)
+        #expect(lines.contains { $0.contains("\"type\":\"tool-error\"") })
+        #expect(lines.contains { $0.contains("\"type\":\"tool-approval-request\"") })
+        #expect(lines.contains { $0.contains("\"type\":\"tool-output-denied\"") })
+    }
 }

@@ -112,6 +112,12 @@ private final class StreamTextV2LogEncoder {
             message = "step \(currentStep):tool-call \(call.logDescription())"
         case let .toolResult(result):
             message = "step \(currentStep):tool-result \(result.logDescription())"
+        case let .toolError(error):
+            message = "step \(currentStep):tool-error (\(error.toolName)) id=\(error.toolCallId) err=\(String(describing: error.error))"
+        case let .toolApprovalRequest(req):
+            message = "step \(currentStep):tool-approval-request id=\(req.approvalId) tool=\(req.toolCall.toolName)"
+        case let .toolOutputDenied(denied):
+            message = "step \(currentStep):tool-output-denied tool=\(denied.toolName) id=\(denied.toolCallId)"
         case let .source(source):
             message = "source \(source.logDescription())"
         case let .file(file):

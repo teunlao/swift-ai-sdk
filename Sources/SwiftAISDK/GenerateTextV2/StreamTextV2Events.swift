@@ -11,6 +11,9 @@ public enum StreamTextV2Event: Sendable {
     case reasoningDelta(text: String, id: String)
     case toolCall(TypedToolCall)
     case toolResult(TypedToolResult)
+    case toolError(TypedToolError)
+    case toolApprovalRequest(ToolApprovalRequestOutput)
+    case toolOutputDenied(ToolOutputDenied)
     case source(Source)
     case file(GeneratedFile)
     case finish(reason: FinishReason, usage: LanguageModelUsage)
@@ -100,6 +103,12 @@ public func summarizeStreamTextV2Events(
             summary.toolCalls.append(call)
         case let .toolResult(result):
             summary.toolResults.append(result)
+        case .toolError:
+            continue
+        case .toolApprovalRequest:
+            continue
+        case .toolOutputDenied:
+            continue
         case let .source(source):
             summary.sources.append(source)
         case let .file(file):
@@ -149,6 +158,15 @@ private final class StreamTextV2EventEncoder {
         case let .toolResult(result):
             return [.toolResult(result)]
 
+        case let .toolError(error):
+            return [.toolError(error)]
+
+        case let .toolApprovalRequest(request):
+            return [.toolApprovalRequest(request)]
+
+        case let .toolOutputDenied(denied):
+            return [.toolOutputDenied(denied)]
+
         case let .source(source):
             return [.source(source)]
 
@@ -173,8 +191,7 @@ private final class StreamTextV2EventEncoder {
             return []
 
         case .toolInputStart, .toolInputDelta, .toolInputEnd,
-             .reasoningStart, .reasoningEnd,
-             .toolError, .toolOutputDenied, .toolApprovalRequest:
+             .reasoningStart, .reasoningEnd:
             return []
         }
     }

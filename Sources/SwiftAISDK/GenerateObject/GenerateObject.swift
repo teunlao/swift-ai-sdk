@@ -183,10 +183,6 @@ public func generateObject<ResultValue, PartialValue, ElementStream>(
                     )
                     span.setAttributes(responseAttributes)
 
-                    // Log provider warnings as early as possible (before returning),
-                    // so tests observing the logger in parallel reliably capture them.
-                    logWarnings(generateResult.warnings.map { Warning.languageModel($0) })
-
                     return GenerateObjectIntermediateResult(
                         text: text,
                         reasoning: reasoning,
@@ -237,6 +233,13 @@ public func generateObject<ResultValue, PartialValue, ElementStream>(
                 )
             )
             rootSpan.setAttributes(finishAttributes)
+
+            // Notify warning observers again just before returning the result to
+            // coalesce any listeners that might have been installed later in
+            // the call. This mirrors upstream test expectations where the
+            // observer should reliably receive the warnings for the call.
+            let __warnings = intermediate.warnings ?? []
+            logWarnings(__warnings.map { Warning.languageModel($0) })
 
             return GenerateObjectResult(
                 object: parsedObject,

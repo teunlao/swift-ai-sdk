@@ -79,15 +79,28 @@ struct GenerateObjectTests {
         }
     }
 
-    private func captureLoggedWarnings<T>(_ body: () async throws -> T) async rethrows -> (T, [[Warning]]) {
-        let storage = WarningStorage()
-        logWarningsObserver = { warnings in
-            storage.append(warnings)
+    private func captureLoggedWarnings<T: Sendable>(_ body: @Sendable () async throws -> T) async rethrows -> (T, [[Warning]]) {
+        return try await LogWarningsTestLock.shared.withLock {
+            guard let token = LogWarningsTestLock.currentOwnerID() else {
+                // Fallback to legacy behavior if token missing (shouldn't happen inside withLock)
+                let storage = WarningStorage()
+                logWarningsObserver = { warnings in storage.append(warnings) }
+                defer { logWarningsObserver = nil }
+                let result = try await body()
+                return (result, storage.snapshot())
+            }
+
+            let storage = WarningStorage()
+            logWarningsObserver = { warnings in
+                // Capture only warnings emitted within this locked scope
+                guard LogWarningsTestLock.currentOwnerID() == token else { return }
+                storage.append(warnings)
+            }
+            defer { logWarningsObserver = nil }
+
+            let result = try await body()
+            return (result, storage.snapshot())
         }
-        defer { logWarningsObserver = nil }
-        let result = try await body()
-        let captured = storage.snapshot()
-        return (result, captured)
     }
 
     private func transformSchema() -> FlexibleSchema<[String: Int]> {

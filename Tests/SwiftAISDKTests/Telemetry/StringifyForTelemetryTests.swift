@@ -13,7 +13,7 @@ import Foundation
 @testable import AISDKProviderUtils
 @testable import SwiftAISDK
 
-@Suite("StringifyForTelemetry Tests")
+@Suite("StringifyForTelemetry Tests", .serialized)
 struct StringifyForTelemetryTests {
 
     @Test("should stringify a prompt with text parts")
