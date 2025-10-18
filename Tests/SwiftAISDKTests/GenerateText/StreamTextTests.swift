@@ -29,6 +29,48 @@ struct StreamTextBasicTests {
         reasoningTokens: nil,
         cachedInputTokens: nil
     )
+    private struct SummaryOutput: Codable, Equatable, Sendable {
+        let value: String
+    }
+
+    private func summarySchema() -> FlexibleSchema<SummaryOutput> {
+        FlexibleSchema(
+            Schema(
+                jsonSchemaResolver: {
+                    .object([
+                        "type": .string("object"),
+                        "properties": .object([
+                            "value": .object(["type": .string("string")])
+                        ]),
+                        "required": .array([.string("value")]),
+                        "additionalProperties": .bool(false)
+                    ])
+                },
+                validator: { value in
+                    do {
+                        let data: Data
+                        if let jsonValue = value as? JSONValue {
+                            data = try JSONEncoder().encode(jsonValue)
+                        } else if JSONSerialization.isValidJSONObject(value) {
+                            data = try JSONSerialization.data(withJSONObject: value, options: [])
+                        } else {
+                            throw SchemaJSONSerializationError(value: value)
+                        }
+                        let decoded = try JSONDecoder().decode(SummaryOutput.self, from: data)
+                        return .success(value: decoded)
+                    } catch let error as SchemaJSONSerializationError {
+                        let wrapped = TypeValidationError.wrap(value: value, cause: error)
+                        return .failure(error: wrapped)
+                    } catch {
+                        let wrapped = TypeValidationError.wrap(value: value, cause: error)
+                        return .failure(error: wrapped)
+                    }
+                }
+            )
+        )
+    }
+
+
 
     @Test("textStream yields raw deltas in order")
     func textStreamYieldsRawDeltas() async throws {

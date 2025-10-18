@@ -534,6 +534,11 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
                             firstTextId = nil
                             accumulated = ""
                             lastRepresentation = nil
+                        case .finish:
+                            try await flushCurrent()
+                            firstTextId = nil
+                            accumulated = ""
+                            lastRepresentation = nil
                         default:
                             break
                         }
