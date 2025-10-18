@@ -83,7 +83,7 @@ struct OpenAICompatibleProviderTests {
             baseURL: "https://api.example.com/v1",
             name: "example",
             apiKey: "secret",
-            headers: ["Custom": "value"],
+            headers: ["Custom-Header": "value"],
             queryParams: ["test": "1"],
             fetch: fetch,
             includeUsage: true,
@@ -128,9 +128,12 @@ struct OpenAICompatibleProviderTests {
 
         #expect(request.url?.absoluteString == targetURL.absoluteString)
         let headers = request.allHTTPHeaderFields ?? [:]
-        #expect(headers["Authorization"] == "Bearer secret")
-        #expect(headers["Custom"] == "value")
-        #expect(headers["Per-Request"] == "header")
+        let normalizedHeaders = headers.reduce(into: [String: String]()) { result, entry in
+            result[entry.key.lowercased()] = entry.value
+        }
+        #expect(normalizedHeaders["authorization"] == "Bearer secret")
+        #expect(normalizedHeaders["custom-header"] == "value")
+        #expect(normalizedHeaders["per-request"] == "header")
 
         #expect(json["model"] as? String == "gpt-oss")
         if let messages = json["messages"] as? [[String: Any]] {
