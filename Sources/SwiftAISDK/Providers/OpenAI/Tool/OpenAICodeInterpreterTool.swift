@@ -178,9 +178,27 @@ private func parseCodeInterpreterArgs(dict: [String: JSONValue]) throws -> OpenA
     }
 }
 
-public let openaiCodeInterpreterTool = createProviderDefinedToolFactoryWithOutputSchema(
+private func encodeCodeInterpreterArgs(_ args: OpenAICodeInterpreterArgs) -> [String: JSONValue] {
+    guard let container = args.container else { return [:] }
+    switch container {
+    case .string(let value):
+        return ["container": .string(value)]
+    case .auto(let fileIds):
+        var payload: [String: JSONValue] = ["type": .string("auto")]
+        if let fileIds {
+            payload["file_ids"] = .array(fileIds.map(JSONValue.string))
+        }
+        return ["container": .object(payload)]
+    }
+}
+
+public let openaiCodeInterpreterToolFactory = createProviderDefinedToolFactoryWithOutputSchema(
     id: "openai.code_interpreter",
     name: "code_interpreter",
     inputSchema: FlexibleSchema(jsonSchema(codeInterpreterInputJSONSchema)),
     outputSchema: FlexibleSchema(jsonSchema(codeInterpreterOutputJSONSchema))
-)
+) { (args: OpenAICodeInterpreterArgs) in
+    var options = ProviderDefinedToolFactoryWithOutputSchemaOptions()
+    options.args = encodeCodeInterpreterArgs(args)
+    return options
+}
