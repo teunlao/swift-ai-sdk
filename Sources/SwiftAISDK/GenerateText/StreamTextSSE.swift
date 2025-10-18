@@ -36,9 +36,13 @@ public func makeStreamTextSSEStream(
 private final class StreamTextSSEEncoder {
     private var includeUsage: Bool
     private var finishedEmitted = false
+    private let jsonEncoder: JSONEncoder
 
     init(includeUsage: Bool) {
         self.includeUsage = includeUsage
+        let enc = JSONEncoder()
+        enc.dateEncodingStrategy = .iso8601
+        self.jsonEncoder = enc
     }
 
     func encode(part: TextStreamPart) -> [String] {
@@ -55,7 +59,7 @@ private final class StreamTextSSEEncoder {
                 "finishReason": finishReason.rawValue,
                 "usage": usageDictionary(usage)
             ]
-            if let responseData = try? JSONEncoder().encode(response),
+            if let responseData = try? jsonEncoder.encode(response),
                let json = try? JSONSerialization.jsonObject(with: responseData) as? [String: Any] {
                 payload["response"] = json
             }

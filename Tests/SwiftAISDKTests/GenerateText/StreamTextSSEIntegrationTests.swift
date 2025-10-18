@@ -211,6 +211,43 @@ struct StreamTextSSEIntegrationTests {
         #expect((end["providerMetadata"] as? NSDictionary)?["prov"] != nil)
     }
 
+    @Test("SSE finish-step response timestamp is ISO8601")
+    func sseFinishStepTimestampIso8601() async throws {
+        let response = LanguageModelResponseMetadata(
+            id: "r",
+            timestamp: Date(timeIntervalSince1970: 0),
+            modelId: "m",
+            headers: nil
+        )
+        let usage = LanguageModelUsage()
+        let parts: [TextStreamPart] = [
+            .start,
+            .startStep(request: LanguageModelRequestMetadata(body: nil), warnings: []),
+            .finishStep(response: response, usage: usage, finishReason: .stop, providerMetadata: nil),
+            .finish(finishReason: .stop, totalUsage: usage)
+        ]
+        let stream = AsyncThrowingStream<TextStreamPart, Error> { c in
+            parts.forEach { c.yield($0) }
+            c.finish()
+        }
+        let events = try await decodeEvents(convertReadableStreamToArray(makeStreamTextSSEStream(from: stream)))
+        let finishStep = try #require(events.first(where: { $0["type"] as? String == "finish-step" }))
+        let resp = try #require(finishStep["response"] as? NSDictionary)
+        let ts = try #require(resp["timestamp"] as? String)
+        #expect(ts.contains("1970-01-01"))
+    }
+
+    @Test("SSE emits abort event")
+    func sseEmitsAbort() async throws {
+        let stream = AsyncThrowingStream<TextStreamPart, Error> { c in
+            c.yield(.abort)
+            c.finish()
+        }
+        let events = try await decodeEvents(convertReadableStreamToArray(makeStreamTextSSEStream(from: stream)))
+        let abort = try #require(events.first)
+        #expect(abort["type"] as? String == "abort")
+    }
+
     @Test("SSE includes providerMetadata for text blocks")
     func sseIncludesTextProviderMetadata() async throws {
         let meta: ProviderMetadata = ["prov": ["m": .string("x")]]
