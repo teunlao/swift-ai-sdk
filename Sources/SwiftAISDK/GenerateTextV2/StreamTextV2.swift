@@ -20,6 +20,22 @@ public typealias StreamTextOnFinish = @Sendable (
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 public typealias StreamTextOnAbort = @Sendable (_ steps: [StepResult]) -> Void
 
+public struct StreamTextTransformOptions {
+    public var tools: ToolSet?
+    public var stopStream: @Sendable () -> Void
+
+    public init(tools: ToolSet?, stopStream: @escaping @Sendable () -> Void) {
+        self.tools = tools
+        self.stopStream = stopStream
+    }
+}
+
+public typealias StreamTextTransform = @Sendable (
+    _ stream: AsyncIterableStream<TextStreamPart>,
+    _ options: StreamTextTransformOptions
+) -> AsyncIterableStream<TextStreamPart>
+
+
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 public func streamTextV2<OutputValue: Sendable, PartialOutputValue: Sendable>(
     model modelArg: LanguageModel,
@@ -257,18 +273,21 @@ public final class DefaultStreamTextV2Result<OutputValue: Sendable, PartialOutpu
             tools: tools,
             stopStream: { Task { await self.actor.requestStop() } }
         )
-        let transformed = pipeline.reduce(iterable) { acc, t in t(acc, options) }
-
-        // Convert back to AsyncThrowingStream for public API
-        return AsyncThrowingStream { continuation in
+        let transformedIterable = pipeline.reduce(iterable) { acc, t in t(acc, options) }
+        let transformedStream = AsyncThrowingStream<TextStreamPart, Error> { continuation in
             let task = Task {
+                var iterator = transformedIterable.makeAsyncIterator()
                 do {
-                    for try await part in transformed { continuation.yield(part) }
+                    while let part = try await iterator.next() {
+                        continuation.yield(part)
+                    }
                     continuation.finish()
                 } catch { continuation.finish(throwing: error) }
             }
             continuation.onTermination = { _ in task.cancel() }
         }
+
+        return transformedStream
     }
 
     // MARK: - Convenience collectors (useful for tests and simple consumers)
@@ -410,6 +429,10 @@ public final class DefaultStreamTextV2Result<OutputValue: Sendable, PartialOutpu
             headers: initOptions?.headers,
             textStream: textStream
         )
+    }
+
+    public func toSSEStream(includeUsage: Bool) -> AsyncThrowingStream<String, Error> {
+        makeStreamTextV2SSEStream(from: fullStream, includeUsage: includeUsage)
     }
 
     // MARK: - UI Message Stream (minimal V2)

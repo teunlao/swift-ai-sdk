@@ -143,6 +143,9 @@ public protocol StreamTextResult: Sendable {
     func toTextStreamResponse(
         init initOptions: TextStreamResponseInit?
     ) -> TextStreamResponse
+
+    /// Convert the stream into a Server-Sent Events stream.
+    func toSSEStream(includeUsage: Bool) -> AsyncThrowingStream<String, Error>
 }
 
 /**
