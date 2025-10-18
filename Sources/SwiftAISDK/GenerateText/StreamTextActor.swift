@@ -10,6 +10,7 @@ actor StreamTextActor {
     private let initialSystem: String?
     private let stopConditions: [StopCondition]
     private let tools: ToolSet?
+    private let configuration: StreamTextActorConfiguration
 
     private let textBroadcaster = AsyncStreamBroadcaster<String>()
     private let fullBroadcaster = AsyncStreamBroadcaster<TextStreamPart>()
@@ -69,6 +70,7 @@ actor StreamTextActor {
         tools: ToolSet?,
         approvalResolver: (@Sendable (ToolApprovalRequestOutput) async -> ApprovalAction)?,
         experimentalApprovalContext: JSONValue?,
+        configuration: StreamTextActorConfiguration,
         totalUsagePromise: DelayedPromise<LanguageModelUsage>,
         finishReasonPromise: DelayedPromise<FinishReason>,
         stepsPromise: DelayedPromise<[StepResult]>
@@ -79,6 +81,7 @@ actor StreamTextActor {
         self.initialSystem = system
         self.stopConditions = stopConditions
         self.tools = tools
+        self.configuration = configuration
         self.approvalResolver = approvalResolver
         self.approvalContext = experimentalApprovalContext
         self.totalUsagePromise = totalUsagePromise
@@ -123,10 +126,21 @@ actor StreamTextActor {
                 if !continueStreaming { break }
                 let nextMessages = makeConversationMessagesForContinuation()
                 let lmPrompt = try await buildLanguageModelPrompt(messages: nextMessages)
-                let options = LanguageModelV3CallOptions(prompt: lmPrompt)
-                let result = try await model.doStream(options: options)
+                let toolPreparation = try await prepareToolsAndToolChoice(
+                    tools: tools,
+                    toolChoice: configuration.toolChoice,
+                    activeTools: configuration.activeTools
+                )
+                let options = try await makeCallOptions(
+                    prompt: lmPrompt,
+                    tools: toolPreparation.tools,
+                    toolChoice: toolPreparation.toolChoice
+                )
+                let result = try await configuration.preparedRetries.retry.call { [self] in
+                    try await self.model.doStream(options: options)
+                }
                 setInitialRequest(result.request)
-                        try await consumeProviderStream(stream: result.stream, emitStartStep: true)
+                try await consumeProviderStream(stream: result.stream, emitStartStep: true)
             }
             await finishAll(response: nil, usage: nil, finishReason: nil, providerMetadata: nil)
         } catch is CancellationError {
@@ -428,7 +442,7 @@ actor StreamTextActor {
         let prompt = try await convertToLanguageModelPrompt(
             prompt: standardized,
             supportedUrls: supported,
-            download: nil
+            download: configuration.download
         )
         return prompt
     }
@@ -923,6 +937,7 @@ actor StreamTextActor {
                 recordedContent.append(.source(type: "source", source: source))
                 await fullBroadcaster.send(.source(source))
             case .raw(let raw):
+                guard configuration.includeRawChunks else { break }
                 if !didEmitStartStep {
                     if !framingEmitted {
                         framingEmitted = true
@@ -1085,6 +1100,32 @@ actor StreamTextActor {
             case .tool(let t): return .tool(t)
             }
         }
+    }
+
+    private func makeCallOptions(
+        prompt: LanguageModelV3Prompt,
+        tools: [LanguageModelV3Tool]?,
+        toolChoice: LanguageModelV3ToolChoice?
+    ) async throws -> LanguageModelV3CallOptions {
+        let responseFormat = try await configuration.responseFormatProvider?()
+        return LanguageModelV3CallOptions(
+            prompt: prompt,
+            maxOutputTokens: configuration.callSettings.maxOutputTokens,
+            temperature: configuration.callSettings.temperature,
+            stopSequences: configuration.callSettings.stopSequences,
+            topP: configuration.callSettings.topP,
+            topK: configuration.callSettings.topK,
+            presencePenalty: configuration.callSettings.presencePenalty,
+            frequencyPenalty: configuration.callSettings.frequencyPenalty,
+            responseFormat: responseFormat,
+            seed: configuration.callSettings.seed,
+            tools: tools,
+            toolChoice: toolChoice,
+            includeRawChunks: configuration.includeRawChunks ? true : nil,
+            abortSignal: configuration.abortSignal,
+            headers: configuration.headers,
+            providerOptions: configuration.providerOptions
+        )
     }
 }
 

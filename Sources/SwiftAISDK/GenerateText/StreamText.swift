@@ -40,6 +40,19 @@ public struct StreamTextInternalOptions: Sendable {
     }
 }
 
+struct StreamTextActorConfiguration: Sendable {
+    let callSettings: PreparedCallSettings
+    let preparedRetries: PreparedRetries
+    let headers: [String: String]
+    let providerOptions: ProviderOptions?
+    let includeRawChunks: Bool
+    let abortSignal: (@Sendable () -> Bool)?
+    let toolChoice: ToolChoice?
+    let activeTools: [String]?
+    let download: DownloadFunction?
+    let responseFormatProvider: (@Sendable () async throws -> LanguageModelV3ResponseFormat?)?
+}
+
 public struct StreamTextTransformOptions {
     public var tools: ToolSet?
     public var stopStream: @Sendable () -> Void
@@ -188,6 +201,7 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
         system: String?,
         tools: ToolSet?,
         approve: (@Sendable (ToolApprovalRequestOutput) async -> ApprovalAction)? = nil,
+        configuration: StreamTextActorConfiguration,
         onChunk: StreamTextOnChunk?,
         onStepFinish: StreamTextOnStepFinish? = nil,
         onFinish: StreamTextOnFinish? = nil,
@@ -204,6 +218,7 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
             tools: tools,
             approvalResolver: approve,
             experimentalApprovalContext: nil,
+            configuration: configuration,
             totalUsagePromise: totalUsagePromise,
             finishReasonPromise: finishReasonPromise,
             stepsPromise: stepsPromise
@@ -675,6 +690,26 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
         "ai/\(VERSION)"
     )
 
+    let responseFormatProvider: (@Sendable () async throws -> LanguageModelV3ResponseFormat?)?
+    if let output {
+        responseFormatProvider = { try await output.responseFormat() }
+    } else {
+        responseFormatProvider = nil
+    }
+
+    let actorConfig = StreamTextActorConfiguration(
+        callSettings: preparedCallSettings,
+        preparedRetries: preparedRetries,
+        headers: headersWithUserAgent,
+        providerOptions: providerOptions,
+        includeRawChunks: includeRawChunks,
+        abortSignal: settings.abortSignal,
+        toolChoice: toolChoice,
+        activeTools: effectiveActiveTools,
+        download: download,
+        responseFormatProvider: responseFormatProvider
+    )
+
     // Bridge provider async stream acquisition without blocking the caller.
     let (bridgeStream, continuation) = AsyncThrowingStream.makeStream(
         of: LanguageModelV3StreamPart.self
@@ -690,6 +725,7 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
         system: standardizedPrompt.system,
         tools: tools,
         approve: approve,
+        configuration: actorConfig,
         onChunk: onChunk,
         onStepFinish: onStepFinish,
         onFinish: onFinish,
@@ -712,25 +748,25 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
                 activeTools: effectiveActiveTools
             )
 
-            let responseFormat = try await output?.responseFormat()
+            let responseFormat = try await actorConfig.responseFormatProvider?()
 
             let callOptions = LanguageModelV3CallOptions(
                 prompt: lmPrompt,
-                maxOutputTokens: preparedCallSettings.maxOutputTokens,
-                temperature: preparedCallSettings.temperature,
-                stopSequences: preparedCallSettings.stopSequences,
-                topP: preparedCallSettings.topP,
-                topK: preparedCallSettings.topK,
-                presencePenalty: preparedCallSettings.presencePenalty,
-                frequencyPenalty: preparedCallSettings.frequencyPenalty,
+                maxOutputTokens: actorConfig.callSettings.maxOutputTokens,
+                temperature: actorConfig.callSettings.temperature,
+                stopSequences: actorConfig.callSettings.stopSequences,
+                topP: actorConfig.callSettings.topP,
+                topK: actorConfig.callSettings.topK,
+                presencePenalty: actorConfig.callSettings.presencePenalty,
+                frequencyPenalty: actorConfig.callSettings.frequencyPenalty,
                 responseFormat: responseFormat,
-                seed: preparedCallSettings.seed,
+                seed: actorConfig.callSettings.seed,
                 tools: toolPreparation.tools,
                 toolChoice: toolPreparation.toolChoice,
-                includeRawChunks: includeRawChunks ? true : nil,
-                abortSignal: settings.abortSignal,
-                headers: headersWithUserAgent,
-                providerOptions: providerOptions
+                includeRawChunks: actorConfig.includeRawChunks ? true : nil,
+                abortSignal: actorConfig.abortSignal,
+                headers: actorConfig.headers,
+                providerOptions: actorConfig.providerOptions
             )
 
             let providerResult = try await preparedRetries.retry.call {
