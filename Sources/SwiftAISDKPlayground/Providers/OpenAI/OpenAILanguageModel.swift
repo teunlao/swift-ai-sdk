@@ -1,6 +1,6 @@
 import Foundation
 import AISDKProvider
-import SwiftAISDK
+import OpenAIProvider
 
 enum OpenAIPlaygroundFactory {
     static func makeLanguageModel(

@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import AISDKProvider
 @testable import AISDKProviderUtils
-@testable import SwiftAISDK
+@testable import OpenAIProvider
 
 private let samplePrompt: LanguageModelV3Prompt = [
     .user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)

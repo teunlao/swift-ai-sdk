@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import AISDKProvider
 @testable import AISDKProviderUtils
-@testable import SwiftAISDK
+@testable import OpenAIProvider
 
 private let speechAudioData = Data([0x01, 0x02, 0x03])
 

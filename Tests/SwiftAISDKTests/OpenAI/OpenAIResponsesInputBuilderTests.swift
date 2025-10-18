@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 import AISDKProvider
-@testable import SwiftAISDK
+@testable import OpenAIProvider
 
 @Suite("OpenAIResponsesInputBuilder")
 struct OpenAIResponsesInputBuilderTests {

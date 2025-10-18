@@ -13,6 +13,8 @@ let package = Package(
         .library(name: "AISDKProvider", targets: ["AISDKProvider"]),
         .library(name: "AISDKProviderUtils", targets: ["AISDKProviderUtils"]),
         .library(name: "SwiftAISDK", targets: ["SwiftAISDK"]),
+        .library(name: "OpenAIProvider", targets: ["OpenAIProvider"]),
+        .library(name: "OpenAICompatibleProvider", targets: ["OpenAICompatibleProvider"]),
         .library(name: "EventSourceParser", targets: ["EventSourceParser"]), // internal lib for SSE
         .executable(name: "playground", targets: ["SwiftAISDKPlayground"])
     ],
@@ -34,10 +36,16 @@ let package = Package(
         .target(name: "AISDKProviderUtils", dependencies: ["AISDKProvider"]),
         .testTarget(name: "AISDKProviderUtilsTests", dependencies: ["AISDKProviderUtils"]),
 
+        // OpenAI provider package
+        .target(name: "OpenAIProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "EventSourceParser"]),
+
+        // OpenAI-compatible provider package
+        .target(name: "OpenAICompatibleProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils"]),
+
         // SwiftAISDK - Main AI SDK (matches @ai-sdk/ai)
         // GenerateText, Registry, Middleware, Prompts, Tools, Telemetry
         .target(name: "SwiftAISDK", dependencies: ["AISDKProvider", "AISDKProviderUtils", "EventSourceParser"]),
-        .testTarget(name: "SwiftAISDKTests", dependencies: ["SwiftAISDK"]),
+        .testTarget(name: "SwiftAISDKTests", dependencies: ["SwiftAISDK", "OpenAIProvider", "OpenAICompatibleProvider"]),
 
         // SwiftAISDKPlayground - CLI executable for manual testing (Playground)
         .executableTarget(
@@ -46,6 +54,7 @@ let package = Package(
                 "SwiftAISDK",
                 "AISDKProvider",
                 "AISDKProviderUtils",
+                "OpenAIProvider",
                 .product(name: "ArgumentParser", package: "swift-argument-parser")
             ]
         )
