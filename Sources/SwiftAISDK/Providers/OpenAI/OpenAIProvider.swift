@@ -34,22 +34,29 @@ public final class OpenAIProvider: ProviderV3 {
     private let responsesFactory: @Sendable (OpenAIResponsesModelId) -> OpenAIResponsesLanguageModel
     private let embeddingFactory: @Sendable (OpenAIEmbeddingModelId) -> OpenAIEmbeddingModel
     private let imageFactory: @Sendable (OpenAIImageModelId) -> OpenAIImageModel
+    private let completionFactory: @Sendable (OpenAICompletionModelId) -> OpenAICompletionLanguageModel
     public let tools: OpenAITools
 
     init(
         responses: @escaping @Sendable (OpenAIResponsesModelId) -> OpenAIResponsesLanguageModel,
         embeddings: @escaping @Sendable (OpenAIEmbeddingModelId) -> OpenAIEmbeddingModel,
         images: @escaping @Sendable (OpenAIImageModelId) -> OpenAIImageModel,
+        completions: @escaping @Sendable (OpenAICompletionModelId) -> OpenAICompletionLanguageModel,
         tools: OpenAITools
     ) {
         self.responsesFactory = responses
         self.embeddingFactory = embeddings
         self.imageFactory = images
+        self.completionFactory = completions
         self.tools = tools
     }
 
     public func languageModel(modelId: String) -> any LanguageModelV3 {
         responsesFactory(OpenAIResponsesModelId(rawValue: modelId))
+    }
+
+    public func completionModel(modelId: String) -> any LanguageModelV3 {
+        completionFactory(OpenAICompletionModelId(rawValue: modelId))
     }
 
     public func textEmbeddingModel(modelId: String) -> any EmbeddingModelV3<String> {
@@ -118,6 +125,7 @@ public func createOpenAIProvider(settings: OpenAIProviderSettings = .init()) -> 
     let responsesConfig = makeConfig(providerSuffix: "responses", fileIdPrefixes: ["file-"])
     let embeddingConfig = makeConfig(providerSuffix: "embedding")
     let imageConfig = makeConfig(providerSuffix: "image")
+    let completionConfig = makeConfig(providerSuffix: "completion")
 
     let responsesFactory: @Sendable (OpenAIResponsesModelId) -> OpenAIResponsesLanguageModel = { modelId in
         OpenAIResponsesLanguageModel(
@@ -140,10 +148,18 @@ public func createOpenAIProvider(settings: OpenAIProviderSettings = .init()) -> 
         )
     }
 
+    let completionFactory: @Sendable (OpenAICompletionModelId) -> OpenAICompletionLanguageModel = { modelId in
+        OpenAICompletionLanguageModel(
+            modelId: modelId,
+            config: completionConfig
+        )
+    }
+
     return OpenAIProvider(
         responses: responsesFactory,
         embeddings: embeddingFactory,
         images: imageFactory,
+        completions: completionFactory,
         tools: openaiTools
     )
 }
