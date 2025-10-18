@@ -154,4 +154,160 @@ struct StreamTextV2ApprovalResolverTests {
         let sawDenied = chunks.contains { if case .toolOutputDenied = $0 { return true } else { return false } }
         #expect(sawDenied)
     }
+
+    @Test("resolver handles multiple approvals in step (V2)")
+    func resolverHandlesMultipleApprovals() async throws {
+        let call1 = LanguageModelV3ToolCall(
+            toolCallId: "a1",
+            toolName: "alpha",
+            input: "{}",
+            providerExecuted: false,
+            providerMetadata: nil
+        )
+        let call2 = LanguageModelV3ToolCall(
+            toolCallId: "b2",
+            toolName: "beta",
+            input: "{}",
+            providerExecuted: false,
+            providerMetadata: nil
+        )
+        let parts: [LanguageModelV3StreamPart] = [
+            .streamStart(warnings: []),
+            .responseMetadata(id: "id-0", modelId: "mock", timestamp: Date(timeIntervalSince1970: 0)),
+            .toolCall(call1),
+            .toolCall(call2),
+            .finish(
+                finishReason: .toolCalls,
+                usage: LanguageModelV3Usage(inputTokens: 1, outputTokens: 2, totalTokens: 3),
+                providerMetadata: nil
+            )
+        ]
+        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
+            parts.forEach { c.yield($0) }
+            c.finish()
+        }
+        let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
+
+        actor ApprovalRecorder {
+            private var values: [String] = []
+            func append(_ value: String) {
+                values.append(value)
+            }
+            func snapshot() -> [String] { values }
+        }
+        let recorder = ApprovalRecorder()
+
+        let tools: ToolSet = [
+            "alpha": tool(
+                description: "Alpha",
+                inputSchema: FlexibleSchema(jsonSchema(.object([:]))),
+                needsApproval: .always,
+                execute: { _, _ in .value(.string("ok-alpha")) }
+            ),
+            "beta": tool(
+                description: "Beta",
+                inputSchema: FlexibleSchema(jsonSchema(.object([:]))),
+                needsApproval: .always,
+                execute: { _, _ in .value(.string("ok-beta")) }
+            )
+        ]
+
+        let result: DefaultStreamTextV2Result<JSONValue, JSONValue> = try streamTextV2(
+            model: .v3(model),
+            prompt: "hi",
+            tools: tools,
+            experimentalApprove: { request in
+                await recorder.append(request.approvalId)
+                return .approve
+            }
+        )
+
+        let chunks = try await result.collectFullStream()
+        let toolResults = chunks.compactMap { part -> String? in
+            guard case let .toolResult(res) = part else { return nil }
+            switch res {
+            case .static(let r): return r.toolCallId
+            case .dynamic(let r): return r.toolCallId
+            }
+        }
+        #expect(toolResults.contains("a1") && toolResults.contains("b2"))
+        #expect(!chunks.contains { if case .toolApprovalRequest = $0 { return true } else { return false } })
+        let approvalOrder = await recorder.snapshot()
+        #expect(approvalOrder == ["a1", "b2"])
+    }
+
+    @Test("conditional approval receives context (V2)")
+    func conditionalApprovalReceivesContext() async throws {
+        let call = LanguageModelV3ToolCall(
+            toolCallId: "ctx",
+            toolName: "gamma",
+            input: "{\"flag\":true}",
+            providerExecuted: false,
+            providerMetadata: nil
+        )
+        let parts: [LanguageModelV3StreamPart] = [
+            .streamStart(warnings: []),
+            .responseMetadata(id: "id-0", modelId: "mock", timestamp: Date(timeIntervalSince1970: 0)),
+            .toolCall(call),
+            .finish(
+                finishReason: .toolCalls,
+                usage: LanguageModelV3Usage(inputTokens: 1, outputTokens: 1, totalTokens: 2),
+                providerMetadata: nil
+            )
+        ]
+        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+            parts.forEach { continuation.yield($0) }
+            continuation.finish()
+        }
+        let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
+
+        actor ContextProbe {
+            private(set) var optionSnapshots: [ToolCallApprovalOptions] = []
+            func record(_ options: ToolCallApprovalOptions) { optionSnapshots.append(options) }
+            func snapshots() -> [ToolCallApprovalOptions] { optionSnapshots }
+        }
+
+        let probe = ContextProbe()
+
+        let tools: ToolSet = [
+            "gamma": tool(
+                description: "Gamma",
+                inputSchema: FlexibleSchema(jsonSchema(.object([:]))),
+                needsApproval: .conditional { _, options in
+                    await probe.record(options)
+                    return true
+                },
+                execute: { _, _ in .value(.string("done")) }
+            )
+        ]
+
+        let result: DefaultStreamTextV2Result<JSONValue, JSONValue> = try streamTextV2(
+            model: .v3(model),
+            system: nil,
+            messages: [.user(UserModelMessage(content: .text("hello"), providerOptions: nil))],
+            tools: tools,
+            experimentalApprove: { _ in .approve }
+        )
+
+        let chunks = try await result.collectFullStream()
+        #expect(chunks.contains { part in
+            if case let .toolResult(res) = part {
+                switch res {
+                case .static(let value):
+                    return value.toolCallId == "ctx"
+                case .dynamic:
+                    return false
+                }
+            }
+            return false
+        })
+
+        let snapshots = await probe.snapshots()
+        #expect(snapshots.count == 1)
+        #expect(snapshots.first?.toolCallId == "ctx")
+        #expect(snapshots.first?.messages.contains(where: { message in
+            if case let .user(user) = message { return user.content == .text("hello") }
+            return false
+        }) == true)
+    }
 }
