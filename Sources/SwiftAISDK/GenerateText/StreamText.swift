@@ -37,11 +37,11 @@ public typealias StreamTextTransform = @Sendable (
 
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-public func streamTextV2<OutputValue: Sendable, PartialOutputValue: Sendable>(
+public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
     model modelArg: LanguageModel,
     prompt: String,
     tools: ToolSet? = nil,
-    experimentalApprove approve: (@Sendable (ToolApprovalRequestOutput) async -> ApprovalActionV2)? = nil,
+    experimentalApprove approve: (@Sendable (ToolApprovalRequestOutput) async -> ApprovalAction)? = nil,
     experimentalTransform transforms: [StreamTextTransform] = [],
     stopWhen stopConditions: [StopCondition] = [stepCountIs(1)],
     onChunk: StreamTextOnChunk? = nil,
@@ -49,11 +49,11 @@ public func streamTextV2<OutputValue: Sendable, PartialOutputValue: Sendable>(
     onFinish: StreamTextOnFinish? = nil,
     onAbort: StreamTextOnAbort? = nil,
     onError: StreamTextOnError? = nil
-) throws -> DefaultStreamTextV2Result<OutputValue, PartialOutputValue> {
+) throws -> DefaultStreamTextResult<OutputValue, PartialOutputValue> {
     // Resolve LanguageModel to a v3 model; for milestone 1 only v3 path is supported.
     _ = try resolveLanguageModel(modelArg)
 
-    return try streamTextV2(
+    return try streamText(
         model: modelArg,
         system: nil,
         messages: [.user(UserModelMessage(content: .text(prompt), providerOptions: nil))],
@@ -72,7 +72,7 @@ public func streamTextV2<OutputValue: Sendable, PartialOutputValue: Sendable>(
 // MARK: - Convenience: top-level response helpers (Text/UI)
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-public func streamTextV2AsResponse(
+public func streamTextAsResponse(
     model: LanguageModel,
     prompt: String,
     tools: ToolSet? = nil,
@@ -81,7 +81,7 @@ public func streamTextV2AsResponse(
     stopWhen stopConditions: [StopCondition] = [stepCountIs(1)],
     onError: StreamTextOnError? = nil
 ) throws -> TextStreamResponse {
-    let result: DefaultStreamTextV2Result<JSONValue, JSONValue> = try streamTextV2(
+    let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
         model: model,
         prompt: prompt,
         tools: tools,
@@ -93,7 +93,7 @@ public func streamTextV2AsResponse(
 }
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-public func pipeStreamTextV2ToResponse(
+public func pipeStreamTextToResponse(
     model: LanguageModel,
     prompt: String,
     tools: ToolSet? = nil,
@@ -103,7 +103,7 @@ public func pipeStreamTextV2ToResponse(
     stopWhen stopConditions: [StopCondition] = [stepCountIs(1)],
     onError: StreamTextOnError? = nil
 ) throws {
-    let result: DefaultStreamTextV2Result<JSONValue, JSONValue> = try streamTextV2(
+    let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
         model: model,
         prompt: prompt,
         tools: tools,
@@ -117,13 +117,13 @@ public func pipeStreamTextV2ToResponse(
 // MARK: - Result Type (Milestone 1)
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-public final class DefaultStreamTextV2Result<OutputValue: Sendable, PartialOutputValue: Sendable>:
+public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputValue: Sendable>:
     @unchecked Sendable
 {
     public typealias Output = OutputValue
     public typealias PartialOutput = PartialOutputValue
 
-    private let actor: StreamTextV2Actor
+    private let actor: StreamTextActor
     private let transforms: [StreamTextTransform]
     private let stopConditions: [StopCondition]
     private let tools: ToolSet?
@@ -143,7 +143,7 @@ public final class DefaultStreamTextV2Result<OutputValue: Sendable, PartialOutpu
         initialMessages: [ModelMessage],
         system: String?,
         tools: ToolSet?,
-        approve: (@Sendable (ToolApprovalRequestOutput) async -> ApprovalActionV2)? = nil,
+        approve: (@Sendable (ToolApprovalRequestOutput) async -> ApprovalAction)? = nil,
         onChunk: StreamTextOnChunk?,
         onStepFinish: StreamTextOnStepFinish? = nil,
         onFinish: StreamTextOnFinish? = nil,
@@ -151,7 +151,7 @@ public final class DefaultStreamTextV2Result<OutputValue: Sendable, PartialOutpu
         onError: StreamTextOnError? = nil
     ) {
         self.stopConditions = stopConditions.isEmpty ? [stepCountIs(1)] : stopConditions
-        self.actor = StreamTextV2Actor(
+        self.actor = StreamTextActor(
             source: providerStream,
             model: model,
             initialMessages: initialMessages,
@@ -405,7 +405,7 @@ public final class DefaultStreamTextV2Result<OutputValue: Sendable, PartialOutpu
         get async throws { try await finalStep.providerMetadata }
     }
 
-    // MARK: - Responses (V2 minimal)
+// MARK: - Responses (minimal)
 
     public func pipeTextStreamToResponse(
         _ response: any StreamTextResponseWriter,
@@ -432,10 +432,10 @@ public final class DefaultStreamTextV2Result<OutputValue: Sendable, PartialOutpu
     }
 
     public func toSSEStream(includeUsage: Bool) -> AsyncThrowingStream<String, Error> {
-        makeStreamTextV2SSEStream(from: fullStream, includeUsage: includeUsage)
+        makeStreamTextSSEStream(from: fullStream, includeUsage: includeUsage)
     }
 
-    // MARK: - UI Message Stream (minimal V2)
+// MARK: - UI Message Stream (minimal)
 
     public func toUIMessageStream<Message: UIMessageConvertible>(
         options: UIMessageStreamOptions<Message>?
@@ -459,7 +459,7 @@ public final class DefaultStreamTextV2Result<OutputValue: Sendable, PartialOutpu
             let message = AISDKProvider.getErrorMessage(value)
             if let onError = streamOptions.onError {
                 let synthetic = NSError(
-                    domain: "ai.streamTextV2",
+                    domain: "ai.streamText",
                     code: 0,
                     userInfo: [NSLocalizedDescriptionKey: message]
                 )
@@ -560,7 +560,7 @@ public final class DefaultStreamTextV2Result<OutputValue: Sendable, PartialOutpu
 
 // MARK: - Overload: system/messages prompt (Upstream parity)
 
-/// Creates a V2 text stream using an initial system/message prompt, matching the upstream stream-text.ts
+/// Creates a text stream using an initial system/message prompt, matching the upstream stream-text.ts
 /// surface. This overload allows callers to pass structured messages instead of a simple text prompt.
 ///
 /// - Parameters:
@@ -570,15 +570,15 @@ public final class DefaultStreamTextV2Result<OutputValue: Sendable, PartialOutpu
 ///   - experimentalTransform: Transforms applied to the full stream (map/tee semantics).
 ///   - stopWhen: Stop conditions to halt multi-step generation.
 ///
-/// - Returns: DefaultStreamTextV2Result exposing text/full/UI streams and accessors.
+/// - Returns: DefaultStreamTextResult exposing text/full/UI streams and accessors.
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-public func streamTextV2<OutputValue: Sendable, PartialOutputValue: Sendable>(
+public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
     model modelArg: LanguageModel,
     system: String?,
     messages initialMessages: [ModelMessage],
     tools: ToolSet? = nil,
-    experimentalApprove approve: (@Sendable (ToolApprovalRequestOutput) async -> ApprovalActionV2)? = nil,
+    experimentalApprove approve: (@Sendable (ToolApprovalRequestOutput) async -> ApprovalAction)? = nil,
     experimentalTransform transforms: [StreamTextTransform] = [],
     stopWhen stopConditions: [StopCondition] = [stepCountIs(1)],
     onChunk: StreamTextOnChunk? = nil,
@@ -586,7 +586,7 @@ public func streamTextV2<OutputValue: Sendable, PartialOutputValue: Sendable>(
     onFinish: StreamTextOnFinish? = nil,
     onAbort: StreamTextOnAbort? = nil,
     onError: StreamTextOnError? = nil
-) throws -> DefaultStreamTextV2Result<OutputValue, PartialOutputValue> {
+) throws -> DefaultStreamTextResult<OutputValue, PartialOutputValue> {
     // Resolve LanguageModel to a v3 model.
     let resolved: any LanguageModelV3 = try resolveLanguageModel(modelArg)
 
@@ -596,7 +596,7 @@ public func streamTextV2<OutputValue: Sendable, PartialOutputValue: Sendable>(
     let (bridgeStream, continuation) = AsyncThrowingStream.makeStream(
         of: LanguageModelV3StreamPart.self)
 
-    let result = DefaultStreamTextV2Result<OutputValue, PartialOutputValue>(
+    let result = DefaultStreamTextResult<OutputValue, PartialOutputValue>(
         baseModel: modelArg,
         model: resolved,
         providerStream: bridgeStream,
@@ -645,7 +645,7 @@ public func streamTextV2<OutputValue: Sendable, PartialOutputValue: Sendable>(
 }
 // MARK: - Overload: Prompt object
 
-/// Starts a V2 text stream from a `Prompt` value (system + prompt/messages),
+/// Starts a text stream from a `Prompt` value (system + prompt/messages),
 /// matching the upstream ergonomics while using the full prompt conversion path.
 ///
 /// - Parameters:
@@ -654,11 +654,11 @@ public func streamTextV2<OutputValue: Sendable, PartialOutputValue: Sendable>(
 ///   - experimentalTransform: Optional transforms
 ///   - stopWhen: Stop conditions to halt multi-step generation
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-public func streamTextV2<OutputValue: Sendable, PartialOutputValue: Sendable>(
+public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
     model: LanguageModel,
     prompt: Prompt,
     tools: ToolSet? = nil,
-    experimentalApprove approve: (@Sendable (ToolApprovalRequestOutput) async -> ApprovalActionV2)? = nil,
+    experimentalApprove approve: (@Sendable (ToolApprovalRequestOutput) async -> ApprovalAction)? = nil,
     experimentalTransform transforms: [StreamTextTransform] = [],
     stopWhen stopConditions: [StopCondition] = [stepCountIs(1)],
     onChunk: StreamTextOnChunk? = nil,
@@ -666,9 +666,9 @@ public func streamTextV2<OutputValue: Sendable, PartialOutputValue: Sendable>(
     onFinish: StreamTextOnFinish? = nil,
     onAbort: StreamTextOnAbort? = nil,
     onError: StreamTextOnError? = nil
-) throws -> DefaultStreamTextV2Result<OutputValue, PartialOutputValue> {
+) throws -> DefaultStreamTextResult<OutputValue, PartialOutputValue> {
     let standardized = try standardizePrompt(prompt)
-    return try streamTextV2(
+    return try streamText(
         model: model,
         system: standardized.system,
         messages: standardized.messages,

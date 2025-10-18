@@ -5,8 +5,8 @@ import Testing
 
 @testable import SwiftAISDK
 
-@Suite("StreamTextV2 – logging", .serialized)
-struct StreamTextV2LoggingTests {
+@Suite("StreamText – logging", .serialized)
+struct StreamTextLoggingTests {
     private func sampleStream() -> AsyncThrowingStream<TextStreamPart, Error> {
         let usage = LanguageModelV3Usage(inputTokens: 1, outputTokens: 3, totalTokens: 4)
         let parts: [TextStreamPart] = [
@@ -25,7 +25,7 @@ struct StreamTextV2LoggingTests {
     @Test("log stream formats lines")
     func logStreamFormatsLines() async throws {
         let stream = sampleStream()
-        let logs = try await convertReadableStreamToArray(makeStreamTextV2LogStream(from: stream))
+        let logs = try await convertReadableStreamToArray(makeStreamTextLogStream(from: stream))
         #expect(logs.contains { $0.contains("stream:start") })
         #expect(logs.contains { $0.contains("text[a] += Hi") })
         #expect(logs.contains { $0.contains("stream:finish") })
@@ -35,9 +35,9 @@ struct StreamTextV2LoggingTests {
     func logFunctionForwardsLines() async throws {
         let stream = sampleStream()
         let (lineStream, continuation) = AsyncStream.makeStream(of: String.self)
-        let options = StreamTextV2LogOptions(
+        let options = StreamTextLogOptions(
             includeTimestamps: true, clock: { Date(timeIntervalSince1970: 0) })
-        try await logStreamTextV2Events(from: stream, options: options) { line in
+        try await logStreamTextEvents(from: stream, options: options) { line in
             continuation.yield(line)
         }
         continuation.finish()
@@ -52,9 +52,9 @@ struct StreamTextV2LoggingTests {
     @Test("log stream preserves prefix")
     func logStreamPreservesPrefix() async throws {
         let stream = sampleStream()
-        let options = StreamTextV2LogOptions(prefix: "[test]")
+        let options = StreamTextLogOptions(prefix: "[test]")
         let logs = try await convertReadableStreamToArray(
-            makeStreamTextV2LogStream(from: stream, options: options))
+            makeStreamTextLogStream(from: stream, options: options))
         #expect(logs.allSatisfy { $0.hasPrefix("[test]") })
     }
 
@@ -97,12 +97,12 @@ struct StreamTextV2LoggingTests {
             continuation.finish()
         }
 
-        let logs = try await convertReadableStreamToArray(makeStreamTextV2LogStream(from: stream))
+        let logs = try await convertReadableStreamToArray(makeStreamTextLogStream(from: stream))
         #expect(logs.contains { $0.contains("tool-result (prelim) streamer [c1]") })
         #expect(logs.contains { $0.contains("tool-result streamer [c1]") && !$0.contains("(prelim)") })
     }
 
-    // @Test("log stream includes tool events (V2)")
+    // @Test("log stream includes tool events")
     // func logStreamIncludesToolEvents() async throws {
     //     // Build a synthetic full stream with tool events
     //     let call = TypedToolCall.dynamic(
@@ -139,7 +139,7 @@ struct StreamTextV2LoggingTests {
     //         parts.forEach { c.yield($0) }
     //         c.finish()
     //     }
-    //     let logs = try await convertReadableStreamToArray(makeStreamTextV2LogStream(from: stream))
+    //     let logs = try await convertReadableStreamToArray(makeStreamTextLogStream(from: stream))
     //     #expect(logs.contains { $0.contains("tool-call") })
     //     #expect(logs.contains { $0.contains("tool-error") })
     //     #expect(logs.contains { $0.contains("tool-approval-request") })

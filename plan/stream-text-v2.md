@@ -1,12 +1,12 @@
-# StreamTextV2 — Implementation Plan
+# StreamText — Implementation Plan
 
-Goal: Rebuild `streamText` from scratch as `StreamTextV2` with 1:1 upstream parity (TypeScript `stream-text.ts`) while eliminating race conditions and flakiness seen in the current Swift port. Work in 6–8 small, verifiable milestones, each landing code plus a matching focused test file `StreamTextV2Tests` (added incrementally by the executor flow).
+Goal: Rebuild `streamText` from scratch as `StreamText` with 1:1 upstream parity (TypeScript `stream-text.ts`) while eliminating race conditions and flakiness seen in the current Swift port. Work in 6–8 small, verifiable milestones, each landing code plus a matching focused test file `StreamTextTests` (added incrementally by the executor flow).
 
 Status: Design-only — no code gated yet. Old `StreamText` remains untouched until V2 reaches feature-parity. A feature flag will later switch default to V2.
 
 ## Design Principles (Race-Free)
 
-- Single owner for pipeline state: one dedicated actor (`StreamTextV2Actor`) mediates all state transitions and output. No shared mutable state outside the actor.
+- Single owner for pipeline state: one dedicated actor (`StreamTextActor`) mediates all state transitions and output. No shared mutable state outside the actor.
 - Deterministic event ordering: the actor processes provider parts strictly FIFO and pushes derived parts to a fan-out broadcaster with idempotent finish.
 - Idempotent termination: exactly one terminal path; cancellations/errors funnel through the actor, which decides how to finish streams. No finish() inside onTermination callbacks.
 - Lazy, replayable subscribers: consumers subscribe to pre-buffered, replay-capable streams (broadcaster), so late subscribers receive the history before terminal.
@@ -15,12 +15,12 @@ Status: Design-only — no code gated yet. Old `StreamText` remains untouched un
 
 ## Public API (V2)
 
-- New entrypoint: `streamTextV2<T, P>(...) -> DefaultStreamTextV2Result<T, P>` with the same public parameters as upstream (`stream-text.ts`) and the current V1, keeping naming consistent but namespaced to V2 types.
-- Result mirrors V1 surface (text, content, usage, finishReason, etc.) but implemented on top of the V2 pipeline. After parity is achieved, a feature flag will alias `streamText = streamTextV2`.
+- New entrypoint: `streamText<T, P>(...) -> DefaultStreamTextResult<T, P>` with the same public parameters as upstream (`stream-text.ts`) and the current V1, keeping naming consistent but namespaced to V2 types.
+- Result mirrors V1 surface (text, content, usage, finishReason, etc.) but implemented on top of the V2 pipeline. After parity is achieved, a feature flag will alias `streamText = streamText`.
 
 ## Concurrency Architecture
 
-- `StreamTextV2Actor` (actor)
+- `StreamTextActor` (actor)
   - Owns pipeline state machine and derived streams.
   - Bridges provider `LanguageModelV3StreamResult.stream` → `EnrichedStreamPart` → `TextStreamPart`/UI chunks.
   - Emits to `AsyncStreamBroadcaster`-V2 (or reuse existing with verified idempotent finish semantics).
@@ -47,15 +47,15 @@ All transitions happen inside the actor; any external cancellation requests are 
 
 ### 1) Skeleton + Minimal Text Deltas
 Scope:
-- Define `DefaultStreamTextV2Result<T, P>` and public `streamTextV2(...)` signature (parity with V1, parameters pass-through, but only `prompt` and `model` initially needed).
-- Add `StreamTextV2Actor` with minimal state and `textStream` only.
+- Define `DefaultStreamTextResult<T, P>` and public `streamText(...)` signature (parity with V1, parameters pass-through, but only `prompt` and `model` initially needed).
+- Add `StreamTextActor` with minimal state and `textStream` only.
 - Ingest provider stream parts: support only `stream-start`, `response-metadata`, `text-start`, `text-delta`, `text-end`, `finish`.
 - Implement idempotent finish path and subscriber broadcaster.
 Deliverables:
 - Sources/SwiftAISDK/GenerateTextV2/* (new folder)
 - `textStream` returns raw deltas in order and finishes deterministically.
 Tests:
-- StreamTextV2Tests: “textStream yields raw deltas in order”.
+- StreamTextTests: “textStream yields raw deltas in order”.
 - Double-subscribe replay test: both subscribers see identical deltas and clean finish.
 
 ### 2) Full Text Pipeline + Step Framing
@@ -141,12 +141,12 @@ Tests:
 ## Deliverables Summary
 
 - New module folder: `Sources/SwiftAISDK/GenerateTextV2/` containing:
-  - `StreamTextV2.swift` (public API + result type)
-  - `StreamTextV2Actor.swift` (pipeline state machine)
+  - `StreamText.swift` (public API + result type)
+  - `StreamTextActor.swift` (pipeline state machine)
   - `TextStreamPartsV2.swift`, `EnrichedPartV2.swift` (internal parts)
   - `BroadcasterV2.swift` (if needed; otherwise reuse existing `AsyncStreamBroadcaster`)
   - `TransformsV2.swift`, `ToolsV2.swift`, etc. as milestones progress
-- Tests: `Tests/SwiftAISDKTests/GenerateTextV2/StreamTextV2Tests.swift` (added incrementally per milestone)
+- Tests: `Tests/SwiftAISDKTests/GenerateTextV2/StreamTextTests.swift` (added incrementally per milestone)
 - Feature flag switch and migration doc once parity achieved.
 
 ## Acceptance Criteria (Overall)
@@ -163,7 +163,7 @@ This section turns open items into precise code tasks with file paths and expect
 
 1) Emit final `.finish` for the whole session (not just `finishStep`).
 - Why: Upstream emits a terminal `finish(TextStreamPart)` after the last step; some ordering tests expect it.
-- Where: `Sources/SwiftAISDK/GenerateTextV2/StreamTextV2Actor.swift`
+- Where: `Sources/SwiftAISDK/GenerateTextV2/StreamTextActor.swift`
   - In `finishAll(...)` before finishing broadcasters, send `fullBroadcaster.send(.finish(totalUsage: accumulatedUsage, providerMetadata: nil))` (shape from V1/Vercel upstream).
   - Ensure this executes only once (guarded by `terminated`).
 - Tests: Extend “fullStream emits framing and text events in order (V2)” to assert the last chunk is `.finish` (executor adds/updates single test only).
@@ -188,7 +188,7 @@ This section turns open items into precise code tasks with file paths and expect
   - Ensure `run()` calls `finishAll(...)` exactly once after step loop terminates.
 
 5) UI stream error mapping cleanup.
-- Where: `Sources/SwiftAISDK/GenerateTextV2/StreamTextV2.swift` in `toUIMessageStream(...)`.
+- Where: `Sources/SwiftAISDK/GenerateTextV2/StreamText.swift` in `toUIMessageStream(...)`.
   - Remove the unused-result warning by directly returning `mapErrorMessage(error)` in `onError:` closure (already done) and keep it as is; no functional change needed beyond confirming.
 
 6) Multi‑step prompt continuity (basic text-only path).

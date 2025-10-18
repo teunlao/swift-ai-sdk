@@ -2,18 +2,18 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-/// Creates a Server-Sent Events (SSE) stream from a StreamText V2 full stream.
+/// Creates a Server-Sent Events (SSE) stream from a StreamText full stream.
 ///
 /// Each emitted string already contains the `data:` prefix and terminating blank line (`\n\n`).
 /// The payload mirrors the upstream `stream-text.ts` SSE framing with a subset of event types
 /// that are currently required by the Swift SDK.
-public func makeStreamTextV2SSEStream(
+public func makeStreamTextSSEStream(
     from stream: AsyncThrowingStream<TextStreamPart, Error>,
     includeUsage: Bool = true
 ) -> AsyncThrowingStream<String, Error> {
     AsyncThrowingStream { continuation in
         let task = Task {
-            let encoder = StreamTextV2SSEEncoder(includeUsage: includeUsage)
+            let encoder = StreamTextSSEEncoder(includeUsage: includeUsage)
             do {
                 for try await part in stream {
                     let payloads = encoder.encode(part: part)
@@ -33,7 +33,7 @@ public func makeStreamTextV2SSEStream(
     }
 }
 
-private final class StreamTextV2SSEEncoder {
+private final class StreamTextSSEEncoder {
     private var includeUsage: Bool
     private var finishedEmitted = false
 

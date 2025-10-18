@@ -1,6 +1,6 @@
 import Foundation
 
-/// Utility to observe and introspect a StreamText V2 full stream.
+/// Utility to observe and introspect a StreamText full stream.
 ///
 /// This helper is designed for diagnostics and test scaffolding: it attaches to an
 /// `AsyncSequence` of `TextStreamPart`, records a replayable log, and provides
@@ -8,7 +8,7 @@ import Foundation
 ///
 /// It is intentionally independent from test frameworks and can be used by SDK
 /// consumers who need lightweight stream inspection.
-public final class StreamTextV2EventRecorder: @unchecked Sendable {
+public final class StreamTextEventRecorder: @unchecked Sendable {
     public private(set) var parts: [TextStreamPart] = []
     public private(set) var finished: Bool = false
     public private(set) var error: Error? = nil
@@ -164,15 +164,15 @@ public final class StreamTextV2EventRecorder: @unchecked Sendable {
     /// Returns nil if ordering is valid, or an error string describing the violation.
     public func checkBasicOrdering() -> String? {
         lock.lock(); defer { lock.unlock() }
-        guard let iStart = parts.firstIndex(where: { StreamTextV2EventRecorder.isStart($0) }) else {
+        guard let iStart = parts.firstIndex(where: { StreamTextEventRecorder.isStart($0) }) else {
             return "missing .start"
         }
-        guard let iStartStep = parts.firstIndex(where: { StreamTextV2EventRecorder.isStartStep($0) }) else {
+        guard let iStartStep = parts.firstIndex(where: { StreamTextEventRecorder.isStartStep($0) }) else {
             return "missing .startStep"
         }
         if iStartStep < iStart { return ".startStep precedes .start" }
-        let iFinishStep = parts.lastIndex(where: { StreamTextV2EventRecorder.isFinishStep($0) })
-        let iFinish = parts.lastIndex(where: { StreamTextV2EventRecorder.isFinish($0) || StreamTextV2EventRecorder.isAbort($0) })
+        let iFinishStep = parts.lastIndex(where: { StreamTextEventRecorder.isFinishStep($0) })
+        let iFinish = parts.lastIndex(where: { StreamTextEventRecorder.isFinish($0) || StreamTextEventRecorder.isAbort($0) })
         if let iFinishStep, let iFinish {
             if iFinishStep > iFinish { return ".finishStep after terminal event" }
         }

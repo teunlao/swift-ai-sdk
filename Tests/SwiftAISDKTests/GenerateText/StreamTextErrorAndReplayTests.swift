@@ -4,8 +4,8 @@ import Testing
 import AISDKProvider
 import AISDKProviderUtils
 
-@Suite("StreamTextV2 – error & replay")
-struct StreamTextV2ErrorAndReplayTests {
+@Suite("StreamText – error & replay")
+struct StreamTextErrorAndReplayTests {
     private let defaultUsage = LanguageModelV3Usage(
         inputTokens: 1,
         outputTokens: 2,
@@ -14,7 +14,7 @@ struct StreamTextV2ErrorAndReplayTests {
         cachedInputTokens: nil
     )
 
-    @Test("provider error terminates with error and no finish (V2)")
+    @Test("provider error terminates with error and no finish")
     func providerErrorTerminates() async throws {
         let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
             c.yield(.streamStart(warnings: []))
@@ -25,7 +25,7 @@ struct StreamTextV2ErrorAndReplayTests {
             c.finish()
         }
         let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
-        let result: DefaultStreamTextV2Result<JSONValue, JSONValue> = try streamTextV2(model: .v3(model), prompt: "hi")
+        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(model: .v3(model), prompt: "hi")
 
         var gotError = false
         do {
@@ -34,7 +34,7 @@ struct StreamTextV2ErrorAndReplayTests {
         #expect(gotError)
     }
 
-    @Test("late subscriber gets replay and terminal (V2)")
+    @Test("late subscriber gets replay and terminal")
     func lateSubscriberGetsReplay() async throws {
         let parts: [LanguageModelV3StreamPart] = [
             .streamStart(warnings: []),
@@ -49,7 +49,7 @@ struct StreamTextV2ErrorAndReplayTests {
             c.finish()
         }
         let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
-        let result: DefaultStreamTextV2Result<JSONValue, JSONValue> = try streamTextV2(model: .v3(model), prompt: "hi")
+        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(model: .v3(model), prompt: "hi")
 
         // Drain fully first
         _ = try await result.collectFullStream()
@@ -61,7 +61,7 @@ struct StreamTextV2ErrorAndReplayTests {
         #expect(hasStart && hasFinish)
     }
 
-    @Test("consumeStream routes errors to handler (V2)")
+    @Test("consumeStream routes errors to handler")
     func consumeStreamRoutesErrors() async throws {
         let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
             c.yield(.streamStart(warnings: []))
@@ -70,7 +70,7 @@ struct StreamTextV2ErrorAndReplayTests {
             c.finish()
         }
         let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
-        let result: DefaultStreamTextV2Result<JSONValue, JSONValue> = try streamTextV2(model: .v3(model), prompt: "hi")
+        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(model: .v3(model), prompt: "hi")
 
         let (errorStream, continuation) = AsyncStream.makeStream(of: Error.self)
         await result.consumeStream(options: ConsumeStreamOptions(onError: { error in
@@ -83,7 +83,7 @@ struct StreamTextV2ErrorAndReplayTests {
         #expect(captured != nil)
     }
 
-    @Test("pipeTextStreamToResponse writes plain text (V2)")
+    @Test("pipeTextStreamToResponse writes plain text")
     func pipeTextStreamToResponseWritesPlainText() async throws {
         let parts: [LanguageModelV3StreamPart] = [
             .streamStart(warnings: []),
@@ -98,7 +98,7 @@ struct StreamTextV2ErrorAndReplayTests {
             c.finish()
         }
         let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
-        let result: DefaultStreamTextV2Result<JSONValue, JSONValue> = try streamTextV2(model: .v3(model), prompt: "hi")
+        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(model: .v3(model), prompt: "hi")
 
         let writer = MockStreamTextResponseWriter()
         let initOptions = TextStreamResponseInit(headers: ["X-Test": "1"], status: 202, statusText: "Accepted")
@@ -111,7 +111,7 @@ struct StreamTextV2ErrorAndReplayTests {
         #expect(writer.decodedChunks().joined() == "Hello")
     }
 
-    @Test("toTextStreamResponse exposes stream (V2)")
+    @Test("toTextStreamResponse exposes stream")
     func toTextStreamResponseExposesStream() async throws {
         let parts: [LanguageModelV3StreamPart] = [
             .streamStart(warnings: []),
@@ -126,7 +126,7 @@ struct StreamTextV2ErrorAndReplayTests {
             c.finish()
         }
         let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
-        let result: DefaultStreamTextV2Result<JSONValue, JSONValue> = try streamTextV2(model: .v3(model), prompt: "hi")
+        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(model: .v3(model), prompt: "hi")
 
         let response = result.toTextStreamResponse(init: TextStreamResponseInit(status: 201, statusText: "Created"))
         let textChunks = try await convertReadableStreamToArray(response.stream)
@@ -136,8 +136,8 @@ struct StreamTextV2ErrorAndReplayTests {
     }
 }
 
-@Suite("StreamTextV2 – SSE encoding")
-struct StreamTextV2SSEEncodingTests {
+@Suite("StreamText – SSE encoding")
+struct StreamTextSSEEncodingTests {
     private let defaultUsage = LanguageModelV3Usage(
         inputTokens: 1,
         outputTokens: 2,
@@ -161,7 +161,7 @@ struct StreamTextV2SSEEncodingTests {
             c.finish()
         }
 
-        let sseStream = makeStreamTextV2SSEStream(from: stream, includeUsage: true)
+        let sseStream = makeStreamTextSSEStream(from: stream, includeUsage: true)
         var payloads: [String] = []
         for try await payload in sseStream { payloads.append(payload) }
 
@@ -180,7 +180,7 @@ struct StreamTextV2SSEEncodingTests {
             c.finish()
         }
 
-        let sseStream = makeStreamTextV2SSEStream(from: stream, includeUsage: false)
+        let sseStream = makeStreamTextSSEStream(from: stream, includeUsage: false)
         var payloads: [String] = []
         for try await payload in sseStream { payloads.append(payload) }
         #expect(!payloads.contains(where: { $0.contains("\"usage\"") }))
@@ -219,7 +219,7 @@ struct StreamTextV2SSEEncodingTests {
             parts.forEach { c.yield($0) }
             c.finish()
         }
-        let sse = makeStreamTextV2SSEStream(from: stream)
+        let sse = makeStreamTextSSEStream(from: stream)
         let lines = try await convertReadableStreamToArray(sse)
         #expect(lines.contains { $0.contains("\"type\":\"tool-error\"") })
         #expect(lines.contains { $0.contains("\"type\":\"tool-approval-request\"") })
@@ -258,7 +258,7 @@ struct StreamTextV2SSEEncodingTests {
             continuation.finish()
         }
 
-        let lines = try await convertReadableStreamToArray(makeStreamTextV2SSEStream(from: stream))
+        let lines = try await convertReadableStreamToArray(makeStreamTextSSEStream(from: stream))
         #expect(lines.contains { $0.contains("\"type\":\"tool-result\"") && $0.contains("\"preliminary\":true") })
         #expect(lines.contains { $0.contains("\"type\":\"tool-result\"") && $0.contains("\"preliminary\":false") })
     }

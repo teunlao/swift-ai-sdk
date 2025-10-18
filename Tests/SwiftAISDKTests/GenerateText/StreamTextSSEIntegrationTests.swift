@@ -4,9 +4,9 @@ import Testing
 import AISDKProvider
 import AISDKProviderUtils
 
-@Suite("StreamTextV2 – SSE stream", .serialized)
-struct StreamTextV2SSEIntegrationTests {
-    @Test("toSSEStream mirrors encoder output (V2)")
+@Suite("StreamText – SSE stream", .serialized)
+struct StreamTextSSEIntegrationTests {
+    @Test("toSSEStream mirrors encoder output")
     func toSSEStreamMatchesEncoder() async throws {
         let parts: [LanguageModelV3StreamPart] = [
             .streamStart(warnings: []),
@@ -23,12 +23,12 @@ struct StreamTextV2SSEIntegrationTests {
             continuation.finish()
         }
         let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: providerStream)))
-        let result: DefaultStreamTextV2Result<JSONValue, JSONValue> = try streamTextV2(
+        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
             model: .v3(model),
             prompt: "hi"
         )
 
-        let encoder = makeStreamTextV2SSEStream(from: result.fullStream, includeUsage: true)
+        let encoder = makeStreamTextSSEStream(from: result.fullStream, includeUsage: true)
         let direct = result.toSSEStream(includeUsage: true)
 
         let encoderEvents = try await convertReadableStreamToArray(encoder)

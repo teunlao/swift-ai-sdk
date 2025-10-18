@@ -4,9 +4,9 @@ import Testing
 import AISDKProvider
 import AISDKProviderUtils
 
-@Suite("StreamTextV2 – approval integration", .serialized)
-struct StreamTextV2ApprovalIntegrationTests {
-    @Test("fullStream injects approval request when tool requires approval (V2)")
+@Suite("StreamText – approval integration", .serialized)
+struct StreamTextApprovalIntegrationTests {
+    @Test("fullStream injects approval request when tool requires approval")
     func fullStreamInjectsApproval() async throws {
         // Provider stream emits a client tool call, then finishes step.
         let call = LanguageModelV3ToolCall(
@@ -37,7 +37,7 @@ struct StreamTextV2ApprovalIntegrationTests {
             )
         ]
 
-        let result: DefaultStreamTextV2Result<JSONValue, JSONValue> = try streamTextV2(
+        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
             model: .v3(model),
             prompt: "hello",
             tools: tools
@@ -59,7 +59,7 @@ struct StreamTextV2ApprovalIntegrationTests {
         #expect(sawApproval && sawFinish)
     }
 
-    @Test("fullStream executes tool when resolver approves (V2)")
+    @Test("fullStream executes tool when resolver approves")
     func fullStreamExecutesToolWhenResolverApproves() async throws {
         let call = LanguageModelV3ToolCall(
             toolCallId: "exec",
@@ -93,7 +93,7 @@ struct StreamTextV2ApprovalIntegrationTests {
             )
         ]
 
-        let result: DefaultStreamTextV2Result<JSONValue, JSONValue> = try streamTextV2(
+        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
             model: .v3(model),
             prompt: "hi",
             tools: tools,
@@ -116,7 +116,7 @@ struct StreamTextV2ApprovalIntegrationTests {
         #expect(!chunks.contains { if case .toolApprovalRequest = $0 { return true } else { return false } })
     }
 
-    @Test("fullStream streams tool error on failure (V2)")
+    @Test("fullStream streams tool error on failure")
     func fullStreamStreamsToolErrorOnFailure() async throws {
         let call = LanguageModelV3ToolCall(
             toolCallId: "err",
@@ -159,7 +159,7 @@ struct StreamTextV2ApprovalIntegrationTests {
             )
         ]
 
-        let result: DefaultStreamTextV2Result<JSONValue, JSONValue> = try streamTextV2(
+        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
             model: .v3(model),
             prompt: "hi",
             tools: tools,
@@ -196,7 +196,7 @@ struct StreamTextV2ApprovalIntegrationTests {
         #expect(!sawFinalResult)
     }
 
-    @Test("fullStream denies tool when resolver denies (V2)")
+    @Test("fullStream denies tool when resolver denies")
     func fullStreamDeniesToolWhenResolverDenies() async throws {
         let call = LanguageModelV3ToolCall(
             toolCallId: "deny",
@@ -230,7 +230,7 @@ struct StreamTextV2ApprovalIntegrationTests {
             )
         ]
 
-        let result: DefaultStreamTextV2Result<JSONValue, JSONValue> = try streamTextV2(
+        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
             model: .v3(model),
             prompt: "hi",
             tools: tools,

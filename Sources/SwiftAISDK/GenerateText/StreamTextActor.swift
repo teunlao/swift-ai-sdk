@@ -3,7 +3,7 @@ import AISDKProviderUtils
 import Foundation
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-actor StreamTextV2Actor {
+actor StreamTextActor {
     private let source: AsyncThrowingStream<LanguageModelV3StreamPart, Error>
     private let model: any LanguageModelV3
     private var initialMessages: [ModelMessage]
@@ -42,7 +42,7 @@ actor StreamTextV2Actor {
     private var activeToolInputs: [String: JSONValue] = [:] // toolCallId -> parsed input
     private var activeToolNames: [String: String] = [:]     // toolCallId -> tool name
 
-    private let approvalResolver: (@Sendable (ToolApprovalRequestOutput) async -> ApprovalActionV2)?
+    private let approvalResolver: (@Sendable (ToolApprovalRequestOutput) async -> ApprovalAction)?
     private let approvalContext: JSONValue?
 
     private struct PendingApproval: Sendable {
@@ -67,7 +67,7 @@ actor StreamTextV2Actor {
         system: String?,
         stopConditions: [StopCondition],
         tools: ToolSet?,
-        approvalResolver: (@Sendable (ToolApprovalRequestOutput) async -> ApprovalActionV2)?,
+        approvalResolver: (@Sendable (ToolApprovalRequestOutput) async -> ApprovalAction)?,
         experimentalApprovalContext: JSONValue?,
         totalUsagePromise: DelayedPromise<LanguageModelUsage>,
         finishReasonPromise: DelayedPromise<FinishReason>,
@@ -153,7 +153,7 @@ actor StreamTextV2Actor {
             return initialMessages
         }
         let responseMessages = recordedResponseMessages
-        let converted = convertResponseMessagesToModelMessagesV2(responseMessages)
+        let converted = convertResponseMessagesToModelMessages(responseMessages)
         return initialMessages + converted
     }
 
@@ -162,7 +162,7 @@ actor StreamTextV2Actor {
             return initialMessages
         }
         let responseMessages = recordedResponseMessages
-        let converted = convertResponseMessagesToModelMessagesV2(responseMessages)
+        let converted = convertResponseMessagesToModelMessages(responseMessages)
         return initialMessages + converted
     }
 
@@ -898,7 +898,7 @@ actor StreamTextV2Actor {
                         providerMetadata: providerMetadata))
                 let contentSnapshot = recordedContent
                 let modelMessages = toResponseMessages(content: contentSnapshot, tools: tools)
-                let responseMessages = convertModelMessagesToResponseMessagesV2(modelMessages)
+                let responseMessages = convertModelMessagesToResponseMessages(modelMessages)
                 let mergedMessages = recordedResponseMessages + responseMessages
                 let stepResult = DefaultStepResult(
                     content: contentSnapshot, finishReason: finishReason, usage: usage,
@@ -947,7 +947,7 @@ actor StreamTextV2Actor {
                     usage: nil,
                     finishReason: nil,
                     providerMetadata: nil,
-                    error: StreamTextV2Error.providerError(err)
+                    error: StreamTextError.providerError(err)
                 )
                 return
             @unknown default:
@@ -972,7 +972,7 @@ actor StreamTextV2Actor {
         if let usage, let finishReason, let resp = response {
             let contentSnapshot = recordedContent
             let modelMessages = toResponseMessages(content: contentSnapshot, tools: tools)
-            let responseMessages = convertModelMessagesToResponseMessagesV2(modelMessages)
+            let responseMessages = convertModelMessagesToResponseMessages(modelMessages)
             let mergedMessages = recordedResponseMessages + responseMessages
             let stepResult = DefaultStepResult(
                 content: contentSnapshot, finishReason: finishReason, usage: usage,
@@ -1065,7 +1065,7 @@ actor StreamTextV2Actor {
     func getRecordedSteps() -> [StepResult] { recordedSteps }
     func getLastStep() -> StepResult? { recordedSteps.last }
 
-    private func convertModelMessagesToResponseMessagesV2(_ messages: [ModelMessage])
+    private func convertModelMessagesToResponseMessages(_ messages: [ModelMessage])
         -> [ResponseMessage]
     {
         messages.compactMap { message in
@@ -1076,7 +1076,7 @@ actor StreamTextV2Actor {
             }
         }
     }
-    private func convertResponseMessagesToModelMessagesV2(_ messages: [ResponseMessage])
+    private func convertResponseMessagesToModelMessages(_ messages: [ResponseMessage])
         -> [ModelMessage]
     {
         messages.map { m in
@@ -1100,4 +1100,4 @@ private struct ActiveReasoningContent: Sendable {
     var providerMetadata: ProviderMetadata?
 }
 
-enum StreamTextV2Error: Error { case providerError(JSONValue) }
+enum StreamTextError: Error { case providerError(JSONValue) }

@@ -4,9 +4,9 @@ import Testing
 import AISDKProvider
 import AISDKProviderUtils
 
-@Suite("StreamTextV2 – approval resolver")
-struct StreamTextV2ApprovalResolverTests {
-    @Test("resolver approve executes tool and emits tool-result (V2)")
+@Suite("StreamText – approval resolver")
+struct StreamTextApprovalResolverTests {
+    @Test("resolver approve executes tool and emits tool-result")
     func resolverApproveEmitsResult() async throws {
         // Provider: client tool call then finish(toolCalls)
         let call = LanguageModelV3ToolCall(
@@ -37,7 +37,7 @@ struct StreamTextV2ApprovalResolverTests {
             )
         ]
 
-        let result: DefaultStreamTextV2Result<JSONValue, JSONValue> = try streamTextV2(
+        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
             model: .v3(model),
             prompt: "hi",
             tools: tools,
@@ -51,7 +51,7 @@ struct StreamTextV2ApprovalResolverTests {
         #expect(!sawApproval && sawToolResult)
     }
 
-    @Test("resolver approve streams preliminary then final (V2)")
+    @Test("resolver approve streams preliminary then final")
     func resolverApproveStreamsPreliminary() async throws {
         // Provider: client tool call then finish(toolCalls)
         let call = LanguageModelV3ToolCall(
@@ -90,7 +90,7 @@ struct StreamTextV2ApprovalResolverTests {
         )
         let tools: ToolSet = ["streamer": streamingTool]
 
-        let result: DefaultStreamTextV2Result<JSONValue, JSONValue> = try streamTextV2(
+        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
             model: .v3(model),
             prompt: "hi",
             tools: tools,
@@ -115,7 +115,7 @@ struct StreamTextV2ApprovalResolverTests {
         #expect(sawFinal)
     }
 
-    @Test("resolver deny emits tool-output-denied (V2)")
+    @Test("resolver deny emits tool-output-denied")
     func resolverDenyEmitsDenied() async throws {
         let call = LanguageModelV3ToolCall(
             toolCallId: "c1",
@@ -143,7 +143,7 @@ struct StreamTextV2ApprovalResolverTests {
             )
         ]
 
-        let result: DefaultStreamTextV2Result<JSONValue, JSONValue> = try streamTextV2(
+        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
             model: .v3(model),
             prompt: "hi",
             tools: tools,
@@ -155,7 +155,7 @@ struct StreamTextV2ApprovalResolverTests {
         #expect(sawDenied)
     }
 
-    @Test("resolver handles multiple approvals in step (V2)")
+    @Test("resolver handles multiple approvals in step")
     func resolverHandlesMultipleApprovals() async throws {
         let call1 = LanguageModelV3ToolCall(
             toolCallId: "a1",
@@ -212,7 +212,7 @@ struct StreamTextV2ApprovalResolverTests {
             )
         ]
 
-        let result: DefaultStreamTextV2Result<JSONValue, JSONValue> = try streamTextV2(
+        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
             model: .v3(model),
             prompt: "hi",
             tools: tools,
@@ -236,7 +236,7 @@ struct StreamTextV2ApprovalResolverTests {
         #expect(approvalOrder == ["a1", "b2"])
     }
 
-    @Test("conditional approval receives context (V2)")
+    @Test("conditional approval receives context")
     func conditionalApprovalReceivesContext() async throws {
         let call = LanguageModelV3ToolCall(
             toolCallId: "ctx",
@@ -281,7 +281,7 @@ struct StreamTextV2ApprovalResolverTests {
             )
         ]
 
-        let result: DefaultStreamTextV2Result<JSONValue, JSONValue> = try streamTextV2(
+        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
             model: .v3(model),
             system: nil,
             messages: [.user(UserModelMessage(content: .text("hello"), providerOptions: nil))],
@@ -311,7 +311,7 @@ struct StreamTextV2ApprovalResolverTests {
         }) == true)
     }
 
-    @Test("provider-executed tool skips resolver (V2)")
+    @Test("provider-executed tool skips resolver")
     func providerExecutedToolSkipsResolver() async throws {
         let call = LanguageModelV3ToolCall(
             toolCallId: "p1",
@@ -360,7 +360,7 @@ struct StreamTextV2ApprovalResolverTests {
             )
         ]
 
-        let result: DefaultStreamTextV2Result<JSONValue, JSONValue> = try streamTextV2(
+        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
             model: .v3(model),
             prompt: "hi",
             tools: tools,
@@ -387,7 +387,7 @@ struct StreamTextV2ApprovalResolverTests {
         })
     }
 
-    @Test("needsApproval never skips resolver (V2)")
+    @Test("needsApproval never skips resolver")
     func needsApprovalNeverSkipsResolver() async throws {
         let call = LanguageModelV3ToolCall(
             toolCallId: "n1",
@@ -429,7 +429,7 @@ struct StreamTextV2ApprovalResolverTests {
             )
         ]
 
-        let result: DefaultStreamTextV2Result<JSONValue, JSONValue> = try streamTextV2(
+        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
             model: .v3(model),
             prompt: "hi",
             tools: tools,
@@ -459,7 +459,7 @@ struct StreamTextV2ApprovalResolverTests {
         #expect(info.output == .string("ok"))
     }
 
-    @Test("streaming tool error propagates (V2)")
+    @Test("streaming tool error propagates")
     func streamingToolErrorPropagates() async throws {
         let call = LanguageModelV3ToolCall(
             toolCallId: "stream-error",
@@ -502,7 +502,7 @@ struct StreamTextV2ApprovalResolverTests {
             )
         ]
 
-        let result: DefaultStreamTextV2Result<JSONValue, JSONValue> = try streamTextV2(
+        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
             model: .v3(model),
             prompt: "hi",
             tools: tools,
