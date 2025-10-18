@@ -83,7 +83,7 @@ struct OpenAICompatibleProviderTests {
             baseURL: "https://api.example.com/v1",
             name: "example",
             apiKey: "secret",
-            headers: ["Custom": "value"],
+            headers: ["Custom-Header": "value"],
             queryParams: ["test": "1"],
             fetch: fetch,
             includeUsage: true,
@@ -96,8 +96,8 @@ struct OpenAICompatibleProviderTests {
             temperature: 0.2,
             headers: ["Per-Request": "header"],
             providerOptions: [
-                "openai-compatible": ["user": .string("tester")],
-                "example": ["customSetting": .string("enabled")]
+                "openai-compatible": ["user": .string("base-user")],
+                "example": ["user": .string("override-user"), "customSetting": .string("enabled")]
             ]
         )
 
@@ -128,11 +128,15 @@ struct OpenAICompatibleProviderTests {
 
         #expect(request.url?.absoluteString == targetURL.absoluteString)
         let headers = request.allHTTPHeaderFields ?? [:]
-        #expect(headers["Authorization"] == "Bearer secret")
-        #expect(headers["Custom"] == "value")
-        #expect(headers["Per-Request"] == "header")
+        let normalizedHeaders = headers.reduce(into: [String: String]()) { result, entry in
+            result[entry.key.lowercased()] = entry.value
+        }
+        #expect(normalizedHeaders["authorization"] == "Bearer secret")
+        #expect(normalizedHeaders["custom-header"] == "value")
+        #expect(normalizedHeaders["per-request"] == "header")
 
         #expect(json["model"] as? String == "gpt-oss")
+        #expect(json["user"] as? String == "override-user")
         if let messages = json["messages"] as? [[String: Any]] {
             #expect(messages.count == 1)
         } else {
@@ -243,8 +247,8 @@ struct OpenAICompatibleProviderTests {
             maxOutputTokens: 20,
             frequencyPenalty: 0.1,
             providerOptions: [
-                "openai-compatible": ["echo": .bool(true)],
-                "example": ["custom": .string("flag")]
+                "openai-compatible": ["echo": .bool(false), "user": .string("base-user")],
+                "example": ["echo": .bool(true), "user": .string("override-user"), "custom": .string("flag")]
             ]
         )
 
@@ -267,11 +271,13 @@ struct OpenAICompatibleProviderTests {
         #expect(json["max_tokens"] as? Double == 20)
         #expect(json["frequency_penalty"] as? Double == 0.1)
         #expect(json["echo"] as? Bool == true)
+        #expect(json["user"] as? String == "override-user")
         #expect(json["custom"] as? String == "flag")
     }
 
-    @Test("embedding doEmbed maps response usage")
+    @Test("embedding doEmbed maps response usage and provider overrides")
     func embeddingDoEmbed() async throws {
+        let capture = RequestCapture()
         let responseJSON: [String: Any] = [
             "data": [["embedding": [0.1, 0.2, 0.3]]],
             "usage": ["prompt_tokens": 3]
@@ -282,8 +288,9 @@ struct OpenAICompatibleProviderTests {
             headers: ["Content-Type": "application/json"]
         )
 
-        let fetch: FetchFunction = { _ in
-            FetchResponse(body: .data(data), urlResponse: response)
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(data), urlResponse: response)
         }
 
         let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
@@ -293,7 +300,14 @@ struct OpenAICompatibleProviderTests {
         ))
 
         let model = provider.textEmbeddingModel(modelId: "text-embedding-3-small")
-        let result = try await model.doEmbed(options: EmbeddingModelV3DoEmbedOptions(values: ["hello"]))
+        let options = EmbeddingModelV3DoEmbedOptions(
+            values: ["hello"],
+            providerOptions: [
+                "openai-compatible": ["dimensions": .number(128), "user": .string("base-user")],
+                "example": ["dimensions": .number(256), "user": .string("override-user")]
+            ]
+        )
+        let result = try await model.doEmbed(options: options)
         #expect(result.embeddings.count == 1)
         if let first = result.embeddings.first {
             #expect(first == [0.1, 0.2, 0.3])
@@ -301,6 +315,16 @@ struct OpenAICompatibleProviderTests {
             Issue.record("Missing embedding result")
         }
         #expect(result.usage?.tokens == 3)
+
+        guard let request = await capture.current(),
+              let body = request.httpBody,
+              let json = try JSONSerialization.jsonObject(with: body) as? [String: Any] else {
+            Issue.record("Missing captured embedding request")
+            return
+        }
+
+        #expect(json["dimensions"] as? Double == 256)
+        #expect(json["user"] as? String == "override-user")
     }
 
     @Test("image doGenerate returns base64 images and warnings")

@@ -41,11 +41,7 @@ public func convertToOpenAICompatibleChatMessages(
                     "role": .string("user"),
                     "content": .string(textPart.text)
                 ]
-                let aggregatedMetadata = mergeMetadata(
-                    metadata(from: options),
-                    with: metadata(from: textPart.providerOptions)
-                )
-                for (key, value) in aggregatedMetadata {
+                for (key, value) in metadata(from: textPart.providerOptions) {
                     payload[key] = value
                 }
                 messages.append(.object(payload))
@@ -138,9 +134,7 @@ public func convertToOpenAICompatibleChatMessages(
                 }
             }
 
-            if !textAccumulator.isEmpty {
-                builder["content"] = .string(textAccumulator)
-            }
+            builder["content"] = .string(textAccumulator)
             if !toolCalls.isEmpty {
                 builder["tool_calls"] = .array(toolCalls.map(JSONValue.object))
             }

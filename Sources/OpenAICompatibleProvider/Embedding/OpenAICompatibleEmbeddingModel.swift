@@ -80,11 +80,11 @@ public final class OpenAICompatibleEmbeddingModel: EmbeddingModelV3 {
         ) ?? OpenAICompatibleEmbeddingProviderOptions()
 
         var mergedOptions = baseOptions
-        if mergedOptions.dimensions == nil {
-            mergedOptions.dimensions = providerSpecificOptions.dimensions
+        if let dimensions = providerSpecificOptions.dimensions {
+            mergedOptions.dimensions = dimensions
         }
-        if mergedOptions.user == nil {
-            mergedOptions.user = providerSpecificOptions.user
+        if let user = providerSpecificOptions.user {
+            mergedOptions.user = user
         }
 
         let response = try await postJsonToAPI(

@@ -301,14 +301,14 @@ public final class OpenAICompatibleChatLanguageModel: LanguageModelV3 {
         ) ?? OpenAICompatibleChatProviderOptions()
 
         var mergedOptions = baseOptions
-        if mergedOptions.user == nil {
-            mergedOptions.user = providerSpecificOptions.user
+        if let user = providerSpecificOptions.user {
+            mergedOptions.user = user
         }
-        if mergedOptions.reasoningEffort == nil {
-            mergedOptions.reasoningEffort = providerSpecificOptions.reasoningEffort
+        if let reasoningEffort = providerSpecificOptions.reasoningEffort {
+            mergedOptions.reasoningEffort = reasoningEffort
         }
-        if mergedOptions.textVerbosity == nil {
-            mergedOptions.textVerbosity = providerSpecificOptions.textVerbosity
+        if let textVerbosity = providerSpecificOptions.textVerbosity {
+            mergedOptions.textVerbosity = textVerbosity
         }
 
         let providerSpecificRaw = options.providerOptions?[providerOptionsName] ?? [:]
