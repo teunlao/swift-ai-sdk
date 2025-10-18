@@ -1117,14 +1117,14 @@ struct StreamTextBasicTests {
         _ = try await result.waitForFinish()
     }
 
-    @Test("experimentalOutput returns parsed text when configured")
-    func experimentalOutputReturnsParsedText() async throws {
+    @Test("experimentalOutput returns parsed object when configured")
+    func experimentalOutputReturnsParsedObject() async throws {
         let parts: [LanguageModelV3StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(id: "output-id", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
             .textStart(id: "txt", providerMetadata: nil),
-            .textDelta(id: "txt", delta: "Hello", providerMetadata: nil),
-            .textDelta(id: "txt", delta: "!", providerMetadata: nil),
+            .textDelta(id: "txt", delta: "{\"value\":\"Hello", providerMetadata: nil),
+            .textDelta(id: "txt", delta: "\"}", providerMetadata: nil),
             .textEnd(id: "txt", providerMetadata: nil),
             .finish(
                 finishReason: .stop,
@@ -1142,15 +1142,15 @@ struct StreamTextBasicTests {
             doStream: .singleValue(LanguageModelV3StreamResult(stream: stream))
         )
 
-        let result: DefaultStreamTextResult<String, String> = try streamText(
+        let result: DefaultStreamTextResult<SummaryOutput, JSONValue> = try streamText(
             model: .v3(model),
             prompt: "hello",
-            experimentalOutput: Output.text()
+            experimentalOutput: Output.object(schema: summarySchema())
         )
 
         _ = try await result.collectFullStream()
         let output = try await result.experimentalOutput
-        #expect(output == "Hello!")
+        #expect(output == SummaryOutput(value: "Hello"))
     }
 
     @Test("experimentalOutput throws when finish reason is tool-calls")
@@ -1175,10 +1175,10 @@ struct StreamTextBasicTests {
             doStream: .singleValue(LanguageModelV3StreamResult(stream: stream))
         )
 
-        let result: DefaultStreamTextResult<String, String> = try streamText(
+        let result: DefaultStreamTextResult<SummaryOutput, JSONValue> = try streamText(
             model: .v3(model),
             prompt: "hello",
-            experimentalOutput: Output.text()
+            experimentalOutput: Output.object(schema: summarySchema())
         )
 
         _ = try await result.collectFullStream()
