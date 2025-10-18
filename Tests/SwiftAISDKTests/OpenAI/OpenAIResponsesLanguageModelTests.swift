@@ -1240,4 +1240,311 @@ struct OpenAIResponsesLanguageModelTests {
         #expect(json["top_logprobs"] as? Int == TOP_LOGPROBS_MAX)
     }
 
+    @Test("doGenerate auto-includes provider tool sources and outputs")
+    func testDoGenerateAutoIncludesProviderTools() async throws {
+        actor BodyCapture {
+            var data: Data?
+            func store(_ body: Data?) { data = body }
+            func current() -> Data? { data }
+        }
+
+        let capture = BodyCapture()
+
+        let minimalResponse: [String: Any] = [
+            "id": "resp_tools",
+            "created_at": 1_701_000_000.0,
+            "model": "gpt-4o",
+            "output": [],
+            "usage": ["input_tokens": 1, "output_tokens": 1, "total_tokens": 2],
+            "warnings": [],
+            "incomplete_details": ["reason": NSNull()],
+            "finish_reason": NSNull(),
+            "error": NSNull()
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: minimalResponse)
+        let fetch: FetchFunction = { request in
+            await capture.store(request.httpBody)
+            let httpResponse = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let webSearchTool = LanguageModelV3Tool.providerDefined(.init(id: "openai.web_search", name: "web_search", args: [:]))
+        let codeInterpreterTool = LanguageModelV3Tool.providerDefined(.init(id: "openai.code_interpreter", name: "code_interpreter", args: [:]))
+
+        _ = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: samplePrompt,
+                tools: [webSearchTool, codeInterpreterTool],
+                providerOptions: [
+                    "openai": [
+                        "logprobs": .bool(true)
+                    ]
+                ]
+            )
+        )
+
+        guard let json = decodeRequestBody(await capture.current()) else {
+            Issue.record("Missing request body for auto include test")
+            return
+        }
+
+        let includeValues = Set((json["include"] as? [String]) ?? [])
+        #expect(includeValues.contains("web_search_call.action.sources"))
+        #expect(includeValues.contains("code_interpreter_call.outputs"))
+        #expect(includeValues.contains("message.output_text.logprobs"))
+        #expect(json["top_logprobs"] as? Int == TOP_LOGPROBS_MAX)
+    }
+
+    @Test("doStream emits web search tool results")
+    func testDoStreamEmitsWebSearchResults() async throws {
+        actor BodyCapture {
+            var data: Data?
+            func store(_ body: Data?) { data = body }
+            func current() -> Data? { data }
+        }
+
+        let capture = BodyCapture()
+
+        func chunk(_ value: Any) -> String {
+            let data = try! JSONSerialization.data(withJSONObject: value)
+            let encoded = String(data: data, encoding: .utf8)!
+            return "data:\(encoded)\n\n"
+        }
+
+        let chunks: [String] = [
+            chunk([
+                "type": "response.output_item.added",
+                "output_index": 0,
+                "item": [
+                    "id": "web_call",
+                    "type": "web_search_call",
+                    "status": "in_progress"
+                ]
+            ]),
+            chunk([
+                "type": "response.output_item.done",
+                "output_index": 0,
+                "item": [
+                    "id": "web_call",
+                    "type": "web_search_call",
+                    "status": "completed",
+                    "action": [
+                        "type": "search",
+                        "query": "swift ai"
+                    ]
+                ]
+            ]),
+            chunk([
+                "type": "response.completed",
+                "response": [
+                    "id": "resp_web",
+                    "object": "response",
+                    "created_at": 1_741_500_000.0,
+                    "status": "completed",
+                    "usage": [
+                        "input_tokens": 2,
+                        "output_tokens": 1,
+                        "total_tokens": 3
+                    ]
+                ]
+            ]),
+            "data: [DONE]\n\n"
+        ]
+
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.openai.com/v1/responses")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "text/event-stream"]
+        )!
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request.httpBody)
+            let stream = AsyncThrowingStream<Data, Error> { continuation in
+                for string in chunks {
+                    continuation.yield(Data(string.utf8))
+                }
+                continuation.finish()
+            }
+            return FetchResponse(body: .stream(stream), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let webSearchTool = LanguageModelV3Tool.providerDefined(.init(id: "openai.web_search", name: "web_search", args: [:]))
+
+        let streamResult = try await model.doStream(
+            options: LanguageModelV3CallOptions(
+                prompt: samplePrompt,
+                tools: [webSearchTool]
+            )
+        )
+
+        var parts: [LanguageModelV3StreamPart] = []
+        for try await part in streamResult.stream {
+            parts.append(part)
+        }
+
+        #expect(parts.contains { part in
+            if case .toolInputStart(let id, let name, _, let executed) = part {
+                return id == "web_call" && name == "web_search" && executed == true
+            }
+            return false
+        })
+
+        #expect(parts.contains { part in
+            if case .toolInputEnd(let id, _) = part {
+                return id == "web_call"
+            }
+            return false
+        })
+
+        #expect(parts.contains { part in
+            if case .toolCall(let call) = part {
+                return call.toolCallId == "web_call" && call.toolName == "web_search" && call.providerExecuted == true
+            }
+            return false
+        })
+
+        #expect(parts.contains { part in
+            if case .toolResult(let result) = part {
+                return result.toolCallId == "web_call" && result.toolName == "web_search" && result.providerExecuted == true
+            }
+            return false
+        })
+
+        if let data = await capture.current(),
+           let json = decodeRequestBody(data) {
+            #expect(json["stream"] as? Bool == true)
+        }
+    }
+
+    @Test("doStream emits reasoning summary parts with deltas")
+    func testDoStreamEmitsReasoningSummary() async throws {
+        func chunk(_ value: Any) -> String {
+            let data = try! JSONSerialization.data(withJSONObject: value)
+            let encoded = String(data: data, encoding: .utf8)!
+            return "data:\(encoded)\n\n"
+        }
+
+        let chunks: [String] = [
+            chunk([
+                "type": "response.output_item.added",
+                "output_index": 0,
+                "item": [
+                    "id": "reasoning_item",
+                    "type": "reasoning",
+                    "status": "in_progress",
+                    "encrypted_content": "opaque"
+                ]
+            ]),
+            chunk([
+                "type": "response.reasoning_summary_part.added",
+                "item_id": "reasoning_item",
+                "summary_index": 1
+            ]),
+            chunk([
+                "type": "response.reasoning_summary_text.delta",
+                "item_id": "reasoning_item",
+                "summary_index": 1,
+                "delta": "Second step"
+            ]),
+            chunk([
+                "type": "response.output_item.done",
+                "output_index": 0,
+                "item": [
+                    "id": "reasoning_item",
+                    "type": "reasoning",
+                    "status": "completed",
+                    "encrypted_content": "opaque",
+                    "summary": [
+                        ["type": "summary_text", "text": "First step"],
+                        ["type": "summary_text", "text": "Second step"]
+                    ]
+                ]
+            ]),
+            chunk([
+                "type": "response.completed",
+                "response": [
+                    "id": "resp_reasoning_stream",
+                    "object": "response",
+                    "created_at": 1_741_600_000.0,
+                    "status": "completed",
+                    "usage": [
+                        "input_tokens": 2,
+                        "output_tokens": 2,
+                        "total_tokens": 4
+                    ]
+                ]
+            ]),
+            "data: [DONE]\n\n"
+        ]
+
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.openai.com/v1/responses")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "text/event-stream"]
+        )!
+
+        let fetch: FetchFunction = { _ in
+            let stream = AsyncThrowingStream<Data, Error> { continuation in
+                for string in chunks {
+                    continuation.yield(Data(string.utf8))
+                }
+                continuation.finish()
+            }
+            return FetchResponse(body: .stream(stream), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "o3-mini",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let streamResult = try await model.doStream(
+            options: LanguageModelV3CallOptions(prompt: samplePrompt)
+        )
+
+        var parts: [LanguageModelV3StreamPart] = []
+        for try await part in streamResult.stream {
+            parts.append(part)
+        }
+
+        #expect(parts.contains { part in
+            if case .reasoningStart(let id, _) = part { return id == "reasoning_item:0" }
+            return false
+        })
+        #expect(parts.contains { part in
+            if case .reasoningStart(let id, _) = part { return id == "reasoning_item:1" }
+            return false
+        })
+        #expect(parts.contains { part in
+            if case .reasoningDelta(let id, let delta, _) = part { return id == "reasoning_item:1" && delta == "Second step" }
+            return false
+        })
+        #expect(parts.contains { part in
+            if case .reasoningEnd(let id, _) = part { return id == "reasoning_item:0" }
+            return false
+        })
+        #expect(parts.contains { part in
+            if case .reasoningEnd(let id, _) = part { return id == "reasoning_item:1" }
+            return false
+        })
+    }
+
 }
