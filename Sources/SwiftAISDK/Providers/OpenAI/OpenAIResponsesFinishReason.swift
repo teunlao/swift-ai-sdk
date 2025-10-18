@@ -8,14 +8,10 @@ func mapOpenAIResponsesFinishReason(
     switch finishReason {
     case nil:
         return hasFunctionCall ? .toolCalls : .stop
-    case "stop":
-        return hasFunctionCall ? .toolCalls : .stop
-    case "length", "max_output_tokens":
+    case "max_output_tokens":
         return .length
     case "content_filter":
         return .contentFilter
-    case "tool_calls":
-        return .toolCalls
     default:
         return hasFunctionCall ? .toolCalls : .unknown
     }

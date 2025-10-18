@@ -118,7 +118,7 @@ struct OpenAIResponsesInputBuilder {
                                 "id": .string(resultPart.toolCallId)
                             ]))
                         } else {
-                            items.append(try makeToolResultItem(part: resultPart))
+                            warnings.append(.other(message: "Results for OpenAI tool \(resultPart.toolName) are not sent to the API when store is false"))
                         }
 
                     case .reasoning(let reasoningPart):
@@ -129,7 +129,8 @@ struct OpenAIResponsesInputBuilder {
                         )
 
                         guard let reasoningId = providerOptions?.itemId else {
-                            warnings.append(.other(message: "Non-OpenAI reasoning parts are not supported. Skipping reasoning part: \(reasoningPart.text)."))
+                            let partDescription = stringifyReasoningPart(reasoningPart)
+                            warnings.append(.other(message: "Non-OpenAI reasoning parts are not supported. Skipping reasoning part: \(partDescription)."))
                             continue
                         }
 
@@ -167,7 +168,8 @@ struct OpenAIResponsesInputBuilder {
                             items[existing.itemIndex] = existing.asJSONValue()
                             reasoningMessages[reasoningId] = existing
                         } else {
-                            warnings.append(.other(message: "Cannot append empty reasoning part to existing reasoning sequence. Skipping reasoning part for id \(reasoningId)."))
+                            let partDescription = stringifyReasoningPart(reasoningPart)
+                            warnings.append(.other(message: "Cannot append empty reasoning part to existing reasoning sequence. Skipping reasoning part: \(partDescription)."))
                         }
 
                     case .file:
@@ -274,29 +276,46 @@ struct OpenAIResponsesInputBuilder {
     ) throws -> JSONValue {
         if part.mediaType.hasPrefix("image/") {
             let mediaType = part.mediaType == "image/*" ? "image/jpeg" : part.mediaType
+            let detail = extractOpenAIStringOption(from: part.providerOptions, key: "imageDetail")
             switch part.data {
             case .url(let url):
-                return .object([
+                var payload: [String: JSONValue] = [
                     "type": .string("input_image"),
                     "image_url": .string(url.absoluteString)
-                ])
+                ]
+                if let detail {
+                    payload["detail"] = .string(detail)
+                }
+                return .object(payload)
             case .base64(let value):
                 if isFileId(value, prefixes: prefixes) {
-                    return .object([
+                    var payload: [String: JSONValue] = [
                         "type": .string("input_image"),
                         "file_id": .string(value)
-                    ])
+                    ]
+                    if let detail {
+                        payload["detail"] = .string(detail)
+                    }
+                    return .object(payload)
                 }
-                return .object([
+                var payload: [String: JSONValue] = [
                     "type": .string("input_image"),
                     "image_url": .string("data:\(mediaType);base64,\(value)")
-                ])
+                ]
+                if let detail {
+                    payload["detail"] = .string(detail)
+                }
+                return .object(payload)
             case .data(let data):
                 let base64 = convertDataToBase64(data)
-                return .object([
+                var payload: [String: JSONValue] = [
                     "type": .string("input_image"),
                     "image_url": .string("data:\(mediaType);base64,\(base64)")
-                ])
+                ]
+                if let detail {
+                    payload["detail"] = .string(detail)
+                }
+                return .object(payload)
             }
         }
 
@@ -364,60 +383,43 @@ struct OpenAIResponsesInputBuilder {
         ])
     }
 
-    private static func toolResultOutputToJSON(_ output: LanguageModelV3ToolResultOutput) -> JSONValue {
-        switch output {
-        case .text(let value):
-            return .string(value)
-        case .json(let value):
-            return value
-        case .executionDenied(let reason):
-            return .object([
-                "type": .string("execution_denied"),
-                "reason": reason.map(JSONValue.string) ?? .null
-            ])
-        case .errorText(let value):
-            return .object([
-                "type": .string("error_text"),
-                "value": .string(value)
-            ])
-        case .errorJson(let value):
-            return .object([
-                "type": .string("error_json"),
-                "value": value
-            ])
-        case .content(let parts):
-            return .array(parts.map { part in
-                switch part {
-                case .text(let text):
-                    return .object([
-                        "type": .string("input_text"),
-                        "text": .string(text)
-                    ])
-                case .media(let data, let mediaType):
-                    if mediaType.hasPrefix("image/") {
-                        return .object([
-                            "type": .string("input_image"),
-                            "image_url": .string("data:\(mediaType);base64,\(data)")
-                        ])
-                    }
-                    return .object([
-                        "type": .string("input_file"),
-                        "filename": .string("data"),
-                        "file_data": .string("data:\(mediaType);base64,\(data)")
-                    ])
-                }
-            })
+
+
+    private static func extractOpenAIStringOption(from options: ProviderOptions?, key: String) -> String? {
+        guard let options,
+              let openaiOptions = options["openai"],
+              let value = openaiOptions[key],
+              case .string(let stringValue) = value else {
+            return nil
         }
+        return stringValue
     }
 
-    private static func makeToolResultItem(part: LanguageModelV3ToolResultPart) throws -> JSONValue {
-        let jsonValue = toolResultOutputToJSON(part.output)
-        let resultJSON = try encodeJSONValue(jsonValue)
-        return .object([
-            "type": .string("function_call_output"),
-            "call_id": .string(part.toolCallId),
-            "output": .string(resultJSON)
-        ])
+    private static func stringifyReasoningPart(_ part: LanguageModelV3ReasoningPart) -> String {
+        let encoder = JSONEncoder()
+        var segments: [String] = []
+
+        if let typeData = try? encoder.encode("reasoning"),
+           let typeJSON = String(data: typeData, encoding: .utf8) {
+            segments.append("\"type\":\(typeJSON)")
+        }
+
+        if let textData = try? encoder.encode(part.text),
+           let textJSON = String(data: textData, encoding: .utf8) {
+            segments.append("\"text\":\(textJSON)")
+        }
+
+        if let providerOptions = part.providerOptions,
+           let providerData = try? encoder.encode(providerOptions),
+           let providerJSON = String(data: providerData, encoding: .utf8) {
+            segments.append("\"providerOptions\":\(providerJSON)")
+        }
+
+        if segments.isEmpty {
+            return part.text
+        }
+
+        return "{\(segments.joined(separator: ","))}"
     }
 
     private static func extractOpenAIItemId(from options: ProviderOptions?) -> String? {
