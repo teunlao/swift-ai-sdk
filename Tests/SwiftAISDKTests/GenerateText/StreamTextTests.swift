@@ -1123,7 +1123,8 @@ struct StreamTextBasicTests {
             .streamStart(warnings: []),
             .responseMetadata(id: "output-id", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
             .textStart(id: "txt", providerMetadata: nil),
-            .textDelta(id: "txt", delta: "{\"value\":\"Hello", providerMetadata: nil),
+            .textDelta(id: "txt", delta: "{\"value\":\"", providerMetadata: nil),
+            .textDelta(id: "txt", delta: "Hello", providerMetadata: nil),
             .textDelta(id: "txt", delta: "\"}", providerMetadata: nil),
             .textEnd(id: "txt", providerMetadata: nil),
             .finish(
@@ -1148,7 +1149,10 @@ struct StreamTextBasicTests {
             experimentalOutput: Output.object(schema: summarySchema())
         )
 
+        async let finishTask = result.waitForFinish()
         _ = try await result.collectFullStream()
+        let finish = try await finishTask
+        #expect(finish.finalStep.text == "{\"value\":\"Hello\"}")
         let output = try await result.experimentalOutput
         #expect(output == SummaryOutput(value: "Hello"))
     }
