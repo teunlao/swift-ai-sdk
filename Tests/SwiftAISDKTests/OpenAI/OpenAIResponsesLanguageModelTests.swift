@@ -1547,4 +1547,430 @@ struct OpenAIResponsesLanguageModelTests {
         })
     }
 
+    @Test("doStream emits code interpreter results")
+    func testDoStreamEmitsCodeInterpreterResults() async throws {
+        func chunk(_ value: Any) -> String {
+            let data = try! JSONSerialization.data(withJSONObject: value)
+            let encoded = String(data: data, encoding: .utf8)!
+            return "data:\(encoded)\n\n"
+        }
+
+        let chunks: [String] = [
+            chunk([
+                "type": "response.output_item.added",
+                "output_index": 0,
+                "item": [
+                    "id": "code_call",
+                    "type": "code_interpreter_call",
+                    "status": "in_progress",
+                    "container_id": "container-7"
+                ]
+            ]),
+            chunk([
+                "type": "response.code_interpreter_call_code.delta",
+                "output_index": 0,
+                "delta": "print(\"Hi\")"
+            ]),
+            chunk([
+                "type": "response.code_interpreter_call_code.done",
+                "output_index": 0,
+                "code": "print(\"Hi\")"
+            ]),
+            chunk([
+                "type": "response.output_item.done",
+                "output_index": 0,
+                "item": [
+                    "id": "code_call",
+                    "type": "code_interpreter_call",
+                    "status": "completed",
+                    "container_id": "container-7",
+                    "outputs": [
+                        ["type": "logs", "content": "Hi"]
+                    ]
+                ]
+            ]),
+            chunk([
+                "type": "response.completed",
+                "response": [
+                    "id": "resp_code",
+                    "object": "response",
+                    "created_at": 1_741_700_000.0,
+                    "status": "completed",
+                    "usage": [
+                        "input_tokens": 2,
+                        "output_tokens": 2,
+                        "total_tokens": 4
+                    ]
+                ]
+            ]),
+            "data: [DONE]\n\n"
+        ]
+
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.openai.com/v1/responses")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "text/event-stream"]
+        )!
+
+        let fetch: FetchFunction = { _ in
+            let stream = AsyncThrowingStream<Data, Error> { continuation in
+                for string in chunks {
+                    continuation.yield(Data(string.utf8))
+                }
+                continuation.finish()
+            }
+            return FetchResponse(body: .stream(stream), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let tool = LanguageModelV3Tool.providerDefined(.init(id: "openai.code_interpreter", name: "code_interpreter", args: [:]))
+
+        let streamResult = try await model.doStream(
+            options: LanguageModelV3CallOptions(
+                prompt: samplePrompt,
+                tools: [tool]
+            )
+        )
+
+        var parts: [LanguageModelV3StreamPart] = []
+        for try await part in streamResult.stream {
+            parts.append(part)
+        }
+
+        #expect(parts.contains { part in
+            if case .toolInputStart(let id, let name, _, let executed) = part {
+                return id == "code_call" && name == "code_interpreter" && executed == true
+            }
+            return false
+        })
+
+        #expect(parts.contains { part in
+            if case .toolInputDelta(let id, let delta, _) = part {
+                return id == "code_call" && delta.hasPrefix("{\"containerId\":\"container-7\",\"code\":\"")
+            }
+            return false
+        })
+
+        #expect(parts.contains { part in
+            if case .toolInputEnd(let id, _) = part { return id == "code_call" }
+            return false
+        })
+
+        #expect(parts.contains { part in
+            if case .toolCall(let call) = part {
+                return call.toolCallId == "code_call" && call.toolName == "code_interpreter" && call.providerExecuted == true
+            }
+            return false
+        })
+
+        #expect(parts.contains { part in
+            if case .toolResult(let result) = part {
+                if result.toolCallId == "code_call" && result.toolName == "code_interpreter" && result.providerExecuted == true {
+                    if case .object(let payload) = result.result,
+                       let outputs = payload["outputs"], case .array(let array) = outputs {
+                        return !array.isEmpty
+                    }
+                }
+            }
+            return false
+        })
+
+        if let finish = parts.last, case .finish(let reason, let usage, _) = finish {
+            #expect(reason == .stop)
+            #expect(usage.totalTokens == 4)
+        } else {
+            Issue.record("Expected finish part for code interpreter stream")
+        }
+    }
+
+    @Test("doStream emits image generation partial results")
+    func testDoStreamEmitsImageGenerationPartial() async throws {
+        func chunk(_ value: Any) -> String {
+            let data = try! JSONSerialization.data(withJSONObject: value)
+            let encoded = String(data: data, encoding: .utf8)!
+            return "data:\(encoded)\n\n"
+        }
+
+        let chunks: [String] = [
+            chunk([
+                "type": "response.output_item.added",
+                "output_index": 0,
+                "item": [
+                    "id": "image_call",
+                    "type": "image_generation_call",
+                    "status": "in_progress"
+                ]
+            ]),
+            chunk([
+                "type": "response.image_generation_call.partial_image",
+                "item_id": "image_call",
+                "partial_image_b64": "partial-data"
+            ]),
+            chunk([
+                "type": "response.output_item.done",
+                "output_index": 0,
+                "item": [
+                    "id": "image_call",
+                    "type": "image_generation_call",
+                    "status": "completed",
+                    "result": "final-data"
+                ]
+            ]),
+            chunk([
+                "type": "response.completed",
+                "response": [
+                    "id": "resp_image",
+                    "object": "response",
+                    "created_at": 1_741_800_000.0,
+                    "status": "completed",
+                    "usage": [
+                        "input_tokens": 2,
+                        "output_tokens": 2,
+                        "total_tokens": 4
+                    ]
+                ]
+            ]),
+            "data: [DONE]\n\n"
+        ]
+
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.openai.com/v1/responses")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "text/event-stream"]
+        )!
+
+        let fetch: FetchFunction = { _ in
+            let stream = AsyncThrowingStream<Data, Error> { continuation in
+                for string in chunks {
+                    continuation.yield(Data(string.utf8))
+                }
+                continuation.finish()
+            }
+            return FetchResponse(body: .stream(stream), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-5-nano",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let tool = LanguageModelV3Tool.providerDefined(.init(id: "openai.image_generation", name: "image_generation", args: [:]))
+
+        let streamResult = try await model.doStream(
+            options: LanguageModelV3CallOptions(
+                prompt: samplePrompt,
+                tools: [tool]
+            )
+        )
+
+        var parts: [LanguageModelV3StreamPart] = []
+        for try await part in streamResult.stream {
+            parts.append(part)
+        }
+
+        #expect(parts.contains { part in
+            if case .toolResult(let result) = part {
+                if result.toolCallId == "image_call" && result.toolName == "image_generation" {
+                    return result.preliminary == true
+                }
+            }
+            return false
+        })
+    }
+
+    @Test("doStream emits file search results")
+    func testDoStreamEmitsFileSearchResults() async throws {
+        func chunk(_ value: Any) -> String {
+            let data = try! JSONSerialization.data(withJSONObject: value)
+            let encoded = String(data: data, encoding: .utf8)!
+            return "data:\(encoded)\n\n"
+        }
+
+        let chunks: [String] = [
+            chunk([
+                "type": "response.output_item.added",
+                "output_index": 0,
+                "item": [
+                    "id": "file_call",
+                    "type": "file_search_call",
+                    "status": "in_progress"
+                ]
+            ]),
+            chunk([
+                "type": "response.output_item.done",
+                "output_index": 0,
+                "item": [
+                    "id": "file_call",
+                    "type": "file_search_call",
+                    "status": "completed",
+                    "queries": ["swift"],
+                    "results": [
+                        [
+                            "attributes": ["kind": "document"],
+                            "file_id": "file-123",
+                            "filename": "doc.txt",
+                            "score": 0.9,
+                            "text": "Result text"
+                        ]
+                    ]
+                ]
+            ]),
+            chunk([
+                "type": "response.completed",
+                "response": [
+                    "id": "resp_file",
+                    "object": "response",
+                    "created_at": 1_741_900_000.0,
+                    "status": "completed",
+                    "usage": [
+                        "input_tokens": 3,
+                        "output_tokens": 1,
+                        "total_tokens": 4
+                    ]
+                ]
+            ]),
+            "data: [DONE]\n\n"
+        ]
+
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.openai.com/v1/responses")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "text/event-stream"]
+        )!
+
+        let fetch: FetchFunction = { _ in
+            let stream = AsyncThrowingStream<Data, Error> { continuation in
+                for string in chunks {
+                    continuation.yield(Data(string.utf8))
+                }
+                continuation.finish()
+            }
+            return FetchResponse(body: .stream(stream), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let tool = LanguageModelV3Tool.providerDefined(.init(id: "openai.file_search", name: "file_search", args: ["vectorStoreIds": .array([.string("vs_1")])]))
+
+        let streamResult = try await model.doStream(
+            options: LanguageModelV3CallOptions(
+                prompt: samplePrompt,
+                tools: [tool]
+            )
+        )
+
+        var parts: [LanguageModelV3StreamPart] = []
+        for try await part in streamResult.stream {
+            parts.append(part)
+        }
+
+        #expect(parts.contains { part in
+            if case .toolResult(let result) = part {
+                if result.toolCallId == "file_call" && result.toolName == "file_search" && result.providerExecuted == true {
+                    if case .object(let payload) = result.result,
+                       let res = payload["results"], case .array(let array) = res {
+                        return array.count == 1
+                    }
+                }
+            }
+            return false
+        })
+    }
+
+    @Test("doStream yields raw chunks and error events")
+    func testDoStreamEmitsRawChunksAndError() async throws {
+        func chunk(_ value: Any) -> String {
+            let data = try! JSONSerialization.data(withJSONObject: value)
+            let encoded = String(data: data, encoding: .utf8)!
+            return "data:\(encoded)\n\n"
+        }
+
+        let chunks: [String] = [
+            chunk([
+                "type": "response.created",
+                "response": [
+                    "id": "resp_error",
+                    "object": "response",
+                    "created_at": 1_742_000_000.0,
+                    "status": "in_progress",
+                    "model": "gpt-4o"
+                ]
+            ]),
+            chunk([
+                "type": "error",
+                "code": "ERR_SOMETHING",
+                "message": "Something went wrong"
+            ]),
+            "data: [DONE]\n\n"
+        ]
+
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.openai.com/v1/responses")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "text/event-stream"]
+        )!
+
+        let fetch: FetchFunction = { _ in
+            let stream = AsyncThrowingStream<Data, Error> { continuation in
+                for string in chunks {
+                    continuation.yield(Data(string.utf8))
+                }
+                continuation.finish()
+            }
+            return FetchResponse(body: .stream(stream), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let streamResult = try await model.doStream(
+            options: LanguageModelV3CallOptions(
+                prompt: samplePrompt,
+                includeRawChunks: true
+            )
+        )
+
+        var parts: [LanguageModelV3StreamPart] = []
+        for try await part in streamResult.stream {
+            parts.append(part)
+        }
+
+        #expect(parts.contains { part in
+            if case .raw(let raw) = part {
+                if case .object(let object) = raw {
+                    return object["type"] == .string("error")
+                }
+            }
+            return false
+        })
+
+        #expect(parts.contains { part in
+            if case .error(let error) = part {
+                if case .object(let object) = error {
+                    return object["message"] == .string("Something went wrong")
+                }
+            }
+            return false
+        })
+
+        if let finish = parts.last, case .finish(let reason, _, _) = finish {
+            #expect(reason == .error)
+        } else {
+            Issue.record("Expected finish error part")
+        }
+    }
+
 }
