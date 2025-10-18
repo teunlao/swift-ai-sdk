@@ -57,8 +57,132 @@ struct StreamTextV2ErrorAndReplayTests {
         let replay = try await result.collectFullStream()
         // Expect full framing present
         let hasStart = replay.contains { if case .start = $0 { return true } else { return false } }
-        let hasFinish = replay.contains { if case .finish = $0 { return true } else { return false } }
+       let hasFinish = replay.contains { if case .finish = $0 { return true } else { return false } }
         #expect(hasStart && hasFinish)
+    }
+
+    @Test("consumeStream routes errors to handler (V2)")
+    func consumeStreamRoutesErrors() async throws {
+        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
+            c.yield(.streamStart(warnings: []))
+            c.yield(.responseMetadata(id: "id-err", modelId: "mock", timestamp: Date(timeIntervalSince1970: 0)))
+            c.yield(.error(error: .string("boom")))
+            c.finish()
+        }
+        let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
+        let result: DefaultStreamTextV2Result<JSONValue, JSONValue> = try streamTextV2(model: .v3(model), prompt: "hi")
+
+        let (errorStream, continuation) = AsyncStream.makeStream(of: Error.self)
+        await result.consumeStream(options: ConsumeStreamOptions(onError: { error in
+            continuation.yield(error)
+            continuation.finish()
+        }))
+        continuation.finish()
+        var iterator = errorStream.makeAsyncIterator()
+        let captured = await iterator.next()
+        #expect(captured != nil)
+    }
+
+    @Test("pipeTextStreamToResponse writes plain text (V2)")
+    func pipeTextStreamToResponseWritesPlainText() async throws {
+        let parts: [LanguageModelV3StreamPart] = [
+            .streamStart(warnings: []),
+            .responseMetadata(id: "id-1", modelId: "mock", timestamp: Date(timeIntervalSince1970: 0)),
+            .textStart(id: "A", providerMetadata: nil),
+            .textDelta(id: "A", delta: "Hello", providerMetadata: nil),
+            .textEnd(id: "A", providerMetadata: nil),
+            .finish(finishReason: .stop, usage: defaultUsage, providerMetadata: nil)
+        ]
+        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
+            for part in parts { c.yield(part) }
+            c.finish()
+        }
+        let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
+        let result: DefaultStreamTextV2Result<JSONValue, JSONValue> = try streamTextV2(model: .v3(model), prompt: "hi")
+
+        let writer = MockStreamTextResponseWriter()
+        let initOptions = TextStreamResponseInit(headers: ["X-Test": "1"], status: 202, statusText: "Accepted")
+        result.pipeTextStreamToResponse(writer, init: initOptions)
+        await writer.waitForEnd()
+
+        #expect(writer.statusCode == 202)
+        #expect(writer.statusMessage == "Accepted")
+        #expect(writer.headers["x-test"] == "1")
+        #expect(writer.decodedChunks().joined() == "Hello")
+    }
+
+    @Test("toTextStreamResponse exposes stream (V2)")
+    func toTextStreamResponseExposesStream() async throws {
+        let parts: [LanguageModelV3StreamPart] = [
+            .streamStart(warnings: []),
+            .responseMetadata(id: "id-2", modelId: "mock", timestamp: Date(timeIntervalSince1970: 0)),
+            .textStart(id: "A", providerMetadata: nil),
+            .textDelta(id: "A", delta: "Hi", providerMetadata: nil),
+            .textEnd(id: "A", providerMetadata: nil),
+            .finish(finishReason: .stop, usage: defaultUsage, providerMetadata: nil)
+        ]
+        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
+            for part in parts { c.yield(part) }
+            c.finish()
+        }
+        let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
+        let result: DefaultStreamTextV2Result<JSONValue, JSONValue> = try streamTextV2(model: .v3(model), prompt: "hi")
+
+        let response = result.toTextStreamResponse(init: TextStreamResponseInit(status: 201, statusText: "Created"))
+        let textChunks = try await convertReadableStreamToArray(response.stream)
+        #expect(textChunks == ["Hi"])
+        #expect(response.initOptions?.status == 201)
+        #expect(response.initOptions?.statusText == "Created")
     }
 }
 
+@Suite("StreamTextV2 – SSE encoding")
+struct StreamTextV2SSEEncodingTests {
+    private let defaultUsage = LanguageModelV3Usage(
+        inputTokens: 1,
+        outputTokens: 2,
+        totalTokens: 3,
+        reasoningTokens: nil,
+        cachedInputTokens: nil
+    )
+
+    @Test("SSE encoder emits text and finish events")
+    func sseEncoderEmitsTextAndFinish() async throws {
+        let parts: [TextStreamPart] = [
+            .start,
+            .startStep(request: LanguageModelRequestMetadata(body: nil), warnings: []),
+            .textStart(id: "A", providerMetadata: nil),
+            .textDelta(id: "A", text: "Hello", providerMetadata: nil),
+            .textEnd(id: "A", providerMetadata: nil),
+            .finish(finishReason: .stop, totalUsage: defaultUsage)
+        ]
+        let stream = AsyncThrowingStream<TextStreamPart, Error> { c in
+            for part in parts { c.yield(part) }
+            c.finish()
+        }
+
+        let sseStream = makeStreamTextV2SSEStream(from: stream, includeUsage: true)
+        var payloads: [String] = []
+        for try await payload in sseStream { payloads.append(payload) }
+
+        #expect(payloads.contains(where: { $0.contains("\"type\":\"text-delta\"") && $0.contains("Hello") }))
+        #expect(payloads.contains(where: { $0.contains("\"type\":\"finish\"") && $0.contains("\"totalTokens\":3") }))
+    }
+
+    @Test("SSE encoder omits usage when disabled")
+    func sseEncoderOmitsUsageWhenDisabled() async throws {
+        let parts: [TextStreamPart] = [
+            .start,
+            .finish(finishReason: .stop, totalUsage: defaultUsage)
+        ]
+        let stream = AsyncThrowingStream<TextStreamPart, Error> { c in
+            for part in parts { c.yield(part) }
+            c.finish()
+        }
+
+        let sseStream = makeStreamTextV2SSEStream(from: stream, includeUsage: false)
+        var payloads: [String] = []
+        for try await payload in sseStream { payloads.append(payload) }
+        #expect(!payloads.contains(where: { $0.contains("\"usage\"") }))
+    }
+}

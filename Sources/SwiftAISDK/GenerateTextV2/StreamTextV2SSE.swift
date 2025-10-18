@@ -1,0 +1,198 @@
+import Foundation
+import AISDKProvider
+import AISDKProviderUtils
+
+/// Creates a Server-Sent Events (SSE) stream from a StreamText V2 full stream.
+///
+/// Each emitted string already contains the `data:` prefix and terminating blank line (`\n\n`).
+/// The payload mirrors the upstream `stream-text.ts` SSE framing with a subset of event types
+/// that are currently required by the Swift SDK.
+public func makeStreamTextV2SSEStream(
+    from stream: AsyncThrowingStream<TextStreamPart, Error>,
+    includeUsage: Bool = true
+) -> AsyncThrowingStream<String, Error> {
+    AsyncThrowingStream { continuation in
+        let task = Task {
+            let encoder = StreamTextV2SSEEncoder(includeUsage: includeUsage)
+            do {
+                for try await part in stream {
+                    let payloads = encoder.encode(part: part)
+                    for payload in payloads {
+                        continuation.yield(payload)
+                    }
+                }
+                for payload in encoder.finalize() {
+                    continuation.yield(payload)
+                }
+                continuation.finish()
+            } catch {
+                continuation.finish(throwing: error)
+            }
+        }
+        continuation.onTermination = { _ in task.cancel() }
+    }
+}
+
+private final class StreamTextV2SSEEncoder {
+    private var includeUsage: Bool
+    private var finishedEmitted = false
+
+    init(includeUsage: Bool) {
+        self.includeUsage = includeUsage
+    }
+
+    func encode(part: TextStreamPart) -> [String] {
+        switch part {
+        case .start:
+            return [encode(event: ["type": "start"])]
+
+        case .startStep:
+            return [encode(event: ["type": "start-step"])]
+
+        case .finishStep:
+            return [encode(event: ["type": "finish-step"])]
+
+        case .abort:
+            finishedEmitted = true
+            return [encode(event: ["type": "abort"])]
+
+        case let .textStart(id, _):
+            return [encode(event: ["type": "text-start", "id": id])]
+
+        case let .textDelta(id, delta, _):
+            return [encode(event: ["type": "text-delta", "id": id, "delta": delta])]
+
+        case let .textEnd(id, _):
+            return [encode(event: ["type": "text-end", "id": id])]
+
+        case let .reasoningDelta(id, text, _):
+            return [encode(event: ["type": "reasoning-delta", "id": id, "delta": text])]
+
+        case .reasoningStart, .reasoningEnd:
+            return []
+
+        case let .toolCall(call):
+            return encodeToolCall(call)
+
+        case let .toolResult(result):
+            return encodeToolResult(result)
+
+        case let .toolInputStart(id, toolName, _, executed, dynamicFlag):
+            var payload: [String: Any] = ["type": "tool-input-start", "id": id, "name": toolName]
+            if let executed { payload["providerExecuted"] = executed }
+            if let dynamicFlag { payload["dynamic"] = dynamicFlag }
+            return [encode(event: payload)]
+
+        case let .toolInputDelta(id, delta, _):
+            return [encode(event: ["type": "tool-input-delta", "id": id, "delta": delta])]
+
+        case let .toolInputEnd(id, _):
+            return [encode(event: ["type": "tool-input-end", "id": id])]
+
+        case .source:
+            return []
+
+        case .file:
+            return []
+
+        case .toolError, .toolOutputDenied, .toolApprovalRequest:
+            return []
+
+        case let .finish(finishReason, usage):
+            finishedEmitted = true
+            var payload: [String: Any] = ["type": "finish", "finishReason": finishReason.rawValue]
+            if includeUsage {
+                payload["usage"] = usageDictionary(usage)
+            }
+            return [encode(event: payload)]
+        case .raw:
+            return []
+
+        case let .error(error):
+            let description: String
+            if let localized = error as? LocalizedError, let failure = localized.errorDescription {
+                description = failure
+            } else {
+                description = String(describing: error)
+            }
+            return [encode(event: ["type": "error", "message": description])]
+        }
+    }
+
+    func finalize() -> [String] {
+        finishedEmitted ? [] : [encode(event: ["type": "end"])]
+    }
+
+    private func encodeToolCall(_ call: TypedToolCall) -> [String] {
+        switch call {
+        case .static(let value):
+            var payload: [String: Any] = [
+                "type": "tool-call",
+                "toolCallId": value.toolCallId,
+                "toolName": value.toolName,
+                "input": value.input
+            ]
+            if let metadata = value.providerMetadata { payload["providerMetadata"] = metadata }
+            if let executed = value.providerExecuted { payload["providerExecuted"] = executed }
+            if let invalid = value.invalid { payload["invalid"] = invalid }
+            return [encode(event: payload)]
+        case .dynamic(let value):
+            var payload: [String: Any] = [
+                "type": "tool-call",
+                "toolCallId": value.toolCallId,
+                "toolName": value.toolName,
+                "input": value.input
+            ]
+            if let metadata = value.providerMetadata { payload["providerMetadata"] = metadata }
+            if let executed = value.providerExecuted { payload["providerExecuted"] = executed }
+            if let invalid = value.invalid { payload["invalid"] = invalid }
+            if let error = value.error { payload["error"] = error }
+            return [encode(event: payload)]
+        }
+    }
+
+    private func encodeToolResult(_ result: TypedToolResult) -> [String] {
+        switch result {
+        case .static(let value):
+            var payload: [String: Any] = [
+                "type": "tool-result",
+                "toolCallId": value.toolCallId,
+                "toolName": value.toolName,
+                "result": value.output
+            ]
+            if let metadata = value.providerMetadata { payload["providerMetadata"] = metadata }
+            if let executed = value.providerExecuted { payload["providerExecuted"] = executed }
+            return [encode(event: payload)]
+        case .dynamic(let value):
+            var payload: [String: Any] = [
+                "type": "tool-result",
+                "toolCallId": value.toolCallId,
+                "toolName": value.toolName,
+                "result": value.output
+            ]
+            if let metadata = value.providerMetadata { payload["providerMetadata"] = metadata }
+            if let executed = value.providerExecuted { payload["providerExecuted"] = executed }
+            if let preliminary = value.preliminary { payload["preliminary"] = preliminary }
+            return [encode(event: payload)]
+        }
+    }
+
+    private func usageDictionary(_ usage: LanguageModelUsage) -> [String: Any] {
+        var dict: [String: Any] = [:]
+        if let input = usage.inputTokens { dict["inputTokens"] = input }
+        if let output = usage.outputTokens { dict["outputTokens"] = output }
+        if let total = usage.totalTokens { dict["totalTokens"] = total }
+        if let reasoning = usage.reasoningTokens { dict["reasoningTokens"] = reasoning }
+        if let cached = usage.cachedInputTokens { dict["cachedInputTokens"] = cached }
+        return dict
+    }
+
+    private func encode(event payload: [String: Any]) -> String {
+        guard JSONSerialization.isValidJSONObject(payload),
+              let data = try? JSONSerialization.data(withJSONObject: payload, options: []),
+              let json = String(data: data, encoding: .utf8) else {
+            return "data: {}\n\n"
+        }
+        return "data: \(json)\n\n"
+    }
+}

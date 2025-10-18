@@ -422,6 +422,10 @@ public final class DefaultStreamTextV2Result<OutputValue: Sendable, PartialOutpu
         )
     }
 
+    public func consumeStream(options: ConsumeStreamOptions? = nil) async {
+        await SwiftAISDK.consumeStream(stream: fullStream, onError: options?.onError)
+    }
+
     // MARK: - Control
 
     /// Requests to stop the underlying stream as soon as possible.
