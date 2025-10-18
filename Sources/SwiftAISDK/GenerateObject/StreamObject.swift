@@ -272,6 +272,7 @@ private func consumeStream<ResultValue, PartialValue, ElementStream>(
     var msToFirstChunkRecorded = false
 
     for try await part in stream {
+        if Task.isCancelled { break }
         if !msToFirstChunkRecorded {
             msToFirstChunkRecorded = true
             let elapsed = internalOptions.now() - execution.startTimestampMs

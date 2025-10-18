@@ -181,6 +181,16 @@ actor StreamTextV2Actor {
         var didEmitStartStep = false
         var sawStreamStart = false
         for try await part in stream {
+            if Task.isCancelled {
+                await finishAll(
+                    response: nil,
+                    usage: nil,
+                    finishReason: nil,
+                    providerMetadata: nil,
+                    error: nil
+                )
+                return
+            }
             if externalStopRequested { break }
             switch part {
             case .streamStart(let warnings):
