@@ -8,6 +8,7 @@ actor StreamTextV2Actor {
     private var initialMessages: [ModelMessage]
     private let initialSystem: String?
     private let stopConditions: [StopCondition]
+    private let tools: ToolSet?
 
     private let textBroadcaster = AsyncStreamBroadcaster<String>()
     private let fullBroadcaster = AsyncStreamBroadcaster<TextStreamPart>()
@@ -24,7 +25,14 @@ actor StreamTextV2Actor {
     private var capturedTimestamp: Date?
     private var openTextIds = Set<String>()
     private var openReasoningIds = Set<String>()
-    private var aggregatedText: String = ""
+    private var recordedContent: [ContentPart] = []
+    private var activeTextContent: [String: ActiveTextContent] = [:]
+    private var activeReasoningContent: [String: ActiveReasoningContent] = [:]
+    private var recordedResponseMessages: [ResponseMessage] = []
+    private var currentToolCalls: [TypedToolCall] = []
+    private var currentToolOutputs: [ToolOutput] = []
+    private var lastClientToolCalls: [TypedToolCall] = []
+    private var lastClientToolOutputs: [ToolOutput] = []
     private var recordedRequest: LanguageModelRequestMetadata = LanguageModelRequestMetadata()
     private var recordedSteps: [StepResult] = []
     private var accumulatedUsage: LanguageModelUsage = LanguageModelUsage()
@@ -45,6 +53,7 @@ actor StreamTextV2Actor {
         initialMessages: [ModelMessage],
         system: String?,
         stopConditions: [StopCondition],
+        tools: ToolSet?,
         totalUsagePromise: DelayedPromise<LanguageModelUsage>,
         finishReasonPromise: DelayedPromise<FinishReason>,
         stepsPromise: DelayedPromise<[StepResult]>
@@ -54,6 +63,7 @@ actor StreamTextV2Actor {
         self.initialMessages = initialMessages
         self.initialSystem = system
         self.stopConditions = stopConditions
+        self.tools = tools
         self.totalUsagePromise = totalUsagePromise
         self.finishReasonPromise = finishReasonPromise
         self.stepsPromise = stepsPromise
@@ -141,7 +151,11 @@ actor StreamTextV2Actor {
         emitStartStep: Bool
     ) async throws {
         // Reset per-step state
-        aggregatedText = ""
+        recordedContent.removeAll()
+        activeTextContent.removeAll()
+        activeReasoningContent.removeAll()
+        currentToolCalls.removeAll()
+        currentToolOutputs.removeAll()
         capturedWarnings = []
         openTextIds.removeAll()
         openReasoningIds.removeAll()
@@ -196,6 +210,13 @@ actor StreamTextV2Actor {
                     }
                 }
                 openTextIds.insert(id)
+                let index = recordedContent.count
+                recordedContent.append(.text(text: "", providerMetadata: providerMetadata))
+                activeTextContent[id] = ActiveTextContent(
+                    index: index,
+                    text: "",
+                    providerMetadata: providerMetadata
+                )
                 await fullBroadcaster.send(.textStart(id: id, providerMetadata: providerMetadata))
             case let .textDelta(id, delta, providerMetadata):
                 if !didEmitStartStep {
@@ -216,12 +237,37 @@ actor StreamTextV2Actor {
                 await textBroadcaster.send(delta)
                 if !openTextIds.contains(id) {
                     openTextIds.insert(id)
+                    let index = recordedContent.count
+                    recordedContent.append(.text(text: "", providerMetadata: providerMetadata))
+                    activeTextContent[id] = ActiveTextContent(
+                        index: index,
+                        text: "",
+                        providerMetadata: providerMetadata
+                    )
                     await fullBroadcaster.send(
                         .textStart(id: id, providerMetadata: providerMetadata))
                 }
+                if var active = activeTextContent[id] {
+                    active.text += delta
+                    if let providerMetadata {
+                        active.providerMetadata = providerMetadata
+                    }
+                    activeTextContent[id] = active
+                    recordedContent[active.index] = .text(
+                        text: active.text,
+                        providerMetadata: active.providerMetadata
+                    )
+                } else {
+                    let index = recordedContent.count
+                    recordedContent.append(.text(text: delta, providerMetadata: providerMetadata))
+                    activeTextContent[id] = ActiveTextContent(
+                        index: index,
+                        text: delta,
+                        providerMetadata: providerMetadata
+                    )
+                }
                 await fullBroadcaster.send(
                     .textDelta(id: id, text: delta, providerMetadata: providerMetadata))
-                aggregatedText.append(delta)
             case let .textEnd(id, providerMetadata):
                 if !didEmitStartStep {
                     if !framingEmitted {
@@ -239,6 +285,16 @@ actor StreamTextV2Actor {
                     }
                 }
                 openTextIds.remove(id)
+                if var active = activeTextContent[id] {
+                    if let providerMetadata {
+                        active.providerMetadata = providerMetadata
+                    }
+                    activeTextContent.removeValue(forKey: id)
+                    recordedContent[active.index] = .text(
+                        text: active.text,
+                        providerMetadata: active.providerMetadata
+                    )
+                }
                 await fullBroadcaster.send(.textEnd(id: id, providerMetadata: providerMetadata))
             case let .reasoningStart(id, providerMetadata):
                 if !didEmitStartStep {
@@ -257,6 +313,14 @@ actor StreamTextV2Actor {
                     }
                 }
                 openReasoningIds.insert(id)
+                let index = recordedContent.count
+                let reasoning = ReasoningOutput(text: "", providerMetadata: providerMetadata)
+                recordedContent.append(.reasoning(reasoning))
+                activeReasoningContent[id] = ActiveReasoningContent(
+                    index: index,
+                    text: "",
+                    providerMetadata: providerMetadata
+                )
                 await fullBroadcaster.send(
                     .reasoningStart(id: id, providerMetadata: providerMetadata)
                 )
@@ -278,8 +342,37 @@ actor StreamTextV2Actor {
                 }
                 if !openReasoningIds.contains(id) {
                     openReasoningIds.insert(id)
+                    let index = recordedContent.count
+                    let reasoning = ReasoningOutput(text: "", providerMetadata: providerMetadata)
+                    recordedContent.append(.reasoning(reasoning))
+                    activeReasoningContent[id] = ActiveReasoningContent(
+                        index: index,
+                        text: "",
+                        providerMetadata: providerMetadata
+                    )
                     await fullBroadcaster.send(
                         .reasoningStart(id: id, providerMetadata: providerMetadata)
+                    )
+                }
+                if var active = activeReasoningContent[id] {
+                    active.text += delta
+                    if let providerMetadata {
+                        active.providerMetadata = providerMetadata
+                    }
+                    activeReasoningContent[id] = active
+                    let reasoning = ReasoningOutput(
+                        text: active.text,
+                        providerMetadata: active.providerMetadata
+                    )
+                    recordedContent[active.index] = .reasoning(reasoning)
+                } else {
+                    let reasoning = ReasoningOutput(text: delta, providerMetadata: providerMetadata)
+                    let index = recordedContent.count
+                    recordedContent.append(.reasoning(reasoning))
+                    activeReasoningContent[id] = ActiveReasoningContent(
+                        index: index,
+                        text: delta,
+                        providerMetadata: providerMetadata
                     )
                 }
                 await fullBroadcaster.send(
@@ -302,6 +395,17 @@ actor StreamTextV2Actor {
                     }
                 }
                 openReasoningIds.remove(id)
+                if var active = activeReasoningContent[id] {
+                    if let providerMetadata {
+                        active.providerMetadata = providerMetadata
+                    }
+                    activeReasoningContent.removeValue(forKey: id)
+                    let reasoning = ReasoningOutput(
+                        text: active.text,
+                        providerMetadata: active.providerMetadata
+                    )
+                    recordedContent[active.index] = .reasoning(reasoning)
+                }
                 await fullBroadcaster.send(
                     .reasoningEnd(id: id, providerMetadata: providerMetadata)
                 )
@@ -383,6 +487,8 @@ actor StreamTextV2Actor {
                         error: nil
                     )
                 )
+                recordedContent.append(.toolCall(typed, providerMetadata: call.providerMetadata))
+                currentToolCalls.append(typed)
                 await fullBroadcaster.send(.toolCall(typed))
             case .toolResult(let result):
                 let input = activeToolInputs[result.toolCallId] ?? .null
@@ -397,16 +503,39 @@ actor StreamTextV2Actor {
                         providerMetadata: result.providerMetadata
                     )
                 )
+                let isPreliminary = result.preliminary == true
                 await fullBroadcaster.send(.toolResult(typed))
+                if !isPreliminary {
+                    recordedContent.append(.toolResult(typed, providerMetadata: result.providerMetadata))
+                    currentToolOutputs.append(.result(typed))
+                    activeToolInputs.removeValue(forKey: result.toolCallId)
+                    activeToolNames.removeValue(forKey: result.toolCallId)
+                }
             case let .finish(finishReason, usage, providerMetadata):
                 for id in openTextIds {
                     await fullBroadcaster.send(.textEnd(id: id, providerMetadata: nil))
+                    if let active = activeTextContent[id] {
+                        activeTextContent.removeValue(forKey: id)
+                        recordedContent[active.index] = .text(
+                            text: active.text,
+                            providerMetadata: active.providerMetadata
+                        )
+                    }
                 }
                 openTextIds.removeAll()
                 for id in openReasoningIds {
                     await fullBroadcaster.send(.reasoningEnd(id: id, providerMetadata: nil))
+                    if let active = activeReasoningContent[id] {
+                        activeReasoningContent.removeValue(forKey: id)
+                        let reasoning = ReasoningOutput(
+                            text: active.text,
+                            providerMetadata: active.providerMetadata
+                        )
+                        recordedContent[active.index] = .reasoning(reasoning)
+                    }
                 }
                 openReasoningIds.removeAll()
+                finalizePendingContent()
                 let response = LanguageModelResponseMetadata(
                     id: capturedResponseId ?? "unknown",
                     timestamp: capturedTimestamp ?? Date(timeIntervalSince1970: 0),
@@ -417,27 +546,35 @@ actor StreamTextV2Actor {
                     .finishStep(
                         response: response, usage: usage, finishReason: finishReason,
                         providerMetadata: providerMetadata))
-                let contentParts: [ContentPart] =
-                    aggregatedText.isEmpty
-                    ? [] : [.text(text: aggregatedText, providerMetadata: nil)]
-                let modelMessages = toResponseMessages(content: contentParts, tools: nil)
+                let contentSnapshot = recordedContent
+                let modelMessages = toResponseMessages(content: contentSnapshot, tools: tools)
                 let responseMessages = convertModelMessagesToResponseMessagesV2(modelMessages)
+                let mergedMessages = recordedResponseMessages + responseMessages
                 let stepResult = DefaultStepResult(
-                    content: contentParts, finishReason: finishReason, usage: usage,
+                    content: contentSnapshot, finishReason: finishReason, usage: usage,
                     warnings: capturedWarnings, request: recordedRequest,
                     response: StepResultResponse(
-                        from: response, messages: responseMessages, body: nil),
+                        from: response, messages: mergedMessages, body: nil),
                     providerMetadata: providerMetadata)
                 recordedSteps.append(stepResult)
+                recordedResponseMessages.append(contentsOf: responseMessages)
                 accumulatedUsage = addLanguageModelUsage(accumulatedUsage, usage)
+                let clientToolCalls = currentToolCalls.filter { $0.providerExecuted != true }
+                let clientToolOutputs = currentToolOutputs.filter { $0.providerExecuted != true }
+                lastClientToolCalls = clientToolCalls
+                lastClientToolOutputs = clientToolOutputs
+                currentToolCalls.removeAll()
+                currentToolOutputs.removeAll()
                 // Do not resolve `finishReasonPromise` here; session-level finish
                 // will resolve it with the last step's reason to mirror upstream.
                 // Keep the last seen reason in `recordedFinishReason`.
                 recordedFinishReason = finishReason
             case .file(let file):
                 let genFile = toGeneratedFile(file)
+                recordedContent.append(.file(file: genFile, providerMetadata: nil))
                 await fullBroadcaster.send(.file(genFile))
             case .source(let source):
+                recordedContent.append(.source(type: "source", source: source))
                 await fullBroadcaster.send(.source(source))
             case .raw(let raw):
                 if !didEmitStartStep {
@@ -467,7 +604,7 @@ actor StreamTextV2Actor {
                     error: StreamTextV2Error.providerError(err)
                 )
                 return
-            default:
+            @unknown default:
                 break
             }
         }
@@ -484,18 +621,26 @@ actor StreamTextV2Actor {
         terminated = true
         // If the provider supplied a tail step via `response/usage/finishReason`,
         // record it before resolving the promises or emitting the terminal `.finish`.
+        finalizePendingContent()
         if let usage, let finishReason, let resp = response {
-            let contentParts: [ContentPart] =
-                aggregatedText.isEmpty ? [] : [.text(text: aggregatedText, providerMetadata: nil)]
-            let modelMessages = toResponseMessages(content: contentParts, tools: nil)
+            let contentSnapshot = recordedContent
+            let modelMessages = toResponseMessages(content: contentSnapshot, tools: tools)
             let responseMessages = convertModelMessagesToResponseMessagesV2(modelMessages)
+            let mergedMessages = recordedResponseMessages + responseMessages
             let stepResult = DefaultStepResult(
-                content: contentParts, finishReason: finishReason, usage: usage,
+                content: contentSnapshot, finishReason: finishReason, usage: usage,
                 warnings: capturedWarnings, request: recordedRequest,
-                response: StepResultResponse(from: resp, messages: responseMessages, body: nil),
+                response: StepResultResponse(from: resp, messages: mergedMessages, body: nil),
                 providerMetadata: providerMetadata)
             recordedSteps.append(stepResult)
+            recordedResponseMessages.append(contentsOf: responseMessages)
             accumulatedUsage = addLanguageModelUsage(accumulatedUsage, usage)
+            let clientToolCalls = currentToolCalls.filter { $0.providerExecuted != true }
+            let clientToolOutputs = currentToolOutputs.filter { $0.providerExecuted != true }
+            lastClientToolCalls = clientToolCalls
+            lastClientToolOutputs = clientToolOutputs
+            currentToolCalls.removeAll()
+            currentToolOutputs.removeAll()
             recordedFinishReason = finishReason
         }
         // Resolve promises BEFORE publishing the terminal `.finish` event.
@@ -526,6 +671,24 @@ actor StreamTextV2Actor {
         }
         onTerminate?()
         onTerminate = nil
+    }
+
+    private func finalizePendingContent() {
+        for (_, active) in activeTextContent {
+            recordedContent[active.index] = .text(
+                text: active.text,
+                providerMetadata: active.providerMetadata
+            )
+        }
+        activeTextContent.removeAll()
+        for (_, active) in activeReasoningContent {
+            let reasoning = ReasoningOutput(
+                text: active.text,
+                providerMetadata: active.providerMetadata
+            )
+            recordedContent[active.index] = .reasoning(reasoning)
+        }
+        activeReasoningContent.removeAll()
     }
 
     // MARK: - Conversions
@@ -572,6 +735,18 @@ actor StreamTextV2Actor {
             }
         }
     }
+}
+
+private struct ActiveTextContent: Sendable {
+    var index: Int
+    var text: String
+    var providerMetadata: ProviderMetadata?
+}
+
+private struct ActiveReasoningContent: Sendable {
+    var index: Int
+    var text: String
+    var providerMetadata: ProviderMetadata?
 }
 
 enum StreamTextV2Error: Error { case providerError(JSONValue) }

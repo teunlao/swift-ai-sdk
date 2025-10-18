@@ -89,6 +89,7 @@ public final class DefaultStreamTextV2Result<OutputValue: Sendable, PartialOutpu
             initialMessages: initialMessages,
             system: system,
             stopConditions: self.stopConditions,
+            tools: nil,
             totalUsagePromise: totalUsagePromise,
             finishReasonPromise: finishReasonPromise,
             stepsPromise: stepsPromise
