@@ -8,8 +8,8 @@ public struct OpenAICompatibleEmbeddingConfig: Sendable {
     public let headers: @Sendable () -> [String: String]
     public let fetch: FetchFunction?
     public let errorConfiguration: OpenAICompatibleErrorConfiguration
-    public let maxEmbeddingsPerCall: Int?
-    public let supportsParallelCalls: Bool?
+    public let maxEmbeddingsPerCallOverride: Int?
+    public let supportsParallelCallsOverride: Bool?
 
     public init(
         provider: String,
@@ -25,8 +25,8 @@ public struct OpenAICompatibleEmbeddingConfig: Sendable {
         self.headers = headers
         self.fetch = fetch
         self.errorConfiguration = errorConfiguration
-        self.maxEmbeddingsPerCall = maxEmbeddingsPerCall
-        self.supportsParallelCalls = supportsParallelCalls
+        self.maxEmbeddingsPerCallOverride = maxEmbeddingsPerCall
+        self.supportsParallelCallsOverride = supportsParallelCalls
     }
 }
 
@@ -45,19 +45,105 @@ public final class OpenAICompatibleEmbeddingModel: EmbeddingModelV3 {
     public var provider: String { config.provider }
     public var modelId: String { modelIdentifier.rawValue }
 
-    private var providerOptionsName: String {
-        provider.split(separator: ".").first.map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) } ?? ""
-    }
-
     public var maxEmbeddingsPerCall: Int? {
-        get async throws { config.maxEmbeddingsPerCall ?? 2048 }
+        get async throws { config.maxEmbeddingsPerCallOverride ?? 2048 }
     }
 
     public var supportsParallelCalls: Bool {
-        get async throws { config.supportsParallelCalls ?? true }
+        get async throws { config.supportsParallelCallsOverride ?? true }
     }
 
     public func doEmbed(options: EmbeddingModelV3DoEmbedOptions<String>) async throws -> EmbeddingModelV3DoEmbedResult {
-        fatalError("OpenAICompatibleEmbeddingModel.doEmbed not yet implemented")
+        if let limit = try await maxEmbeddingsPerCall, options.values.count > limit {
+            throw TooManyEmbeddingValuesForCallError(
+                provider: provider,
+                modelId: modelId,
+                maxEmbeddingsPerCall: limit,
+                values: options.values
+            )
+        }
+
+        let defaultHeaders = config.headers().mapValues { Optional($0) }
+        let requestHeaders = options.headers?.mapValues { Optional($0) }
+        let headers = combineHeaders(defaultHeaders, requestHeaders).compactMapValues { $0 }
+
+        let baseOptions = try await parseProviderOptions(
+            provider: "openai-compatible",
+            providerOptions: options.providerOptions,
+            schema: openAICompatibleEmbeddingProviderOptionsSchema
+        ) ?? OpenAICompatibleEmbeddingProviderOptions()
+
+        let providerSpecificOptions = try await parseProviderOptions(
+            provider: config.provider.split(separator: ".").first.map(String.init) ?? "openai-compatible",
+            providerOptions: options.providerOptions,
+            schema: openAICompatibleEmbeddingProviderOptionsSchema
+        ) ?? OpenAICompatibleEmbeddingProviderOptions()
+
+        var mergedOptions = baseOptions
+        if mergedOptions.dimensions == nil {
+            mergedOptions.dimensions = providerSpecificOptions.dimensions
+        }
+        if mergedOptions.user == nil {
+            mergedOptions.user = providerSpecificOptions.user
+        }
+
+        let response = try await postJsonToAPI(
+            url: config.url(.init(modelId: modelIdentifier.rawValue, path: "/embeddings")),
+            headers: headers,
+            body: JSONValue.object([
+                "model": .string(modelIdentifier.rawValue),
+                "input": .array(options.values.map(JSONValue.string)),
+                "encoding_format": .string("float"),
+                "dimensions": mergedOptions.dimensions.map { .number(Double($0)) } ?? .null,
+                "user": mergedOptions.user.map(JSONValue.string) ?? .null
+            ].compactMapValues { value in
+                if case .null = value { return nil }
+                return value
+            }),
+            failedResponseHandler: config.errorConfiguration.failedResponseHandler,
+            successfulResponseHandler: createJsonResponseHandler(responseSchema: openAICompatibleEmbeddingResponseSchema),
+            isAborted: options.abortSignal,
+            fetch: config.fetch
+        )
+
+        let embeddings = response.value.data.map { item -> [Double] in
+            item.embedding
+        }
+
+        let providerMetadata = response.value.providerMetadata?.isEmpty == false ? response.value.providerMetadata : nil
+
+        return EmbeddingModelV3DoEmbedResult(
+            embeddings: embeddings,
+            usage: response.value.usage?.promptTokens.map { EmbeddingModelV3Usage(tokens: $0) },
+            providerMetadata: providerMetadata,
+            response: EmbeddingModelV3ResponseInfo(headers: response.responseHeaders, body: response.rawValue)
+        )
     }
 }
+
+private let genericJSONObjectSchema: JSONValue = .object(["type": .string("object")])
+
+private struct OpenAICompatibleEmbeddingResponse: Codable {
+    struct DataItem: Codable {
+        let embedding: [Double]
+    }
+
+    struct Usage: Codable {
+        let promptTokens: Int?
+
+        private enum CodingKeys: String, CodingKey {
+            case promptTokens = "prompt_tokens"
+        }
+    }
+
+    let data: [DataItem]
+    let usage: Usage?
+    let providerMetadata: SharedV3ProviderMetadata?
+}
+
+private let openAICompatibleEmbeddingResponseSchema = FlexibleSchema(
+    Schema<OpenAICompatibleEmbeddingResponse>.codable(
+        OpenAICompatibleEmbeddingResponse.self,
+        jsonSchema: genericJSONObjectSchema
+    )
+)
