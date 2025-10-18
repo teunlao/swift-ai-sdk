@@ -32,13 +32,16 @@ public struct OpenAIProviderSettings: Sendable {
 
 public final class OpenAIProvider: ProviderV3 {
     private let responsesFactory: @Sendable (OpenAIResponsesModelId) -> OpenAIResponsesLanguageModel
+    private let embeddingFactory: @Sendable (OpenAIEmbeddingModelId) -> OpenAIEmbeddingModel
     public let tools: OpenAITools
 
     init(
         responses: @escaping @Sendable (OpenAIResponsesModelId) -> OpenAIResponsesLanguageModel,
+        embeddings: @escaping @Sendable (OpenAIEmbeddingModelId) -> OpenAIEmbeddingModel,
         tools: OpenAITools
     ) {
         self.responsesFactory = responses
+        self.embeddingFactory = embeddings
         self.tools = tools
     }
 
@@ -47,7 +50,7 @@ public final class OpenAIProvider: ProviderV3 {
     }
 
     public func textEmbeddingModel(modelId: String) -> any EmbeddingModelV3<String> {
-        fatalError("OpenAI embedding models not yet implemented")
+        embeddingFactory(OpenAIEmbeddingModelId(rawValue: modelId))
     }
 
     public func imageModel(modelId: String) -> any ImageModelV3 {
@@ -99,17 +102,18 @@ public func createOpenAIProvider(settings: OpenAIProviderSettings = .init()) -> 
         return userAgentHeaders.mapValues { Optional($0) }
     }
 
-    func makeConfig() -> OpenAIConfig {
+    func makeConfig(providerSuffix: String, fileIdPrefixes: [String]? = nil) -> OpenAIConfig {
         OpenAIConfig(
-            provider: "\(providerName).responses",
+            provider: "\(providerName).\(providerSuffix)",
             url: { options in "\(baseURL)\(options.path)" },
             headers: headersClosure,
             fetch: settings.fetch,
-            fileIdPrefixes: ["file-"]
+            fileIdPrefixes: fileIdPrefixes
         )
     }
 
-    let responsesConfig = makeConfig()
+    let responsesConfig = makeConfig(providerSuffix: "responses", fileIdPrefixes: ["file-"])
+    let embeddingConfig = makeConfig(providerSuffix: "embedding")
 
     let responsesFactory: @Sendable (OpenAIResponsesModelId) -> OpenAIResponsesLanguageModel = { modelId in
         OpenAIResponsesLanguageModel(
@@ -118,8 +122,16 @@ public func createOpenAIProvider(settings: OpenAIProviderSettings = .init()) -> 
         )
     }
 
+    let embeddingFactory: @Sendable (OpenAIEmbeddingModelId) -> OpenAIEmbeddingModel = { modelId in
+        OpenAIEmbeddingModel(
+            modelId: modelId,
+            config: embeddingConfig
+        )
+    }
+
     return OpenAIProvider(
         responses: responsesFactory,
+        embeddings: embeddingFactory,
         tools: openaiTools
     )
 }
