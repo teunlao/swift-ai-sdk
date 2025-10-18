@@ -740,7 +740,13 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
         }
 
         // Start from plain text stream and transform into UI chunks
-        let base = transformTextToUIMessageStream(stream: textStream)
+        let base = transformTextToUIMessageStream(
+            stream: textStream,
+            options: UIMessageTransformOptions(
+                sendStart: streamOptions.sendStart,
+                sendFinish: streamOptions.sendFinish
+            )
+        )
 
         // Handle finish, id injection, and final onFinish
         let handled = handleUIMessageStreamFinish(

@@ -8,13 +8,26 @@ import Foundation
  **Adaptations**:
  - Web `TransformStream` is modelled as `AsyncThrowingStream` in Swift.
  */
+public struct UIMessageTransformOptions: Sendable {
+    public var sendStart: Bool
+    public var sendFinish: Bool
+
+    public init(sendStart: Bool = true, sendFinish: Bool = true) {
+        self.sendStart = sendStart
+        self.sendFinish = sendFinish
+    }
+}
+
 public func transformTextToUIMessageStream(
-    stream: AsyncThrowingStream<String, Error>
+    stream: AsyncThrowingStream<String, Error>,
+    options: UIMessageTransformOptions = UIMessageTransformOptions()
 ) -> AsyncThrowingStream<AnyUIMessageChunk, Error> {
     AsyncThrowingStream { continuation in
         let task = Task {
             do {
-                continuation.yield(.start(messageId: nil, messageMetadata: nil))
+                if options.sendStart {
+                    continuation.yield(.start(messageId: nil, messageMetadata: nil))
+                }
                 continuation.yield(.startStep)
                 continuation.yield(.textStart(id: "text-1", providerMetadata: nil))
 
@@ -24,7 +37,9 @@ public func transformTextToUIMessageStream(
 
                 continuation.yield(.textEnd(id: "text-1", providerMetadata: nil))
                 continuation.yield(.finishStep)
-                continuation.yield(.finish(messageMetadata: nil))
+                if options.sendFinish {
+                    continuation.yield(.finish(messageMetadata: nil))
+                }
                 continuation.finish()
             } catch is CancellationError {
                 // Consumer cancelled: do not attempt to finish again to avoid

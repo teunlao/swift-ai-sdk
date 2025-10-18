@@ -1452,6 +1452,135 @@ struct StreamTextBasicTests {
         #expect(captured.usage?.totalTokens == 5)
     }
 
+    @Test("stop() emits abort before final finish")
+    func stopEmitsAbortBeforeFinish() async throws {
+        let usage = LanguageModelV3Usage(inputTokens: 1, outputTokens: 1, totalTokens: 2)
+        let providerStream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
+            c.yield(.streamStart(warnings: []))
+            c.yield(.responseMetadata(id: "s", modelId: "m", timestamp: Date(timeIntervalSince1970: 0)))
+            c.yield(.textStart(id: "t", providerMetadata: nil))
+            // Delay finish so we can call stop() before it arrives
+            Task {
+                try? await delay(30)
+                c.yield(.textEnd(id: "t", providerMetadata: nil))
+                c.yield(.finish(finishReason: .stop, usage: usage, providerMetadata: nil))
+                c.finish()
+            }
+        }
+        let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: providerStream)))
+        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+            model: .v3(model),
+            prompt: "hi"
+        )
+
+        // Request stop immediately; actor should emit abort before session finish.
+        result.stop()
+        let parts = try await convertReadableStreamToArray(result.fullStream)
+        let types = parts.map { part -> String in
+            switch part {
+            case .start: return "start"
+            case .startStep: return "start-step"
+            case .finishStep: return "finish-step"
+            case .abort: return "abort"
+            case .finish: return "finish"
+            case .textStart: return "text-start"
+            case .textEnd: return "text-end"
+            case .textDelta: return "text-delta"
+            case .reasoningStart: return "reasoning-start"
+            case .reasoningEnd: return "reasoning-end"
+            case .reasoningDelta: return "reasoning-delta"
+            case .toolInputStart: return "tool-input-start"
+            case .toolInputDelta: return "tool-input-delta"
+            case .toolInputEnd: return "tool-input-end"
+            case .toolCall: return "tool-call"
+            case .toolResult: return "tool-result"
+            case .toolError: return "tool-error"
+            case .toolOutputDenied: return "tool-output-denied"
+            case .toolApprovalRequest: return "tool-approval-request"
+            case .source: return "source"
+            case .file: return "file"
+            case .raw: return "raw"
+            case .error: return "error"
+            }
+        }
+        // Ensure abort appears before finish in the sequence
+        let abortIndex = types.firstIndex(of: "abort")
+        let finishIndex = types.firstIndex(of: "finish")
+        #expect(abortIndex != nil && finishIndex != nil && abortIndex! < finishIndex!)
+    }
+
+    @Test("AsyncIterable wrappers yield same elements as streams")
+    func iterableWrappersMatchStreams() async throws {
+        let parts: [LanguageModelV3StreamPart] = [
+            .streamStart(warnings: []),
+            .textStart(id: "t", providerMetadata: nil),
+            .textDelta(id: "t", delta: "A", providerMetadata: nil),
+            .textDelta(id: "t", delta: "B", providerMetadata: nil),
+            .textEnd(id: "t", providerMetadata: nil),
+            .finish(finishReason: .stop, usage: LanguageModelV3Usage(), providerMetadata: nil)
+        ]
+        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
+            parts.forEach { c.yield($0) }
+            c.finish()
+        }
+        let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
+        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+            model: .v3(model),
+            prompt: "hi"
+        )
+
+        // Collect via stream and iterable wrappers
+        let textChunks = try await convertReadableStreamToArray(result.textStream)
+        var iterableText: [String] = []
+        var iter = result.textStreamIterable.makeAsyncIterator()
+        while let next = try await iter.next() { iterableText.append(next) }
+        #expect(textChunks == iterableText)
+
+        let fullChunks = try await convertReadableStreamToArray(result.fullStream)
+        var iterableFull: [TextStreamPart] = []
+        var iter2 = result.fullStreamIterable.makeAsyncIterator()
+        while let next = try await iter2.next() { iterableFull.append(next) }
+        #expect(fullChunks == iterableFull)
+    }
+
+    @Test("toUIMessageStream respects sendStart/sendFinish flags")
+    func uiMessageStreamRespectsFlags() async throws {
+        let parts: [LanguageModelV3StreamPart] = [
+            .streamStart(warnings: []),
+            .textStart(id: "t", providerMetadata: nil),
+            .textDelta(id: "t", delta: "A", providerMetadata: nil),
+            .textEnd(id: "t", providerMetadata: nil),
+            .finish(finishReason: .stop, usage: LanguageModelV3Usage(), providerMetadata: nil)
+        ]
+        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
+            parts.forEach { c.yield($0) }
+            c.finish()
+        }
+        let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
+
+        // sendStart=false, sendFinish=true
+        let result1: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+            model: .v3(model),
+            prompt: "hi"
+        )
+        let stream1 = result1.toUIMessageStream(options: UIMessageStreamOptions<UIMessage>(sendFinish: true, sendStart: false))
+        let chunks1 = try await convertReadableStreamToArray(stream1)
+        let hasStart1 = chunks1.contains { $0.typeIdentifier == "start" }
+        let hasFinish1 = chunks1.contains { $0.typeIdentifier == "finish" }
+        #expect(!hasStart1 && hasFinish1)
+
+        // sendStart=true, sendFinish=false
+        let result2: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+            model: .v3(model),
+            prompt: "hi"
+        )
+        let stream2 = result2.toUIMessageStream(options: UIMessageStreamOptions<UIMessage>(sendFinish: false, sendStart: true))
+        let chunks2 = try await convertReadableStreamToArray(stream2)
+        let hasStart2 = chunks2.contains { $0.typeIdentifier == "start" }
+        let hasFinish2 = chunks2.contains { $0.typeIdentifier == "finish" }
+        #expect(hasStart2 && !hasFinish2)
+    }
+
     @Test("onFinish is invoked exactly once")
     func onFinishInvokedExactlyOnce() async throws {
         let usage = LanguageModelV3Usage(inputTokens: 1, outputTokens: 1, totalTokens: 2, reasoningTokens: nil, cachedInputTokens: nil)
