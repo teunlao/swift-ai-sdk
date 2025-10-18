@@ -36,6 +36,8 @@ public final class OpenAIProvider: ProviderV3 {
     private let embeddingFactory: @Sendable (OpenAIEmbeddingModelId) -> OpenAIEmbeddingModel
     private let imageFactory: @Sendable (OpenAIImageModelId) -> OpenAIImageModel
     private let completionFactory: @Sendable (OpenAICompletionModelId) -> OpenAICompletionLanguageModel
+    private let transcriptionFactory: @Sendable (OpenAITranscriptionModelId) -> OpenAITranscriptionModel
+    private let speechFactory: @Sendable (OpenAISpeechModelId) -> OpenAISpeechModel
     public let tools: OpenAITools
 
     init(
@@ -44,6 +46,8 @@ public final class OpenAIProvider: ProviderV3 {
         embeddings: @escaping @Sendable (OpenAIEmbeddingModelId) -> OpenAIEmbeddingModel,
         images: @escaping @Sendable (OpenAIImageModelId) -> OpenAIImageModel,
         completions: @escaping @Sendable (OpenAICompletionModelId) -> OpenAICompletionLanguageModel,
+        transcriptions: @escaping @Sendable (OpenAITranscriptionModelId) -> OpenAITranscriptionModel,
+        speeches: @escaping @Sendable (OpenAISpeechModelId) -> OpenAISpeechModel,
         tools: OpenAITools
     ) {
         self.responsesFactory = responses
@@ -51,6 +55,8 @@ public final class OpenAIProvider: ProviderV3 {
         self.embeddingFactory = embeddings
         self.imageFactory = images
         self.completionFactory = completions
+        self.transcriptionFactory = transcriptions
+        self.speechFactory = speeches
         self.tools = tools
     }
 
@@ -75,11 +81,11 @@ public final class OpenAIProvider: ProviderV3 {
     }
 
     public func transcriptionModel(modelId: String) -> any TranscriptionModelV3 {
-        fatalError("OpenAI transcription models not yet implemented")
+        transcriptionFactory(OpenAITranscriptionModelId(rawValue: modelId))
     }
 
     public func speechModel(modelId: String) -> any SpeechModelV3 {
-        fatalError("OpenAI speech models not yet implemented")
+        speechFactory(OpenAISpeechModelId(rawValue: modelId))
     }
 
     public func responses(modelId: OpenAIResponsesModelId) -> OpenAIResponsesLanguageModel {
@@ -88,6 +94,14 @@ public final class OpenAIProvider: ProviderV3 {
 
     public func chat(modelId: OpenAIChatModelId) -> OpenAIChatLanguageModel {
         chatFactory(modelId)
+    }
+
+    public func transcription(modelId: OpenAITranscriptionModelId) -> OpenAITranscriptionModel {
+        transcriptionFactory(modelId)
+    }
+
+    public func speech(modelId: OpenAISpeechModelId) -> OpenAISpeechModel {
+        speechFactory(modelId)
     }
 }
 
@@ -138,6 +152,8 @@ public func createOpenAIProvider(settings: OpenAIProviderSettings = .init()) -> 
     let embeddingConfig = makeConfig(providerSuffix: "embedding")
     let imageConfig = makeConfig(providerSuffix: "image")
     let completionConfig = makeConfig(providerSuffix: "completion")
+    let transcriptionConfig = makeConfig(providerSuffix: "transcription")
+    let speechConfig = makeConfig(providerSuffix: "speech")
 
     let responsesFactory: @Sendable (OpenAIResponsesModelId) -> OpenAIResponsesLanguageModel = { modelId in
         OpenAIResponsesLanguageModel(
@@ -174,12 +190,28 @@ public func createOpenAIProvider(settings: OpenAIProviderSettings = .init()) -> 
         )
     }
 
+    let transcriptionFactory: @Sendable (OpenAITranscriptionModelId) -> OpenAITranscriptionModel = { modelId in
+        OpenAITranscriptionModel(
+            modelId: modelId,
+            config: transcriptionConfig
+        )
+    }
+
+    let speechFactory: @Sendable (OpenAISpeechModelId) -> OpenAISpeechModel = { modelId in
+        OpenAISpeechModel(
+            modelId: modelId,
+            config: speechConfig
+        )
+    }
+
     return OpenAIProvider(
         responses: responsesFactory,
         chat: chatFactory,
         embeddings: embeddingFactory,
         images: imageFactory,
         completions: completionFactory,
+        transcriptions: transcriptionFactory,
+        speeches: speechFactory,
         tools: openaiTools
     )
 }

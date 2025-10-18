@@ -5,7 +5,16 @@ import AISDKProviderUtils
 ///
 /// Mirrors `packages/openai/src/openai-config.ts`.
 public struct OpenAIConfig: @unchecked Sendable {
+    public struct InternalOptions: Sendable {
+        public let currentDate: (@Sendable () -> Date)?
+
+        public init(currentDate: (@Sendable () -> Date)? = nil) {
+            self.currentDate = currentDate
+        }
+    }
+
     public struct URLOptions: Sendable {
+
         public let modelId: String
         public let path: String
 
@@ -21,6 +30,7 @@ public struct OpenAIConfig: @unchecked Sendable {
     public let fetch: FetchFunction?
     public let generateId: (@Sendable () -> String)?
     public let fileIdPrefixes: [String]?
+    public let _internal: InternalOptions?
 
     public init(
         provider: String,
@@ -28,7 +38,8 @@ public struct OpenAIConfig: @unchecked Sendable {
         headers: @escaping @Sendable () -> [String: String?],
         fetch: FetchFunction? = nil,
         generateId: (@Sendable () -> String)? = nil,
-        fileIdPrefixes: [String]? = nil
+        fileIdPrefixes: [String]? = nil,
+        _internal: InternalOptions? = nil
     ) {
         self.provider = provider
         self.url = url
@@ -36,5 +47,6 @@ public struct OpenAIConfig: @unchecked Sendable {
         self.fetch = fetch
         self.generateId = generateId
         self.fileIdPrefixes = fileIdPrefixes
+        self._internal = _internal
     }
 }
