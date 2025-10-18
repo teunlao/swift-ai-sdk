@@ -310,4 +310,223 @@ struct StreamTextV2ApprovalResolverTests {
             return false
         }) == true)
     }
+
+    @Test("provider-executed tool skips resolver (V2)")
+    func providerExecutedToolSkipsResolver() async throws {
+        let call = LanguageModelV3ToolCall(
+            toolCallId: "p1",
+            toolName: "providerTool",
+            input: "{}",
+            providerExecuted: true,
+            providerMetadata: nil
+        )
+        let toolResult = LanguageModelV3ToolResult(
+            toolCallId: "p1",
+            toolName: "providerTool",
+            result: .string("done"),
+            providerExecuted: true,
+            preliminary: false,
+            providerMetadata: nil
+        )
+        let parts: [LanguageModelV3StreamPart] = [
+            .streamStart(warnings: []),
+            .responseMetadata(id: "id-0", modelId: "mock", timestamp: Date(timeIntervalSince1970: 0)),
+            .toolCall(call),
+            .toolResult(toolResult),
+            .finish(
+                finishReason: .toolCalls,
+                usage: LanguageModelV3Usage(inputTokens: 1, outputTokens: 1, totalTokens: 2),
+                providerMetadata: nil
+            )
+        ]
+        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+            parts.forEach { continuation.yield($0) }
+            continuation.finish()
+        }
+        let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
+
+        actor Counter {
+            private var value = 0
+            func increment() { value += 1 }
+            func current() -> Int { value }
+        }
+        let counter = Counter()
+
+        let tools: ToolSet = [
+            "providerTool": tool(
+                description: "Provider tool shadow",
+                inputSchema: FlexibleSchema(jsonSchema(.object([:]))),
+                needsApproval: .always
+            )
+        ]
+
+        let result: DefaultStreamTextV2Result<JSONValue, JSONValue> = try streamTextV2(
+            model: .v3(model),
+            prompt: "hi",
+            tools: tools,
+            experimentalApprove: { request in
+                await counter.increment()
+                return .approve
+            }
+        )
+
+        let chunks = try await result.collectFullStream()
+        let approvalRequests = chunks.filter { if case .toolApprovalRequest = $0 { return true } else { return false } }
+        #expect(approvalRequests.isEmpty)
+        #expect(await counter.current() == 0)
+        #expect(chunks.contains { part in
+            if case let .toolResult(res) = part {
+                switch res {
+                case .static(let info):
+                    return info.toolCallId == "p1" && info.providerExecuted == true
+                case .dynamic(let info):
+                    return info.toolCallId == "p1" && info.providerExecuted == true
+                }
+            }
+            return false
+        })
+    }
+
+    @Test("needsApproval never skips resolver (V2)")
+    func needsApprovalNeverSkipsResolver() async throws {
+        let call = LanguageModelV3ToolCall(
+            toolCallId: "n1",
+            toolName: "noop",
+            input: "{}",
+            providerExecuted: false,
+            providerMetadata: nil
+        )
+        let parts: [LanguageModelV3StreamPart] = [
+            .streamStart(warnings: []),
+            .responseMetadata(id: "id-0", modelId: "mock", timestamp: Date(timeIntervalSince1970: 0)),
+            .toolCall(call),
+            .finish(
+                finishReason: .toolCalls,
+                usage: LanguageModelV3Usage(inputTokens: 1, outputTokens: 1, totalTokens: 2),
+                providerMetadata: nil
+            )
+        ]
+        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+            parts.forEach { continuation.yield($0) }
+            continuation.finish()
+        }
+        let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
+
+        actor InvokeCounter {
+            private var value = 0
+            func increment() { value += 1 }
+            func snapshot() -> Int { value }
+        }
+
+        let counter = InvokeCounter()
+
+        let tools: ToolSet = [
+            "noop": tool(
+                description: "No approval needed",
+                inputSchema: FlexibleSchema(jsonSchema(.object([:]))),
+                needsApproval: .never,
+                execute: { _, _ in .value(.string("ok")) }
+            )
+        ]
+
+        let result: DefaultStreamTextV2Result<JSONValue, JSONValue> = try streamTextV2(
+            model: .v3(model),
+            prompt: "hi",
+            tools: tools,
+            experimentalApprove: { request in
+                await counter.increment()
+                return .approve
+            }
+        )
+
+        let chunks = try await result.collectFullStream()
+        let approvalRequests = chunks.filter { if case .toolApprovalRequest = $0 { return true } else { return false } }
+        #expect(approvalRequests.isEmpty)
+        #expect(await counter.snapshot() == 0)
+        let toolResults = chunks.filter { if case .toolResult = $0 { return true } else { return false } }
+        #expect(toolResults.isEmpty)
+    }
+
+    @Test("streaming tool error propagates (V2)")
+    func streamingToolErrorPropagates() async throws {
+        let call = LanguageModelV3ToolCall(
+            toolCallId: "stream-error",
+            toolName: "streamer",
+            input: "{}",
+            providerExecuted: false,
+            providerMetadata: nil
+        )
+        let parts: [LanguageModelV3StreamPart] = [
+            .streamStart(warnings: []),
+            .responseMetadata(id: "id-0", modelId: "mock", timestamp: Date(timeIntervalSince1970: 0)),
+            .toolCall(call),
+            .finish(
+                finishReason: .toolCalls,
+                usage: LanguageModelV3Usage(inputTokens: 1, outputTokens: 1, totalTokens: 2),
+                providerMetadata: nil
+            )
+        ]
+        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+            parts.forEach { continuation.yield($0) }
+            continuation.finish()
+        }
+        let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
+
+        struct ToolStreamError: Error {}
+
+        let tools: ToolSet = [
+            "streamer": tool(
+                description: "Streaming tool that fails",
+                inputSchema: FlexibleSchema(jsonSchema(.object([:]))),
+                needsApproval: .always,
+                execute: { _, _ in
+                    let (stream, continuation) = AsyncThrowingStream<JSONValue, Error>.makeStream()
+                    Task {
+                        continuation.yield(.string("partial"))
+                        continuation.finish(throwing: ToolStreamError())
+                    }
+                    return .stream(stream)
+                }
+            )
+        ]
+
+        let result: DefaultStreamTextV2Result<JSONValue, JSONValue> = try streamTextV2(
+            model: .v3(model),
+            prompt: "hi",
+            tools: tools,
+            experimentalApprove: { _ in .approve }
+        )
+
+        let chunks = try await result.collectFullStream()
+        let preliminaryCount = chunks.filter { part in
+            if case let .toolResult(res) = part {
+                switch res {
+                case .static(let info):
+                    return info.toolCallId == "stream-error" && info.preliminary == true
+                case .dynamic(let info):
+                    return info.toolCallId == "stream-error" && info.preliminary == true
+                }
+            }
+            return false
+        }.count
+        let sawToolError = chunks.contains { part in
+            if case let .toolError(error) = part {
+                return error.toolCallId == "stream-error"
+            }
+            return false
+        }
+        #expect(preliminaryCount == 1)
+        #expect(sawToolError)
+        #expect(!chunks.contains { part in
+            if case let .toolResult(res) = part {
+                switch res {
+                case .static(let info):
+                    return info.toolCallId == "stream-error" && info.preliminary != true
+                case .dynamic(let info):
+                    return info.toolCallId == "stream-error" && info.preliminary != true
+                }
+            }
+            return false
+        })
+    }
 }
