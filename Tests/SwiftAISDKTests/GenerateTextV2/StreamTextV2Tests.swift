@@ -55,6 +55,37 @@ struct StreamTextV2BasicTests {
         #expect(chunks == ["Hello", " ", "World", "!"])
     }
 
+    @Test("readAllText concatenates all deltas (V2)")
+    func readAllTextConcatenatesV2() async throws {
+        let parts: [LanguageModelV3StreamPart] = [
+            .streamStart(warnings: []),
+            .responseMetadata(id: "id-rat", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
+            .textStart(id: "z", providerMetadata: nil),
+            .textDelta(id: "z", delta: "Hi", providerMetadata: nil),
+            .textDelta(id: "z", delta: "!", providerMetadata: nil),
+            .textEnd(id: "z", providerMetadata: nil),
+            .finish(
+                finishReason: .stop,
+                usage: defaultUsage,
+                providerMetadata: nil
+            )
+        ]
+
+        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
+            for p in parts { c.yield(p) }
+            c.finish()
+        }
+
+        let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
+        let result: DefaultStreamTextV2Result<JSONValue, JSONValue> = try streamTextV2(
+            model: .v3(model),
+            prompt: "hello"
+        )
+
+        let all = try await result.readAllText()
+        #expect(all == "Hi!")
+    }
+
     @Test("tools convert client tool calls to static variants (V2)")
     func toolsConvertClientToolCallsToStaticV2() async throws {
         // Arrange a simple client-executed tool call with valid JSON input and result.

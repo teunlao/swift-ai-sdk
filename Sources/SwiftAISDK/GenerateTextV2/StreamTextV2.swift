@@ -51,6 +51,51 @@ public func streamTextV2<OutputValue: Sendable, PartialOutputValue: Sendable>(
     )
 }
 
+// MARK: - Convenience: top-level response helpers (Text/UI)
+
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+public func streamTextV2AsResponse(
+    model: LanguageModel,
+    prompt: String,
+    tools: ToolSet? = nil,
+    init initOptions: TextStreamResponseInit? = nil,
+    experimentalTransform transforms: [StreamTextTransform] = [],
+    stopWhen stopConditions: [StopCondition] = [stepCountIs(1)],
+    onError: StreamTextOnError? = nil
+) throws -> TextStreamResponse {
+    let result: DefaultStreamTextV2Result<JSONValue, JSONValue> = try streamTextV2(
+        model: model,
+        prompt: prompt,
+        tools: tools,
+        experimentalTransform: transforms,
+        stopWhen: stopConditions,
+        onError: onError
+    )
+    return result.toTextStreamResponse(init: initOptions)
+}
+
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+public func pipeStreamTextV2ToResponse(
+    model: LanguageModel,
+    prompt: String,
+    tools: ToolSet? = nil,
+    response: any StreamTextResponseWriter,
+    init initOptions: TextStreamResponseInit? = nil,
+    experimentalTransform transforms: [StreamTextTransform] = [],
+    stopWhen stopConditions: [StopCondition] = [stepCountIs(1)],
+    onError: StreamTextOnError? = nil
+) throws {
+    let result: DefaultStreamTextV2Result<JSONValue, JSONValue> = try streamTextV2(
+        model: model,
+        prompt: prompt,
+        tools: tools,
+        experimentalTransform: transforms,
+        stopWhen: stopConditions,
+        onError: onError
+    )
+    result.pipeTextStreamToResponse(response, init: initOptions)
+}
+
 // MARK: - Result Type (Milestone 1)
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)

@@ -5,6 +5,7 @@ This document tracks the Swift port of `packages/ai/src/generate-text/stream-tex
 ## Completed
 - **Stream runtime**  
   - `StreamTextV2.swift` – public API (`streamTextV2` overloads, `DefaultStreamTextV2Result` accessors, `consumeStream`, `pipeTextStreamToResponse`, `toTextStreamResponse`).  
+  - Added top-level response helpers: `streamTextV2AsResponse`, `pipeStreamTextV2ToResponse` for parity with upstream fetch/response ergonomics.
   - `StreamTextV2Actor.swift` – core actor handling provider streams, multi-step logic, stop/abort flow, tool handling, usage aggregation.  
     - Step result aggregation now mirrors upstream (text/reasoning/tool/file/source) and feeds ResponseMessage history for parity.
     - Multi-step continuation honours finishReason `tool-calls`, stop conditions, and rebuilds prompts from conversation + tool outputs.
@@ -21,7 +22,7 @@ This document tracks the Swift port of `packages/ai/src/generate-text/stream-tex
 
 ## Remaining Work
 - **HTTP/Fetch wrappers**  
-  - Port upstream helpers such as `fetchText`, `streamText`, `streamTextAsResponse`, ensuring parity with the JavaScript fetch wrappers (headers, request cloning, streaming response handling).
+  - If required, port fetch-style entry points (`fetchText`, etc.) to wrap V2, mapping to our response helpers. This is optional if consumers call the Swift helpers directly.
 - **UI response builders**  
   - Upstream exposes `createStreamTextResponse`, `streamTextToUI`, etc., which still rely on V1 plumbing. Validate V2 code paths and ensure wrappers delegate to `StreamTextV2`.
 - **Transforms & tools integration**  
@@ -38,7 +39,7 @@ This document tracks the Swift port of `packages/ai/src/generate-text/stream-tex
 ## Next Steps
 1. Port fetch/response helpers so V2 can be consumed via `fetchStreamText`.
 2. Audit transforms/tool execution path to ensure V2 handles all callbacks and telemetry.
-3. Expand integration tests to cover approval flows and tool result propagation end-to-end.
+3. Expand integration tests to cover approval flows and tool result propagation end-to-end (добавлять по одному тесту за итерацию).
 4. Document public API changes and migrate playground examples to the V2 surface.
 
-> Last updated: October 18, 2025.
+> Last updated: October 18, 2025 (later).
