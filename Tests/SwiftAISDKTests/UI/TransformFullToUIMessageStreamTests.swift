@@ -318,4 +318,90 @@ struct TransformFullToUIMessageStreamTests {
         #expect(!types.contains("finish"))
         #expect(types.last == "finish-step")
     }
+
+    @Test("maps tool approval request to UI chunk")
+    func mapsToolApprovalRequest() async throws {
+        let call = StaticToolCall(
+            toolCallId: "tc-1",
+            toolName: "search",
+            input: .object(["q": .string("swift")])
+        )
+        let approval = ToolApprovalRequestOutput(
+            approvalId: "ap-1",
+            toolCall: .static(call)
+        )
+        let parts: [TextStreamPart] = [
+            .start,
+            .startStep(request: LanguageModelRequestMetadata(body: nil), warnings: []),
+            .toolApprovalRequest(approval),
+            .finishStep(
+                response: LanguageModelResponseMetadata(id: "resp-7", timestamp: Date(), modelId: "m", headers: nil),
+                usage: LanguageModelUsage(),
+                finishReason: .stop,
+                providerMetadata: nil
+            ),
+            .finish(finishReason: .stop, totalUsage: LanguageModelUsage())
+        ]
+
+        let stream = makeAsyncStream(from: parts)
+        let ui = transformFullToUIMessageStream(stream: stream)
+        let chunks = try await collectStream(ui)
+        let hasApproval = chunks.contains { chunk in
+            if case let .toolApprovalRequest(approvalId, toolCallId) = chunk {
+                return approvalId == "ap-1" && toolCallId == "tc-1"
+            }
+            return false
+        }
+        #expect(hasApproval)
+    }
+
+    @Test("maps tool result and error to UI chunks")
+    func mapsToolResultAndError() async throws {
+        let result = StaticToolResult(
+            toolCallId: "tc-2",
+            toolName: "calc",
+            input: .object(["a": .number(1), "b": .number(2)]),
+            output: .number(3),
+            providerExecuted: true,
+            preliminary: false,
+            providerMetadata: nil
+        )
+        let err = DynamicToolError(
+            toolCallId: "tc-3",
+            toolName: "failing",
+            input: .null,
+            error: NSError(domain: "test", code: 1),
+            providerExecuted: true
+        )
+        let parts: [TextStreamPart] = [
+            .start,
+            .startStep(request: LanguageModelRequestMetadata(body: nil), warnings: []),
+            .toolResult(.static(result)),
+            .toolError(.dynamic(err)),
+            .finishStep(
+                response: LanguageModelResponseMetadata(id: "resp-8", timestamp: Date(), modelId: "m", headers: nil),
+                usage: LanguageModelUsage(),
+                finishReason: .stop,
+                providerMetadata: nil
+            ),
+            .finish(finishReason: .stop, totalUsage: LanguageModelUsage())
+        ]
+        let stream = makeAsyncStream(from: parts)
+        let ui = transformFullToUIMessageStream(stream: stream)
+        let chunks = try await collectStream(ui)
+        let hasOutput = chunks.contains { chunk in
+            if case let .toolOutputAvailable(toolCallId, output, providerExecuted, _, preliminary) = chunk {
+                if toolCallId != "tc-2" || preliminary == true || providerExecuted != true { return false }
+                if case .number(3) = output { return true } else { return false }
+            }
+            return false
+        }
+        let hasError = chunks.contains { chunk in
+            if case let .toolOutputError(toolCallId, errorText, providerExecuted, _) = chunk {
+                return toolCallId == "tc-3" && !errorText.isEmpty && providerExecuted == true
+            }
+            return false
+        }
+        #expect(hasOutput && hasError)
+    }
 }

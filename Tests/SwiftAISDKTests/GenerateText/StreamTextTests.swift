@@ -1623,6 +1623,42 @@ struct StreamTextBasicTests {
         #expect(!lines2.contains { $0.contains("\"type\":\"finish\"") })
     }
 
+    @Test("toUIMessageStream includes sources when enabled")
+    func toUIMessageStreamIncludesSources() async throws {
+        let parts: [LanguageModelV3StreamPart] = [
+            .streamStart(warnings: []),
+            .responseMetadata(id: "sid", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
+            .textStart(id: "t", providerMetadata: nil),
+            .textDelta(id: "t", delta: "X", providerMetadata: nil),
+            .textEnd(id: "t", providerMetadata: nil),
+            .source(
+                .url(id: "s-url", url: "https://example.com", title: "Example", providerMetadata: nil)
+            ),
+            .finish(finishReason: .stop, usage: defaultUsage, providerMetadata: nil)
+        ]
+
+        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
+            parts.forEach { c.yield($0) }
+            c.finish()
+        }
+        let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
+        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+            model: .v3(model),
+            prompt: "hi"
+        )
+
+        let chunks = try await convertReadableStreamToArray(
+            result.toUIMessageStream(options: UIMessageStreamOptions<UIMessage>(sendSources: true))
+        )
+        let hasSourceUrl = chunks.contains { chunk in
+            if case let .sourceUrl(sourceId, url, title, _) = chunk {
+                return sourceId == "s-url" && url == "https://example.com" && title == "Example"
+            }
+            return false
+        }
+        #expect(hasSourceUrl)
+    }
+
     @Test("toUIMessageStream emits message-metadata at start/finish when provided")
     func uiMessageStreamEmitsMessageMetadata() async throws {
         let parts: [LanguageModelV3StreamPart] = [

@@ -90,10 +90,54 @@ public func transformFullToUIMessageStream(
                         // Upstream UI stream surfaces files via dedicated pathways.
                         break
 
-                    case .toolCall, .toolResult, .toolError, .toolOutputDenied,
-                         .toolApprovalRequest, .toolInputStart, .toolInputEnd, .toolInputDelta:
-                        // Tool-related events are mapped elsewhere (not part of this transform's scope now)
+                    case let .toolInputStart(toolCallId, toolName, _providerMetadata, providerExecuted, dynamic):
+                        continuation.yield(.toolInputStart(
+                            toolCallId: toolCallId,
+                            toolName: toolName,
+                            providerExecuted: providerExecuted,
+                            dynamic: dynamic
+                        ))
+
+                    case let .toolInputDelta(toolCallId, delta, _):
+                        continuation.yield(.toolInputDelta(toolCallId: toolCallId, inputTextDelta: delta))
+
+                    case .toolInputEnd:
+                        // No explicit UI chunk; the UI state is updated via start/delta and availability below.
                         break
+
+                    case let .toolCall(typedCall):
+                        // Input became available (parsed)
+                        continuation.yield(.toolInputAvailable(
+                            toolCallId: typedCall.toolCallId,
+                            toolName: typedCall.toolName,
+                            input: typedCall.input,
+                            providerExecuted: typedCall.providerExecuted,
+                            providerMetadata: typedCall.providerMetadata,
+                            dynamic: typedCall.isDynamic
+                        ))
+
+                    case let .toolResult(typedResult):
+                        continuation.yield(.toolOutputAvailable(
+                            toolCallId: typedResult.toolCallId,
+                            output: typedResult.output,
+                            providerExecuted: typedResult.providerExecuted,
+                            dynamic: typedResult.isDynamic,
+                            preliminary: typedResult.preliminary
+                        ))
+
+                    case let .toolError(typedError):
+                        continuation.yield(.toolOutputError(
+                            toolCallId: typedError.toolCallId,
+                            errorText: AISDKProvider.getErrorMessage(typedError.error),
+                            providerExecuted: typedError.providerExecuted,
+                            dynamic: typedError.isDynamic
+                        ))
+
+                    case let .toolOutputDenied(denied):
+                        continuation.yield(.toolOutputDenied(toolCallId: denied.toolCallId))
+
+                    case let .toolApprovalRequest(request):
+                        continuation.yield(.toolApprovalRequest(approvalId: request.approvalId, toolCallId: request.toolCall.toolCallId))
 
                     case let .finishStep(_, _, _, _):
                         if stepOpen { continuation.yield(.finishStep); stepOpen = false }
