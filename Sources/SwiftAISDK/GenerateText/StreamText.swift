@@ -20,6 +20,26 @@ public typealias StreamTextOnFinish = @Sendable (
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 public typealias StreamTextOnAbort = @Sendable (_ steps: [StepResult]) -> Void
 
+public struct StreamTextInternalOptions: Sendable {
+    public var now: @Sendable () -> Double
+    public var generateId: IDGenerator
+    public var currentDate: @Sendable () -> Date
+
+    public init(
+        now: @escaping @Sendable () -> Double = SwiftAISDK.now,
+        generateId: IDGenerator? = nil,
+        currentDate: @escaping @Sendable () -> Date = Date.init
+    ) {
+        self.now = now
+        if let generateId {
+            self.generateId = generateId
+        } else {
+            self.generateId = try! createIDGenerator(prefix: "aitxt", size: 24)
+        }
+        self.currentDate = currentDate
+    }
+}
+
 public struct StreamTextTransformOptions {
     public var tools: ToolSet?
     public var stopStream: @Sendable () -> Void
@@ -41,14 +61,26 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
     model modelArg: LanguageModel,
     prompt: String,
     tools: ToolSet? = nil,
+    toolChoice: ToolChoice? = nil,
+    providerOptions: ProviderOptions? = nil,
+    experimentalActiveTools: [String]? = nil,
+    activeTools: [String]? = nil,
+    experimentalOutput output: Output.Specification<OutputValue, PartialOutputValue>? = nil,
+    experimentalTelemetry telemetry: TelemetrySettings? = nil,
     experimentalApprove approve: (@Sendable (ToolApprovalRequestOutput) async -> ApprovalAction)? = nil,
     experimentalTransform transforms: [StreamTextTransform] = [],
+    experimentalDownload download: DownloadFunction? = nil,
+    experimentalRepairToolCall repairToolCall: ToolCallRepairFunction? = nil,
+    experimentalContext: JSONValue? = nil,
+    includeRawChunks: Bool = false,
     stopWhen stopConditions: [StopCondition] = [stepCountIs(1)],
     onChunk: StreamTextOnChunk? = nil,
     onStepFinish: StreamTextOnStepFinish? = nil,
     onFinish: StreamTextOnFinish? = nil,
     onAbort: StreamTextOnAbort? = nil,
-    onError: StreamTextOnError? = nil
+    onError: StreamTextOnError? = nil,
+    internalOptions _internal: StreamTextInternalOptions = StreamTextInternalOptions(),
+    settings: CallSettings = CallSettings()
 ) throws -> DefaultStreamTextResult<OutputValue, PartialOutputValue> {
     // Resolve LanguageModel to a v3 model; for milestone 1 only v3 path is supported.
     _ = try resolveLanguageModel(modelArg)
@@ -58,14 +90,26 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
         system: nil,
         messages: [.user(UserModelMessage(content: .text(prompt), providerOptions: nil))],
         tools: tools,
+        toolChoice: toolChoice,
+        providerOptions: providerOptions,
+        experimentalActiveTools: experimentalActiveTools,
+        activeTools: activeTools,
+        experimentalOutput: output,
+        experimentalTelemetry: telemetry,
         experimentalApprove: approve,
         experimentalTransform: transforms,
+        experimentalDownload: download,
+        experimentalRepairToolCall: repairToolCall,
+        experimentalContext: experimentalContext,
+        includeRawChunks: includeRawChunks,
         stopWhen: stopConditions,
         onChunk: onChunk,
         onStepFinish: onStepFinish,
         onFinish: onFinish,
         onAbort: onAbort,
-        onError: onError
+        onError: onError,
+        internalOptions: _internal,
+        settings: settings
     )
 }
 
@@ -578,32 +622,72 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
     system: String?,
     messages initialMessages: [ModelMessage],
     tools: ToolSet? = nil,
+    toolChoice: ToolChoice? = nil,
+    providerOptions: ProviderOptions? = nil,
+    experimentalActiveTools: [String]? = nil,
+    activeTools: [String]? = nil,
+    experimentalOutput output: Output.Specification<OutputValue, PartialOutputValue>? = nil,
+    experimentalTelemetry telemetry: TelemetrySettings? = nil,
     experimentalApprove approve: (@Sendable (ToolApprovalRequestOutput) async -> ApprovalAction)? = nil,
     experimentalTransform transforms: [StreamTextTransform] = [],
+    experimentalDownload download: DownloadFunction? = nil,
+    experimentalRepairToolCall repairToolCall: ToolCallRepairFunction? = nil,
+    experimentalContext: JSONValue? = nil,
+    includeRawChunks: Bool = false,
     stopWhen stopConditions: [StopCondition] = [stepCountIs(1)],
     onChunk: StreamTextOnChunk? = nil,
     onStepFinish: StreamTextOnStepFinish? = nil,
     onFinish: StreamTextOnFinish? = nil,
     onAbort: StreamTextOnAbort? = nil,
-    onError: StreamTextOnError? = nil
+    onError: StreamTextOnError? = nil,
+    internalOptions _internal: StreamTextInternalOptions = StreamTextInternalOptions(),
+    settings: CallSettings = CallSettings()
 ) throws -> DefaultStreamTextResult<OutputValue, PartialOutputValue> {
-    // Resolve LanguageModel to a v3 model.
-    let resolved: any LanguageModelV3 = try resolveLanguageModel(modelArg)
+    // TODO: integrate telemetry/output/repairToolCall/experimentalContext parity.
+    _ = telemetry
+    _ = repairToolCall
+    _ = experimentalContext
+
+    _ = _internal
+    let resolvedModel = try resolveLanguageModel(modelArg)
+    let standardizedPrompt = StandardizedPrompt(system: system, messages: initialMessages)
+    let normalizedMessages = standardizedPrompt.messages
+    let effectiveActiveTools = activeTools ?? experimentalActiveTools
+
+    let preparedRetries = try prepareRetries(
+        maxRetries: settings.maxRetries,
+        abortSignal: settings.abortSignal
+    )
+
+    let preparedCallSettings = try prepareCallSettings(
+        maxOutputTokens: settings.maxOutputTokens,
+        temperature: settings.temperature,
+        topP: settings.topP,
+        topK: settings.topK,
+        presencePenalty: settings.presencePenalty,
+        frequencyPenalty: settings.frequencyPenalty,
+        stopSequences: settings.stopSequences,
+        seed: settings.seed
+    )
+
+    let headersWithUserAgent = withUserAgentSuffix(
+        settings.headers ?? [:],
+        "ai/\(VERSION)"
+    )
 
     // Bridge provider async stream acquisition without blocking the caller.
-    // We will build the provider prompt inside the task using supportedUrls
-    // and the full `convertToLanguageModelPrompt` pipeline.
     let (bridgeStream, continuation) = AsyncThrowingStream.makeStream(
-        of: LanguageModelV3StreamPart.self)
+        of: LanguageModelV3StreamPart.self
+    )
 
     let result = DefaultStreamTextResult<OutputValue, PartialOutputValue>(
         baseModel: modelArg,
-        model: resolved,
+        model: resolvedModel,
         providerStream: bridgeStream,
         transforms: transforms,
         stopConditions: stopConditions,
-        initialMessages: initialMessages,
-        system: system,
+        initialMessages: normalizedMessages,
+        system: standardizedPrompt.system,
         tools: tools,
         approve: approve,
         onChunk: onChunk,
@@ -613,20 +697,46 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
         onError: onError
     )
 
-    // Start producer task to fetch provider stream and forward its parts.
     let providerTask = Task {
         do {
-            // Build the provider prompt via full conversion path (upstream parity)
-            let standardized = StandardizedPrompt(system: system, messages: initialMessages)
-            let supported = try await resolved.supportedUrls
+            let supported = try await resolvedModel.supportedUrls
             let lmPrompt = try await convertToLanguageModelPrompt(
-                prompt: standardized,
+                prompt: standardizedPrompt,
                 supportedUrls: supported,
-                download: nil
+                download: download
             )
-            let options = LanguageModelV3CallOptions(prompt: lmPrompt)
 
-            let providerResult = try await resolved.doStream(options: options)
+            let toolPreparation = try await prepareToolsAndToolChoice(
+                tools: tools,
+                toolChoice: toolChoice,
+                activeTools: effectiveActiveTools
+            )
+
+            let responseFormat = try await output?.responseFormat()
+
+            let callOptions = LanguageModelV3CallOptions(
+                prompt: lmPrompt,
+                maxOutputTokens: preparedCallSettings.maxOutputTokens,
+                temperature: preparedCallSettings.temperature,
+                stopSequences: preparedCallSettings.stopSequences,
+                topP: preparedCallSettings.topP,
+                topK: preparedCallSettings.topK,
+                presencePenalty: preparedCallSettings.presencePenalty,
+                frequencyPenalty: preparedCallSettings.frequencyPenalty,
+                responseFormat: responseFormat,
+                seed: preparedCallSettings.seed,
+                tools: toolPreparation.tools,
+                toolChoice: toolPreparation.toolChoice,
+                includeRawChunks: includeRawChunks ? true : nil,
+                abortSignal: settings.abortSignal,
+                headers: headersWithUserAgent,
+                providerOptions: providerOptions
+            )
+
+            let providerResult = try await preparedRetries.retry.call {
+                try await resolvedModel.doStream(options: callOptions)
+            }
+
             await result._setRequestInfo(providerResult.request)
             for try await part in providerResult.stream {
                 continuation.yield(part)
@@ -636,9 +746,8 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
             continuation.finish(throwing: error)
         }
     }
-    continuation.onTermination = { _ in providerTask.cancel() }
 
-    // Allow actor to cancel provider task on early finish
+    continuation.onTermination = { _ in providerTask.cancel() }
     Task { await result._setProviderCancel { providerTask.cancel() } }
 
     return result
@@ -658,14 +767,26 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
     model: LanguageModel,
     prompt: Prompt,
     tools: ToolSet? = nil,
+    toolChoice: ToolChoice? = nil,
+    providerOptions: ProviderOptions? = nil,
+    experimentalActiveTools: [String]? = nil,
+    activeTools: [String]? = nil,
+    experimentalOutput output: Output.Specification<OutputValue, PartialOutputValue>? = nil,
+    experimentalTelemetry telemetry: TelemetrySettings? = nil,
     experimentalApprove approve: (@Sendable (ToolApprovalRequestOutput) async -> ApprovalAction)? = nil,
     experimentalTransform transforms: [StreamTextTransform] = [],
+    experimentalDownload download: DownloadFunction? = nil,
+    experimentalRepairToolCall repairToolCall: ToolCallRepairFunction? = nil,
+    experimentalContext: JSONValue? = nil,
+    includeRawChunks: Bool = false,
     stopWhen stopConditions: [StopCondition] = [stepCountIs(1)],
     onChunk: StreamTextOnChunk? = nil,
     onStepFinish: StreamTextOnStepFinish? = nil,
     onFinish: StreamTextOnFinish? = nil,
     onAbort: StreamTextOnAbort? = nil,
-    onError: StreamTextOnError? = nil
+    onError: StreamTextOnError? = nil,
+    internalOptions _internal: StreamTextInternalOptions = StreamTextInternalOptions(),
+    settings: CallSettings = CallSettings()
 ) throws -> DefaultStreamTextResult<OutputValue, PartialOutputValue> {
     let standardized = try standardizePrompt(prompt)
     return try streamText(
@@ -673,13 +794,25 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
         system: standardized.system,
         messages: standardized.messages,
         tools: tools,
+        toolChoice: toolChoice,
+        providerOptions: providerOptions,
+        experimentalActiveTools: experimentalActiveTools,
+        activeTools: activeTools,
+        experimentalOutput: output,
+        experimentalTelemetry: telemetry,
         experimentalApprove: approve,
         experimentalTransform: transforms,
+        experimentalDownload: download,
+        experimentalRepairToolCall: repairToolCall,
+        experimentalContext: experimentalContext,
+        includeRawChunks: includeRawChunks,
         stopWhen: stopConditions,
         onChunk: onChunk,
         onStepFinish: onStepFinish,
         onFinish: onFinish,
         onAbort: onAbort,
-        onError: onError
+        onError: onError,
+        internalOptions: _internal,
+        settings: settings
     )
 }
