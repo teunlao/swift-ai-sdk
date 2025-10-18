@@ -744,7 +744,8 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
             stream: textStream,
             options: UIMessageTransformOptions(
                 sendStart: streamOptions.sendStart,
-                sendFinish: streamOptions.sendFinish
+                sendFinish: streamOptions.sendFinish,
+                messageMetadata: streamOptions.messageMetadata
             )
         )
 

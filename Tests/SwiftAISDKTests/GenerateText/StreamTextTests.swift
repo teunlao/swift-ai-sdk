@@ -1623,6 +1623,42 @@ struct StreamTextBasicTests {
         #expect(!lines2.contains { $0.contains("\"type\":\"finish\"") })
     }
 
+    @Test("toUIMessageStream emits message-metadata at start/finish when provided")
+    func uiMessageStreamEmitsMessageMetadata() async throws {
+        let parts: [LanguageModelV3StreamPart] = [
+            .streamStart(warnings: []),
+            .textStart(id: "t", providerMetadata: nil),
+            .textDelta(id: "t", delta: "A", providerMetadata: nil),
+            .textEnd(id: "t", providerMetadata: nil),
+            .finish(finishReason: .stop, usage: LanguageModelV3Usage(), providerMetadata: nil)
+        ]
+        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
+            parts.forEach { c.yield($0) }
+            c.finish()
+        }
+        let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
+        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+            model: .v3(model),
+            prompt: "hi"
+        )
+
+        let mapper: @Sendable (TextStreamPart) -> JSONValue? = { part in
+            switch part {
+            case .start: return .object(["phase": .string("begin")])
+            case .finish: return .object(["phase": .string("end")])
+            default: return nil
+            }
+        }
+
+        let uiStream = result.toUIMessageStream(options: UIMessageStreamOptions<UIMessage>(
+            messageMetadata: { part in mapper(part) }
+        ))
+        let chunks = try await convertReadableStreamToArray(uiStream)
+        let hasBegin = chunks.contains { if case let .messageMetadata(meta) = $0, case let .object(obj) = meta { return obj["phase"] == .string("begin") } else { return false } }
+        let hasEnd = chunks.contains { if case let .messageMetadata(meta) = $0, case let .object(obj) = meta { return obj["phase"] == .string("end") } else { return false } }
+        #expect(hasBegin && hasEnd)
+    }
+
     @Test("onFinish is invoked exactly once")
     func onFinishInvokedExactlyOnce() async throws {
         let usage = LanguageModelV3Usage(inputTokens: 1, outputTokens: 1, totalTokens: 2, reasoningTokens: nil, cachedInputTokens: nil)

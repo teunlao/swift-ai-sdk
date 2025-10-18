@@ -1,4 +1,7 @@
 import Foundation
+import AISDKProvider
+import AISDKProviderUtils
+@testable import SwiftAISDK
 
 /**
  Transforms a text stream into a UI message stream sequence.
@@ -11,10 +14,16 @@ import Foundation
 public struct UIMessageTransformOptions: Sendable {
     public var sendStart: Bool
     public var sendFinish: Bool
+    public var messageMetadata: (@Sendable (TextStreamPart) -> JSONValue?)?
 
-    public init(sendStart: Bool = true, sendFinish: Bool = true) {
+    public init(
+        sendStart: Bool = true,
+        sendFinish: Bool = true,
+        messageMetadata: (@Sendable (TextStreamPart) -> JSONValue?)? = nil
+    ) {
         self.sendStart = sendStart
         self.sendFinish = sendFinish
+        self.messageMetadata = messageMetadata
     }
 }
 
@@ -26,6 +35,9 @@ public func transformTextToUIMessageStream(
         let task = Task {
             do {
                 if options.sendStart {
+                    if let mapper = options.messageMetadata, let meta = mapper(.start) {
+                        continuation.yield(.messageMetadata(meta))
+                    }
                     continuation.yield(.start(messageId: nil, messageMetadata: nil))
                 }
                 continuation.yield(.startStep)
@@ -38,6 +50,9 @@ public func transformTextToUIMessageStream(
                 continuation.yield(.textEnd(id: "text-1", providerMetadata: nil))
                 continuation.yield(.finishStep)
                 if options.sendFinish {
+                    if let mapper = options.messageMetadata, let meta = mapper(.finish(finishReason: .unknown, totalUsage: LanguageModelV3Usage())) {
+                        continuation.yield(.messageMetadata(meta))
+                    }
                     continuation.yield(.finish(messageMetadata: nil))
                 }
                 continuation.finish()
