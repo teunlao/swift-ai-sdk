@@ -19,8 +19,7 @@ import Testing
 @Suite("Download Tests")
 struct DownloadTests {
     @Test("download should successfully download data from URL")
-    @MainActor
-    func testDownloadSuccess() async throws {
+        func testDownloadSuccess() async throws {
         let url = URL(string: "https://example.com/success")!
         let expectedBody = "<html>ok</html>".data(using: .utf8)!
         let contentType = "text/html; charset=utf-8"
@@ -48,8 +47,7 @@ struct DownloadTests {
     }
 
     @Test("download should throw DownloadError when response is not ok (404)")
-    @MainActor
-    func testDownload404Error() async throws {
+        func testDownload404Error() async throws {
         let url = URL(string: "https://example.com/not-found")!
         let response = HTTPURLResponse(
             url: url,
@@ -76,8 +74,7 @@ struct DownloadTests {
     }
 
     @Test("download should throw DownloadError when response is not ok (500)")
-    @MainActor
-    func testDownload500Error() async throws {
+        func testDownload500Error() async throws {
         let url = URL(string: "https://example.com/server-error")!
         let response = HTTPURLResponse(
             url: url,
@@ -104,8 +101,7 @@ struct DownloadTests {
     }
 
     @Test("download should include User-Agent header")
-    @MainActor
-    func testDownloadUserAgentHeader() async throws {
+        func testDownloadUserAgentHeader() async throws {
         let url = URL(string: "https://example.com/user-agent")!
         let expectedBody = Data("ok".utf8)
         let response = HTTPURLResponse(
@@ -129,10 +125,9 @@ struct DownloadTests {
 
     // MARK: - Helpers
 
-    @MainActor
-    private func registerMock(
+        private func registerMock(
         for url: URL,
-        handler: @escaping (URLRequest) throws -> (HTTPURLResponse, Data)
+        handler: @escaping @Sendable (URLRequest) throws -> (HTTPURLResponse, Data)
     ) throws -> () -> Void {
         MockURLProtocol.install(handler: handler, for: url)
         guard URLProtocol.registerClass(MockURLProtocol.self) else {
@@ -149,14 +144,36 @@ struct DownloadTests {
     }
 }
 
-@MainActor
-private final class MockURLProtocol: URLProtocol {
-    nonisolated(unsafe) private static let handlerLock = NSLock()
-    nonisolated(unsafe) private static var handlers: [String: (URLRequest) throws -> (HTTPURLResponse, Data)] = [:]
+@preconcurrency private final class MockURLProtocol: URLProtocol {
+    typealias Handler = @Sendable (URLRequest) throws -> (HTTPURLResponse, Data)
+
+    private final class HandlerStore: @unchecked Sendable {
+        private let queue = DispatchQueue(label: "mock-url-protocol.handlers", attributes: .concurrent)
+        private var handlers: [String: Handler] = [:]
+
+        @discardableResult
+        private func barrier<T>(_ block: () -> T) -> T {
+            queue.sync(flags: .barrier, execute: block)
+        }
+
+        func install(_ handler: @escaping Handler, for url: String) {
+            barrier { handlers[url] = handler }
+        }
+
+        func remove(for url: String) {
+            barrier { handlers.removeValue(forKey: url) }
+        }
+
+        func handler(for url: String) -> Handler? {
+            queue.sync { handlers[url] }
+        }
+    }
+
+    private static let handlerStore = HandlerStore()
 
     override class func canInit(with request: URLRequest) -> Bool {
         guard let url = request.url?.absoluteString else { return false }
-        return currentHandler(for: url) != nil
+        return handlerStore.handler(for: url) != nil
     }
 
     override class func canonicalRequest(for request: URLRequest) -> URLRequest {
@@ -164,17 +181,14 @@ private final class MockURLProtocol: URLProtocol {
     }
 
     override func startLoading() {
-        guard
-            let url = request.url?.absoluteString,
-            let handler = MockURLProtocol.currentHandler(for: url)
-        else {
-            client?.urlProtocol(
-                self,
-                didFailWithError: URLError(.unknown)
-            )
+        guard let url = request.url?.absoluteString else {
+            client?.urlProtocol(self, didFailWithError: URLError(.unknown))
             return
         }
-
+        guard let handler = MockURLProtocol.handlerStore.handler(for: url) else {
+            client?.urlProtocol(self, didFailWithError: URLError(.unknown))
+            return
+        }
         do {
             let (response, data) = try handler(request)
             client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
@@ -189,23 +203,15 @@ private final class MockURLProtocol: URLProtocol {
         // Nothing to do
     }
 
-    @MainActor
-    static func install(handler: @escaping (URLRequest) throws -> (HTTPURLResponse, Data), for url: URL) {
-        handlerLock.lock()
-        handlers[url.absoluteString] = handler
-        handlerLock.unlock()
+    static func install(handler: @escaping Handler, for url: URL) {
+        handlerStore.install(handler, for: url.absoluteString)
     }
 
-    @MainActor
     static func removeHandler(for url: URL) {
-        handlerLock.lock()
-        handlers.removeValue(forKey: url.absoluteString)
-        handlerLock.unlock()
+        handlerStore.remove(for: url.absoluteString)
     }
 
-    nonisolated(unsafe) private static func currentHandler(for url: String) -> ((URLRequest) throws -> (HTTPURLResponse, Data))? {
-        handlerLock.lock()
-        defer { handlerLock.unlock() }
-        return handlers[url]
+    private static func currentHandler(for url: String) -> Handler? {
+        handlerStore.handler(for: url)
     }
 }
