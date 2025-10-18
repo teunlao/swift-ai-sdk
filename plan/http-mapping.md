@@ -5,7 +5,7 @@
 ## Шаблон записи
 - Провайдер: `openai`
 - TypeScript источник: `packages/ai/src/providers/openai/index.ts`
-- Swift файл: `Sources/SwiftAISDK/Providers/OpenAI/OpenAIClient.swift`
+- Swift файл: `Sources/OpenAIProvider/OpenAIProvider.swift`
 - Метод: `createResponse`
 - Сравнение: ✅ заголовки `Authorization`, `Content-Type`, `X-VERCEL-AI-*`; тело запроса совпадает; обработка ошибок `OpenAIErrorResponse` совпадает.
 

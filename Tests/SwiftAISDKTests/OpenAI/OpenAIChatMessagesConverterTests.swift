@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 @testable import AISDKProvider
-@testable import SwiftAISDK
+@testable import OpenAIProvider
 
 @Suite("OpenAIChatMessagesConverter")
 struct OpenAIChatMessagesConverterTests {

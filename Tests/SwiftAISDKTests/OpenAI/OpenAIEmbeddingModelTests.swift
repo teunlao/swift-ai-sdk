@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import AISDKProvider
 @testable import AISDKProviderUtils
-@testable import SwiftAISDK
+@testable import OpenAIProvider
 
 private let embeddingValues = ["sunny day at the beach", "rainy day in the city"]
 private let embeddingVectors: [[Double]] = [

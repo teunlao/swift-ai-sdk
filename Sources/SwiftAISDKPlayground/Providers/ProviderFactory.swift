@@ -21,6 +21,13 @@ enum ProviderFactory {
                 baseURL: baseURL
             )
 
+        case "openai":
+            return try OpenAIPlaygroundFactory.makeLanguageModel(
+                modelId: modelId,
+                configuration: configuration,
+                logger: logger
+            )
+
         default:
             throw ContextError.unsupportedProvider(provider)
         }
