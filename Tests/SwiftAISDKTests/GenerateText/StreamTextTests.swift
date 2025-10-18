@@ -1075,8 +1075,8 @@ struct StreamTextBasicTests {
         _ = try await result.waitForFinish()
     }
 
-    @Test("tool onInputAvailable is invoked before execution")
-    func toolOnInputAvailableInvoked() async throws {
+    @Test("tool input callbacks are invoked before execution")
+    func toolInputCallbacksInvoked() async throws {
         let parts: [LanguageModelV3StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(id: "input-available", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
@@ -1087,6 +1087,10 @@ struct StreamTextBasicTests {
                 providerExecuted: false,
                 providerMetadata: nil
             )),
+            .toolInputStart(id: "call-1", toolName: "demo", providerMetadata: nil, providerExecuted: false),
+            .toolInputDelta(id: "call-1", delta: "{\"", providerMetadata: nil),
+            .toolInputDelta(id: "call-1", delta: "\"value\":1}", providerMetadata: nil),
+            .toolInputEnd(id: "call-1", providerMetadata: nil),
             .finish(
                 finishReason: .stop,
                 usage: defaultUsage,
@@ -1103,15 +1107,23 @@ struct StreamTextBasicTests {
             doStream: .singleValue(LanguageModelV3StreamResult(stream: stream))
         )
 
-        let inputCalls = LockedValue(initial: 0)
+        let startCalls = LockedValue(initial: 0)
+        let deltaCalls = LockedValue(initial: [String]())
+        let availableInputs = LockedValue(initial: [JSONValue]())
         let executeCalls = LockedValue(initial: 0)
 
         let tool = Tool(
             description: "Demo tool",
             inputSchema: FlexibleSchema(jsonSchema(.object([:]))),
             needsApproval: .never,
-            onInputAvailable: { _ in
-                inputCalls.withValue { $0 += 1 }
+            onInputStart: { _ in
+                startCalls.withValue { $0 += 1 }
+            },
+            onInputDelta: { options in
+                deltaCalls.withValue { $0.append(options.inputTextDelta) }
+            },
+            onInputAvailable: { options in
+                availableInputs.withValue { $0.append(options.input) }
             },
             execute: { _, _ in
                 executeCalls.withValue { $0 += 1 }
@@ -1128,7 +1140,9 @@ struct StreamTextBasicTests {
         )
 
         let full = try await result.collectFullStream()
-        #expect(inputCalls.withValue { $0 } == 1)
+        #expect(startCalls.withValue { $0 } == 1)
+        #expect(deltaCalls.withValue { $0 } == ["{\"", "\"value\":1}"])
+        #expect(availableInputs.withValue { $0 } == [.object(["value": .number(1)])])
         #expect(executeCalls.withValue { $0 } == 1)
 
         let hasToolResult = full.contains { part in
@@ -1137,6 +1151,7 @@ struct StreamTextBasicTests {
         }
         #expect(hasToolResult)
     }
+
 
     @Test("repairToolCall fixes invalid tool input before execution")
     func repairToolCallFixesInvalidInput() async throws {

@@ -739,10 +739,27 @@ actor StreamTextActor {
                         )
                     }
                 }
+                let messagesForInput = currentMessagesForApproval()
+                activeToolNames[id] = toolName
+                let tool = tools?[toolName]
+                if let onInputStart = tool?.onInputStart {
+                    let options = ToolCallOptions(
+                        toolCallId: id,
+                        messages: messagesForInput,
+                        abortSignal: configuration.abortSignal,
+                        experimentalContext: approvalContext
+                    )
+                    try await onInputStart(options)
+                }
                 await fullBroadcaster.send(
                     .toolInputStart(
-                        id: id, toolName: toolName, providerMetadata: providerMetadata,
-                        providerExecuted: providerExecuted, dynamic: nil))
+                        id: id,
+                        toolName: toolName,
+                        providerMetadata: providerMetadata,
+                        providerExecuted: providerExecuted,
+                        dynamic: tool?.type == .dynamic ? true : nil
+                    )
+                )
             case let .toolInputDelta(id, delta, providerMetadata):
                 if !didEmitStartStep {
                     if !framingEmitted {
@@ -758,6 +775,16 @@ actor StreamTextActor {
                             )
                         )
                     }
+                }
+                if let toolName = activeToolNames[id], let tool = tools?[toolName], let onInputDelta = tool.onInputDelta {
+                    let options = ToolCallDeltaOptions(
+                        inputTextDelta: delta,
+                        toolCallId: id,
+                        messages: currentMessagesForApproval(),
+                        abortSignal: configuration.abortSignal,
+                        experimentalContext: approvalContext
+                    )
+                    try await onInputDelta(options)
                 }
                 await fullBroadcaster.send(
                     .toolInputDelta(id: id, delta: delta, providerMetadata: providerMetadata))
@@ -777,6 +804,7 @@ actor StreamTextActor {
                         )
                     }
                 }
+                activeToolNames.removeValue(forKey: id)
                 await fullBroadcaster.send(
                     .toolInputEnd(id: id, providerMetadata: providerMetadata))
             case .toolCall(let call):
