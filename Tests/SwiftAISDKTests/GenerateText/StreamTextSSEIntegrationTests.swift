@@ -295,6 +295,94 @@ struct StreamTextSSEIntegrationTests {
         #expect(events.contains { ($0["type"] as? String) == "file" && ($0["mediaType"] as? String) == "text/plain" })
     }
 
+    @Test("SSE encodes tool-approval-request details with providerMetadata and dynamic")
+    func sseEncodesToolApprovalRequest() async throws {
+        // Build a request with dynamic call and provider metadata
+        let dynamicCall = DynamicToolCall(
+            toolCallId: "dyn-1",
+            toolName: "approveMe",
+            input: .object(["arg": .string("x")]),
+            providerExecuted: false,
+            providerMetadata: ["prov": ["k": .string("v")]],
+            invalid: nil,
+            error: nil
+        )
+        let approval = ToolApprovalRequestOutput(approvalId: "ap-1", toolCall: .dynamic(dynamicCall))
+        let parts: [TextStreamPart] = [
+            .toolApprovalRequest(approval),
+            .finish(finishReason: .stop, totalUsage: LanguageModelUsage())
+        ]
+        let stream = AsyncThrowingStream<TextStreamPart, Error> { c in
+            parts.forEach { c.yield($0) }
+            c.finish()
+        }
+        let events = try await decodeEvents(convertReadableStreamToArray(makeStreamTextSSEStream(from: stream)))
+        let req = try #require(events.first(where: { $0["type"] as? String == "tool-approval-request" }))
+        #expect(req["approvalId"] as? String == "ap-1")
+        #expect(req["toolCallId"] as? String == "dyn-1")
+        #expect(req["toolName"] as? String == "approveMe")
+        #expect(req["dynamic"] as? Bool == true)
+        let input = try #require(req["input"] as? NSDictionary)
+        #expect(input["arg"] as? String == "x")
+        let meta = try #require(req["providerMetadata"] as? NSDictionary)
+        #expect(meta["prov"] != nil)
+    }
+
+    @Test("SSE preserves multi-step order and emits two finish-step before final finish")
+    func sseMultiStepOrdering() async throws {
+        // Simulate two steps: first finishes with tool-calls, second with stop
+        let response1 = LanguageModelResponseMetadata(id: "r1", timestamp: Date(timeIntervalSince1970: 0), modelId: "m1", headers: nil)
+        let usage1 = LanguageModelUsage(inputTokens: 1, outputTokens: 1, totalTokens: 2)
+        let response2 = LanguageModelResponseMetadata(id: "r2", timestamp: Date(timeIntervalSince1970: 1), modelId: "m2", headers: nil)
+        let usage2 = LanguageModelUsage(inputTokens: 2, outputTokens: 3, totalTokens: 5)
+
+        let parts: [TextStreamPart] = [
+            .start,
+            .startStep(request: LanguageModelRequestMetadata(body: nil), warnings: []),
+            .finishStep(response: response1, usage: usage1, finishReason: .toolCalls, providerMetadata: nil),
+            .startStep(request: LanguageModelRequestMetadata(body: nil), warnings: []),
+            .textStart(id: "t", providerMetadata: nil),
+            .textDelta(id: "t", text: "ok", providerMetadata: nil),
+            .textEnd(id: "t", providerMetadata: nil),
+            .finishStep(response: response2, usage: usage2, finishReason: .stop, providerMetadata: nil),
+            .finish(finishReason: .stop, totalUsage: LanguageModelUsage(inputTokens: 3, outputTokens: 4, totalTokens: 7))
+        ]
+        let stream = AsyncThrowingStream<TextStreamPart, Error> { c in
+            parts.forEach { c.yield($0) }
+            c.finish()
+        }
+        let events = try await decodeEvents(convertReadableStreamToArray(makeStreamTextSSEStream(from: stream)))
+        let types = events.compactMap { $0["type"] as? String }
+        // Expected subsequence
+        let expected = ["start", "start-step", "finish-step", "start-step", "text-start", "text-delta", "text-end", "finish-step", "finish"]
+        #expect(types == expected)
+    }
+
+    @Test("SSE emits end when stream ends without finish/abort")
+    func sseEmitsEndWithoutFinish() async throws {
+        let stream = AsyncThrowingStream<TextStreamPart, Error> { c in
+            c.yield(.textStart(id: "t", providerMetadata: nil))
+            c.yield(.textEnd(id: "t", providerMetadata: nil))
+            c.finish()
+        }
+        let lines = try await convertReadableStreamToArray(makeStreamTextSSEStream(from: stream))
+        // Last line should be an end event
+        #expect(lines.last == "data: {\"type\":\"end\"}\n\n")
+    }
+
+    @Test("SSE ignores raw chunks from provider")
+    func sseIgnoresRaw() async throws {
+        let stream = AsyncThrowingStream<TextStreamPart, Error> { c in
+            c.yield(.raw(rawValue: .string("x")))
+            c.yield(.finish(finishReason: .stop, totalUsage: LanguageModelUsage()))
+            c.finish()
+        }
+        let lines = try await convertReadableStreamToArray(makeStreamTextSSEStream(from: stream))
+        // Only a finish event should appear
+        #expect(lines.contains { $0.contains("\"type\":\"finish\"") })
+        #expect(!lines.contains { $0.contains("\"type\":\"raw\"") })
+    }
+
     @Test("SSE includes providerMetadata for text blocks")
     func sseIncludesTextProviderMetadata() async throws {
         let meta: ProviderMetadata = ["prov": ["m": .string("x")]]
