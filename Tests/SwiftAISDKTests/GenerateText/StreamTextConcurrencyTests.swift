@@ -4,8 +4,8 @@ import Testing
 import AISDKProvider
 import AISDKProviderUtils
 
-@Suite("StreamTextV2 – concurrency & control")
-struct StreamTextV2ConcurrencyTests {
+@Suite("StreamText – concurrency & control")
+struct StreamTextConcurrencyTests {
     private let defaultUsage = LanguageModelV3Usage(
         inputTokens: 1,
         outputTokens: 2,
@@ -25,7 +25,7 @@ struct StreamTextV2ConcurrencyTests {
         return await predicate()
     }
 
-    @Test("two subscribers receive identical deltas (V2)")
+    @Test("two subscribers receive identical deltas")
     func twoSubscribersReceiveIdenticalDeltas() async throws {
         let parts: [LanguageModelV3StreamPart] = [
             .streamStart(warnings: []),
@@ -41,7 +41,7 @@ struct StreamTextV2ConcurrencyTests {
             c.finish()
         }
         let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
-        let result: DefaultStreamTextV2Result<JSONValue, JSONValue> = try streamTextV2(model: .v3(model), prompt: "hello")
+        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(model: .v3(model), prompt: "hello")
 
         var s1: [String] = []
         var s2: [String] = []
@@ -57,7 +57,7 @@ struct StreamTextV2ConcurrencyTests {
         #expect(s2 == ["X","Y"]) 
     }
 
-    @Test("stop() emits abort before finish (V2)")
+    @Test("stop() emits abort before finish")
     func stopEmitsAbortBeforeFinish() async throws {
         let yielded = Flag()
         // Build a slow stream to allow stop() to interleave
@@ -76,7 +76,7 @@ struct StreamTextV2ConcurrencyTests {
             }
         }
         let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
-        let result: DefaultStreamTextV2Result<JSONValue, JSONValue> = try streamTextV2(
+        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
             model: .v3(model),
             prompt: "hello"
         )

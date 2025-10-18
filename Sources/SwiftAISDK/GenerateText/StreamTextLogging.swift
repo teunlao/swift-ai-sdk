@@ -2,8 +2,8 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-/// Options that control how StreamText V2 events are logged.
-public struct StreamTextV2LogOptions: Sendable {
+/// Options that control how StreamText events are logged.
+public struct StreamTextLogOptions: Sendable {
     /// When `true`, each line is prefixed with an ISO8601 timestamp.
     public var includeTimestamps: Bool
 
@@ -23,7 +23,7 @@ public struct StreamTextV2LogOptions: Sendable {
         includeTimestamps: Bool = false,
         prefix: String? = nil,
         clock: @escaping @Sendable () -> Date = Date.init,
-        timestampFormatter: @escaping @Sendable (Date) -> String = StreamTextV2LogOptions.defaultTimestampFormatter,
+        timestampFormatter: @escaping @Sendable (Date) -> String = StreamTextLogOptions.defaultTimestampFormatter,
         lineTerminator: String = "\n"
     ) {
         self.includeTimestamps = includeTimestamps
@@ -34,20 +34,21 @@ public struct StreamTextV2LogOptions: Sendable {
     }
 }
 
-/// Creates a textual log stream from StreamText V2 parts.
+/// Creates a textual log stream from StreamText parts.
 ///
 /// Each produced string already contains a trailing terminator (default `\n`) so it can be
 /// written directly to an output.
-public func makeStreamTextV2LogStream(
+public func makeStreamTextLogStream(
     from stream: AsyncThrowingStream<TextStreamPart, Error>,
-    options: StreamTextV2LogOptions = StreamTextV2LogOptions()
+    options: StreamTextLogOptions = StreamTextLogOptions()
 ) -> AsyncThrowingStream<String, Error> {
-    let eventStream = makeStreamTextV2EventStream(from: stream)
+    let eventStream = makeStreamTextEventStream(from: stream)
     return AsyncThrowingStream { continuation in
         let task = Task {
-            let encoder = StreamTextV2LogEncoder(options: options)
+            let encoder = StreamTextLogEncoder(options: options)
             do {
                 for try await event in eventStream {
+                    if Task.isCancelled { break }
                     for line in encoder.encode(event: event) {
                         continuation.yield(line)
                     }
@@ -65,12 +66,12 @@ public func makeStreamTextV2LogStream(
 }
 
 /// Iterates through the log stream and forwards each line into the provided callback.
-public func logStreamTextV2Events(
+public func logStreamTextEvents(
     from stream: AsyncThrowingStream<TextStreamPart, Error>,
-    options: StreamTextV2LogOptions = StreamTextV2LogOptions(),
+    options: StreamTextLogOptions = StreamTextLogOptions(),
     onLine: @escaping @Sendable (String) -> Void
 ) async throws {
-    let logStream = makeStreamTextV2LogStream(from: stream, options: options)
+    let logStream = makeStreamTextLogStream(from: stream, options: options)
     for try await line in logStream {
         onLine(line)
     }
@@ -78,15 +79,15 @@ public func logStreamTextV2Events(
 
 // MARK: - Internal encoder
 
-private final class StreamTextV2LogEncoder {
-    private let options: StreamTextV2LogOptions
+private final class StreamTextLogEncoder {
+    private let options: StreamTextLogOptions
     private var currentStep: Int = -1
 
-    init(options: StreamTextV2LogOptions) {
+    init(options: StreamTextLogOptions) {
         self.options = options
     }
 
-    func encode(event: StreamTextV2Event) -> [String] {
+    func encode(event: StreamTextEvent) -> [String] {
         var message: String
         switch event {
         case .start:
@@ -111,6 +112,12 @@ private final class StreamTextV2LogEncoder {
             message = "step \(currentStep):tool-call \(call.logDescription())"
         case let .toolResult(result):
             message = "step \(currentStep):tool-result \(result.logDescription())"
+        case let .toolError(error):
+            message = "step \(currentStep):tool-error (\(error.toolName)) id=\(error.toolCallId) err=\(String(describing: error.error))"
+        case let .toolApprovalRequest(req):
+            message = "step \(currentStep):tool-approval-request id=\(req.approvalId) tool=\(req.toolCall.toolName)"
+        case let .toolOutputDenied(denied):
+            message = "step \(currentStep):tool-output-denied tool=\(denied.toolName) id=\(denied.toolCallId)"
         case let .source(source):
             message = "source \(source.logDescription())"
         case let .file(file):
@@ -175,9 +182,11 @@ private extension TypedToolResult {
     func logDescription() -> String {
         switch self {
         case .static(let result):
-            return "\(result.toolName) [\(result.toolCallId)] result=\(result.output)"
+            let prefix = result.preliminary == true ? "(prelim) " : ""
+            return "\(prefix)\(result.toolName) [\(result.toolCallId)] result=\(result.output)"
         case .dynamic(let result):
-            return "\(result.toolName) [\(result.toolCallId)] result=\(result.output)"
+            let prefix = result.preliminary == true ? "(prelim) " : ""
+            return "\(prefix)\(result.toolName) [\(result.toolCallId)] result=\(result.output)"
         }
     }
 }
@@ -215,7 +224,7 @@ private extension LanguageModelUsage {
     }
 }
 
-public extension StreamTextV2LogOptions {
+public extension StreamTextLogOptions {
     static func defaultTimestampFormatter(_ date: Date) -> String {
         let value = date.timeIntervalSince1970
         return String(format: "%.3f", value)

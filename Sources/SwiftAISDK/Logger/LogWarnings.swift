@@ -40,10 +40,14 @@ private final class FirstWarningState: @unchecked Sendable {
 /// Global lock for synchronizing access to all mutable state
 private let globalWarningsLock = NSLock()
 
-/// Storage for observer hook - protected by globalWarningsLock
-// Support multiple concurrent observers to avoid cross-suite races in tests.
-// Observers may be left registered if competing suites assign and clear in
-// overlapping windows; this is acceptable for tests and prevents lost events.
+/// Storage for warning observers - protected by globalWarningsLock.
+/// We treat the public property as a replaceable single-observer API:
+/// assigning a non-nil closure replaces the current list with that closure;
+/// assigning nil clears all observers. Internally we keep an array so we can
+/// evolve to multiple observers if needed without changing call sites.
+// Observer stack: setting a non-nil observer pushes it; setting nil pops the most-recent one.
+// This matches common test patterns that set the hook in `setUp` and clear in `tearDown`,
+// while allowing overlapping tests to coexist without clobbering each other.
 private nonisolated(unsafe) var _logWarningsObservers: [(@Sendable ([Warning]) -> Void)] = []
 
 /// Storage for logger config - protected by globalWarningsLock
@@ -90,19 +94,16 @@ public let FIRST_WARNING_INFO_MESSAGE =
 /// Thread-safe via lock-protected storage
 nonisolated(unsafe) var logWarningsObserver: (@Sendable ([Warning]) -> Void)? {
     get {
-        // Getter is unused by tests; return nil to avoid implying single-observer.
-        return nil
+        globalWarningsLock.lock(); defer { globalWarningsLock.unlock() }
+        return _logWarningsObservers.last
     }
     set {
-        globalWarningsLock.lock()
-        defer { globalWarningsLock.unlock() }
+        globalWarningsLock.lock(); defer { globalWarningsLock.unlock() }
         if let observer = newValue {
             _logWarningsObservers.append(observer)
         } else {
-            // Clear only if we are the sole observer to avoid removing observers
-            // installed by other concurrently running suites.
-            if _logWarningsObservers.count <= 1 {
-                _logWarningsObservers.removeAll()
+            if !_logWarningsObservers.isEmpty {
+                _logWarningsObservers.removeLast()
             }
         }
     }
@@ -211,7 +212,7 @@ private func formatTranscriptionModelWarning(_ warning: TranscriptionModelV3Call
 ///
 /// - Parameter warnings: Array of warnings to log
 public func logWarnings(_ warnings: [Warning]) {
-    // Snapshot observers and notify all (thread-safe)
+    // Snapshot observers (thread-safe) and notify
     let observers: [(@Sendable ([Warning]) -> Void)] = {
         globalWarningsLock.lock(); defer { globalWarningsLock.unlock() }
         return _logWarningsObservers

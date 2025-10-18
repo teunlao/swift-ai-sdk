@@ -2,18 +2,18 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-/// Creates a Server-Sent Events (SSE) stream from a StreamText V2 full stream.
+/// Creates a Server-Sent Events (SSE) stream from a StreamText full stream.
 ///
 /// Each emitted string already contains the `data:` prefix and terminating blank line (`\n\n`).
 /// The payload mirrors the upstream `stream-text.ts` SSE framing with a subset of event types
 /// that are currently required by the Swift SDK.
-public func makeStreamTextV2SSEStream(
+public func makeStreamTextSSEStream(
     from stream: AsyncThrowingStream<TextStreamPart, Error>,
     includeUsage: Bool = true
 ) -> AsyncThrowingStream<String, Error> {
     AsyncThrowingStream { continuation in
         let task = Task {
-            let encoder = StreamTextV2SSEEncoder(includeUsage: includeUsage)
+            let encoder = StreamTextSSEEncoder(includeUsage: includeUsage)
             do {
                 for try await part in stream {
                     let payloads = encoder.encode(part: part)
@@ -33,7 +33,7 @@ public func makeStreamTextV2SSEStream(
     }
 }
 
-private final class StreamTextV2SSEEncoder {
+private final class StreamTextSSEEncoder {
     private var includeUsage: Bool
     private var finishedEmitted = false
 
@@ -95,8 +95,37 @@ private final class StreamTextV2SSEEncoder {
         case .file:
             return []
 
-        case .toolError, .toolOutputDenied, .toolApprovalRequest:
-            return []
+        case let .toolError(error):
+            var payload: [String: Any] = [
+                "type": "tool-error",
+                "toolCallId": error.toolCallId,
+                "toolName": error.toolName,
+            ]
+            // Serialize error as string description to keep payload lightweight
+            payload["error"] = String(describing: error.error)
+            if let executed = error.providerExecuted { payload["providerExecuted"] = executed }
+            return [encode(event: payload)]
+
+        case let .toolOutputDenied(denied):
+            var payload: [String: Any] = [
+                "type": "tool-output-denied",
+                "toolCallId": denied.toolCallId,
+                "toolName": denied.toolName
+            ]
+            if let executed = denied.providerExecuted { payload["providerExecuted"] = executed }
+            return [encode(event: payload)]
+
+        case let .toolApprovalRequest(request):
+            var payload: [String: Any] = [
+                "type": "tool-approval-request",
+                "approvalId": request.approvalId,
+            ]
+            // Inline basic info of the tool call for convenience
+            payload["toolCallId"] = request.toolCall.toolCallId
+            payload["toolName"] = request.toolCall.toolName
+            payload["input"] = toJSONAny(request.toolCall.input)
+            if let executed = request.toolCall.providerExecuted { payload["providerExecuted"] = executed }
+            return [encode(event: payload)]
 
         case let .finish(finishReason, usage):
             finishedEmitted = true
@@ -130,7 +159,7 @@ private final class StreamTextV2SSEEncoder {
                 "type": "tool-call",
                 "toolCallId": value.toolCallId,
                 "toolName": value.toolName,
-                "input": value.input
+                "input": toJSONAny(value.input)
             ]
             if let metadata = value.providerMetadata { payload["providerMetadata"] = metadata }
             if let executed = value.providerExecuted { payload["providerExecuted"] = executed }
@@ -141,7 +170,7 @@ private final class StreamTextV2SSEEncoder {
                 "type": "tool-call",
                 "toolCallId": value.toolCallId,
                 "toolName": value.toolName,
-                "input": value.input
+                "input": toJSONAny(value.input)
             ]
             if let metadata = value.providerMetadata { payload["providerMetadata"] = metadata }
             if let executed = value.providerExecuted { payload["providerExecuted"] = executed }
@@ -158,17 +187,18 @@ private final class StreamTextV2SSEEncoder {
                 "type": "tool-result",
                 "toolCallId": value.toolCallId,
                 "toolName": value.toolName,
-                "result": value.output
+                "result": toJSONAny(value.output)
             ]
             if let metadata = value.providerMetadata { payload["providerMetadata"] = metadata }
             if let executed = value.providerExecuted { payload["providerExecuted"] = executed }
+            if let prelim = value.preliminary { payload["preliminary"] = prelim }
             return [encode(event: payload)]
         case .dynamic(let value):
             var payload: [String: Any] = [
                 "type": "tool-result",
                 "toolCallId": value.toolCallId,
                 "toolName": value.toolName,
-                "result": value.output
+                "result": toJSONAny(value.output)
             ]
             if let metadata = value.providerMetadata { payload["providerMetadata"] = metadata }
             if let executed = value.providerExecuted { payload["providerExecuted"] = executed }
@@ -194,5 +224,20 @@ private final class StreamTextV2SSEEncoder {
             return "data: {}\n\n"
         }
         return "data: \(json)\n\n"
+    }
+
+    // Convert JSONValue to JSON-serializable Any
+    private func toJSONAny(_ value: JSONValue) -> Any {
+        switch value {
+        case .null: return NSNull()
+        case .bool(let b): return b
+        case .number(let n): return n
+        case .string(let s): return s
+        case .array(let arr): return arr.map { toJSONAny($0) }
+        case .object(let dict):
+            var obj: [String: Any] = [:]
+            for (k, v) in dict { obj[k] = toJSONAny(v) }
+            return obj
+        }
     }
 }

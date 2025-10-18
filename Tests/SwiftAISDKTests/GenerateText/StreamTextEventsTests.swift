@@ -4,8 +4,8 @@ import Testing
 import AISDKProvider
 import AISDKProviderUtils
 
-@Suite("StreamTextV2 – event stream")
-struct StreamTextV2EventsTests {
+@Suite("StreamText – event stream")
+struct StreamTextEventsTests {
     private let usage = LanguageModelV3Usage(inputTokens: 2, outputTokens: 5, totalTokens: 7)
 
     private func makeSampleParts() -> [TextStreamPart] {
@@ -28,7 +28,7 @@ struct StreamTextV2EventsTests {
             continuation.finish()
         }
 
-        let eventStream = makeStreamTextV2EventStream(from: stream)
+        let eventStream = makeStreamTextEventStream(from: stream)
         let events = try await convertReadableStreamToArray(eventStream)
 
         if let first = events.first {
@@ -51,8 +51,8 @@ struct StreamTextV2EventsTests {
             continuation.finish()
         }
 
-        let eventStream = makeStreamTextV2EventStream(from: stream)
-        let summary = try await summarizeStreamTextV2Events(eventStream)
+        let eventStream = makeStreamTextEventStream(from: stream)
+        let summary = try await summarizeStreamTextEvents(eventStream)
 
         #expect(summary.text == "Hello")
         #expect(summary.finishReason == .stop)
@@ -71,8 +71,8 @@ struct StreamTextV2EventsTests {
             continuation.finish()
         }
 
-        let eventStream = makeStreamTextV2EventStream(from: stream)
-        let summary = try await summarizeStreamTextV2Events(eventStream)
+        let eventStream = makeStreamTextEventStream(from: stream)
+        let summary = try await summarizeStreamTextEvents(eventStream)
         #expect(summary.aborted)
         #expect(summary.finishReason == nil)
     }

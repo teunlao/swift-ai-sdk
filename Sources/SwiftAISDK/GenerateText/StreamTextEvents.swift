@@ -2,8 +2,8 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-/// High-level event emitted while observing a StreamText V2 full stream.
-public enum StreamTextV2Event: Sendable {
+/// High-level event emitted while observing a StreamText full stream.
+public enum StreamTextEvent: Sendable {
     case start
     case startStep(index: Int, warnings: [LanguageModelV3CallWarning])
     case textDelta(text: String, id: String)
@@ -11,6 +11,9 @@ public enum StreamTextV2Event: Sendable {
     case reasoningDelta(text: String, id: String)
     case toolCall(TypedToolCall)
     case toolResult(TypedToolResult)
+    case toolError(TypedToolError)
+    case toolApprovalRequest(ToolApprovalRequestOutput)
+    case toolOutputDenied(ToolOutputDenied)
     case source(Source)
     case file(GeneratedFile)
     case finish(reason: FinishReason, usage: LanguageModelUsage)
@@ -19,14 +22,15 @@ public enum StreamTextV2Event: Sendable {
 
 /// Converts a `TextStreamPart` stream into a higher-level event stream mirroring the
 /// upstream `stream-text.ts` event helpers.
-public func makeStreamTextV2EventStream(
+public func makeStreamTextEventStream(
     from stream: AsyncThrowingStream<TextStreamPart, Error>
-) -> AsyncThrowingStream<StreamTextV2Event, Error> {
+) -> AsyncThrowingStream<StreamTextEvent, Error> {
     AsyncThrowingStream { continuation in
         let task = Task {
-            let encoder = StreamTextV2EventEncoder()
+            let encoder = StreamTextEventEncoder()
             do {
                 for try await part in stream {
+                    if Task.isCancelled { break }
                     for event in encoder.encode(part: part) {
                         continuation.yield(event)
                     }
@@ -43,8 +47,8 @@ public func makeStreamTextV2EventStream(
     }
 }
 
-/// Summary produced by `summarizeStreamTextV2Events`.
-public struct StreamTextV2EventSummary: Sendable {
+/// Summary produced by `summarizeStreamTextEvents`.
+public struct StreamTextEventSummary: Sendable {
     public var text: String
     public var reasoning: [String]
     public var toolCalls: [TypedToolCall]
@@ -78,11 +82,11 @@ public struct StreamTextV2EventSummary: Sendable {
     }
 }
 
-/// Consumes a StreamText V2 event stream and aggregates high-level data.
-public func summarizeStreamTextV2Events(
-    _ stream: AsyncThrowingStream<StreamTextV2Event, Error>
-) async throws -> StreamTextV2EventSummary {
-    var summary = StreamTextV2EventSummary()
+/// Consumes a StreamText event stream and aggregates high-level data.
+public func summarizeStreamTextEvents(
+    _ stream: AsyncThrowingStream<StreamTextEvent, Error>
+) async throws -> StreamTextEventSummary {
+    var summary = StreamTextEventSummary()
     for try await event in stream {
         switch event {
         case .start:
@@ -99,6 +103,12 @@ public func summarizeStreamTextV2Events(
             summary.toolCalls.append(call)
         case let .toolResult(result):
             summary.toolResults.append(result)
+        case .toolError:
+            continue
+        case .toolApprovalRequest:
+            continue
+        case .toolOutputDenied:
+            continue
         case let .source(source):
             summary.sources.append(source)
         case let .file(file):
@@ -115,11 +125,11 @@ public func summarizeStreamTextV2Events(
 
 // MARK: - Internal encoder
 
-private final class StreamTextV2EventEncoder {
+private final class StreamTextEventEncoder {
     private var currentStep = -1
     private var finishedEmitted = false
 
-    func encode(part: TextStreamPart) -> [StreamTextV2Event] {
+    func encode(part: TextStreamPart) -> [StreamTextEvent] {
         switch part {
         case .start:
             currentStep = -1
@@ -148,13 +158,22 @@ private final class StreamTextV2EventEncoder {
         case let .toolResult(result):
             return [.toolResult(result)]
 
+        case let .toolError(error):
+            return [.toolError(error)]
+
+        case let .toolApprovalRequest(request):
+            return [.toolApprovalRequest(request)]
+
+        case let .toolOutputDenied(denied):
+            return [.toolOutputDenied(denied)]
+
         case let .source(source):
             return [.source(source)]
 
         case let .file(file):
             return [.file(file)]
 
-        case let .finishStep:
+        case .finishStep:
             return []
 
         case let .finish(reason, usage):
@@ -172,13 +191,12 @@ private final class StreamTextV2EventEncoder {
             return []
 
         case .toolInputStart, .toolInputDelta, .toolInputEnd,
-             .reasoningStart, .reasoningEnd,
-             .toolError, .toolOutputDenied, .toolApprovalRequest:
+             .reasoningStart, .reasoningEnd:
             return []
         }
     }
 
-    func finalize() -> [StreamTextV2Event] {
+    func finalize() -> [StreamTextEvent] {
         finishedEmitted ? [] : [.finish(reason: .unknown, usage: LanguageModelUsage())]
     }
 }
