@@ -133,4 +133,189 @@ struct TransformFullToUIMessageStreamTests {
         }
         #expect(hasDoc)
     }
+
+    @Test("excludes sources when disabled")
+    func excludesSourcesWhenDisabled() async throws {
+        let urlSource = LanguageModelV3Source.url(
+            id: "s3",
+            url: "https://disabled.example",
+            title: nil,
+            providerMetadata: nil
+        )
+
+        let parts: [TextStreamPart] = [
+            .start,
+            .startStep(
+                request: LanguageModelRequestMetadata(body: nil),
+                warnings: []
+            ),
+            .source(urlSource),
+            .finishStep(
+                response: LanguageModelResponseMetadata(
+                    id: "resp-3",
+                    timestamp: Date(),
+                    modelId: "test",
+                    headers: nil
+                ),
+                usage: LanguageModelUsage(),
+                finishReason: .stop,
+                providerMetadata: nil
+            ),
+            .finish(finishReason: .stop, totalUsage: LanguageModelUsage())
+        ]
+
+        let fullStream = makeAsyncStream(from: parts)
+        let chunkStream = transformFullToUIMessageStream(
+            stream: fullStream,
+            options: UIMessageTransformOptions(
+                sendStart: true,
+                sendFinish: true,
+                sendReasoning: false,
+                sendSources: false,
+                messageMetadata: nil
+            )
+        )
+
+        let chunks = try await collectStream(chunkStream)
+        let hasAnySource = chunks.contains { chunk in
+            switch chunk {
+            case .sourceUrl, .sourceDocument: return true
+            default: return false
+            }
+        }
+        #expect(!hasAnySource)
+    }
+
+    @Test("excludes reasoning when disabled")
+    func excludesReasoningWhenDisabled() async throws {
+        let parts: [TextStreamPart] = [
+            .start,
+            .startStep(
+                request: LanguageModelRequestMetadata(body: nil),
+                warnings: []
+            ),
+            .reasoningStart(id: "r1", providerMetadata: nil),
+            .reasoningDelta(id: "r1", text: "hidden", providerMetadata: nil),
+            .reasoningEnd(id: "r1", providerMetadata: nil),
+            .finishStep(
+                response: LanguageModelResponseMetadata(
+                    id: "resp-4",
+                    timestamp: Date(),
+                    modelId: "test",
+                    headers: nil
+                ),
+                usage: LanguageModelUsage(),
+                finishReason: .stop,
+                providerMetadata: nil
+            ),
+            .finish(finishReason: .stop, totalUsage: LanguageModelUsage())
+        ]
+
+        let fullStream = makeAsyncStream(from: parts)
+        let chunkStream = transformFullToUIMessageStream(
+            stream: fullStream,
+            options: UIMessageTransformOptions(
+                sendStart: true,
+                sendFinish: true,
+                sendReasoning: false,
+                sendSources: false,
+                messageMetadata: nil
+            )
+        )
+
+        let chunks = try await collectStream(chunkStream)
+        let hasAnyReasoning = chunks.contains { chunk in
+            switch chunk {
+            case .reasoningStart, .reasoningDelta, .reasoningEnd: return true
+            default: return false
+            }
+        }
+        #expect(!hasAnyReasoning)
+    }
+
+    @Test("does not emit start when sendStart=false")
+    func excludesStartWhenDisabled() async throws {
+        let parts: [TextStreamPart] = [
+            .start,
+            .startStep(
+                request: LanguageModelRequestMetadata(body: nil),
+                warnings: []
+            ),
+            .textStart(id: "t1", providerMetadata: nil),
+            .textDelta(id: "t1", text: "Hi", providerMetadata: nil),
+            .textEnd(id: "t1", providerMetadata: nil),
+            .finishStep(
+                response: LanguageModelResponseMetadata(
+                    id: "resp-5",
+                    timestamp: Date(),
+                    modelId: "test",
+                    headers: nil
+                ),
+                usage: LanguageModelUsage(),
+                finishReason: .stop,
+                providerMetadata: nil
+            ),
+            .finish(finishReason: .stop, totalUsage: LanguageModelUsage())
+        ]
+
+        let fullStream = makeAsyncStream(from: parts)
+        let chunkStream = transformFullToUIMessageStream(
+            stream: fullStream,
+            options: UIMessageTransformOptions(
+                sendStart: false,
+                sendFinish: true,
+                sendReasoning: false,
+                sendSources: false,
+                messageMetadata: nil
+            )
+        )
+
+        let chunks = try await collectStream(chunkStream)
+        let types = chunks.map { $0.typeIdentifier }
+        #expect(!types.contains("start"))
+        #expect(types.first == "start-step")
+    }
+
+    @Test("does not emit finish when sendFinish=false")
+    func excludesFinishWhenDisabled() async throws {
+        let parts: [TextStreamPart] = [
+            .start,
+            .startStep(
+                request: LanguageModelRequestMetadata(body: nil),
+                warnings: []
+            ),
+            .textStart(id: "t2", providerMetadata: nil),
+            .textDelta(id: "t2", text: "Bye", providerMetadata: nil),
+            .textEnd(id: "t2", providerMetadata: nil),
+            .finishStep(
+                response: LanguageModelResponseMetadata(
+                    id: "resp-6",
+                    timestamp: Date(),
+                    modelId: "test",
+                    headers: nil
+                ),
+                usage: LanguageModelUsage(),
+                finishReason: .stop,
+                providerMetadata: nil
+            ),
+            .finish(finishReason: .stop, totalUsage: LanguageModelUsage())
+        ]
+
+        let fullStream = makeAsyncStream(from: parts)
+        let chunkStream = transformFullToUIMessageStream(
+            stream: fullStream,
+            options: UIMessageTransformOptions(
+                sendStart: true,
+                sendFinish: false,
+                sendReasoning: false,
+                sendSources: false,
+                messageMetadata: nil
+            )
+        )
+
+        let chunks = try await collectStream(chunkStream)
+        let types = chunks.map { $0.typeIdentifier }
+        #expect(!types.contains("finish"))
+        #expect(types.last == "finish-step")
+    }
 }
