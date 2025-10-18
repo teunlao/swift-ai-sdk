@@ -443,8 +443,15 @@ struct StreamTextV2ApprovalResolverTests {
         let approvalRequests = chunks.filter { if case .toolApprovalRequest = $0 { return true } else { return false } }
         #expect(approvalRequests.isEmpty)
         #expect(await counter.snapshot() == 0)
-        let toolResults = chunks.filter { if case .toolResult = $0 { return true } else { return false } }
-        #expect(toolResults.isEmpty)
+        let toolResults = chunks.compactMap { part -> StaticToolResult? in
+            if case let .toolResult(res) = part {
+                if case let .static(info) = res { return info }
+            }
+            return nil
+        }
+        #expect(toolResults.count == 1)
+        #expect(toolResults.first?.toolCallId == "n1")
+        #expect(toolResults.first?.providerExecuted == false)
     }
 
     @Test("streaming tool error propagates (V2)")

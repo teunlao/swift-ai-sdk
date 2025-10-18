@@ -375,29 +375,7 @@ actor StreamTextV2Actor {
                 if Task.isCancelled { break }
                 switch decision {
                 case .approve:
-                    guard let execute = pending.tool.execute else {
-                        await emitToolOutputDenied(callId: pending.toolCallId, toolName: pending.toolName)
-                        continue
-                    }
-                    let options = ToolCallOptions(
-                        toolCallId: pending.toolCallId,
-                        messages: currentMessagesForApproval(),
-                        abortSignal: nil,
-                        experimentalContext: approvalContext
-                    )
-                    do {
-                        let result = try await execute(pending.input, options)
-                        await handleExecutionResult(result, pending: pending)
-                    } catch {
-                        let typedError = makeTypedToolError(
-                            tool: pending.tool,
-                            callId: pending.toolCallId,
-                            toolName: pending.toolName,
-                            input: pending.input,
-                            error: error
-                        )
-                        await emitToolError(typedError)
-                    }
+                    await executeToolAfterApproval(pending)
                 case .deny:
                     await emitToolOutputDenied(callId: pending.toolCallId, toolName: pending.toolName)
                 }
@@ -407,6 +385,32 @@ actor StreamTextV2Actor {
                 activeToolInputs.removeValue(forKey: pending.toolCallId)
                 activeToolNames.removeValue(forKey: pending.toolCallId)
             }
+        }
+    }
+
+    private func executeToolAfterApproval(_ pending: PendingApproval) async {
+        guard let execute = pending.tool.execute else {
+            await emitToolOutputDenied(callId: pending.toolCallId, toolName: pending.toolName)
+            return
+        }
+        let options = ToolCallOptions(
+            toolCallId: pending.toolCallId,
+            messages: currentMessagesForApproval(),
+            abortSignal: nil,
+            experimentalContext: approvalContext
+        )
+        do {
+            let result = try await execute(pending.input, options)
+            await handleExecutionResult(result, pending: pending)
+        } catch {
+            let typedError = makeTypedToolError(
+                tool: pending.tool,
+                callId: pending.toolCallId,
+                toolName: pending.toolName,
+                input: pending.input,
+                error: error
+            )
+            await emitToolError(typedError)
         }
     }
 
@@ -809,6 +813,16 @@ actor StreamTextV2Actor {
                             tool: tool,
                             providerMetadata: call.providerMetadata
                         ))
+                    } else {
+                        let pending = PendingApproval(
+                            toolCallId: call.toolCallId,
+                            toolName: call.toolName,
+                            input: inputValue,
+                            typedCall: typed,
+                            tool: tool,
+                            providerMetadata: call.providerMetadata
+                        )
+                        await executeToolAfterApproval(pending)
                     }
                 }
             case .toolResult(let result):
