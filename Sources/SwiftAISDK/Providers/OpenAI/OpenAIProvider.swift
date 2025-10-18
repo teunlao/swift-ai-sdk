@@ -33,15 +33,18 @@ public struct OpenAIProviderSettings: Sendable {
 public final class OpenAIProvider: ProviderV3 {
     private let responsesFactory: @Sendable (OpenAIResponsesModelId) -> OpenAIResponsesLanguageModel
     private let embeddingFactory: @Sendable (OpenAIEmbeddingModelId) -> OpenAIEmbeddingModel
+    private let imageFactory: @Sendable (OpenAIImageModelId) -> OpenAIImageModel
     public let tools: OpenAITools
 
     init(
         responses: @escaping @Sendable (OpenAIResponsesModelId) -> OpenAIResponsesLanguageModel,
         embeddings: @escaping @Sendable (OpenAIEmbeddingModelId) -> OpenAIEmbeddingModel,
+        images: @escaping @Sendable (OpenAIImageModelId) -> OpenAIImageModel,
         tools: OpenAITools
     ) {
         self.responsesFactory = responses
         self.embeddingFactory = embeddings
+        self.imageFactory = images
         self.tools = tools
     }
 
@@ -54,7 +57,7 @@ public final class OpenAIProvider: ProviderV3 {
     }
 
     public func imageModel(modelId: String) -> any ImageModelV3 {
-        fatalError("OpenAI image models not yet implemented")
+        imageFactory(OpenAIImageModelId(rawValue: modelId))
     }
 
     public func transcriptionModel(modelId: String) -> any TranscriptionModelV3 {
@@ -114,6 +117,7 @@ public func createOpenAIProvider(settings: OpenAIProviderSettings = .init()) -> 
 
     let responsesConfig = makeConfig(providerSuffix: "responses", fileIdPrefixes: ["file-"])
     let embeddingConfig = makeConfig(providerSuffix: "embedding")
+    let imageConfig = makeConfig(providerSuffix: "image")
 
     let responsesFactory: @Sendable (OpenAIResponsesModelId) -> OpenAIResponsesLanguageModel = { modelId in
         OpenAIResponsesLanguageModel(
@@ -129,9 +133,17 @@ public func createOpenAIProvider(settings: OpenAIProviderSettings = .init()) -> 
         )
     }
 
+    let imageFactory: @Sendable (OpenAIImageModelId) -> OpenAIImageModel = { modelId in
+        OpenAIImageModel(
+            modelId: modelId,
+            config: imageConfig
+        )
+    }
+
     return OpenAIProvider(
         responses: responsesFactory,
         embeddings: embeddingFactory,
+        images: imageFactory,
         tools: openaiTools
     )
 }
