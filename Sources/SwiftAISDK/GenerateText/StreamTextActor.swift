@@ -780,68 +780,76 @@ actor StreamTextActor {
                 await fullBroadcaster.send(
                     .toolInputEnd(id: id, providerMetadata: providerMetadata))
             case .toolCall(let call):
-                let parsed = await safeParseJSON(ParseJSONOptions(text: call.input))
-                let inputValue: JSONValue
-                let parseError: Error?
-                switch parsed {
-                case .success(let value, _):
-                    inputValue = value
-                    parseError = nil
-                case .failure(let error, _):
-                    inputValue = .string(call.input)
-                    parseError = error
-                }
-                activeToolInputs[call.toolCallId] = inputValue
-                activeToolNames[call.toolCallId] = call.toolName
-                let tool = tools?[call.toolName]
-                let typed: TypedToolCall
-                if parseError == nil, tool != nil {
-                    let staticCall = StaticToolCall(
-                        toolCallId: call.toolCallId,
-                        toolName: call.toolName,
-                        input: inputValue,
-                        providerExecuted: call.providerExecuted,
-                        providerMetadata: call.providerMetadata
-                    )
-                    typed = .static(staticCall)
-                } else {
-                    let dynamicCall = DynamicToolCall(
-                        toolCallId: call.toolCallId,
-                        toolName: call.toolName,
-                        input: inputValue,
-                        providerExecuted: call.providerExecuted,
-                        providerMetadata: call.providerMetadata,
-                        invalid: parseError == nil ? nil : true,
-                        error: parseError
-                    )
-                    typed = .dynamic(dynamicCall)
-                }
-                recordedContent.append(.toolCall(typed, providerMetadata: call.providerMetadata))
+                let approvalMessages = currentMessagesForApproval()
+                let typed = await parseToolCall(
+                    toolCall: call,
+                    tools: tools,
+                    repairToolCall: configuration.repairToolCall,
+                    system: initialSystem,
+                    messages: approvalMessages
+                )
+
+                activeToolInputs[typed.toolCallId] = typed.input
+                activeToolNames[typed.toolCallId] = typed.toolName
+
+                recordedContent.append(.toolCall(typed, providerMetadata: typed.providerMetadata))
                 currentToolCalls.append(typed)
                 await fullBroadcaster.send(.toolCall(typed))
 
-                if let tool, call.providerExecuted != true {
-                    if await requiresApproval(for: tool, callId: call.toolCallId, input: inputValue) {
-                        pendingApprovals.append(PendingApproval(
-                            toolCallId: call.toolCallId,
-                            toolName: call.toolName,
-                            input: inputValue,
-                            typedCall: typed,
+                if typed.invalid == true {
+                    let error = makeInvalidToolCallError(from: typed)
+                    await emitToolError(error)
+                    continue
+                }
+
+                guard let tool = tools?[typed.toolName], typed.providerExecuted != true else {
+                    continue
+                }
+
+                if let onInputAvailable = tool.onInputAvailable {
+                    let options = ToolCallInputOptions(
+                        input: typed.input,
+                        toolCallId: typed.toolCallId,
+                        messages: approvalMessages,
+                        abortSignal: configuration.abortSignal,
+                        experimentalContext: approvalContext
+                    )
+                    do {
+                        try await onInputAvailable(options)
+                    } catch {
+                        let typedError = makeTypedToolError(
                             tool: tool,
-                            providerMetadata: call.providerMetadata
-                        ))
-                    } else {
-                        let pending = PendingApproval(
-                            toolCallId: call.toolCallId,
-                            toolName: call.toolName,
-                            input: inputValue,
-                            typedCall: typed,
-                            tool: tool,
-                            providerMetadata: call.providerMetadata
+                            callId: typed.toolCallId,
+                            toolName: typed.toolName,
+                            input: typed.input,
+                            error: error
                         )
-                        await executeToolAfterApproval(pending)
+                        await emitToolError(typedError)
+                        continue
                     }
                 }
+
+                if await requiresApproval(for: tool, callId: typed.toolCallId, input: typed.input) {
+                    pendingApprovals.append(PendingApproval(
+                        toolCallId: typed.toolCallId,
+                        toolName: typed.toolName,
+                        input: typed.input,
+                        typedCall: typed,
+                        tool: tool,
+                        providerMetadata: typed.providerMetadata
+                    ))
+                } else {
+                    let pending = PendingApproval(
+                        toolCallId: typed.toolCallId,
+                        toolName: typed.toolName,
+                        input: typed.input,
+                        typedCall: typed,
+                        tool: tool,
+                        providerMetadata: typed.providerMetadata
+                    )
+                    await executeToolAfterApproval(pending)
+                }
+
             case .toolResult(let result):
                 let input = activeToolInputs[result.toolCallId] ?? .null
                 let typed: TypedToolResult

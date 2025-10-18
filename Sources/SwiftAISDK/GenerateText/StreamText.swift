@@ -59,6 +59,7 @@ struct StreamTextActorConfiguration: Sendable {
     let baseTelemetryAttributes: Attributes
     let baseModel: LanguageModel
     let prepareStep: PrepareStepFunction?
+    let repairToolCall: ToolCallRepairFunction?
 }
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
@@ -172,7 +173,7 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
     providerOptions: ProviderOptions? = nil,
     experimentalActiveTools: [String]? = nil,
     activeTools: [String]? = nil,
-    experimentalOutput output: Output.Specification<OutputValue, PartialOutputValue>? = nil,
+    experimentalOutput output: SwiftAISDK.Output.Specification<OutputValue, PartialOutputValue>? = nil,
     experimentalTelemetry telemetry: TelemetrySettings? = nil,
     experimentalApprove approve: (@Sendable (ToolApprovalRequestOutput) async -> ApprovalAction)? = nil,
     experimentalTransform transforms: [StreamTextTransform] = [],
@@ -280,6 +281,7 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
     private let transforms: [StreamTextTransform]
     private let stopConditions: [StopCondition]
     private let tools: ToolSet?
+    private let outputSpecification: SwiftAISDK.Output.Specification<OutputValue, PartialOutputValue>?
     private let totalUsagePromise = DelayedPromise<LanguageModelUsage>()
     private let finishReasonPromise = DelayedPromise<FinishReason>()
     private let stepsPromise = DelayedPromise<[StepResult]>()
@@ -297,6 +299,8 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
         system: String?,
         tools: ToolSet?,
         approve: (@Sendable (ToolApprovalRequestOutput) async -> ApprovalAction)? = nil,
+        approvalContext: JSONValue?,
+        outputSpecification: SwiftAISDK.Output.Specification<OutputValue, PartialOutputValue>?,
         configuration: StreamTextActorConfiguration,
         onChunk: StreamTextOnChunk?,
         onStepFinish: StreamTextOnStepFinish? = nil,
@@ -313,13 +317,14 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
             stopConditions: self.stopConditions,
             tools: tools,
             approvalResolver: approve,
-            experimentalApprovalContext: nil,
+            experimentalApprovalContext: approvalContext,
             configuration: configuration,
             totalUsagePromise: totalUsagePromise,
             finishReasonPromise: finishReasonPromise,
             stepsPromise: stepsPromise
         )
         self.transforms = transforms
+        self.outputSpecification = outputSpecification
         self.tools = tools
         _ = self.actor  // keep strong reference
 
@@ -451,6 +456,67 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
         }
 
         return transformedStream
+    }
+
+    public var experimentalPartialOutputStream: AsyncThrowingStream<PartialOutputValue, Error> {
+        guard let outputSpecification else {
+            return AsyncThrowingStream { continuation in
+                continuation.finish(throwing: NoOutputSpecifiedError())
+            }
+        }
+
+        return AsyncThrowingStream { continuation in
+            let task = Task {
+                let inner = await actor.fullStream()
+                var firstTextId: String? = nil
+                var accumulated = ""
+                var lastRepresentation: String? = nil
+
+                do {
+                    for try await part in inner {
+                        switch part {
+                        case .textStart(let id, _):
+                            if firstTextId == nil {
+                                firstTextId = id
+                                accumulated = ""
+                                lastRepresentation = nil
+                            }
+                        case .textDelta(let id, let delta, _):
+                            if firstTextId == nil {
+                                firstTextId = id
+                                accumulated = ""
+                                lastRepresentation = nil
+                            }
+                            guard id == firstTextId else { continue }
+                            accumulated += delta
+                            if let partial = try await outputSpecification.parsePartial(text: accumulated) {
+                                let representation = partialRepresentation(partial)
+                                if representation != lastRepresentation {
+                                    continuation.yield(partial)
+                                    lastRepresentation = representation
+                                }
+                            }
+                        case .textEnd(let id, _):
+                            if id == firstTextId {
+                                firstTextId = nil
+                                accumulated = ""
+                                lastRepresentation = nil
+                            }
+                        case .finishStep:
+                            firstTextId = nil
+                            accumulated = ""
+                            lastRepresentation = nil
+                        default:
+                            break
+                        }
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
     }
 
     // MARK: - Convenience collectors (useful for tests and simple consumers)
@@ -715,6 +781,19 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
         }
         return parts
     }
+
+    private func partialRepresentation(_ value: PartialOutputValue) -> String {
+        if let json = value as? JSONValue, let encoded = jsonString(from: json) {
+            return encoded
+        }
+        if let string = value as? String {
+            return string
+        }
+        if let convertible = value as? CustomStringConvertible {
+            return convertible.description
+        }
+        return String(describing: value)
+    }
 }
 
 // MARK: - Internal helpers
@@ -745,7 +824,7 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
     providerOptions: ProviderOptions? = nil,
     experimentalActiveTools: [String]? = nil,
     activeTools: [String]? = nil,
-    experimentalOutput output: Output.Specification<OutputValue, PartialOutputValue>? = nil,
+    experimentalOutput output: SwiftAISDK.Output.Specification<OutputValue, PartialOutputValue>? = nil,
     experimentalTelemetry telemetry: TelemetrySettings? = nil,
     experimentalApprove approve: (@Sendable (ToolApprovalRequestOutput) async -> ApprovalAction)? = nil,
     experimentalTransform transforms: [StreamTextTransform] = [],
@@ -763,10 +842,6 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
     internalOptions _internal: StreamTextInternalOptions = StreamTextInternalOptions(),
     settings: CallSettings = CallSettings()
 ) throws -> DefaultStreamTextResult<OutputValue, PartialOutputValue> {
-    // TODO: integrate telemetry/output/repairToolCall/experimentalContext parity.
-    _ = telemetry
-    _ = repairToolCall
-    _ = experimentalContext
 
     _ = _internal
     let defaultResolvedModel = try resolveLanguageModel(modelArg)
@@ -835,7 +910,8 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
         tracer: tracer,
         baseTelemetryAttributes: baseTelemetryAttributes,
         baseModel: modelArg,
-        prepareStep: prepareStep
+        prepareStep: prepareStep,
+        repairToolCall: repairToolCall
     )
 
     // Bridge provider async stream acquisition without blocking the caller.
@@ -853,6 +929,8 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
         system: standardizedPrompt.system,
         tools: tools,
         approve: approve,
+        approvalContext: experimentalContext,
+        outputSpecification: output,
         configuration: actorConfig,
         onChunk: onChunk,
         onStepFinish: onStepFinish,
@@ -901,7 +979,7 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
                             toolName: denied.toolCall.toolName,
                             providerExecuted: providerExecuted
                         )
-                        await result._publishPreludeEvents([.toolOutputDenied(deniedEvent)])
+                        await result._publishPreludeEvents([TextStreamPart.toolOutputDenied(deniedEvent)])
 
                         let deniedPart = ToolResultPart(
                             toolCallId: denied.toolCall.toolCallId,
@@ -923,7 +1001,7 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
                                 experimentalContext: experimentalContext,
                                 onPreliminaryToolResult: { typed in
                                     Task {
-                                        await result._publishPreludeEvents([.toolResult(typed)])
+                                        await result._publishPreludeEvents([TextStreamPart.toolResult(typed)])
                                     }
                                 }
                             )
@@ -932,9 +1010,9 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
 
                             switch output {
                             case .result(let typed):
-                                await result._publishPreludeEvents([.toolResult(typed)])
+                                await result._publishPreludeEvents([TextStreamPart.toolResult(typed)])
                             case .error(let error):
-                                await result._publishPreludeEvents([.toolError(error)])
+                                await result._publishPreludeEvents([TextStreamPart.toolError(error)])
                             }
 
                             toolContentParts.append(makeToolContentPart(output: output, tools: tools))
@@ -1369,7 +1447,7 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
     providerOptions: ProviderOptions? = nil,
     experimentalActiveTools: [String]? = nil,
     activeTools: [String]? = nil,
-    experimentalOutput output: Output.Specification<OutputValue, PartialOutputValue>? = nil,
+    experimentalOutput output: SwiftAISDK.Output.Specification<OutputValue, PartialOutputValue>? = nil,
     experimentalTelemetry telemetry: TelemetrySettings? = nil,
     experimentalApprove approve: (@Sendable (ToolApprovalRequestOutput) async -> ApprovalAction)? = nil,
     experimentalTransform transforms: [StreamTextTransform] = [],

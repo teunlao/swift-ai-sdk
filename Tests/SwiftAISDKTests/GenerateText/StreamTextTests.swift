@@ -1037,4 +1037,175 @@ struct StreamTextBasicTests {
         }
     }
 
+    @Test("experimental_partialOutputStream yields deduplicated partials for text output")
+    func experimentalPartialOutputStreamYieldsTextPartials() async throws {
+        let parts: [LanguageModelV3StreamPart] = [
+            .streamStart(warnings: []),
+            .responseMetadata(id: "partial-id", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
+            .textStart(id: "txt", providerMetadata: nil),
+            .textDelta(id: "txt", delta: "He", providerMetadata: nil),
+            .textDelta(id: "txt", delta: "ll", providerMetadata: nil),
+            .textDelta(id: "txt", delta: "o", providerMetadata: nil),
+            .textEnd(id: "txt", providerMetadata: nil),
+            .finish(
+                finishReason: .stop,
+                usage: defaultUsage,
+                providerMetadata: nil
+            )
+        ]
+
+        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+            for part in parts { continuation.yield(part) }
+            continuation.finish()
+        }
+
+        let model = MockLanguageModelV3(
+            doStream: .singleValue(LanguageModelV3StreamResult(stream: stream))
+        )
+
+        let result: DefaultStreamTextResult<String, String> = try streamText(
+            model: .v3(model),
+            prompt: "hello",
+            experimentalOutput: Output.text()
+        )
+
+        let partials = try await convertReadableStreamToArray(result.experimentalPartialOutputStream)
+        #expect(partials == ["He", "Hell", "Hello"])
+
+        _ = try await result.waitForFinish()
+    }
+
+    @Test("tool onInputAvailable is invoked before execution")
+    func toolOnInputAvailableInvoked() async throws {
+        let parts: [LanguageModelV3StreamPart] = [
+            .streamStart(warnings: []),
+            .responseMetadata(id: "input-available", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
+            .toolCall(LanguageModelV3ToolCall(
+                toolCallId: "call-1",
+                toolName: "demo",
+                input: "{\"value\":1}",
+                providerExecuted: false,
+                providerMetadata: nil
+            )),
+            .finish(
+                finishReason: .stop,
+                usage: defaultUsage,
+                providerMetadata: nil
+            )
+        ]
+
+        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+            for part in parts { continuation.yield(part) }
+            continuation.finish()
+        }
+
+        let model = MockLanguageModelV3(
+            doStream: .singleValue(LanguageModelV3StreamResult(stream: stream))
+        )
+
+        let inputCalls = LockedValue(initial: 0)
+        let executeCalls = LockedValue(initial: 0)
+
+        let tool = Tool(
+            description: "Demo tool",
+            inputSchema: FlexibleSchema(jsonSchema(.object([:]))),
+            needsApproval: .never,
+            onInputAvailable: { _ in
+                inputCalls.withValue { $0 += 1 }
+            },
+            execute: { _, _ in
+                executeCalls.withValue { $0 += 1 }
+                return .value(.object(["ok": .bool(true)]))
+            }
+        )
+
+        let tools: ToolSet = ["demo": tool]
+
+        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+            model: .v3(model),
+            prompt: "hello",
+            tools: tools
+        )
+
+        let full = try await result.collectFullStream()
+        #expect(inputCalls.withValue { $0 } == 1)
+        #expect(executeCalls.withValue { $0 } == 1)
+
+        let hasToolResult = full.contains { part in
+            if case .toolResult = part { return true }
+            return false
+        }
+        #expect(hasToolResult)
+    }
+
+    @Test("repairToolCall fixes invalid tool input before execution")
+    func repairToolCallFixesInvalidInput() async throws {
+        let parts: [LanguageModelV3StreamPart] = [
+            .streamStart(warnings: []),
+            .responseMetadata(id: "repair", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
+            .toolCall(LanguageModelV3ToolCall(
+                toolCallId: "repair-1",
+                toolName: "demo",
+                input: "{invalid",
+                providerExecuted: false,
+                providerMetadata: nil
+            )),
+            .finish(
+                finishReason: .stop,
+                usage: defaultUsage,
+                providerMetadata: nil
+            )
+        ]
+
+        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+            for part in parts { continuation.yield(part) }
+            continuation.finish()
+        }
+
+        let model = MockLanguageModelV3(
+            doStream: .singleValue(LanguageModelV3StreamResult(stream: stream))
+        )
+
+        let repairCalls = LockedValue(initial: 0)
+        let executeCalls = LockedValue(initial: 0)
+
+        let tool = Tool(
+            description: "Demo tool",
+            inputSchema: FlexibleSchema(jsonSchema(.object([:]))),
+            needsApproval: .never,
+            execute: { _, _ in
+                executeCalls.withValue { $0 += 1 }
+                return .value(.object(["ok": .bool(true)]))
+            }
+        )
+
+        let tools: ToolSet = ["demo": tool]
+
+        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+            model: .v3(model),
+            prompt: "hello",
+            tools: tools,
+            experimentalRepairToolCall: { options in
+                repairCalls.withValue { $0 += 1 }
+                return LanguageModelV3ToolCall(
+                    toolCallId: options.toolCall.toolCallId,
+                    toolName: options.toolCall.toolName,
+                    input: "{\"value\":42}",
+                    providerExecuted: options.toolCall.providerExecuted,
+                    providerMetadata: options.toolCall.providerMetadata
+                )
+            }
+        )
+
+        let full = try await result.collectFullStream()
+        #expect(repairCalls.withValue { $0 } == 1)
+        #expect(executeCalls.withValue { $0 } == 1)
+
+        let hasToolResult = full.contains { part in
+            if case .toolResult = part { return true }
+            return false
+        }
+        #expect(hasToolResult)
+    }
+
 }
