@@ -61,18 +61,31 @@ public final class OpenAISpeechModel: SpeechModelV3 {
     private func prepareRequest(options: SpeechModelV3CallOptions) async throws -> PreparedRequest {
         var warnings: [SpeechModelV3CallWarning] = []
 
-        let _: OpenAISpeechProviderOptions? = try await parseProviderOptions(
+        let openAIOptions = try await parseProviderOptions(
             provider: "openai",
             providerOptions: options.providerOptions,
             schema: openAISpeechProviderOptionsSchema
         )
 
-        if providerOptionsName != "openai" {
-            _ = try await parseProviderOptions(
+        let providerSpecificOptions: OpenAISpeechProviderOptions? = try await {
+            guard providerOptionsName != "openai" else { return nil }
+            return try await parseProviderOptions(
                 provider: providerOptionsName,
                 providerOptions: options.providerOptions,
                 schema: openAISpeechProviderOptionsSchema
             )
+        }()
+
+        var effectiveOptions = OpenAISpeechProviderOptions()
+        if let openAIOptions {
+            if let instructions = openAIOptions.instructions { effectiveOptions.instructions = instructions }
+            if let speed = openAIOptions.speed { effectiveOptions.speed = speed }
+            if let format = openAIOptions.responseFormat { effectiveOptions.responseFormat = format }
+        }
+        if let providerSpecificOptions {
+            if let instructions = providerSpecificOptions.instructions { effectiveOptions.instructions = instructions }
+            if let speed = providerSpecificOptions.speed { effectiveOptions.speed = speed }
+            if let format = providerSpecificOptions.responseFormat { effectiveOptions.responseFormat = format }
         }
 
         let voice = options.voice ?? "alloy"
@@ -83,20 +96,19 @@ public final class OpenAISpeechModel: SpeechModelV3 {
             "response_format": .string("mp3")
         ]
 
-        if let speed = options.speed {
+        if let speed = options.speed ?? effectiveOptions.speed {
             body["speed"] = .number(speed)
         }
-        if let instructions = options.instructions {
+        if let instructions = options.instructions ?? effectiveOptions.instructions {
             body["instructions"] = .string(instructions)
         }
-
-        if let outputFormat = options.outputFormat {
-            if allowedOutputFormats.contains(outputFormat) {
-                body["response_format"] = .string(outputFormat)
+        if let format = options.outputFormat ?? effectiveOptions.responseFormat {
+            if allowedOutputFormats.contains(format) {
+                body["response_format"] = .string(format)
             } else {
                 warnings.append(.unsupportedSetting(
                     setting: "outputFormat",
-                    details: "Unsupported output format: \(outputFormat). Using mp3 instead."
+                    details: "Unsupported output format: \(format). Using mp3 instead."
                 ))
             }
         }

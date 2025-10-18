@@ -72,20 +72,29 @@ public final class OpenAITranscriptionModel: TranscriptionModelV3 {
             provider: "openai",
             providerOptions: options.providerOptions,
             schema: openAITranscriptionProviderOptionsSchema
-        )
+        ) ?? .default
 
-        let providerSpecificOptions: OpenAITranscriptionProviderOptions?
-        if providerOptionsName != "openai" {
-            providerSpecificOptions = try await parseProviderOptions(
+        let providerSpecificOptions: OpenAITranscriptionProviderOptions = try await { () async throws -> OpenAITranscriptionProviderOptions in
+            guard providerOptionsName != "openai" else { return .default }
+            return try await parseProviderOptions(
                 provider: providerOptionsName,
                 providerOptions: options.providerOptions,
                 schema: openAITranscriptionProviderOptionsSchema
-            )
-        } else {
-            providerSpecificOptions = nil
+            ) ?? .default
+        }()
+
+        var effectiveOptions = OpenAITranscriptionProviderOptions.default
+
+        func apply(_ source: OpenAITranscriptionProviderOptions) {
+            if let include = source.include { effectiveOptions.include = include }
+            if let language = source.language { effectiveOptions.language = language }
+            if let prompt = source.prompt { effectiveOptions.prompt = prompt }
+            if let temperature = source.temperature { effectiveOptions.temperature = temperature }
+            if let granularities = source.timestampGranularities { effectiveOptions.timestampGranularities = granularities }
         }
 
-        let mergedOptions = merge(primary: openAIOptions, override: providerSpecificOptions)
+        apply(openAIOptions)
+        apply(providerSpecificOptions)
 
         let audioData = try data(from: options.audio)
         let fileExtension = mediaTypeToExtension(options.mediaType)
@@ -95,27 +104,26 @@ public final class OpenAITranscriptionModel: TranscriptionModelV3 {
         builder.appendField(name: "model", value: modelIdentifier.rawValue)
         builder.appendFile(name: "file", filename: filename, contentType: options.mediaType, data: audioData)
 
-        if let mergedOptions {
-            if let include = mergedOptions.include {
-                for value in include {
-                    builder.appendField(name: "include[]", value: value)
-                }
+        if let include = effectiveOptions.include {
+            for value in include {
+                builder.appendField(name: "include[]", value: value)
             }
-            if let language = mergedOptions.language {
-                builder.appendField(name: "language", value: language)
-            }
-            if let prompt = mergedOptions.prompt {
-                builder.appendField(name: "prompt", value: prompt)
-            }
-            let responseFormat = responseFormat(for: modelIdentifier)
-            builder.appendField(name: "response_format", value: responseFormat)
-            if let temperature = mergedOptions.temperature {
-                builder.appendField(name: "temperature", value: String(temperature))
-            }
-            if let granularities = mergedOptions.timestampGranularities {
-                for granularity in granularities {
-                    builder.appendField(name: "timestamp_granularities[]", value: granularity)
-                }
+        }
+        if let language = effectiveOptions.language {
+            builder.appendField(name: "language", value: language)
+        }
+        if let prompt = effectiveOptions.prompt {
+            builder.appendField(name: "prompt", value: prompt)
+        }
+
+        builder.appendField(name: "response_format", value: responseFormat(for: modelIdentifier))
+
+        if let temperature = effectiveOptions.temperature {
+            builder.appendField(name: "temperature", value: String(temperature))
+        }
+        if let granularities = effectiveOptions.timestampGranularities {
+            for granularity in granularities {
+                builder.appendField(name: "timestamp_granularities[]", value: granularity)
             }
         }
 

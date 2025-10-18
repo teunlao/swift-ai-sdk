@@ -109,3 +109,17 @@ let openAITranscriptionProviderOptionsSchema = FlexibleSchema<OpenAITranscriptio
         }
     )
 )
+
+
+
+extension OpenAITranscriptionProviderOptions {
+    static var `default`: OpenAITranscriptionProviderOptions {
+        OpenAITranscriptionProviderOptions(
+            include: nil,
+            language: nil,
+            prompt: nil,
+            temperature: 0,
+            timestampGranularities: ["segment"]
+        )
+    }
+}
