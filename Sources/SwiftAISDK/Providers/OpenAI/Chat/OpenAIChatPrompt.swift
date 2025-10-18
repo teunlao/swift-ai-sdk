@@ -165,12 +165,9 @@ struct OpenAIChatMessagesConverter {
                 }
 
                 var messageObject: [String: JSONValue] = [
-                    "role": .string("assistant")
+                    "role": .string("assistant"),
+                    "content": .string(text)
                 ]
-
-                if !text.isEmpty {
-                    messageObject["content"] = .string(text)
-                }
 
                 if !toolCalls.isEmpty {
                     messageObject["tool_calls"] = .array(toolCalls)
