@@ -54,6 +54,9 @@ struct StreamTextActorConfiguration: Sendable {
     let now: @Sendable () -> Double
     let generateId: IDGenerator
     let currentDate: @Sendable () -> Date
+    let telemetry: TelemetrySettings?
+    let tracer: any Tracer
+    let baseTelemetryAttributes: Attributes
 }
 
 private func convertResponseMessagesToModelMessages(
@@ -723,6 +726,21 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
         "ai/\(VERSION)"
     )
 
+    var telemetryCallSettings = settings
+    telemetryCallSettings.maxRetries = preparedRetries.maxRetries
+
+    let tracer = getTracer(
+        isEnabled: telemetry?.isEnabled ?? false,
+        tracer: telemetry?.tracer
+    )
+
+    let baseTelemetryAttributes = getBaseTelemetryAttributes(
+        model: TelemetryModelInfo(modelId: resolvedModel.modelId, provider: resolvedModel.provider),
+        settings: telemetryCallSettings,
+        telemetry: telemetry,
+        headers: headersWithUserAgent
+    )
+
     let responseFormatProvider: (@Sendable () async throws -> LanguageModelV3ResponseFormat?)?
     if let output {
         responseFormatProvider = { try await output.responseFormat() }
@@ -743,7 +761,10 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
         responseFormatProvider: responseFormatProvider,
         now: _internal.now,
         generateId: _internal.generateId,
-        currentDate: _internal.currentDate
+        currentDate: _internal.currentDate,
+        telemetry: telemetry,
+        tracer: tracer,
+        baseTelemetryAttributes: baseTelemetryAttributes
     )
 
     // Bridge provider async stream acquisition without blocking the caller.
@@ -770,126 +791,169 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
     )
 
     let providerTask = Task {
+        let outerAttributeInputs = buildStreamTextOuterTelemetryAttributes(
+            telemetry: actorConfig.telemetry,
+            baseAttributes: actorConfig.baseTelemetryAttributes,
+            system: standardizedPrompt.system,
+            prompt: nil,
+            messages: standardizedPrompt.messages
+        )
+
+        let outerSpanAttributes: Attributes
         do {
-            var responseMessagesHistory: [ResponseMessage] = []
-            let approvals = collectToolApprovals(messages: normalizedMessages)
-            let tracer: any Tracer = noopTracer
+            outerSpanAttributes = try await selectTelemetryAttributes(
+                telemetry: actorConfig.telemetry,
+                attributes: outerAttributeInputs
+            )
+        } catch {
+            outerSpanAttributes = resolvedAttributesFromValues(outerAttributeInputs)
+        }
 
-            if !approvals.deniedToolApprovals.isEmpty || !approvals.approvedToolApprovals.isEmpty {
-                var toolContentParts: [ToolContentPart] = []
+        try await recordSpan(
+            name: "ai.streamText",
+            tracer: actorConfig.tracer,
+            attributes: outerSpanAttributes
+        ) { span in
+            do {
+                var responseMessagesHistory: [ResponseMessage] = []
+                let approvals = collectToolApprovals(messages: normalizedMessages)
+                let tracer: any Tracer = actorConfig.tracer
 
-                for denied in approvals.deniedToolApprovals {
-                    let providerExecuted = providerExecutedFlag(for: denied.toolCall)
-                    let deniedEvent = ToolOutputDenied(
-                        toolCallId: denied.toolCall.toolCallId,
-                        toolName: denied.toolCall.toolName,
-                        providerExecuted: providerExecuted
-                    )
-                    await result._publishPreludeEvents([.toolOutputDenied(deniedEvent)])
+                if !approvals.deniedToolApprovals.isEmpty || !approvals.approvedToolApprovals.isEmpty {
+                    var toolContentParts: [ToolContentPart] = []
 
-                    let deniedPart = ToolResultPart(
-                        toolCallId: denied.toolCall.toolCallId,
-                        toolName: denied.toolCall.toolName,
-                        output: .executionDenied(reason: denied.approvalResponse.reason)
-                    )
-                    toolContentParts.append(.toolResult(deniedPart))
-                }
-
-                if let tools, !approvals.approvedToolApprovals.isEmpty {
-                    for approval in approvals.approvedToolApprovals {
-                        let output = await executeToolCall(
-                            toolCall: approval.toolCall,
-                            tools: tools,
-                            tracer: tracer,
-                            telemetry: telemetry,
-                            messages: normalizedMessages,
-                            abortSignal: settings.abortSignal,
-                            experimentalContext: experimentalContext,
-                            onPreliminaryToolResult: { typed in
-                                Task {
-                                    await result._publishPreludeEvents([.toolResult(typed)])
-                                }
-                            }
+                    for denied in approvals.deniedToolApprovals {
+                        let providerExecuted = providerExecutedFlag(for: denied.toolCall)
+                        let deniedEvent = ToolOutputDenied(
+                            toolCallId: denied.toolCall.toolCallId,
+                            toolName: denied.toolCall.toolName,
+                            providerExecuted: providerExecuted
                         )
+                        await result._publishPreludeEvents([.toolOutputDenied(deniedEvent)])
 
-                        guard let output else { continue }
+                        let deniedPart = ToolResultPart(
+                            toolCallId: denied.toolCall.toolCallId,
+                            toolName: denied.toolCall.toolName,
+                            output: .executionDenied(reason: denied.approvalResponse.reason)
+                        )
+                        toolContentParts.append(.toolResult(deniedPart))
+                    }
 
-                        switch output {
-                        case .result(let typed):
-                            await result._publishPreludeEvents([.toolResult(typed)])
-                        case .error(let error):
-                            await result._publishPreludeEvents([.toolError(error)])
+                    if let tools, !approvals.approvedToolApprovals.isEmpty {
+                        for approval in approvals.approvedToolApprovals {
+                            let output = await executeToolCall(
+                                toolCall: approval.toolCall,
+                                tools: tools,
+                                tracer: tracer,
+                                telemetry: actorConfig.telemetry,
+                                messages: normalizedMessages,
+                                abortSignal: settings.abortSignal,
+                                experimentalContext: experimentalContext,
+                                onPreliminaryToolResult: { typed in
+                                    Task {
+                                        await result._publishPreludeEvents([.toolResult(typed)])
+                                    }
+                                }
+                            )
+
+                            guard let output else { continue }
+
+                            switch output {
+                            case .result(let typed):
+                                await result._publishPreludeEvents([.toolResult(typed)])
+                            case .error(let error):
+                                await result._publishPreludeEvents([.toolError(error)])
+                            }
+
+                            toolContentParts.append(makeToolContentPart(output: output, tools: tools))
                         }
+                    }
 
-                        toolContentParts.append(makeToolContentPart(output: output, tools: tools))
+                    if !toolContentParts.isEmpty {
+                        let toolMessage = ToolModelMessage(content: toolContentParts)
+                        let responseMessage = ResponseMessage.tool(toolMessage)
+                        responseMessagesHistory.append(responseMessage)
+                        await result._appendInitialResponseMessages([responseMessage])
                     }
                 }
 
-                if !toolContentParts.isEmpty {
-                    let toolMessage = ToolModelMessage(content: toolContentParts)
-                    let responseMessage = ResponseMessage.tool(toolMessage)
-                    responseMessagesHistory.append(responseMessage)
-                    await result._appendInitialResponseMessages([responseMessage])
+                let conversationMessages: [ModelMessage]
+                if responseMessagesHistory.isEmpty {
+                    conversationMessages = normalizedMessages
+                } else {
+                    conversationMessages = normalizedMessages + convertResponseMessagesToModelMessages(responseMessagesHistory)
                 }
+
+                let promptForProvider = StandardizedPrompt(
+                    system: standardizedPrompt.system,
+                    messages: conversationMessages
+                )
+
+                let supported = try await resolvedModel.supportedUrls
+                let lmPrompt = try await convertToLanguageModelPrompt(
+                    prompt: promptForProvider,
+                    supportedUrls: supported,
+                    download: download
+                )
+
+                let toolPreparation = try await prepareToolsAndToolChoice(
+                    tools: tools,
+                    toolChoice: toolChoice,
+                    activeTools: effectiveActiveTools
+                )
+
+                let responseFormat = try await actorConfig.responseFormatProvider?()
+
+                let callOptions = LanguageModelV3CallOptions(
+                    prompt: lmPrompt,
+                    maxOutputTokens: actorConfig.callSettings.maxOutputTokens,
+                    temperature: actorConfig.callSettings.temperature,
+                    stopSequences: actorConfig.callSettings.stopSequences,
+                    topP: actorConfig.callSettings.topP,
+                    topK: actorConfig.callSettings.topK,
+                    presencePenalty: actorConfig.callSettings.presencePenalty,
+                    frequencyPenalty: actorConfig.callSettings.frequencyPenalty,
+                    responseFormat: responseFormat,
+                    seed: actorConfig.callSettings.seed,
+                    tools: toolPreparation.tools,
+                    toolChoice: toolPreparation.toolChoice,
+                    includeRawChunks: actorConfig.includeRawChunks ? true : nil,
+                    abortSignal: actorConfig.abortSignal,
+                    headers: actorConfig.headers,
+                    providerOptions: actorConfig.providerOptions
+                )
+
+                let providerResult = try await actorConfig.preparedRetries.retry.call {
+                    try await resolvedModel.doStream(options: callOptions)
+                }
+
+                await result._setRequestInfo(providerResult.request)
+                for try await part in providerResult.stream {
+                    continuation.yield(part)
+                }
+                continuation.finish()
+
+                let finish = try await result.waitForFinish()
+                let rootAttributeInputs = buildStreamTextRootTelemetryAttributes(
+                    telemetry: actorConfig.telemetry,
+                    finishReason: finish.finishReason,
+                    finalStep: finish.finalStep,
+                    totalUsage: finish.totalUsage
+                )
+                let resolvedRootAttributes: Attributes
+                do {
+                    resolvedRootAttributes = try await selectTelemetryAttributes(
+                        telemetry: actorConfig.telemetry,
+                        attributes: rootAttributeInputs
+                    )
+                } catch {
+                    resolvedRootAttributes = resolvedAttributesFromValues(rootAttributeInputs)
+                }
+                span.setAttributes(resolvedRootAttributes)
+            } catch {
+                continuation.finish(throwing: error)
+                throw error
             }
-
-            let conversationMessages: [ModelMessage]
-            if responseMessagesHistory.isEmpty {
-                conversationMessages = normalizedMessages
-            } else {
-                conversationMessages = normalizedMessages + convertResponseMessagesToModelMessages(responseMessagesHistory)
-            }
-
-            let promptForProvider = StandardizedPrompt(
-                system: standardizedPrompt.system,
-                messages: conversationMessages
-            )
-
-            let supported = try await resolvedModel.supportedUrls
-            let lmPrompt = try await convertToLanguageModelPrompt(
-                prompt: promptForProvider,
-                supportedUrls: supported,
-                download: download
-            )
-
-            let toolPreparation = try await prepareToolsAndToolChoice(
-                tools: tools,
-                toolChoice: toolChoice,
-                activeTools: effectiveActiveTools
-            )
-
-            let responseFormat = try await actorConfig.responseFormatProvider?()
-
-            let callOptions = LanguageModelV3CallOptions(
-                prompt: lmPrompt,
-                maxOutputTokens: actorConfig.callSettings.maxOutputTokens,
-                temperature: actorConfig.callSettings.temperature,
-                stopSequences: actorConfig.callSettings.stopSequences,
-                topP: actorConfig.callSettings.topP,
-                topK: actorConfig.callSettings.topK,
-                presencePenalty: actorConfig.callSettings.presencePenalty,
-                frequencyPenalty: actorConfig.callSettings.frequencyPenalty,
-                responseFormat: responseFormat,
-                seed: actorConfig.callSettings.seed,
-                tools: toolPreparation.tools,
-                toolChoice: toolPreparation.toolChoice,
-                includeRawChunks: actorConfig.includeRawChunks ? true : nil,
-                abortSignal: actorConfig.abortSignal,
-                headers: actorConfig.headers,
-                providerOptions: actorConfig.providerOptions
-            )
-
-            let providerResult = try await preparedRetries.retry.call {
-                try await resolvedModel.doStream(options: callOptions)
-            }
-
-            await result._setRequestInfo(providerResult.request)
-            for try await part in providerResult.stream {
-                continuation.yield(part)
-            }
-            continuation.finish()
-        } catch {
-            continuation.finish(throwing: error)
         }
     }
 
@@ -898,6 +962,163 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
 
     return result
 }
+
+private func buildStreamTextOuterTelemetryAttributes(
+    telemetry: TelemetrySettings?,
+    baseAttributes: Attributes,
+    system: String?,
+    prompt: String?,
+    messages: [ModelMessage]
+) -> [String: ResolvableAttributeValue?] {
+    var attributes: [String: ResolvableAttributeValue?] = [:]
+
+    for (key, value) in assembleOperationName(operationId: "ai.streamText", telemetry: telemetry) {
+        attributes[key] = .value(value)
+    }
+
+    for (key, value) in baseAttributes {
+        attributes[key] = .value(value)
+    }
+
+    attributes["ai.prompt"] = .input {
+        guard let summary = summarizePromptForTelemetry(system: system, prompt: prompt, messages: messages) else {
+            return nil
+        }
+        return .string(summary)
+    }
+
+    return attributes
+}
+
+private func buildStreamTextRootTelemetryAttributes(
+    telemetry: TelemetrySettings?,
+    finishReason: FinishReason,
+    finalStep: StepResult,
+    totalUsage: LanguageModelUsage
+) -> [String: ResolvableAttributeValue?] {
+    var attributes: [String: ResolvableAttributeValue?] = [:]
+
+    attributes["ai.response.finishReason"] = .value(.string(finishReason.rawValue))
+
+    attributes["ai.response.text"] = .output {
+        .string(finalStep.text)
+    }
+
+    if let toolCallsString = encodeToolCallsForTelemetry(finalStep.toolCalls) {
+        attributes["ai.response.toolCalls"] = .output { .string(toolCallsString) }
+    }
+
+    if let providerMetadata = finalStep.providerMetadata,
+       let metadataString = jsonString(from: providerMetadataToJSON(providerMetadata)) {
+        attributes["ai.response.providerMetadata"] = .output { .string(metadataString) }
+    }
+
+    if let inputTokens = totalUsage.inputTokens {
+        attributes["ai.usage.inputTokens"] = .value(.int(inputTokens))
+    }
+    if let outputTokens = totalUsage.outputTokens {
+        attributes["ai.usage.outputTokens"] = .value(.int(outputTokens))
+    }
+    if let totalTokens = totalUsage.totalTokens {
+        attributes["ai.usage.totalTokens"] = .value(.int(totalTokens))
+    }
+    if let reasoningTokens = totalUsage.reasoningTokens {
+        attributes["ai.usage.reasoningTokens"] = .value(.int(reasoningTokens))
+    }
+    if let cachedInputTokens = totalUsage.cachedInputTokens {
+        attributes["ai.usage.cachedInputTokens"] = .value(.int(cachedInputTokens))
+    }
+
+    attributes["gen_ai.response.finish_reasons"] = .value(.stringArray([finishReason.rawValue]))
+
+    return attributes
+}
+
+private func encodeToolCallsForTelemetry(_ toolCalls: [TypedToolCall]) -> String? {
+    guard !toolCalls.isEmpty else { return nil }
+
+    let encodedCalls: [JSONValue] = toolCalls.map { call in
+        var object: [String: JSONValue] = [
+            "toolCallId": .string(call.toolCallId),
+            "toolName": .string(call.toolName),
+            "input": call.input
+        ]
+
+        if let providerExecuted = call.providerExecuted {
+            object["providerExecuted"] = .bool(providerExecuted)
+        }
+
+        if call.isDynamic {
+            object["dynamic"] = .bool(true)
+        }
+
+        if let metadata = call.providerMetadata {
+            object["providerMetadata"] = providerMetadataToJSON(metadata)
+        }
+
+        return .object(object)
+    }
+
+    return jsonString(from: .array(encodedCalls))
+}
+
+private func providerMetadataToJSON(_ metadata: ProviderMetadata) -> JSONValue {
+    let nested = metadata.mapValues { JSONValue.object($0) }
+    return .object(nested)
+}
+
+private func jsonString(from jsonValue: JSONValue) -> String? {
+    let encoder = JSONEncoder()
+    encoder.dateEncodingStrategy = .iso8601
+    guard let data = try? encoder.encode(jsonValue) else {
+        return nil
+    }
+    return String(data: data, encoding: .utf8)
+}
+
+private func summarizePromptForTelemetry(
+    system: String?,
+    prompt: String?,
+    messages: [ModelMessage]
+) -> String? {
+    var payload: [String: Any] = [:]
+
+    if let system {
+        payload["system"] = system
+    }
+    if let prompt {
+        payload["prompt"] = prompt
+    }
+
+    payload["messagesRoles"] = messages.map { message -> String in
+        switch message {
+        case .system: return "system"
+        case .user: return "user"
+        case .assistant: return "assistant"
+        case .tool: return "tool"
+        }
+    }
+    payload["messagesCount"] = messages.count
+
+    guard JSONSerialization.isValidJSONObject(payload),
+          let data = try? JSONSerialization.data(withJSONObject: payload, options: []) else {
+        return nil
+    }
+    return String(data: data, encoding: .utf8)
+}
+
+private func resolvedAttributesFromValues(
+    _ inputs: [String: ResolvableAttributeValue?]
+) -> Attributes {
+    var resolved: Attributes = [:]
+    for (key, value) in inputs {
+        if case let .value(attribute)? = value {
+            resolved[key] = attribute
+        }
+    }
+    return resolved
+}
+
 // MARK: - Overload: Prompt object
 
 /// Starts a text stream from a `Prompt` value (system + prompt/messages),

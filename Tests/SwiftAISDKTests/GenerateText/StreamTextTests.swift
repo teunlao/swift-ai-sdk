@@ -140,6 +140,106 @@ struct StreamTextBasicTests {
     }
 
 
+    @Test("telemetry disabled produces no spans")
+    func telemetryDisabledProducesNoSpans() async throws {
+        let parts: [LanguageModelV3StreamPart] = [
+            .streamStart(warnings: []),
+            .responseMetadata(id: "telemetry-id", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
+            .textStart(id: "1", providerMetadata: nil),
+            .textDelta(id: "1", delta: "Telemetry", providerMetadata: nil),
+            .textEnd(id: "1", providerMetadata: nil),
+            .finish(
+                finishReason: .stop,
+                usage: defaultUsage,
+                providerMetadata: nil
+            )
+        ]
+
+        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+            for part in parts { continuation.yield(part) }
+            continuation.finish()
+        }
+
+        let model = MockLanguageModelV3(
+            doStream: .singleValue(LanguageModelV3StreamResult(stream: stream))
+        )
+
+        let tracer = MockTracer()
+        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+            model: .v3(model),
+            prompt: "hello",
+            experimentalTelemetry: TelemetrySettings(isEnabled: false, tracer: tracer),
+            internalOptions: StreamTextInternalOptions(
+                now: { 0 },
+                generateId: { "disabled-span" },
+                currentDate: { Date(timeIntervalSince1970: 123) }
+            )
+        )
+
+        _ = try await result.readAllText()
+        _ = try await result.waitForFinish()
+
+        #expect(tracer.spanRecords.isEmpty)
+    }
+
+    @Test("telemetry records spans when enabled")
+    func telemetryRecordsSpansWhenEnabled() async throws {
+        let parts: [LanguageModelV3StreamPart] = [
+            .streamStart(warnings: []),
+            .responseMetadata(id: nil, modelId: nil, timestamp: nil),
+            .textStart(id: "1", providerMetadata: nil),
+            .textDelta(id: "1", delta: "Hello", providerMetadata: nil),
+            .textDelta(id: "1", delta: "!", providerMetadata: nil),
+            .textEnd(id: "1", providerMetadata: nil),
+            .finish(
+                finishReason: .stop,
+                usage: defaultUsage,
+                providerMetadata: nil
+            )
+        ]
+
+        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+            for part in parts { continuation.yield(part) }
+            continuation.finish()
+        }
+
+        let model = MockLanguageModelV3(
+            doStream: .singleValue(LanguageModelV3StreamResult(stream: stream))
+        )
+
+        let tracer = MockTracer()
+        let fallbackDate = Date(timeIntervalSince1970: 456)
+        let telemetry = TelemetrySettings(
+            isEnabled: true,
+            metadata: ["test-key": .string("value")],
+            tracer: tracer
+        )
+
+        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+            model: .v3(model),
+            prompt: "hello",
+            experimentalTelemetry: telemetry,
+            internalOptions: StreamTextInternalOptions(
+                now: { 0 },
+                generateId: { "enabled-span" },
+                currentDate: { fallbackDate }
+            )
+        )
+
+        _ = try await result.readAllText()
+        let finish = try await result.waitForFinish()
+
+        let span = try #require(tracer.spanRecords.first)
+        #expect(span.name == "ai.streamText")
+        #expect(span.attributes["ai.response.finishReason"] == .string("stop"))
+        #expect(span.attributes["ai.response.text"] == .string("Hello!"))
+                let totalTokens = try #require(defaultUsage.totalTokens)
+        #expect(span.attributes["ai.usage.totalTokens"] == .int(totalTokens))
+        #expect(span.attributes["ai.telemetry.metadata.test-key"] == .string("value"))
+        #expect(span.attributes["ai.operationId"] == .string("ai.streamText"))
+        #expect(finish.totalUsage.totalTokens == defaultUsage.totalTokens)
+    }
+
     @Test("tools convert client tool calls to static variants")
     func toolsConvertClientToolCallsToStatic() async throws {
         // Arrange a simple client-executed tool call with valid JSON input and result.
