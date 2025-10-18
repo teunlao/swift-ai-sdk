@@ -250,10 +250,28 @@ private func parseOpenAIResponsesProviderOptions(dict: [String: JSONValue]) thro
     options.reasoningEffort = try parseOptionalString(dict, key: "reasoningEffort")
     options.reasoningSummary = try parseOptionalString(dict, key: "reasoningSummary")
     options.safetyIdentifier = try parseOptionalString(dict, key: "safetyIdentifier")
-    options.serviceTier = try parseOptionalString(dict, key: "serviceTier")
+    if let serviceTierValue = dict["serviceTier"], serviceTierValue != .null {
+        guard case .string(let serviceTier) = serviceTierValue else {
+            throw TypeValidationError.wrap(value: serviceTierValue, cause: SchemaValidationIssuesError(vendor: "openai", issues: "serviceTier must be a string"))
+        }
+        let allowedServiceTiers = ["auto", "flex", "priority", "default"]
+        guard allowedServiceTiers.contains(serviceTier) else {
+            throw TypeValidationError.wrap(value: serviceTierValue, cause: SchemaValidationIssuesError(vendor: "openai", issues: "invalid serviceTier"))
+        }
+        options.serviceTier = serviceTier
+    }
     options.store = try parseOptionalBool(dict, key: "store")
     options.strictJsonSchema = try parseOptionalBool(dict, key: "strictJsonSchema")
-    options.textVerbosity = try parseOptionalString(dict, key: "textVerbosity")
+    if let verbosityValue = dict["textVerbosity"], verbosityValue != .null {
+        guard case .string(let verbosity) = verbosityValue else {
+            throw TypeValidationError.wrap(value: verbosityValue, cause: SchemaValidationIssuesError(vendor: "openai", issues: "textVerbosity must be a string"))
+        }
+        let allowedVerbosity = ["low", "medium", "high"]
+        guard allowedVerbosity.contains(verbosity) else {
+            throw TypeValidationError.wrap(value: verbosityValue, cause: SchemaValidationIssuesError(vendor: "openai", issues: "invalid textVerbosity"))
+        }
+        options.textVerbosity = verbosity
+    }
     options.user = try parseOptionalString(dict, key: "user")
 
     if let logprobsValue = dict["logprobs"], logprobsValue != .null {

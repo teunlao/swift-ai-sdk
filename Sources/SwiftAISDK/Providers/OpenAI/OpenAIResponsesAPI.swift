@@ -5,11 +5,6 @@ import AISDKProviderUtils
 public typealias OpenAIResponsesInput = [JSONValue]
 
 public struct OpenAIResponsesResponse: Codable, Sendable {
-    public struct OutputItem: Codable, Sendable {
-        public let type: String
-        public let text: String?
-    }
-
     public struct Usage: Codable, Sendable {
         public let inputTokens: Int?
         public let outputTokens: Int?
@@ -23,7 +18,7 @@ public struct OpenAIResponsesResponse: Codable, Sendable {
     }
 
     public let id: String?
-    public let output: [OutputItem]
+    public let output: [JSONValue]
     public let usage: Usage?
     public let warnings: [LanguageModelV3CallWarningRecord]?
     public let finishReason: String?
@@ -55,15 +50,14 @@ public struct LanguageModelV3CallWarningRecord: Codable, Sendable {
     }
 }
 
-
 public struct OpenAIResponsesChunk: Codable, Sendable {
     public let type: String?
-    public let output: [OpenAIResponsesResponse.OutputItem]?
+    public let value: JSONValue?
     public let finishReason: String?
 
     enum CodingKeys: String, CodingKey {
         case type
-        case output
+        case value
         case finishReason = "finish_reason"
     }
 }
@@ -72,14 +66,7 @@ public let openAIResponsesChunkSchema = FlexibleSchema(
     Schema.codable(
         OpenAIResponsesChunk.self,
         jsonSchema: .object([
-            "type": .array([.string("object"), .string("null")]),
-            "properties": .object([
-                "type": .object(["type": .array([.string("string"), .string("null")])]),
-                "output": .object([
-                    "type": .array([.string("array"), .string("null")])
-                ]),
-                "finish_reason": .object(["type": .array([.string("string"), .string("null")])])
-            ])
+            "type": .array([.string("object"), .string("null")])
         ])
     )
 )
@@ -91,17 +78,7 @@ public let openAIResponsesResponseSchema = FlexibleSchema(
             "type": .string("object"),
             "properties": .object([
                 "id": .object(["type": .array([.string("string"), .string("null")])]),
-                "output": .object([
-                    "type": .string("array"),
-                    "items": .object([
-                        "type": .string("object"),
-                        "properties": .object([
-                            "type": .object(["type": .string("string")]),
-                            "text": .object(["type": .array([.string("string"), .string("null")])])
-                        ]),
-                        "required": .array([.string("type")])
-                    ])
-                ]),
+                "output": .object(["type": .string("array")]),
                 "usage": .object(["type": .array([.string("object"), .string("null")])]),
                 "warnings": .object([
                     "type": .array([.string("array"), .string("null")])
