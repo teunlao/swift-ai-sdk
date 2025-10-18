@@ -113,6 +113,43 @@ struct StreamTextSSEIntegrationTests {
         #expect(types.contains("tool-result"))
     }
 
+    @Test("SSE includes providerMetadata for tool-input and tool-error/result")
+    func sseIncludesToolMetadataAndFields() async throws {
+        let meta: ProviderMetadata = ["prov": ["tag": .string("m")]]
+        // Build a stream of low-level TextStreamPart events to feed the encoder directly.
+        let parts: [TextStreamPart] = [
+            .toolInputStart(id: "c1", toolName: "demo", providerMetadata: meta, providerExecuted: false, dynamic: true),
+            .toolInputDelta(id: "c1", delta: "{}", providerMetadata: meta),
+            .toolInputEnd(id: "c1", providerMetadata: meta),
+            .toolError(.static(StaticToolError(toolCallId: "c1", toolName: "demo", input: .object([:]), error: NSError(domain: "x", code: 1)))),
+            .toolResult(.static(StaticToolResult(toolCallId: "c1", toolName: "demo", input: .null, output: .object(["ok": .bool(true)]), providerExecuted: false, preliminary: false, providerMetadata: meta))),
+            .finish(finishReason: .stop, totalUsage: LanguageModelUsage())
+        ]
+
+        let stream = AsyncThrowingStream<TextStreamPart, Error> { c in
+            parts.forEach { c.yield($0) }
+            c.finish()
+        }
+
+        let events = try await decodeEvents(convertReadableStreamToArray(makeStreamTextSSEStream(from: stream)))
+        let inputStart = try #require(events.first(where: { $0["type"] as? String == "tool-input-start" }))
+        #expect((inputStart["providerMetadata"] as? NSDictionary)?["prov"] != nil)
+        #expect(inputStart["dynamic"] as? Bool == true)
+
+        let inputDelta = try #require(events.first(where: { $0["type"] as? String == "tool-input-delta" }))
+        #expect((inputDelta["providerMetadata"] as? NSDictionary)?["prov"] != nil)
+
+        let inputEnd = try #require(events.first(where: { $0["type"] as? String == "tool-input-end" }))
+        #expect((inputEnd["providerMetadata"] as? NSDictionary)?["prov"] != nil)
+
+        let toolError = try #require(events.first(where: { $0["type"] as? String == "tool-error" }))
+        #expect(toolError["input"] != nil)
+
+        let toolResult = try #require(events.first(where: { $0["type"] as? String == "tool-result" }))
+        #expect(toolResult["input"] != nil)
+        #expect((toolResult["providerMetadata"] as? NSDictionary)?["prov"] != nil)
+    }
+
     @Test("SSE includes finish-step payload and finish usage when enabled")
     func sseIncludesFinishStepAndUsage() async throws {
         let request = LanguageModelRequestMetadata(body: .object(["prompt": .string("hi")] ))

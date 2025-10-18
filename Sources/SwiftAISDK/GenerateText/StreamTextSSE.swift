@@ -102,17 +102,22 @@ private final class StreamTextSSEEncoder {
         case let .toolResult(result):
             return encodeToolResult(result)
 
-        case let .toolInputStart(id, toolName, _, executed, dynamicFlag):
+        case let .toolInputStart(id, toolName, providerMetadata, executed, dynamicFlag):
             var payload: [String: Any] = ["type": "tool-input-start", "id": id, "name": toolName]
             if let executed { payload["providerExecuted"] = executed }
             if let dynamicFlag { payload["dynamic"] = dynamicFlag }
+            if let meta = providerMetadataDictionary(providerMetadata) { payload["providerMetadata"] = meta }
             return [encode(event: payload)]
 
-        case let .toolInputDelta(id, delta, _):
-            return [encode(event: ["type": "tool-input-delta", "id": id, "delta": delta])]
+        case let .toolInputDelta(id, delta, providerMetadata):
+            var payload: [String: Any] = ["type": "tool-input-delta", "id": id, "delta": delta]
+            if let meta = providerMetadataDictionary(providerMetadata) { payload["providerMetadata"] = meta }
+            return [encode(event: payload)]
 
-        case let .toolInputEnd(id, _):
-            return [encode(event: ["type": "tool-input-end", "id": id])]
+        case let .toolInputEnd(id, providerMetadata):
+            var payload: [String: Any] = ["type": "tool-input-end", "id": id]
+            if let meta = providerMetadataDictionary(providerMetadata) { payload["providerMetadata"] = meta }
+            return [encode(event: payload)]
 
         case .source:
             return []
@@ -129,6 +134,8 @@ private final class StreamTextSSEEncoder {
             // Serialize error as string description to keep payload lightweight
             payload["error"] = String(describing: error.error)
             if let executed = error.providerExecuted { payload["providerExecuted"] = executed }
+            payload["input"] = toJSONAny(error.input)
+            if error.isDynamic { payload["dynamic"] = true }
             return [encode(event: payload)]
 
         case let .toolOutputDenied(denied):
@@ -150,6 +157,10 @@ private final class StreamTextSSEEncoder {
             payload["toolName"] = request.toolCall.toolName
             payload["input"] = toJSONAny(request.toolCall.input)
             if let executed = request.toolCall.providerExecuted { payload["providerExecuted"] = executed }
+            if let meta = providerMetadataDictionary(request.toolCall.providerMetadata) {
+                payload["providerMetadata"] = meta
+            }
+            if case .dynamic = request.toolCall { payload["dynamic"] = true }
             return [encode(event: payload)]
 
         case let .finish(finishReason, usage):
@@ -212,9 +223,10 @@ private final class StreamTextSSEEncoder {
                 "type": "tool-result",
                 "toolCallId": value.toolCallId,
                 "toolName": value.toolName,
-                "result": toJSONAny(value.output)
+                "result": toJSONAny(value.output),
+                "input": toJSONAny(value.input)
             ]
-            if let metadata = value.providerMetadata { payload["providerMetadata"] = metadata }
+            if let metadata = providerMetadataDictionary(value.providerMetadata) { payload["providerMetadata"] = metadata }
             if let executed = value.providerExecuted { payload["providerExecuted"] = executed }
             if let prelim = value.preliminary { payload["preliminary"] = prelim }
             return [encode(event: payload)]
@@ -223,11 +235,13 @@ private final class StreamTextSSEEncoder {
                 "type": "tool-result",
                 "toolCallId": value.toolCallId,
                 "toolName": value.toolName,
-                "result": toJSONAny(value.output)
+                "result": toJSONAny(value.output),
+                "input": toJSONAny(value.input)
             ]
-            if let metadata = value.providerMetadata { payload["providerMetadata"] = metadata }
+            if let metadata = providerMetadataDictionary(value.providerMetadata) { payload["providerMetadata"] = metadata }
             if let executed = value.providerExecuted { payload["providerExecuted"] = executed }
             if let preliminary = value.preliminary { payload["preliminary"] = preliminary }
+            payload["dynamic"] = true
             return [encode(event: payload)]
         }
     }

@@ -301,15 +301,17 @@ async function runMultipleTimes(suites, timeoutMs, runs = 3, parallel = false) {
  * @param {number} timeoutMs - Timeout in milliseconds
  * @param {number} runs - Number of times to run tests
  * @param {boolean} parallel - Run tests in parallel
+ * @param {boolean} onceMode - Quick mode: single run, immediate detection
  */
-async function findRace(allSuites, timeoutMs, runs = 3, parallel = false) {
+async function findRace(allSuites, timeoutMs, runs = 3, parallel = false, onceMode = false) {
     console.log('\n🏁 RACE FINDER');
     console.log('━'.repeat(60));
     console.log(`Total suites: ${allSuites.length}`);
     console.log(`Timeout:      ${timeoutMs}ms`);
     console.log(`Runs:         ${runs}`);
     console.log(`Parallel:     ${parallel ? 'YES' : 'NO'}`);
-    console.log(`Strategy:     Remove from END until timeout disappears`);
+    console.log(`Mode:         ${onceMode ? 'QUICK (--once)' : 'FULL SEARCH'}`);
+    console.log(`Strategy:     ${onceMode ? 'Single run detection' : 'Remove from END until timeout disappears'}`);
     console.log('━'.repeat(60) + '\n');
 
     // Step 1: Run all tests N times
@@ -327,6 +329,21 @@ async function findRace(allSuites, timeoutMs, runs = 3, parallel = false) {
         return [];
     }
 
+    // QUICK MODE (--once): immediate detection
+    if (onceMode) {
+        if (initialResult.hasTimeout) {
+            console.log('🎯 RACE CONDITION DETECTED (timeout in single run)!');
+            console.log('   Use full mode (without --once) to isolate specific culprit.\n');
+            return ['TIMEOUT_DETECTED'];
+        }
+        if (initialResult.failedCount > 0) {
+            console.log('⚠️  Tests FAILED (not race condition - regular test failure)');
+            console.log('   Fix test failures first, then re-run to detect race conditions.\n');
+            return [];
+        }
+    }
+
+    // FULL SEARCH MODE
     if (initialResult.failedCount > 0 && !initialResult.hasTimeout) {
         console.log('⚠️  Tests are FAILING (not timing out)');
         console.log('   This tool is designed to find race conditions causing TIMEOUTS.');
@@ -521,12 +538,14 @@ async function main() {
 Race Finder - Detect race conditions by removing tests from end
 
 Usage:
-  node race-finder.js [--timeout <ms>] [--runs <n>] [--parallel] [--exclude <pattern>...]
+  node race-finder.js [--timeout <ms>] [--runs <n>] [--parallel] [--once] [--exclude <pattern>...]
 
 Options:
-  --timeout <ms>        Timeout in milliseconds (default: 4000)
+  --timeout <ms>        Timeout in milliseconds (default: 4000, 30000 with --once)
   --runs <n>            Number of times to run each test (default: 3)
   --parallel            Run tests in parallel (helps trigger race conditions)
+  --once                Quick mode: run once, if timeout/fail = race condition found
+                        Sets runs=1 and timeout=30s (unless overridden)
   --exclude <pattern>   Exclude test suites matching pattern (can be used multiple times)
                         Supports wildcards: * for any characters
   --help, -h            Show this help
@@ -539,19 +558,25 @@ How it works:
 
 Examples:
   node race-finder.js --timeout 5000 --runs 5 --parallel
+  node race-finder.js --once --parallel
   node race-finder.js --exclude SwiftAISDKTests.CreateUIMessageStreamTests
   node race-finder.js --runs 10 --parallel --exclude "*UIMessageStream*" --exclude "*SerialJobExecutor*"
         `);
         return;
     }
 
-    // Parse timeout
-    const timeoutIndex = args.indexOf('--timeout');
-    const timeoutMs = timeoutIndex !== -1 ? parseInt(args[timeoutIndex + 1]) : 4000;
+    // Parse once flag (quick mode)
+    const onceMode = args.includes('--once');
 
-    // Parse runs
+    // Parse timeout (default depends on once mode)
+    const timeoutIndex = args.indexOf('--timeout');
+    const timeoutMs = timeoutIndex !== -1
+        ? parseInt(args[timeoutIndex + 1])
+        : (onceMode ? 30000 : 4000);
+
+    // Parse runs (once mode overrides to 1)
     const runsIndex = args.indexOf('--runs');
-    const runs = runsIndex !== -1 ? parseInt(args[runsIndex + 1]) : 3;
+    const runs = onceMode ? 1 : (runsIndex !== -1 ? parseInt(args[runsIndex + 1]) : 3);
 
     // Parse parallel flag
     const parallel = args.includes('--parallel');
@@ -568,7 +593,7 @@ Examples:
     const allSuites = getAllTestSuites(excludePatterns);
     console.log(`✅ Found ${allSuites.length} test suites\n`);
 
-    const culprits = await findRace(allSuites, timeoutMs, runs, parallel);
+    const culprits = await findRace(allSuites, timeoutMs, runs, parallel, onceMode);
 
     const duration = Date.now() - startTime;
     const minutes = Math.floor(duration / 60000);
