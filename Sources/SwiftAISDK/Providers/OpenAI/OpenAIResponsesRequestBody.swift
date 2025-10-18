@@ -25,6 +25,7 @@ struct OpenAIResponsesRequestBody: Encodable, Sendable {
     var truncation: String?
     var tools: [JSONValue]?
     var toolChoice: JSONValue?
+    var stream: Bool?
 
     enum CodingKeys: String, CodingKey {
         case model
@@ -49,6 +50,7 @@ struct OpenAIResponsesRequestBody: Encodable, Sendable {
         case truncation
         case tools
         case toolChoice = "tool_choice"
+        case stream
     }
 
     func encode(to encoder: Encoder) throws {
@@ -75,5 +77,6 @@ struct OpenAIResponsesRequestBody: Encodable, Sendable {
         try container.encodeIfPresent(truncation, forKey: .truncation)
         try container.encodeIfPresent(tools, forKey: .tools)
         try container.encodeIfPresent(toolChoice, forKey: .toolChoice)
+        try container.encodeIfPresent(stream, forKey: .stream)
     }
 }

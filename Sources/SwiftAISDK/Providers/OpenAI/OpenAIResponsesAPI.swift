@@ -6,26 +6,66 @@ public typealias OpenAIResponsesInput = [JSONValue]
 
 public struct OpenAIResponsesResponse: Codable, Sendable {
     public struct Usage: Codable, Sendable {
-        public let inputTokens: Int?
-        public let outputTokens: Int?
-        public let totalTokens: Int?
+        public struct InputTokensDetails: Codable, Sendable {
+            public let cachedTokens: Int?
+
+            enum CodingKeys: String, CodingKey {
+                case cachedTokens = "cached_tokens"
+            }
+        }
+
+        public struct OutputTokensDetails: Codable, Sendable {
+            public let reasoningTokens: Int?
+
+            enum CodingKeys: String, CodingKey {
+                case reasoningTokens = "reasoning_tokens"
+            }
+        }
+
+        public let inputTokens: Int
+        public let outputTokens: Int
+        public let inputTokensDetails: InputTokensDetails?
+        public let outputTokensDetails: OutputTokensDetails?
 
         enum CodingKeys: String, CodingKey {
             case inputTokens = "input_tokens"
             case outputTokens = "output_tokens"
-            case totalTokens = "total_tokens"
+            case inputTokensDetails = "input_tokens_details"
+            case outputTokensDetails = "output_tokens_details"
         }
     }
 
-    public let id: String?
+    public struct IncompleteDetails: Codable, Sendable {
+        public let reason: String?
+    }
+
+    public struct ErrorPayload: Codable, Sendable {
+        public let code: String
+        public let message: String
+    }
+
+    public let id: String
+    public let createdAt: TimeInterval?
+    public let model: String
     public let output: [JSONValue]
-    public let usage: Usage?
+    public let serviceTier: String?
+    public let usage: Usage
     public let warnings: [LanguageModelV3CallWarningRecord]?
+    public let incompleteDetails: IncompleteDetails?
     public let finishReason: String?
+    public let error: ErrorPayload?
 
     enum CodingKeys: String, CodingKey {
-        case id, output, usage, warnings
+        case id
+        case createdAt = "created_at"
+        case model
+        case output
+        case serviceTier = "service_tier"
+        case usage
+        case warnings
+        case incompleteDetails = "incomplete_details"
         case finishReason = "finish_reason"
+        case error
     }
 }
 
@@ -51,14 +91,28 @@ public struct LanguageModelV3CallWarningRecord: Codable, Sendable {
 }
 
 public struct OpenAIResponsesChunk: Codable, Sendable {
-    public let type: String?
-    public let value: JSONValue?
-    public let finishReason: String?
+    public let rawValue: JSONValue
 
-    enum CodingKeys: String, CodingKey {
-        case type
-        case value
-        case finishReason = "finish_reason"
+    public init(rawValue: JSONValue) {
+        self.rawValue = rawValue
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        rawValue = try container.decode(JSONValue.self)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
+
+    public var type: String? {
+        guard case .object(let object) = rawValue,
+              case .string(let value) = object["type"] else {
+            return nil
+        }
+        return value
     }
 }
 
@@ -66,7 +120,7 @@ public let openAIResponsesChunkSchema = FlexibleSchema(
     Schema.codable(
         OpenAIResponsesChunk.self,
         jsonSchema: .object([
-            "type": .array([.string("object"), .string("null")])
+            "type": .string("object")
         ])
     )
 )
@@ -75,17 +129,7 @@ public let openAIResponsesResponseSchema = FlexibleSchema(
     Schema.codable(
         OpenAIResponsesResponse.self,
         jsonSchema: .object([
-            "type": .string("object"),
-            "properties": .object([
-                "id": .object(["type": .array([.string("string"), .string("null")])]),
-                "output": .object(["type": .string("array")]),
-                "usage": .object(["type": .array([.string("object"), .string("null")])]),
-                "warnings": .object([
-                    "type": .array([.string("array"), .string("null")])
-                ]),
-                "finish_reason": .object(["type": .array([.string("string"), .string("null")])])
-            ]),
-            "required": .array([.string("output")])
+            "type": .string("object")
         ])
     )
 )
