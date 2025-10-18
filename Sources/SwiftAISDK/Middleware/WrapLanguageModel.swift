@@ -49,10 +49,13 @@ public func wrapLanguageModel(
 }
 
 /// Input type for middleware parameter - can be single or multiple
-public enum MiddlewareInput {
+public enum MiddlewareInput: Sendable {
     case single(LanguageModelV3Middleware)
     case multiple([LanguageModelV3Middleware])
 }
+
+/// Alias for readability when configuring provider registries.
+public typealias LanguageModelMiddlewareInput = MiddlewareInput
 
 /// Internal function that wraps a model with a single middleware
 private func doWrap(

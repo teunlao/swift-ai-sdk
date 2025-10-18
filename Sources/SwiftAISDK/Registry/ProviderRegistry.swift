@@ -38,11 +38,7 @@ public protocol ProviderRegistryProvider: Sendable {
 
  - Parameters:
    - providers: A dictionary of provider instances to be registered in the registry.
-   - separator: The separator used between provider ID and model ID in the combined identifier. Defaults to ":".
-     Supports multi-character separators (e.g., " > ").
-   - languageModelMiddleware: Optional middleware to be applied to all language models from the registry.
-     When multiple middlewares are provided, the first middleware will transform the input first,
-     and the last middleware will be wrapped directly around the model.
+   - options: Configuration options that control the separator and optional language model middleware.
 
  - Returns: A new ProviderRegistryProvider instance that provides access to all registered providers
    with optional middleware applied to language models.
@@ -52,14 +48,48 @@ public protocol ProviderRegistryProvider: Sendable {
    - Swift: uses fatalError (crashes with detailed message)
    - Rationale: Protocol methods cannot conditionally declare 'throws' in Swift
  */
+public struct ProviderRegistryOptions: Sendable {
+    public var separator: String
+    public var languageModelMiddleware: LanguageModelMiddlewareInput?
+
+    public init(
+        separator: String = ":",
+        languageModelMiddleware: LanguageModelMiddlewareInput? = nil
+    ) {
+        self.separator = separator
+        self.languageModelMiddleware = languageModelMiddleware
+    }
+
+    public init(
+        separator: String = ":",
+        languageModelMiddleware: [LanguageModelV3Middleware]
+    ) {
+        self.separator = separator
+        if languageModelMiddleware.isEmpty {
+            self.languageModelMiddleware = nil
+        } else if languageModelMiddleware.count == 1, let middleware = languageModelMiddleware.first {
+            self.languageModelMiddleware = .single(middleware)
+        } else {
+            self.languageModelMiddleware = .multiple(languageModelMiddleware)
+        }
+    }
+
+    public init(
+        separator: String = ":",
+        languageModelMiddleware: LanguageModelV3Middleware
+    ) {
+        self.separator = separator
+        self.languageModelMiddleware = .single(languageModelMiddleware)
+    }
+}
+
 public func createProviderRegistry(
     providers: [String: any ProviderV3],
-    separator: String = ":",
-    languageModelMiddleware: [LanguageModelV3Middleware]? = nil
+    options: ProviderRegistryOptions = ProviderRegistryOptions()
 ) -> ProviderRegistryProvider {
     return DefaultProviderRegistry(
-        separator: separator,
-        languageModelMiddleware: languageModelMiddleware,
+        separator: options.separator,
+        languageModelMiddleware: options.languageModelMiddleware,
         providers: providers
     )
 }
@@ -68,11 +98,11 @@ public func createProviderRegistry(
 final class DefaultProviderRegistry: ProviderRegistryProvider {
     private let providers: [String: any ProviderV3]
     private let separator: String
-    private let languageModelMiddleware: [LanguageModelV3Middleware]?
+    private let languageModelMiddleware: LanguageModelMiddlewareInput?
 
     init(
         separator: String,
-        languageModelMiddleware: [LanguageModelV3Middleware]?,
+        languageModelMiddleware: LanguageModelMiddlewareInput?,
         providers: [String: any ProviderV3] = [:]
     ) {
         self.separator = separator
@@ -130,15 +160,13 @@ final class DefaultProviderRegistry: ProviderRegistryProvider {
             let (providerId, modelId) = try splitId(id: id, modelType: .languageModel)
             let provider = try getProvider(id: providerId, modelType: .languageModel)
 
-            let model = provider.languageModel(modelId: modelId)
+            var model = provider.languageModel(modelId: modelId)
 
-            // Apply middleware if present
-            // Note: wrapLanguageModel function will be implemented in middleware block
-            // For now, we just return the model as-is
-            // TODO: Implement wrapLanguageModel when middleware block is complete
             if let middleware = languageModelMiddleware {
-                // model = wrapLanguageModel(model: model, middleware: middleware)
-                _ = middleware // Silence unused warning until implementation
+                model = wrapLanguageModel(
+                    model: model,
+                    middleware: middleware
+                )
             }
 
             return model
