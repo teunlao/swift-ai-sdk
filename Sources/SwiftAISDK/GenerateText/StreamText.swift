@@ -390,7 +390,8 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
                     async let usage = totalUsagePromise.task.value
                     async let stepList = stepsPromise.task.value
                     let (r, u, s) = try await (reason, usage, stepList)
-                    if let final = s.last { onFinish(final, s, u, r) }
+                    guard !s.isEmpty, let final = s.last else { return }
+                    onFinish(final, s, u, r)
                 } catch { }
             }
         }
@@ -548,11 +549,13 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
     public var experimentalOutput: OutputValue {
         get async throws {
             guard outputSpecification != nil else { throw NoOutputSpecifiedError() }
-            _ = try await waitForFinish()
-            let snapshot = await outputStorage.snapshot()
-            guard snapshot.parsed, let value = snapshot.value else {
-                throw NoOutputSpecifiedError()
+            let (final, _, _, reason) = try await waitForFinish()
+            var snapshot = await outputStorage.snapshot()
+            if !snapshot.parsed {
+                try await parseOutputIfNeeded(finalStep: final, finishReason: reason)
+                snapshot = await outputStorage.snapshot()
             }
+            guard snapshot.parsed, let value = snapshot.value else { throw NoOutputSpecifiedError() }
             return value
         }
     }

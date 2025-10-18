@@ -1369,6 +1369,89 @@ struct StreamTextBasicTests {
         #expect(calls.withValue { $0 } == 1)
     }
 
+    @Test("onError invoked and onFinish not invoked on provider error")
+    func onErrorInvokedOnProviderError() async throws {
+        // Provider emits an error part; actor should finish with error, delivering onError
+        // and never calling onFinish or onStepFinish.
+        let providerStream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
+            c.yield(.streamStart(warnings: []))
+            c.yield(.error(error: .string("boom")))
+            c.finish()
+        }
+        let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: providerStream)))
+
+        let onErrorCalls = LockedValue(initial: 0)
+        let onFinishCalls = LockedValue(initial: 0)
+        let onStepCalls = LockedValue(initial: 0)
+
+        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+            model: .v3(model),
+            prompt: "err",
+            onStepFinish: { _ in onStepCalls.withValue { $0 += 1 } },
+            onFinish: { _, _, _, _ in onFinishCalls.withValue { $0 += 1 } },
+            onError: { _ in onErrorCalls.withValue { $0 += 1 } }
+        )
+
+        // Draining fullStream should throw; that's expected.
+        await #expect(throws: StreamTextError.self) {
+            _ = try await convertReadableStreamToArray(result.fullStream)
+        }
+
+        // Promises may still resolve; ensure we don't crash on waitForFinish.
+        // If no steps were recorded, waitForFinish will throw NoOutputGeneratedError.
+        await #expect(throws: NoOutputGeneratedError.self) {
+            _ = try await result.waitForFinish()
+        }
+
+        #expect(onErrorCalls.withValue { $0 } == 1)
+        #expect(onFinishCalls.withValue { $0 } == 0)
+        #expect(onStepCalls.withValue { $0 } == 0)
+    }
+
+    @Test("onStepFinish provides correct finishReason and usage")
+    func onStepFinishProvidesDetails() async throws {
+        let usage = LanguageModelV3Usage(inputTokens: 2, outputTokens: 3, totalTokens: 5, reasoningTokens: nil, cachedInputTokens: nil)
+        let parts: [LanguageModelV3StreamPart] = [
+            .streamStart(warnings: []),
+            .responseMetadata(id: "rf-1", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
+            .textStart(id: "t", providerMetadata: nil),
+            .textDelta(id: "t", delta: "ok", providerMetadata: nil),
+            .textEnd(id: "t", providerMetadata: nil),
+            .finish(
+                finishReason: .stop,
+                usage: usage,
+                providerMetadata: nil
+            )
+        ]
+
+        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
+            parts.forEach { c.yield($0) }
+            c.finish()
+        }
+        let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
+
+        struct Snapshot: Sendable { var reason: FinishReason?; var usage: LanguageModelUsage? }
+        let snap = LockedValue(initial: Snapshot(reason: nil, usage: nil))
+
+        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+            model: .v3(model),
+            prompt: "ok",
+            onStepFinish: { step in
+                snap.withValue { s in
+                    s.reason = step.finishReason
+                    s.usage = step.usage
+                }
+            }
+        )
+
+        _ = try await result.collectFullStream()
+        _ = try await result.waitForFinish()
+
+        let captured = snap.withValue { $0 }
+        #expect(captured.reason == .stop)
+        #expect(captured.usage?.totalTokens == 5)
+    }
+
     @Test("onFinish is invoked exactly once")
     func onFinishInvokedExactlyOnce() async throws {
         let usage = LanguageModelV3Usage(inputTokens: 1, outputTokens: 1, totalTokens: 2, reasoningTokens: nil, cachedInputTokens: nil)
