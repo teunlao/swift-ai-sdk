@@ -1547,6 +1547,112 @@ struct OpenAIResponsesLanguageModelTests {
         })
     }
 
+    @Test("doGenerate maps incomplete length finish reason")
+    func testDoGenerateIncompleteLengthFinishReason() async throws {
+        let responseJSON: [String: Any] = [
+            "id": "resp_incomplete_length",
+            "created_at": 1_742_250_000.0,
+            "model": "gpt-4o",
+            "output": [],
+            "service_tier": NSNull(),
+            "usage": ["input_tokens": 2, "output_tokens": 2, "total_tokens": 4],
+            "warnings": [],
+            "incomplete_details": ["reason": "max_output_tokens"],
+            "finish_reason": "length",
+            "error": NSNull()
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let fetch: FetchFunction = { _ in
+            let httpResponse = HTTPURLResponse(
+                url: URL(string: "https://api.openai.com/v1/responses")!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: samplePrompt))
+        #expect(result.finishReason == .length)
+    }
+
+    @Test("doStream maps incomplete finish reason")
+    func testDoStreamIncompleteFinishReason() async throws {
+        func chunk(_ value: Any) -> String {
+            let data = try! JSONSerialization.data(withJSONObject: value)
+            let encoded = String(data: data, encoding: .utf8)!
+            return "data:\(encoded)\n\n"
+        }
+
+        let chunks: [String] = [
+            chunk([
+                "type": "response.output_item.added",
+                "output_index": 0,
+                "item": [
+                    "id": "msg_incomplete",
+                    "type": "message",
+                    "status": "in_progress",
+                    "role": "assistant",
+                    "content": []
+                ]
+            ]),
+            chunk([
+                "type": "response.incomplete",
+                "response": [
+                    "id": "resp_incomplete_stream",
+                    "object": "response",
+                    "created_at": 1_742_260_000.0,
+                    "status": "incomplete",
+                    "incomplete_details": ["reason": "max_output_tokens"],
+                    "usage": ["input_tokens": 3, "output_tokens": 3, "total_tokens": 6]
+                ]
+            ]),
+            "data: [DONE]\n\n"
+        ]
+
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.openai.com/v1/responses")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "text/event-stream"]
+        )!
+
+        let fetch: FetchFunction = { _ in
+            let stream = AsyncThrowingStream<Data, Error> { continuation in
+                for string in chunks {
+                    continuation.yield(Data(string.utf8))
+                }
+                continuation.finish()
+            }
+            return FetchResponse(body: .stream(stream), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let streamResult = try await model.doStream(options: LanguageModelV3CallOptions(prompt: samplePrompt))
+
+        var finishPart: LanguageModelV3StreamPart?
+        for try await part in streamResult.stream {
+            finishPart = part
+        }
+
+        if case .finish(let reason, let usage, _) = finishPart {
+            #expect(reason == .length)
+            #expect(usage.totalTokens == 6)
+        } else {
+            Issue.record("Expected finish part for incomplete stream")
+        }
+    }
+
     @Test("doStream emits code interpreter results")
     func testDoStreamEmitsCodeInterpreterResults() async throws {
         func chunk(_ value: Any) -> String {
