@@ -248,6 +248,53 @@ struct StreamTextSSEIntegrationTests {
         #expect(abort["type"] as? String == "abort")
     }
 
+    @Test("SSE includes start-step request body and warnings")
+    func sseIncludesStartStepRequestAndWarnings() async throws {
+        let req = LanguageModelRequestMetadata(body: .object(["prompt": .string("hi")]))
+        let warn: [CallWarning] = [
+            .unsupportedSetting(setting: "temperature", details: "not supported")
+        ]
+        let parts: [TextStreamPart] = [
+            .start,
+            .startStep(request: req, warnings: warn),
+            .finish(finishReason: .stop, totalUsage: LanguageModelUsage())
+        ]
+        let stream = AsyncThrowingStream<TextStreamPart, Error> { c in
+            parts.forEach { c.yield($0) }
+            c.finish()
+        }
+        let events = try await decodeEvents(convertReadableStreamToArray(makeStreamTextSSEStream(from: stream)))
+        let startStep = try #require(events.first(where: { $0["type"] as? String == "start-step" }))
+        let request = try #require(startStep["request"] as? NSDictionary)
+        let body = try #require(request["body"] as? NSDictionary)
+        #expect(body["prompt"] as? String == "hi")
+        let warnings = try #require(startStep["warnings"] as? [Any])
+        #expect(!warnings.isEmpty)
+    }
+
+    @Test("SSE encodes source url/document and file events")
+    func sseEncodesSourceAndFile() async throws {
+        let urlSource: LanguageModelV3Source = .url(id: "u1", url: "https://example.com", title: "Ex", providerMetadata: ["p": ["k": .string("v")]])
+        let docSource: LanguageModelV3Source = .document(id: "d1", mediaType: "text/plain", title: "Doc", filename: "a.txt", providerMetadata: nil)
+        let file = DefaultGeneratedFileWithType(data: Data("X".utf8), mediaType: "text/plain")
+        let parts: [TextStreamPart] = [
+            .source(urlSource),
+            .textStart(id: "t", providerMetadata: nil),
+            .textEnd(id: "t", providerMetadata: nil),
+            .source(docSource),
+            .file(file),
+            .finish(finishReason: .stop, totalUsage: LanguageModelUsage())
+        ]
+        let stream = AsyncThrowingStream<TextStreamPart, Error> { c in
+            parts.forEach { c.yield($0) }
+            c.finish()
+        }
+        let events = try await decodeEvents(convertReadableStreamToArray(makeStreamTextSSEStream(from: stream)))
+        #expect(events.contains { ($0["type"] as? String) == "source" && ($0["sourceType"] as? String) == "url" })
+        #expect(events.contains { ($0["type"] as? String) == "source" && ($0["sourceType"] as? String) == "document" })
+        #expect(events.contains { ($0["type"] as? String) == "file" && ($0["mediaType"] as? String) == "text/plain" })
+    }
+
     @Test("SSE includes providerMetadata for text blocks")
     func sseIncludesTextProviderMetadata() async throws {
         let meta: ProviderMetadata = ["prov": ["m": .string("x")]]

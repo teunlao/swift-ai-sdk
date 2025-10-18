@@ -50,8 +50,18 @@ private final class StreamTextSSEEncoder {
         case .start:
             return [encode(event: ["type": "start"])]
 
-        case .startStep:
-            return [encode(event: ["type": "start-step"])]
+        case let .startStep(request, warnings):
+            var payload: [String: Any] = ["type": "start-step"]
+            if let body = request.body {
+                payload["request"] = ["body": toJSONAny(body)]
+            }
+            if !warnings.isEmpty {
+                if let data = try? jsonEncoder.encode(warnings),
+                   let array = try? JSONSerialization.jsonObject(with: data) as? [Any] {
+                    payload["warnings"] = array
+                }
+            }
+            return [encode(event: payload)]
 
         case let .finishStep(response, usage, finishReason, metadata):
             var payload: [String: Any] = [
@@ -123,11 +133,22 @@ private final class StreamTextSSEEncoder {
             if let meta = providerMetadataDictionary(providerMetadata) { payload["providerMetadata"] = meta }
             return [encode(event: payload)]
 
-        case .source:
+        case let .source(source):
+            if let data = try? jsonEncoder.encode(source),
+               var obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                // Ensure type field stays 'source' per upstream shape
+                obj["type"] = "source"
+                return [encode(event: obj)]
+            }
             return []
 
-        case .file:
-            return []
+        case let .file(file):
+            var payload: [String: Any] = [
+                "type": "file",
+                "base64": file.base64,
+                "mediaType": file.mediaType
+            ]
+            return [encode(event: payload)]
 
         case let .toolError(error):
             var payload: [String: Any] = [
