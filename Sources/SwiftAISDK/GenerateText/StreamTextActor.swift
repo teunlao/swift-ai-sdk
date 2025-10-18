@@ -1076,6 +1076,18 @@ actor StreamTextActor {
         }
     }
 
+    func appendInitialResponseMessages(_ messages: [ResponseMessage]) {
+        guard !messages.isEmpty else { return }
+        recordedResponseMessages.append(contentsOf: messages)
+    }
+
+    func publishPreludeEvents(_ parts: [TextStreamPart]) async {
+        guard !parts.isEmpty else { return }
+        for part in parts {
+            await fullBroadcaster.send(part)
+        }
+    }
+
     // Observability helpers for consumers that need step snapshots.
     func getRecordedSteps() -> [StepResult] { recordedSteps }
     func getLastStep() -> StepResult? { recordedSteps.last }

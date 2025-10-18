@@ -53,6 +53,28 @@ struct StreamTextActorConfiguration: Sendable {
     let responseFormatProvider: (@Sendable () async throws -> LanguageModelV3ResponseFormat?)?
 }
 
+private func convertResponseMessagesToModelMessages(
+    _ messages: [ResponseMessage]
+) -> [ModelMessage] {
+    messages.map { message in
+        switch message {
+        case .assistant(let assistant):
+            return .assistant(assistant)
+        case .tool(let tool):
+            return .tool(tool)
+        }
+    }
+}
+
+private func providerExecutedFlag(for call: TypedToolCall) -> Bool? {
+    switch call {
+    case .static(let value):
+        return value.providerExecuted
+    case .dynamic(let value):
+        return value.providerExecuted
+    }
+}
+
 public struct StreamTextTransformOptions {
     public var tools: ToolSet?
     public var stopStream: @Sendable () -> Void
@@ -289,6 +311,14 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
     // Internal: install provider cancel callback so actor can cancel upstream if it finishes earlier
     func _setProviderCancel(_ cancel: @escaping @Sendable () -> Void) async {
         await actor.setOnTerminate(cancel)
+    }
+
+    func _appendInitialResponseMessages(_ messages: [ResponseMessage]) async {
+        await actor.appendInitialResponseMessages(messages)
+    }
+
+    func _publishPreludeEvents(_ parts: [TextStreamPart]) async {
+        await actor.publishPreludeEvents(parts)
     }
 
     public var textStream: AsyncThrowingStream<String, Error> {
@@ -735,9 +765,83 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
 
     let providerTask = Task {
         do {
+            var responseMessagesHistory: [ResponseMessage] = []
+            let approvals = collectToolApprovals(messages: normalizedMessages)
+            let tracer: any Tracer = noopTracer
+
+            if !approvals.deniedToolApprovals.isEmpty || !approvals.approvedToolApprovals.isEmpty {
+                var toolContentParts: [ToolContentPart] = []
+
+                for denied in approvals.deniedToolApprovals {
+                    let providerExecuted = providerExecutedFlag(for: denied.toolCall)
+                    let deniedEvent = ToolOutputDenied(
+                        toolCallId: denied.toolCall.toolCallId,
+                        toolName: denied.toolCall.toolName,
+                        providerExecuted: providerExecuted
+                    )
+                    await result._publishPreludeEvents([.toolOutputDenied(deniedEvent)])
+
+                    let deniedPart = ToolResultPart(
+                        toolCallId: denied.toolCall.toolCallId,
+                        toolName: denied.toolCall.toolName,
+                        output: .executionDenied(reason: denied.approvalResponse.reason)
+                    )
+                    toolContentParts.append(.toolResult(deniedPart))
+                }
+
+                if let tools, !approvals.approvedToolApprovals.isEmpty {
+                    for approval in approvals.approvedToolApprovals {
+                        let output = await executeToolCall(
+                            toolCall: approval.toolCall,
+                            tools: tools,
+                            tracer: tracer,
+                            telemetry: telemetry,
+                            messages: normalizedMessages,
+                            abortSignal: settings.abortSignal,
+                            experimentalContext: experimentalContext,
+                            onPreliminaryToolResult: { typed in
+                                Task {
+                                    await result._publishPreludeEvents([.toolResult(typed)])
+                                }
+                            }
+                        )
+
+                        guard let output else { continue }
+
+                        switch output {
+                        case .result(let typed):
+                            await result._publishPreludeEvents([.toolResult(typed)])
+                        case .error(let error):
+                            await result._publishPreludeEvents([.toolError(error)])
+                        }
+
+                        toolContentParts.append(makeToolContentPart(output: output, tools: tools))
+                    }
+                }
+
+                if !toolContentParts.isEmpty {
+                    let toolMessage = ToolModelMessage(content: toolContentParts)
+                    let responseMessage = ResponseMessage.tool(toolMessage)
+                    responseMessagesHistory.append(responseMessage)
+                    await result._appendInitialResponseMessages([responseMessage])
+                }
+            }
+
+            let conversationMessages: [ModelMessage]
+            if responseMessagesHistory.isEmpty {
+                conversationMessages = normalizedMessages
+            } else {
+                conversationMessages = normalizedMessages + convertResponseMessagesToModelMessages(responseMessagesHistory)
+            }
+
+            let promptForProvider = StandardizedPrompt(
+                system: standardizedPrompt.system,
+                messages: conversationMessages
+            )
+
             let supported = try await resolvedModel.supportedUrls
             let lmPrompt = try await convertToLanguageModelPrompt(
-                prompt: standardizedPrompt,
+                prompt: promptForProvider,
                 supportedUrls: supported,
                 download: download
             )
