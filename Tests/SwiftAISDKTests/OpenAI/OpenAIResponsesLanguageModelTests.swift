@@ -2084,6 +2084,104 @@ struct OpenAIResponsesLanguageModelTests {
             return false
         })
     }
+    @Test("doStream emits local shell input")
+    func testDoStreamEmitsLocalShellInput() async throws {
+        func chunk(_ value: Any) -> String {
+            let data = try! JSONSerialization.data(withJSONObject: value)
+            let encoded = String(data: data, encoding: .utf8)!
+            return "data:\(encoded)\n\n"
+        }
+
+        let chunks: [String] = [
+            chunk([
+                "type": "response.output_item.added",
+                "output_index": 0,
+                "item": [
+                    "id": "shell_item",
+                    "type": "local_shell_call",
+                    "status": "in_progress",
+                    "action": [
+                        "type": "exec",
+                        "command": []
+                    ],
+                    "call_id": "call_shell"
+                ]
+            ]),
+            chunk([
+                "type": "response.output_item.done",
+                "output_index": 0,
+                "item": [
+                    "id": "shell_item",
+                    "type": "local_shell_call",
+                    "status": "completed",
+                    "action": [
+                        "type": "exec",
+                        "command": ["ls"],
+                        "working_directory": "/tmp",
+                        "env": [
+                            "PATH": "/usr/bin"
+                        ]
+                    ],
+                    "call_id": "call_shell"
+                ]
+            ]),
+            chunk([
+                "type": "response.completed",
+                "response": [
+                    "id": "resp_shell",
+                    "object": "response",
+                    "created_at": 1_742_150_000.0,
+                    "status": "completed",
+                    "usage": ["input_tokens": 2, "output_tokens": 1, "total_tokens": 3]
+                ]
+            ]),
+            "data: [DONE]\n\n"
+        ]
+
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.openai.com/v1/responses")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "text/event-stream"]
+        )!
+
+        let fetch: FetchFunction = { _ in
+            let stream = AsyncThrowingStream<Data, Error> { continuation in
+                for string in chunks {
+                    continuation.yield(Data(string.utf8))
+                }
+                continuation.finish()
+            }
+            return FetchResponse(body: .stream(stream), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let tool = LanguageModelV3Tool.providerDefined(.init(id: "openai.local_shell", name: "local_shell", args: [:]))
+
+        let streamResult = try await model.doStream(
+            options: LanguageModelV3CallOptions(
+                prompt: samplePrompt,
+                tools: [tool]
+            )
+        )
+
+        var parts: [LanguageModelV3StreamPart] = []
+        for try await part in streamResult.stream {
+            parts.append(part)
+        }
+
+        #expect(parts.contains { part in
+            if case .toolCall(let call) = part {
+                return call.toolCallId == "call_shell" && call.toolName == "local_shell" && call.providerExecuted == true
+            }
+            return false
+        })
+    }
+
 
     @Test("doGenerate forwards previousResponseId and metadata")
     func testDoGeneratePreviousResponseId() async throws {
