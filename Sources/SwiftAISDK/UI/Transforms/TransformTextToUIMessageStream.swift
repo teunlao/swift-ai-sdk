@@ -14,15 +14,21 @@ import AISDKProviderUtils
 public struct UIMessageTransformOptions: Sendable {
     public var sendStart: Bool
     public var sendFinish: Bool
+    public var sendReasoning: Bool
+    public var sendSources: Bool
     public var messageMetadata: (@Sendable (TextStreamPart) -> JSONValue?)?
 
     public init(
         sendStart: Bool = true,
         sendFinish: Bool = true,
+        sendReasoning: Bool = false,
+        sendSources: Bool = false,
         messageMetadata: (@Sendable (TextStreamPart) -> JSONValue?)? = nil
     ) {
         self.sendStart = sendStart
         self.sendFinish = sendFinish
+        self.sendReasoning = sendReasoning
+        self.sendSources = sendSources
         self.messageMetadata = messageMetadata
     }
 }
