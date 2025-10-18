@@ -493,6 +493,17 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
                 var accumulated = ""
                 var lastRepresentation: String? = nil
 
+                func flushCurrent() async throws {
+                    guard firstTextId != nil, !accumulated.isEmpty else { return }
+                    if let partial = try await outputSpecification.parsePartial(text: accumulated) {
+                        let representation = partialRepresentation(partial)
+                        if representation != lastRepresentation {
+                            continuation.yield(partial)
+                            lastRepresentation = representation
+                        }
+                    }
+                }
+
                 do {
                     for try await part in inner {
                         switch part {
@@ -510,20 +521,16 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
                             }
                             guard id == firstTextId else { continue }
                             accumulated += delta
-                            if let partial = try await outputSpecification.parsePartial(text: accumulated) {
-                                let representation = partialRepresentation(partial)
-                                if representation != lastRepresentation {
-                                    continuation.yield(partial)
-                                    lastRepresentation = representation
-                                }
-                            }
+                            try await flushCurrent()
                         case .textEnd(let id, _):
                             if id == firstTextId {
+                                try await flushCurrent()
                                 firstTextId = nil
                                 accumulated = ""
                                 lastRepresentation = nil
                             }
                         case .finishStep:
+                            try await flushCurrent()
                             firstTextId = nil
                             accumulated = ""
                             lastRepresentation = nil
