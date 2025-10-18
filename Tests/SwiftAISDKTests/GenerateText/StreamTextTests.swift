@@ -1581,6 +1581,48 @@ struct StreamTextBasicTests {
         #expect(hasStart2 && !hasFinish2)
     }
 
+    @Test("toUIMessageStreamResponse respects sendStart/sendFinish flags")
+    func uiMessageStreamResponseRespectsFlags() async throws {
+        let parts: [LanguageModelV3StreamPart] = [
+            .streamStart(warnings: []),
+            .textStart(id: "t", providerMetadata: nil),
+            .textDelta(id: "t", delta: "A", providerMetadata: nil),
+            .textEnd(id: "t", providerMetadata: nil),
+            .finish(finishReason: .stop, usage: LanguageModelV3Usage(), providerMetadata: nil)
+        ]
+        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
+            parts.forEach { c.yield($0) }
+            c.finish()
+        }
+        let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
+        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+            model: .v3(model),
+            prompt: "hi"
+        )
+
+        // Case 1: sendStart=false, sendFinish=false
+        let response1 = result.toUIMessageStreamResponse(
+            options: StreamTextUIResponseOptions<UIMessage>(
+                responseInit: UIMessageStreamResponseInit(),
+                streamOptions: UIMessageStreamOptions<UIMessage>(sendFinish: false, sendStart: false)
+            )
+        )
+        let lines1 = try await convertReadableStreamToArray(response1.stream)
+        #expect(!lines1.contains { $0.contains("\"type\":\"start\"") })
+        #expect(!lines1.contains { $0.contains("\"type\":\"finish\"") })
+
+        // Case 2: sendStart=true, sendFinish=false
+        let response2 = result.toUIMessageStreamResponse(
+            options: StreamTextUIResponseOptions<UIMessage>(
+                responseInit: UIMessageStreamResponseInit(),
+                streamOptions: UIMessageStreamOptions<UIMessage>(sendFinish: false, sendStart: true)
+            )
+        )
+        let lines2 = try await convertReadableStreamToArray(response2.stream)
+        #expect(lines2.contains { $0.contains("\"type\":\"start\"") })
+        #expect(!lines2.contains { $0.contains("\"type\":\"finish\"") })
+    }
+
     @Test("onFinish is invoked exactly once")
     func onFinishInvokedExactlyOnce() async throws {
         let usage = LanguageModelV3Usage(inputTokens: 1, outputTokens: 1, totalTokens: 2, reasoningTokens: nil, cachedInputTokens: nil)
