@@ -25,6 +25,7 @@ public func streamTextV2<OutputValue: Sendable, PartialOutputValue: Sendable>(
     model modelArg: LanguageModel,
     prompt: String,
     tools: ToolSet? = nil,
+    experimentalApprove approve: (@Sendable (ToolApprovalRequestOutput) async -> ApprovalActionV2)? = nil,
     experimentalTransform transforms: [StreamTextTransform] = [],
     stopWhen stopConditions: [StopCondition] = [stepCountIs(1)],
     onChunk: StreamTextOnChunk? = nil,
@@ -41,6 +42,7 @@ public func streamTextV2<OutputValue: Sendable, PartialOutputValue: Sendable>(
         system: nil,
         messages: [.user(UserModelMessage(content: .text(prompt), providerOptions: nil))],
         tools: tools,
+        experimentalApprove: approve,
         experimentalTransform: transforms,
         stopWhen: stopConditions,
         onChunk: onChunk,
@@ -125,6 +127,7 @@ public final class DefaultStreamTextV2Result<OutputValue: Sendable, PartialOutpu
         initialMessages: [ModelMessage],
         system: String?,
         tools: ToolSet?,
+        approve: (@Sendable (ToolApprovalRequestOutput) async -> ApprovalActionV2)? = nil,
         onChunk: StreamTextOnChunk?,
         onStepFinish: StreamTextOnStepFinish? = nil,
         onFinish: StreamTextOnFinish? = nil,
@@ -139,6 +142,8 @@ public final class DefaultStreamTextV2Result<OutputValue: Sendable, PartialOutpu
             system: system,
             stopConditions: self.stopConditions,
             tools: tools,
+            approvalResolver: approve,
+            experimentalApprovalContext: nil,
             totalUsagePromise: totalUsagePromise,
             finishReasonPromise: finishReasonPromise,
             stepsPromise: stepsPromise
@@ -244,11 +249,15 @@ public final class DefaultStreamTextV2Result<OutputValue: Sendable, PartialOutpu
 
         // Convert to AsyncIterableStream for transforms
         let iterable = createAsyncIterableStream(source: baseStream)
+
+        // Build transform pipeline. Approval is handled inside the actor, so only caller-supplied transforms run here.
+        let pipeline = transforms
+
         let options = StreamTextTransformOptions(
             tools: tools,
             stopStream: { Task { await self.actor.requestStop() } }
         )
-        let transformed = transforms.reduce(iterable) { acc, t in t(acc, options) }
+        let transformed = pipeline.reduce(iterable) { acc, t in t(acc, options) }
 
         // Convert back to AsyncThrowingStream for public API
         return AsyncThrowingStream { continuation in
@@ -522,6 +531,8 @@ public final class DefaultStreamTextV2Result<OutputValue: Sendable, PartialOutpu
     }
 }
 
+// MARK: - Internal helpers
+
 // MARK: - Helpers (none needed for milestone 1)
 
 // MARK: - Overload: system/messages prompt (Upstream parity)
@@ -544,6 +555,7 @@ public func streamTextV2<OutputValue: Sendable, PartialOutputValue: Sendable>(
     system: String?,
     messages initialMessages: [ModelMessage],
     tools: ToolSet? = nil,
+    experimentalApprove approve: (@Sendable (ToolApprovalRequestOutput) async -> ApprovalActionV2)? = nil,
     experimentalTransform transforms: [StreamTextTransform] = [],
     stopWhen stopConditions: [StopCondition] = [stepCountIs(1)],
     onChunk: StreamTextOnChunk? = nil,
@@ -570,6 +582,7 @@ public func streamTextV2<OutputValue: Sendable, PartialOutputValue: Sendable>(
         initialMessages: initialMessages,
         system: system,
         tools: tools,
+        approve: approve,
         onChunk: onChunk,
         onStepFinish: onStepFinish,
         onFinish: onFinish,
@@ -622,6 +635,7 @@ public func streamTextV2<OutputValue: Sendable, PartialOutputValue: Sendable>(
     model: LanguageModel,
     prompt: Prompt,
     tools: ToolSet? = nil,
+    experimentalApprove approve: (@Sendable (ToolApprovalRequestOutput) async -> ApprovalActionV2)? = nil,
     experimentalTransform transforms: [StreamTextTransform] = [],
     stopWhen stopConditions: [StopCondition] = [stepCountIs(1)],
     onChunk: StreamTextOnChunk? = nil,
@@ -636,6 +650,7 @@ public func streamTextV2<OutputValue: Sendable, PartialOutputValue: Sendable>(
         system: standardized.system,
         messages: standardized.messages,
         tools: tools,
+        experimentalApprove: approve,
         experimentalTransform: transforms,
         stopWhen: stopConditions,
         onChunk: onChunk,

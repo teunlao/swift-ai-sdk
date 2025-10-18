@@ -182,9 +182,11 @@ private extension TypedToolResult {
     func logDescription() -> String {
         switch self {
         case .static(let result):
-            return "\(result.toolName) [\(result.toolCallId)] result=\(result.output)"
+            let prefix = result.preliminary == true ? "(prelim) " : ""
+            return "\(prefix)\(result.toolName) [\(result.toolCallId)] result=\(result.output)"
         case .dynamic(let result):
-            return "\(result.toolName) [\(result.toolCallId)] result=\(result.output)"
+            let prefix = result.preliminary == true ? "(prelim) " : ""
+            return "\(prefix)\(result.toolName) [\(result.toolCallId)] result=\(result.output)"
         }
     }
 }

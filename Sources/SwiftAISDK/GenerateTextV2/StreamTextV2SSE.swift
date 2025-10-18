@@ -191,6 +191,7 @@ private final class StreamTextV2SSEEncoder {
             ]
             if let metadata = value.providerMetadata { payload["providerMetadata"] = metadata }
             if let executed = value.providerExecuted { payload["providerExecuted"] = executed }
+            if let prelim = value.preliminary { payload["preliminary"] = prelim }
             return [encode(event: payload)]
         case .dynamic(let value):
             var payload: [String: Any] = [

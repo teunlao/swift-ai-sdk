@@ -1,10 +1,11 @@
-import Foundation
-import Testing
-@testable import SwiftAISDK
 import AISDKProvider
 import AISDKProviderUtils
+import Foundation
+import Testing
 
-@Suite("StreamTextV2 – logging")
+@testable import SwiftAISDK
+
+@Suite("StreamTextV2 – logging", .serialized)
 struct StreamTextV2LoggingTests {
     private func sampleStream() -> AsyncThrowingStream<TextStreamPart, Error> {
         let usage = LanguageModelV3Usage(inputTokens: 1, outputTokens: 3, totalTokens: 4)
@@ -13,7 +14,7 @@ struct StreamTextV2LoggingTests {
             .startStep(request: LanguageModelRequestMetadata(body: nil), warnings: []),
             .textDelta(id: "a", text: "Hi", providerMetadata: nil),
             .textEnd(id: "a", providerMetadata: nil),
-            .finish(finishReason: .stop, totalUsage: usage)
+            .finish(finishReason: .stop, totalUsage: usage),
         ]
         return AsyncThrowingStream { continuation in
             for part in parts { continuation.yield(part) }
@@ -34,7 +35,8 @@ struct StreamTextV2LoggingTests {
     func logFunctionForwardsLines() async throws {
         let stream = sampleStream()
         let (lineStream, continuation) = AsyncStream.makeStream(of: String.self)
-        let options = StreamTextV2LogOptions(includeTimestamps: true, clock: { Date(timeIntervalSince1970: 0) })
+        let options = StreamTextV2LogOptions(
+            includeTimestamps: true, clock: { Date(timeIntervalSince1970: 0) })
         try await logStreamTextV2Events(from: stream, options: options) { line in
             continuation.yield(line)
         }
@@ -51,7 +53,52 @@ struct StreamTextV2LoggingTests {
     func logStreamPreservesPrefix() async throws {
         let stream = sampleStream()
         let options = StreamTextV2LogOptions(prefix: "[test]")
-        let logs = try await convertReadableStreamToArray(makeStreamTextV2LogStream(from: stream, options: options))
+        let logs = try await convertReadableStreamToArray(
+            makeStreamTextV2LogStream(from: stream, options: options))
         #expect(logs.allSatisfy { $0.hasPrefix("[test]") })
     }
+
+    // @Test("log stream includes tool events (V2)")
+    // func logStreamIncludesToolEvents() async throws {
+    //     // Build a synthetic full stream with tool events
+    //     let call = TypedToolCall.dynamic(
+    //         DynamicToolCall(
+    //             toolCallId: "c1",
+    //             toolName: "search",
+    //             input: .object(["q": .string("hi")]),
+    //             providerExecuted: false,
+    //             providerMetadata: nil,
+    //             invalid: nil,
+    //             error: nil
+    //         ))
+    //     let toolErr = TypedToolError.dynamic(
+    //         DynamicToolError(
+    //             toolCallId: "c1",
+    //             toolName: "search",
+    //             input: .null,
+    //             error: NSError(domain: "x", code: 1),
+    //             providerExecuted: false
+    //         ))
+    //     let approval = ToolApprovalRequestOutput(approvalId: "a1", toolCall: call)
+    //     let denied = ToolOutputDenied(toolCallId: "c1", toolName: "search")
+
+    //     let parts: [TextStreamPart] = [
+    //         .start,
+    //         .startStep(request: LanguageModelRequestMetadata(body: nil), warnings: []),
+    //         .toolCall(call),
+    //         .toolError(toolErr),
+    //         .toolApprovalRequest(approval),
+    //         .toolOutputDenied(denied),
+    //         .finish(finishReason: .stop, totalUsage: LanguageModelUsage()),
+    //     ]
+    //     let stream = AsyncThrowingStream<TextStreamPart, Error> { c in
+    //         parts.forEach { c.yield($0) }
+    //         c.finish()
+    //     }
+    //     let logs = try await convertReadableStreamToArray(makeStreamTextV2LogStream(from: stream))
+    //     #expect(logs.contains { $0.contains("tool-call") })
+    //     #expect(logs.contains { $0.contains("tool-error") })
+    //     #expect(logs.contains { $0.contains("tool-approval-request") })
+    //     #expect(logs.contains { $0.contains("tool-output-denied") })
+    // }
 }

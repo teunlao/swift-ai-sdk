@@ -2,6 +2,7 @@ import AISDKProvider
 import AISDKProviderUtils
 import Foundation
 
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 actor StreamTextV2Actor {
     private let source: AsyncThrowingStream<LanguageModelV3StreamPart, Error>
     private let model: any LanguageModelV3
@@ -41,6 +42,20 @@ actor StreamTextV2Actor {
     private var activeToolInputs: [String: JSONValue] = [:] // toolCallId -> parsed input
     private var activeToolNames: [String: String] = [:]     // toolCallId -> tool name
 
+    private let approvalResolver: (@Sendable (ToolApprovalRequestOutput) async -> ApprovalActionV2)?
+    private let approvalContext: JSONValue?
+
+    private struct PendingApproval: Sendable {
+        let toolCallId: String
+        let toolName: String
+        let input: JSONValue
+        let typedCall: TypedToolCall
+        let tool: Tool
+        let providerMetadata: ProviderMetadata?
+    }
+
+    private var pendingApprovals: [PendingApproval] = []
+
     private let totalUsagePromise: DelayedPromise<LanguageModelUsage>
     private let finishReasonPromise: DelayedPromise<FinishReason>
     private let stepsPromise: DelayedPromise<[StepResult]>
@@ -52,6 +67,8 @@ actor StreamTextV2Actor {
         system: String?,
         stopConditions: [StopCondition],
         tools: ToolSet?,
+        approvalResolver: (@Sendable (ToolApprovalRequestOutput) async -> ApprovalActionV2)?,
+        experimentalApprovalContext: JSONValue?,
         totalUsagePromise: DelayedPromise<LanguageModelUsage>,
         finishReasonPromise: DelayedPromise<FinishReason>,
         stepsPromise: DelayedPromise<[StepResult]>
@@ -62,6 +79,8 @@ actor StreamTextV2Actor {
         self.initialSystem = system
         self.stopConditions = stopConditions
         self.tools = tools
+        self.approvalResolver = approvalResolver
+        self.approvalContext = experimentalApprovalContext
         self.totalUsagePromise = totalUsagePromise
         self.finishReasonPromise = finishReasonPromise
         self.stepsPromise = stepsPromise
@@ -136,6 +155,259 @@ actor StreamTextV2Actor {
         let responseMessages = recordedResponseMessages
         let converted = convertResponseMessagesToModelMessagesV2(responseMessages)
         return initialMessages + converted
+    }
+
+    private func currentMessagesForApproval() -> [ModelMessage] {
+        if recordedResponseMessages.isEmpty {
+            return initialMessages
+        }
+        let responseMessages = recordedResponseMessages
+        let converted = convertResponseMessagesToModelMessagesV2(responseMessages)
+        return initialMessages + converted
+    }
+
+    private func requiresApproval(for tool: Tool, callId: String, input: JSONValue) async -> Bool {
+        guard let needsApproval = tool.needsApproval else { return false }
+        switch needsApproval {
+        case .always:
+            return true
+        case .never:
+            return false
+        case .conditional(let predicate):
+            do {
+                return try await predicate(
+                    input,
+                    ToolCallApprovalOptions(
+                        toolCallId: callId,
+                        messages: currentMessagesForApproval(),
+                        experimentalContext: approvalContext
+                    )
+                )
+            } catch {
+                return true
+            }
+        }
+    }
+
+    private func removePendingApproval(toolCallId: String) {
+        pendingApprovals.removeAll { $0.toolCallId == toolCallId }
+    }
+
+    private func makeTypedToolResult(
+        tool: Tool,
+        callId: String,
+        toolName: String,
+        input: JSONValue,
+        output: JSONValue,
+        preliminary: Bool,
+        providerMetadata: ProviderMetadata?
+    ) -> TypedToolResult {
+        if tool.type == nil || tool.type == .function {
+            return .static(
+                StaticToolResult(
+                    toolCallId: callId,
+                    toolName: toolName,
+                    input: input,
+                    output: output,
+                    providerExecuted: false,
+                    preliminary: preliminary,
+                    providerMetadata: providerMetadata
+                )
+            )
+        } else {
+            return .dynamic(
+                DynamicToolResult(
+                    toolCallId: callId,
+                    toolName: toolName,
+                    input: input,
+                    output: output,
+                    providerExecuted: false,
+                    preliminary: preliminary,
+                    providerMetadata: providerMetadata
+                )
+            )
+        }
+    }
+
+    private func makeTypedToolError(
+        tool: Tool,
+        callId: String,
+        toolName: String,
+        input: JSONValue,
+        error: Error
+    ) -> TypedToolError {
+        if tool.type == nil || tool.type == .function {
+            return .static(
+                StaticToolError(
+                    toolCallId: callId,
+                    toolName: toolName,
+                    input: input,
+                    error: error,
+                    providerExecuted: false
+                )
+            )
+        } else {
+            return .dynamic(
+                DynamicToolError(
+                    toolCallId: callId,
+                    toolName: toolName,
+                    input: input,
+                    error: error,
+                    providerExecuted: false
+                )
+            )
+        }
+    }
+
+    private func emitToolResult(_ result: TypedToolResult, preliminary: Bool) async {
+        await fullBroadcaster.send(.toolResult(result))
+        if !preliminary {
+            recordedContent.append(.toolResult(result, providerMetadata: nil))
+            currentToolOutputs.append(.result(result))
+            activeToolInputs.removeValue(forKey: result.toolCallId)
+            activeToolNames.removeValue(forKey: result.toolCallId)
+            removePendingApproval(toolCallId: result.toolCallId)
+        }
+    }
+
+    private func emitToolError(_ error: TypedToolError) async {
+        await fullBroadcaster.send(.toolError(error))
+        recordedContent.append(.toolError(error, providerMetadata: nil))
+        currentToolOutputs.append(.error(error))
+        activeToolInputs.removeValue(forKey: error.toolCallId)
+        activeToolNames.removeValue(forKey: error.toolCallId)
+        removePendingApproval(toolCallId: error.toolCallId)
+    }
+
+    private func emitToolOutputDenied(callId: String, toolName: String) async {
+        await fullBroadcaster.send(.toolOutputDenied(ToolOutputDenied(toolCallId: callId, toolName: toolName)))
+        activeToolInputs.removeValue(forKey: callId)
+        activeToolNames.removeValue(forKey: callId)
+        removePendingApproval(toolCallId: callId)
+    }
+
+    private func handleExecutionResult(_ execution: ToolExecutionResult<JSONValue>, pending: PendingApproval) async {
+        switch execution {
+        case .value(let value):
+            let typed = makeTypedToolResult(
+                tool: pending.tool,
+                callId: pending.toolCallId,
+                toolName: pending.toolName,
+                input: pending.input,
+                output: value,
+                preliminary: false,
+                providerMetadata: pending.providerMetadata
+            )
+            await emitToolResult(typed, preliminary: false)
+        case .future(let future):
+            do {
+                let value = try await future()
+                let typed = makeTypedToolResult(
+                    tool: pending.tool,
+                    callId: pending.toolCallId,
+                    toolName: pending.toolName,
+                    input: pending.input,
+                    output: value,
+                    preliminary: false,
+                    providerMetadata: pending.providerMetadata
+                )
+                await emitToolResult(typed, preliminary: false)
+            } catch {
+                let typedError = makeTypedToolError(
+                    tool: pending.tool,
+                    callId: pending.toolCallId,
+                    toolName: pending.toolName,
+                    input: pending.input,
+                    error: error
+                )
+                await emitToolError(typedError)
+            }
+        case .stream(let stream):
+            var last: JSONValue = .null
+            do {
+                for try await chunk in stream {
+                    if Task.isCancelled { return }
+                    last = chunk
+                    let prelim = makeTypedToolResult(
+                        tool: pending.tool,
+                        callId: pending.toolCallId,
+                        toolName: pending.toolName,
+                        input: pending.input,
+                        output: chunk,
+                        preliminary: true,
+                        providerMetadata: pending.providerMetadata
+                    )
+                    await emitToolResult(prelim, preliminary: true)
+                }
+            } catch {
+                let typedError = makeTypedToolError(
+                    tool: pending.tool,
+                    callId: pending.toolCallId,
+                    toolName: pending.toolName,
+                    input: pending.input,
+                    error: error
+                )
+                await emitToolError(typedError)
+                return
+            }
+            let finalResult = makeTypedToolResult(
+                tool: pending.tool,
+                callId: pending.toolCallId,
+                toolName: pending.toolName,
+                input: pending.input,
+                output: last,
+                preliminary: false,
+                providerMetadata: pending.providerMetadata
+            )
+            await emitToolResult(finalResult, preliminary: false)
+        }
+    }
+
+    private func resolvePendingApprovals() async {
+        if pendingApprovals.isEmpty { return }
+        let approvals = pendingApprovals
+        pendingApprovals.removeAll()
+        for pending in approvals {
+            if Task.isCancelled { break }
+            let approval = ToolApprovalRequestOutput(approvalId: pending.toolCallId, toolCall: pending.typedCall)
+            if let resolver = approvalResolver {
+                let decision = await resolver(approval)
+                if Task.isCancelled { break }
+                switch decision {
+                case .approve:
+                    guard let execute = pending.tool.execute else {
+                        await emitToolOutputDenied(callId: pending.toolCallId, toolName: pending.toolName)
+                        continue
+                    }
+                    let options = ToolCallOptions(
+                        toolCallId: pending.toolCallId,
+                        messages: currentMessagesForApproval(),
+                        abortSignal: nil,
+                        experimentalContext: approvalContext
+                    )
+                    do {
+                        let result = try await execute(pending.input, options)
+                        await handleExecutionResult(result, pending: pending)
+                    } catch {
+                        let typedError = makeTypedToolError(
+                            tool: pending.tool,
+                            callId: pending.toolCallId,
+                            toolName: pending.toolName,
+                            input: pending.input,
+                            error: error
+                        )
+                        await emitToolError(typedError)
+                    }
+                case .deny:
+                    await emitToolOutputDenied(callId: pending.toolCallId, toolName: pending.toolName)
+                }
+            } else {
+                await fullBroadcaster.send(.toolApprovalRequest(approval))
+                recordedContent.append(.toolApprovalRequest(approval))
+                activeToolInputs.removeValue(forKey: pending.toolCallId)
+                activeToolNames.removeValue(forKey: pending.toolCallId)
+            }
+        }
     }
 
     // MARK: - Prompt Construction (Upstream parity)
@@ -500,8 +772,9 @@ actor StreamTextV2Actor {
                 }
                 activeToolInputs[call.toolCallId] = inputValue
                 activeToolNames[call.toolCallId] = call.toolName
+                let tool = tools?[call.toolName]
                 let typed: TypedToolCall
-                if parseError == nil, tools?[call.toolName] != nil {
+                if parseError == nil, tool != nil {
                     let staticCall = StaticToolCall(
                         toolCallId: call.toolCallId,
                         toolName: call.toolName,
@@ -525,6 +798,19 @@ actor StreamTextV2Actor {
                 recordedContent.append(.toolCall(typed, providerMetadata: call.providerMetadata))
                 currentToolCalls.append(typed)
                 await fullBroadcaster.send(.toolCall(typed))
+
+                if let tool, call.providerExecuted != true {
+                    if await requiresApproval(for: tool, callId: call.toolCallId, input: inputValue) {
+                        pendingApprovals.append(PendingApproval(
+                            toolCallId: call.toolCallId,
+                            toolName: call.toolName,
+                            input: inputValue,
+                            typedCall: typed,
+                            tool: tool,
+                            providerMetadata: call.providerMetadata
+                        ))
+                    }
+                }
             case .toolResult(let result):
                 let input = activeToolInputs[result.toolCallId] ?? .null
                 let typed: TypedToolResult
@@ -558,6 +844,7 @@ actor StreamTextV2Actor {
                     currentToolOutputs.append(.result(typed))
                     activeToolInputs.removeValue(forKey: result.toolCallId)
                     activeToolNames.removeValue(forKey: result.toolCallId)
+                    removePendingApproval(toolCallId: result.toolCallId)
                 }
             case let .finish(finishReason, usage, providerMetadata):
                 for id in openTextIds {
@@ -584,6 +871,7 @@ actor StreamTextV2Actor {
                 }
                 openReasoningIds.removeAll()
                 finalizePendingContent()
+                await resolvePendingApprovals()
                 let response = LanguageModelResponseMetadata(
                     id: capturedResponseId ?? "unknown",
                     timestamp: capturedTimestamp ?? Date(timeIntervalSince1970: 0),
@@ -666,6 +954,7 @@ actor StreamTextV2Actor {
         // If the provider supplied a tail step via `response/usage/finishReason`,
         // record it before resolving the promises or emitting the terminal `.finish`.
         finalizePendingContent()
+        await resolvePendingApprovals()
         if let usage, let finishReason, let resp = response {
             let contentSnapshot = recordedContent
             let modelMessages = toResponseMessages(content: contentSnapshot, tools: tools)
