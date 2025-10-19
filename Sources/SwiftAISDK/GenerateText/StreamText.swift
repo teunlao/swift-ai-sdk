@@ -5,20 +5,20 @@ import Foundation
 // MARK: - Public API (Milestone 1)
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-public typealias StreamTextOnChunk = @Sendable (TextStreamPart) -> Void
+public typealias StreamTextOnChunk = @Sendable (TextStreamPart) async -> Void
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-public typealias StreamTextOnError = @Sendable (Error) -> Void
+public typealias StreamTextOnError = @Sendable (Error) async -> Void
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-public typealias StreamTextOnStepFinish = @Sendable (StepResult) -> Void
+public typealias StreamTextOnStepFinish = @Sendable (StepResult) async -> Void
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 public typealias StreamTextOnFinish = @Sendable (
     _ finalStep: StepResult,
     _ steps: [StepResult],
     _ totalUsage: LanguageModelUsage,
     _ finishReason: FinishReason
-) -> Void
+) async -> Void
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-public typealias StreamTextOnAbort = @Sendable (_ steps: [StepResult]) -> Void
+public typealias StreamTextOnAbort = @Sendable (_ steps: [StepResult]) async -> Void
 
 public struct StreamTextInternalOptions: Sendable {
     public var now: @Sendable () -> Double
@@ -359,7 +359,7 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
                             switch part {
                             case .textDelta, .reasoningDelta, .source, .toolCall,
                                  .toolInputStart, .toolInputDelta, .toolResult, .raw:
-                                onChunk(part)
+                                await onChunk(part)
                             default:
                                 break
                             }
@@ -369,16 +369,24 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
                             // Deliver onStepFinish at-most-once per recorded step
                             if steps.count == deliveredFinishSteps + 1, let last = steps.last {
                                 deliveredFinishSteps = steps.count
-                                onStepFinish(last)
+                                await onStepFinish(last)
                             }
                         }
                         if let onAbort, case .abort = part {
-                            onAbort(await actor.getRecordedSteps())
+                            let steps = await actor.getRecordedSteps()
+                            await onAbort(steps)
+                        }
+                        if let onError, case .error(let errorPart) = part {
+                            let normalized = (wrapGatewayError(errorPart) as? Error) ?? errorPart
+                            await onError(normalized)
                         }
                         // onFinish is delivered by dedicated onFinishTask after promises resolve
                     }
                 } catch {
-                    if let onError { onError(error) }
+                    if let onError {
+                        let normalized = (wrapGatewayError(error) as? Error) ?? error
+                        await onError(normalized)
+                    }
                 }
             }
         }
@@ -391,7 +399,7 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
                     async let stepList = stepsPromise.task.value
                     let (r, u, s) = try await (reason, usage, stepList)
                     guard !s.isEmpty, let final = s.last else { return }
-                    onFinish(final, s, u, r)
+                    await onFinish(final, s, u, r)
                 } catch { }
             }
         }
@@ -997,6 +1005,10 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
         of: LanguageModelV3StreamPart.self
     )
 
+    let errorHandler: StreamTextOnError = onError ?? { error in
+        fputs("streamText error: \\(error)\n", stderr)
+    }
+
     let result = DefaultStreamTextResult<OutputValue, PartialOutputValue>(
         baseModel: modelArg,
         model: defaultResolvedModel,
@@ -1014,7 +1026,7 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
         onStepFinish: onStepFinish,
         onFinish: onFinish,
         onAbort: onAbort,
-        onError: onError
+        onError: errorHandler
     )
 
     let providerTask = Task {

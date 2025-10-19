@@ -111,6 +111,10 @@ actor StreamTextActor {
         }
     }
 
+    private func emitStreamError(_ message: String) async {
+        await fullBroadcaster.send(.error(StreamTextInvariantError(message: message)))
+    }
+
     private func ensureStarted() async {
         guard !started else { return }
         started = true
@@ -548,38 +552,21 @@ actor StreamTextActor {
                         )
                     }
                 }
+                guard openTextIds.contains(id), let stored = activeTextContent[id] else {
+                    await emitStreamError("text part \(id) not found")
+                    continue
+                }
                 await textBroadcaster.send(delta)
-                if !openTextIds.contains(id) {
-                    openTextIds.insert(id)
-                    let index = recordedContent.count
-                    recordedContent.append(.text(text: "", providerMetadata: providerMetadata))
-                    activeTextContent[id] = ActiveTextContent(
-                        index: index,
-                        text: "",
-                        providerMetadata: providerMetadata
-                    )
-                    await fullBroadcaster.send(
-                        .textStart(id: id, providerMetadata: providerMetadata))
+                var active = stored
+                active.text += delta
+                if let providerMetadata {
+                    active.providerMetadata = providerMetadata
                 }
-                if var active = activeTextContent[id] {
-                    active.text += delta
-                    if let providerMetadata {
-                        active.providerMetadata = providerMetadata
-                    }
-                    activeTextContent[id] = active
-                    recordedContent[active.index] = .text(
-                        text: active.text,
-                        providerMetadata: active.providerMetadata
-                    )
-                } else {
-                    let index = recordedContent.count
-                    recordedContent.append(.text(text: delta, providerMetadata: providerMetadata))
-                    activeTextContent[id] = ActiveTextContent(
-                        index: index,
-                        text: delta,
-                        providerMetadata: providerMetadata
-                    )
-                }
+                activeTextContent[id] = active
+                recordedContent[active.index] = .text(
+                    text: active.text,
+                    providerMetadata: active.providerMetadata
+                )
                 await fullBroadcaster.send(
                     .textDelta(id: id, text: delta, providerMetadata: providerMetadata))
             case let .textEnd(id, providerMetadata):
@@ -598,17 +585,20 @@ actor StreamTextActor {
                         )
                     }
                 }
-                openTextIds.remove(id)
-                if var active = activeTextContent[id] {
-                    if let providerMetadata {
-                        active.providerMetadata = providerMetadata
-                    }
-                    activeTextContent.removeValue(forKey: id)
-                    recordedContent[active.index] = .text(
-                        text: active.text,
-                        providerMetadata: active.providerMetadata
-                    )
+                guard openTextIds.contains(id), let stored = activeTextContent[id] else {
+                    await emitStreamError("text part \(id) not found")
+                    continue
                 }
+                openTextIds.remove(id)
+                var active = stored
+                if let providerMetadata {
+                    active.providerMetadata = providerMetadata
+                }
+                activeTextContent.removeValue(forKey: id)
+                recordedContent[active.index] = .text(
+                    text: active.text,
+                    providerMetadata: active.providerMetadata
+                )
                 await fullBroadcaster.send(.textEnd(id: id, providerMetadata: providerMetadata))
             case let .reasoningStart(id, providerMetadata):
                 if !didEmitStartStep {
@@ -654,44 +644,25 @@ actor StreamTextActor {
                         )
                     }
                 }
-                if !openReasoningIds.contains(id) {
-                    openReasoningIds.insert(id)
-                    let index = recordedContent.count
-                    let reasoning = ReasoningOutput(text: "", providerMetadata: providerMetadata)
-                    recordedContent.append(.reasoning(reasoning))
-                    activeReasoningContent[id] = ActiveReasoningContent(
-                        index: index,
-                        text: "",
-                        providerMetadata: providerMetadata
-                    )
-                    await fullBroadcaster.send(
-                        .reasoningStart(id: id, providerMetadata: providerMetadata)
-                    )
+                guard openReasoningIds.contains(id), let stored = activeReasoningContent[id] else {
+                    await emitStreamError("reasoning part \(id) not found")
+                    continue
                 }
-                if var active = activeReasoningContent[id] {
-                    active.text += delta
-                    if let providerMetadata {
-                        active.providerMetadata = providerMetadata
-                    }
-                    activeReasoningContent[id] = active
-                    let reasoning = ReasoningOutput(
-                        text: active.text,
-                        providerMetadata: active.providerMetadata
-                    )
-                    recordedContent[active.index] = .reasoning(reasoning)
-                } else {
-                    let reasoning = ReasoningOutput(text: delta, providerMetadata: providerMetadata)
-                    let index = recordedContent.count
-                    recordedContent.append(.reasoning(reasoning))
-                    activeReasoningContent[id] = ActiveReasoningContent(
-                        index: index,
-                        text: delta,
-                        providerMetadata: providerMetadata
-                    )
+                var active = stored
+                active.text += delta
+                if let providerMetadata {
+                    active.providerMetadata = providerMetadata
                 }
+                activeReasoningContent[id] = active
+                let reasoning = ReasoningOutput(
+                    text: active.text,
+                    providerMetadata: active.providerMetadata
+                )
+                recordedContent[active.index] = .reasoning(reasoning)
                 await fullBroadcaster.send(
                     .reasoningDelta(id: id, text: delta, providerMetadata: providerMetadata)
                 )
+
             case let .reasoningEnd(id, providerMetadata):
                 if !didEmitStartStep {
                     if !framingEmitted {
@@ -708,22 +679,26 @@ actor StreamTextActor {
                         )
                     }
                 }
-                openReasoningIds.remove(id)
-                if var active = activeReasoningContent[id] {
-                    if let providerMetadata {
-                        active.providerMetadata = providerMetadata
-                    }
-                    activeReasoningContent.removeValue(forKey: id)
-                    let reasoning = ReasoningOutput(
-                        text: active.text,
-                        providerMetadata: active.providerMetadata
-                    )
-                    recordedContent[active.index] = .reasoning(reasoning)
+                guard openReasoningIds.contains(id), let stored = activeReasoningContent[id] else {
+                    await emitStreamError("reasoning part \(id) not found")
+                    continue
                 }
+                openReasoningIds.remove(id)
+                var active = stored
+                if let providerMetadata {
+                    active.providerMetadata = providerMetadata
+                }
+                activeReasoningContent.removeValue(forKey: id)
+                let reasoning = ReasoningOutput(
+                    text: active.text,
+                    providerMetadata: active.providerMetadata
+                )
+                recordedContent[active.index] = .reasoning(reasoning)
                 await fullBroadcaster.send(
                     .reasoningEnd(id: id, providerMetadata: providerMetadata)
                 )
-            case let .toolInputStart(id, toolName, providerMetadata, providerExecuted):
+
+case let .toolInputStart(id, toolName, providerMetadata, providerExecuted):
                 if !didEmitStartStep {
                     if !framingEmitted {
                         framingEmitted = true
@@ -1190,6 +1165,13 @@ private struct ActiveReasoningContent: Sendable {
     var index: Int
     var text: String
     var providerMetadata: ProviderMetadata?
+}
+
+private struct StreamTextInvariantError: LocalizedError, CustomStringConvertible, Sendable {
+    let message: String
+
+    var errorDescription: String? { message }
+    var description: String { message }
 }
 
 enum StreamTextError: Error { case providerError(JSONValue) }
