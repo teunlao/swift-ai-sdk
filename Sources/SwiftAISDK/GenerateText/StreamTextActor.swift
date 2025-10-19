@@ -552,10 +552,20 @@ actor StreamTextActor {
                         )
                     }
                 }
-                guard openTextIds.contains(id), let stored = activeTextContent[id] else {
-                    await emitStreamError("text part \(id) not found")
-                    continue
+                // Upstream tolerance: if a textDelta appears before textStart for an id,
+                // implicitly open the text span and emit a matching .textStart.
+                if !openTextIds.contains(id) || activeTextContent[id] == nil {
+                    openTextIds.insert(id)
+                    let index = recordedContent.count
+                    recordedContent.append(.text(text: "", providerMetadata: providerMetadata))
+                    activeTextContent[id] = ActiveTextContent(
+                        index: index,
+                        text: "",
+                        providerMetadata: providerMetadata
+                    )
+                    await fullBroadcaster.send(.textStart(id: id, providerMetadata: providerMetadata))
                 }
+                guard let stored = activeTextContent[id] else { break }
                 await textBroadcaster.send(delta)
                 var active = stored
                 active.text += delta
@@ -644,10 +654,22 @@ actor StreamTextActor {
                         )
                     }
                 }
-                guard openReasoningIds.contains(id), let stored = activeReasoningContent[id] else {
-                    await emitStreamError("reasoning part \(id) not found")
-                    continue
+                // Same tolerance for reasoning deltas: auto-open if needed.
+                if !openReasoningIds.contains(id) || activeReasoningContent[id] == nil {
+                    openReasoningIds.insert(id)
+                    let index = recordedContent.count
+                    let reasoning = ReasoningOutput(text: "", providerMetadata: providerMetadata)
+                    recordedContent.append(.reasoning(reasoning))
+                    activeReasoningContent[id] = ActiveReasoningContent(
+                        index: index,
+                        text: "",
+                        providerMetadata: providerMetadata
+                    )
+                    await fullBroadcaster.send(
+                        .reasoningStart(id: id, providerMetadata: providerMetadata)
+                    )
                 }
+                guard let stored = activeReasoningContent[id] else { break }
                 var active = stored
                 active.text += delta
                 if let providerMetadata {
@@ -1031,7 +1053,9 @@ case let .toolInputStart(id, toolName, providerMetadata, providerExecuted):
         finishReasonPromise.resolve(recordedFinishReason ?? .unknown)
 
         if let error {
-            // Error path: finish streams with the error, do not emit terminal `.finish` part.
+            // Error path: emit a .error part for downstream observers,
+            // then finish streams with the error (no terminal `.finish`).
+            await fullBroadcaster.send(.error(error))
             await textBroadcaster.finish(error: error)
             await fullBroadcaster.finish(error: error)
         } else {

@@ -285,8 +285,11 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
     private let totalUsagePromise = DelayedPromise<LanguageModelUsage>()
     private let finishReasonPromise = DelayedPromise<FinishReason>()
     private let stepsPromise = DelayedPromise<[StepResult]>()
-    private var observerTask: Task<Void, Never>? = nil
-    private var onFinishTask: Task<Void, Never>? = nil
+    private let aggregator: StreamTextPipelineAggregator
+    private let fullStreamBroadcaster = AsyncStreamBroadcaster<TextStreamPart>()
+    private let textStreamBroadcaster = AsyncStreamBroadcaster<String>()
+    private var pipelineTask: Task<Void, Never>!
+    private let baseModelId: String
 
     private actor OutputStorage {
         var parsed = false
@@ -330,6 +333,7 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
         onError: StreamTextOnError? = nil
     ) {
         self.stopConditions = stopConditions.isEmpty ? [stepCountIs(1)] : stopConditions
+        self.baseModelId = model.modelId
         self.actor = StreamTextActor(
             source: providerStream,
             model: model,
@@ -347,89 +351,96 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
         self.transforms = transforms
         self.outputSpecification = outputSpecification
         self.tools = tools
-        _ = self.actor  // keep strong reference
 
-        if onChunk != nil || onStepFinish != nil || onAbort != nil || onError != nil || onFinish != nil {
-            self.observerTask = Task { [actor] in
-                var deliveredFinishSteps = 0
-                let stream = await actor.fullStream()
-                do {
-                    for try await part in stream {
-                        if let onChunk {
-                            switch part {
-                            case .textDelta, .reasoningDelta, .source, .toolCall,
-                                 .toolInputStart, .toolInputDelta, .toolResult, .raw:
-                                await onChunk(part)
-                            default:
-                                break
-                            }
+        self.aggregator = StreamTextPipelineAggregator(
+            tools: tools,
+            baseModelId: model.modelId,
+            onChunk: onChunk,
+            onStepFinish: onStepFinish,
+            onFinish: onFinish,
+            onAbort: onAbort,
+            onError: onError,
+            includeRawChunks: configuration.includeRawChunks
+        )
+
+        let actor = self.actor
+        let aggregator = self.aggregator
+        let transforms = self.transforms
+        let tools = self.tools
+
+        self.pipelineTask = Task {
+            let baseStream = AsyncThrowingStream<TextStreamPart, Error> { continuation in
+                let task = Task {
+                    let inner = await actor.fullStream()
+                    do {
+                        for try await value in inner {
+                            continuation.yield(value)
                         }
-                        if let onStepFinish, case .finishStep = part {
-                            let steps = await actor.getRecordedSteps()
-                            // Deliver onStepFinish at-most-once per recorded step
-                            if steps.count == deliveredFinishSteps + 1, let last = steps.last {
-                                deliveredFinishSteps = steps.count
-                                await onStepFinish(last)
-                            }
-                        }
-                        if let onAbort, case .abort = part {
-                            let steps = await actor.getRecordedSteps()
-                            await onAbort(steps)
-                        }
-                        if let onError, case .error(let errorPart) = part {
-                            let normalized = (wrapGatewayError(errorPart) as? Error) ?? errorPart
-                            await onError(normalized)
-                        }
-                        // onFinish is delivered by dedicated onFinishTask after promises resolve
-                    }
-                } catch {
-                    if let onError {
-                        let normalized = (wrapGatewayError(error) as? Error) ?? error
-                        await onError(normalized)
+                        continuation.finish()
+                    } catch {
+                        continuation.finish(throwing: error)
                     }
                 }
+                continuation.onTermination = { _ in task.cancel() }
+            }
+
+            let iterable = createAsyncIterableStream(source: baseStream)
+
+            let transformOptions = StreamTextTransformOptions(
+                tools: tools,
+                stopStream: {
+                    Task { await actor.requestStop() }
+                }
+            )
+
+            let transformedIterable = transforms.reduce(iterable) { current, transform in
+                transform(current, transformOptions)
+            }
+
+            let transformedStream = AsyncThrowingStream<TextStreamPart, Error> { continuation in
+                let task = Task {
+                    var iterator = transformedIterable.makeAsyncIterator()
+                    do {
+                        while let part = try await iterator.next() {
+                            continuation.yield(part)
+                        }
+                        continuation.finish()
+                    } catch {
+                        continuation.finish(throwing: error)
+                    }
+                }
+                continuation.onTermination = { _ in task.cancel() }
+            }
+
+            do {
+                for try await part in transformedStream {
+                    await aggregator.process(part: part)
+                    if case .textDelta(_, let delta, _) = part {
+                        await self.textStreamBroadcaster.send(delta)
+                    }
+                    await self.fullStreamBroadcaster.send(part)
+                }
+                await aggregator.finish(error: nil)
+                await self.textStreamBroadcaster.finish()
+                await self.fullStreamBroadcaster.finish()
+            } catch {
+                await aggregator.finish(error: error)
+                await self.textStreamBroadcaster.finish(error: error)
+                await self.fullStreamBroadcaster.finish(error: error)
             }
         }
-
-        if let onFinish {
-            self.onFinishTask = Task {
-                do {
-                    async let reason = finishReasonPromise.task.value
-                    async let usage = totalUsagePromise.task.value
-                    async let stepList = stepsPromise.task.value
-                    let (r, u, s) = try await (reason, usage, stepList)
-                    guard !s.isEmpty, let final = s.last else { return }
-                    await onFinish(final, s, u, r)
-                } catch { }
-            }
-        }
     }
 
-    // Internal: forward provider request info into actor state
-    func _setRequestInfo(_ info: LanguageModelV3RequestInfo?) async {
-        await actor.setInitialRequest(info)
-    }
-
-    // Internal: install provider cancel callback so actor can cancel upstream if it finishes earlier
-    func _setProviderCancel(_ cancel: @escaping @Sendable () -> Void) async {
-        await actor.setOnTerminate(cancel)
-    }
-
-    func _appendInitialResponseMessages(_ messages: [ResponseMessage]) async {
-        await actor.appendInitialResponseMessages(messages)
-    }
-
-    func _publishPreludeEvents(_ parts: [TextStreamPart]) async {
-        await actor.publishPreludeEvents(parts)
+    deinit {
+        pipelineTask.cancel()
     }
 
     public var textStream: AsyncThrowingStream<String, Error> {
-        // Bridge async actor method into a non-async property via forwarding stream
         AsyncThrowingStream { continuation in
             let task = Task {
-                let inner = await actor.textStream()
+                let stream = await textStreamBroadcaster.register()
                 do {
-                    for try await value in inner {
+                    for try await value in stream {
                         continuation.yield(value)
                     }
                     continuation.finish()
@@ -442,43 +453,20 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
     }
 
     public var fullStream: AsyncThrowingStream<TextStreamPart, Error> {
-        // Build base full stream from actor
-        let baseStream = AsyncThrowingStream<TextStreamPart, Error> { continuation in
+        AsyncThrowingStream { continuation in
             let task = Task {
-                let inner = await actor.fullStream()
+                let stream = await fullStreamBroadcaster.register()
                 do {
-                    for try await value in inner { continuation.yield(value) }
-                    continuation.finish()
-                } catch { continuation.finish(throwing: error) }
-            }
-            continuation.onTermination = { _ in task.cancel() }
-        }
-
-        // Convert to AsyncIterableStream for transforms
-        let iterable = createAsyncIterableStream(source: baseStream)
-
-        // Build transform pipeline. Approval is handled inside the actor, so only caller-supplied transforms run here.
-        let pipeline = transforms
-
-        let options = StreamTextTransformOptions(
-            tools: tools,
-            stopStream: { Task { await self.actor.requestStop() } }
-        )
-        let transformedIterable = pipeline.reduce(iterable) { acc, t in t(acc, options) }
-        let transformedStream = AsyncThrowingStream<TextStreamPart, Error> { continuation in
-            let task = Task {
-                var iterator = transformedIterable.makeAsyncIterator()
-                do {
-                    while let part = try await iterator.next() {
-                        continuation.yield(part)
+                    for try await value in stream {
+                        continuation.yield(value)
                     }
                     continuation.finish()
-                } catch { continuation.finish(throwing: error) }
+                } catch {
+                    continuation.finish(throwing: error)
+                }
             }
             continuation.onTermination = { _ in task.cancel() }
         }
-
-        return transformedStream
     }
 
     public var experimentalPartialOutputStream: AsyncThrowingStream<PartialOutputValue, Error> {
@@ -490,13 +478,13 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
 
         return AsyncThrowingStream { continuation in
             let task = Task {
-                let inner = await actor.fullStream()
+                let stream = await fullStreamBroadcaster.register()
                 var firstTextId: String? = nil
                 var accumulated = ""
                 var lastRepresentation: String? = nil
 
                 func flushCurrent() async throws {
-                    guard firstTextId != nil, !accumulated.isEmpty else { return }
+                    guard let textId = firstTextId, !accumulated.isEmpty else { return }
                     if let partial = try await outputSpecification.parsePartial(text: accumulated) {
                         let representation = partialRepresentation(partial)
                         if representation != lastRepresentation {
@@ -507,14 +495,12 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
                 }
 
                 do {
-                    for try await part in inner {
+                    for try await part in stream {
                         switch part {
                         case .textStart(let id, _):
-                            if firstTextId == nil {
-                                firstTextId = id
-                                accumulated = ""
-                                lastRepresentation = nil
-                            }
+                            firstTextId = id
+                            accumulated = ""
+                            lastRepresentation = nil
                         case .textDelta(let id, let delta, _):
                             if firstTextId == nil {
                                 firstTextId = id
@@ -531,12 +517,7 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
                                 accumulated = ""
                                 lastRepresentation = nil
                             }
-                        case .finishStep:
-                            try await flushCurrent()
-                            firstTextId = nil
-                            accumulated = ""
-                            lastRepresentation = nil
-                        case .finish:
+                        case .finishStep, .finish:
                             try await flushCurrent()
                             firstTextId = nil
                             accumulated = ""
@@ -568,39 +549,30 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
         }
     }
 
-    // MARK: - Convenience collectors (useful for tests and simple consumers)
-
-    /// Collects all text deltas from `textStream` into a single concatenated string.
     public func collectText() async throws -> String {
         var buffer = ""
-        for try await chunk in textStream { buffer.append(chunk) }
+        for try await delta in textStream { buffer.append(delta) }
         return buffer
     }
 
-    /// Waits for stream completion and returns the final tuple (finalStep, steps, totalUsage, finishReason).
-    /// Promises are awaited directly to avoid any ordering races with `.finish` event delivery.
     public func waitForFinish() async throws -> (
         finalStep: StepResult,
         steps: [StepResult],
         totalUsage: LanguageModelUsage,
         finishReason: FinishReason
     ) {
-        async let reason = finishReasonPromise.task.value
-        async let usage = totalUsagePromise.task.value
-        async let stepList = stepsPromise.task.value
-        let (r, u, s) = try await (reason, usage, stepList)
-        guard let last = s.last else { throw NoOutputGeneratedError() }
-        try await parseOutputIfNeeded(finalStep: last, finishReason: r)
-        return (last, s, u, r)
+        try await aggregator.waitForCompletion()
+        let steps = try await aggregator.stepsList()
+        guard let final = steps.last else { throw NoOutputGeneratedError() }
+        let finishReason = try await aggregator.finishReasonValue()
+        let usage = try await aggregator.totalUsageValue()
+        try await parseOutputIfNeeded(finalStep: final, finishReason: finishReason)
+        return (final, steps, usage, finishReason)
     }
-
-    // MARK: - Accessors (Milestone 3)
 
     private var finalStep: StepResult {
         get async throws {
-            let steps = try await stepsPromise.task.value
-            guard let last = steps.last else { throw NoOutputGeneratedError() }
-            return last
+            try await aggregator.finalStepValue()
         }
     }
 
@@ -653,7 +625,7 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
     }
 
     public var finishReason: FinishReason {
-        get async throws { try await finishReasonPromise.task.value }
+        get async throws { try await aggregator.finishReasonValue() }
     }
 
     public var usage: LanguageModelUsage {
@@ -661,7 +633,7 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
     }
 
     public var totalUsage: LanguageModelUsage {
-        get async throws { try await totalUsagePromise.task.value }
+        get async throws { try await aggregator.totalUsageValue() }
     }
 
     public var warnings: [CallWarning]? {
@@ -669,7 +641,7 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
     }
 
     public var steps: [StepResult] {
-        get async throws { try await stepsPromise.task.value }
+        get async throws { try await aggregator.stepsList() }
     }
 
     public var request: LanguageModelRequestMetadata {
@@ -683,8 +655,6 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
     public var providerMetadata: ProviderMetadata? {
         get async throws { try await finalStep.providerMetadata }
     }
-
-// MARK: - Responses (minimal)
 
     public func pipeTextStreamToResponse(
         _ response: any StreamTextResponseWriter,
@@ -713,8 +683,6 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
     public func toSSEStream(includeUsage: Bool) -> AsyncThrowingStream<String, Error> {
         makeStreamTextSSEStream(from: fullStream, includeUsage: includeUsage)
     }
-
-// MARK: - UI Message Stream (minimal)
 
     public func toUIMessageStream<Message: UIMessageConvertible>(
         options: UIMessageStreamOptions<Message>?
@@ -747,7 +715,6 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
             return message
         }
 
-        // Always map from the full stream so tool/sources/reasoning events can be included as needed.
         let base: AsyncThrowingStream<AnyUIMessageChunk, Error> = transformFullToUIMessageStream(
             stream: fullStream,
             options: UIMessageTransformOptions(
@@ -759,7 +726,6 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
             )
         )
 
-        // Handle finish, id injection, and final onFinish
         let handled = handleUIMessageStreamFinish(
             stream: base,
             messageId: responseMessageId,
@@ -797,48 +763,58 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
         await SwiftAISDK.consumeStream(stream: fullStream, onError: options?.onError)
     }
 
-    // MARK: - Control
-
-    /// Requests to stop the underlying stream as soon as possible.
-    /// This mirrors the upstream `stopStream` hook and is useful for
-    /// transforms or consumers that want to abort further steps.
     public func stop() {
-        // Do not cancel observer/onFinish tasks here — they must remain alive
-        // to deliver `.abort` and `.finish` callbacks deterministically.
         Task { await actor.requestStop() }
     }
 
-    // MARK: - Convenience
-
-    /// Returns the full stream as an AsyncIterableStream wrapper, which is sometimes
-    /// more ergonomic for consumers that want a cancellable async sequence abstraction.
     public var fullStreamIterable: AsyncIterableStream<TextStreamPart> {
         createAsyncIterableStream(source: fullStream)
     }
 
-    /// Returns the text delta stream wrapped as `AsyncIterableStream`.
     public var textStreamIterable: AsyncIterableStream<String> {
         createAsyncIterableStream(source: textStream)
     }
 
-    /// Reads the entire `textStream` and returns the concatenated text.
-    /// This is a convenience for simple, non-streaming use-cases.
     public func readAllText() async throws -> String {
         var buffer = ""
-        for try await delta in textStream {
-            buffer += delta
-        }
+        for try await chunk in textStream { buffer.append(chunk) }
         return buffer
     }
 
-    /// Collects the entire `fullStream` into an in-memory array.
-    /// Useful for tests or debugging to assert on precise event ordering.
     public func collectFullStream() async throws -> [TextStreamPart] {
         var parts: [TextStreamPart] = []
         for try await part in fullStream {
             parts.append(part)
         }
         return parts
+    }
+
+
+    func _setRequestInfo(_ info: LanguageModelV3RequestInfo?) async {
+        await actor.setInitialRequest(info)
+    }
+
+    func _setProviderCancel(_ cancel: @escaping @Sendable () -> Void) async {
+        await actor.setOnTerminate(cancel)
+    }
+
+    func _appendInitialResponseMessages(_ messages: [ResponseMessage]) async {
+        await aggregator.appendInitialResponseMessages(messages)
+    }
+
+    func _notifyThrownError(_ error: Error) async {
+        await aggregator.notifyThrownError(error)
+    }
+
+    func _publishPreludeEvents(_ parts: [TextStreamPart]) async {
+        guard !parts.isEmpty else { return }
+        for part in parts {
+            await aggregator.deliverChunkEvent(part)
+            if case .textDelta(_, let delta, _) = part {
+                await textStreamBroadcaster.send(delta)
+            }
+            await fullStreamBroadcaster.send(part)
+        }
     }
 
     private func parseOutputIfNeeded(finalStep: StepResult, finishReason: FinishReason) async throws {
@@ -879,6 +855,416 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
             return convertible.description
         }
         return String(describing: value)
+    }
+}
+
+
+
+private struct AggregatedTextContent {
+    var index: Int
+    var text: String
+    var providerMetadata: ProviderMetadata?
+}
+
+private struct AggregatedReasoningContent {
+    var index: Int
+    var text: String
+    var providerMetadata: ProviderMetadata?
+}
+
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+private actor StreamTextPipelineAggregator {
+    private let tools: ToolSet?
+    private let baseModelId: String
+    private let onChunk: StreamTextOnChunk?
+    private let onStepFinish: StreamTextOnStepFinish?
+    private let onFinish: StreamTextOnFinish?
+    private let onAbort: StreamTextOnAbort?
+    private let onError: StreamTextOnError?
+    private let includeRawChunks: Bool
+
+    private var recordedSteps: [DefaultStepResult] = []
+    private var recordedContent: [ContentPart] = []
+    private var recordedResponseMessages: [ResponseMessage] = []
+    private var currentWarnings: [CallWarning] = []
+    private var currentRequest = LanguageModelRequestMetadata()
+    private var currentResponseId: String?
+    private var currentModelId: String?
+    private var currentTimestamp: Date?
+    private var openTextIds = Set<String>()
+    private var activeTextContent: [String: AggregatedTextContent] = [:]
+    private var openReasoningIds = Set<String>()
+    private var activeReasoningContent: [String: AggregatedReasoningContent] = [:]
+    private var activeToolInputs: [String: JSONValue] = [:]
+    private var activeToolNames: [String: String] = [:]
+    private var finishReason: FinishReason? = nil
+    private var totalUsage: LanguageModelUsage? = nil
+    private var finalStep: DefaultStepResult? = nil
+    private var finishError: Error? = nil
+    private var finished = false
+    private var waiters: [CheckedContinuation<Void, Error>] = []
+
+    init(
+        tools: ToolSet?,
+        baseModelId: String,
+        onChunk: StreamTextOnChunk?,
+        onStepFinish: StreamTextOnStepFinish?,
+        onFinish: StreamTextOnFinish?,
+        onAbort: StreamTextOnAbort?,
+        onError: StreamTextOnError?,
+        includeRawChunks: Bool
+    ) {
+        self.tools = tools
+        self.baseModelId = baseModelId
+        self.onChunk = onChunk
+        self.onStepFinish = onStepFinish
+        self.onFinish = onFinish
+        self.onAbort = onAbort
+        self.onError = onError
+        self.includeRawChunks = includeRawChunks
+    }
+
+
+    func deliverChunkEvent(_ part: TextStreamPart) async {
+        await deliverOnChunkIfNeeded(part)
+    }
+    func process(part: TextStreamPart) async {
+        await deliverOnChunkIfNeeded(part)
+
+        switch part {
+        case .start:
+            return
+        case .abort:
+            await handleAbort()
+        case .startStep(let request, let warnings):
+            await startStep(request: request, warnings: warnings)
+        case .textStart(let id, let providerMetadata):
+            await handleTextStart(id: id, providerMetadata: providerMetadata)
+        case .textDelta(let id, let delta, let providerMetadata):
+            await handleTextDelta(id: id, delta: delta, providerMetadata: providerMetadata)
+        case .textEnd(let id, let providerMetadata):
+            await handleTextEnd(id: id, providerMetadata: providerMetadata)
+        case .reasoningStart(let id, let providerMetadata):
+            await handleReasoningStart(id: id, providerMetadata: providerMetadata)
+        case .reasoningDelta(let id, let delta, let providerMetadata):
+            await handleReasoningDelta(id: id, delta: delta, providerMetadata: providerMetadata)
+        case .reasoningEnd(let id, let providerMetadata):
+            await handleReasoningEnd(id: id, providerMetadata: providerMetadata)
+        case .toolInputStart(let id, let toolName, _, _, _):
+            activeToolNames[id] = toolName
+        case .toolInputDelta(let id, _, _):
+            if activeToolNames[id] != nil { /* callbacks handled in actor */ }
+        case .toolInputEnd(let id, _):
+            activeToolNames.removeValue(forKey: id)
+        case .toolCall(let call):
+            await handleToolCall(call)
+        case .toolResult(let result):
+            await handleToolResult(result)
+        case .toolError(let error):
+            recordedContent.append(.toolError(error, providerMetadata: nil))
+        case .toolApprovalRequest(let approval):
+            recordedContent.append(.toolApprovalRequest(approval))
+        case .toolOutputDenied:
+            return
+        case .source(let source):
+            recordedContent.append(.source(type: "source", source: source))
+        case .file(let file):
+            recordedContent.append(.file(file: file, providerMetadata: nil))
+        case .raw:
+            return
+        case .finishStep(let response, let usage, let finishReason, let providerMetadata):
+            await finalizeStep(
+                response: response,
+                usage: usage,
+                finishReason: finishReason,
+                providerMetadata: providerMetadata
+            )
+        case .finish(let finishReason, let usage):
+            await handleFinish(finishReason: finishReason, usage: usage)
+        case .error(let errorValue):
+            let normalized = (wrapGatewayError(errorValue) as? Error) ?? errorValue
+            await deliverError(normalized)
+        }
+    }
+
+    func finish(error: Error?) async {
+        guard !finished else { return }
+        finished = true
+        if let _ = error {
+            // На ошибке провайдера для ожидателей финала возвращаем
+            // NoOutputGeneratedError (стрим уже завершён с ошибкой отдельно).
+            finishError = NoOutputGeneratedError()
+        } else if finishReason == nil || totalUsage == nil || recordedSteps.isEmpty {
+            finishError = NoOutputGeneratedError()
+        }
+        resumeWaiters()
+    }
+
+    func waitForCompletion() async throws {
+        if finished {
+            if let error = finishError { throw error }
+            return
+        }
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            waiters.append(continuation)
+        }
+    }
+
+    func stepsList() async throws -> [StepResult] {
+        try await waitForCompletion()
+        return recordedSteps
+    }
+
+    func finalStepValue() async throws -> StepResult {
+        try await waitForCompletion()
+        guard let finalStep else { throw NoOutputGeneratedError() }
+        return finalStep
+    }
+
+    func totalUsageValue() async throws -> LanguageModelUsage {
+        try await waitForCompletion()
+        guard let usage = totalUsage else { throw NoOutputGeneratedError() }
+        return usage
+    }
+
+    func finishReasonValue() async throws -> FinishReason {
+        try await waitForCompletion()
+        guard let reason = finishReason else { throw NoOutputGeneratedError() }
+        return reason
+    }
+
+    func appendInitialResponseMessages(_ messages: [ResponseMessage]) {
+        guard !messages.isEmpty else { return }
+        recordedResponseMessages.append(contentsOf: messages)
+    }
+
+    private func resumeWaiters() {
+        let continuations = waiters
+        waiters.removeAll()
+        if let error = finishError {
+            for continuation in continuations {
+                continuation.resume(throwing: error)
+            }
+        } else {
+            for continuation in continuations {
+                continuation.resume(returning: ())
+            }
+        }
+    }
+
+    private func deliverOnChunkIfNeeded(_ part: TextStreamPart) async {
+        guard let onChunk else { return }
+        switch part {
+        case .textDelta, .reasoningDelta, .source, .toolCall, .toolInputStart, .toolInputDelta, .toolResult:
+            await onChunk(part)
+        case .raw:
+            if includeRawChunks { await onChunk(part) }
+        default:
+            break
+        }
+    }
+
+    private func deliverError(_ error: Error) async {
+        // Сообщаем об ошибке, но не сохраняем её как финальную:
+        // waitForFinish должен бросать NoOutputGeneratedError.
+        if let onError {
+            await onError(error)
+        }
+    }
+
+    // Ошибка пришла как исключение из стрима (а не .error часть)
+    func notifyThrownError(_ error: Error) async {
+        await deliverError(error)
+    }
+
+    private func handleAbort() async {
+        await onAbort?(recordedSteps)
+        finishError = NoOutputGeneratedError()
+    }
+
+    private func startStep(request: LanguageModelRequestMetadata, warnings: [CallWarning]) async {
+        recordedContent.removeAll()
+        activeTextContent.removeAll()
+        activeReasoningContent.removeAll()
+        activeToolInputs.removeAll()
+        activeToolNames.removeAll()
+        openTextIds.removeAll()
+        openReasoningIds.removeAll()
+        currentWarnings = warnings
+        currentRequest = request
+        currentResponseId = nil
+        currentModelId = nil
+        currentTimestamp = nil
+    }
+
+    private func handleTextStart(id: String, providerMetadata: ProviderMetadata?) async {
+        openTextIds.insert(id)
+        let index = recordedContent.count
+        recordedContent.append(.text(text: "", providerMetadata: providerMetadata))
+        activeTextContent[id] = AggregatedTextContent(index: index, text: "", providerMetadata: providerMetadata)
+    }
+
+    private func handleTextDelta(id: String, delta: String, providerMetadata: ProviderMetadata?) async {
+        if !openTextIds.contains(id) {
+            await handleTextStart(id: id, providerMetadata: providerMetadata)
+        }
+        guard var active = activeTextContent[id] else { return }
+        active.text += delta
+        if let providerMetadata {
+            active.providerMetadata = providerMetadata
+        }
+        activeTextContent[id] = active
+        recordedContent[active.index] = .text(text: active.text, providerMetadata: active.providerMetadata)
+    }
+
+    private func handleTextEnd(id: String, providerMetadata: ProviderMetadata?) async {
+        openTextIds.remove(id)
+        guard var active = activeTextContent[id] else { return }
+        if let providerMetadata {
+            active.providerMetadata = providerMetadata
+        }
+        activeTextContent.removeValue(forKey: id)
+        recordedContent[active.index] = .text(text: active.text, providerMetadata: active.providerMetadata)
+    }
+
+    private func handleReasoningStart(id: String, providerMetadata: ProviderMetadata?) async {
+        openReasoningIds.insert(id)
+        let index = recordedContent.count
+        let reasoning = ReasoningOutput(text: "", providerMetadata: providerMetadata)
+        recordedContent.append(.reasoning(reasoning))
+        activeReasoningContent[id] = AggregatedReasoningContent(index: index, text: "", providerMetadata: providerMetadata)
+    }
+
+    private func handleReasoningDelta(id: String, delta: String, providerMetadata: ProviderMetadata?) async {
+        if !openReasoningIds.contains(id) {
+            await handleReasoningStart(id: id, providerMetadata: providerMetadata)
+        }
+        guard var active = activeReasoningContent[id] else { return }
+        active.text += delta
+        if let providerMetadata {
+            active.providerMetadata = providerMetadata
+        }
+        activeReasoningContent[id] = active
+        let reasoning = ReasoningOutput(text: active.text, providerMetadata: active.providerMetadata)
+        recordedContent[active.index] = .reasoning(reasoning)
+    }
+
+    private func handleReasoningEnd(id: String, providerMetadata: ProviderMetadata?) async {
+        openReasoningIds.remove(id)
+        guard var active = activeReasoningContent[id] else { return }
+        if let providerMetadata {
+            active.providerMetadata = providerMetadata
+        }
+        activeReasoningContent.removeValue(forKey: id)
+        let reasoning = ReasoningOutput(text: active.text, providerMetadata: active.providerMetadata)
+        recordedContent[active.index] = .reasoning(reasoning)
+    }
+
+    private func handleToolCall(_ call: TypedToolCall) async {
+        activeToolInputs[call.toolCallId] = call.input
+        activeToolNames[call.toolCallId] = call.toolName
+        recordedContent.append(.toolCall(call, providerMetadata: call.providerMetadata))
+    }
+
+    private func handleToolResult(_ result: TypedToolResult) async {
+        if result.preliminary == true { return }
+        recordedContent.append(.toolResult(result, providerMetadata: result.providerMetadata))
+        activeToolInputs.removeValue(forKey: result.toolCallId)
+        activeToolNames.removeValue(forKey: result.toolCallId)
+    }
+
+    private func finalizePendingContent() {
+        for (id, active) in activeTextContent {
+            recordedContent[active.index] = .text(text: active.text, providerMetadata: active.providerMetadata)
+            openTextIds.remove(id)
+        }
+        activeTextContent.removeAll()
+        openTextIds.removeAll()
+
+        for (id, active) in activeReasoningContent {
+            let reasoning = ReasoningOutput(text: active.text, providerMetadata: active.providerMetadata)
+            recordedContent[active.index] = .reasoning(reasoning)
+            openReasoningIds.remove(id)
+        }
+        activeReasoningContent.removeAll()
+        openReasoningIds.removeAll()
+    }
+
+    private func finalizeStep(
+        response: LanguageModelResponseMetadata,
+        usage: LanguageModelUsage,
+        finishReason: FinishReason,
+        providerMetadata: ProviderMetadata?
+    ) async {
+        finalizePendingContent()
+
+        let contentSnapshot = recordedContent
+        let modelMessages = toResponseMessages(content: contentSnapshot, tools: tools)
+        let responseMessages = convertModelMessagesToResponseMessages(modelMessages)
+        let mergedMessages = recordedResponseMessages + responseMessages
+
+        let responseMetadata = LanguageModelResponseMetadata(
+            id: response.id,
+            timestamp: response.timestamp,
+            modelId: response.modelId,
+            headers: response.headers
+        )
+
+        let stepResult = DefaultStepResult(
+            content: contentSnapshot,
+            finishReason: finishReason,
+            usage: usage,
+            warnings: currentWarnings,
+            request: currentRequest,
+            response: StepResultResponse(from: responseMetadata, messages: mergedMessages, body: nil),
+            providerMetadata: providerMetadata
+        )
+
+        recordedSteps.append(stepResult)
+        recordedResponseMessages.append(contentsOf: responseMessages)
+
+        if let onStepFinish {
+            await onStepFinish(stepResult)
+        }
+
+        currentWarnings.removeAll()
+        currentRequest = LanguageModelRequestMetadata()
+        currentResponseId = nil
+        currentModelId = nil
+        currentTimestamp = nil
+    }
+
+    private func handleFinish(finishReason: FinishReason, usage: LanguageModelUsage) async {
+        totalUsage = usage
+        self.finishReason = finishReason
+        if let step = recordedSteps.last {
+            finalStep = step
+            if let onFinish {
+                await onFinish(step, recordedSteps, usage, finishReason)
+            }
+        }
+    }
+}
+
+private func toGeneratedFile(_ file: LanguageModelV3File) -> GeneratedFile {
+    switch file.data {
+    case .base64(let base64):
+        return DefaultGeneratedFileWithType(base64: base64, mediaType: file.mediaType)
+    case .binary(let data):
+        return DefaultGeneratedFileWithType(data: data, mediaType: file.mediaType)
+    }
+}
+
+private func convertModelMessagesToResponseMessages(_ messages: [ModelMessage]) -> [ResponseMessage] {
+    messages.compactMap { message in
+        switch message {
+        case .assistant(let value):
+            return .assistant(value)
+        case .tool(let value):
+            return .tool(value)
+        case .system, .user:
+            return nil
+        }
     }
 }
 
