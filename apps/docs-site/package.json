@@ -1,0 +1,21 @@
+{
+  "name": "@swift-ai-sdk/docs-site",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "next dev -p 4321",
+    "build": "next build",
+    "start": "next start -p 4321"
+  },
+  "dependencies": {
+    "next": "^15",
+    "nextra": "^4",
+    "nextra-theme-docs": "^4",
+    "react": "^19",
+    "react-dom": "^19"
+  },
+  "devDependencies": {
+    "@types/react": "^19",
+    "@types/react-dom": "^19"
+  }
+}

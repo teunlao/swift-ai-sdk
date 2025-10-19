@@ -5,7 +5,8 @@
 	"workspaces": [
 		"tools/orchestrator-mcp",
 		"tools/orchestrator-dashboard",
-		"tools/orchestrator-db"
+		"tools/orchestrator-db",
+		"apps/docs-site"
 	],
 	"bin": {
 		"orchestrator-dashboard": "./tools/orchestrator-dashboard/bin/start-dashboard.cjs"
