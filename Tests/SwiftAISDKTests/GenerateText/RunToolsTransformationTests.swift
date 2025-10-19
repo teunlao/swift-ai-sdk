@@ -11,9 +11,8 @@ import Testing
 
 @testable import SwiftAISDK
 
-// DISABLED: Causes hang after RetryWithExponentialBackoff (Task #37)
-// @Suite("RunToolsTransformation Tests")
-struct RunToolsTransformationTests_DISABLED {
+@Suite("RunToolsTransformation Tests", .serialized)
+struct RunToolsTransformationTests {
     private let usage = LanguageModelV3Usage(
         inputTokens: 3,
         outputTokens: 10,

@@ -8,7 +8,7 @@ import AISDKProvider
 
 // MARK: - Zod Core Types
 
-enum ZodFirstPartyTypeKind: String, Sendable {
+public enum ZodFirstPartyTypeKind: String, Sendable {
     case zodString = "ZodString"
     case zodNumber = "ZodNumber"
     case zodObject = "ZodObject"
@@ -57,7 +57,7 @@ class ZodTypeDef: @unchecked Sendable {
     }
 }
 
-final class ZodSchema: @unchecked Sendable {
+public final class ZodSchema: @unchecked Sendable {
     let _def: ZodTypeDef
 
     init(_ def: ZodTypeDef) {

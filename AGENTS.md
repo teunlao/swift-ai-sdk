@@ -417,3 +417,23 @@ Non‑compliance is unacceptable:
 Для запуска MCP к примур taskmaster.get_tasks используем для MCP taskmaster
 
 *Last updated: 2025-10-14*
+## ZERO-TOLERANCE: Commits Require Explicit User Approval
+- No commit may be made without the user's explicit, contemporaneous consent.
+- "Consent" means a clear instruction in the current session to commit.
+- Past permissions do not carry forward; approval must be re-obtained each time.
+- Silent assumptions, inferred intent, or convenience do not qualify as approval.
+- Auto-commits, background commits, or "minor" commits are strictly prohibited.
+- Pushing, amending, rebasing, or rewriting history also require explicit approval.
+- Staging changes ("git add") that will be auto-committed by tooling is prohibited.
+- Creating tags or releases counts as a commit action and is prohibited without approval.
+- If unsure, you must ask; never proceed on guesswork.
+- Emergencies do not suspend this rule; pause and request instruction.
+- Use dry-runs or patches for review instead of committing when approval is absent.
+- Document the exact command you will run before any approved commit.
+- Limit the action to the scope explicitly authorized—no drive‑by changes.
+- After committing, report the commit hash and affected files immediately.
+- Never hide, squash, or alter the audit trail without explicit instruction.
+- Violations are a blocking defect and grounds for task rejection.
+- Validators must fail any work that violates this policy.
+- This section overrides conflicting guidance elsewhere in this repo.
+- Read this before every session; compliance is mandatory.

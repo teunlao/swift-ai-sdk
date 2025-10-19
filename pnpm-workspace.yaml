@@ -2,3 +2,4 @@ packages:
   - tools/orchestrator-mcp
   - tools/orchestrator-db
   - tools/orchestrator-dashboard
+  - apps/docs

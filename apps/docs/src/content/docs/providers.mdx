@@ -1,0 +1,27 @@
+---
+title: Providers & Models
+description: Configure providers and model types compatible with Swift AI SDK.
+---
+
+# Providers & Models
+
+Swift AI SDK supports providers via the Language Model V3 spec.
+
+OpenAI‑compatible provider
+
+```swift
+import AISDKProvider
+
+let model = OpenAICompatible.TextModel(
+  id: "gpt-4o-mini",
+  baseURL: URL(string: "https://api.openai.com/v1")!,
+  apiKey: ProcessInfo.processInfo.environment["OPENAI_API_KEY"] ?? ""
+)
+```
+
+Model types
+- TextModelV3: `generateText`, `streamText`, Tools
+- EmbeddingModel: embeddings
+- ImageModel: image generation
+- SpeechModel/TranscriptionModel: TTS/ASR
+

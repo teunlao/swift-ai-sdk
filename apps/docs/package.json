@@ -1,0 +1,21 @@
+{
+	"name": "@swift-ai-sdk/docs",
+	"private": true,
+	"version": "0.1.0",
+	"type": "module",
+	"scripts": {
+		"dev": "astro dev -p 4321",
+		"build": "astro build",
+		"preview": "astro preview -p 4321",
+		"sync": "astro sync",
+		"check": "astro check"
+	},
+	"dependencies": {
+		"@astrojs/starlight": "^0.36.1",
+		"astro": "^5.14.6"
+	},
+	"devDependencies": {
+		"@astrojs/check": "0.9.4",
+		"typescript": "5.9.3"
+	}
+}

@@ -50,42 +50,42 @@ enum RemoveAdditionalStrategy: Sendable {
     case strict
 }
 
-enum RefStrategy: Sendable {
+public enum RefStrategy: Sendable {
     case root
     case relative
     case none
     case seen
 }
 
-enum EffectStrategy: Sendable {
+public enum EffectStrategy: Sendable {
     case input
     case any
 }
 
-enum PipeStrategy: Sendable {
+public enum PipeStrategy: Sendable {
     case input
     case output
     case all
 }
 
-enum PatternStrategy: Sendable {
+public enum PatternStrategy: Sendable {
     case escape
     case preserve
 }
 
-enum EmailStrategy: Sendable {
+public enum EmailStrategy: Sendable {
     case formatEmail
     case formatIdnEmail
     case patternZod
 }
 
-enum Base64Strategy: Sendable {
+public enum Base64Strategy: Sendable {
     case formatBinary
     case contentEncodingBase64
     case patternZod
 }
 
-enum NameStrategy: Sendable {
+public enum NameStrategy: Sendable {
     case ref
     case title
 }
@@ -257,7 +257,7 @@ func getDefaultOptions(_ options: PartialOptions?) -> Options {
     return resolved
 }
 
-struct PartialOptions: Sendable {
+public struct PartialOptions: Sendable {
     var name: String?
     var refStrategy: RefStrategy?
     var basePath: [String]?
@@ -279,6 +279,59 @@ struct PartialOptions: Sendable {
     var nameStrategy: NameStrategy?
     var override: OverrideCallback?
     var postProcess: PostProcessCallback?
+
+    public init(name: String? = nil, refStrategy: RefStrategy? = nil, nameStrategy: NameStrategy? = nil) {
+        self.name = name
+        self.refStrategy = refStrategy
+        self.basePath = nil
+        self.effectStrategy = nil
+        self.pipeStrategy = nil
+        self.dateStrategy = nil
+        self.mapStrategy = nil
+        self.removeAdditionalStrategy = nil
+        self.allowedAdditionalProperties = nil
+        self.rejectedAdditionalProperties = nil
+        self.strictUnions = nil
+        self.definitionPath = nil
+        self.definitions = nil
+        self.errorMessages = nil
+        self.patternStrategy = nil
+        self.applyRegexFlags = nil
+        self.emailStrategy = nil
+        self.base64Strategy = nil
+        self.nameStrategy = nameStrategy
+        self.override = nil
+        self.postProcess = nil
+    }
+
+    public init(
+        patternStrategy: PatternStrategy? = nil,
+        base64Strategy: Base64Strategy? = nil,
+        emailStrategy: EmailStrategy? = nil,
+        applyRegexFlags: Bool? = nil
+    ) {
+        self.name = nil
+        self.refStrategy = nil
+        self.basePath = nil
+        self.effectStrategy = nil
+        self.pipeStrategy = nil
+        self.dateStrategy = nil
+        self.mapStrategy = nil
+        self.removeAdditionalStrategy = nil
+        self.allowedAdditionalProperties = nil
+        self.rejectedAdditionalProperties = nil
+        self.strictUnions = nil
+        self.definitionPath = nil
+        self.definitions = nil
+        self.errorMessages = nil
+        self.patternStrategy = patternStrategy
+        self.applyRegexFlags = applyRegexFlags
+        self.emailStrategy = emailStrategy
+        self.base64Strategy = base64Strategy
+        self.nameStrategy = nil
+        self.override = nil
+        self.postProcess = nil
+    }
 }
 
 // MARK: - Refs
@@ -389,7 +442,7 @@ func getRefs(_ options: Zod3Options?) -> Refs {
     )
 }
 
-enum Zod3Options: Sendable {
+public enum Zod3Options: Sendable {
     case name(String)
     case partial(PartialOptions)
 }
