@@ -7,34 +7,34 @@ import AISDKProviderUtils
 struct ChatCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "chat",
-        abstract: "Сгенерировать ответ модели текста через Swift AI SDK."
+        abstract: "Generate text model response via Swift AI SDK."
     )
 
     @OptionGroup
     var global: GlobalOptions
 
-    @Option(name: [.customShort("P"), .long], help: "Провайдер (gateway, openai, anthropic ...). По умолчанию берётся из конфигурации.")
+    @Option(name: [.customShort("P"), .long], help: "Provider (gateway, openai, anthropic ...). Defaults to configuration.")
     var provider: String?
 
-    @Option(name: .shortAndLong, help: "Идентификатор модели (обязательный).")
+    @Option(name: .shortAndLong, help: "Model identifier (required).")
     var model: String
 
-    @Option(name: .shortAndLong, help: "Промпт одной строкой. Либо используйте --input-file / stdin.")
+    @Option(name: .shortAndLong, help: "Single-line prompt. Or use --input-file / stdin.")
     var prompt: String?
 
-    @Option(name: .long, help: "Путь к файлу с промптом.")
+    @Option(name: .long, help: "Path to file with prompt.")
     var inputFile: String?
 
-    @Flag(name: .shortAndLong, help: "Включить потоковый вывод.")
+    @Flag(name: .shortAndLong, help: "Enable streaming output.")
     var stream: Bool = false
 
-    @Flag(name: .long, help: "Вывести результат в формате JSON (final result).")
+    @Flag(name: .long, help: "Output result in JSON format (final result).")
     var jsonOutput: Bool = false
 
-    @Flag(name: .long, help: "Читать промпт из стандартного ввода.")
+    @Flag(name: .long, help: "Read prompt from standard input.")
     var stdin: Bool = false
 
-    @Flag(name: .long, help: "Включить демо-инструменты (weather, calculator).")
+    @Flag(name: .long, help: "Enable demo tools (weather, calculator).")
     var withTools: Bool = false
 
     @MainActor
@@ -45,7 +45,7 @@ struct ChatCommand: AsyncParsableCommand {
             throw ContextError.missingRootContext
         }
 
-        await context.logger.verbose("Инициализация команды chat")
+        await context.logger.verbose("Initializing chat command")
 
         let inputText = try await resolvePromptText(logger: context.logger)
         let chosenProvider = provider ?? context.configuration.defaultProvider
@@ -68,7 +68,7 @@ struct ChatCommand: AsyncParsableCommand {
                     logger: context.logger
                 )
             } else if tools != nil {
-                await context.logger.verbose("⚠️ Streaming с tools требует macOS 13.0+")
+                await context.logger.verbose("⚠️ Streaming with tools requires macOS 13.0+")
                 throw ContextError.toolsRequireMacOS13
             } else {
                 // Fallback for old macOS without tools
@@ -108,7 +108,7 @@ struct ChatCommand: AsyncParsableCommand {
         }
 
         if stdin {
-            await logger.verbose("Читаю промпт из stdin...")
+            await logger.verbose("Reading prompt from stdin...")
             var buffer = ""
             while let line = readLine() {
                 buffer.append(line)
@@ -131,7 +131,7 @@ struct ChatCommand: AsyncParsableCommand {
             if #available(macOS 13.0, *) {
                 try await runWithTools(model: model, promptText: promptText, tools: tools, jsonOutput: jsonOutput, logger: logger)
             } else {
-                await logger.verbose("⚠️ Tools требуют macOS 13.0+")
+                await logger.verbose("⚠️ Tools require macOS 13.0+")
                 throw ContextError.toolsRequireMacOS13
             }
             return
@@ -190,7 +190,7 @@ struct ChatCommand: AsyncParsableCommand {
             case .finish(let reason, _, _):
                 finishReason = reason
             default:
-                await logger.verbose("Пропущен потоковый chunk: \(part)")
+                await logger.verbose("Skipped stream chunk: \(part)")
             }
         }
 
@@ -236,7 +236,7 @@ struct ChatCommand: AsyncParsableCommand {
         jsonOutput: Bool,
         logger: PlaygroundLogger
     ) async throws {
-        await logger.verbose("Использую \(tools.count) инструмент(ов)")
+        await logger.verbose("Using \(tools.count) tool(s)")
 
         let result: DefaultGenerateTextResult<JSONValue> = try await generateText(
             model: .v3(model),
@@ -257,8 +257,8 @@ struct ChatCommand: AsyncParsableCommand {
             ))
             print(String(decoding: data, as: UTF8.self))
         } else {
-            // Красивый вывод для консоли
-            print("📊 Результаты:\n")
+            // Pretty console output
+            print("📊 Results:\n")
             print("Steps: \(result.steps.count)")
             print("Finish reason: \(result.finishReason.rawValue)")
             print("Usage: \(result.usage.totalTokens ?? 0) tokens\n")
@@ -310,7 +310,7 @@ struct ChatCommand: AsyncParsableCommand {
         tools: ToolSet,
         logger: PlaygroundLogger
     ) async throws {
-        await logger.verbose("Streaming с \(tools.count) инструмент(ами)")
+        await logger.verbose("Streaming with \(tools.count) tool(s)")
 
         let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
             model: .v3(model),
@@ -351,7 +351,7 @@ struct ChatCommand: AsyncParsableCommand {
                 stepNumber += 1
                 print("\n")
                 print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-                print("📍 Step \(stepNumber) завершён")
+                print("📍 Step \(stepNumber) completed")
                 print("   Reason: \(finishReason.rawValue)")
                 print("   Usage: \(usage.totalTokens ?? 0) tokens")
                 totalUsage = addLanguageModelUsage(totalUsage, usage)
@@ -359,7 +359,7 @@ struct ChatCommand: AsyncParsableCommand {
 
             case .finish(let finishReason, let usage):
                 print("\n")
-                print("🏁 Завершено")
+                print("🏁 Completed")
                 print("   Final reason: \(finishReason.rawValue)")
                 print("   Total usage: \(usage.totalTokens ?? totalUsage.totalTokens ?? 0) tokens")
                 print("   Steps: \(stepNumber)")
@@ -490,15 +490,15 @@ enum ContextError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .missingRootContext:
-            return "Внутренняя ошибка: контекст CLI не инициализирован. Запустите команду через `swift run playground ...`."
+            return "Internal error: CLI context not initialized. Run command via `swift run playground ...`."
         case .unsupportedProvider(let provider):
-            return "Провайдер \(provider) пока не поддерживается."
+            return "Provider \(provider) is not yet supported."
         case .missingPrompt:
-            return "Укажите промпт через --prompt, --input-file или --stdin."
+            return "Specify prompt via --prompt, --input-file or --stdin."
         case .missingAPIKey(let provider):
-            return "Не найден API ключ для провайдера \(provider). Добавьте его в переменные окружения или .env."
+            return "API key for provider \(provider) not found. Add it to environment variables or .env file."
         case .toolsRequireMacOS13:
-            return "Использование tools требует macOS 13.0 или новее."
+            return "Using tools requires macOS 13.0 or newer."
         }
     }
 }

@@ -114,18 +114,21 @@ public func createOpenAIProvider(settings: OpenAIProviderSettings = .init()) -> 
     ) ?? "https://api.openai.com/v1"
 
     let providerName = settings.name ?? "openai"
-    let apiKey: String
-    do {
-        apiKey = try loadAPIKey(
-            apiKey: settings.apiKey,
-            environmentVariableName: "OPENAI_API_KEY",
-            description: "OpenAI"
-        )
-    } catch {
-        fatalError("OpenAI API key is missing: \(error)")
-    }
 
     let headersClosure: @Sendable () -> [String: String?] = {
+        // Lazily load API key on first request to mirror upstream behavior.
+        // If missing, fail with a clear error message.
+        let apiKey: String
+        do {
+            apiKey = try loadAPIKey(
+                apiKey: settings.apiKey,
+                environmentVariableName: "OPENAI_API_KEY",
+                description: "OpenAI"
+            )
+        } catch {
+            fatalError("OpenAI API key is missing: \(error)")
+        }
+
         let baseHeaders: [String: String?] = [
             "Authorization": "Bearer \(apiKey)",
             "OpenAI-Organization": settings.organization,
@@ -215,3 +218,46 @@ public func createOpenAIProvider(settings: OpenAIProviderSettings = .init()) -> 
         tools: openaiTools
     )
 }
+
+// MARK: - Provider call/aliases (parity with TS facade)
+
+public extension OpenAIProvider {
+    /// Allow calling the provider instance like a function: `openai("gpt-5")`.
+    func callAsFunction(_ modelId: String) -> any LanguageModelV3 {
+        languageModel(modelId: modelId)
+    }
+
+    /// Typed alias for embeddings to mirror TS facade naming.
+    func embedding(_ modelId: OpenAIEmbeddingModelId) -> OpenAIEmbeddingModel {
+        embeddingFactory(modelId)
+    }
+
+    /// Typed alias for image models.
+    func image(_ modelId: OpenAIImageModelId) -> OpenAIImageModel {
+        imageFactory(modelId)
+    }
+
+    /// Typed alias for completion models.
+    func completion(_ modelId: OpenAICompletionModelId) -> OpenAICompletionLanguageModel {
+        completionFactory(modelId)
+    }
+
+    /// Alias for `textEmbeddingModel` to match upstream naming.
+    func textEmbedding(_ modelId: OpenAIEmbeddingModelId) -> OpenAIEmbeddingModel {
+        embeddingFactory(modelId)
+    }
+
+    /// Typed alias for transcription models (not just String-based).
+    func transcriptionModel(_ modelId: OpenAITranscriptionModelId) -> OpenAITranscriptionModel {
+        transcriptionFactory(modelId)
+    }
+
+    /// Typed alias for speech models (not just String-based).
+    func speechModel(_ modelId: OpenAISpeechModelId) -> OpenAISpeechModel {
+        speechFactory(modelId)
+    }
+}
+
+// MARK: - Default provider instance (parity with TS `export const openai = createOpenAI()`)
+
+public let openai: OpenAIProvider = createOpenAIProvider()

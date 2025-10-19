@@ -9,6 +9,26 @@ Port **Vercel AI SDK** from TypeScript to Swift with **100% upstream parity**.
 
 **Goal**: 1:1 feature-complete implementation matching TypeScript API, behavior, types, and tests.
 
+## Documentation Porting Workflow (Starlight site in `apps/docs`)
+
+1. **Source of truth** — every page originates from the upstream Markdown/MDX under `external/vercel-ai-sdk/content/**`. Copy a single file at a time; never author pages from scratch.
+2. **Placement** — paste the copied file into `apps/docs/src/content/docs/...`, matching the upstream path semantics. Keep the original frontmatter (title/description/slug).
+3. **Initial build fix‑ups** — remove or replace upstream‑specific React components (`<PreviewSwitchProviders/>`, bespoke imports, etc.) with Starlight/MDX constructs (e.g., `Tabs`, blockquotes). The page must compile with `pnpm run docs:check` and `pnpm run docs:build` before moving on.
+4. **Swift adaptation** — translate code samples and narrative details to Swift parity while preserving ~80% of the original text flow. Replace TypeScript examples with Swift snippets using the new provider facades (e.g., `import OpenAIProvider` + `openai("gpt-5")`). Document any Swift-specific differences via short notes or callouts when necessary.
+5. **Sidebar wiring** — update `apps/docs/astro.config.mjs` whenever a new page is copied so navigation mirrors the upstream structure.
+6. **One page at a time** — complete copy → adapt → build cycle for a single document before starting the next. Store any temporary upstream dumps in `.staging/` if needed; keep `apps/docs/src/content/docs` clean and buildable.
+7. **Validation** — run `pnpm run docs:check` and `pnpm run docs:build` after adapting each page. Do not commit documentation changes until both commands are green.
+
+## Code Audit & Parity Verification Workflow
+
+1. **Enumerate and read** — iterate through every upstream `.ts`/`.tsx` source (excluding tests) under the target package, and immediately inspect the matching Swift implementation. No summaries or mappings; check and understand the real code.
+2. **Logic parity** — confirm all branches, loops, error paths, and side effects mirror upstream behavior. If Swift uses different idioms, ensure observable output stays identical and note the rationale in code comments if necessary.
+3. **Schema & types** — verify request/response schemas, option objects, enums, defaults, and metadata fields (usage, tool calls, annotations, logprobs, etc.) match upstream semantics.
+4. **Utilities & config** — validate helper modules (error mappers, config loaders, version constants, tool registries) align with TypeScript originals.
+5. **Tests** — ensure each upstream test scenario is represented in Swift tests (or add coverage). Re-run relevant tests after changes.
+6. **Immediate fixes** — upon finding any discrepancy, fix the Swift code (or document an intentional deviation) before proceeding. Never defer unresolved differences.
+7. **Final validation** — run `swift test` (and any package-specific checks) plus parity smoke tests if applicable to confirm runtime behavior.
+
 ---
 
 **📚 Read first:**
