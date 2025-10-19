@@ -7,8 +7,8 @@
 | Metric                        | TypeScript Upstream    | Swift Port         | Status            |
 |-------------------------------|------------------------|--------------------|--------------------|
 | Total Test Files              | 13                     | 13                 | ✅ Files match    |
-| Total Test Cases              | 290                    | 99                 | ❌ 66% missing    |
-| OpenAIChatLanguageModel       | 71 tests (3,152 lines) | 18 tests (1,177 lines) | ❌ 75% missing    |
+| Total Test Cases              | 290                    | 105                | ❌ 64% missing    |
+| OpenAIChatLanguageModel       | 71 tests (3,152 lines) | 24 tests (1,493 lines) | ❌ 66% missing    |
 | OpenAIResponsesLanguageModel  | 77 tests               | 25 tests           | ❌ 67% missing    |
 | OpenAIResponsesInput          | 48 tests               | 4 tests            | ❌ 92% missing    |
 | OpenAICompletionLanguageModel | 16 tests               | 3 tests            | ❌ 81% missing    |
@@ -89,7 +89,7 @@
 
 | File | Upstream | Swift | Coverage | Status |
 |------|----------|-------|----------|--------|
-| OpenAIChatLanguageModel | 71 | 18 | 25.4% | ⚠️ MAJOR |
+| OpenAIChatLanguageModel | 71 | 24 | 33.8% | ⚠️ MAJOR |
 | OpenAIResponsesLanguageModel | 77 | 25 | 32% | ⚠️ MAJOR |
 | OpenAIResponsesInput | 48 | 4 | 8% | ❌ CRITICAL |
 | OpenAICompletionLanguageModel | 16 | 3 | 19% | ⚠️ MAJOR |
@@ -103,7 +103,7 @@
 | OpenAIError | 1 | 1 | 100% | ✅ PERFECT |
 | OpenAIProvider | 3 | 1 | 33% | ⚠️ MODERATE |
 
-**TOTAL: 290 → 99 (34.1% coverage) ❌ INSUFFICIENT**
+**TOTAL: 290 → 105 (36.2% coverage) ❌ INSUFFICIENT**
 
 ---
 
@@ -167,10 +167,10 @@ While the implementation code appears correct (100% functional parity from previ
 
 **Started:** 2025-10-19
 **Target:** 100% test parity (290 tests)
-**Current:** 99/290 tests (34.1%)
+**Current:** 105/290 tests (36.2%)
 
 ### OpenAIChatLanguageModel (Priority 1 - CRITICAL)
-**Target:** 71 tests | **Current:** 18/71 (25.4%)
+**Target:** 71 tests | **Current:** 24/71 (33.8%)
 
 #### Batch 1: Settings & Configuration (5/5) ✅ COMPLETE
 - [x] Pass settings (logitBias, user, parallelToolCalls) - `testPassSettings`
@@ -195,6 +195,14 @@ While the implementation code appears correct (100% functional parity from previ
 - [x] Use developer messages for o1 - `testUseDeveloperMessagesForO1`
 - [x] Return reasoning tokens in provider metadata - `testReturnReasoningTokens`
 
+#### Batch 4: Extension Settings (6/6) ✅ COMPLETE
+- [x] Pass max_completion_tokens extension - `testMaxCompletionTokensExtension`
+- [x] Pass prediction extension - `testPredictionExtension`
+- [x] Pass store extension - `testStoreExtension`
+- [x] Pass metadata extension - `testMetadataExtension`
+- [x] Pass promptCacheKey extension - `testPromptCacheKeyExtension`
+- [x] Pass safetyIdentifier extension - `testSafetyIdentifierExtension`
+
 ---
 
-**Last Updated:** 2025-10-19 23:33 UTC
+**Last Updated:** 2025-10-20 00:15 UTC
