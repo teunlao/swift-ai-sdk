@@ -13,6 +13,12 @@ export default defineConfig({
         { label: "Introduction", link: "/intro" },
         { label: "Getting Started", link: "/getting-started" },
         {
+          label: "Foundations",
+          items: [
+            { label: "Overview", link: "/foundations/overview" }
+          ]
+        },
+        {
           label: "Swift AI SDK Core",
           items: [
             { label: "Generating & Streaming Text", link: "/core/generating-text" },
