@@ -283,15 +283,17 @@ struct AnthropicMessagesLanguageModelStreamAdvancedTests {
         let result = try await model.doStream(options: .init(prompt: advancedTestPrompt))
         let parts = try await collectParts(from: result.stream)
 
-        let reasoningDeltas = parts.compactMap { part -> (String, String)? in
-            if case .reasoningDelta(let id, let delta, _) = part {
-                return (id, delta)
+        let reasoningDeltas = parts.compactMap { part -> (String, String, SharedV3ProviderMetadata?)? in
+            if case .reasoningDelta(let id, let delta, let metadata) = part {
+                return (id, delta, metadata)
             }
             return nil
         }
         #expect(reasoningDeltas.contains(where: { $0.0 == "0" && $0.1 == "I am" }))
         #expect(reasoningDeltas.contains(where: { $0.0 == "0" && $0.1 == "thinking..." }))
-        #expect(reasoningDeltas.count >= 2)
+        #expect(reasoningDeltas.contains(where: {
+            $0.0 == "0" && $0.1.isEmpty && $0.2?["anthropic"]?["signature"] == .string("1234567890")
+        }))
     }
 
     @Test("streams redacted reasoning metadata")

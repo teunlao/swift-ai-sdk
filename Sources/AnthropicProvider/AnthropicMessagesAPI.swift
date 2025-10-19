@@ -171,7 +171,7 @@ public struct TextContent: Codable, Sendable {
 public struct ThinkingContent: Codable, Sendable {
     public let type: String
     public let thinking: String
-    public let signature: String
+    public let signature: String?
 }
 
 public struct RedactedThinkingContent: Codable, Sendable {

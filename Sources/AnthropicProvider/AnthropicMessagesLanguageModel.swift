@@ -479,9 +479,12 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                 }
 
             case .thinking(let value):
-                let metadata: SharedV3ProviderMetadata = [
-                    "anthropic": ["signature": .string(value.signature)]
-                ]
+                var metadata: SharedV3ProviderMetadata? = nil
+                if let signature = value.signature {
+                    metadata = [
+                        "anthropic": ["signature": .string(signature)]
+                    ]
+                }
                 content.append(.reasoning(LanguageModelV3Reasoning(text: value.thinking, providerMetadata: metadata)))
 
             case .redactedThinking(let value):
