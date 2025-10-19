@@ -739,30 +739,17 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
             return message
         }
 
-        // Choose transform based on requested features: if reasoning/sources are needed,
-        // map from the full stream; otherwise, use the simpler text stream transform.
-        let base: AsyncThrowingStream<AnyUIMessageChunk, Error>
-        if streamOptions.sendReasoning || streamOptions.sendSources {
-            base = transformFullToUIMessageStream(
-                stream: fullStream,
-                options: UIMessageTransformOptions(
-                    sendStart: streamOptions.sendStart,
-                    sendFinish: streamOptions.sendFinish,
-                    sendReasoning: streamOptions.sendReasoning,
-                    sendSources: streamOptions.sendSources,
-                    messageMetadata: streamOptions.messageMetadata
-                )
+        // Always map from the full stream so tool/sources/reasoning events can be included as needed.
+        let base: AsyncThrowingStream<AnyUIMessageChunk, Error> = transformFullToUIMessageStream(
+            stream: fullStream,
+            options: UIMessageTransformOptions(
+                sendStart: streamOptions.sendStart,
+                sendFinish: streamOptions.sendFinish,
+                sendReasoning: streamOptions.sendReasoning,
+                sendSources: streamOptions.sendSources,
+                messageMetadata: streamOptions.messageMetadata
             )
-        } else {
-            base = transformTextToUIMessageStream(
-                stream: textStream,
-                options: UIMessageTransformOptions(
-                    sendStart: streamOptions.sendStart,
-                    sendFinish: streamOptions.sendFinish,
-                    messageMetadata: streamOptions.messageMetadata
-                )
-            )
-        }
+        )
 
         // Handle finish, id injection, and final onFinish
         let handled = handleUIMessageStreamFinish(
