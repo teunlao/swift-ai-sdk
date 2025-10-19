@@ -1,5 +1,5 @@
 import Testing
-@testable import AISDKProviderUtils
+@testable import AISDKZodAdapter
 
 @Suite("Branded Parser")
 struct BrandedParserTests {

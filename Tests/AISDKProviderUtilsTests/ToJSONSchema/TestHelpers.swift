@@ -1,5 +1,5 @@
 import Testing
-@testable import AISDKProviderUtils
+@testable import AISDKZodAdapter
 import AISDKProvider
 
 enum SchemaTestHelpers {

@@ -6,7 +6,7 @@
 import Foundation
 import AISDKProvider
 
-func zod3ToJSONSchema(
+public func zod3ToJSONSchema(
     _ schema: ZodSchema,
     options: Zod3Options? = nil
 ) -> JSONValue {

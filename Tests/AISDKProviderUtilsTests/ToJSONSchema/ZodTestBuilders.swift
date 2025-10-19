@@ -1,4 +1,4 @@
-@testable import AISDKProviderUtils
+@testable import AISDKZodAdapter
 
 enum TestZod {
     static func string(_ checks: [ZodStringCheck] = []) -> ZodSchema {

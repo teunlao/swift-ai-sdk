@@ -1,6 +1,6 @@
 import Testing
 
-@testable import AISDKProviderUtils
+@testable import AISDKZodAdapter
 
 @Suite("String Parser")
 struct StringParserTests {

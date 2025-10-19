@@ -1,5 +1,5 @@
 import Testing
-@testable import AISDKProviderUtils
+@testable import AISDKZodAdapter
 
 @Suite("Catch Parser")
 struct CatchParserTests {

@@ -17,6 +17,7 @@ let package = Package(
         .library(name: "OpenAICompatibleProvider", targets: ["OpenAICompatibleProvider"]),
         .library(name: "AnthropicProvider", targets: ["AnthropicProvider"]),
         .library(name: "EventSourceParser", targets: ["EventSourceParser"]), // internal lib for SSE
+        .library(name: "AISDKZodAdapter", targets: ["AISDKZodAdapter"]),
         .executable(name: "playground", targets: ["SwiftAISDKPlayground"])
     ],
     dependencies: [
@@ -34,8 +35,11 @@ let package = Package(
 
         // AISDKProviderUtils - Provider utilities (matches @ai-sdk/provider-utils)
         // HTTP, JSON, schema, validation, retry, headers, ID generation, tools
-        .target(name: "AISDKProviderUtils", dependencies: ["AISDKProvider"]),
-        .testTarget(name: "AISDKProviderUtilsTests", dependencies: ["AISDKProviderUtils"]),
+        .target(name: "AISDKProviderUtils", dependencies: ["AISDKProvider", "AISDKZodAdapter"]),
+        .testTarget(name: "AISDKProviderUtilsTests", dependencies: ["AISDKProviderUtils", "AISDKZodAdapter"]),
+
+        // Zod/ToJSONSchema adapters (public)
+        .target(name: "AISDKZodAdapter", dependencies: ["AISDKProvider"]),
 
         // OpenAI provider package
         .target(name: "OpenAIProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "EventSourceParser"]),
