@@ -7,8 +7,8 @@
 | Metric                        | TypeScript Upstream    | Swift Port         | Status            |
 |-------------------------------|------------------------|--------------------|--------------------|
 | Total Test Files              | 13                     | 13                 | ✅ Files match    |
-| Total Test Cases              | 290                    | 121                | ❌ 58% missing    |
-| OpenAIChatLanguageModel       | 71 tests (3,152 lines) | 40 tests (2,372 lines) | ❌ 44% missing    |
+| Total Test Cases              | 290                    | 123                | ❌ 58% missing    |
+| OpenAIChatLanguageModel       | 71 tests (3,152 lines) | 42 tests (2,500 lines) | ❌ 41% missing    |
 | OpenAIResponsesLanguageModel  | 77 tests               | 25 tests           | ❌ 67% missing    |
 | OpenAIResponsesInput          | 48 tests               | 4 tests            | ❌ 92% missing    |
 | OpenAICompletionLanguageModel | 16 tests               | 3 tests            | ❌ 81% missing    |
@@ -28,42 +28,13 @@
 ✅ Raw response headers
 ✅ Send request body
 
-### ❌ MISSING in Swift (63 scenarios):
+### ❌ MISSING in Swift (29 scenarios):
 
-#### Response Format Handling (7 tests):
-- JSON object response format
-- JSON schema with strict mode
-- Structured outputs enabled/disabled
-- Schema name & description
-- Undefined schema handling
+**All non-streaming tests completed (42/42) ✅**
 
-#### O1/O3 Model-Specific (5 tests):
-- Clear temperature/top_p/frequency_penalty with warnings
-- Convert maxOutputTokens to max_completion_tokens
-- Remove system messages for o1-preview
-- Developer messages for o1
-- Reasoning tokens in metadata
+**Remaining: Streaming Tests Only (29 tests)**
 
-#### Extension Settings (6 tests):
-- max_completion_tokens
-- prediction extension
-- store extension
-- metadata extension
-- promptCacheKey
-- safetyIdentifier
-
-#### Search Models (3 tests):
-- Remove temperature for gpt-4o-search-preview
-- Remove temperature for gpt-4o-mini-search-preview variants
-
-#### Service Tier Processing (6 tests):
-- Flex processing setting
-- Flex processing warnings with unsupported models
-- Priority processing setting
-- Priority processing warnings
-- Model-specific processing support
-
-#### Streaming (10+ tests):
+#### Streaming - Basic (8 tests):
 - Stream text deltas
 - Stream annotations/citations
 - Stream tool deltas
@@ -71,17 +42,30 @@
 - Empty chunk handling after tool call
 - Tool call in single chunk
 - Error stream parts
-- includeRawChunks option
+- Send request body for streaming
 
-#### Settings & Headers (8+ tests):
-- reasoningEffort from provider metadata
-- reasoningEffort from settings
-- textVerbosity setting
-- Tools and toolChoice
-- Custom headers
-- Partial usage support
-- Unknown finish reasons
-- Additional response information
+#### Streaming - Headers & Response (3 tests):
+- Expose raw response headers
+- Pass messages and model
+- Pass headers
+
+#### Streaming - Metadata & Tokens (4 tests):
+- Return cached tokens in providerMetadata
+- Return prediction tokens in providerMetadata
+- includeRawChunks option enabled
+- includeRawChunks option disabled
+
+#### Streaming - Extensions (2 tests):
+- Send store extension setting
+- Send metadata extension values
+
+#### Streaming - Service Tier (2 tests):
+- Send serviceTier flex processing
+- Send serviceTier priority processing
+
+#### Streaming - O1 Model (2 tests):
+- Stream text delta for o1
+- Send reasoning tokens for o1
 
 ---
 
@@ -89,7 +73,7 @@
 
 | File | Upstream | Swift | Coverage | Status |
 |------|----------|-------|----------|--------|
-| OpenAIChatLanguageModel | 71 | 40 | 56.3% | ⚠️ MAJOR |
+| OpenAIChatLanguageModel | 71 | 42 | 59.2% | ⚠️ MAJOR |
 | OpenAIResponsesLanguageModel | 77 | 25 | 32% | ⚠️ MAJOR |
 | OpenAIResponsesInput | 48 | 4 | 8% | ❌ CRITICAL |
 | OpenAICompletionLanguageModel | 16 | 3 | 19% | ⚠️ MAJOR |
@@ -103,7 +87,7 @@
 | OpenAIError | 1 | 1 | 100% | ✅ PERFECT |
 | OpenAIProvider | 3 | 1 | 33% | ⚠️ MODERATE |
 
-**TOTAL: 290 → 121 (41.7% coverage) ❌ INSUFFICIENT**
+**TOTAL: 290 → 123 (42.4% coverage) ❌ INSUFFICIENT**
 
 ---
 
@@ -167,10 +151,10 @@ While the implementation code appears correct (100% functional parity from previ
 
 **Started:** 2025-10-19
 **Target:** 100% test parity (290 tests)
-**Current:** 121/290 tests (41.7%)
+**Current:** 123/290 tests (42.4%)
 
 ### OpenAIChatLanguageModel (Priority 1 - CRITICAL)
-**Target:** 71 tests | **Current:** 40/71 (56.3%)
+**Target:** 71 tests | **Current:** 42/71 (59.2%)
 
 #### Batch 1: Settings & Configuration (5/5) ✅ COMPLETE
 - [x] Pass settings (logitBias, user, parallelToolCalls) - `testPassSettings`
@@ -227,6 +211,10 @@ While the implementation code appears correct (100% functional parity from previ
 - [x] Return cached_tokens in prompt_details_tokens - `testCachedTokensInUsage`
 - [x] Return accepted and rejected prediction tokens - `testPredictionTokensInMetadata`
 
+#### Batch 9: Missing Non-Streaming Tests (2/2) ✅ COMPLETE
+- [x] Pass the model and the messages - `testPassModelAndMessages`
+- [x] Allow priority processing with o3 model without warnings - `testPriorityProcessingO3Mini`
+
 ---
 
-**Last Updated:** 2025-10-20 01:35 UTC
+**Last Updated:** 2025-10-20 02:45 UTC
