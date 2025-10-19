@@ -7,8 +7,8 @@
 | Metric                        | TypeScript Upstream    | Swift Port         | Status            |
 |-------------------------------|------------------------|--------------------|--------------------|
 | Total Test Files              | 13                     | 13                 | ✅ Files match    |
-| Total Test Cases              | 290                    | 118                | ❌ 59% missing    |
-| OpenAIChatLanguageModel       | 71 tests (3,152 lines) | 37 tests (2,215 lines) | ❌ 48% missing    |
+| Total Test Cases              | 290                    | 121                | ❌ 58% missing    |
+| OpenAIChatLanguageModel       | 71 tests (3,152 lines) | 40 tests (2,372 lines) | ❌ 44% missing    |
 | OpenAIResponsesLanguageModel  | 77 tests               | 25 tests           | ❌ 67% missing    |
 | OpenAIResponsesInput          | 48 tests               | 4 tests            | ❌ 92% missing    |
 | OpenAICompletionLanguageModel | 16 tests               | 3 tests            | ❌ 81% missing    |
@@ -89,7 +89,7 @@
 
 | File | Upstream | Swift | Coverage | Status |
 |------|----------|-------|----------|--------|
-| OpenAIChatLanguageModel | 71 | 37 | 52.1% | ⚠️ MAJOR |
+| OpenAIChatLanguageModel | 71 | 40 | 56.3% | ⚠️ MAJOR |
 | OpenAIResponsesLanguageModel | 77 | 25 | 32% | ⚠️ MAJOR |
 | OpenAIResponsesInput | 48 | 4 | 8% | ❌ CRITICAL |
 | OpenAICompletionLanguageModel | 16 | 3 | 19% | ⚠️ MAJOR |
@@ -103,7 +103,7 @@
 | OpenAIError | 1 | 1 | 100% | ✅ PERFECT |
 | OpenAIProvider | 3 | 1 | 33% | ⚠️ MODERATE |
 
-**TOTAL: 290 → 118 (40.7% coverage) ❌ INSUFFICIENT**
+**TOTAL: 290 → 121 (41.7% coverage) ❌ INSUFFICIENT**
 
 ---
 
@@ -167,10 +167,10 @@ While the implementation code appears correct (100% functional parity from previ
 
 **Started:** 2025-10-19
 **Target:** 100% test parity (290 tests)
-**Current:** 118/290 tests (40.7%)
+**Current:** 121/290 tests (41.7%)
 
 ### OpenAIChatLanguageModel (Priority 1 - CRITICAL)
-**Target:** 71 tests | **Current:** 37/71 (52.1%)
+**Target:** 71 tests | **Current:** 40/71 (56.3%)
 
 #### Batch 1: Settings & Configuration (5/5) ✅ COMPLETE
 - [x] Pass settings (logitBias, user, parallelToolCalls) - `testPassSettings`
@@ -222,6 +222,11 @@ While the implementation code appears correct (100% functional parity from previ
 - [x] Pass tools and toolChoice - `testPassToolsAndToolChoice`
 - [x] Set strict for tool usage when structuredOutputs enabled - `testStrictToolWithStructuredOutputs`
 
+#### Batch 8: Response Metadata & Token Details (3/3) ✅ COMPLETE
+- [x] Send additional response information - `testAdditionalResponseInformation`
+- [x] Return cached_tokens in prompt_details_tokens - `testCachedTokensInUsage`
+- [x] Return accepted and rejected prediction tokens - `testPredictionTokensInMetadata`
+
 ---
 
-**Last Updated:** 2025-10-20 01:20 UTC
+**Last Updated:** 2025-10-20 01:35 UTC

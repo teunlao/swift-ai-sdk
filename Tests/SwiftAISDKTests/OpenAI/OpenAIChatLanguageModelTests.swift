@@ -2212,4 +2212,160 @@ struct OpenAIChatLanguageModelTests {
         // Check response content has tool call
         #expect(result.content.count > 0)
     }
+
+    // MARK: - Batch 8: Response Metadata & Token Details (3 tests)
+
+    @Test("Send additional response information")
+    func testAdditionalResponseInformation() async throws {
+        let mockData = try JSONSerialization.data(withJSONObject: [
+            "id": "test-id",
+            "created": 123,
+            "model": "test-model",
+            "object": "chat.completion",
+            "system_fingerprint": "fp_3bc1b5746c",
+            "choices": [["index": 0, "message": ["content": "", "role": "assistant"], "finish_reason": "stop"]],
+            "usage": ["prompt_tokens": 4, "completion_tokens": 30, "total_tokens": 34]
+        ])
+
+        let mockFetch: FetchFunction = { _ in
+            FetchResponse(
+                body: .data(mockData),
+                urlResponse: HTTPURLResponse(url: URL(string: "https://api.openai.com")!, statusCode: 200, httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "application/json", "Content-Length": "275"])!
+            )
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.chat",
+            url: { _ in "https://api.openai.com/v1/chat/completions" },
+            headers: { ["Authorization": "Bearer test-key"] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAIChatLanguageModel(modelId: "gpt-3.5-turbo", config: config)
+
+        let result = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)]
+            )
+        )
+
+        // Check response metadata
+        #expect(result.response?.id == "test-id")
+        #expect(result.response?.modelId == "test-model")
+        #expect(result.response?.timestamp != nil)
+
+        // Check response body exists
+        guard let responseBody = result.response?.body,
+              let bodyDict = responseBody as? [String: Any] else {
+            Issue.record("Response body not present")
+            return
+        }
+
+        // Verify body contains expected data
+        #expect(bodyDict["id"] as? String == "test-id")
+        #expect(bodyDict["model"] as? String == "test-model")
+        #expect(bodyDict["created"] as? Int == 123)
+    }
+
+    @Test("Return cached_tokens in prompt_details_tokens")
+    func testCachedTokensInUsage() async throws {
+        let mockData = try JSONSerialization.data(withJSONObject: [
+            "id": "test", "created": 1, "model": "gpt-4o-mini",
+            "choices": [["index": 0, "message": ["content": "ok"], "finish_reason": "stop"]],
+            "usage": [
+                "prompt_tokens": 15,
+                "completion_tokens": 20,
+                "total_tokens": 35,
+                "prompt_tokens_details": ["cached_tokens": 1152]
+            ]
+        ])
+
+        let mockFetch: FetchFunction = { _ in
+            FetchResponse(
+                body: .data(mockData),
+                urlResponse: HTTPURLResponse(url: URL(string: "https://api.openai.com")!, statusCode: 200, httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "application/json"])!
+            )
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.chat",
+            url: { _ in "https://api.openai.com/v1/chat/completions" },
+            headers: { ["Authorization": "Bearer test-key"] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAIChatLanguageModel(modelId: "gpt-4o-mini", config: config)
+
+        let result = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)]
+            )
+        )
+
+        #expect(result.usage.inputTokens == 15)
+        #expect(result.usage.outputTokens == 20)
+        #expect(result.usage.totalTokens == 35)
+        #expect(result.usage.cachedInputTokens == 1152)
+    }
+
+    @Test("Return accepted and rejected prediction tokens in completion details")
+    func testPredictionTokensInMetadata() async throws {
+        let mockData = try JSONSerialization.data(withJSONObject: [
+            "id": "test", "created": 1, "model": "gpt-4o-mini",
+            "choices": [["index": 0, "message": ["content": "ok"], "finish_reason": "stop"]],
+            "usage": [
+                "prompt_tokens": 15,
+                "completion_tokens": 20,
+                "total_tokens": 35,
+                "completion_tokens_details": [
+                    "accepted_prediction_tokens": 123,
+                    "rejected_prediction_tokens": 456
+                ]
+            ]
+        ])
+
+        let mockFetch: FetchFunction = { _ in
+            FetchResponse(
+                body: .data(mockData),
+                urlResponse: HTTPURLResponse(url: URL(string: "https://api.openai.com")!, statusCode: 200, httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "application/json"])!
+            )
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.chat",
+            url: { _ in "https://api.openai.com/v1/chat/completions" },
+            headers: { ["Authorization": "Bearer test-key"] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAIChatLanguageModel(modelId: "gpt-4o-mini", config: config)
+
+        let result = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)]
+            )
+        )
+
+        // Check provider metadata
+        guard let metadata = result.providerMetadata,
+              let openaiMetadata = metadata["openai"] else {
+            Issue.record("Provider metadata not present")
+            return
+        }
+
+        if case .number(let accepted) = openaiMetadata["acceptedPredictionTokens"] {
+            #expect(Int(accepted) == 123)
+        } else {
+            Issue.record("acceptedPredictionTokens not found")
+        }
+
+        if case .number(let rejected) = openaiMetadata["rejectedPredictionTokens"] {
+            #expect(Int(rejected) == 456)
+        } else {
+            Issue.record("rejectedPredictionTokens not found")
+        }
+    }
 }
