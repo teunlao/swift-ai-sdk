@@ -1,0 +1,147 @@
+---
+title: Providers and Models
+description: Learn about the providers and models available in the Swift AI SDK.
+---
+
+_This page adapts the original AI SDK documentation: [Providers and Models](https://ai-sdk.dev/docs/foundations/providers-and-models)._ 
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+Companies such as OpenAI, Anthropic, Google, and Groq ("providers") expose families of large language models (LLMs) via their individual APIs. Each API comes with its own authentication, payload shapes, and feature flags, which can make switching providers laborious and increase the risk of vendor lock-in.
+
+The Swift AI SDK removes that friction by mirroring the AI SDK language-model specification in Swift (`AISDKProvider`). You interact with every provider through the same strongly typed Swift surface area—`generateText`, `generateObject`, streaming helpers, tool execution—while the provider modules handle the protocol details.
+
+<picture>
+  <source
+    srcset="https://ai-sdk.dev/images/ai-sdk-diagram-dark.png"
+    media="(prefers-color-scheme: dark)"
+  />
+  <img
+    src="https://ai-sdk.dev/images/ai-sdk-diagram.png"
+    alt="Swift AI SDK provider architecture diagram"
+  />
+</picture>
+
+<small>Illustration reused from the original AI SDK documentation.</small>
+
+## Built-in provider modules
+
+The repository ships with Swift-native ports of the core AI SDK providers. Each module exports a lazily configured global shortcut as well as a factory for full control over configuration.
+
+- `OpenAIProvider` — `import OpenAIProvider` and call `openai("gpt-5")` or `createOpenAIProvider(settings:)`.
+- `AnthropicProvider` — `import AnthropicProvider` and call `anthropic("claude-3-5-sonnet")` or `createAnthropicProvider(settings:)`.
+- `GoogleProvider` — `import GoogleProvider` and call `google("gemini-1.5-pro")` or `createGoogleGenerativeAI(settings:)`.
+- `GroqProvider` — `import GroqProvider` and call `groq("llama-3.1-8b-instant")` or `createGroqProvider(settings:)`.
+- `OpenAICompatibleProvider` — `import OpenAICompatibleProvider` and build a provider for any OpenAI-compatible endpoint via `createOpenAICompatibleProvider(settings:)`.
+
+Each shortcut loads API keys lazily (matching the TypeScript behavior) and returns a ready-to-use `LanguageModelV3` that plugs directly into `generateText` and other Swift AI SDK entry points.
+
+## Switching providers in code
+
+<Tabs syncKey="provider-switching">
+  <TabItem label="OpenAI">
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+
+let response = try await generateText(
+  model: openai("gpt-5"),
+  prompt: "Summarize the Swift concurrency model."
+)
+print(response.text)
+```
+
+  </TabItem>
+  <TabItem label="Anthropic">
+
+```swift
+import SwiftAISDK
+import AnthropicProvider
+
+let response = try await generateText(
+  model: anthropic("claude-3-5-sonnet"),
+  prompt: "Summarize the Swift concurrency model."
+)
+print(response.text)
+```
+
+  </TabItem>
+  <TabItem label="Google">
+
+```swift
+import SwiftAISDK
+import GoogleProvider
+
+let response = try await generateText(
+  model: google("gemini-1.5-pro"),
+  prompt: "Summarize the Swift concurrency model."
+)
+print(response.text)
+```
+
+  </TabItem>
+  <TabItem label="Groq">
+
+```swift
+import SwiftAISDK
+import GroqProvider
+
+let response = try await generateText(
+  model: groq("llama-3.1-8b-instant"),
+  prompt: "Summarize the Swift concurrency model."
+)
+print(response.text)
+```
+
+  </TabItem>
+</Tabs>
+
+Switching providers is a one-line change: the rest of the call site stays identical, and advanced options (abort handlers, tool execution, structured outputs) behave uniformly across providers.
+
+## OpenAI-compatible endpoints
+
+The `OpenAICompatibleProvider` lets you target any service that speaks the OpenAI API shape (including local gateways such as LM Studio or hosted services such as Together). Supply the base URL, name, optional headers, and structured-output support, and the Swift AI SDK will handle the rest:
+
+```swift
+import SwiftAISDK
+import OpenAICompatibleProvider
+
+let custom = createOpenAICompatibleProvider(
+  settings: .init(
+    baseURL: "https://gateway.example.com/v1",
+    name: "gateway",
+    apiKey: ProcessInfo.processInfo.environment["GATEWAY_KEY"]
+  )
+)
+
+let result = try await generateText(
+  model: .v3(custom.languageModel(modelId: "gpt-5-compatible")),
+  prompt: "List three safety checks to run before deploying a rocket."
+)
+print(result.text)
+```
+
+## Creating custom providers
+
+Because the Swift AI SDK mirrors the AI SDK provider contracts, you can build your own provider by implementing the `ProviderV3` interfaces from `AISDKProvider`. This gives you:
+
+- Shared streaming utilities (`StreamText`, SSE helpers).
+- Tool execution and JSON schema utilities from `AISDKProviderUtils`.
+- Compatibility with higher-level conveniences such as `generateObject` and the UI toolkit.
+
+Start by exploring the existing provider packages in `Sources/` and the [language model specification](https://github.com/vercel/ai/tree/main/packages/provider/src/language-model/v2). You can follow the same patterns (request builders, response parsers, telemetry hooks) to bring additional services to Swift.
+
+## Capability highlights
+
+| Provider | Typical text models | Text | Embeddings | Images | Audio |
+| --- | --- | --- | --- | --- | --- |
+| OpenAI (`openai`) | `gpt-5`, `gpt-4.1-mini`, `gpt-4o-audio-preview` | ✅ | ✅ | ✅ | ✅ |
+| Anthropic (`anthropic`) | `claude-3-5-sonnet`, `claude-3-opus` | ✅ | ❌ | ❌ | ❌ |
+| Google Generative AI (`google`) | `gemini-1.5-pro`, `gemini-2.0-flash-exp` | ✅ | ✅ | ✅ | ❌ |
+| Groq (`groq`) | `llama-3.1-8b-instant`, `mixtral-8x7b-32768` | ✅ | ❌ | ❌ | ✅ (transcription) |
+| OpenAI-compatible | Depends on upstream service | ✅ | ✅ | ✅ | ✅ |
+
+> The exact model catalog evolves quickly. Refer to each provider package for the authoritative list of model identifiers and helper types (`OpenAIChatModelId`, `GoogleGenerativeAIModelId`, `GroqChatModelId`, and others).
+
+By standardizing on the Swift AI SDK provider interfaces you can mix and match services, experiment rapidly, and keep your application code portable across vendors.

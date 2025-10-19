@@ -1664,4 +1664,552 @@ struct OpenAIChatLanguageModelTests {
             Issue.record("Expected unsupported-setting warning for temperature")
         }
     }
+
+    // MARK: - Batch 6: Service Tier Processing (6 tests)
+
+    @Test("Send serviceTier flex processing setting")
+    func testServiceTierFlexProcessing() async throws {
+        final class RequestCapture: @unchecked Sendable {
+            var body: [String: Any]?
+        }
+
+        let capture = RequestCapture()
+        let mockData = try JSONSerialization.data(withJSONObject: [
+            "id": "test", "created": 1, "model": "o3-mini",
+            "choices": [["index": 0, "message": ["content": ""], "finish_reason": "stop"]],
+            "usage": ["prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2]
+        ])
+
+        let mockFetch: FetchFunction = { request in
+            if let body = request.httpBody,
+               let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] {
+                capture.body = json
+            }
+            return FetchResponse(
+                body: .data(mockData),
+                urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "application/json"])!
+            )
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.chat",
+            url: { _ in "https://api.openai.com/v1/chat/completions" },
+            headers: { ["Authorization": "Bearer test-key"] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAIChatLanguageModel(modelId: "o3-mini", config: config)
+
+        _ = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+                providerOptions: ["openai": ["serviceTier": JSONValue.string("flex")]]
+            )
+        )
+
+        guard let body = capture.body else {
+            Issue.record("Request body not captured")
+            return
+        }
+
+        #expect(body["model"] as? String == "o3-mini")
+        #expect(body["service_tier"] as? String == "flex")
+    }
+
+    @Test("Show warning when using flex processing with unsupported model")
+    func testFlexProcessingWarningUnsupportedModel() async throws {
+        final class RequestCapture: @unchecked Sendable {
+            var body: [String: Any]?
+        }
+
+        let capture = RequestCapture()
+        let mockData = try JSONSerialization.data(withJSONObject: [
+            "id": "test", "created": 1, "model": "gpt-4o-mini",
+            "choices": [["index": 0, "message": ["content": "ok"], "finish_reason": "stop"]],
+            "usage": ["prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2]
+        ])
+
+        let mockFetch: FetchFunction = { request in
+            if let body = request.httpBody,
+               let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] {
+                capture.body = json
+            }
+            return FetchResponse(
+                body: .data(mockData),
+                urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "application/json"])!
+            )
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.chat",
+            url: { _ in "https://api.openai.com/v1/chat/completions" },
+            headers: { ["Authorization": "Bearer test-key"] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAIChatLanguageModel(modelId: "gpt-4o-mini", config: config)
+
+        let result = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+                providerOptions: ["openai": ["serviceTier": JSONValue.string("flex")]]
+            )
+        )
+
+        guard let body = capture.body else {
+            Issue.record("Request body not captured")
+            return
+        }
+
+        #expect(body["service_tier"] == nil)
+        #expect(result.warnings.count == 1)
+        if case .unsupportedSetting(let setting, let details) = result.warnings.first {
+            #expect(setting == "serviceTier")
+            #expect(details == "flex processing is only available for o3, o4-mini, and gpt-5 models")
+        } else {
+            Issue.record("Expected unsupported-setting warning for serviceTier")
+        }
+    }
+
+    @Test("Allow flex processing with o4-mini model without warnings")
+    func testFlexProcessingO4Mini() async throws {
+        final class RequestCapture: @unchecked Sendable {
+            var body: [String: Any]?
+        }
+
+        let capture = RequestCapture()
+        let mockData = try JSONSerialization.data(withJSONObject: [
+            "id": "test", "created": 1, "model": "o4-mini",
+            "choices": [["index": 0, "message": ["content": "ok"], "finish_reason": "stop"]],
+            "usage": ["prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2]
+        ])
+
+        let mockFetch: FetchFunction = { request in
+            if let body = request.httpBody,
+               let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] {
+                capture.body = json
+            }
+            return FetchResponse(
+                body: .data(mockData),
+                urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "application/json"])!
+            )
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.chat",
+            url: { _ in "https://api.openai.com/v1/chat/completions" },
+            headers: { ["Authorization": "Bearer test-key"] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAIChatLanguageModel(modelId: "o4-mini", config: config)
+
+        let result = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+                providerOptions: ["openai": ["serviceTier": JSONValue.string("flex")]]
+            )
+        )
+
+        guard let body = capture.body else {
+            Issue.record("Request body not captured")
+            return
+        }
+
+        #expect(body["service_tier"] as? String == "flex")
+        #expect(result.warnings.isEmpty)
+    }
+
+    @Test("Send serviceTier priority processing setting")
+    func testServiceTierPriorityProcessing() async throws {
+        final class RequestCapture: @unchecked Sendable {
+            var body: [String: Any]?
+        }
+
+        let capture = RequestCapture()
+        let mockData = try JSONSerialization.data(withJSONObject: [
+            "id": "test", "created": 1, "model": "gpt-4o-mini",
+            "choices": [["index": 0, "message": ["content": "ok"], "finish_reason": "stop"]],
+            "usage": ["prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2]
+        ])
+
+        let mockFetch: FetchFunction = { request in
+            if let body = request.httpBody,
+               let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] {
+                capture.body = json
+            }
+            return FetchResponse(
+                body: .data(mockData),
+                urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "application/json"])!
+            )
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.chat",
+            url: { _ in "https://api.openai.com/v1/chat/completions" },
+            headers: { ["Authorization": "Bearer test-key"] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAIChatLanguageModel(modelId: "gpt-4o-mini", config: config)
+
+        _ = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+                providerOptions: ["openai": ["serviceTier": JSONValue.string("priority")]]
+            )
+        )
+
+        guard let body = capture.body else {
+            Issue.record("Request body not captured")
+            return
+        }
+
+        #expect(body["model"] as? String == "gpt-4o-mini")
+        #expect(body["service_tier"] as? String == "priority")
+    }
+
+    @Test("Show warning when using priority processing with unsupported model")
+    func testPriorityProcessingWarningUnsupportedModel() async throws {
+        final class RequestCapture: @unchecked Sendable {
+            var body: [String: Any]?
+        }
+
+        let capture = RequestCapture()
+        let mockData = try JSONSerialization.data(withJSONObject: [
+            "id": "test", "created": 1, "model": "gpt-3.5-turbo",
+            "choices": [["index": 0, "message": ["content": "ok"], "finish_reason": "stop"]],
+            "usage": ["prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2]
+        ])
+
+        let mockFetch: FetchFunction = { request in
+            if let body = request.httpBody,
+               let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] {
+                capture.body = json
+            }
+            return FetchResponse(
+                body: .data(mockData),
+                urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "application/json"])!
+            )
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.chat",
+            url: { _ in "https://api.openai.com/v1/chat/completions" },
+            headers: { ["Authorization": "Bearer test-key"] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAIChatLanguageModel(modelId: "gpt-3.5-turbo", config: config)
+
+        let result = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+                providerOptions: ["openai": ["serviceTier": JSONValue.string("priority")]]
+            )
+        )
+
+        guard let body = capture.body else {
+            Issue.record("Request body not captured")
+            return
+        }
+
+        #expect(body["service_tier"] == nil)
+        #expect(result.warnings.count == 1)
+        if case .unsupportedSetting(let setting, let details) = result.warnings.first {
+            #expect(setting == "serviceTier")
+            #expect(details == "priority processing is only available for supported models (gpt-4, gpt-5, gpt-5-mini, o3, o4-mini) and requires Enterprise access. gpt-5-nano is not supported")
+        } else {
+            Issue.record("Expected unsupported-setting warning for serviceTier")
+        }
+    }
+
+    @Test("Allow priority processing with gpt-4o model without warnings")
+    func testPriorityProcessingGpt4o() async throws {
+        final class RequestCapture: @unchecked Sendable {
+            var body: [String: Any]?
+        }
+
+        let capture = RequestCapture()
+        let mockData = try JSONSerialization.data(withJSONObject: [
+            "id": "test", "created": 1, "model": "gpt-4o",
+            "choices": [["index": 0, "message": ["content": "ok"], "finish_reason": "stop"]],
+            "usage": ["prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2]
+        ])
+
+        let mockFetch: FetchFunction = { request in
+            if let body = request.httpBody,
+               let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] {
+                capture.body = json
+            }
+            return FetchResponse(
+                body: .data(mockData),
+                urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "application/json"])!
+            )
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.chat",
+            url: { _ in "https://api.openai.com/v1/chat/completions" },
+            headers: { ["Authorization": "Bearer test-key"] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAIChatLanguageModel(modelId: "gpt-4o", config: config)
+
+        let result = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+                providerOptions: ["openai": ["serviceTier": JSONValue.string("priority")]]
+            )
+        )
+
+        guard let body = capture.body else {
+            Issue.record("Request body not captured")
+            return
+        }
+
+        #expect(body["service_tier"] as? String == "priority")
+        #expect(result.warnings.isEmpty)
+    }
+
+    // MARK: - Batch 7: Tools & Additional (4 tests)
+
+    @Test("Support partial usage")
+    func testPartialUsage() async throws {
+        let mockData = try JSONSerialization.data(withJSONObject: [
+            "id": "test", "created": 1, "model": "gpt-3.5-turbo",
+            "choices": [["index": 0, "message": ["content": "ok"], "finish_reason": "stop"]],
+            "usage": ["prompt_tokens": 20, "total_tokens": 20]
+        ])
+
+        let mockFetch: FetchFunction = { _ in
+            FetchResponse(
+                body: .data(mockData),
+                urlResponse: HTTPURLResponse(url: URL(string: "https://api.openai.com")!, statusCode: 200, httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "application/json"])!
+            )
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.chat",
+            url: { _ in "https://api.openai.com/v1/chat/completions" },
+            headers: { ["Authorization": "Bearer test-key"] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAIChatLanguageModel(modelId: "gpt-3.5-turbo", config: config)
+
+        let result = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)]
+            )
+        )
+
+        #expect(result.usage.inputTokens == 20)
+        #expect(result.usage.outputTokens == nil)
+        #expect(result.usage.totalTokens == 20)
+    }
+
+    @Test("Support unknown finish reason")
+    func testUnknownFinishReason() async throws {
+        let mockData = try JSONSerialization.data(withJSONObject: [
+            "id": "test", "created": 1, "model": "gpt-3.5-turbo",
+            "choices": [["index": 0, "message": ["content": "ok"], "finish_reason": "eos"]],
+            "usage": ["prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2]
+        ])
+
+        let mockFetch: FetchFunction = { _ in
+            FetchResponse(
+                body: .data(mockData),
+                urlResponse: HTTPURLResponse(url: URL(string: "https://api.openai.com")!, statusCode: 200, httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "application/json"])!
+            )
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.chat",
+            url: { _ in "https://api.openai.com/v1/chat/completions" },
+            headers: { ["Authorization": "Bearer test-key"] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAIChatLanguageModel(modelId: "gpt-3.5-turbo", config: config)
+
+        let result = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)]
+            )
+        )
+
+        #expect(result.finishReason == .unknown)
+    }
+
+    @Test("Pass tools and toolChoice")
+    func testPassToolsAndToolChoice() async throws {
+        final class RequestCapture: @unchecked Sendable {
+            var body: [String: Any]?
+        }
+
+        let capture = RequestCapture()
+        let mockData = try JSONSerialization.data(withJSONObject: [
+            "id": "test", "created": 1, "model": "gpt-3.5-turbo",
+            "choices": [["index": 0, "message": ["content": ""], "finish_reason": "stop"]],
+            "usage": ["prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2]
+        ])
+
+        let mockFetch: FetchFunction = { request in
+            if let body = request.httpBody,
+               let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] {
+                capture.body = json
+            }
+            return FetchResponse(
+                body: .data(mockData),
+                urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "application/json"])!
+            )
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.chat",
+            url: { _ in "https://api.openai.com/v1/chat/completions" },
+            headers: { ["Authorization": "Bearer test-key"] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAIChatLanguageModel(modelId: "gpt-3.5-turbo", config: config)
+
+        let toolSchema = JSONValue.object([
+            "type": .string("object"),
+            "properties": .object(["value": .object(["type": .string("string")])]),
+            "required": .array([.string("value")]),
+            "additionalProperties": .bool(false),
+            "$schema": .string("http://json-schema.org/draft-07/schema#")
+        ])
+
+        _ = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+                tools: [.function(LanguageModelV3FunctionTool(name: "test-tool", inputSchema: toolSchema))],
+                toolChoice: .tool(toolName: "test-tool")
+            )
+        )
+
+        guard let body = capture.body else {
+            Issue.record("Request body not captured")
+            return
+        }
+
+        #expect(body["model"] as? String == "gpt-3.5-turbo")
+
+        // Check tools array
+        guard let tools = body["tools"] as? [[String: Any]],
+              let firstTool = tools.first,
+              let function = firstTool["function"] as? [String: Any] else {
+            Issue.record("Tools not properly formatted")
+            return
+        }
+
+        #expect(firstTool["type"] as? String == "function")
+        #expect(function["name"] as? String == "test-tool")
+        #expect(function["strict"] as? Bool == false)
+
+        // Check tool_choice
+        guard let toolChoice = body["tool_choice"] as? [String: Any],
+              let choiceFunction = toolChoice["function"] as? [String: Any] else {
+            Issue.record("Tool choice not properly formatted")
+            return
+        }
+
+        #expect(toolChoice["type"] as? String == "function")
+        #expect(choiceFunction["name"] as? String == "test-tool")
+    }
+
+    @Test("Set strict for tool usage when structuredOutputs enabled")
+    func testStrictToolWithStructuredOutputs() async throws {
+        final class RequestCapture: @unchecked Sendable {
+            var body: [String: Any]?
+        }
+
+        let capture = RequestCapture()
+        let mockData = try JSONSerialization.data(withJSONObject: [
+            "id": "test", "created": 1, "model": "gpt-4o-2024-08-06",
+            "choices": [[
+                "index": 0,
+                "message": [
+                    "content": "",
+                    "tool_calls": [[
+                        "id": "call_O17Uplv4lJvD6DVdIvFFeRMw",
+                        "type": "function",
+                        "function": ["name": "test-tool", "arguments": "{\"value\":\"Spark\"}"]
+                    ]]
+                ],
+                "finish_reason": "tool_calls"
+            ]],
+            "usage": ["prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2]
+        ])
+
+        let mockFetch: FetchFunction = { request in
+            if let body = request.httpBody,
+               let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] {
+                capture.body = json
+            }
+            return FetchResponse(
+                body: .data(mockData),
+                urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "application/json"])!
+            )
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.chat",
+            url: { _ in "https://api.openai.com/v1/chat/completions" },
+            headers: { ["Authorization": "Bearer test-key"] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAIChatLanguageModel(modelId: "gpt-4o-2024-08-06", config: config)
+
+        let toolSchema = JSONValue.object([
+            "type": .string("object"),
+            "properties": .object(["value": .object(["type": .string("string")])]),
+            "required": .array([.string("value")]),
+            "additionalProperties": .bool(false),
+            "$schema": .string("http://json-schema.org/draft-07/schema#")
+        ])
+
+        let result = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+                tools: [.function(LanguageModelV3FunctionTool(name: "test-tool", inputSchema: toolSchema))],
+                toolChoice: .tool(toolName: "test-tool")
+            )
+        )
+
+        guard let body = capture.body else {
+            Issue.record("Request body not captured")
+            return
+        }
+
+        #expect(body["model"] as? String == "gpt-4o-2024-08-06")
+
+        // Check strict is false for gpt-4o-2024-08-06 (structured outputs model)
+        guard let tools = body["tools"] as? [[String: Any]],
+              let firstTool = tools.first,
+              let function = firstTool["function"] as? [String: Any] else {
+            Issue.record("Tools not properly formatted")
+            return
+        }
+
+        #expect(function["strict"] as? Bool == false)
+
+        // Check response content has tool call
+        #expect(result.content.count > 0)
+    }
 }

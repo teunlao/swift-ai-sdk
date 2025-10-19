@@ -7,8 +7,8 @@
 | Metric                        | TypeScript Upstream    | Swift Port         | Status            |
 |-------------------------------|------------------------|--------------------|--------------------|
 | Total Test Files              | 13                     | 13                 | ✅ Files match    |
-| Total Test Cases              | 290                    | 108                | ❌ 63% missing    |
-| OpenAIChatLanguageModel       | 71 tests (3,152 lines) | 27 tests (1,667 lines) | ❌ 62% missing    |
+| Total Test Cases              | 290                    | 118                | ❌ 59% missing    |
+| OpenAIChatLanguageModel       | 71 tests (3,152 lines) | 37 tests (2,215 lines) | ❌ 48% missing    |
 | OpenAIResponsesLanguageModel  | 77 tests               | 25 tests           | ❌ 67% missing    |
 | OpenAIResponsesInput          | 48 tests               | 4 tests            | ❌ 92% missing    |
 | OpenAICompletionLanguageModel | 16 tests               | 3 tests            | ❌ 81% missing    |
@@ -89,7 +89,7 @@
 
 | File | Upstream | Swift | Coverage | Status |
 |------|----------|-------|----------|--------|
-| OpenAIChatLanguageModel | 71 | 27 | 38.0% | ⚠️ MAJOR |
+| OpenAIChatLanguageModel | 71 | 37 | 52.1% | ⚠️ MAJOR |
 | OpenAIResponsesLanguageModel | 77 | 25 | 32% | ⚠️ MAJOR |
 | OpenAIResponsesInput | 48 | 4 | 8% | ❌ CRITICAL |
 | OpenAICompletionLanguageModel | 16 | 3 | 19% | ⚠️ MAJOR |
@@ -103,7 +103,7 @@
 | OpenAIError | 1 | 1 | 100% | ✅ PERFECT |
 | OpenAIProvider | 3 | 1 | 33% | ⚠️ MODERATE |
 
-**TOTAL: 290 → 108 (37.2% coverage) ❌ INSUFFICIENT**
+**TOTAL: 290 → 118 (40.7% coverage) ❌ INSUFFICIENT**
 
 ---
 
@@ -167,10 +167,10 @@ While the implementation code appears correct (100% functional parity from previ
 
 **Started:** 2025-10-19
 **Target:** 100% test parity (290 tests)
-**Current:** 108/290 tests (37.2%)
+**Current:** 118/290 tests (40.7%)
 
 ### OpenAIChatLanguageModel (Priority 1 - CRITICAL)
-**Target:** 71 tests | **Current:** 27/71 (38.0%)
+**Target:** 71 tests | **Current:** 37/71 (52.1%)
 
 #### Batch 1: Settings & Configuration (5/5) ✅ COMPLETE
 - [x] Pass settings (logitBias, user, parallelToolCalls) - `testPassSettings`
@@ -208,6 +208,20 @@ While the implementation code appears correct (100% functional parity from previ
 - [x] Remove temperature for gpt-4o-mini-search-preview with warning - `testRemoveTemperatureForGpt4oMiniSearchPreview`
 - [x] Remove temperature for gpt-4o-mini-search-preview-2025-03-11 with warning - `testRemoveTemperatureForGpt4oMiniSearchPreview20250311`
 
+#### Batch 6: Service Tier Processing (6/6) ✅ COMPLETE
+- [x] Send serviceTier flex processing setting - `testServiceTierFlexProcessing`
+- [x] Show warning when using flex processing with unsupported model - `testFlexProcessingWarningUnsupportedModel`
+- [x] Allow flex processing with o4-mini model without warnings - `testFlexProcessingO4Mini`
+- [x] Send serviceTier priority processing setting - `testServiceTierPriorityProcessing`
+- [x] Show warning when using priority processing with unsupported model - `testPriorityProcessingWarningUnsupportedModel`
+- [x] Allow priority processing with gpt-4o model without warnings - `testPriorityProcessingGpt4o`
+
+#### Batch 7: Tools & Additional (4/4) ✅ COMPLETE
+- [x] Support partial usage - `testPartialUsage`
+- [x] Support unknown finish reason - `testUnknownFinishReason`
+- [x] Pass tools and toolChoice - `testPassToolsAndToolChoice`
+- [x] Set strict for tool usage when structuredOutputs enabled - `testStrictToolWithStructuredOutputs`
+
 ---
 
-**Last Updated:** 2025-10-20 00:25 UTC
+**Last Updated:** 2025-10-20 01:20 UTC

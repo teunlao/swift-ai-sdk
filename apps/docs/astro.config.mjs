@@ -13,7 +13,8 @@ export default defineConfig({
         {
           label: "Foundations",
           items: [
-            { label: "Overview", link: "/foundations/overview" }
+            { label: "Overview", link: "/foundations/overview" },
+            { label: "Providers and Models", link: "/foundations/providers-and-models" }
           ]
         }
 			],

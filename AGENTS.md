@@ -29,6 +29,12 @@ Port **Vercel AI SDK** from TypeScript to Swift with **100% upstream parity**.
 6. **Immediate fixes** — upon finding any discrepancy, fix the Swift code (or document an intentional deviation) before proceeding. Never defer unresolved differences.
 7. **Final validation** — run `swift test` (and any package-specific checks) plus parity smoke tests if applicable to confirm runtime behavior.
 
+## Git & File Ownership Rules
+- Never edit, stage, or revert files you didn’t author. Limit all modifications strictly to files you created or were explicitly asked to change.
+- Do not run `git checkout`, `git reset`, or other destructive git commands on shared files unless the user explicitly instructs you to.
+- Before running any git command, inspect the diff and ensure the changes belong to you.
+- All git operations require explicit user approval.
+
 ---
 
 **📚 Read first:**

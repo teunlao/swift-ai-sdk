@@ -24,6 +24,9 @@ plan/principles.md              # Porting rules
 
 ```
 swift-ai-sdk/
+├── .audit/                      # Validation audits & reports
+│   ├── VALIDATION.md            # Validation guide (Russian)
+│   └── audit-openai.md          # OpenAI provider test coverage audit
 ├── .claude/agents/validator.md  # Custom validator agent definition
 ├── .sessions/                   # Session contexts (gitignored)
 ├── .orchestrator/               # Automation artifacts (gitignored)
@@ -62,6 +65,40 @@ SwiftAISDK (depends on: AISDKProvider, AISDKProviderUtils, EventSourceParser)
 
 **Use for**: Multi-session tasks, interrupted work, complex checkpoints
 **See**: `.sessions/README.md`
+
+### Validation Audits
+
+**Location**: `.audit/` - Validation reports and coverage tracking
+
+**Key Documents**:
+- 📋 **`VALIDATION.md`** - Complete validation guide (Russian)
+  - Step-by-step validation process
+  - API/behavior/test parity checklist
+  - Common validation errors
+  - Report templates (approval/rejection)
+
+- 📊 **`audit-openai.md`** - OpenAI provider test coverage audit
+  - Current: 114/290 tests (39.3%)
+  - Batch-by-batch progress tracking
+  - Gap analysis vs upstream
+  - Example of comprehensive audit report
+
+**Usage**:
+- **Before validation**: Read `VALIDATION.md` for process/checklist
+- **During development**: Update audit files with progress
+- **After completion**: Compare final coverage vs upstream
+
+**Example Workflow**:
+```bash
+# Check validation guide
+cat .audit/VALIDATION.md
+
+# Review OpenAI audit status
+cat .audit/audit-openai.md
+
+# Update audit after adding tests
+# (Track progress: X/Y tests, coverage %)
+```
 
 ---
 
@@ -385,6 +422,10 @@ Config files in `tools/`:
 ### Session Contexts
 - `.sessions/README.md` — Context guide
 - `.sessions/EXAMPLE-*.md` — Templates
+
+### Validation Audits
+- `.audit/VALIDATION.md` — Complete validation guide (Russian)
+- `.audit/audit-openai.md` — OpenAI provider test coverage audit (example)
 
 ---
 
