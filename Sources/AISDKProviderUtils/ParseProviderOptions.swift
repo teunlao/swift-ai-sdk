@@ -1,3 +1,4 @@
+import Foundation
 import AISDKProvider
 
 /// Validates provider-specific options against a schema.
@@ -12,8 +13,12 @@ public func parseProviderOptions<Options>(
         return nil
     }
 
+    let normalized = rawOptions.reduce(into: [String: Any]()) { result, entry in
+        result[entry.key] = jsonValueToFoundation(entry.value)
+    }
+
     let validation = await safeValidateTypes(
-        ValidateTypesOptions(value: rawOptions, schema: schema)
+        ValidateTypesOptions(value: normalized, schema: schema)
     )
 
     switch validation {

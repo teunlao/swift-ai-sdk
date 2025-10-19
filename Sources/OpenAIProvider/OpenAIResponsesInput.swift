@@ -183,7 +183,7 @@ struct OpenAIResponsesInputBuilder {
                     case .json(let value):
                         if hasLocalShellTool, part.toolName == "local_shell" {
                             let parsed = try await validateTypes(
-                                ValidateTypesOptions(value: value, schema: openaiLocalShellOutputSchema)
+                                ValidateTypesOptions(value: jsonValueToFoundation(value), schema: openaiLocalShellOutputSchema)
                             )
 
                             items.append(.object([
