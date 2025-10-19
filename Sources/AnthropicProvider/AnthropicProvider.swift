@@ -34,11 +34,11 @@ public struct AnthropicProviderSettings: Sendable {
 }
 
 public final class AnthropicProvider: ProviderV3 {
-    private let makeMessagesModel: @Sendable (String) -> any LanguageModelV3
+    private let makeMessagesModel: @Sendable (AnthropicMessagesModelId) -> AnthropicMessagesLanguageModel
     public let tools: AnthropicTools
 
     init(
-        makeMessagesModel: @escaping @Sendable (String) -> any LanguageModelV3,
+        makeMessagesModel: @escaping @Sendable (AnthropicMessagesModelId) -> AnthropicMessagesLanguageModel,
         tools: AnthropicTools
     ) {
         self.makeMessagesModel = makeMessagesModel
@@ -46,10 +46,18 @@ public final class AnthropicProvider: ProviderV3 {
     }
 
     public func languageModel(modelId: String) -> any LanguageModelV3 {
-        makeMessagesModel(modelId)
+        makeMessagesModel(AnthropicMessagesModelId(rawValue: modelId))
     }
 
     public func chatModel(modelId: String) -> any LanguageModelV3 {
+        makeMessagesModel(AnthropicMessagesModelId(rawValue: modelId))
+    }
+
+    public func chat(modelId: AnthropicMessagesModelId) -> AnthropicMessagesLanguageModel {
+        makeMessagesModel(modelId)
+    }
+
+    public func messages(modelId: AnthropicMessagesModelId) -> AnthropicMessagesLanguageModel {
         makeMessagesModel(modelId)
     }
 
@@ -65,18 +73,18 @@ public final class AnthropicProvider: ProviderV3 {
 public func createAnthropicProvider(settings: AnthropicProviderSettings = .init()) -> AnthropicProvider {
     let baseURL = withoutTrailingSlash(settings.baseURL) ?? "https://api.anthropic.com/v1"
 
-    let apiKey: String
-    do {
-        apiKey = try loadAPIKey(
-            apiKey: settings.apiKey,
-            environmentVariableName: "ANTHROPIC_API_KEY",
-            description: "Anthropic"
-        )
-    } catch {
-        fatalError("Anthropic API key is missing: \(error)")
-    }
-
     let headersClosure: @Sendable () -> [String: String?] = {
+        let apiKey: String
+        do {
+            apiKey = try loadAPIKey(
+                apiKey: settings.apiKey,
+                environmentVariableName: "ANTHROPIC_API_KEY",
+                description: "Anthropic"
+            )
+        } catch {
+            fatalError("Anthropic API key is missing: \(error)")
+        }
+
         var baseHeaders: [String: String?] = [
             "anthropic-version": "2023-06-01",
             "x-api-key": apiKey
@@ -108,9 +116,8 @@ public func createAnthropicProvider(settings: AnthropicProviderSettings = .init(
         generateId: settings.generateId
     )
 
-    let messagesFactory: @Sendable (String) -> any LanguageModelV3 = { modelId in
-        let identifier = AnthropicMessagesModelId(rawValue: modelId)
-        return AnthropicMessagesLanguageModel(modelId: identifier, config: config)
+    let messagesFactory: @Sendable (AnthropicMessagesModelId) -> AnthropicMessagesLanguageModel = { modelId in
+        AnthropicMessagesLanguageModel(modelId: modelId, config: config)
     }
 
     return AnthropicProvider(
@@ -118,3 +125,11 @@ public func createAnthropicProvider(settings: AnthropicProviderSettings = .init(
         tools: anthropicTools
     )
 }
+
+public extension AnthropicProvider {
+    func callAsFunction(_ modelId: String) -> any LanguageModelV3 {
+        languageModel(modelId: modelId)
+    }
+}
+
+public let anthropic = createAnthropicProvider()

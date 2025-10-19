@@ -168,4 +168,717 @@ struct OpenAIChatLanguageModelTests {
             Issue.record("messages missing from body")
         }
     }
+
+    // MARK: - Batch 1: Settings & Configuration
+
+    @Test("Pass provider settings (logitBias, user, parallelToolCalls)")
+    func testPassSettings() async throws {
+        final class RequestCapture: @unchecked Sendable {
+            var body: [String: Any]?
+        }
+
+        let capture = RequestCapture()
+        let mockData = try JSONSerialization.data(withJSONObject: [
+            "id": "test", "created": 1, "model": "gpt-3.5-turbo",
+            "choices": [["index": 0, "message": ["content": "ok"], "finish_reason": "stop"]],
+            "usage": ["prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2]
+        ])
+
+        let mockFetch: FetchFunction = { request in
+            if let body = request.httpBody,
+               let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] {
+                capture.body = json
+            }
+            let httpResponse = HTTPURLResponse(
+                url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(mockData), urlResponse: httpResponse)
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.chat",
+            url: { _ in "https://api.openai.com/v1/chat/completions" },
+            headers: { ["Authorization": "Bearer test-key"] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAIChatLanguageModel(modelId: "gpt-3.5-turbo", config: config)
+
+        _ = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: samplePrompt,
+                providerOptions: [
+                    "openai": [
+                        "logitBias": JSONValue.object(["50256": JSONValue.number(-100)]),
+                        "parallelToolCalls": JSONValue.bool(false),
+                        "user": JSONValue.string("test-user-id")
+                    ]
+                ]
+            )
+        )
+
+        guard let body = capture.body else {
+            Issue.record("Request body not captured")
+            return
+        }
+
+        #expect(body["model"] as? String == "gpt-3.5-turbo")
+        #expect(body["user"] as? String == "test-user-id")
+        #expect(body["parallel_tool_calls"] as? Bool == false)
+
+        if let logitBias = body["logit_bias"] as? [String: Any] {
+            #expect(logitBias["50256"] as? Int == -100)
+        } else {
+            Issue.record("logit_bias missing")
+        }
+    }
+
+    @Test("Pass reasoningEffort from provider metadata")
+    func testReasoningEffortFromMetadata() async throws {
+        final class RequestCapture: @unchecked Sendable {
+            var body: [String: Any]?
+        }
+
+        let capture = RequestCapture()
+        let mockData = try JSONSerialization.data(withJSONObject: [
+            "id": "test", "created": 1, "model": "o1-mini",
+            "choices": [["index": 0, "message": ["content": "ok"], "finish_reason": "stop"]],
+            "usage": ["prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2]
+        ])
+
+        let mockFetch: FetchFunction = { request in
+            if let body = request.httpBody,
+               let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] {
+                capture.body = json
+            }
+            return FetchResponse(
+                body: .data(mockData),
+                urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "application/json"])!
+            )
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.chat",
+            url: { _ in "https://api.openai.com/v1/chat/completions" },
+            headers: { ["Authorization": "Bearer test-key"] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAIChatLanguageModel(modelId: "o1-mini", config: config)
+
+        _ = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+                providerOptions: ["openai": ["reasoningEffort": JSONValue.string("low")]]
+            )
+        )
+
+        guard let body = capture.body else {
+            Issue.record("Request body not captured")
+            return
+        }
+
+        #expect(body["model"] as? String == "o1-mini")
+        #expect(body["reasoning_effort"] as? String == "low")
+    }
+
+    @Test("Pass reasoningEffort from settings")
+    func testReasoningEffortFromSettings() async throws {
+        final class RequestCapture: @unchecked Sendable {
+            var body: [String: Any]?
+        }
+
+        let capture = RequestCapture()
+        let mockData = try JSONSerialization.data(withJSONObject: [
+            "id": "test", "created": 1, "model": "o1-mini",
+            "choices": [["index": 0, "message": ["content": "ok"], "finish_reason": "stop"]],
+            "usage": ["prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2]
+        ])
+
+        let mockFetch: FetchFunction = { request in
+            if let body = request.httpBody,
+               let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] {
+                capture.body = json
+            }
+            return FetchResponse(
+                body: .data(mockData),
+                urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "application/json"])!
+            )
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.chat",
+            url: { _ in "https://api.openai.com/v1/chat/completions" },
+            headers: { ["Authorization": "Bearer test-key"] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAIChatLanguageModel(modelId: "o1-mini", config: config)
+
+        _ = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+                providerOptions: ["openai": ["reasoningEffort": JSONValue.string("high")]]
+            )
+        )
+
+        guard let body = capture.body else {
+            Issue.record("Request body not captured")
+            return
+        }
+
+        #expect(body["model"] as? String == "o1-mini")
+        #expect(body["reasoning_effort"] as? String == "high")
+    }
+
+    @Test("Pass textVerbosity setting")
+    func testTextVerbosity() async throws {
+        final class RequestCapture: @unchecked Sendable {
+            var body: [String: Any]?
+        }
+
+        let capture = RequestCapture()
+        let mockData = try JSONSerialization.data(withJSONObject: [
+            "id": "test", "created": 1, "model": "gpt-4o-2024-11-20",
+            "choices": [["index": 0, "message": ["content": "ok"], "finish_reason": "stop"]],
+            "usage": ["prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2]
+        ])
+
+        let mockFetch: FetchFunction = { request in
+            if let body = request.httpBody,
+               let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] {
+                capture.body = json
+            }
+            return FetchResponse(
+                body: .data(mockData),
+                urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "application/json"])!
+            )
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.chat",
+            url: { _ in "https://api.openai.com/v1/chat/completions" },
+            headers: { ["Authorization": "Bearer test-key"] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAIChatLanguageModel(modelId: "gpt-4o-2024-11-20", config: config)
+
+        _ = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+                providerOptions: ["openai": ["textVerbosity": JSONValue.string("low")]]
+            )
+        )
+
+        guard let body = capture.body else {
+            Issue.record("Request body not captured")
+            return
+        }
+
+        #expect(body["model"] as? String == "gpt-4o-2024-11-20")
+        #expect(body["verbosity"] as? String == "low")
+    }
+
+    @Test("Pass custom headers to request")
+    func testCustomHeaders() async throws {
+        final class RequestCapture: @unchecked Sendable {
+            var headers: [String: String]?
+        }
+
+        let capture = RequestCapture()
+        let mockData = try JSONSerialization.data(withJSONObject: [
+            "id": "test", "created": 1, "model": "gpt-4o-mini",
+            "choices": [["index": 0, "message": ["content": "ok"], "finish_reason": "stop"]],
+            "usage": ["prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2]
+        ])
+
+        let mockFetch: FetchFunction = { request in
+            capture.headers = request.allHTTPHeaderFields ?? [:]
+            return FetchResponse(
+                body: .data(mockData),
+                urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "application/json"])!
+            )
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.chat",
+            url: { _ in "https://api.openai.com/v1/chat/completions" },
+            headers: { ["Authorization": "Bearer test-key"] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAIChatLanguageModel(modelId: "gpt-4o-mini", config: config)
+
+        _ = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: samplePrompt,
+                headers: ["X-Custom-Header": "custom-value", "X-Test-Id": "123"]
+            )
+        )
+
+        guard let headers = capture.headers else {
+            Issue.record("Headers not captured")
+            return
+        }
+
+        let normalized = Dictionary(uniqueKeysWithValues: headers.map { ($0.key.lowercased(), $0.value) })
+        #expect(normalized["authorization"] == "Bearer test-key")
+        #expect(normalized["x-custom-header"] == "custom-value")
+        #expect(normalized["x-test-id"] == "123")
+    }
+
+    // MARK: - Batch 2: Response Format
+
+    @Test("Should not send response_format when text")
+    func testResponseFormatText() async throws {
+        final class RequestCapture: @unchecked Sendable {
+            var body: [String: Any]?
+        }
+
+        let capture = RequestCapture()
+        let mockData = try JSONSerialization.data(withJSONObject: [
+            "id": "test", "created": 1, "model": "gpt-4o-2024-08-06",
+            "choices": [["index": 0, "message": ["content": "{\"value\":\"Spark\"}"], "finish_reason": "stop"]],
+            "usage": ["prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2]
+        ])
+
+        let mockFetch: FetchFunction = { request in
+            if let body = request.httpBody,
+               let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] {
+                capture.body = json
+            }
+            return FetchResponse(
+                body: .data(mockData),
+                urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "application/json"])!
+            )
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.chat",
+            url: { _ in "https://api.openai.com/v1/chat/completions" },
+            headers: { ["Authorization": "Bearer test-key"] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAIChatLanguageModel(modelId: "gpt-4o-2024-08-06", config: config)
+
+        _ = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+                responseFormat: LanguageModelV3ResponseFormat.text
+            )
+        )
+
+        guard let body = capture.body else {
+            Issue.record("Request body not captured")
+            return
+        }
+
+        #expect(body["model"] as? String == "gpt-4o-2024-08-06")
+        #expect(body["response_format"] == nil)
+    }
+
+    @Test("Forward json response format as json_object without schema")
+    func testResponseFormatJsonObject() async throws {
+        final class RequestCapture: @unchecked Sendable {
+            var body: [String: Any]?
+        }
+
+        let capture = RequestCapture()
+        let mockData = try JSONSerialization.data(withJSONObject: [
+            "id": "test", "created": 1, "model": "gpt-4o-2024-08-06",
+            "choices": [["index": 0, "message": ["content": "{\"value\":\"Spark\"}"], "finish_reason": "stop"]],
+            "usage": ["prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2]
+        ])
+
+        let mockFetch: FetchFunction = { request in
+            if let body = request.httpBody,
+               let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] {
+                capture.body = json
+            }
+            return FetchResponse(
+                body: .data(mockData),
+                urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "application/json"])!
+            )
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.chat",
+            url: { _ in "https://api.openai.com/v1/chat/completions" },
+            headers: { ["Authorization": "Bearer test-key"] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAIChatLanguageModel(modelId: "gpt-4o-2024-08-06", config: config)
+
+        _ = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+                responseFormat: LanguageModelV3ResponseFormat.json(schema: nil, name: nil, description: nil)
+            )
+        )
+
+        guard let body = capture.body else {
+            Issue.record("Request body not captured")
+            return
+        }
+
+        #expect(body["model"] as? String == "gpt-4o-2024-08-06")
+        if let responseFormat = body["response_format"] as? [String: Any] {
+            #expect(responseFormat["type"] as? String == "json_object")
+        } else {
+            Issue.record("response_format missing")
+        }
+    }
+
+    @Test("Forward json format and omit schema when structuredOutputs disabled")
+    func testResponseFormatJsonStructuredOutputsDisabled() async throws {
+        final class RequestCapture: @unchecked Sendable {
+            var body: [String: Any]?
+        }
+
+        let capture = RequestCapture()
+        let mockData = try JSONSerialization.data(withJSONObject: [
+            "id": "test", "created": 1, "model": "gpt-4o-2024-08-06",
+            "choices": [["index": 0, "message": ["content": "{\"value\":\"Spark\"}"], "finish_reason": "stop"]],
+            "usage": ["prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2]
+        ])
+
+        let mockFetch: FetchFunction = { request in
+            if let body = request.httpBody,
+               let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] {
+                capture.body = json
+            }
+            return FetchResponse(
+                body: .data(mockData),
+                urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "application/json"])!
+            )
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.chat",
+            url: { _ in "https://api.openai.com/v1/chat/completions" },
+            headers: { ["Authorization": "Bearer test-key"] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAIChatLanguageModel(modelId: "gpt-4o-2024-08-06", config: config)
+
+        let schema = JSONValue.object([
+            "type": .string("object"),
+            "properties": .object(["value": .object(["type": .string("string")])]),
+            "required": .array([.string("value")]),
+            "additionalProperties": .bool(false),
+            "$schema": .string("http://json-schema.org/draft-07/schema#")
+        ])
+
+        let result = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+                responseFormat: LanguageModelV3ResponseFormat.json(schema: schema, name: nil, description: nil),
+                providerOptions: ["openai": ["structuredOutputs": .bool(false)]]
+            )
+        )
+
+        guard let body = capture.body else {
+            Issue.record("Request body not captured")
+            return
+        }
+
+        #expect(body["model"] as? String == "gpt-4o-2024-08-06")
+        if let responseFormat = body["response_format"] as? [String: Any] {
+            #expect(responseFormat["type"] as? String == "json_object")
+            #expect(responseFormat["json_schema"] == nil)
+        } else {
+            Issue.record("response_format missing")
+        }
+
+        // Check for warning
+        #expect(result.warnings.count == 1)
+        if case .unsupportedSetting(let setting, _) = result.warnings.first {
+            #expect(setting == "responseFormat")
+        } else {
+            Issue.record("Expected unsupported-setting warning")
+        }
+    }
+
+    @Test("Include schema when structuredOutputs enabled")
+    func testResponseFormatJsonStructuredOutputsEnabled() async throws {
+        final class RequestCapture: @unchecked Sendable {
+            var body: [String: Any]?
+        }
+
+        let capture = RequestCapture()
+        let mockData = try JSONSerialization.data(withJSONObject: [
+            "id": "test", "created": 1, "model": "gpt-4o-2024-08-06",
+            "choices": [["index": 0, "message": ["content": "{\"value\":\"Spark\"}"], "finish_reason": "stop"]],
+            "usage": ["prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2]
+        ])
+
+        let mockFetch: FetchFunction = { request in
+            if let body = request.httpBody,
+               let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] {
+                capture.body = json
+            }
+            return FetchResponse(
+                body: .data(mockData),
+                urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "application/json"])!
+            )
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.chat",
+            url: { _ in "https://api.openai.com/v1/chat/completions" },
+            headers: { ["Authorization": "Bearer test-key"] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAIChatLanguageModel(modelId: "gpt-4o-2024-08-06", config: config)
+
+        let schema = JSONValue.object([
+            "type": .string("object"),
+            "properties": .object(["value": .object(["type": .string("string")])]),
+            "required": .array([.string("value")]),
+            "additionalProperties": .bool(false),
+            "$schema": .string("http://json-schema.org/draft-07/schema#")
+        ])
+
+        let result = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+                responseFormat: LanguageModelV3ResponseFormat.json(schema: schema, name: nil, description: nil)
+            )
+        )
+
+        guard let body = capture.body else {
+            Issue.record("Request body not captured")
+            return
+        }
+
+        #expect(body["model"] as? String == "gpt-4o-2024-08-06")
+        if let responseFormat = body["response_format"] as? [String: Any] {
+            #expect(responseFormat["type"] as? String == "json_schema")
+            if let jsonSchema = responseFormat["json_schema"] as? [String: Any] {
+                #expect(jsonSchema["name"] as? String == "response")
+                #expect(jsonSchema["strict"] as? Bool == false)
+                #expect(jsonSchema["schema"] != nil)
+            } else {
+                Issue.record("json_schema missing")
+            }
+        } else {
+            Issue.record("response_format missing")
+        }
+
+        // No warnings expected
+        #expect(result.warnings.isEmpty)
+    }
+
+    @Test("Use json_schema and strict with responseFormat json")
+    func testResponseFormatJsonSchemaStrict() async throws {
+        final class RequestCapture: @unchecked Sendable {
+            var body: [String: Any]?
+        }
+
+        let capture = RequestCapture()
+        let mockData = try JSONSerialization.data(withJSONObject: [
+            "id": "test", "created": 1, "model": "gpt-4o-2024-08-06",
+            "choices": [["index": 0, "message": ["content": "{\"value\":\"Spark\"}"], "finish_reason": "stop"]],
+            "usage": ["prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2]
+        ])
+
+        let mockFetch: FetchFunction = { request in
+            if let body = request.httpBody,
+               let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] {
+                capture.body = json
+            }
+            return FetchResponse(
+                body: .data(mockData),
+                urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "application/json"])!
+            )
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.chat",
+            url: { _ in "https://api.openai.com/v1/chat/completions" },
+            headers: { ["Authorization": "Bearer test-key"] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAIChatLanguageModel(modelId: "gpt-4o-2024-08-06", config: config)
+
+        let schema = JSONValue.object([
+            "type": .string("object"),
+            "properties": .object(["value": .object(["type": .string("string")])]),
+            "required": .array([.string("value")]),
+            "additionalProperties": .bool(false),
+            "$schema": .string("http://json-schema.org/draft-07/schema#")
+        ])
+
+        _ = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+                responseFormat: LanguageModelV3ResponseFormat.json(schema: schema, name: nil, description: nil)
+            )
+        )
+
+        guard let body = capture.body else {
+            Issue.record("Request body not captured")
+            return
+        }
+
+        #expect(body["model"] as? String == "gpt-4o-2024-08-06")
+        if let responseFormat = body["response_format"] as? [String: Any] {
+            #expect(responseFormat["type"] as? String == "json_schema")
+            if let jsonSchema = responseFormat["json_schema"] as? [String: Any] {
+                #expect(jsonSchema["name"] as? String == "response")
+                #expect(jsonSchema["strict"] as? Bool == false)
+            } else {
+                Issue.record("json_schema missing")
+            }
+        } else {
+            Issue.record("response_format missing")
+        }
+    }
+
+    @Test("Set name and description with responseFormat json")
+    func testResponseFormatJsonWithNameDescription() async throws {
+        final class RequestCapture: @unchecked Sendable {
+            var body: [String: Any]?
+        }
+
+        let capture = RequestCapture()
+        let mockData = try JSONSerialization.data(withJSONObject: [
+            "id": "test", "created": 1, "model": "gpt-4o-2024-08-06",
+            "choices": [["index": 0, "message": ["content": "{\"value\":\"Spark\"}"], "finish_reason": "stop"]],
+            "usage": ["prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2]
+        ])
+
+        let mockFetch: FetchFunction = { request in
+            if let body = request.httpBody,
+               let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] {
+                capture.body = json
+            }
+            return FetchResponse(
+                body: .data(mockData),
+                urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "application/json"])!
+            )
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.chat",
+            url: { _ in "https://api.openai.com/v1/chat/completions" },
+            headers: { ["Authorization": "Bearer test-key"] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAIChatLanguageModel(modelId: "gpt-4o-2024-08-06", config: config)
+
+        let schema = JSONValue.object([
+            "type": .string("object"),
+            "properties": .object(["value": .object(["type": .string("string")])]),
+            "required": .array([.string("value")]),
+            "additionalProperties": .bool(false),
+            "$schema": .string("http://json-schema.org/draft-07/schema#")
+        ])
+
+        _ = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+                responseFormat: LanguageModelV3ResponseFormat.json(
+                    schema: schema,
+                    name: "test-name",
+                    description: "test description"
+                )
+            )
+        )
+
+        guard let body = capture.body else {
+            Issue.record("Request body not captured")
+            return
+        }
+
+        #expect(body["model"] as? String == "gpt-4o-2024-08-06")
+        if let responseFormat = body["response_format"] as? [String: Any] {
+            #expect(responseFormat["type"] as? String == "json_schema")
+            if let jsonSchema = responseFormat["json_schema"] as? [String: Any] {
+                #expect(jsonSchema["name"] as? String == "test-name")
+                #expect(jsonSchema["description"] as? String == "test description")
+                #expect(jsonSchema["strict"] as? Bool == false)
+            } else {
+                Issue.record("json_schema missing")
+            }
+        } else {
+            Issue.record("response_format missing")
+        }
+    }
+
+    @Test("Allow undefined schema with responseFormat json")
+    func testResponseFormatJsonUndefinedSchema() async throws {
+        final class RequestCapture: @unchecked Sendable {
+            var body: [String: Any]?
+        }
+
+        let capture = RequestCapture()
+        let mockData = try JSONSerialization.data(withJSONObject: [
+            "id": "test", "created": 1, "model": "gpt-4o-2024-08-06",
+            "choices": [["index": 0, "message": ["content": "{\"value\":\"Spark\"}"], "finish_reason": "stop"]],
+            "usage": ["prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2]
+        ])
+
+        let mockFetch: FetchFunction = { request in
+            if let body = request.httpBody,
+               let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] {
+                capture.body = json
+            }
+            return FetchResponse(
+                body: .data(mockData),
+                urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "application/json"])!
+            )
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.chat",
+            url: { _ in "https://api.openai.com/v1/chat/completions" },
+            headers: { ["Authorization": "Bearer test-key"] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAIChatLanguageModel(modelId: "gpt-4o-2024-08-06", config: config)
+
+        _ = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+                responseFormat: LanguageModelV3ResponseFormat.json(
+                    schema: nil,
+                    name: "test-name",
+                    description: "test description"
+                )
+            )
+        )
+
+        guard let body = capture.body else {
+            Issue.record("Request body not captured")
+            return
+        }
+
+        #expect(body["model"] as? String == "gpt-4o-2024-08-06")
+        if let responseFormat = body["response_format"] as? [String: Any] {
+            #expect(responseFormat["type"] as? String == "json_object")
+        } else {
+            Issue.record("response_format missing")
+        }
+    }
 }
