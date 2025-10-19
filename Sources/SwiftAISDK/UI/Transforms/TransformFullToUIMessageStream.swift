@@ -90,7 +90,7 @@ public func transformFullToUIMessageStream(
                         // Upstream UI stream surfaces files via dedicated pathways.
                         break
 
-                    case let .toolInputStart(toolCallId, toolName, _providerMetadata, providerExecuted, dynamic):
+                    case let .toolInputStart(toolCallId, toolName, _, providerExecuted, dynamic):
                         continuation.yield(.toolInputStart(
                             toolCallId: toolCallId,
                             toolName: toolName,
@@ -139,7 +139,7 @@ public func transformFullToUIMessageStream(
                     case let .toolApprovalRequest(request):
                         continuation.yield(.toolApprovalRequest(approvalId: request.approvalId, toolCallId: request.toolCall.toolCallId))
 
-                    case let .finishStep(_, _, _, _):
+                    case .finishStep:
                         if stepOpen { continuation.yield(.finishStep); stepOpen = false }
 
                     case let .finish(finishReason, totalUsage):

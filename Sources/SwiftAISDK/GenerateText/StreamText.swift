@@ -484,7 +484,7 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
                 var lastRepresentation: String? = nil
 
                 func flushCurrent() async throws {
-                    guard let textId = firstTextId, !accumulated.isEmpty else { return }
+                    guard let _ = firstTextId, !accumulated.isEmpty else { return }
                     if let partial = try await outputSpecification.parsePartial(text: accumulated) {
                         let representation = partialRepresentation(partial)
                         if representation != lastRepresentation {

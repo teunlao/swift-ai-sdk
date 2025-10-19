@@ -1,7 +1,6 @@
 import Foundation
 import AISDKProvider
 import AISDKProviderUtils
-@testable import SwiftAISDK
 
 /**
  Transforms a text stream into a UI message stream sequence.

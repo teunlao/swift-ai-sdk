@@ -20,3 +20,16 @@
 - 2025-10-13T15:13:58Z [executor][gpt-5] **RunToolsTransformation**: перенесли run-tools-transformation.ts на Swift, совместив два потока (forward и результаты инструментов) через AsyncThrowingStream. Внутренний класс состояния отслеживает pending tool execution и откладывает finish, пока outstanding задачи не завершены, реплицируя attemptClose из TS. Для вывода введён enum SingleRequestTextStreamPart, provider tool results/ошибки собираются на основе сохранённых TypedToolCall + JSONValue и мапятся в Static/Dynamic варианты. Invalid tool call делает DynamicToolError с getErrorMessage, как в оригинале. Тесты RunToolsTransformationTests.swift повторяют vitest-сценарии, MockTracer вынесен в TestSupport для телеметрии.
 
 - 2025-10-13T15:46:01Z [executor][gpt-5] **Result Types (Task 5.7)**: Портированы `GenerateTextResult`/`DefaultGenerateTextResult` и протокол `StreamTextResult`. В Swift введён `associatedtype Output`/`PartialOutput`, чтобы сохранить дженерики апстрима (`experimental_output`, partial streams). `DefaultGenerateTextResult<Output>` лениво читает финальный `StepResult`, а при отсутствии парсера бросает `NoOutputSpecifiedError`. `StreamTextResult` декларирует все публичные методы (`toUIMessageStream*`, `pipe*ToResponse`, `toTextStreamResponse`) и использует placeholder-типы (UIMessage, UIMessageStreamOptions, ResponseInit и т.п.) как заглушки до блоков F/R. Реализация методов появится на следующих этапах, но сигнатуры уже стабильны, что гарантирует паритет API.
+
+- 2025-10-19T05:00:00Z [executor][gpt-5] StreamText parity fixes (pipeline + telemetry):
+  - Implicit-open for `textDelta`/`reasoningDelta` when `*Start` is missing (matches stream-text.ts tolerant behavior).
+  - Provider error handling: emit `.error` part, invoke `onError` once, but `waitForFinish()` resolves with `NoOutputGeneratedError` when no steps are produced.
+  - Telemetry spans: record `ai.stream.firstChunk` and `ai.stream.finish` with `ai.response.msToFirstChunk`, `ai.response.msToFinish`, and `ai.response.avgOutputTokensPerSecond`.
+
+- 2025-10-19T05:05:00Z [executor][gpt-5] TextStreamPart JSON/Codable parity for tool events:
+  - Implemented encode/decode for `tool-call`, `tool-result`, `tool-error`, and `tool-approval-request` with flattened fields (`toolCallId`, `toolName`, `input`, `result`, `preliminary`, `providerExecuted`, `providerMetadata`, `dynamic`, `invalid`, `error`).
+  - Keeps current upstream representation (commit 77db222ee): invalid tool call is expressed via `dynamic + invalid + error` flags on `TypedToolCall` instead of a separate `InvalidToolCall` type.
+  - Rationale: exact parity with referenced upstream; future AI SDK 6 migration to a dedicated `InvalidToolCall` can be done without breaking current tests.
+
+- 2025-10-19T05:07:00Z [executor][gpt-5] UI Transform polish:
+  - Removed `@testable import` from sources; fixed unused bindings and pattern matches in UI transforms. No behavioral changes.
