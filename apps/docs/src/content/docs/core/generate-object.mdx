@@ -3,8 +3,6 @@ title: Generate Object
 description: Produce structured JSON mapped to Swift Codable or Zod‑derived schema.
 ---
 
-# Generate Object
-
 Create validated structured data. Swift mirrors `generateObject` from Vercel AI SDK.
 
 ## Codable schema
@@ -38,4 +36,3 @@ let repoSchema: Schema<Repo> = schemaFromZod3(Repo.self, zod: repoZod, name: "Re
 ```
 
 The adapter converts Zod v3 to JSON Schema and then to `Schema<T>` for decoding.
-

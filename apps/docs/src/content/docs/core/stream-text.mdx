@@ -3,9 +3,7 @@ title: Stream Text
 description: Stream partial tokens, tool calls, reasoning and final result.
 ---
 
-# Stream Text
-
-Produce live token streams and events. Swift mirrors Vercel AI SDK `streamText` semantics.
+Produce live token streams and events from supported models.
 
 ## Basic streaming
 
@@ -48,4 +46,3 @@ for try await event in stream {
 - `error` — fatal errors (stream ends).
 
 All event naming and ordering is aligned with upstream tests.
-

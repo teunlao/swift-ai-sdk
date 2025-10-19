@@ -3,11 +3,7 @@ title: Generate Text
 description: Call a text model to produce plain text with Swift AI SDK.
 ---
 
-# Generate Text
-
 Generate free‑form text from any provider that implements the Language Model V3 spec.
-
-Swift adaptation of Vercel AI SDK’s `generateText` (commit `77db222ee`).
 
 ## Basic usage
 
@@ -67,4 +63,3 @@ let result = try await generateText(model: model, input: "...", abortSignal: sho
 ## Error behavior
 
 Error types and messages mirror upstream where applicable. Provider errors are normalized (status, code, message).
-
