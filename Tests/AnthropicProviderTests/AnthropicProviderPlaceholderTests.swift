@@ -3,8 +3,10 @@ import Testing
 
 @Suite("Anthropic placeholder")
 struct AnthropicProviderPlaceholderTests {
-    @Test("createAnthropicProvider throws fatal when using models")
+    @Test("createAnthropicProvider produces provider when API key supplied")
     func placeholder() {
-        _ = createAnthropicProvider()
+        let provider = createAnthropicProvider(settings: .init(apiKey: "test-key"))
+        let model = provider.languageModel(modelId: "claude-3-opus-20240229")
+        #expect(model is AnthropicMessagesLanguageModel)
     }
 }

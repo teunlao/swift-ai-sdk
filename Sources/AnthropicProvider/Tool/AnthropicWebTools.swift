@@ -85,13 +85,6 @@ public struct AnthropicWebFetchToolArgs: Codable, Sendable, Equatable {
         self.maxContentTokens = maxContentTokens
     }
 
-    private enum CodingKeys: String, CodingKey {
-        case maxUses = "max_uses"
-        case allowedDomains = "allowed_domains"
-        case blockedDomains = "blocked_domains"
-        case citations
-        case maxContentTokens = "max_content_tokens"
-    }
 }
 
 public let anthropicWebFetch20250910ArgsSchema = FlexibleSchema(
@@ -162,12 +155,6 @@ public struct AnthropicWebSearchToolArgs: Codable, Sendable, Equatable {
         self.userLocation = userLocation
     }
 
-    private enum CodingKeys: String, CodingKey {
-        case maxUses = "max_uses"
-        case allowedDomains = "allowed_domains"
-        case blockedDomains = "blocked_domains"
-        case userLocation = "user_location"
-    }
 }
 
 public let anthropicWebSearch20250305ArgsSchema = FlexibleSchema(

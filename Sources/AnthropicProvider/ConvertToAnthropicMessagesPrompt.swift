@@ -297,7 +297,7 @@ private func appendToolMessageParts(
 
         switch part.output {
         case .content(let items):
-            let mapped = try items.map { item -> JSONValue in
+            let mapped = items.map { item -> JSONValue in
                 switch item {
                 case .text(let text):
                     return .object([
@@ -468,7 +468,7 @@ private func appendAssistantToolResult(
         }
 
         let parsed = try await validateTypes(
-            ValidateTypesOptions(value: value, schema: anthropicCodeExecution20250522OutputSchema)
+            ValidateTypesOptions(value: jsonValueToFoundation(value), schema: anthropicCodeExecution20250522OutputSchema)
         )
 
         var payload: [String: JSONValue] = [
@@ -491,7 +491,7 @@ private func appendAssistantToolResult(
         }
 
         let parsed = try await validateTypes(
-            ValidateTypesOptions(value: value, schema: anthropicWebFetch20250910OutputSchema)
+            ValidateTypesOptions(value: jsonValueToFoundation(value), schema: anthropicWebFetch20250910OutputSchema)
         )
 
         var contentPayload: [String: JSONValue] = [
@@ -527,7 +527,7 @@ private func appendAssistantToolResult(
         }
 
         let results = try await validateTypes(
-            ValidateTypesOptions(value: value, schema: anthropicWebSearch20250305OutputSchema)
+            ValidateTypesOptions(value: jsonValueToFoundation(value), schema: anthropicWebSearch20250305OutputSchema)
         )
 
         let mapped = results.map { result in

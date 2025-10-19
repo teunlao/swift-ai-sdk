@@ -9,9 +9,6 @@ public struct AnthropicTextEditor20250728Args: Codable, Sendable, Equatable {
         self.maxCharacters = maxCharacters
     }
 
-    private enum CodingKeys: String, CodingKey {
-        case maxCharacters = "max_characters"
-    }
 }
 
 public let anthropicTextEditor20250728ArgsSchema = FlexibleSchema(

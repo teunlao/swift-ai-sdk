@@ -9,6 +9,12 @@ struct AnthropicPreparedTools: Sendable {
     let betas: Set<String>
 }
 
+private func foundationArgs(_ args: [String: JSONValue]) -> [String: Any] {
+    Dictionary(uniqueKeysWithValues: args.map { key, value in
+        (key, jsonValueToFoundation(value))
+    })
+}
+
 private func cacheControlJSON(from cacheControl: AnthropicCacheControl?) -> JSONValue? {
     guard let cacheControl else { return nil }
     var payload: [String: JSONValue] = [
@@ -135,7 +141,7 @@ func prepareAnthropicTools(
 
             case "anthropic.text_editor_20250728":
                 let parsed = try await validateTypes(
-                    ValidateTypesOptions(value: providerTool.args, schema: anthropicTextEditor20250728ArgsSchema)
+                    ValidateTypesOptions(value: foundationArgs(providerTool.args), schema: anthropicTextEditor20250728ArgsSchema)
                 )
                 var payload: [String: JSONValue] = [
                     "name": .string("str_replace_based_edit_tool"),
@@ -163,7 +169,7 @@ func prepareAnthropicTools(
             case "anthropic.web_fetch_20250910":
                 betas.insert("web-fetch-2025-09-10")
                 let parsed = try await validateTypes(
-                    ValidateTypesOptions(value: providerTool.args, schema: anthropicWebFetch20250910ArgsSchema)
+                    ValidateTypesOptions(value: foundationArgs(providerTool.args), schema: anthropicWebFetch20250910ArgsSchema)
                 )
                 var payload: [String: JSONValue] = [
                     "type": .string("web_fetch_20250910"),
@@ -188,7 +194,7 @@ func prepareAnthropicTools(
 
             case "anthropic.web_search_20250305":
                 let parsed = try await validateTypes(
-                    ValidateTypesOptions(value: providerTool.args, schema: anthropicWebSearch20250305ArgsSchema)
+                    ValidateTypesOptions(value: foundationArgs(providerTool.args), schema: anthropicWebSearch20250305ArgsSchema)
                 )
                 var payload: [String: JSONValue] = [
                     "type": .string("web_search_20250305"),
