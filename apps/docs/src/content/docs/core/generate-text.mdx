@@ -1,0 +1,70 @@
+---
+title: Generate Text
+description: Call a text model to produce plain text with Swift AI SDK.
+---
+
+# Generate Text
+
+Generate free‑form text from any provider that implements the Language Model V3 spec.
+
+Swift adaptation of Vercel AI SDK’s `generateText` (commit `77db222ee`).
+
+## Basic usage
+
+```swift
+import SwiftAISDK
+import AISDKProvider
+
+let model = OpenAICompatible.TextModel(
+  id: "gpt-4o-mini",
+  baseURL: URL(string: "https://api.openai.com/v1")!,
+  apiKey: ProcessInfo.processInfo.environment["OPENAI_API_KEY"] ?? ""
+)
+
+let result = try await generateText(
+  model: model,
+  input: "Write a friendly, one‑paragraph project introduction"
+)
+
+print(result.text)
+```
+
+## With system prompt and messages
+
+```swift
+let result = try await generateText(
+  model: model,
+  system: "You are a concise technical writer.",
+  input: [
+    .user("Summarize the key goals in 3 bullets."),
+    .assistant("Sure, what is the context?"),
+    .user("Swift AI SDK: a 1:1 port of Vercel AI SDK.")
+  ]
+)
+print(result.text)
+```
+
+## Stop sequences and max tokens
+
+```swift
+let result = try await generateText(
+  model: model,
+  input: "List 3 ideas",
+  maxTokens: 128,
+  stopSequences: ["\n4."]
+)
+```
+
+## Abort / cancellation
+
+Swift uses a closure equivalent for `AbortSignal`.
+
+```swift
+let shouldAbort: @Sendable () -> Bool = { Task.isCancelled }
+let result = try await generateText(model: model, input: "...", abortSignal: shouldAbort)
+```
+
+## Error behavior
+
+Error types and messages mirror upstream where applicable. Provider errors are normalized (status, code, message).
+

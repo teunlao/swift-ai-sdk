@@ -1,0 +1,49 @@
+---
+title: Tools
+description: Define and run tools (function calling) during generation/streaming.
+---
+
+# Tools
+
+Swift mirrors Vercel AI SDK’s tool calling with a type‑safe API.
+
+## Define a tool
+
+```swift
+import SwiftAISDK
+import AISDKProviderUtils
+
+struct SearchQuery: Codable, Sendable { let q: String }
+
+let tools: [ToolDefinition] = [
+  Tool("search", input: .codable(SearchQuery.self)) { input in
+    // Run your logic here (DB/API/etc.)
+    .text("Top result for: \(input.q)")
+  }
+]
+```
+
+## Use with generateText
+
+```swift
+let res = try await generateText(
+  model: model,
+  tools: tools,
+  input: "Search for 'Swift AI SDK' and summarize"
+)
+print(res.text)
+```
+
+## Use with streamText
+
+```swift
+let s = try await streamText(model: model, tools: tools, input: "Find 2 facts about Vercel AI SDK")
+for try await e in s {
+  switch e {
+  case let .toolCall(call): print("tool call:", call)
+  case let .toolResult(result): print("tool result:", result)
+  default: break
+  }
+}
+```
+

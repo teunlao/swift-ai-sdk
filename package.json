@@ -18,7 +18,9 @@
     "dashboard": "orchestrator-dashboard",
     "docs:dev": "pnpm -C apps/docs dev",
     "docs:build": "pnpm -C apps/docs build",
-    "docs:preview": "pnpm -C apps/docs preview"
+    "docs:preview": "pnpm -C apps/docs preview",
+    "docs:sync": "pnpm -C apps/docs sync",
+    "docs:check": "pnpm -C apps/docs check"
   },
 	"devDependencies": {
 		"@types/node": "^24.7.2"
