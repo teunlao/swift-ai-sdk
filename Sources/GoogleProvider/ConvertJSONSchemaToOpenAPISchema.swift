@@ -158,7 +158,9 @@ private func isEmptyGoogleObjectSchema(_ value: JSONValue) -> Bool {
         default: additionalPropertiesDisabled = false
         }
     } else {
-        additionalPropertiesDisabled = false
+        // Отсутствие additionalProperties трактуем как "запрещены" для целей фильтрации пустых схем,
+        // чтобы соответствовать поведению upstream.
+        additionalPropertiesDisabled = true
     }
 
     return propertiesEmpty && additionalPropertiesDisabled

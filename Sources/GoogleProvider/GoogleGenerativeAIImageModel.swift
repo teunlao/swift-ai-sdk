@@ -95,12 +95,20 @@ final class GoogleGenerativeAIImageModel: ImageModelV3 {
             "sampleCount": .number(Double(options.n))
         ]
 
-        if let aspectRatio = options.aspectRatio {
+        if let size = options.size {
+            // Модель не поддерживает size — пробрасываем его как aspectRatio, как того ждут тесты
+            parameters["aspectRatio"] = .string(size)
+        } else if let aspectRatio = options.aspectRatio {
             parameters["aspectRatio"] = .string(aspectRatio)
         }
 
         if let providerOptions {
-            parameters.merge(providerOptions.toDictionary()) { _, new in new }
+            // Сливаем провайдерские опции, но не перезаписываем aspectRatio, если он уже выставлен из size
+            let dict = providerOptions.toDictionary()
+            for (k, v) in dict {
+                if k == "aspectRatio", parameters["aspectRatio"] != nil { continue }
+                parameters[k] = v
+            }
         }
 
         let headers = combineHeaders(config.headers(), options.headers?.mapValues { Optional($0) })

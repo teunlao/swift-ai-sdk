@@ -64,10 +64,14 @@ struct GoogleGenerativeAIImageModelTests {
         ))
 
         #expect(result.warnings.count == 2)
-        #expect(result.images == .base64([
-            Data([0x01]).base64EncodedString(),
-            Data([0x02]).base64EncodedString()
-        ]))
+        if case let .base64(images) = result.images {
+            #expect(images == [
+                Data([0x01]).base64EncodedString(),
+                Data([0x02]).base64EncodedString()
+            ])
+        } else {
+            Issue.record("Expected base64 image payload")
+        }
         #expect(result.response.timestamp == Date(timeIntervalSince1970: 1_700_000_000))
 
         guard let request = await capture.value(),

@@ -189,19 +189,21 @@ public final class GoogleGenerativeAILanguageModel: LanguageModelV3 {
                                     hasToolCalls = true
                                 }
 
-                                if let sources = extractSources(
-                                    groundingMetadata: candidate.groundingMetadata,
-                                    generateId: config.generateId
-                                ) {
-                                    for source in sources {
-                                        if case let .url(_, url, _, _) = source, emittedSourceURLs.contains(url) {
-                                            continue
-                                        }
-                                        if case let .url(_, url, _, _) = source {
-                                            emittedSourceURLs.insert(url)
-                                        }
-                                        continuation.yield(.source(source))
+                            }
+
+                            // Источники могут приходить даже когда parts отсутствуют — обрабатываем независимо
+                            if let sources = extractSources(
+                                groundingMetadata: candidate.groundingMetadata,
+                                generateId: config.generateId
+                            ) {
+                                for source in sources {
+                                    if case let .url(_, url, _, _) = source, emittedSourceURLs.contains(url) {
+                                        continue
                                     }
+                                    if case let .url(_, url, _, _) = source {
+                                        emittedSourceURLs.insert(url)
+                                    }
+                                    continuation.yield(.source(source))
                                 }
                             }
 
