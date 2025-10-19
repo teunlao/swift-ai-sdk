@@ -1491,4 +1491,177 @@ struct OpenAIChatLanguageModelTests {
         #expect(body["model"] as? String == "gpt-3.5-turbo")
         #expect(body["safety_identifier"] as? String == "test-safety-identifier-123")
     }
+
+    // MARK: - Batch 5: Search Models (3 tests)
+
+    @Test("Remove temperature for gpt-4o-search-preview with warning")
+    func testRemoveTemperatureForGpt4oSearchPreview() async throws {
+        final class RequestCapture: @unchecked Sendable {
+            var body: [String: Any]?
+        }
+
+        let capture = RequestCapture()
+        let mockData = try JSONSerialization.data(withJSONObject: [
+            "id": "test", "created": 1, "model": "gpt-4o-search-preview",
+            "choices": [["index": 0, "message": ["content": "ok"], "finish_reason": "stop"]],
+            "usage": ["prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2]
+        ])
+
+        let mockFetch: FetchFunction = { request in
+            if let body = request.httpBody,
+               let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] {
+                capture.body = json
+            }
+            return FetchResponse(
+                body: .data(mockData),
+                urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "application/json"])!
+            )
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.chat",
+            url: { _ in "https://api.openai.com/v1/chat/completions" },
+            headers: { ["Authorization": "Bearer test-key"] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAIChatLanguageModel(modelId: "gpt-4o-search-preview", config: config)
+
+        let result = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+                temperature: 0.7
+            )
+        )
+
+        guard let body = capture.body else {
+            Issue.record("Request body not captured")
+            return
+        }
+
+        #expect(body["model"] as? String == "gpt-4o-search-preview")
+        #expect(body["temperature"] == nil)
+        #expect(result.warnings.count == 1)
+        if case .unsupportedSetting(let setting, let details) = result.warnings.first {
+            #expect(setting == "temperature")
+            #expect(details == "temperature is not supported for the search preview models and has been removed.")
+        } else {
+            Issue.record("Expected unsupported-setting warning for temperature")
+        }
+    }
+
+    @Test("Remove temperature for gpt-4o-mini-search-preview with warning")
+    func testRemoveTemperatureForGpt4oMiniSearchPreview() async throws {
+        final class RequestCapture: @unchecked Sendable {
+            var body: [String: Any]?
+        }
+
+        let capture = RequestCapture()
+        let mockData = try JSONSerialization.data(withJSONObject: [
+            "id": "test", "created": 1, "model": "gpt-4o-mini-search-preview",
+            "choices": [["index": 0, "message": ["content": "ok"], "finish_reason": "stop"]],
+            "usage": ["prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2]
+        ])
+
+        let mockFetch: FetchFunction = { request in
+            if let body = request.httpBody,
+               let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] {
+                capture.body = json
+            }
+            return FetchResponse(
+                body: .data(mockData),
+                urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "application/json"])!
+            )
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.chat",
+            url: { _ in "https://api.openai.com/v1/chat/completions" },
+            headers: { ["Authorization": "Bearer test-key"] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAIChatLanguageModel(modelId: "gpt-4o-mini-search-preview", config: config)
+
+        let result = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+                temperature: 0.7
+            )
+        )
+
+        guard let body = capture.body else {
+            Issue.record("Request body not captured")
+            return
+        }
+
+        #expect(body["model"] as? String == "gpt-4o-mini-search-preview")
+        #expect(body["temperature"] == nil)
+        #expect(result.warnings.count == 1)
+        if case .unsupportedSetting(let setting, let details) = result.warnings.first {
+            #expect(setting == "temperature")
+            #expect(details == "temperature is not supported for the search preview models and has been removed.")
+        } else {
+            Issue.record("Expected unsupported-setting warning for temperature")
+        }
+    }
+
+    @Test("Remove temperature for gpt-4o-mini-search-preview-2025-03-11 with warning")
+    func testRemoveTemperatureForGpt4oMiniSearchPreview20250311() async throws {
+        final class RequestCapture: @unchecked Sendable {
+            var body: [String: Any]?
+        }
+
+        let capture = RequestCapture()
+        let mockData = try JSONSerialization.data(withJSONObject: [
+            "id": "test", "created": 1, "model": "gpt-4o-mini-search-preview-2025-03-11",
+            "choices": [["index": 0, "message": ["content": "ok"], "finish_reason": "stop"]],
+            "usage": ["prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2]
+        ])
+
+        let mockFetch: FetchFunction = { request in
+            if let body = request.httpBody,
+               let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] {
+                capture.body = json
+            }
+            return FetchResponse(
+                body: .data(mockData),
+                urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "application/json"])!
+            )
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.chat",
+            url: { _ in "https://api.openai.com/v1/chat/completions" },
+            headers: { ["Authorization": "Bearer test-key"] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAIChatLanguageModel(modelId: "gpt-4o-mini-search-preview-2025-03-11", config: config)
+
+        let result = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+                temperature: 0.7
+            )
+        )
+
+        guard let body = capture.body else {
+            Issue.record("Request body not captured")
+            return
+        }
+
+        #expect(body["model"] as? String == "gpt-4o-mini-search-preview-2025-03-11")
+        #expect(body["temperature"] == nil)
+        #expect(result.warnings.count == 1)
+        if case .unsupportedSetting(let setting, let details) = result.warnings.first {
+            #expect(setting == "temperature")
+            #expect(details == "temperature is not supported for the search preview models and has been removed.")
+        } else {
+            Issue.record("Expected unsupported-setting warning for temperature")
+        }
+    }
 }
