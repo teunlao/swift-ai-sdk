@@ -1,0 +1,36 @@
+---
+title: Swift AI SDK Core
+description: Core APIs – generateText, streamText, generateObject, Tools.
+---
+
+# Swift AI SDK Core
+
+API parity with Vercel AI SDK Core (TypeScript).
+
+Adaptations
+- `Promise<T>` → `async throws -> T`
+- `undefined` → `nil`
+- `AbortSignal` → `@Sendable () -> Bool`
+
+Examples
+
+```swift
+let text = try await generateText(model: model, input: "hi").text
+
+let stream = try await streamText(model: model, input: "list 3")
+for try await e in stream { /* handle */ }
+
+let obj = try await generateObject(model: model, input: "repo", schema: schema)
+```
+
+Tools
+
+```swift
+let tools: [ToolDefinition] = [
+  Tool("search", input: .codable(SearchQuery.self)) { input in
+    .text("Results: …")
+  }
+]
+let res = try await generateText(model: model, tools: tools, input: "Find 2 facts…")
+```
+

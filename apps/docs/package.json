@@ -1,0 +1,15 @@
+{
+  "name": "@swift-ai-sdk/docs",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev -p 4321",
+    "build": "astro build",
+    "preview": "astro preview -p 4321"
+  },
+  "dependencies": {
+    "astro": "^4.16.10",
+    "@astrojs/starlight": "^0.28.3"
+  }
+}

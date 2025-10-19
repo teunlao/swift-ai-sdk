@@ -5,18 +5,21 @@
 	"workspaces": [
 		"tools/orchestrator-mcp",
 		"tools/orchestrator-dashboard",
-		"tools/orchestrator-db",
-		"apps/docs-site"
-	],
+    "tools/orchestrator-db",
+    "apps/docs"
+  ],
 	"bin": {
 		"orchestrator-dashboard": "./tools/orchestrator-dashboard/bin/start-dashboard.cjs"
 	},
-	"scripts": {
-		"build": "npm run build --workspaces",
-		"lint": "echo 'No lint configured'",
-		"test": "npm run test --workspaces",
-		"dashboard": "orchestrator-dashboard"
-	},
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "lint": "echo 'No lint configured'",
+    "test": "npm run test --workspaces",
+    "dashboard": "orchestrator-dashboard",
+    "docs:dev": "pnpm -C apps/docs dev",
+    "docs:build": "pnpm -C apps/docs build",
+    "docs:preview": "pnpm -C apps/docs preview"
+  },
 	"devDependencies": {
 		"@types/node": "^24.7.2"
 	},
