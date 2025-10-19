@@ -776,6 +776,222 @@ struct StreamTextBasicTests {
         #expect(deltas == ["HELLO", " WORLD"])
     }
 
+
+    @Test("transform uppercases tool results and inputs across steps")
+    func transformUppercasesToolResultsAcrossSteps() async throws {
+        let usageStepOne = LanguageModelV3Usage(
+            inputTokens: 3,
+            outputTokens: 10,
+            totalTokens: 13,
+            reasoningTokens: nil,
+            cachedInputTokens: nil
+        )
+        let usageStepTwo = LanguageModelV3Usage(
+            inputTokens: 1,
+            outputTokens: 4,
+            totalTokens: 5,
+            reasoningTokens: nil,
+            cachedInputTokens: nil
+        )
+
+        let stepOneParts: [LanguageModelV3StreamPart] = [
+            .streamStart(warnings: []),
+            .responseMetadata(id: "id-0", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
+            .reasoningStart(id: "reasoning-0", providerMetadata: nil),
+            .reasoningDelta(id: "reasoning-0", delta: "thinking", providerMetadata: nil),
+            .reasoningEnd(id: "reasoning-0", providerMetadata: nil),
+            .toolCall(LanguageModelV3ToolCall(
+                toolCallId: "call-1",
+                toolName: "tool1",
+                input: "{\"value\":\"value\"}",
+                providerExecuted: false,
+                providerMetadata: nil
+            )),
+            .finish(
+                finishReason: .toolCalls,
+                usage: usageStepOne,
+                providerMetadata: nil
+            )
+        ]
+
+        let stepTwoParts: [LanguageModelV3StreamPart] = [
+            .streamStart(warnings: []),
+            .responseMetadata(id: "id-1", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 1)),
+            .textStart(id: "text-1", providerMetadata: nil),
+            .textDelta(id: "text-1", delta: "Hello, ", providerMetadata: nil),
+            .textDelta(id: "text-1", delta: "world!", providerMetadata: nil),
+            .textEnd(id: "text-1", providerMetadata: nil),
+            .finish(
+                finishReason: .stop,
+                usage: usageStepTwo,
+                providerMetadata: nil
+            )
+        ]
+
+        let stream1 = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+            for part in stepOneParts { continuation.yield(part) }
+            continuation.finish()
+        }
+        let stream2 = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+            for part in stepTwoParts { continuation.yield(part) }
+            continuation.finish()
+        }
+
+        let model = MockLanguageModelV3(
+            doStream: .array([
+                LanguageModelV3StreamResult(stream: stream1),
+                LanguageModelV3StreamResult(stream: stream2)
+            ])
+        )
+
+        let idValues = LockedValue(initial: ["id-0", "id-1", "id-2", "id-3"])
+        let nowValues = LockedValue(initial: [0.0, 100.0, 500.0, 600.0, 1000.0])
+
+        let uppercaseToolTransform: StreamTextTransform = { stream, _ in
+            func uppercaseJSONValue(_ value: JSONValue) -> JSONValue {
+                switch value {
+                case .string(let string):
+                    return .string(string.uppercased())
+                case .object(var object):
+                    if case .string(let string)? = object["value"] {
+                        object["value"] = .string(string.uppercased())
+                    }
+                    return .object(object)
+                default:
+                    return value
+                }
+            }
+
+            let mapped = AsyncThrowingStream<TextStreamPart, Error> { continuation in
+                Task {
+                    do {
+                        for try await part in stream {
+                            switch part {
+                            case .toolResult(let typed):
+                                let transformed: TypedToolResult
+                                switch typed {
+                                case .static(let result):
+                                    let newInput = uppercaseJSONValue(result.input)
+                                    let newOutput = uppercaseJSONValue(result.output)
+                                    transformed = .static(StaticToolResult(
+                                        toolCallId: result.toolCallId,
+                                        toolName: result.toolName,
+                                        input: newInput,
+                                        output: newOutput,
+                                        providerExecuted: result.providerExecuted,
+                                        preliminary: result.preliminary,
+                                        providerMetadata: result.providerMetadata
+                                    ))
+                                case .dynamic(let result):
+                                    let newInput = uppercaseJSONValue(result.input)
+                                    let newOutput = uppercaseJSONValue(result.output)
+                                    transformed = .dynamic(DynamicToolResult(
+                                        toolCallId: result.toolCallId,
+                                        toolName: result.toolName,
+                                        input: newInput,
+                                        output: newOutput,
+                                        providerExecuted: result.providerExecuted,
+                                        preliminary: result.preliminary,
+                                        providerMetadata: result.providerMetadata
+                                    ))
+                                }
+                                continuation.yield(.toolResult(transformed))
+                            default:
+                                continuation.yield(part)
+                            }
+                        }
+                        continuation.finish()
+                    } catch {
+                        continuation.finish(throwing: error)
+                    }
+                }
+            }
+
+            return createAsyncIterableStream(source: mapped)
+        }
+
+        let finishEvent = LockedValue<StepResult?>(initial: nil)
+        let stepEvents = LockedValue(initial: [StepResult]())
+
+        let tools: ToolSet = [
+            "tool1": Tool(
+                description: "Demo tool",
+                inputSchema: FlexibleSchema(jsonSchema(.object([:]))),
+                needsApproval: .never,
+                execute: { _, _ in .value(.string("result1")) }
+            )
+        ]
+
+        let tracer = MockTracer()
+        let telemetry = TelemetrySettings(isEnabled: true, tracer: tracer)
+
+        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+            model: .v3(model),
+            prompt: "test-input",
+            tools: tools,
+            experimentalTelemetry: telemetry,
+            experimentalTransform: [uppercaseToolTransform],
+            stopWhen: [stepCountIs(3)],
+            onStepFinish: { step in
+                stepEvents.withValue { $0.append(step) }
+            },
+            onFinish: { finalStep, _, _, _ in
+                finishEvent.withValue { $0 = finalStep }
+            },
+            internalOptions: StreamTextInternalOptions(
+                now: { nowValues.withValue { values in values.isEmpty ? 0.0 : values.removeFirst() } },
+                generateId: {
+                    idValues.withValue { values in
+                        if values.isEmpty { return UUID().uuidString }
+                        return values.removeFirst()
+                    }
+                }
+            )
+        )
+
+        let parts = try await convertReadableStreamToArray(result.fullStream)
+        let toolResultPart = parts.compactMap { part -> StaticToolResult? in
+            guard case .toolResult(let typed) = part else { return nil }
+            if case .static(let result) = typed { return result }
+            return nil
+        }.first
+
+        #expect(toolResultPart != nil)
+        if let input = toolResultPart?.input, case .object(let object) = input, case .string(let value) = object["value"] {
+            #expect(value == "VALUE")
+        } else {
+            Issue.record("Expected uppercase tool input value")
+        }
+        if let output = toolResultPart?.output {
+            switch output {
+            case .string(let string):
+                #expect(string == "RESULT1")
+            case .object(let object):
+                if case .string(let string)? = object["value"] {
+                    #expect(string == "RESULT1")
+                } else {
+                    Issue.record("Expected uppercase tool output value")
+                }
+            default:
+                Issue.record("Unexpected tool output type: \(output)")
+            }
+        }
+
+        let steps = try await result.steps
+        #expect(steps.count == 2)
+        #expect(steps.first?.finishReason == .toolCalls)
+        #expect(steps.last?.finishReason == .stop)
+
+        let text = try await result.text
+        #expect(text == "Hello, world!")
+
+        await Task.yield()
+        let finishSnapshot = finishEvent.withValue { $0 }
+        #expect(finishSnapshot?.text == "Hello, world!")
+
+        #expect(!tracer.spanRecords.isEmpty)
+    }
+
     @Test("fullStream emits framing and text events in order")
     func fullStreamFramingOrder() async throws {
         let parts: [LanguageModelV3StreamPart] = [
