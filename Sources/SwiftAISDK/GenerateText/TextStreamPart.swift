@@ -228,6 +228,8 @@ extension TextStreamPart: Codable {
         case error
         // Raw field
         case rawValue
+        // Approval fields
+        case approvalId
     }
 
     private enum FileCodingKeys: String, CodingKey {
@@ -440,12 +442,43 @@ extension TextStreamPart: Codable {
             self = .toolOutputDenied(denied)
 
         case "tool-approval-request":
-            // ToolApprovalRequestOutput will be decoded from the full decoder context
-            throw DecodingError.dataCorruptedError(
-                forKey: .type,
-                in: container,
-                debugDescription: "tool-approval-request decoding not yet implemented in TextStreamPart"
-            )
+            let approvalId = try container.decode(String.self, forKey: .approvalId)
+            // Flattened toolCall fields (same schema as tool-call)
+            let toolCallId = (try? container.decode(String.self, forKey: .toolCallId))
+                ?? (try? container.decode(String.self, forKey: .id))
+                ?? ""
+            let toolName = try container.decode(String.self, forKey: .toolName)
+            let input = (try? container.decode(JSONValue.self, forKey: .input)) ?? .null
+            let providerExecuted = try container.decodeIfPresent(Bool.self, forKey: .providerExecuted)
+            let providerMetadata = try container.decodeIfPresent(ProviderMetadata.self, forKey: .providerMetadata)
+            let dynamic = try container.decodeIfPresent(Bool.self, forKey: .dynamic) ?? false
+            let invalid = try container.decodeIfPresent(Bool.self, forKey: .invalid)
+            var errorValue: (any Error)? = nil
+            if let jsonErr = try? container.decode(JSONValue.self, forKey: .error) {
+                errorValue = NSError(domain: "TextStreamPart.tool-approval-request", code: -1,
+                                     userInfo: [NSLocalizedDescriptionKey: String(describing: jsonErr)])
+            }
+            let typedCall: TypedToolCall
+            if dynamic || invalid == true || errorValue != nil {
+                typedCall = .dynamic(DynamicToolCall(
+                    toolCallId: toolCallId,
+                    toolName: toolName,
+                    input: input,
+                    providerExecuted: providerExecuted,
+                    providerMetadata: providerMetadata,
+                    invalid: invalid ?? (errorValue != nil),
+                    error: errorValue
+                ))
+            } else {
+                typedCall = .static(StaticToolCall(
+                    toolCallId: toolCallId,
+                    toolName: toolName,
+                    input: input,
+                    providerExecuted: providerExecuted,
+                    providerMetadata: providerMetadata
+                ))
+            }
+            self = .toolApprovalRequest(ToolApprovalRequestOutput(approvalId: approvalId, toolCall: typedCall))
 
         // Step events
         case "start-step":
@@ -656,15 +689,28 @@ extension TextStreamPart: Codable {
             try container.encodeIfPresent(denied.providerExecuted, forKey: .providerExecuted)
             try container.encodeIfPresent(denied.dynamic, forKey: .dynamic)
 
-        case .toolApprovalRequest:
-            // ToolApprovalRequestOutput encoding not yet implemented
-            throw EncodingError.invalidValue(
-                self,
-                EncodingError.Context(
-                    codingPath: encoder.codingPath,
-                    debugDescription: "tool-approval-request encoding not yet implemented in TextStreamPart"
-                )
-            )
+        case .toolApprovalRequest(let request):
+            try container.encode("tool-approval-request", forKey: .type)
+            try container.encode(request.approvalId, forKey: .approvalId)
+            // Flatten tool call fields for parity with other encoders
+            switch request.toolCall {
+            case .static(let v):
+                try container.encode(v.toolCallId, forKey: .toolCallId)
+                try container.encode(v.toolName, forKey: .toolName)
+                try container.encode(v.input, forKey: .input)
+                try container.encodeIfPresent(v.providerExecuted, forKey: .providerExecuted)
+                try container.encodeIfPresent(v.providerMetadata, forKey: .providerMetadata)
+                try container.encodeIfPresent(v.invalid, forKey: .invalid)
+            case .dynamic(let v):
+                try container.encode(v.toolCallId, forKey: .toolCallId)
+                try container.encode(v.toolName, forKey: .toolName)
+                try container.encode(v.input, forKey: .input)
+                try container.encode(true, forKey: .dynamic)
+                try container.encodeIfPresent(v.providerExecuted, forKey: .providerExecuted)
+                try container.encodeIfPresent(v.providerMetadata, forKey: .providerMetadata)
+                try container.encodeIfPresent(v.invalid, forKey: .invalid)
+                if let err = v.error { try container.encode(String(describing: err), forKey: .error) }
+            }
 
         // Step events
         case .startStep(let request, let warnings):
