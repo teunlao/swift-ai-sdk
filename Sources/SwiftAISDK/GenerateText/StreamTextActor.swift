@@ -751,6 +751,10 @@ case let .toolInputStart(id, toolName, providerMetadata, providerExecuted):
                         )
                     }
                 }
+                guard activeToolNames[id] != nil else {
+                    await emitStreamError("tool input \(id) not found")
+                    continue
+                }
                 if let toolName = activeToolNames[id], let tool = tools?[toolName], let onInputDelta = tool.onInputDelta {
                     let options = ToolCallDeltaOptions(
                         inputTextDelta: delta,
@@ -779,7 +783,10 @@ case let .toolInputStart(id, toolName, providerMetadata, providerExecuted):
                         )
                     }
                 }
-                activeToolNames.removeValue(forKey: id)
+                guard activeToolNames.removeValue(forKey: id) != nil else {
+                    await emitStreamError("tool input \(id) not found")
+                    continue
+                }
                 await fullBroadcaster.send(
                     .toolInputEnd(id: id, providerMetadata: providerMetadata))
             case .toolCall(let call):
