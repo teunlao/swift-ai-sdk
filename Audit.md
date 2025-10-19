@@ -7,8 +7,8 @@
 | Metric                        | TypeScript Upstream    | Swift Port         | Status            |
 |-------------------------------|------------------------|--------------------|--------------------|
 | Total Test Files              | 13                     | 13                 | ✅ Files match    |
-| Total Test Cases              | 290                    | 94                 | ❌ 68% missing    |
-| OpenAIChatLanguageModel       | 71 tests (3,152 lines) | 13 tests (884 lines) | ❌ 82% missing    |
+| Total Test Cases              | 290                    | 99                 | ❌ 66% missing    |
+| OpenAIChatLanguageModel       | 71 tests (3,152 lines) | 18 tests (1,177 lines) | ❌ 75% missing    |
 | OpenAIResponsesLanguageModel  | 77 tests               | 25 tests           | ❌ 67% missing    |
 | OpenAIResponsesInput          | 48 tests               | 4 tests            | ❌ 92% missing    |
 | OpenAICompletionLanguageModel | 16 tests               | 3 tests            | ❌ 81% missing    |
@@ -89,7 +89,7 @@
 
 | File | Upstream | Swift | Coverage | Status |
 |------|----------|-------|----------|--------|
-| OpenAIChatLanguageModel | 71 | 13 | 18.3% | ❌ CRITICAL |
+| OpenAIChatLanguageModel | 71 | 18 | 25.4% | ⚠️ MAJOR |
 | OpenAIResponsesLanguageModel | 77 | 25 | 32% | ⚠️ MAJOR |
 | OpenAIResponsesInput | 48 | 4 | 8% | ❌ CRITICAL |
 | OpenAICompletionLanguageModel | 16 | 3 | 19% | ⚠️ MAJOR |
@@ -103,7 +103,7 @@
 | OpenAIError | 1 | 1 | 100% | ✅ PERFECT |
 | OpenAIProvider | 3 | 1 | 33% | ⚠️ MODERATE |
 
-**TOTAL: 290 → 94 (32.4% coverage) ❌ INSUFFICIENT**
+**TOTAL: 290 → 99 (34.1% coverage) ❌ INSUFFICIENT**
 
 ---
 
@@ -111,10 +111,10 @@
 
 ### Option 1: Full Parity (Recommended for Production)
 
-Add 196 missing tests to achieve 100% upstream parity.
+Add 191 missing tests to achieve 100% upstream parity.
 
 **Priority Order:**
-1. **Critical** (OpenAIChatLanguageModel): +58 tests for streaming, o1/o3 models, service tiers
+1. **Major** (OpenAIChatLanguageModel): +53 tests for streaming, service tiers, extensions
 2. **Major** (OpenAIResponsesInput): +44 tests for input conversion edge cases
 3. **Major** (OpenAIResponsesLanguageModel): +52 tests for responses API specifics
 4. **Major** (OpenAICompletionLanguageModel): +13 tests for completion models
@@ -167,10 +167,10 @@ While the implementation code appears correct (100% functional parity from previ
 
 **Started:** 2025-10-19
 **Target:** 100% test parity (290 tests)
-**Current:** 94/290 tests (32.4%)
+**Current:** 99/290 tests (34.1%)
 
 ### OpenAIChatLanguageModel (Priority 1 - CRITICAL)
-**Target:** 71 tests | **Current:** 13/71 (18.3%)
+**Target:** 71 tests | **Current:** 18/71 (25.4%)
 
 #### Batch 1: Settings & Configuration (5/5) ✅ COMPLETE
 - [x] Pass settings (logitBias, user, parallelToolCalls) - `testPassSettings`
@@ -188,13 +188,13 @@ While the implementation code appears correct (100% functional parity from previ
 - [x] Set name & description with responseFormat json - `testResponseFormatJsonWithNameDescription`
 - [x] Allow undefined schema with responseFormat json - `testResponseFormatJsonUndefinedSchema`
 
-#### Batch 3: O1/O3 Model-Specific (0/5)
-- [ ] Clear temperature/top_p/frequency_penalty with warnings for o1
-- [ ] Convert maxOutputTokens to max_completion_tokens
-- [ ] Remove system messages for o1-preview
-- [ ] Use developer messages for o1
-- [ ] Return reasoning tokens in provider metadata
+#### Batch 3: O1/O3 Model-Specific (5/5) ✅ COMPLETE
+- [x] Clear temperature/top_p/frequency_penalty/presence_penalty with warnings for o1 - `testClearTemperatureForO1Preview`
+- [x] Convert maxOutputTokens to max_completion_tokens - `testConvertMaxOutputTokensForO1Preview`
+- [x] Remove system messages for o1-preview - `testRemoveSystemMessagesForO1Preview`
+- [x] Use developer messages for o1 - `testUseDeveloperMessagesForO1`
+- [x] Return reasoning tokens in provider metadata - `testReturnReasoningTokens`
 
 ---
 
-**Last Updated:** 2025-10-19 23:24 UTC
+**Last Updated:** 2025-10-19 23:33 UTC

@@ -881,4 +881,296 @@ struct OpenAIChatLanguageModelTests {
             Issue.record("response_format missing")
         }
     }
+
+    // MARK: - Batch 3: O1/O3 Model-Specific
+
+    @Test("Clear temperature, topP, frequencyPenalty, presencePenalty and return warnings for o1")
+    func testClearTemperatureForO1Preview() async throws {
+        final class RequestCapture: @unchecked Sendable {
+            var body: [String: Any]?
+        }
+
+        let capture = RequestCapture()
+        let mockData = try JSONSerialization.data(withJSONObject: [
+            "id": "test", "created": 1, "model": "o1-preview",
+            "choices": [["index": 0, "message": ["content": "ok"], "finish_reason": "stop"]],
+            "usage": ["prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2]
+        ])
+
+        let mockFetch: FetchFunction = { request in
+            if let body = request.httpBody,
+               let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] {
+                capture.body = json
+            }
+            return FetchResponse(
+                body: .data(mockData),
+                urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "application/json"])!
+            )
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.chat",
+            url: { _ in "https://api.openai.com/v1/chat/completions" },
+            headers: { ["Authorization": "Bearer test-key"] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAIChatLanguageModel(modelId: "o1-preview", config: config)
+
+        let result = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+                temperature: 0.5,
+                topP: 0.7,
+                presencePenalty: 0.3,
+                frequencyPenalty: 0.2
+            )
+        )
+
+        guard let body = capture.body else {
+            Issue.record("Request body not captured")
+            return
+        }
+
+        #expect(body["model"] as? String == "o1-preview")
+        #expect(body["temperature"] == nil)
+        #expect(body["top_p"] == nil)
+        #expect(body["frequency_penalty"] == nil)
+        #expect(body["presence_penalty"] == nil)
+
+        // Check warnings
+        #expect(result.warnings.count == 4)
+        let warningSettings = result.warnings.compactMap { warning -> String? in
+            if case .unsupportedSetting(let setting, _) = warning {
+                return setting
+            }
+            return nil
+        }
+        #expect(warningSettings.contains("temperature"))
+        #expect(warningSettings.contains("topP"))
+        #expect(warningSettings.contains("frequencyPenalty"))
+        #expect(warningSettings.contains("presencePenalty"))
+    }
+
+    @Test("Convert maxOutputTokens to max_completion_tokens for o1")
+    func testConvertMaxOutputTokensForO1Preview() async throws {
+        final class RequestCapture: @unchecked Sendable {
+            var body: [String: Any]?
+        }
+
+        let capture = RequestCapture()
+        let mockData = try JSONSerialization.data(withJSONObject: [
+            "id": "test", "created": 1, "model": "o1-preview",
+            "choices": [["index": 0, "message": ["content": "ok"], "finish_reason": "stop"]],
+            "usage": ["prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2]
+        ])
+
+        let mockFetch: FetchFunction = { request in
+            if let body = request.httpBody,
+               let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] {
+                capture.body = json
+            }
+            return FetchResponse(
+                body: .data(mockData),
+                urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "application/json"])!
+            )
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.chat",
+            url: { _ in "https://api.openai.com/v1/chat/completions" },
+            headers: { ["Authorization": "Bearer test-key"] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAIChatLanguageModel(modelId: "o1-preview", config: config)
+
+        _ = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+                maxOutputTokens: 1000
+            )
+        )
+
+        guard let body = capture.body else {
+            Issue.record("Request body not captured")
+            return
+        }
+
+        #expect(body["model"] as? String == "o1-preview")
+        #expect(body["max_completion_tokens"] as? Int == 1000)
+    }
+
+    @Test("Remove system messages for o1-preview and add warning")
+    func testRemoveSystemMessagesForO1Preview() async throws {
+        final class RequestCapture: @unchecked Sendable {
+            var body: [String: Any]?
+        }
+
+        let capture = RequestCapture()
+        let mockData = try JSONSerialization.data(withJSONObject: [
+            "id": "test", "created": 1, "model": "o1-preview",
+            "choices": [["index": 0, "message": ["content": "ok"], "finish_reason": "stop"]],
+            "usage": ["prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2]
+        ])
+
+        let mockFetch: FetchFunction = { request in
+            if let body = request.httpBody,
+               let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] {
+                capture.body = json
+            }
+            return FetchResponse(
+                body: .data(mockData),
+                urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "application/json"])!
+            )
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.chat",
+            url: { _ in "https://api.openai.com/v1/chat/completions" },
+            headers: { ["Authorization": "Bearer test-key"] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAIChatLanguageModel(modelId: "o1-preview", config: config)
+
+        let result = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: [
+                    .system(content: "You are a helpful assistant", providerOptions: nil),
+                    .user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)
+                ]
+            )
+        )
+
+        guard let body = capture.body else {
+            Issue.record("Request body not captured")
+            return
+        }
+
+        #expect(body["model"] as? String == "o1-preview")
+        if let messages = body["messages"] as? [[String: Any]] {
+            #expect(messages.count == 1)
+            #expect(messages.first?["role"] as? String == "user")
+        } else {
+            Issue.record("messages missing")
+        }
+
+        // Check warning
+        #expect(result.warnings.count == 1)
+        if case .other(let message) = result.warnings.first {
+            #expect(message == "system messages are removed for this model")
+        } else {
+            Issue.record("Expected 'other' warning about system messages")
+        }
+    }
+
+    @Test("Use developer messages for o1")
+    func testUseDeveloperMessagesForO1() async throws {
+        final class RequestCapture: @unchecked Sendable {
+            var body: [String: Any]?
+        }
+
+        let capture = RequestCapture()
+        let mockData = try JSONSerialization.data(withJSONObject: [
+            "id": "test", "created": 1, "model": "o1",
+            "choices": [["index": 0, "message": ["content": "ok"], "finish_reason": "stop"]],
+            "usage": ["prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2]
+        ])
+
+        let mockFetch: FetchFunction = { request in
+            if let body = request.httpBody,
+               let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] {
+                capture.body = json
+            }
+            return FetchResponse(
+                body: .data(mockData),
+                urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "application/json"])!
+            )
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.chat",
+            url: { _ in "https://api.openai.com/v1/chat/completions" },
+            headers: { ["Authorization": "Bearer test-key"] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAIChatLanguageModel(modelId: "o1", config: config)
+
+        let result = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: [
+                    .system(content: "You are a helpful assistant", providerOptions: nil),
+                    .user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)
+                ]
+            )
+        )
+
+        guard let body = capture.body else {
+            Issue.record("Request body not captured")
+            return
+        }
+
+        #expect(body["model"] as? String == "o1")
+        if let messages = body["messages"] as? [[String: Any]] {
+            #expect(messages.count == 2)
+            #expect(messages[0]["role"] as? String == "developer")
+            #expect(messages[0]["content"] as? String == "You are a helpful assistant")
+            #expect(messages[1]["role"] as? String == "user")
+        } else {
+            Issue.record("messages missing")
+        }
+
+        // No warnings expected
+        #expect(result.warnings.isEmpty)
+    }
+
+    @Test("Return reasoning tokens in provider metadata")
+    func testReturnReasoningTokens() async throws {
+        let mockData = try JSONSerialization.data(withJSONObject: [
+            "id": "test", "created": 1, "model": "o1-preview",
+            "choices": [["index": 0, "message": ["content": "ok"], "finish_reason": "stop"]],
+            "usage": [
+                "prompt_tokens": 15,
+                "completion_tokens": 20,
+                "total_tokens": 35,
+                "completion_tokens_details": [
+                    "reasoning_tokens": 10
+                ]
+            ]
+        ])
+
+        let mockFetch: FetchFunction = { request in
+            return FetchResponse(
+                body: .data(mockData),
+                urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "application/json"])!
+            )
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.chat",
+            url: { _ in "https://api.openai.com/v1/chat/completions" },
+            headers: { ["Authorization": "Bearer test-key"] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAIChatLanguageModel(modelId: "o1-preview", config: config)
+
+        let result = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)]
+            )
+        )
+
+        #expect(result.usage.inputTokens == 15)
+        #expect(result.usage.outputTokens == 20)
+        #expect(result.usage.totalTokens == 35)
+        #expect(result.usage.reasoningTokens == 10)
+    }
 }
