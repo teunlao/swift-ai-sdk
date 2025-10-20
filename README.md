@@ -3,7 +3,7 @@
 [![Tests](https://github.com/teunlao/swift-ai-sdk/actions/workflows/test.yml/badge.svg)](https://github.com/teunlao/swift-ai-sdk/actions/workflows/test.yml)
 [![Swift Version](https://img.shields.io/badge/Swift-6.1-orange.svg)](https://swift.org)
 [![Platforms](https://img.shields.io/badge/Platforms-iOS%20|%20macOS%20|%20tvOS%20|%20watchOS-blue.svg)](https://swift.org)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/teunlao/swift-ai-sdk)](https://github.com/teunlao/swift-ai-sdk/releases)
 
 Unified AI SDK for Swift — a 1:1 port of the Vercel AI SDK with the same API and behavior.
