@@ -37,8 +37,9 @@ struct ExtractResponseHeadersTests {
 
         let result = extractResponseHeaders(from: response)
 
-        #expect(result["Content-Type"] == "application/json")
-        #expect(result["Content-Length"] == "1234")
+        // Keys are normalized to lowercase to match JavaScript Headers API
+        #expect(result["content-type"] == "application/json")
+        #expect(result["content-length"] == "1234")
         #expect(result.count == 2)
     }
 
@@ -63,10 +64,11 @@ struct ExtractResponseHeadersTests {
 
         let result = extractResponseHeaders(from: response)
 
-        #expect(result["Content-Type"] == "application/json")
-        #expect(result["Authorization"] == "Bearer token")
-        #expect(result["X-Custom-Header"] == "custom-value")
-        #expect(result["User-Agent"] == "SwiftAISDK/1.0")
+        // Keys are normalized to lowercase to match JavaScript Headers API
+        #expect(result["content-type"] == "application/json")
+        #expect(result["authorization"] == "Bearer token")
+        #expect(result["x-custom-header"] == "custom-value")
+        #expect(result["user-agent"] == "SwiftAISDK/1.0")
         #expect(result.count == 4)
     }
 
@@ -81,11 +83,12 @@ struct ExtractResponseHeadersTests {
 
         let result = extractResponseHeaders(from: response)
 
-        // HTTPURLResponse normalizes header keys, so we check both cases
+        // All keys are normalized to lowercase to match JavaScript Headers API
         // Note: HTTP headers are case-insensitive per RFC 2616
-        let contentTypeValue = result["Content-Type"] ?? result["content-type"]
-        #expect(contentTypeValue == "application/json")
-        #expect(result.count >= 3)
+        #expect(result["content-type"] == "application/json")
+        #expect(result["content-length"] == "1234")
+        #expect(result["x-custom-header"] == "value")
+        #expect(result.count == 3)
     }
 
     @Test("extractResponseHeaders: handles common HTTP headers")
@@ -102,12 +105,13 @@ struct ExtractResponseHeadersTests {
 
         let result = extractResponseHeaders(from: response)
 
-        #expect(result["Content-Type"] == "application/json; charset=utf-8")
-        #expect(result["Cache-Control"] == "no-cache")
-        #expect(result["Date"] == "Mon, 12 Oct 2025 12:00:00 GMT")
-        #expect(result["Server"] == "nginx/1.21.0")
-        #expect(result["X-RateLimit-Remaining"] == "99")
-        #expect(result["X-Request-Id"] == "req-123456")
+        // Keys are normalized to lowercase to match JavaScript Headers API
+        #expect(result["content-type"] == "application/json; charset=utf-8")
+        #expect(result["cache-control"] == "no-cache")
+        #expect(result["date"] == "Mon, 12 Oct 2025 12:00:00 GMT")
+        #expect(result["server"] == "nginx/1.21.0")
+        #expect(result["x-ratelimit-remaining"] == "99")
+        #expect(result["x-request-id"] == "req-123456")
         #expect(result.count == 6)
     }
 
@@ -118,17 +122,17 @@ struct ExtractResponseHeadersTests {
         // Test 200 OK
         let response200 = createResponse(statusCode: 200, headers: headers)
         let result200 = extractResponseHeaders(from: response200)
-        #expect(result200["Content-Type"] == "application/json")
+        #expect(result200["content-type"] == "application/json")
 
         // Test 404 Not Found
         let response404 = createResponse(statusCode: 404, headers: headers)
         let result404 = extractResponseHeaders(from: response404)
-        #expect(result404["Content-Type"] == "application/json")
+        #expect(result404["content-type"] == "application/json")
 
         // Test 500 Internal Server Error
         let response500 = createResponse(statusCode: 500, headers: headers)
         let result500 = extractResponseHeaders(from: response500)
-        #expect(result500["Content-Type"] == "application/json")
+        #expect(result500["content-type"] == "application/json")
     }
 
     @Test("extractResponseHeaders: handles special characters in values")
@@ -142,8 +146,9 @@ struct ExtractResponseHeadersTests {
 
         let result = extractResponseHeaders(from: response)
 
-        #expect(result["X-Custom"] == "value with spaces")
-        #expect(result["X-Quotes"] == "\"quoted value\"")
-        #expect(result["X-Unicode"] == "Hello 世界 🌍")
+        // Keys are normalized to lowercase to match JavaScript Headers API
+        #expect(result["x-custom"] == "value with spaces")
+        #expect(result["x-quotes"] == "\"quoted value\"")
+        #expect(result["x-unicode"] == "Hello 世界 🌍")
     }
 }

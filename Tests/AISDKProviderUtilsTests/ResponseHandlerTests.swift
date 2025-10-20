@@ -328,7 +328,7 @@ struct ResponseHandlerTests {
         )
 
         // Headers are normalized to lowercase by extractResponseHeaders
-        #expect(result.responseHeaders["X-Custom-Header"] == "test-value")
+        #expect(result.responseHeaders["x-custom-header"] == "test-value")
     }
 
     @Test("createEventSourceResponseHandler handles streaming body")

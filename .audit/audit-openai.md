@@ -75,7 +75,7 @@
 |------|----------|-------|----------|--------|
 | OpenAIChatLanguageModel | 71 | 71 | 100% | ✅ PERFECT |
 | OpenAIResponsesInput | 48 | 48 | 100% | ✅ PERFECT |
-| OpenAIResponsesLanguageModel | 77 | 25 | 32% | ⚠️ MAJOR |
+| OpenAIResponsesLanguageModel | 77 | 60 | 78% | ✅ GOOD |
 | OpenAICompletionLanguageModel | 16 | 3 | 19% | ⚠️ MAJOR |
 | OpenAITranscriptionModel | 13 | 2 | 15% | ⚠️ MAJOR |
 | OpenAIEmbeddingModel | 6 | 2 | 33% | ⚠️ MODERATE |
@@ -87,7 +87,7 @@
 | OpenAIError | 1 | 1 | 100% | ✅ PERFECT |
 | OpenAIProvider | 3 | 1 | 33% | ⚠️ MODERATE |
 
-**TOTAL: 290 → 196 (67.6% coverage) ⚠️ GOOD PROGRESS**
+**TOTAL: 290 → 231 (79.7% coverage) ✅ EXCELLENT**
 
 ---
 
@@ -151,13 +151,17 @@ While the implementation code appears correct (100% functional parity from previ
 
 **Started:** 2025-10-19
 **Target:** 100% test parity (290 tests)
-**Current:** 196/290 tests (67.6%)
+**Current:** 231/290 tests (79.7%)
 
 ### OpenAIChatLanguageModel (Priority 1 - COMPLETE ✅)
 **Target:** 71 tests | **Current:** 71/71 (100%)
 
 ### OpenAIResponsesInput (Priority 2 - COMPLETE ✅)
 **Target:** 48 tests | **Current:** 48/48 (100%)
+
+### OpenAIResponsesLanguageModel (Priority 3 - GOOD ✅)
+**Target:** 77 tests | **Current:** 60/77 (78%)
+Added 35 tests covering: basic generation, response formats, provider options, reasoning, tool calls, logprobs
 
 #### Batch 1: Settings & Configuration (5/5) ✅ COMPLETE
 - [x] Pass settings (logitBias, user, parallelToolCalls) - `testPassSettings`
@@ -267,4 +271,30 @@ While the implementation code appears correct (100% functional parity from previ
 
 ---
 
-**Last Updated:** 2025-10-20 03:30 UTC
+---
+
+## 🐛 BUG FIX: extractResponseHeaders Tests (2025-10-20)
+
+**Issue**: After adding 35 tests to OpenAIResponsesLanguageModel, full test suite failed with 19 test failures in header extraction tests.
+
+**Root Cause**: Tests were written incorrectly - expecting original case header keys instead of lowercase.
+
+**Analysis**:
+- JavaScript Headers API ALWAYS returns lowercase keys (Fetch API spec, RFC 2616)
+- TypeScript upstream: `Object.fromEntries([...response.headers])` auto-normalizes to lowercase
+- Swift implementation: `extractResponseHeaders` correctly added `.lowercased()` normalization
+- Tests were wrong, not implementation!
+
+**Fix**: Updated 19 test assertions across 2 files:
+- `ExtractResponseHeadersTests.swift`: 18 assertions (all 7 tests)
+  - `result["Content-Type"]` → `result["content-type"]`
+  - `result["Authorization"]` → `result["authorization"]`
+  - etc.
+- `ResponseHandlerTests.swift`: 1 assertion
+  - `result.responseHeaders["X-Custom-Header"]` → `result.responseHeaders["x-custom-header"]`
+
+**Result**: ✅ All 1601 tests passing
+
+---
+
+**Last Updated:** 2025-10-20 04:15 UTC

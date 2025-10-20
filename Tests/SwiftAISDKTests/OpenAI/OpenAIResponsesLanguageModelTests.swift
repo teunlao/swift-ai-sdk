@@ -2358,4 +2358,1988 @@ struct OpenAIResponsesLanguageModelTests {
         #expect(json["user"] as? String == "test-user")
     }
 
+    // MARK: - Missing Basic Tests (lines 161-250)
+
+    @Test("should generate text")
+    func testShouldGenerateText() async throws {
+        let responseJSON: [String: Any] = [
+            "id": "resp_67c97c0203188190a025beb4a75242bc",
+            "object": "response",
+            "created_at": 1_741_257_730.0,
+            "status": "completed",
+            "error": NSNull(),
+            "incomplete_details": NSNull(),
+            "model": "gpt-4o-2024-07-18",
+            "output": [
+                [
+                    "id": "msg_67c97c02656c81908e080dfdf4a03cd1",
+                    "type": "message",
+                    "status": "completed",
+                    "role": "assistant",
+                    "content": [
+                        [
+                            "type": "output_text",
+                            "text": "answer text",
+                            "annotations": [],
+                            "logprobs": []
+                        ]
+                    ]
+                ]
+            ],
+            "usage": [
+                "input_tokens": 345,
+                "input_tokens_details": ["cached_tokens": 234],
+                "output_tokens": 538,
+                "output_tokens_details": ["reasoning_tokens": 123],
+                "total_tokens": 883
+            ],
+            "warnings": []
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let fetch: FetchFunction = { _ in
+            let httpResponse = HTTPURLResponse(
+                url: URL(string: "https://api.openai.com/v1/responses")!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: samplePrompt))
+
+        #expect(result.content.contains { content in
+            if case .text(let text) = content {
+                return text.text == "answer text"
+            }
+            return false
+        })
+
+        if let textContent = result.content.first, case .text(let text) = textContent {
+            if let metadata = text.providerMetadata?["openai"] {
+                #expect(metadata["itemId"] == .string("msg_67c97c02656c81908e080dfdf4a03cd1"))
+            }
+        }
+    }
+
+    @Test("should extract usage")
+    func testShouldExtractUsage() async throws {
+        let responseJSON: [String: Any] = [
+            "id": "resp_usage",
+            "object": "response",
+            "created_at": 1_741_257_730.0,
+            "status": "completed",
+            "error": NSNull(),
+            "incomplete_details": NSNull(),
+            "model": "gpt-4o",
+            "output": [],
+            "usage": [
+                "input_tokens": 345,
+                "input_tokens_details": ["cached_tokens": 234],
+                "output_tokens": 538,
+                "output_tokens_details": ["reasoning_tokens": 123],
+                "total_tokens": 883
+            ],
+            "warnings": []
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let fetch: FetchFunction = { _ in
+            let httpResponse = HTTPURLResponse(
+                url: URL(string: "https://api.openai.com/v1/responses")!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: samplePrompt))
+
+        #expect(result.usage.inputTokens == 345)
+        #expect(result.usage.outputTokens == 538)
+        #expect(result.usage.totalTokens == 883)
+        #expect(result.usage.cachedInputTokens == 234)
+        #expect(result.usage.reasoningTokens == 123)
+    }
+
+    @Test("should extract response id metadata")
+    func testShouldExtractResponseIdMetadata() async throws {
+        let responseJSON: [String: Any] = [
+            "id": "resp_67c97c0203188190a025beb4a75242bc",
+            "object": "response",
+            "created_at": 1_741_257_730.0,
+            "status": "completed",
+            "error": NSNull(),
+            "incomplete_details": NSNull(),
+            "model": "gpt-4o",
+            "output": [],
+            "usage": ["input_tokens": 1, "output_tokens": 1, "total_tokens": 2],
+            "warnings": []
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let fetch: FetchFunction = { _ in
+            let httpResponse = HTTPURLResponse(
+                url: URL(string: "https://api.openai.com/v1/responses")!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: samplePrompt))
+
+        if let openaiMetadata = result.providerMetadata?["openai"] {
+            #expect(openaiMetadata["responseId"] == .string("resp_67c97c0203188190a025beb4a75242bc"))
+        } else {
+            Issue.record("Missing openai provider metadata")
+        }
+    }
+
+    @Test("should send model id, settings, and input")
+    func testShouldSendModelIdSettingsAndInput() async throws {
+        actor BodyCapture {
+            var data: Data?
+            func store(_ body: Data?) { data = body }
+            func current() -> Data? { data }
+        }
+
+        let capture = BodyCapture()
+
+        let responseJSON: [String: Any] = [
+            "id": "resp_settings",
+            "created_at": 1_700_000_000.0,
+            "model": "gpt-4o",
+            "output": [],
+            "usage": ["input_tokens": 1, "output_tokens": 1, "total_tokens": 2],
+            "warnings": []
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let fetch: FetchFunction = { request in
+            await capture.store(request.httpBody)
+            let httpResponse = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let result = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: [
+                    .system(content: "You are a helpful assistant.", providerOptions: nil),
+                    .user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)
+                ],
+                temperature: 0.5,
+                topP: 0.3,
+                providerOptions: [
+                    "openai": [
+                        "maxToolCalls": .number(10)
+                    ]
+                ]
+            )
+        )
+
+        #expect(result.warnings.isEmpty)
+
+        guard let json = decodeRequestBody(await capture.current()) else {
+            Issue.record("Missing request body")
+            return
+        }
+
+        #expect(json["model"] as? String == "gpt-4o")
+        #expect(json["temperature"] as? Double == 0.5)
+        #expect(json["top_p"] as? Double == 0.3)
+        #expect(json["max_tool_calls"] as? Int == 10)
+
+        if let input = json["input"] as? [[String: Any]] {
+            #expect(input.count == 2)
+            #expect(input[0]["role"] as? String == "system")
+            if let content = input[0]["content"] as? String {
+                #expect(content == "You are a helpful assistant.")
+            } else if let contentArray = input[0]["content"] as? [[String: Any]] {
+                if let first = contentArray.first, let text = first["text"] as? String {
+                    #expect(text == "You are a helpful assistant.")
+                }
+            }
+            #expect(input[1]["role"] as? String == "user")
+        } else {
+            Issue.record("Missing input array")
+        }
+    }
+
+    @Test("should remove unsupported settings for o1")
+    func testShouldRemoveUnsupportedSettingsForO1() async throws {
+        actor BodyCapture {
+            var data: Data?
+            func store(_ body: Data?) { data = body }
+            func current() -> Data? { data }
+        }
+
+        let capture = BodyCapture()
+
+        let responseJSON: [String: Any] = [
+            "id": "resp_o1",
+            "created_at": 1_700_000_000.0,
+            "model": "o1-mini",
+            "output": [],
+            "usage": ["input_tokens": 1, "output_tokens": 1, "total_tokens": 2],
+            "warnings": []
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let fetch: FetchFunction = { request in
+            await capture.store(request.httpBody)
+            let httpResponse = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "o1-mini",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let result = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: [
+                    .system(content: "You are a helpful assistant.", providerOptions: nil),
+                    .user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)
+                ],
+                temperature: 0.5,
+                topP: 0.3
+            )
+        )
+
+        #expect(result.warnings.count >= 2)
+        #expect(result.warnings.contains { warning in
+            if case let .unsupportedSetting(setting, _) = warning {
+                return setting == "temperature"
+            }
+            return false
+        })
+        #expect(result.warnings.contains { warning in
+            if case let .unsupportedSetting(setting, _) = warning {
+                return setting == "topP"
+            }
+            return false
+        })
+
+        guard let json = decodeRequestBody(await capture.current()) else {
+            Issue.record("Missing request body")
+            return
+        }
+
+        #expect(json["model"] as? String == "o1-mini")
+        #expect(json["temperature"] == nil)
+        #expect(json["top_p"] == nil)
+
+        if let input = json["input"] as? [[String: Any]] {
+            #expect(input.count == 1)
+            #expect(input[0]["role"] as? String == "user")
+        }
+    }
+
+    // MARK: - Response Format Tests (lines 352-441)
+
+    @Test("should send response format json schema")
+    func testShouldSendResponseFormatJsonSchema() async throws {
+        actor BodyCapture {
+            var data: Data?
+            func store(_ body: Data?) { data = body }
+            func current() -> Data? { data }
+        }
+
+        let capture = BodyCapture()
+
+        let responseJSON: [String: Any] = [
+            "id": "resp_json_schema",
+            "created_at": 1_700_000_000.0,
+            "model": "gpt-4o",
+            "output": [],
+            "usage": ["input_tokens": 1, "output_tokens": 1, "total_tokens": 2],
+            "warnings": []
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let fetch: FetchFunction = { request in
+            await capture.store(request.httpBody)
+            let httpResponse = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let schema: JSONValue = .object([
+            "$schema": .string("http://json-schema.org/draft-07/schema#"),
+            "type": .string("object"),
+            "properties": .object([
+                "value": .object(["type": .string("string")])
+            ]),
+            "required": .array([.string("value")]),
+            "additionalProperties": .bool(false)
+        ])
+
+        let result = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: samplePrompt,
+                responseFormat: .json(schema: schema, name: "response", description: "A response")
+            )
+        )
+
+        #expect(result.warnings.isEmpty)
+
+        guard let json = decodeRequestBody(await capture.current()),
+              let text = json["text"] as? [String: Any],
+              let format = text["format"] as? [String: Any] else {
+            Issue.record("Missing text format in request")
+            return
+        }
+
+        #expect(format["type"] as? String == "json_schema")
+        #expect(format["name"] as? String == "response")
+        #expect(format["description"] as? String == "A response")
+        #expect(format["strict"] as? Bool == false)
+        #expect(format["schema"] != nil)
+    }
+
+    @Test("should send response format json object")
+    func testShouldSendResponseFormatJsonObject() async throws {
+        actor BodyCapture {
+            var data: Data?
+            func store(_ body: Data?) { data = body }
+            func current() -> Data? { data }
+        }
+
+        let capture = BodyCapture()
+
+        let responseJSON: [String: Any] = [
+            "id": "resp_json_obj",
+            "created_at": 1_700_000_000.0,
+            "model": "gpt-4o",
+            "output": [],
+            "usage": ["input_tokens": 1, "output_tokens": 1, "total_tokens": 2],
+            "warnings": []
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let fetch: FetchFunction = { request in
+            await capture.store(request.httpBody)
+            let httpResponse = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let result = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: samplePrompt,
+                responseFormat: .json(schema: nil, name: nil, description: nil)
+            )
+        )
+
+        #expect(result.warnings.isEmpty)
+
+        guard let json = decodeRequestBody(await capture.current()),
+              let text = json["text"] as? [String: Any],
+              let format = text["format"] as? [String: Any] else {
+            Issue.record("Missing text format in request")
+            return
+        }
+
+        #expect(format["type"] as? String == "json_object")
+    }
+
+    // MARK: - Provider Options Tests (lines 443-622)
+
+    @Test("should send parallelToolCalls provider option")
+    func testShouldSendParallelToolCallsProviderOption() async throws {
+        actor BodyCapture {
+            var data: Data?
+            func store(_ body: Data?) { data = body }
+            func current() -> Data? { data }
+        }
+
+        let capture = BodyCapture()
+
+        let responseJSON: [String: Any] = [
+            "id": "resp_parallel",
+            "created_at": 1_700_000_000.0,
+            "model": "gpt-4o",
+            "output": [],
+            "usage": ["input_tokens": 1, "output_tokens": 1, "total_tokens": 2],
+            "warnings": []
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let fetch: FetchFunction = { request in
+            await capture.store(request.httpBody)
+            let httpResponse = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let result = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: samplePrompt,
+                providerOptions: [
+                    "openai": [
+                        "parallelToolCalls": .bool(false)
+                    ]
+                ]
+            )
+        )
+
+        #expect(result.warnings.isEmpty)
+
+        guard let json = decodeRequestBody(await capture.current()) else {
+            Issue.record("Missing request body")
+            return
+        }
+
+        #expect(json["parallel_tool_calls"] as? Bool == false)
+    }
+
+    @Test("should send store = false provider option and opt into reasoning.encrypted_content for reasoning models")
+    func testShouldSendStoreFalseForReasoningModels() async throws {
+        actor BodyCapture {
+            var data: Data?
+            func store(_ body: Data?) { data = body }
+            func current() -> Data? { data }
+        }
+
+        let capture = BodyCapture()
+
+        let responseJSON: [String: Any] = [
+            "id": "resp_store_reasoning",
+            "created_at": 1_700_000_000.0,
+            "model": "gpt-5-mini",
+            "output": [],
+            "usage": ["input_tokens": 1, "output_tokens": 1, "total_tokens": 2],
+            "warnings": []
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let fetch: FetchFunction = { request in
+            await capture.store(request.httpBody)
+            let httpResponse = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-5-mini",
+            config: makeConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: samplePrompt,
+                providerOptions: [
+                    "openai": [
+                        "store": .bool(false)
+                    ]
+                ]
+            )
+        )
+
+        guard let json = decodeRequestBody(await capture.current()) else {
+            Issue.record("Missing request body")
+            return
+        }
+
+        #expect(json["store"] as? Bool == false)
+
+        if let include = json["include"] as? [String] {
+            #expect(include.contains("reasoning.encrypted_content"))
+        } else {
+            Issue.record("Missing include for reasoning model with store=false")
+        }
+    }
+
+    @Test("should send store = false provider option and not opt into reasoning.encrypted_content for non-reasoning models")
+    func testShouldSendStoreFalseForNonReasoningModels() async throws {
+        actor BodyCapture {
+            var data: Data?
+            func store(_ body: Data?) { data = body }
+            func current() -> Data? { data }
+        }
+
+        let capture = BodyCapture()
+
+        let responseJSON: [String: Any] = [
+            "id": "resp_store_standard",
+            "created_at": 1_700_000_000.0,
+            "model": "gpt-4o",
+            "output": [],
+            "usage": ["input_tokens": 1, "output_tokens": 1, "total_tokens": 2],
+            "warnings": []
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let fetch: FetchFunction = { request in
+            await capture.store(request.httpBody)
+            let httpResponse = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: samplePrompt,
+                providerOptions: [
+                    "openai": [
+                        "store": .bool(false)
+                    ]
+                ]
+            )
+        )
+
+        guard let json = decodeRequestBody(await capture.current()) else {
+            Issue.record("Missing request body")
+            return
+        }
+
+        #expect(json["store"] as? Bool == false)
+
+        if let include = json["include"] as? [String] {
+            #expect(!include.contains("reasoning.encrypted_content"))
+        }
+    }
+
+    @Test("should send store = true provider option without reasoning.encrypted_content")
+    func testShouldSendStoreTrueWithoutReasoningContent() async throws {
+        actor BodyCapture {
+            var data: Data?
+            func store(_ body: Data?) { data = body }
+            func current() -> Data? { data }
+        }
+
+        let capture = BodyCapture()
+
+        let responseJSON: [String: Any] = [
+            "id": "resp_store_true",
+            "created_at": 1_700_000_000.0,
+            "model": "gpt-4o",
+            "output": [],
+            "usage": ["input_tokens": 1, "output_tokens": 1, "total_tokens": 2],
+            "warnings": []
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let fetch: FetchFunction = { request in
+            await capture.store(request.httpBody)
+            let httpResponse = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: samplePrompt,
+                providerOptions: [
+                    "openai": [
+                        "store": .bool(true)
+                    ]
+                ]
+            )
+        )
+
+        guard let json = decodeRequestBody(await capture.current()) else {
+            Issue.record("Missing request body")
+            return
+        }
+
+        #expect(json["store"] as? Bool == true)
+
+        if let include = json["include"] as? [String] {
+            #expect(!include.contains("reasoning.encrypted_content"))
+        }
+    }
+
+    @Test("should send user provider option")
+    func testShouldSendUserProviderOption() async throws {
+        actor BodyCapture {
+            var data: Data?
+            func store(_ body: Data?) { data = body }
+            func current() -> Data? { data }
+        }
+
+        let capture = BodyCapture()
+
+        let responseJSON: [String: Any] = [
+            "id": "resp_user",
+            "created_at": 1_700_000_000.0,
+            "model": "gpt-4o",
+            "output": [],
+            "usage": ["input_tokens": 1, "output_tokens": 1, "total_tokens": 2],
+            "warnings": []
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let fetch: FetchFunction = { request in
+            await capture.store(request.httpBody)
+            let httpResponse = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: samplePrompt,
+                providerOptions: [
+                    "openai": [
+                        "user": .string("test-user-123")
+                    ]
+                ]
+            )
+        )
+
+        guard let json = decodeRequestBody(await capture.current()) else {
+            Issue.record("Missing request body")
+            return
+        }
+
+        #expect(json["user"] as? String == "test-user-123")
+    }
+
+    @Test("should send previous response id provider option")
+    func testShouldSendPreviousResponseIdProviderOption() async throws {
+        actor BodyCapture {
+            var data: Data?
+            func store(_ body: Data?) { data = body }
+            func current() -> Data? { data }
+        }
+
+        let capture = BodyCapture()
+
+        let responseJSON: [String: Any] = [
+            "id": "resp_new",
+            "created_at": 1_700_000_000.0,
+            "model": "gpt-4o",
+            "output": [],
+            "usage": ["input_tokens": 1, "output_tokens": 1, "total_tokens": 2],
+            "warnings": []
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let fetch: FetchFunction = { request in
+            await capture.store(request.httpBody)
+            let httpResponse = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: samplePrompt,
+                providerOptions: [
+                    "openai": [
+                        "previousResponseId": .string("resp_previous_123")
+                    ]
+                ]
+            )
+        )
+
+        guard let json = decodeRequestBody(await capture.current()) else {
+            Issue.record("Missing request body")
+            return
+        }
+
+        #expect(json["previous_response_id"] as? String == "resp_previous_123")
+    }
+
+    @Test("should send metadata provider option")
+    func testShouldSendMetadataProviderOption() async throws {
+        actor BodyCapture {
+            var data: Data?
+            func store(_ body: Data?) { data = body }
+            func current() -> Data? { data }
+        }
+
+        let capture = BodyCapture()
+
+        let responseJSON: [String: Any] = [
+            "id": "resp_metadata",
+            "created_at": 1_700_000_000.0,
+            "model": "gpt-4o",
+            "output": [],
+            "usage": ["input_tokens": 1, "output_tokens": 1, "total_tokens": 2],
+            "warnings": []
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let fetch: FetchFunction = { request in
+            await capture.store(request.httpBody)
+            let httpResponse = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: samplePrompt,
+                providerOptions: [
+                    "openai": [
+                        "metadata": .object([
+                            "userId": .string("user-456"),
+                            "sessionId": .string("session-789")
+                        ])
+                    ]
+                ]
+            )
+        )
+
+        guard let json = decodeRequestBody(await capture.current()),
+              let metadata = json["metadata"] as? [String: Any] else {
+            Issue.record("Missing metadata in request")
+            return
+        }
+
+        #expect(metadata["userId"] as? String == "user-456")
+        #expect(metadata["sessionId"] as? String == "session-789")
+    }
+
+    // MARK: - Additional Provider Options (lines 707-914)
+
+    @Test("should send instructions provider option")
+    func testShouldSendInstructionsProviderOption() async throws {
+        actor BodyCapture {
+            var data: Data?
+            func store(_ body: Data?) { data = body }
+            func current() -> Data? { data }
+        }
+
+        let capture = BodyCapture()
+
+        let responseJSON: [String: Any] = [
+            "id": "resp_instructions",
+            "created_at": 1_700_000_000.0,
+            "model": "o3-mini",
+            "output": [],
+            "usage": ["input_tokens": 1, "output_tokens": 1, "total_tokens": 2],
+            "warnings": []
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let fetch: FetchFunction = { request in
+            await capture.store(request.httpBody)
+            let httpResponse = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "o3-mini",
+            config: makeConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: samplePrompt,
+                providerOptions: [
+                    "openai": [
+                        "instructions": .string("Be very concise")
+                    ]
+                ]
+            )
+        )
+
+        guard let json = decodeRequestBody(await capture.current()) else {
+            Issue.record("Missing request body")
+            return
+        }
+
+        #expect(json["instructions"] as? String == "Be very concise")
+    }
+
+    @Test("should send include provider option")
+    func testShouldSendIncludeProviderOption() async throws {
+        actor BodyCapture {
+            var data: Data?
+            func store(_ body: Data?) { data = body }
+            func current() -> Data? { data }
+        }
+
+        let capture = BodyCapture()
+
+        let responseJSON: [String: Any] = [
+            "id": "resp_include",
+            "created_at": 1_700_000_000.0,
+            "model": "gpt-4o",
+            "output": [],
+            "usage": ["input_tokens": 1, "output_tokens": 1, "total_tokens": 2],
+            "warnings": []
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let fetch: FetchFunction = { request in
+            await capture.store(request.httpBody)
+            let httpResponse = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: samplePrompt,
+                providerOptions: [
+                    "openai": [
+                        "include": .array([.string("reasoning.encrypted_content")])
+                    ]
+                ]
+            )
+        )
+
+        guard let json = decodeRequestBody(await capture.current()),
+              let include = json["include"] as? [String] else {
+            Issue.record("Missing include in request")
+            return
+        }
+
+        #expect(include.contains("reasoning.encrypted_content"))
+    }
+
+    @Test("should send include provider option with multiple values")
+    func testShouldSendIncludeWithMultipleValues() async throws {
+        actor BodyCapture {
+            var data: Data?
+            func store(_ body: Data?) { data = body }
+            func current() -> Data? { data }
+        }
+
+        let capture = BodyCapture()
+
+        let responseJSON: [String: Any] = [
+            "id": "resp_include_multi",
+            "created_at": 1_700_000_000.0,
+            "model": "gpt-4o",
+            "output": [],
+            "usage": ["input_tokens": 1, "output_tokens": 1, "total_tokens": 2],
+            "warnings": []
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let fetch: FetchFunction = { request in
+            await capture.store(request.httpBody)
+            let httpResponse = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: samplePrompt,
+                providerOptions: [
+                    "openai": [
+                        "include": .array([
+                            .string("reasoning.encrypted_content"),
+                            .string("file_search_call.results")
+                        ])
+                    ]
+                ]
+            )
+        )
+
+        guard let json = decodeRequestBody(await capture.current()),
+              let include = json["include"] as? [String] else {
+            Issue.record("Missing include in request")
+            return
+        }
+
+        #expect(Set(include) == Set(["reasoning.encrypted_content", "file_search_call.results"]))
+    }
+
+    @Test("should send textVerbosity provider option - low")
+    func testShouldSendTextVerbosityLow() async throws {
+        actor BodyCapture {
+            var data: Data?
+            func store(_ body: Data?) { data = body }
+            func current() -> Data? { data }
+        }
+
+        let capture = BodyCapture()
+
+        let responseJSON: [String: Any] = [
+            "id": "resp_verbosity",
+            "created_at": 1_700_000_000.0,
+            "model": "gpt-5",
+            "output": [],
+            "usage": ["input_tokens": 1, "output_tokens": 1, "total_tokens": 2],
+            "warnings": []
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let fetch: FetchFunction = { request in
+            await capture.store(request.httpBody)
+            let httpResponse = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-5",
+            config: makeConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: samplePrompt,
+                providerOptions: [
+                    "openai": [
+                        "textVerbosity": .string("low")
+                    ]
+                ]
+            )
+        )
+
+        guard let json = decodeRequestBody(await capture.current()),
+              let text = json["text"] as? [String: Any] else {
+            Issue.record("Missing text payload")
+            return
+        }
+
+        #expect(text["verbosity"] as? String == "low")
+    }
+
+    @Test("should send textVerbosity provider option - medium")
+    func testShouldSendTextVerbosityMedium() async throws {
+        actor BodyCapture {
+            var data: Data?
+            func store(_ body: Data?) { data = body }
+            func current() -> Data? { data }
+        }
+
+        let capture = BodyCapture()
+
+        let responseJSON: [String: Any] = [
+            "id": "resp_verbosity_med",
+            "created_at": 1_700_000_000.0,
+            "model": "gpt-5",
+            "output": [],
+            "usage": ["input_tokens": 1, "output_tokens": 1, "total_tokens": 2],
+            "warnings": []
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let fetch: FetchFunction = { request in
+            await capture.store(request.httpBody)
+            let httpResponse = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-5",
+            config: makeConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: samplePrompt,
+                providerOptions: [
+                    "openai": [
+                        "textVerbosity": .string("medium")
+                    ]
+                ]
+            )
+        )
+
+        guard let json = decodeRequestBody(await capture.current()),
+              let text = json["text"] as? [String: Any] else {
+            Issue.record("Missing text payload")
+            return
+        }
+
+        #expect(text["verbosity"] as? String == "medium")
+    }
+
+    @Test("should send textVerbosity provider option - high")
+    func testShouldSendTextVerbosityHigh() async throws {
+        actor BodyCapture {
+            var data: Data?
+            func store(_ body: Data?) { data = body }
+            func current() -> Data? { data }
+        }
+
+        let capture = BodyCapture()
+
+        let responseJSON: [String: Any] = [
+            "id": "resp_verbosity_high",
+            "created_at": 1_700_000_000.0,
+            "model": "gpt-5",
+            "output": [],
+            "usage": ["input_tokens": 1, "output_tokens": 1, "total_tokens": 2],
+            "warnings": []
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let fetch: FetchFunction = { request in
+            await capture.store(request.httpBody)
+            let httpResponse = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-5",
+            config: makeConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: samplePrompt,
+                providerOptions: [
+                    "openai": [
+                        "textVerbosity": .string("high")
+                    ]
+                ]
+            )
+        )
+
+        guard let json = decodeRequestBody(await capture.current()),
+              let text = json["text"] as? [String: Any] else {
+            Issue.record("Missing text payload")
+            return
+        }
+
+        #expect(text["verbosity"] as? String == "high")
+    }
+
+    @Test("should send promptCacheKey provider option")
+    func testShouldSendPromptCacheKeyProviderOption() async throws {
+        actor BodyCapture {
+            var data: Data?
+            func store(_ body: Data?) { data = body }
+            func current() -> Data? { data }
+        }
+
+        let capture = BodyCapture()
+
+        let responseJSON: [String: Any] = [
+            "id": "resp_cache_key",
+            "created_at": 1_700_000_000.0,
+            "model": "gpt-4o",
+            "output": [],
+            "usage": ["input_tokens": 1, "output_tokens": 1, "total_tokens": 2],
+            "warnings": []
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let fetch: FetchFunction = { request in
+            await capture.store(request.httpBody)
+            let httpResponse = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: samplePrompt,
+                providerOptions: [
+                    "openai": [
+                        "promptCacheKey": .string("cache-key-123")
+                    ]
+                ]
+            )
+        )
+
+        guard let json = decodeRequestBody(await capture.current()) else {
+            Issue.record("Missing request body")
+            return
+        }
+
+        #expect(json["prompt_cache_key"] as? String == "cache-key-123")
+    }
+
+    @Test("should send safetyIdentifier provider option")
+    func testShouldSendSafetyIdentifierProviderOption() async throws {
+        actor BodyCapture {
+            var data: Data?
+            func store(_ body: Data?) { data = body }
+            func current() -> Data? { data }
+        }
+
+        let capture = BodyCapture()
+
+        let responseJSON: [String: Any] = [
+            "id": "resp_safety",
+            "created_at": 1_700_000_000.0,
+            "model": "gpt-4o",
+            "output": [],
+            "usage": ["input_tokens": 1, "output_tokens": 1, "total_tokens": 2],
+            "warnings": []
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let fetch: FetchFunction = { request in
+            await capture.store(request.httpBody)
+            let httpResponse = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: samplePrompt,
+                providerOptions: [
+                    "openai": [
+                        "safetyIdentifier": .string("safety-id-456")
+                    ]
+                ]
+            )
+        )
+
+        guard let json = decodeRequestBody(await capture.current()) else {
+            Issue.record("Missing request body")
+            return
+        }
+
+        #expect(json["safety_identifier"] as? String == "safety-id-456")
+    }
+
+    @Test("should send logprobs provider option")
+    func testShouldSendLogprobsProviderOption() async throws {
+        actor BodyCapture {
+            var data: Data?
+            func store(_ body: Data?) { data = body }
+            func current() -> Data? { data }
+        }
+
+        let capture = BodyCapture()
+
+        let responseJSON: [String: Any] = [
+            "id": "resp_logprobs_opt",
+            "created_at": 1_700_000_000.0,
+            "model": "gpt-4o",
+            "output": [],
+            "usage": ["input_tokens": 1, "output_tokens": 1, "total_tokens": 2],
+            "warnings": []
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let fetch: FetchFunction = { request in
+            await capture.store(request.httpBody)
+            let httpResponse = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: samplePrompt,
+                providerOptions: [
+                    "openai": [
+                        "logprobs": .bool(true)
+                    ]
+                ]
+            )
+        )
+
+        guard let json = decodeRequestBody(await capture.current()) else {
+            Issue.record("Missing request body")
+            return
+        }
+
+        if let include = json["include"] as? [String] {
+            #expect(include.contains("message.output_text.logprobs"))
+        } else {
+            Issue.record("Missing include for logprobs")
+        }
+        #expect(json["top_logprobs"] as? Int == TOP_LOGPROBS_MAX)
+    }
+
+    // MARK: - Response Format Additional Tests (lines 936-1061)
+
+    @Test("should send responseFormat json format")
+    func testShouldSendResponseFormatJson() async throws {
+        actor BodyCapture {
+            var data: Data?
+            func store(_ body: Data?) { data = body }
+            func current() -> Data? { data }
+        }
+
+        let capture = BodyCapture()
+
+        let responseJSON: [String: Any] = [
+            "id": "resp_response_format",
+            "created_at": 1_700_000_000.0,
+            "model": "gpt-4o",
+            "output": [],
+            "usage": ["input_tokens": 1, "output_tokens": 1, "total_tokens": 2],
+            "warnings": []
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let fetch: FetchFunction = { request in
+            await capture.store(request.httpBody)
+            let httpResponse = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: samplePrompt,
+                responseFormat: .json(schema: nil, name: nil, description: nil)
+            )
+        )
+
+        guard let json = decodeRequestBody(await capture.current()),
+              let text = json["text"] as? [String: Any],
+              let format = text["format"] as? [String: Any] else {
+            Issue.record("Missing text format in request")
+            return
+        }
+
+        #expect(format["type"] as? String == "json_object")
+    }
+
+    @Test("should send responseFormat json_schema format")
+    func testShouldSendResponseFormatJsonSchemaFormat() async throws {
+        actor BodyCapture {
+            var data: Data?
+            func store(_ body: Data?) { data = body }
+            func current() -> Data? { data }
+        }
+
+        let capture = BodyCapture()
+
+        let responseJSON: [String: Any] = [
+            "id": "resp_json_schema_format",
+            "created_at": 1_700_000_000.0,
+            "model": "gpt-4o",
+            "output": [],
+            "usage": ["input_tokens": 1, "output_tokens": 1, "total_tokens": 2],
+            "warnings": []
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let fetch: FetchFunction = { request in
+            await capture.store(request.httpBody)
+            let httpResponse = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let schema: JSONValue = .object([
+            "$schema": .string("http://json-schema.org/draft-07/schema#"),
+            "type": .string("object"),
+            "properties": .object([
+                "value": .object(["type": .string("string")])
+            ]),
+            "required": .array([.string("value")]),
+            "additionalProperties": .bool(false)
+        ])
+
+        _ = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: samplePrompt,
+                responseFormat: .json(schema: schema, name: "MyResponse", description: "Test response")
+            )
+        )
+
+        guard let json = decodeRequestBody(await capture.current()),
+              let text = json["text"] as? [String: Any],
+              let format = text["format"] as? [String: Any] else {
+            Issue.record("Missing text format in request")
+            return
+        }
+
+        #expect(format["type"] as? String == "json_schema")
+        #expect(format["name"] as? String == "MyResponse")
+        #expect(format["description"] as? String == "Test response")
+        #expect(format["strict"] as? Bool == false)
+    }
+
+    @Test("should send responseFormat json_schema format with strictSchemas false")
+    func testShouldSendResponseFormatJsonSchemaWithStrictSchemasFalse() async throws {
+        actor BodyCapture {
+            var data: Data?
+            func store(_ body: Data?) { data = body }
+            func current() -> Data? { data }
+        }
+
+        let capture = BodyCapture()
+
+        let responseJSON: [String: Any] = [
+            "id": "resp_strict_false",
+            "created_at": 1_700_000_000.0,
+            "model": "gpt-4o",
+            "output": [],
+            "usage": ["input_tokens": 1, "output_tokens": 1, "total_tokens": 2],
+            "warnings": []
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let fetch: FetchFunction = { request in
+            await capture.store(request.httpBody)
+            let httpResponse = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let schema: JSONValue = .object([
+            "type": .string("object"),
+            "properties": .object([
+                "value": .object(["type": .string("string")])
+            ])
+        ])
+
+        _ = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: samplePrompt,
+                responseFormat: .json(schema: schema, name: "test", description: nil),
+                providerOptions: [
+                    "openai": [
+                        "strictSchemas": .bool(false)
+                    ]
+                ]
+            )
+        )
+
+        guard let json = decodeRequestBody(await capture.current()),
+              let text = json["text"] as? [String: Any],
+              let format = text["format"] as? [String: Any] else {
+            Issue.record("Missing text format in request")
+            return
+        }
+
+        #expect(format["strict"] as? Bool == false)
+    }
+
+    @Test("should warn about unsupported settings")
+    func testShouldWarnAboutUnsupportedSettings() async throws {
+        let responseJSON: [String: Any] = [
+            "id": "resp_warn_unsupported",
+            "created_at": 1_700_000_000.0,
+            "model": "gpt-4o",
+            "output": [],
+            "usage": ["input_tokens": 1, "output_tokens": 1, "total_tokens": 2],
+            "warnings": [
+                [
+                    "type": "unsupported-setting",
+                    "setting": "temperature",
+                    "message": "temperature is not supported"
+                ]
+            ]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let fetch: FetchFunction = { _ in
+            let httpResponse = HTTPURLResponse(
+                url: URL(string: "https://api.openai.com/v1/responses")!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: samplePrompt))
+
+        #expect(result.warnings.count == 1)
+        if let warning = result.warnings.first {
+            if case let .unsupportedSetting(setting, details) = warning {
+                #expect(setting == "temperature")
+                #expect(details == "temperature is not supported")
+            } else {
+                Issue.record("Expected unsupported-setting warning")
+            }
+        }
+    }
+
+    @Test("should extract logprobs in providerMetadata")
+    func testShouldExtractLogprobsInProviderMetadata() async throws {
+        let responseJSON: [String: Any] = [
+            "id": "resp_logprobs_meta",
+            "created_at": 1_700_000_000.0,
+            "model": "gpt-4o",
+            "output": [
+                [
+                    "id": "msg_logprobs",
+                    "type": "message",
+                    "status": "completed",
+                    "role": "assistant",
+                    "content": [
+                        [
+                            "type": "output_text",
+                            "text": "Hello",
+                            "annotations": [],
+                            "logprobs": [
+                                [
+                                    "token": "Hello",
+                                    "logprob": -0.5,
+                                    "bytes": [72, 101, 108, 108, 111],
+                                    "top_logprobs": []
+                                ]
+                            ]
+                        ]
+                    ]
+                ]
+            ],
+            "usage": ["input_tokens": 1, "output_tokens": 1, "total_tokens": 2],
+            "warnings": []
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let fetch: FetchFunction = { _ in
+            let httpResponse = HTTPURLResponse(
+                url: URL(string: "https://api.openai.com/v1/responses")!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: samplePrompt))
+
+        if let openaiMetadata = result.providerMetadata?["openai"] {
+            if case .array(let logprobs) = openaiMetadata["logprobs"] {
+                #expect(!logprobs.isEmpty)
+            }
+        } else {
+            Issue.record("Missing openai provider metadata")
+        }
+    }
+
+    // MARK: - Reasoning Tests (lines 1208-1972)
+
+    @Test("should handle reasoning with summary")
+    func testShouldHandleReasoningWithSummary() async throws {
+        let responseJSON: [String: Any] = [
+            "id": "resp_reasoning_summary",
+            "created_at": 1_700_000_000.0,
+            "model": "o3-mini",
+            "output": [
+                [
+                    "id": "reasoning_1",
+                    "type": "reasoning",
+                    "status": "completed",
+                    "summary": [
+                        ["type": "summary_text", "text": "First step of reasoning"],
+                        ["type": "summary_text", "text": "Second step of reasoning"]
+                    ],
+                    "encrypted_content": "encrypted-data-here"
+                ]
+            ],
+            "usage": ["input_tokens": 10, "output_tokens": 5, "total_tokens": 15],
+            "warnings": []
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let fetch: FetchFunction = { _ in
+            let httpResponse = HTTPURLResponse(
+                url: URL(string: "https://api.openai.com/v1/responses")!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "o3-mini",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: samplePrompt))
+
+        let reasoningParts = result.content.compactMap { content -> LanguageModelV3Reasoning? in
+            if case .reasoning(let reasoning) = content { return reasoning }
+            return nil
+        }
+        #expect(reasoningParts.count >= 1)
+        #expect(reasoningParts.contains { $0.text.contains("First step") || $0.text.contains("Second step") })
+    }
+
+    @Test("should handle reasoning with empty summary")
+    func testShouldHandleReasoningWithEmptySummary() async throws {
+        let responseJSON: [String: Any] = [
+            "id": "resp_reasoning_empty",
+            "created_at": 1_700_000_000.0,
+            "model": "o3-mini",
+            "output": [
+                [
+                    "id": "reasoning_2",
+                    "type": "reasoning",
+                    "status": "completed",
+                    "summary": [],
+                    "encrypted_content": "encrypted-data"
+                ]
+            ],
+            "usage": ["input_tokens": 5, "output_tokens": 3, "total_tokens": 8],
+            "warnings": []
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let fetch: FetchFunction = { _ in
+            let httpResponse = HTTPURLResponse(
+                url: URL(string: "https://api.openai.com/v1/responses")!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "o3-mini",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: samplePrompt))
+
+        let reasoningParts = result.content.compactMap { content -> LanguageModelV3Reasoning? in
+            if case .reasoning(let reasoning) = content { return reasoning }
+            return nil
+        }
+        #expect(reasoningParts.isEmpty || reasoningParts.allSatisfy { $0.text.isEmpty })
+    }
+
+    @Test("should handle encrypted content with summary")
+    func testShouldHandleEncryptedContentWithSummary() async throws {
+        let responseJSON: [String: Any] = [
+            "id": "resp_encrypted",
+            "created_at": 1_700_000_000.0,
+            "model": "o3-mini",
+            "output": [
+                [
+                    "id": "reasoning_enc",
+                    "type": "reasoning",
+                    "status": "completed",
+                    "summary": [
+                        ["type": "summary_text", "text": "Encrypted reasoning summary"]
+                    ],
+                    "encrypted_content": "base64-encrypted-content"
+                ]
+            ],
+            "usage": ["input_tokens": 15, "output_tokens": 10, "total_tokens": 25],
+            "warnings": []
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let fetch: FetchFunction = { _ in
+            let httpResponse = HTTPURLResponse(
+                url: URL(string: "https://api.openai.com/v1/responses")!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "o3-mini",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: samplePrompt))
+
+        #expect(result.content.contains { content in
+            if case .reasoning(let reasoning) = content {
+                return reasoning.text.contains("Encrypted reasoning summary")
+            }
+            return false
+        })
+    }
+
+    @Test("should handle encrypted content with empty summary")
+    func testShouldHandleEncryptedContentWithEmptySummary() async throws {
+        let responseJSON: [String: Any] = [
+            "id": "resp_encrypted_empty",
+            "created_at": 1_700_000_000.0,
+            "model": "o3-mini",
+            "output": [
+                [
+                    "id": "reasoning_enc_empty",
+                    "type": "reasoning",
+                    "status": "completed",
+                    "summary": [],
+                    "encrypted_content": "base64-encrypted"
+                ]
+            ],
+            "usage": ["input_tokens": 8, "output_tokens": 4, "total_tokens": 12],
+            "warnings": []
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let fetch: FetchFunction = { _ in
+            let httpResponse = HTTPURLResponse(
+                url: URL(string: "https://api.openai.com/v1/responses")!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "o3-mini",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: samplePrompt))
+
+        let reasoningParts = result.content.compactMap { content -> LanguageModelV3Reasoning? in
+            if case .reasoning(let reasoning) = content { return reasoning }
+            return nil
+        }
+        #expect(reasoningParts.isEmpty || reasoningParts.allSatisfy { $0.text.isEmpty })
+    }
+
+    @Test("should handle multiple reasoning blocks")
+    func testShouldHandleMultipleReasoningBlocks() async throws {
+        let responseJSON: [String: Any] = [
+            "id": "resp_multiple_reasoning",
+            "created_at": 1_700_000_000.0,
+            "model": "o3-mini",
+            "output": [
+                [
+                    "id": "reasoning_a",
+                    "type": "reasoning",
+                    "status": "completed",
+                    "summary": [
+                        ["type": "summary_text", "text": "First block"]
+                    ]
+                ],
+                [
+                    "id": "reasoning_b",
+                    "type": "reasoning",
+                    "status": "completed",
+                    "summary": [
+                        ["type": "summary_text", "text": "Second block"]
+                    ]
+                ],
+                [
+                    "id": "reasoning_c",
+                    "type": "reasoning",
+                    "status": "completed",
+                    "summary": [
+                        ["type": "summary_text", "text": "Third block"]
+                    ]
+                ]
+            ],
+            "usage": ["input_tokens": 20, "output_tokens": 15, "total_tokens": 35],
+            "warnings": []
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let fetch: FetchFunction = { _ in
+            let httpResponse = HTTPURLResponse(
+                url: URL(string: "https://api.openai.com/v1/responses")!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "o3-mini",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: samplePrompt))
+
+        let reasoningParts = result.content.compactMap { content -> LanguageModelV3Reasoning? in
+            if case .reasoning(let reasoning) = content { return reasoning }
+            return nil
+        }
+        #expect(reasoningParts.count >= 3)
+    }
+
+    // MARK: - Tool Call Tests (lines 1972-2035)
+
+    @Test("should generate tool calls")
+    func testShouldGenerateToolCalls() async throws {
+        let responseJSON: [String: Any] = [
+            "id": "resp_tool_calls",
+            "created_at": 1_700_000_000.0,
+            "model": "gpt-4o",
+            "output": [
+                [
+                    "id": "tool_call_1",
+                    "type": "function_call",
+                    "status": "completed",
+                    "name": "get_weather",
+                    "call_id": "call_abc123",
+                    "arguments": "{\"location\":\"San Francisco\"}"
+                ]
+            ],
+            "usage": ["input_tokens": 50, "output_tokens": 20, "total_tokens": 70],
+            "warnings": []
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let fetch: FetchFunction = { _ in
+            let httpResponse = HTTPURLResponse(
+                url: URL(string: "https://api.openai.com/v1/responses")!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: samplePrompt))
+
+        let toolCalls = result.content.compactMap { content -> LanguageModelV3ToolCall? in
+            if case .toolCall(let call) = content { return call }
+            return nil
+        }
+        #expect(toolCalls.count >= 1)
+        #expect(toolCalls.contains { $0.toolName == "get_weather" && $0.toolCallId == "call_abc123" })
+    }
+
+    @Test("should have tool-calls finish reason")
+    func testShouldHaveToolCallsFinishReason() async throws {
+        let responseJSON: [String: Any] = [
+            "id": "resp_tool_finish",
+            "created_at": 1_700_000_000.0,
+            "model": "gpt-4o",
+            "output": [
+                [
+                    "id": "tool_call_2",
+                    "type": "function_call",
+                    "status": "completed",
+                    "name": "search",
+                    "call_id": "call_def456",
+                    "arguments": "{\"query\":\"AI\"}"
+                ]
+            ],
+            "finish_reason": "tool_calls",
+            "usage": ["input_tokens": 30, "output_tokens": 15, "total_tokens": 45],
+            "warnings": []
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let fetch: FetchFunction = { _ in
+            let httpResponse = HTTPURLResponse(
+                url: URL(string: "https://api.openai.com/v1/responses")!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: samplePrompt))
+
+        #expect(result.finishReason == .toolCalls)
+    }
+
 }
