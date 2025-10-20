@@ -26,11 +26,11 @@ The Swift AI SDK mirrors the AI SDK language-model specification (`AISDKProvider
 
 The Swift port currently ships with the following provider packages. Each module exports a lazily configured global shortcut plus a factory for advanced configuration, matching the TypeScript behavior.
 
-- [OpenAI Provider](/providers/ai-sdk-providers/openai) — `import OpenAIProvider`, then call `openai("gpt-4o")` or `createOpenAIProvider(settings:)`.
-- [Anthropic Provider](/providers/ai-sdk-providers/anthropic) — `import AnthropicProvider`, use `anthropic("claude-3-5-sonnet")` or `createAnthropicProvider(settings:)`.
-- [Google Generative AI Provider](/providers/ai-sdk-providers/google-generative-ai) — `import GoogleProvider`, use `google("gemini-1.5-pro")` or `createGoogleGenerativeAI(settings:)`.
-- [Groq Provider](/providers/ai-sdk-providers/groq) — `import GroqProvider`, use `groq("llama-3.1-8b-instant")` or `createGroqProvider(settings:)`.
-- [OpenAI Compatible Provider](/providers/openai-compatible-providers) — `import OpenAICompatibleProvider`, call `createOpenAICompatibleProvider(settings:)` for any OpenAI-compatible gateway.
+- [OpenAI Provider](/providers/openai) — `import OpenAIProvider`, then call `openai("gpt-4o")` or `createOpenAIProvider(settings:)`.
+- [Anthropic Provider](/providers/anthropic) — `import AnthropicProvider`, use `anthropic("claude-3-5-sonnet")` or `createAnthropicProvider(settings:)`.
+- [Google Generative AI Provider](/providers/google-generative-ai) — `import GoogleProvider`, use `google("gemini-1.5-pro")` or `createGoogleGenerativeAI(settings:)`.
+- Groq Provider — `import GroqProvider`, use `groq("llama-3.1-8b-instant")` or `createGroqProvider(settings:)`. _(Documentation coming soon)_
+- OpenAI Compatible Provider — `import OpenAICompatibleProvider`, call `createOpenAICompatibleProvider(settings:)` for any OpenAI-compatible gateway. _(Documentation coming soon)_
 
 Each shortcut performs lazy API-key loading (via environment variables such as `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, `GROQ_API_KEY`) and returns a ready-to-use `LanguageModelV3` instance for the higher-level Swift AI SDK APIs.
 

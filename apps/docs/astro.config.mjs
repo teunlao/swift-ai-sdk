@@ -64,6 +64,14 @@ export default defineConfig({
             { label: "Tools", link: "/foundations/tools" },
             { label: "Streaming", link: "/foundations/streaming" }
           ]
+        },
+        {
+          label: "Providers",
+          items: [
+            { label: "OpenAI", link: "/providers/openai" },
+            { label: "Anthropic", link: "/providers/anthropic" },
+            { label: "Google Generative AI", link: "/providers/google-generative-ai" }
+          ]
         }
 			],
 		}),
