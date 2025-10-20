@@ -10,19 +10,35 @@ external/
 .dist
 dist
 
-# Validation artifacts (real validation requests/reports created during work)
-# Documentation, examples, and templates ARE committed
-.validation/requests/*
-!.validation/requests/EXAMPLE-*
-.validation/reports/*
-!.validation/reports/EXAMPLE-*
-.validation/temp/
+# Archive for removed git-tracked files (local backup)
+.archive/
 
-# Session contexts (real session files created during work)
-# Documentation and templates ARE committed
-.sessions/*
-!.sessions/EXAMPLE-*
-!.sessions/README.md
+# Validation artifacts (entire directory - not tracked in git)
+.validation/
+
+# Session contexts (entire directory - not tracked in git)
+.sessions/
+
+# Audit files (entire directory - not tracked in git)
+.audit/
+
+# Staging and trash (local development)
+.staging/
+.trash/
+
+# Planning documents (moved to archive)
+plan/
+
+# Insights (moved to archive)
+insights/
+
+# Parity tracking (moved to archive)
+parity/
+
+# Agent and project configuration (moved to archive)
+git-local-config.md
+AGENTS.md
+CLAUDE.md
 
 # Logs
 logs
