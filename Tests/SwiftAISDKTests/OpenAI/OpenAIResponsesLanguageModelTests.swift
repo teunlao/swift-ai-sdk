@@ -4737,6 +4737,70 @@ struct OpenAIResponsesLanguageModelTests {
         }
     }
 
+    // Port of openai-responses-language-model.test.ts: "should handle both url_citation and file_citation annotations"
+    @Test("should handle both url_citation and file_citation annotations")
+    func testShouldHandleBothUrlCitationAndFileCitationAnnotations() async throws {
+        let chunks = [
+            #"data:{"type":"response.content_part.added","item_id":"msg_123","output_index":0,"content_index":0,"part":{"type":"output_text","text":"","annotations":[]}}"# + "\n\n",
+            #"data:{"type":"response.output_text.annotation.added","item_id":"msg_123","output_index":0,"content_index":0,"annotation_index":0,"annotation":{"type":"url_citation","url":"https://example.com","title":"Example URL"}}"# + "\n\n",
+            #"data:{"type":"response.output_text.annotation.added","item_id":"msg_123","output_index":0,"content_index":0,"annotation_index":1,"annotation":{"type":"file_citation","file_id":"file-abc123","quote":"This is a quote from the file"}}"# + "\n\n",
+            #"data:{"type":"response.content_part.done","item_id":"msg_123","output_index":0,"content_index":0,"part":{"type":"output_text","text":"Based on web search and file content.","annotations":[{"type":"url_citation","start_index":0,"end_index":10,"url":"https://example.com","title":"Example URL"},{"type":"file_citation","start_index":20,"end_index":30,"file_id":"file-abc123","quote":"This is a quote from the file"}]}}"# + "\n\n",
+            #"data:{"type":"response.output_item.done","output_index":0,"item":{"id":"msg_123","type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"Based on web search and file content.","annotations":[{"type":"url_citation","start_index":0,"end_index":10,"url":"https://example.com","title":"Example URL"},{"type":"file_citation","start_index":20,"end_index":30,"file_id":"file-abc123","quote":"This is a quote from the file"}]}]}}"# + "\n\n",
+            #"data:{"type":"response.completed","response":{"id":"resp_123","object":"response","created_at":1234567890,"status":"completed","error":null,"incomplete_details":null,"instructions":null,"max_output_tokens":null,"model":"gpt-4o","output":[{"id":"msg_123","type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"Based on web search and file content.","annotations":[{"type":"url_citation","start_index":0,"end_index":10,"url":"https://example.com","title":"Example URL"},{"type":"file_citation","start_index":20,"end_index":30,"file_id":"file-abc123","quote":"This is a quote from the file"}]}]}],"parallel_tool_calls":true,"previous_response_id":null,"reasoning":{"effort":null,"summary":null},"store":true,"temperature":0,"text":{"format":{"type":"text"}},"tool_choice":"auto","tools":[],"top_p":1,"truncation":"disabled","usage":{"input_tokens":100,"input_tokens_details":{"cached_tokens":0},"output_tokens":50,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":150},"user":null,"metadata":{}}}"# + "\n\n",
+            "data: [DONE]\n\n"
+        ]
+
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.openai.com/v1/responses")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "text/event-stream"]
+        )!
+
+        let fetch: FetchFunction = { _ in
+            let stream = AsyncThrowingStream<Data, Error> { continuation in
+                for string in chunks {
+                    continuation.yield(Data(string.utf8))
+                }
+                continuation.finish()
+            }
+            return FetchResponse(body: .stream(stream), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let result = try await model.doStream(options: LanguageModelV3CallOptions(prompt: samplePrompt))
+
+        var events: [String] = []
+        for try await chunk in result.stream {
+            switch chunk {
+            case .streamStart:
+                events.append("stream-start")
+            case .source(.url(let id, _, _, _)):
+                events.append("source:url:\(id)")
+            case .source(.document(let id, _, _, _, _)):
+                events.append("source:document:\(id)")
+            case .textEnd(let id, _):
+                events.append("text-end:\(id)")
+            case .finish:
+                events.append("finish")
+            default:
+                break
+            }
+        }
+
+        #expect(events == [
+            "stream-start",
+            "source:url:generated-0",
+            "source:document:generated-1",
+            "text-end:msg_123",
+            "finish"
+        ])
+    }
+
     // MARK: - Computer Use Tool Tests
     // Port of openai-responses-language-model.test.ts: "should handle computer use tool calls"
 
