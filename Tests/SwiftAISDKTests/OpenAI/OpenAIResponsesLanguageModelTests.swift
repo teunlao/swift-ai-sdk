@@ -4852,6 +4852,116 @@ struct OpenAIResponsesLanguageModelTests {
         #expect(sourceCount == 2)
     }
 
+    // Port of openai-responses-language-model.test.ts: "should handle mixed url_citation and file_citation annotations"
+    @Test("should handle mixed url_citation and file_citation annotations")
+    func testShouldHandleMixedUrlCitationAndFileCitationAnnotations() async throws {
+        let responseJSON: [String: Any] = [
+            "id": "resp_123",
+            "object": "response",
+            "created_at": 1234567890,
+            "status": "completed",
+            "error": NSNull(),
+            "incomplete_details": NSNull(),
+            "input": [],
+            "instructions": NSNull(),
+            "max_output_tokens": NSNull(),
+            "model": "gpt-4o",
+            "output": [
+                [
+                    "id": "msg_123",
+                    "type": "message",
+                    "status": "completed",
+                    "role": "assistant",
+                    "content": [
+                        [
+                            "type": "output_text",
+                            "text": "Based on web search and file content.",
+                            "annotations": [
+                                [
+                                    "type": "url_citation",
+                                    "start_index": 0,
+                                    "end_index": 10,
+                                    "url": "https://example.com",
+                                    "title": "Example URL"
+                                ],
+                                [
+                                    "type": "file_citation",
+                                    "start_index": 20,
+                                    "end_index": 30,
+                                    "file_id": "file-abc123",
+                                    "quote": "This is a quote from the file"
+                                ]
+                            ]
+                        ]
+                    ]
+                ]
+            ],
+            "parallel_tool_calls": true,
+            "previous_response_id": NSNull(),
+            "reasoning": ["effort": NSNull(), "summary": NSNull()],
+            "store": true,
+            "temperature": 0,
+            "text": ["format": ["type": "text"]],
+            "tool_choice": "auto",
+            "tools": [],
+            "top_p": 1,
+            "truncation": "disabled",
+            "usage": [
+                "input_tokens": 100,
+                "input_tokens_details": ["cached_tokens": 0],
+                "output_tokens": 50,
+                "output_tokens_details": ["reasoning_tokens": 0],
+                "total_tokens": 150
+            ],
+            "user": NSNull(),
+            "metadata": [:]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let fetch: FetchFunction = { request in
+            let httpResponse = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: samplePrompt))
+
+        #expect(result.content.count == 3)
+
+        // Check text content
+        guard case .text(let text) = result.content[0] else {
+            Issue.record("Expected text at index 0")
+            return
+        }
+        #expect(text.text == "Based on web search and file content.")
+
+        // Check URL source
+        guard case .source(.url(_, let url, let title, _)) = result.content[1] else {
+            Issue.record("Expected url source at index 1")
+            return
+        }
+        #expect(url == "https://example.com")
+        #expect(title == "Example URL")
+
+        // Check document source
+        guard case .source(.document(_, let mediaType, let docTitle, let filename, _)) = result.content[2] else {
+            Issue.record("Expected document source at index 2")
+            return
+        }
+        #expect(mediaType == "text/plain")
+        #expect(docTitle == "This is a quote from the file")
+        #expect(filename == "file-abc123")
+    }
+
     // MARK: - Computer Use Tool Tests
     // Port of openai-responses-language-model.test.ts: "should handle computer use tool calls"
 
