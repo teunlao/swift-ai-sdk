@@ -159,9 +159,30 @@ struct OpenAIChatMessagesConverterTests {
         #expect(imageURL["detail"] == .string("low"))
     }
 
-    // Port of convert-to-openai-chat-messages.test.ts: "should throw error for unsupported file types"
-    @Test("unsupported file media type throws")
-    func unsupportedFileMediaTypeThrows() {
+    // Port of convert-to-openai-chat-messages.test.ts: "should throw for unsupported mime types" (nested in file parts)
+    @Test("unsupported mime type throws")
+    func unsupportedMimeTypeThrows() {
+        let filePart = LanguageModelV3FilePart(
+            data: .base64("AAECAw=="),
+            mediaType: "application/something"
+        )
+        let prompt: LanguageModelV3Prompt = [
+            .user(content: [.file(filePart)], providerOptions: nil)
+        ]
+
+        do {
+            _ = try OpenAIChatMessagesConverter.convert(prompt: prompt, systemMessageMode: .system)
+            Issue.record("Expected UnsupportedFunctionalityError")
+        } catch let error as UnsupportedFunctionalityError {
+            #expect(error.functionality == "file part media type application/something")
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+    }
+
+    // Port of convert-to-openai-chat-messages.test.ts: "should throw error for unsupported file types" (top level)
+    @Test("unsupported file type text/plain throws")
+    func unsupportedFileTypeTextPlainThrows() {
         let filePart = LanguageModelV3FilePart(
             data: .base64("AQIDBAU="),
             mediaType: "text/plain"

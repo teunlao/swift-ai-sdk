@@ -81,13 +81,13 @@
 | OpenAIEmbeddingModel | 6 | 6 | 100% | ✅ PERFECT |
 | OpenAIImageModel | 10 | 10 | 100% | ✅ PERFECT |
 | OpenAISpeechModel | 8 | 9 | 113% | ✅ EXCELLENT |
-| OpenAIChatMessages | 19 | 18 | 95% | ✅ GOOD |
+| OpenAIChatMessages | 19 | 19 | 100% | ✅ PERFECT |
 | OpenAIResponsesPrepareTools | 10 | 13 | 130% | ✅ EXCELLENT |
 | OpenAIChatPrepareTools | 8 | 8 | 100% | ✅ PERFECT |
 | OpenAIError | 1 | 1 | 100% | ✅ PERFECT |
 | OpenAIProvider | 3 | 1 | 33% | ⚠️ MODERATE |
 
-**TOTAL: 290 → 275 (94.8% coverage) ✅ EXCELLENT**
+**TOTAL: 290 → 276 (95.2% coverage) ✅ EXCELLENT**
 
 ---
 
@@ -441,15 +441,16 @@ return .value(1)  // ✅ Matches upstream fallback behavior
 
 ---
 
-### OpenAIChatMessages (Priority 10 - NEAR COMPLETE ✅)
-**Target:** 19 tests | **Current:** 18/19 (95%)
+### OpenAIChatMessages (Priority 10 - COMPLETE ✅)
+**Target:** 19 tests | **Current:** 19/19 (100%)
 
-#### Added/Fixed (2/2)
+#### Added Tests (2)
 
-- [x] Add audio mp3 file part - `audioMp3FilePartConverted`
-- [x] Fix unsupported file media type - Updated to match upstream (text/plain)
+- [x] Audio mp3 file part - `audioMp3FilePartConverted`
+- [x] Unsupported mime type (application/something) - `unsupportedMimeTypeThrows`
+- [x] Unsupported file type (text/plain) - `unsupportedFileTypeTextPlainThrows`
 
-**Note:** Corrected existing test to use upstream data (AQIDBAU= and text/plain mediaType).
+**Note:** Upstream has TWO separate unsupported file tests - one for application/something (nested) and one for text/plain (top level). Both now implemented.
 
 ---
 
