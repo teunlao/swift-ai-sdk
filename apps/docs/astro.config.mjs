@@ -45,6 +45,12 @@ export default defineConfig({
           ]
         },
         {
+          label: "Zod Adapter",
+          items: [
+            { label: "Zod-like Schema DSL", link: "/zod-adapter/overview" }
+          ]
+        },
+        {
           label: "Foundations",
           items: [
             { label: "Overview", link: "/foundations/overview" },

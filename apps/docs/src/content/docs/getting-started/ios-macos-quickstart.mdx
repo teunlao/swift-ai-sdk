@@ -29,7 +29,7 @@ import SwiftAISDK
 import OpenAIProvider
 
 let result = try await generateText(
-  model: openai("gpt-5"),
+  model: openai("gpt-4o"),
   prompt: "Hello from Swift!"
 )
 print(result.text)
@@ -84,20 +84,76 @@ struct ChatView: View {
 
 ## 5) Tools (optional)
 
+### Manual JSON Schema
+
 ```swift
 import AISDKProviderUtils
 
 let echo = tool(
-  inputSchema: FlexibleSchema(jsonSchema(.object(["additionalProperties": .bool(true)]))),
+  description: "Echo back the input data",
+  inputSchema: FlexibleSchema(jsonSchema(
+    .object([
+      "type": .string("object"),
+      "properties": .object([
+        "message": .object([
+          "type": .string("string"),
+          "description": .string("The message to echo")
+        ])
+      ]),
+      "required": .array([.string("message")]),
+      "additionalProperties": .bool(false)
+    ])
+  )),
   execute: { input, _ in .value(input) }
 )
 
 let result = try await generateText(
   model: openai("gpt-5"),
   tools: ["echo": echo],
-  prompt: "Call echo with {\"hello\":\"world\"}"
+  prompt: "Call echo with {\"message\":\"Hello!\"}"
 )
 ```
 
-> Note: Keep long‑running work off the main actor; UI updates should be marshalled on the main thread.
+### Zod-like Schema (cleaner!)
+
+```swift
+import AISDKProviderUtils
+import AISDKZodAdapter
+
+let calculator = tool(
+  description: "Perform arithmetic operations",
+  inputSchema: flexibleSchemaFromZod3(z.object([
+    "operation": z.string(),
+    "a": z.number(),
+    "b": z.number()
+  ])),
+  execute: { input, _ in
+    guard case .object(let obj) = input,
+          case .string(let op) = obj["operation"] ?? .null,
+          case .number(let a) = obj["a"] ?? .null,
+          case .number(let b) = obj["b"] ?? .null else {
+      return .value(.string("Invalid input"))
+    }
+
+    let result: Double
+    switch op {
+    case "add": result = a + b
+    case "multiply": result = a * b
+    default: result = 0
+    }
+
+    return .value(.number(result))
+  }
+)
+
+let result = try await generateText(
+  model: openai("gpt-5"),
+  tools: ["calculator": calculator],
+  prompt: "What is 234 multiplied by 89?"
+)
+```
+
+> **Note:** The Zod-like DSL (`z.object()`, `z.string()`, etc.) provides a cleaner way to define schemas. Use `flexibleSchemaFromZod3()` to convert ZodSchema to FlexibleSchema.
+
+> Keep long‑running work off the main actor; UI updates should be marshalled on the main thread.
 

@@ -1,0 +1,434 @@
+---
+title: Zod-like Schema DSL
+description: Use a cleaner, Zod-inspired syntax for defining tool schemas instead of manual JSON Schema.
+---
+
+## What is AISDKZodAdapter?
+
+`AISDKZodAdapter` is a **Swift-native DSL** (Domain Specific Language) inspired by TypeScript's [Zod](https://zod.dev) library. It provides a cleaner, more ergonomic way to define JSON schemas for AI tools.
+
+> **Important:** This is **not** a port of Zod itself—it's a lightweight Swift API designed to improve developer experience (DX) when working with schemas. Under the hood, it converts your Zod-like syntax into standard JSON Schema that the AI SDK uses internally.
+
+**Key characteristics:**
+- ✅ Zod-**inspired** syntax (not a full Zod port)
+- ✅ Pure Swift implementation
+- ✅ Converts to JSON Schema internally
+- ✅ No TypeScript/JavaScript dependencies
+- ✅ Designed specifically for AI SDK tool schemas
+
+Think of it as **syntactic sugar** over manual JSON Schema construction—same functionality, better ergonomics.
+
+---
+
+## Why Zod DSL?
+
+### The Problem with Manual JSON Schema
+
+When defining tools with manual JSON Schema, the code becomes verbose and error-prone:
+
+```swift
+import AISDKProviderUtils
+
+let weatherTool = tool(
+  description: "Get current weather",
+  inputSchema: FlexibleSchema(jsonSchema(
+    .object([
+      "type": .string("object"),
+      "properties": .object([
+        "location": .object([
+          "type": .string("string"),
+          "description": .string("City name")
+        ]),
+        "units": .object([
+          "type": .string("string"),
+          "enum": .array([.string("celsius"), .string("fahrenheit")]),
+          "description": .string("Temperature units")
+        ])
+      ]),
+      "required": .array([.string("location")]),
+      "additionalProperties": .bool(false)
+    ])
+  )),
+  execute: { input, _ in
+    // Execute weather API call
+    return .value(.string("22°C, sunny"))
+  }
+)
+```
+
+**Problems:**
+- ❌ Verbose and hard to read
+- ❌ Easy to make syntax errors
+- ❌ No compile-time validation of schema structure
+- ❌ Difficult to maintain
+
+### The Solution: Zod-like DSL
+
+The same schema with Zod DSL is dramatically cleaner:
+
+```swift
+import AISDKProviderUtils
+import AISDKZodAdapter
+
+let weatherTool = tool(
+  description: "Get current weather",
+  inputSchema: flexibleSchemaFromZod3(z.object([
+    "location": z.string(),
+    "units": z.optional(z.string())
+  ])),
+  execute: { input, _ in
+    // Execute weather API call
+    return .value(.string("22°C, sunny"))
+  }
+)
+```
+
+**Benefits:**
+- ✅ Clean, readable syntax
+- ✅ Less boilerplate
+- ✅ Inspired by popular Zod library (familiar to TypeScript developers)
+- ✅ Type-safe schema construction
+
+## Available Schema Types
+
+### Basic Types
+
+```swift
+import AISDKZodAdapter
+
+// String
+z.string()
+z.string(minLength: 3, maxLength: 50)
+z.string(email: true)
+z.string(url: true)
+
+// Number
+z.number()
+z.number(min: 0, max: 100)
+z.number(integer: true)
+
+// Boolean
+z.boolean()
+```
+
+### Complex Types
+
+```swift
+// Array
+z.array(of: z.string())
+z.array(of: z.number(), minItems: 1, maxItems: 10)
+
+// Object
+z.object([
+  "name": z.string(),
+  "age": z.number(integer: true),
+  "email": z.string(email: true)
+])
+
+// Nested objects
+z.object([
+  "user": z.object([
+    "name": z.string(),
+    "settings": z.object([
+      "theme": z.string(),
+      "notifications": z.boolean()
+    ])
+  ])
+])
+```
+
+### Modifiers
+
+```swift
+// Optional (can be undefined)
+z.optional(z.string())
+
+// Nullable (can be null)
+z.nullable(z.number())
+
+// Union types
+z.union([z.string(), z.number()])
+```
+
+## Complete Examples
+
+### Example 1: Simple Calculator Tool
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+import AISDKProviderUtils
+import AISDKZodAdapter
+
+let calculator = tool(
+  description: "Perform basic arithmetic operations",
+  inputSchema: flexibleSchemaFromZod3(z.object([
+    "operation": z.string(),  // "add", "subtract", "multiply", "divide"
+    "a": z.number(),
+    "b": z.number()
+  ])),
+  execute: { input, _ in
+    guard case .object(let obj) = input,
+          case .string(let op) = obj["operation"] ?? .null,
+          case .number(let a) = obj["a"] ?? .null,
+          case .number(let b) = obj["b"] ?? .null else {
+      return .value(.string("Invalid input"))
+    }
+
+    let result: Double
+    switch op {
+    case "add": result = a + b
+    case "subtract": result = a - b
+    case "multiply": result = a * b
+    case "divide": result = b != 0 ? a / b : 0
+    default: return .value(.string("Unknown operation"))
+    }
+
+    return .value(.number(result))
+  }
+)
+
+// Use the tool
+let result = try await generateText(
+  model: openai("gpt-4o"),
+  tools: ["calculator": calculator],
+  prompt: "What is 234 multiplied by 89? Use the calculator tool."
+)
+
+print(result.text)
+// Output: The result of 234 multiplied by 89 is 20,826.
+```
+
+### Example 2: Database Query Tool
+
+```swift
+let dbQuery = tool(
+  description: "Query the database",
+  inputSchema: flexibleSchemaFromZod3(z.object([
+    "table": z.string(),
+    "filters": z.optional(z.object([
+      "field": z.string(),
+      "value": z.string()
+    ])),
+    "limit": z.optional(z.number(min: 1, max: 100, integer: true))
+  ])),
+  execute: { input, _ in
+    guard case .object(let obj) = input,
+          case .string(let table) = obj["table"] ?? .null else {
+      return .value(.string("Table name required"))
+    }
+
+    // Execute database query
+    // ... (your DB logic here)
+
+    return .value(.object([
+      "count": .number(42),
+      "rows": .array([
+        .object(["id": .number(1), "name": .string("Alice")]),
+        .object(["id": .number(2), "name": .string("Bob")])
+      ])
+    ]))
+  }
+)
+```
+
+### Example 3: Email Sender Tool
+
+```swift
+let sendEmail = tool(
+  description: "Send an email",
+  inputSchema: flexibleSchemaFromZod3(z.object([
+    "to": z.string(email: true),
+    "subject": z.string(minLength: 1, maxLength: 200),
+    "body": z.string(),
+    "attachments": z.optional(z.array(of: z.string(url: true)))
+  ])),
+  execute: { input, _ in
+    guard case .object(let obj) = input,
+          case .string(let to) = obj["to"] ?? .null,
+          case .string(let subject) = obj["subject"] ?? .null,
+          case .string(let body) = obj["body"] ?? .null else {
+      return .value(.string("Missing required fields"))
+    }
+
+    // Send email
+    // ... (your email service logic here)
+
+    return .value(.object([
+      "status": .string("sent"),
+      "messageId": .string("msg_123abc")
+    ]))
+  }
+)
+```
+
+## Converting to FlexibleSchema
+
+The `flexibleSchemaFromZod3()` function converts ZodSchema to FlexibleSchema:
+
+```swift
+// Basic conversion
+let schema: FlexibleSchema<JSONValue> = flexibleSchemaFromZod3(
+  z.object([
+    "name": z.string(),
+    "age": z.number()
+  ])
+)
+
+// With options (advanced)
+let schemaWithOptions = flexibleSchemaFromZod3(
+  z.object([
+    "data": z.array(of: z.string())
+  ]),
+  options: .partial(PartialOptions(
+    name: "MySchema",
+    refStrategy: .none,
+    nameStrategy: .ref
+  ))
+)
+```
+
+## Migration Guide
+
+### From Manual JSON Schema
+
+**Before:**
+```swift
+inputSchema: FlexibleSchema(jsonSchema(
+  .object([
+    "type": .string("object"),
+    "properties": .object([
+      "name": .object([
+        "type": .string("string"),
+        "minLength": .number(1)
+      ]),
+      "age": .object([
+        "type": .string("number"),
+        "minimum": .number(0)
+      ])
+    ]),
+    "required": .array([.string("name")])
+  ])
+))
+```
+
+**After:**
+```swift
+inputSchema: flexibleSchemaFromZod3(z.object([
+  "name": z.string(minLength: 1),
+  "age": z.number(min: 0)
+]))
+```
+
+### Common Patterns
+
+| Manual JSON Schema | Zod DSL |
+|-------------------|---------|
+| `"type": .string("string")` | `z.string()` |
+| `"type": .string("number")` | `z.number()` |
+| `"type": .string("boolean")` | `z.boolean()` |
+| `"type": .string("array"), "items": ...` | `z.array(of: ...)` |
+| `"type": .string("object"), "properties": ...` | `z.object([...])` |
+| Optional property | `z.optional(...)` |
+| `"minimum": .number(0)` | `z.number(min: 0)` |
+| `"minLength": .number(3)` | `z.string(minLength: 3)` |
+
+## Best Practices
+
+### 1. Use Descriptive Property Names
+
+```swift
+// ❌ Bad
+z.object([
+  "d": z.string(),
+  "t": z.number()
+])
+
+// ✅ Good
+z.object([
+  "destination": z.string(),
+  "travelTime": z.number()
+])
+```
+
+### 2. Add Validation Constraints
+
+```swift
+// ✅ Good - validates input
+z.object([
+  "email": z.string(email: true),
+  "age": z.number(min: 0, max: 150, integer: true),
+  "username": z.string(minLength: 3, maxLength: 20)
+])
+```
+
+### 3. Use Optional for Non-Required Fields
+
+```swift
+z.object([
+  "required": z.string(),
+  "optional": z.optional(z.string())
+])
+```
+
+### 4. Nest Objects for Complex Data
+
+```swift
+z.object([
+  "user": z.object([
+    "profile": z.object([
+      "name": z.string(),
+      "bio": z.optional(z.string())
+    ]),
+    "preferences": z.object([
+      "theme": z.string(),
+      "language": z.string()
+    ])
+  ])
+])
+```
+
+## Comparison: Manual vs Zod
+
+### Weather Tool Example
+
+**Manual JSON Schema (verbose):**
+```swift
+inputSchema: FlexibleSchema(jsonSchema(
+  .object([
+    "type": .string("object"),
+    "properties": .object([
+      "location": .object([
+        "type": .string("string"),
+        "description": .string("City name")
+      ]),
+      "units": .object([
+        "type": .string("string"),
+        "enum": .array([.string("celsius"), .string("fahrenheit")])
+      ])
+    ]),
+    "required": .array([.string("location")]),
+    "additionalProperties": .bool(false)
+  ])
+))
+```
+
+**Zod DSL (clean):**
+```swift
+inputSchema: flexibleSchemaFromZod3(z.object([
+  "location": z.string(),
+  "units": z.optional(z.string())
+]))
+```
+
+**Lines of code:** 19 → 3 (84% reduction!)
+
+## See Also
+
+- [Tools and Tool Calling](/ai-sdk-core/tools-and-tool-calling) - Complete guide to using tools
+- [Getting Started](/getting-started/ios-macos-quickstart) - Quick start examples with tools
+- [Generating Structured Data](/ai-sdk-core/generating-structured-data) - Using schemas for structured output
+
+---
+
+> **Tip:** Always prefer Zod DSL over manual JSON Schema for better readability and maintainability. The two approaches are functionally equivalent, but Zod syntax is much cleaner.

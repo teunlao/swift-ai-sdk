@@ -19,36 +19,36 @@ struct BasicTextGeneration: CLIExample {
     // Example 1: Simple generation
     Logger.section("Example 1: Simple Generation")
     let simple = try await generateText(
-      model: .v3(openai("gpt-4o")),
+      model: openai("gpt-4o"),
       prompt: "Write a vegetarian lasagna recipe for 4 people."
     )
     print(Helpers.truncate(simple.text, to: 200))
 
     // Example 2: With system prompt
     Logger.section("Example 2: With System Prompt")
-    let article = "The Swift AI SDK provides a unified interface for working with multiple LLM providers..."
 
     let withSystem = try await generateText(
-      model: .v3(openai("gpt-4o")),
+      model: openai("gpt-4o"),
       system: "You are a professional writer. You write simple, clear, and concise content.",
-      prompt: "Summarize the following article in 3-5 sentences: \(article)"
+      prompt: "Write a one-sentence summary about the benefits of using Swift for iOS development."
     )
     print(withSystem.text)
 
     // Example 3: With settings
     Logger.section("Example 3: With Temperature Settings")
     let creative = try await generateText(
-      model: .v3(openai("gpt-4o")),
+      model: openai("gpt-4o"),
       prompt: "Invent a new holiday and describe its traditions.",
       settings: CallSettings(
-        temperature: 0.9,
-        maxOutputTokens: 100
+        maxOutputTokens: 100,
+        temperature: 0.9
       )
     )
     print(creative.text)
 
     // Show usage stats
     Logger.separator()
-    Logger.info("Total tokens used: \(simple.usage.totalTokens + withSystem.usage.totalTokens + creative.usage.totalTokens)")
+    let totalTokens = (simple.usage.totalTokens ?? 0) + (withSystem.usage.totalTokens ?? 0) + (creative.usage.totalTokens ?? 0)
+    Logger.info("Total tokens used: \(totalTokens)")
   }
 }

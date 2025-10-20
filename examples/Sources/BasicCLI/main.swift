@@ -27,7 +27,7 @@ struct BasicCLI: CLIExample {
 
     // Stream response to stdout
     let stream = try streamText(
-      model: .v3(openai("gpt-4o")),
+      model: openai("gpt-4o"),
       prompt: prompt
     )
 

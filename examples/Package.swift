@@ -54,6 +54,7 @@ let package = Package(
         .product(name: "SwiftAISDK", package: "swift-ai-sdk"),
         .product(name: "OpenAIProvider", package: "swift-ai-sdk"),
         .product(name: "AISDKProviderUtils", package: "swift-ai-sdk"),
+        .product(name: "AISDKZodAdapter", package: "swift-ai-sdk"),
       ]
     ),
 
@@ -84,6 +85,52 @@ let package = Package(
         .product(name: "SwiftAISDK", package: "swift-ai-sdk"),
         .product(name: "OpenAIProvider", package: "swift-ai-sdk"),
         .product(name: "AISDKProviderUtils", package: "swift-ai-sdk"),
+      ]
+    ),
+
+    // MARK: - Zod Adapter Examples
+
+    .executableTarget(
+      name: "CalculatorExample",
+      dependencies: [
+        "ExamplesCore",
+        .product(name: "SwiftAISDK", package: "swift-ai-sdk"),
+        .product(name: "OpenAIProvider", package: "swift-ai-sdk"),
+        .product(name: "AISDKProviderUtils", package: "swift-ai-sdk"),
+        .product(name: "AISDKZodAdapter", package: "swift-ai-sdk"),
+      ]
+    ),
+
+    .executableTarget(
+      name: "DatabaseQueryExample",
+      dependencies: [
+        "ExamplesCore",
+        .product(name: "SwiftAISDK", package: "swift-ai-sdk"),
+        .product(name: "OpenAIProvider", package: "swift-ai-sdk"),
+        .product(name: "AISDKProviderUtils", package: "swift-ai-sdk"),
+        .product(name: "AISDKZodAdapter", package: "swift-ai-sdk"),
+      ]
+    ),
+
+    .executableTarget(
+      name: "EmailSenderExample",
+      dependencies: [
+        "ExamplesCore",
+        .product(name: "SwiftAISDK", package: "swift-ai-sdk"),
+        .product(name: "OpenAIProvider", package: "swift-ai-sdk"),
+        .product(name: "AISDKProviderUtils", package: "swift-ai-sdk"),
+        .product(name: "AISDKZodAdapter", package: "swift-ai-sdk"),
+      ]
+    ),
+
+    // MARK: - Debug/Test Examples
+
+    .executableTarget(
+      name: "TestSystemPrompt",
+      dependencies: [
+        "ExamplesCore",
+        .product(name: "SwiftAISDK", package: "swift-ai-sdk"),
+        .product(name: "OpenAIProvider", package: "swift-ai-sdk"),
       ]
     ),
 

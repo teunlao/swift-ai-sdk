@@ -22,16 +22,16 @@ struct StreamingExample: CLIExample {
     Logger.info("Prompt: \(prompt)")
     Logger.separator()
 
-    // Stream text
+    // Stream text - clean syntax matching TypeScript!
     let stream = try streamText(
-      model: .v3(openai("gpt-4o")),
+      model: openai("gpt-4o"),
       prompt: prompt,
-      onFinish: { event in
+      onFinish: { finalStep, steps, totalUsage, finishReason in
         // Called when streaming completes
         Logger.separator()
         Logger.info("Streaming complete")
-        Logger.info("Total tokens: \(event.totalUsage.totalTokens)")
-        Logger.info("Finish reason: \(event.finishReason)")
+        Logger.info("Total tokens: \(totalUsage.totalTokens ?? 0)")
+        Logger.info("Finish reason: \(finishReason)")
       }
     )
 

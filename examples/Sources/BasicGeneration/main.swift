@@ -8,7 +8,6 @@
 import Foundation
 import SwiftAISDK
 import OpenAIProvider
-import AISDKProvider
 import ExamplesCore
 
 @main
@@ -19,11 +18,10 @@ struct BasicGeneration: CLIExample {
   static func run() async throws {
     Logger.info("Generating text from a simple prompt...")
 
-    // Generate text
+    // Generate text - clean syntax matching TypeScript!
     let result = try await generateText(
-      model: .v3(openai("gpt-4o")),
-      prompt: "Write a 1-sentence product tagline for a time-tracking app.",
-      experimentalOutput: nil as Output.Specification<Never, JSONValue>?
+      model: openai("gpt-4o"),
+      prompt: "Write a 1-sentence product tagline for a time-tracking app."
     )
 
     // Display result
@@ -32,7 +30,7 @@ struct BasicGeneration: CLIExample {
 
     // Show metadata
     Logger.separator()
-    Logger.info("Tokens used: \(result.usage.totalTokens)")
+    Logger.info("Tokens used: \(result.usage.totalTokens ?? 0)")
     Logger.info("Finish reason: \(result.finishReason)")
   }
 }

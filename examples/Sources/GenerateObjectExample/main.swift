@@ -55,7 +55,7 @@ struct GenerateObjectExample: CLIExample {
 
     // Generate object
     let result = try await generateObject(
-      model: .v3(openai("gpt-4o")),
+      model: openai("gpt-4o"),
       schema: recipeSchema,
       prompt: "Generate a lasagna recipe."
     )
