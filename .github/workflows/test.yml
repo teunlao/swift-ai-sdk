@@ -16,6 +16,16 @@ jobs:
       with:
         submodules: recursive
 
+    - name: Cache SPM dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          .build
+          ~/Library/Developer/Xcode/DerivedData
+        key: ${{ runner.os }}-spm-${{ hashFiles('**/Package.resolved') }}
+        restore-keys: |
+          ${{ runner.os }}-spm-
+
     - name: Select Xcode 16.4
       run: sudo xcode-select -s /Applications/Xcode_16.4.app
 
