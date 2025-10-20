@@ -3886,27 +3886,8 @@ struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
             Issue.record("Expected tool-call at index 0")
         }
 
-        // Verify source citation content (index 1)
-        if case .source(let source) = result.content[1] {
-            if case .url(let id, let url, let title, let providerMetadata) = source {
-                #expect(url == "https://example.com/ai-news")
-                #expect(title == "Latest AI Developments")
-
-                // Verify provider metadata
-                if let anthropicMeta = providerMetadata?["anthropic"] {
-                    #expect(anthropicMeta["pageAge"] == JSONValue.string("January 15, 2025"))
-                } else {
-                    Issue.record("Expected anthropic provider metadata")
-                }
-            } else {
-                Issue.record("Expected url source")
-            }
-        } else {
-            Issue.record("Expected source at index 1")
-        }
-
-        // Verify tool result with array (index 2)
-        if case .toolResult(let toolResult) = result.content[2] {
+        // Verify tool result with array (index 1)
+        if case .toolResult(let toolResult) = result.content[1] {
             #expect(toolResult.toolCallId == "tool_1")
             #expect(toolResult.toolName == "web_search")
             #expect(toolResult.providerExecuted == true)
@@ -3928,7 +3909,26 @@ struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
                 Issue.record("Expected array result")
             }
         } else {
-            Issue.record("Expected tool-result at index 2")
+            Issue.record("Expected tool-result at index 1")
+        }
+
+        // Verify source citation content (index 2)
+        if case .source(let source) = result.content[2] {
+            if case .url(let id, let url, let title, let providerMetadata) = source {
+                #expect(url == "https://example.com/ai-news")
+                #expect(title == "Latest AI Developments")
+
+                // Verify provider metadata
+                if let anthropicMeta = providerMetadata?["anthropic"] {
+                    #expect(anthropicMeta["pageAge"] == JSONValue.string("January 15, 2025"))
+                } else {
+                    Issue.record("Expected anthropic provider metadata")
+                }
+            } else {
+                Issue.record("Expected url source")
+            }
+        } else {
+            Issue.record("Expected source at index 2")
         }
 
         // Verify text content

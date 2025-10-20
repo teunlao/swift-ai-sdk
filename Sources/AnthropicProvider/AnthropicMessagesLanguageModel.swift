@@ -619,6 +619,8 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                 switch value.content {
                 case .array(let results):
                     var array: [JSONValue] = []
+                    var sources: [LanguageModelV3Source] = []
+
                     for item in results {
                         guard case .object(let object) = item else { continue }
                         guard
@@ -641,14 +643,13 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                         let metadata: SharedV3ProviderMetadata = [
                             "anthropic": ["pageAge": pageAge ?? .null]
                         ]
-                        content.append(
-                            .source(
-                                .url(
-                                    id: generateIdentifier(),
-                                    url: url,
-                                    title: title,
-                                    providerMetadata: metadata
-                                )))
+                        sources.append(
+                            .url(
+                                id: generateIdentifier(),
+                                url: url,
+                                title: title,
+                                providerMetadata: metadata
+                            ))
                     }
 
                     let toolResult = LanguageModelV3ToolResult(
@@ -658,6 +659,10 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                         providerExecuted: true
                     )
                     content.append(.toolResult(toolResult))
+
+                    for source in sources {
+                        content.append(.source(source))
+                    }
 
                 case .object(let object):
                     let errorCode = object["error_code"] ?? .null

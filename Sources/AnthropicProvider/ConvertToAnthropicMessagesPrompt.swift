@@ -216,23 +216,31 @@ private func appendUserFile(
 
     case "application/pdf":
         betas.insert("pdfs-2024-09-25")
-        let base64: String
+
+        let source: JSONValue
         switch filePart.data {
-        case .data(let data):
-            base64 = convertDataToBase64(data)
-        case .base64(let string):
-            base64 = string
         case .url(let url):
-            throw UnsupportedFunctionalityError(functionality: "URL-based PDFs", message: url.absoluteString)
+            source = .object([
+                "type": .string("url"),
+                "url": .string(url.absoluteString)
+            ])
+        case .data(let data):
+            source = .object([
+                "type": .string("base64"),
+                "media_type": .string("application/pdf"),
+                "data": .string(convertDataToBase64(data))
+            ])
+        case .base64(let string):
+            source = .object([
+                "type": .string("base64"),
+                "media_type": .string("application/pdf"),
+                "data": .string(string)
+            ])
         }
 
         var payload: [String: JSONValue] = [
             "type": .string("document"),
-            "source": .object([
-                "type": .string("base64"),
-                "media_type": .string("application/pdf"),
-                "data": .string(base64)
-            ])
+            "source": source
         ]
         if let title { payload["title"] = .string(title) }
         if let context { payload["context"] = .string(context) }
@@ -241,31 +249,37 @@ private func appendUserFile(
         anthropicContent.append(.object(payload))
 
     case "text/plain":
-        betas.insert("pdfs-2024-09-25")
-        let text: String
+        let source: JSONValue
         switch filePart.data {
-        case .data(let data):
-            guard let string = String(data: data, encoding: .utf8) else {
-                throw UnsupportedFunctionalityError(functionality: "text/plain encoding", message: "Expected UTF-8 data")
-            }
-            text = string
-        case .base64(let base64):
-            let data = try convertBase64ToData(base64)
-            guard let string = String(data: data, encoding: .utf8) else {
-                throw UnsupportedFunctionalityError(functionality: "text/plain encoding", message: "Expected UTF-8 data")
-            }
-            text = string
         case .url(let url):
-            throw UnsupportedFunctionalityError(functionality: "URL-based text documents", message: url.absoluteString)
-        }
-
-        var payload: [String: JSONValue] = [
-            "type": .string("document"),
-            "source": .object([
+            source = .object([
+                "type": .string("url"),
+                "url": .string(url.absoluteString)
+            ])
+        case .data(let data):
+            guard let text = String(data: data, encoding: .utf8) else {
+                throw UnsupportedFunctionalityError(functionality: "text/plain encoding", message: "Expected UTF-8 data")
+            }
+            source = .object([
                 "type": .string("text"),
                 "media_type": .string("text/plain"),
                 "data": .string(text)
             ])
+        case .base64(let base64):
+            let data = try convertBase64ToData(base64)
+            guard let text = String(data: data, encoding: .utf8) else {
+                throw UnsupportedFunctionalityError(functionality: "text/plain encoding", message: "Expected UTF-8 data")
+            }
+            source = .object([
+                "type": .string("text"),
+                "media_type": .string("text/plain"),
+                "data": .string(text)
+            ])
+        }
+
+        var payload: [String: JSONValue] = [
+            "type": .string("document"),
+            "source": source
         ]
         if let title { payload["title"] = .string(title) }
         if let context { payload["context"] = .string(context) }

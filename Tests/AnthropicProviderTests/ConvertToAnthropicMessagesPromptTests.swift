@@ -249,7 +249,7 @@ struct ConvertToAnthropicMessagesPromptUserTests {
         let (result, warnings) = try await convert(prompt)
 
         #expect(warnings.isEmpty)
-        #expect(result.betas == Set(["pdfs-2024-09-25"]))
+        #expect(result.betas.isEmpty)
         #expect(result.prompt == AnthropicMessagesPrompt(
             system: nil,
             messages: [
@@ -610,5 +610,185 @@ struct ConvertToAnthropicMessagesPromptMiscTests {
         let (result, _) = try await convert(prompt)
 
         #expect(result.betas == Set(["pdfs-2024-09-25"]))
+    }
+}
+
+// MARK: - Batch 18: File Content Tests
+
+@Suite("convertToAnthropicMessagesPrompt Batch 18: file content")
+struct ConvertToAnthropicMessagesPromptBatch18Tests {
+    @Test("add image parts for base64 images")
+    func addsImagePartsForBase64Images() async throws {
+        let file = LanguageModelV3FilePart(
+            data: .base64("AAECAw=="),
+            mediaType: "image/png"
+        )
+        let prompt: LanguageModelV3Prompt = [
+            .user(content: [.file(file)], providerOptions: nil)
+        ]
+
+        let (result, warnings) = try await convert(prompt)
+
+        #expect(warnings.isEmpty)
+        #expect(result.betas.isEmpty)
+        #expect(result.prompt == AnthropicMessagesPrompt(
+            system: nil,
+            messages: [
+                AnthropicMessage(
+                    role: "user",
+                    content: [
+                        .object([
+                            "type": .string("image"),
+                            "source": .object([
+                                "type": .string("base64"),
+                                "data": .string("AAECAw=="),
+                                "media_type": .string("image/png")
+                            ])
+                        ])
+                    ]
+                )
+            ]
+        ))
+    }
+
+    @Test("add image parts for URL images")
+    func addsImagePartsForURLImages() async throws {
+        let file = LanguageModelV3FilePart(
+            data: .url(URL(string: "https://example.com/image.png")!),
+            mediaType: "image/*"
+        )
+        let prompt: LanguageModelV3Prompt = [
+            .user(content: [.file(file)], providerOptions: nil)
+        ]
+
+        let (result, warnings) = try await convert(prompt)
+
+        #expect(warnings.isEmpty)
+        #expect(result.betas.isEmpty)
+        #expect(result.prompt == AnthropicMessagesPrompt(
+            system: nil,
+            messages: [
+                AnthropicMessage(
+                    role: "user",
+                    content: [
+                        .object([
+                            "type": .string("image"),
+                            "source": .object([
+                                "type": .string("url"),
+                                "url": .string("https://example.com/image.png")
+                            ])
+                        ])
+                    ]
+                )
+            ]
+        ))
+    }
+
+    @Test("add PDF file parts for base64 PDFs")
+    func addsPDFFilePartsForBase64PDFs() async throws {
+        let file = LanguageModelV3FilePart(
+            data: .base64("base64PDFdata"),
+            mediaType: "application/pdf"
+        )
+        let prompt: LanguageModelV3Prompt = [
+            .user(content: [.file(file)], providerOptions: nil)
+        ]
+
+        let (result, warnings) = try await convert(prompt)
+
+        #expect(warnings.isEmpty)
+        #expect(result.betas == Set(["pdfs-2024-09-25"]))
+        #expect(result.prompt == AnthropicMessagesPrompt(
+            system: nil,
+            messages: [
+                AnthropicMessage(
+                    role: "user",
+                    content: [
+                        .object([
+                            "type": .string("document"),
+                            "source": .object([
+                                "type": .string("base64"),
+                                "media_type": .string("application/pdf"),
+                                "data": .string("base64PDFdata")
+                            ])
+                        ])
+                    ]
+                )
+            ]
+        ))
+    }
+
+    @Test("add PDF file parts for URL PDFs")
+    func addsPDFFilePartsForURLPDFs() async throws {
+        let file = LanguageModelV3FilePart(
+            data: .url(URL(string: "https://example.com/document.pdf")!),
+            mediaType: "application/pdf"
+        )
+        let prompt: LanguageModelV3Prompt = [
+            .user(content: [.file(file)], providerOptions: nil)
+        ]
+
+        let (result, warnings) = try await convert(prompt)
+
+        #expect(warnings.isEmpty)
+        #expect(result.betas == Set(["pdfs-2024-09-25"]))
+        #expect(result.prompt == AnthropicMessagesPrompt(
+            system: nil,
+            messages: [
+                AnthropicMessage(
+                    role: "user",
+                    content: [
+                        .object([
+                            "type": .string("document"),
+                            "source": .object([
+                                "type": .string("url"),
+                                "url": .string("https://example.com/document.pdf")
+                            ])
+                        ])
+                    ]
+                )
+            ]
+        ))
+    }
+
+    @Test("add text file parts for text/plain documents")
+    func addsTextFilePartsForTextPlainDocuments() async throws {
+        // In TypeScript, Buffer.from('sample text content', 'utf-8').toString('base64')
+        // We decode the base64 to get the actual text
+        let textContent = "sample text content"
+        let base64Data = textContent.data(using: .utf8)!.base64EncodedString()
+
+        let file = LanguageModelV3FilePart(
+            data: .base64(base64Data),
+            mediaType: "text/plain",
+            filename: "sample.txt"
+        )
+        let prompt: LanguageModelV3Prompt = [
+            .user(content: [.file(file)], providerOptions: nil)
+        ]
+
+        let (result, warnings) = try await convert(prompt)
+
+        #expect(warnings.isEmpty)
+        #expect(result.betas.isEmpty)
+        #expect(result.prompt == AnthropicMessagesPrompt(
+            system: nil,
+            messages: [
+                AnthropicMessage(
+                    role: "user",
+                    content: [
+                        .object([
+                            "type": .string("document"),
+                            "source": .object([
+                                "type": .string("text"),
+                                "media_type": .string("text/plain"),
+                                "data": .string("sample text content")
+                            ]),
+                            "title": .string("sample.txt")
+                        ])
+                    ]
+                )
+            ]
+        ))
     }
 }
