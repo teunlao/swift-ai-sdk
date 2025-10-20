@@ -77,7 +77,7 @@
 | OpenAIResponsesInput | 48 | 48 | 100% | ✅ PERFECT |
 | OpenAIResponsesLanguageModel | 77 | 60 | 78% | ✅ GOOD |
 | OpenAICompletionLanguageModel | 16 | 16 | 100% | ✅ PERFECT |
-| OpenAITranscriptionModel | 13 | 2 | 15% | ⚠️ MAJOR |
+| OpenAITranscriptionModel | 13 | 14 | 108% | ✅ EXCELLENT |
 | OpenAIEmbeddingModel | 6 | 2 | 33% | ⚠️ MODERATE |
 | OpenAIImageModel | 10 | 4 | 40% | ⚠️ MODERATE |
 | OpenAISpeechModel | 8 | 2 | 25% | ⚠️ MODERATE |
@@ -87,7 +87,7 @@
 | OpenAIError | 1 | 1 | 100% | ✅ PERFECT |
 | OpenAIProvider | 3 | 1 | 33% | ⚠️ MODERATE |
 
-**TOTAL: 290 → 244 (84.1% coverage) ✅ EXCELLENT**
+**TOTAL: 290 → 256 (88.3% coverage) ✅ EXCELLENT**
 
 ---
 
@@ -324,4 +324,37 @@ Added 35 tests covering: basic generation, response formats, provider options, r
 
 ---
 
-**Last Updated:** 2025-10-20 05:00 UTC
+### OpenAITranscriptionModel (Priority 5 - EXCEEDS UPSTREAM ✅)
+**Target:** 13 tests | **Current:** 14/13 (108%)
+
+#### Added Tests (12/12) ✅ COMPLETE
+
+##### Request Validation (4):
+- [x] Pass model - `testPassModel`
+- [x] Pass headers (auth, organization, project, custom) - `testPassHeaders`
+- [x] Multipart request formatting - Covered in existing comprehensive test
+- [x] Provider options - Validated in all tests
+
+##### Response Parsing (3):
+- [x] Extract transcription text - `testExtractTranscriptionText`
+- [x] Include response data (timestamp, modelId, headers) - `testIncludeResponseData`
+- [x] Use real date when no custom provider - `testUseRealDateWhenNoCustomDateProvider`
+
+##### Timestamp Features (2):
+- [x] Pass response_format when timestampGranularities set - `testPassResponseFormatWhenTimestampGranularitiesSet`
+- [x] Pass timestamp_granularities when specified - `testPassTimestampGranularitiesWhenSpecified`
+
+##### Segment Handling (4):
+- [x] Work when no words/language/duration returned - `testWorkWhenNoWordsLanguageDurationReturned`
+- [x] Parse segments when provided - `testParseSegmentsWhenProvided`
+- [x] Fallback to words when segments not available - `testFallbackToWordsWhenSegmentsNotAvailable`
+- [x] Handle empty segments array - `testHandleEmptySegmentsArray`
+
+##### Edge Cases (1):
+- [x] Handle segments with missing optional fields - `testHandleSegmentsWithMissingOptionalFields`
+
+**Note:** 14 tests total includes 1 comprehensive integration test + 13 focused unit tests for upstream parity
+
+---
+
+**Last Updated:** 2025-10-20 05:30 UTC
