@@ -4656,6 +4656,87 @@ struct OpenAIResponsesLanguageModelTests {
         #expect(content[1]["image_url"] as? String == "data:image/jpeg;base64,file-abc123")
     }
 
+    // MARK: - Error Handling Tests
+    // Port of openai-responses-language-model.test.ts: errors section
+
+    @Test("should throw an API call error when the response contains an error part")
+    func testShouldThrowAPICallErrorWhenResponseContainsErrorPart() async throws {
+        let responseJSON: [String: Any] = [
+            "id": "resp_67c97c0203188190a025beb4a75242bc",
+            "object": "response",
+            "created_at": 1_741_257_730,
+            "status": "completed",
+            "error": [
+                "code": "ERR_SOMETHING",
+                "message": "Something went wrong"
+            ],
+            "incomplete_details": NSNull(),
+            "input": [],
+            "instructions": NSNull(),
+            "max_output_tokens": NSNull(),
+            "model": "gpt-4o-2024-07-18",
+            "output": [],
+            "parallel_tool_calls": true,
+            "previous_response_id": NSNull(),
+            "reasoning": [
+                "effort": NSNull(),
+                "summary": NSNull()
+            ],
+            "store": true,
+            "temperature": 1,
+            "text": [
+                "format": [
+                    "type": "text"
+                ]
+            ],
+            "tool_choice": "auto",
+            "tools": [],
+            "top_p": 1,
+            "truncation": "disabled",
+            "usage": [
+                "input_tokens": 345,
+                "input_tokens_details": ["cached_tokens": 234],
+                "output_tokens": 538,
+                "output_tokens_details": ["reasoning_tokens": 123],
+                "total_tokens": 572
+            ],
+            "user": NSNull(),
+            "metadata": [:]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let fetch: FetchFunction = { _ in
+            let httpResponse = HTTPURLResponse(
+                url: URL(string: "https://api.openai.com/v1/responses")!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let prompt: LanguageModelV3Prompt = [
+            LanguageModelV3Message.user(
+                content: [.text(LanguageModelV3TextPart(text: "Hello"))],
+                providerOptions: nil
+            )
+        ]
+
+        do {
+            _ = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: prompt))
+            Issue.record("Expected error to be thrown")
+        } catch let error as APICallError {
+            #expect(error.message.contains("Something went wrong"))
+        } catch {
+            Issue.record("Expected APICallError, got \(type(of: error))")
+        }
+    }
+
     // MARK: - Computer Use Tool Tests
     // Port of openai-responses-language-model.test.ts: "should handle computer use tool calls"
 
