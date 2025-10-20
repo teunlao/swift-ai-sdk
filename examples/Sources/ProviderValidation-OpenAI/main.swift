@@ -261,29 +261,37 @@ func testProviderMetadata() async throws {
 // MARK: - Language Models - Basic Generation Tests
 
 func testGenerateTextBasic() async throws {
-    print("   ⏭️  Skipping: Requires API key and network call")
-    throw SkippedTest()
+    // From docs: Basic text generation with OpenAI
+    print("   Testing generate text with OpenAI API...")
 
-    // This would be the actual test:
-    // let result = try await generateText(
-    //     model: openai("gpt-4o"),
-    //     prompt: "Write a vegetarian lasagna recipe for 4 people."
-    // )
-    // print("   Generated text: \(result.text.prefix(50))...")
+    let result = try await generateText(
+        model: openai("gpt-4o"),
+        prompt: "Write a vegetarian lasagna recipe for 4 people."
+    )
+
+    print("   ✓ Generated text: \(result.text.prefix(100))...")
+    print("   ✓ Tokens used: \(result.usage.totalTokens ?? 0)")
+    print("   ✓ Finish reason: \(result.finishReason)")
 }
 
 func testStreamTextBasic() async throws {
-    print("   ⏭️  Skipping: Requires API key and network call")
-    throw SkippedTest()
+    // From docs: Stream text generation
+    print("   Testing stream text with OpenAI API...")
 
-    // This would be the actual test:
-    // let stream = try streamText(
-    //     model: openai("gpt-4o"),
-    //     prompt: "Write a short poem about Swift programming."
-    // )
-    // for try await chunk in stream.textStream {
-    //     print("   Chunk: \(chunk)")
-    // }
+    let stream = try streamText(
+        model: openai("gpt-4o"),
+        prompt: "Write a 2-sentence description of Swift programming language."
+    )
+
+    var chunkCount = 0
+    for try await chunk in stream.textStream {
+        chunkCount += 1
+        if chunkCount <= 3 {
+            print("   Chunk \(chunkCount): \(chunk.prefix(50))...")
+        }
+    }
+
+    print("   ✓ Received \(chunkCount) text chunks")
 }
 
 // MARK: - Embedding Models Tests
