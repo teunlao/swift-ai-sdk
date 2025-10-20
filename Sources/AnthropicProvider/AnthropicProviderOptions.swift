@@ -2,6 +2,26 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
+/// Known Anthropic Claude model identifiers for autocomplete.
+/// See: https://docs.claude.com/en/docs/about-claude/models/overview
+///
+/// Port of `@ai-sdk/anthropic/src/anthropic-messages-options.ts`.
+public let anthropicMessagesModelIds: [AnthropicMessagesModelId] = [
+    "claude-sonnet-4-5",
+    "claude-sonnet-4-5-20250929",
+    "claude-opus-4-1",
+    "claude-opus-4-0",
+    "claude-sonnet-4-0",
+    "claude-opus-4-1-20250805",
+    "claude-opus-4-20250514",
+    "claude-sonnet-4-20250514",
+    "claude-3-7-sonnet-latest",
+    "claude-3-7-sonnet-20250219",
+    "claude-3-5-haiku-latest",
+    "claude-3-5-haiku-20241022",
+    "claude-3-haiku-20240307"
+].map(AnthropicMessagesModelId.init(rawValue:))
+
 public struct AnthropicThinkingOptions: Sendable, Equatable {
     public enum Mode: String, Sendable, Equatable {
         case enabled

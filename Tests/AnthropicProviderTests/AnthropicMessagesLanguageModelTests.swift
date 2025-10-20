@@ -172,6 +172,292 @@ struct AnthropicMessagesLanguageModelGenerateTests {
             Issue.record("Missing captured request")
         }
     }
+
+    // MARK: - Batch 1: Request Body Validation Tests
+
+    @Test("should send the model id and settings")
+    func sendsModelIdAndSettings() async throws {
+        let capture = RequestCapture()
+        let responseJSON: [String: Any] = [
+            "type": "message",
+            "id": "msg_017TfcQ4AgGxKyBduUpqYPZn",
+            "model": "claude-3-haiku-20240307",
+            "content": [["type": "text", "text": ""]],
+            "stop_reason": "end_turn",
+            "stop_sequence": NSNull(),
+            "usage": [
+                "input_tokens": 4,
+                "output_tokens": 30
+            ]
+        ]
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.anthropic.com/v1/messages")!,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: nil
+        )!
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: makeConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(options: .init(
+            prompt: testPrompt,
+            maxOutputTokens: 100,
+            temperature: 0.5,
+            stopSequences: ["abc", "def"],
+            topP: 0.9,
+            topK: 1,
+            frequencyPenalty: 0.15
+        ))
+
+        if let request = await capture.current(),
+           let body = request.httpBody,
+           let json = try JSONSerialization.jsonObject(with: body) as? [String: Any] {
+            #expect(json["model"] as? String == "claude-3-haiku-20240307")
+            #expect(json["max_tokens"] as? Int == 100)
+            #expect(json["stop_sequences"] as? [String] == ["abc", "def"])
+            #expect(json["temperature"] as? Double == 0.5)
+            #expect(json["top_k"] as? Int == 1)
+            #expect(json["top_p"] as? Double == 0.9)
+            if let messages = json["messages"] as? [[String: Any]] {
+                #expect(messages.first?["role"] as? String == "user")
+            } else {
+                Issue.record("Expected messages array")
+            }
+        } else {
+            Issue.record("Missing captured request")
+        }
+    }
+
+    @Test("should pass headers")
+    func passesHeaders() async throws {
+        actor HeaderCapture {
+            var headers: [String: String]?
+            func store(_ headers: [String: String]) { self.headers = headers }
+            func current() -> [String: String]? { headers }
+        }
+
+        let capture = HeaderCapture()
+        let responseJSON: [String: Any] = [
+            "type": "message",
+            "id": "msg_017TfcQ4AgGxKyBduUpqYPZn",
+            "model": "claude-3-haiku-20240307",
+            "content": [],
+            "stop_reason": "end_turn",
+            "stop_sequence": NSNull(),
+            "usage": [
+                "input_tokens": 4,
+                "output_tokens": 30
+            ]
+        ]
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.anthropic.com/v1/messages")!,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: nil
+        )!
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request.allHTTPHeaderFields ?? [:])
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let config = AnthropicMessagesConfig(
+            provider: "anthropic.messages",
+            baseURL: "https://api.anthropic.com/v1",
+            headers: { [
+                "x-api-key": "test-api-key",
+                "anthropic-version": "2023-06-01",
+                "Custom-Provider-Header": "provider-header-value"
+            ] },
+            fetch: fetch,
+            supportedUrls: { [:] },
+            generateId: { "generated-id" }
+        )
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: config
+        )
+
+        _ = try await model.doGenerate(options: .init(
+            prompt: testPrompt,
+            headers: ["Custom-Request-Header": "request-header-value"]
+        ))
+
+        if let headers = await capture.current() {
+            #expect(headers["anthropic-version"] == "2023-06-01")
+            #expect(headers["Content-Type"] == "application/json")
+            #expect(headers["custom-provider-header"] == "provider-header-value")
+            #expect(headers["custom-request-header"] == "request-header-value")
+            #expect(headers["x-api-key"] == "test-api-key")
+        } else {
+            Issue.record("Missing captured headers")
+        }
+    }
+
+    @Test("should pass tools and toolChoice")
+    func passesToolsAndToolChoice() async throws {
+        let capture = RequestCapture()
+        let responseJSON: [String: Any] = [
+            "type": "message",
+            "id": "msg_017TfcQ4AgGxKyBduUpqYPZn",
+            "model": "claude-3-haiku-20240307",
+            "content": [["type": "text", "text": ""]],
+            "stop_reason": "end_turn",
+            "stop_sequence": NSNull(),
+            "usage": [
+                "input_tokens": 4,
+                "output_tokens": 30
+            ]
+        ]
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.anthropic.com/v1/messages")!,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: nil
+        )!
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: makeConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(options: .init(
+            prompt: testPrompt,
+            tools: [
+                .function(LanguageModelV3FunctionTool(
+                    name: "test-tool",
+                    inputSchema: .object([
+                        "type": .string("object"),
+                        "properties": .object([
+                            "value": .object(["type": .string("string")])
+                        ]),
+                        "required": .array([.string("value")]),
+                        "additionalProperties": .bool(false),
+                        "$schema": .string("http://json-schema.org/draft-07/schema#")
+                    ])
+                ))
+            ],
+            toolChoice: .tool(toolName: "test-tool")
+        ))
+
+        if let request = await capture.current(),
+           let body = request.httpBody,
+           let json = try JSONSerialization.jsonObject(with: body) as? [String: Any] {
+            #expect(json["model"] as? String == "claude-3-haiku-20240307")
+
+            if let messages = json["messages"] as? [[String: Any]] {
+                #expect(messages.first?["role"] as? String == "user")
+            } else {
+                Issue.record("Expected messages array")
+            }
+
+            #expect(json["max_tokens"] as? Int == 4096)
+
+            if let tools = json["tools"] as? [[String: Any]],
+               let tool = tools.first {
+                #expect(tool["name"] as? String == "test-tool")
+                #expect(tool["input_schema"] != nil)
+            } else {
+                Issue.record("Expected tools array")
+            }
+
+            if let toolChoice = json["tool_choice"] as? [String: Any] {
+                #expect(toolChoice["type"] as? String == "tool")
+                #expect(toolChoice["name"] as? String == "test-tool")
+            } else {
+                Issue.record("Expected tool_choice object")
+            }
+        } else {
+            Issue.record("Missing captured request")
+        }
+    }
+
+    @Test("should pass disableParallelToolUse")
+    func passesDisableParallelToolUse() async throws {
+        let capture = RequestCapture()
+        let responseJSON: [String: Any] = [
+            "type": "message",
+            "id": "msg_017TfcQ4AgGxKyBduUpqYPZn",
+            "model": "claude-3-haiku-20240307",
+            "content": [["type": "text", "text": ""]],
+            "stop_reason": "end_turn",
+            "stop_sequence": NSNull(),
+            "usage": [
+                "input_tokens": 4,
+                "output_tokens": 30
+            ]
+        ]
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.anthropic.com/v1/messages")!,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: nil
+        )!
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: makeConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(options: .init(
+            prompt: testPrompt,
+            tools: [
+                .function(LanguageModelV3FunctionTool(
+                    name: "test-tool",
+                    inputSchema: .object([
+                        "type": .string("object"),
+                        "properties": .object([
+                            "value": .object(["type": .string("string")])
+                        ]),
+                        "required": .array([.string("value")]),
+                        "additionalProperties": .bool(false),
+                        "$schema": .string("http://json-schema.org/draft-07/schema#")
+                    ])
+                ))
+            ],
+            providerOptions: [
+                "anthropic": [
+                    "disableParallelToolUse": .bool(true)
+                ]
+            ]
+        ))
+
+        if let request = await capture.current(),
+           let body = request.httpBody,
+           let json = try JSONSerialization.jsonObject(with: body) as? [String: Any] {
+            if let toolChoice = json["tool_choice"] as? [String: Any] {
+                #expect(toolChoice["type"] as? String == "auto")
+                #expect(toolChoice["disable_parallel_tool_use"] as? Bool == true)
+            } else {
+                Issue.record("Expected tool_choice object with disable_parallel_tool_use")
+            }
+        } else {
+            Issue.record("Missing captured request")
+        }
+    }
 }
 
 @Suite("AnthropicMessagesLanguageModel doStream")
