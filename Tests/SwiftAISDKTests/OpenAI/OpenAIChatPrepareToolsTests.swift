@@ -142,15 +142,10 @@ struct OpenAIChatPrepareToolsTests {
 
         let result = OpenAIChatToolPreparer.prepare(
             tools: [tool],
-            toolChoice: .none,
+            toolChoice: LanguageModelV3ToolChoice.none,
             structuredOutputs: false,
             strictJsonSchema: false
         )
-
-        // Debug
-        print("result.tools: \(String(describing: result.tools))")
-        print("result.toolChoice: \(String(describing: result.toolChoice))")
-        print("result.warnings: \(result.warnings)")
 
         #expect(result.toolChoice == .string("none"))
     }

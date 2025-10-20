@@ -47,17 +47,16 @@ enum OpenAIChatToolPreparer {
             }
         }
 
-        let toolChoiceValue: JSONValue?
-        if let toolChoice {
+        let toolChoiceValue: JSONValue? = if let toolChoice {
             switch toolChoice {
             case .auto:
-                toolChoiceValue = .string("auto")
+                .string("auto")
             case .none:
-                toolChoiceValue = .string("none")
+                .string("none")
             case .required:
-                toolChoiceValue = .string("required")
+                .string("required")
             case .tool(let toolName):
-                toolChoiceValue = .object([
+                .object([
                     "type": .string("function"),
                     "function": .object([
                         "name": .string(toolName)
@@ -65,7 +64,7 @@ enum OpenAIChatToolPreparer {
                 ])
             }
         } else {
-            toolChoiceValue = nil
+            nil
         }
 
         return OpenAIChatPreparedTools(

@@ -83,11 +83,11 @@
 | OpenAISpeechModel | 8 | 9 | 113% | ✅ EXCELLENT |
 | OpenAIChatMessages | 19 | 17 | 89% | ✅ GOOD |
 | OpenAIResponsesPrepareTools | 10 | 13 | 130% | ✅ EXCELLENT |
-| OpenAIChatPrepareTools | 8 | 7 | 88% | ✅ GOOD |
+| OpenAIChatPrepareTools | 8 | 8 | 100% | ✅ PERFECT |
 | OpenAIError | 1 | 1 | 100% | ✅ PERFECT |
 | OpenAIProvider | 3 | 1 | 33% | ⚠️ MODERATE |
 
-**TOTAL: 290 → 273 (94.1% coverage) ✅ EXCELLENT**
+**TOTAL: 290 → 274 (94.5% coverage) ✅ EXCELLENT**
 
 ---
 
@@ -430,4 +430,15 @@ return .value(1)  // ✅ Matches upstream fallback behavior
 
 ---
 
-**Last Updated:** 2025-10-20 07:00 UTC
+### OpenAIChatPrepareTools (Priority 9 - COMPLETE ✅)
+**Target:** 8 tests | **Current:** 8/8 (100%)
+
+#### Added Test (1/1) ✅
+
+- [x] Handle tool choice 'none' - `toolChoiceNone`
+
+**Note:** Fixed Swift compiler ambiguity - `.none` was interpreted as `Optional.none` instead of `LanguageModelV3ToolChoice.none`. Solution: explicit type annotation `LanguageModelV3ToolChoice.none`.
+
+---
+
+**Last Updated:** 2025-10-20 07:30 UTC
