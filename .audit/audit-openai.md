@@ -78,7 +78,7 @@
 | OpenAIResponsesLanguageModel | 77 | 60 | 78% | ✅ GOOD |
 | OpenAICompletionLanguageModel | 16 | 16 | 100% | ✅ PERFECT |
 | OpenAITranscriptionModel | 13 | 14 | 108% | ✅ EXCELLENT |
-| OpenAIEmbeddingModel | 6 | 2 | 33% | ⚠️ MODERATE |
+| OpenAIEmbeddingModel | 6 | 6 | 100% | ✅ PERFECT |
 | OpenAIImageModel | 10 | 4 | 40% | ⚠️ MODERATE |
 | OpenAISpeechModel | 8 | 2 | 25% | ⚠️ MODERATE |
 | OpenAIChatMessages | 19 | 17 | 89% | ✅ GOOD |
@@ -87,7 +87,7 @@
 | OpenAIError | 1 | 1 | 100% | ✅ PERFECT |
 | OpenAIProvider | 3 | 1 | 33% | ⚠️ MODERATE |
 
-**TOTAL: 290 → 256 (88.3% coverage) ✅ EXCELLENT**
+**TOTAL: 290 → 260 (89.7% coverage) ✅ EXCELLENT**
 
 ---
 
@@ -357,4 +357,16 @@ Added 35 tests covering: basic generation, response formats, provider options, r
 
 ---
 
-**Last Updated:** 2025-10-20 05:30 UTC
+### OpenAIEmbeddingModel (Priority 6 - COMPLETE ✅)
+**Target:** 6 tests | **Current:** 6/6 (100%)
+
+#### Added Tests (4/4) ✅ COMPLETE
+
+- [x] Extract embedding - `testDoEmbedExtractsEmbedding`
+- [x] Expose raw response - `testDoEmbedExposesRawResponse`
+- [x] Extract usage - `testDoEmbedExtractsUsage`
+- [x] Pass dimensions setting - `testDoEmbedPassesDimensionsSetting`
+
+---
+
+**Last Updated:** 2025-10-20 06:00 UTC
