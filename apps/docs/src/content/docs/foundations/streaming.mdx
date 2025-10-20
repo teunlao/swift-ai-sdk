@@ -20,7 +20,7 @@ import SwiftAISDK
 import OpenAIProvider
 
 let stream = try streamText(
-  model: openai("gpt-5"),
+  model: openai("gpt-4o"),
   prompt: "Write a poem about embedding models."
 )
 
@@ -36,7 +36,7 @@ import SwiftAISDK
 import OpenAIProvider
 
 let result = try streamText(
-  model: openai("gpt-5"),
+  model: openai("gpt-4o"),
   messages: [
     .user(UserModelMessage(content: .text("Give me three rhymes for 'vector'.")))
   ],

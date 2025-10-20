@@ -53,7 +53,7 @@ final class ChatViewModel: ObservableObject {
     Task {
       do {
         let stream = try streamText(
-          model: openai("gpt-5"),
+          model: openai("gpt-4o"),
           prompt: prompt
         )
         for try await delta in stream.textStream {
@@ -108,7 +108,7 @@ let echo = tool(
 )
 
 let result = try await generateText(
-  model: openai("gpt-5"),
+  model: openai("gpt-4o"),
   tools: ["echo": echo],
   prompt: "Call echo with {\"message\":\"Hello!\"}"
 )
@@ -147,7 +147,7 @@ let calculator = tool(
 )
 
 let result = try await generateText(
-  model: openai("gpt-5"),
+  model: openai("gpt-4o"),
   tools: ["calculator": calculator],
   prompt: "What is 234 multiplied by 89?"
 )

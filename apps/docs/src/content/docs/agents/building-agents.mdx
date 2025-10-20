@@ -29,7 +29,7 @@ import SwiftAISDK
 import OpenAIProvider
 
 let myAgent = Agent<Never, Never>(settings: .init(
-  model: .v3(openai("gpt-5")),
+  model: .v3(openai("gpt-4o")),
   system: "You are a helpful assistant.",
   tools: [:]
 ))
@@ -43,7 +43,7 @@ The Agent class accepts all the same settings as `generateText` and `streamText`
 
 ```swift
 let agent = Agent<Never, Never>(settings: .init(
-  model: .v3(openai("gpt-5")),
+  model: .v3(openai("gpt-4o")),
   system: "You are an expert software engineer."
 ))
 ```
@@ -72,7 +72,7 @@ let runCode = tool(
 )
 
 let codeAgent = Agent<Never, Never>(settings: .init(
-  model: .v3(openai("gpt-5")),
+  model: .v3(openai("gpt-4o")),
   tools: ["runCode": runCode]
 ))
 ```
@@ -85,7 +85,7 @@ To let agents call multiple tools in sequence, configure `stopWhen` to allow mor
 
 ```swift
 let agent = Agent<Never, Never>(settings: .init(
-  model: .v3(openai("gpt-5")),
+  model: .v3(openai("gpt-4o")),
   stopWhen: [stepCountIs(20)] // Allow up to 20 steps
 ))
 ```
@@ -99,7 +99,7 @@ You can combine multiple conditions:
 
 ```swift
 let agent = Agent<Never, Never>(settings: .init(
-  model: .v3(openai("gpt-5")),
+  model: .v3(openai("gpt-4o")),
   stopWhen: [
     stepCountIs(20)
     // Add custom conditions as needed
@@ -115,7 +115,7 @@ Control how the agent uses tools:
 
 ```swift
 let agent = Agent<Never, Never>(settings: .init(
-  model: .v3(openai("gpt-5")),
+  model: .v3(openai("gpt-4o")),
   tools: [/* your tools */],
   toolChoice: .required // or .none / .auto (default)
 ))
@@ -125,7 +125,7 @@ You can also force the use of a specific tool:
 
 ```swift
 let agent = Agent<Never, Never>(settings: .init(
-  model: .v3(openai("gpt-5")),
+  model: .v3(openai("gpt-4o")),
   tools: [
     "weather": weatherTool,
     "cityAttractions": attractionsTool
@@ -143,7 +143,7 @@ Define structured output schemas:
 // let outputSpec = Output.Specification<MyOutput, Never>.object(...)
 
 let analysisAgent = Agent<MyOutput, Never>(settings: .init(
-  model: .v3(openai("gpt-5")),
+  model: .v3(openai("gpt-4o")),
   experimentalOutput: outputSpec,
   stopWhen: [stepCountIs(10)]
 ))
@@ -164,7 +164,7 @@ Set the agent's role and expertise:
 
 ```swift
 let agent = Agent<Never, Never>(settings: .init(
-  model: .v3(openai("gpt-5")),
+  model: .v3(openai("gpt-4o")),
   system: "You are an expert data analyst. You provide clear insights from complex data."
 ))
 ```
@@ -175,7 +175,7 @@ Provide specific guidelines for agent behavior:
 
 ```swift
 let codeReviewAgent = Agent<Never, Never>(settings: .init(
-  model: .v3(openai("gpt-5")),
+  model: .v3(openai("gpt-4o")),
   system: """
   You are a senior software engineer conducting code reviews.
   
@@ -195,7 +195,7 @@ Set boundaries and ensure consistent behavior:
 
 ```swift
 let customerSupportAgent = Agent<Never, Never>(settings: .init(
-  model: .v3(openai("gpt-5")),
+  model: .v3(openai("gpt-4o")),
   system: """
   You are a customer support specialist for an e-commerce platform.
 
@@ -220,7 +220,7 @@ Guide how the agent should use available tools:
 
 ```swift
 let researchAgent = Agent<Never, Never>(settings: .init(
-  model: .v3(openai("gpt-5")),
+  model: .v3(openai("gpt-4o")),
   system: """
   You are a research assistant with access to search and document tools.
 
@@ -245,7 +245,7 @@ Control the output format and communication style:
 
 ```swift
 let technicalWriterAgent = Agent<Never, Never>(settings: .init(
-  model: .v3(openai("gpt-5")),
+  model: .v3(openai("gpt-4o")),
   system: """
   You are a technical documentation writer.
 

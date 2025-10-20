@@ -24,7 +24,7 @@ import OpenAIProvider
 let toolset: ToolSet = [:]
 
 let agent = Agent<Never, Never>(settings: .init(
-  model: openai("gpt-5"),
+  model: openai("gpt-4o"),
   tools: toolset,
   // Default behaviour in Agent is stepCountIs(20), shown here explicitly
   stopWhen: [stepCountIs(20)]
@@ -44,7 +44,7 @@ import SwiftAISDK
 import OpenAIProvider
 
 let agent = Agent<Never, Never>(settings: .init(
-  model: openai("gpt-5"),
+  model: openai("gpt-4o"),
   tools: toolset,
   stopWhen: [
     stepCountIs(20),            // Maximum 20 steps
@@ -71,7 +71,7 @@ let hasAnswer: StopCondition = { steps in
 }
 
 let agent = Agent<Never, Never>(settings: .init(
-  model: openai("gpt-5"),
+  model: openai("gpt-4o"),
   tools: toolset,
   stopWhen: [hasAnswer]
 ))

@@ -138,7 +138,7 @@ When you have multiple steps, the callback is triggered for each step.
 
 ```swift
 let _ = try await generateText(
-  model: openai("gpt-5"),
+  model: openai("gpt-4o"),
   prompt: "...",
   onStepFinish: { step in
     // your own logic, e.g., logging toolCalls/toolResults
@@ -163,7 +163,7 @@ You can use it to provide different settings for a step, including modifying the
 
 ```swift
 let _ = try await generateText(
-  model: openai("gpt-5"),
+  model: openai("gpt-4o"),
   prompt: "...",
   prepareStep: { options in
     if options.stepNumber == 0 {
@@ -215,7 +215,7 @@ var messages: [ModelMessage] = [
 ]
 
 let out = try await generateText(
-  model: openai("gpt-5"),
+  model: openai("gpt-4o"),
   messages: messages
 )
 
@@ -374,7 +374,7 @@ You can use it e.g. when sending tool-call related information with stream data.
 // Pseudocode for forwarding toolCallId in a Swift server
 let stream = createUIMessageStream { writer in
   let result = try streamText(
-    model: openai("gpt-5"),
+    model: openai("gpt-4o"),
     messages: messages,
     tools: [
       "myTool": dynamicTool(
@@ -408,7 +408,7 @@ let myTool = dynamicTool(
     return .object(["ok": .bool(true)])
   }
 )
-let _ = try await generateText(model: openai("gpt-5"), tools: ["myTool": myTool], prompt: "...")
+let _ = try await generateText(model: openai("gpt-4o"), tools: ["myTool": myTool], prompt: "...")
 ```
 
 ### Abort Signals
@@ -452,7 +452,7 @@ let someTool = dynamicTool(
 )
 
 let result = try await generateText(
-  model: openai("gpt-5"),
+  model: openai("gpt-4o"),
   tools: ["someTool": someTool],
   experimentalContext: .object(["example": .string("123")])
 )
@@ -520,7 +520,7 @@ When tool execution fails (errors thrown by your tool's `execute` function), the
 
 ```swift
 do {
-  _ = try await generateText(model: openai("gpt-5"), prompt: "...")
+  _ = try await generateText(model: openai("gpt-4o"), prompt: "...")
 } catch is NoSuchToolError {
   // handle no such tool error
 } catch is InvalidToolInputError {
@@ -533,7 +533,7 @@ do {
 Tool execution errors are available in the result steps:
 
 ```swift
-let out2 = try await generateText(model: openai("gpt-5"), prompt: "...")
+let out2 = try await generateText(model: openai("gpt-4o"), prompt: "...")
 let steps2 = out2.steps
 let toolErrors = steps2.flatMap { step in
   step.content.compactMap { part -> ToolErrorContentPart? in
@@ -559,7 +559,7 @@ import SwiftAISDK
 import OpenAIProvider
 
 let stream = try streamText(
-  model: openai("gpt-5"),
+  model: openai("gpt-4o"),
   tools: tools,
   prompt: "..."
 )
@@ -644,7 +644,7 @@ let _ = try await generateText(
   experimentalRepairToolCall: { toolCall, tools, error, messages, system in
     let syntheticMessages = messages + [.assistant(AssistantModelMessage(content: .parts([.toolCall(.init(toolCallId: toolCall.toolCallId, toolName: toolCall.toolName, input: toolCall.input))]))), .tool(ToolModelMessage(content: [.toolResult(.init(toolCallId: toolCall.toolCallId, toolName: toolCall.toolName, output: .string(String(describing: error))))]))]
     let result = try await generateText(
-      model: openai("gpt-5"),
+      model: openai("gpt-4o"),
       system: system,
       messages: syntheticMessages,
       tools: tools
@@ -705,7 +705,7 @@ let computer = dynamicTool(
     }
   }
 )
-let result = try await generateText(model: openai("gpt-5"), tools: ["computer": computer], prompt: "...")
+let result = try await generateText(model: openai("gpt-4o"), tools: ["computer": computer], prompt: "...")
 ```
 
 ## Extracting Tools

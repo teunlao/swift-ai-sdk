@@ -45,7 +45,7 @@ import OpenAIProvider
 func routes(_ app: Application) throws {
   app.get("stream") { req async throws -> Response in
     let stream = try streamText(
-      model: openai("gpt-5"),
+      model: openai("gpt-4o"),
       prompt: req.query[String.self, at: "q"] ?? "Hello"
     )
 
