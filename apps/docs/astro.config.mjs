@@ -22,7 +22,6 @@ export default defineConfig({
         {
           label: "Agents",
           items: [
-            { label: "Index", link: "/agents" },
             { label: "Overview", link: "/agents/overview" },
             { label: "Building Agents", link: "/agents/building-agents" },
             { label: "Workflow Patterns", link: "/agents/workflows" },
