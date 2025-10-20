@@ -81,13 +81,13 @@
 | OpenAIEmbeddingModel | 6 | 6 | 100% | ✅ PERFECT |
 | OpenAIImageModel | 10 | 10 | 100% | ✅ PERFECT |
 | OpenAISpeechModel | 8 | 9 | 113% | ✅ EXCELLENT |
-| OpenAIChatMessages | 19 | 17 | 89% | ✅ GOOD |
+| OpenAIChatMessages | 19 | 18 | 95% | ✅ GOOD |
 | OpenAIResponsesPrepareTools | 10 | 13 | 130% | ✅ EXCELLENT |
 | OpenAIChatPrepareTools | 8 | 8 | 100% | ✅ PERFECT |
 | OpenAIError | 1 | 1 | 100% | ✅ PERFECT |
 | OpenAIProvider | 3 | 1 | 33% | ⚠️ MODERATE |
 
-**TOTAL: 290 → 274 (94.5% coverage) ✅ EXCELLENT**
+**TOTAL: 290 → 275 (94.8% coverage) ✅ EXCELLENT**
 
 ---
 
@@ -441,4 +441,16 @@ return .value(1)  // ✅ Matches upstream fallback behavior
 
 ---
 
-**Last Updated:** 2025-10-20 07:30 UTC
+### OpenAIChatMessages (Priority 10 - NEAR COMPLETE ✅)
+**Target:** 19 tests | **Current:** 18/19 (95%)
+
+#### Added/Fixed (2/2)
+
+- [x] Add audio mp3 file part - `audioMp3FilePartConverted`
+- [x] Fix unsupported file media type - Updated to match upstream (text/plain)
+
+**Note:** Corrected existing test to use upstream data (AQIDBAU= and text/plain mediaType).
+
+---
+
+**Last Updated:** 2025-10-20 08:00 UTC

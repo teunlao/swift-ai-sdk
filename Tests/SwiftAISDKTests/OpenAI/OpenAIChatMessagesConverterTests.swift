@@ -159,11 +159,12 @@ struct OpenAIChatMessagesConverterTests {
         #expect(imageURL["detail"] == .string("low"))
     }
 
+    // Port of convert-to-openai-chat-messages.test.ts: "should throw error for unsupported file types"
     @Test("unsupported file media type throws")
     func unsupportedFileMediaTypeThrows() {
         let filePart = LanguageModelV3FilePart(
-            data: .base64("AAECAw=="),
-            mediaType: "application/something"
+            data: .base64("AQIDBAU="),
+            mediaType: "text/plain"
         )
         let prompt: LanguageModelV3Prompt = [
             .user(content: [.file(filePart)], providerOptions: nil)
@@ -173,7 +174,7 @@ struct OpenAIChatMessagesConverterTests {
             _ = try OpenAIChatMessagesConverter.convert(prompt: prompt, systemMessageMode: .system)
             Issue.record("Expected UnsupportedFunctionalityError")
         } catch let error as UnsupportedFunctionalityError {
-            #expect(error.functionality == "file part media type application/something")
+            #expect(error.functionality.contains("file part media type text/plain"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
@@ -236,6 +237,34 @@ struct OpenAIChatMessagesConverterTests {
         let filePart = LanguageModelV3FilePart(
             data: .base64("AAECAw=="),
             mediaType: "audio/mpeg"
+        )
+        let prompt: LanguageModelV3Prompt = [
+            .user(content: [.file(filePart)], providerOptions: nil)
+        ]
+        let result = try OpenAIChatMessagesConverter.convert(prompt: prompt, systemMessageMode: .system)
+
+        guard case .object(let message) = result.messages.first else {
+            Issue.record("Expected object message")
+            return
+        }
+        guard case .array(let parts)? = message["content"], parts.count == 1 else {
+            Issue.record("Expected single content part")
+            return
+        }
+        if case .object(let audioPart) = parts.first,
+           case .object(let payload)? = audioPart["input_audio"] {
+            #expect(payload["format"] == .string("mp3"))
+        } else {
+            Issue.record("Expected input_audio payload")
+        }
+    }
+
+    // Port of convert-to-openai-chat-messages.test.ts: "should add audio content for audio/mp3 file parts"
+    @Test("audio mp3 file part converted to input_audio")
+    func audioMp3FilePartConverted() throws {
+        let filePart = LanguageModelV3FilePart(
+            data: .base64("AAECAw=="),
+            mediaType: "audio/mp3"  // not official but sometimes used
         )
         let prompt: LanguageModelV3Prompt = [
             .user(content: [.file(filePart)], providerOptions: nil)
