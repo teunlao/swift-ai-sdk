@@ -1,0 +1,207 @@
+---
+title: Workflow Patterns
+description: Learn workflow patterns for building reliable agents with the Swift AI SDK.
+---
+
+_This page adapts the original AI SDK documentation: [Workflow Patterns](https://ai-sdk.dev/docs/agents/workflows)._ 
+
+# Workflow Patterns
+
+Combine the building blocks from the [overview](/agents/overview) with these patterns to add structure and reliability to your agents:
+
+- [Sequential Processing](#sequential-processing-chains) — Steps executed in order
+- [Parallel Processing](#parallel-processing) — Independent tasks run simultaneously
+- [Evaluation/Feedback Loops](#evaluator-optimizer) — Results checked and improved iteratively
+- [Orchestrator-Worker](#orchestrator-worker) — Coordinating multiple components
+- [Routing](#routing) — Directing work based on context
+
+## Choose Your Approach
+
+Consider these key factors:
+
+- Flexibility vs Control — How much freedom does the LLM need vs how tightly you must constrain its actions?
+- Error Tolerance — What are the consequences of mistakes in your use case?
+- Cost Considerations — More complex systems typically mean more LLM calls and higher costs
+- Maintenance — Simpler architectures are easier to debug and modify
+
+Start with the simplest approach that meets your needs. Add complexity only when required by:
+
+1. Breaking down tasks into clear steps
+2. Adding tools for specific capabilities
+3. Implementing feedback loops for quality control
+4. Introducing multiple agents for complex workflows
+
+The examples below show these patterns in action, translated to Swift.
+
+## Sequential Processing (Chains)
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+import AISDKProviderUtils
+
+struct MarketingResult { let copy: String; let quality: JSONValue }
+
+func generateMarketingCopy(_ input: String) async throws -> MarketingResult {
+  let copy = try await generateText(
+    model: openai("gpt-5"),
+    prompt: "Write persuasive marketing copy for: \(input). Focus on benefits and emotional appeal."
+  ).text
+
+  let qualitySchema = FlexibleSchema(jsonSchema(.object([
+    "type": .string("object"),
+    "properties": .object([
+      "hasCallToAction": .object(["type": .string("boolean")]),
+      "emotionalAppeal": .object(["type": .string("number")]),
+      "clarity": .object(["type": .string("number")])
+    ])
+  ])))
+  let spec = Output.object(schema: qualitySchema)
+
+  let quality = try await generateText(
+    model: openai("gpt-5"),
+    experimentalOutput: spec,
+    prompt: "Evaluate this marketing copy for CTA, emotional appeal (1-10), clarity (1-10). Copy: \(copy)"
+  )
+
+  let q = try quality.experimentalOutput
+  let needRewrite = (q.asObject?["hasCallToAction"]?.asBool == false)
+    || (q.asObject?["emotionalAppeal"]?.asNumber ?? 0) < 7
+    || (q.asObject?["clarity"]?.asNumber ?? 0) < 7
+
+  if needRewrite {
+    let improved = try await generateText(
+      model: openai("gpt-5"),
+      prompt: "Rewrite to add clear CTA, stronger emotional appeal, and clarity. Original: \(copy)"
+    )
+    return .init(copy: improved.text, quality: q)
+  }
+  return .init(copy: copy, quality: q)
+}
+```
+
+## Routing
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+import AISDKProviderUtils
+
+func handleCustomerQuery(_ query: String) async throws -> (String, JSONValue) {
+  let schema = FlexibleSchema(jsonSchema(.object([
+    "type": .string("object"),
+    "properties": .object([
+      "reasoning": .object(["type": .string("string")]),
+      "type": .object(["type": .string("string")]),
+      "complexity": .object(["type": .string("string")])
+    ])
+  ])))
+  let spec = Output.object(schema: schema)
+  let cls = try await generateText(
+    model: openai("gpt-5"),
+    experimentalOutput: spec,
+    prompt: "Classify this customer query and explain your reasoning: \(query)"
+  )
+  let c = try cls.experimentalOutput
+  let type = c.asObject?["type"]?.asString ?? "general"
+  let complexity = c.asObject?["complexity"]?.asString ?? "simple"
+
+  let systemMap: [String: String] = [
+    "general": "You are a friendly and helpful customer support assistant.",
+    "refund": "You specialize in refunds. Be empathetic and precise.",
+    "technical": "You are a technical support specialist. Provide step-by-step troubleshooting."
+  ]
+  let model = complexity == "simple" ? openai("gpt-4.1-mini") : openai("o4-mini")
+  let response = try await generateText(model: model, system: systemMap[type], prompt: query)
+  return (response.text, c)
+}
+```
+
+## Parallel Processing
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+import AISDKProviderUtils
+
+struct Review: Sendable { let kind: String; let data: JSONValue }
+
+func parallelCodeReview(_ code: String) async throws -> (reviews: [Review], summary: String) {
+  let reviewSchema = FlexibleSchema(jsonSchema(.object(["additionalProperties": .bool(true)])))
+  let spec = Output.object(schema: reviewSchema)
+
+  async let security = generateText(model: openai("gpt-5"), experimentalOutput: spec, system: "Security expert.", prompt: "Review:\n\(code)")
+  async let performance = generateText(model: openai("gpt-5"), experimentalOutput: spec, system: "Performance expert.", prompt: "Review:\n\(code)")
+  async let quality = generateText(model: openai("gpt-5"), experimentalOutput: spec, system: "Code quality expert.", prompt: "Review:\n\(code)")
+
+  let r1 = try Review(kind: "security", data: try security.experimentalOutput)
+  let r2 = try Review(kind: "performance", data: try performance.experimentalOutput)
+  let r3 = try Review(kind: "maintainability", data: try quality.experimentalOutput)
+  let reviews = [r1, r2, r3]
+
+  let summary = try await generateText(
+    model: openai("gpt-5"),
+    system: "You are a technical lead summarizing multiple code reviews.",
+    prompt: "Synthesize these results into key actions:\n\(reviews)"
+  ).text
+  return (reviews, summary)
+}
+```
+
+## Orchestrator-Worker
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+import AISDKProviderUtils
+
+func implementFeature(_ feature: String) async throws -> (plan: JSONValue, changes: [JSONValue]) {
+  let planSpec = Output.object(schema: FlexibleSchema(jsonSchema(.object(["additionalProperties": .bool(true)]))))
+  let planText = try await generateText(
+    model: openai("o4-mini"),
+    experimentalOutput: planSpec,
+    system: "You are a senior software architect planning feature implementations.",
+    prompt: "Analyze this feature request and create an implementation plan: \(feature)"
+  )
+  let plan = try planText.experimentalOutput
+  // Workers could implement per-file changes; omitted for brevity.
+  return (plan, [])
+}
+```
+
+## Evaluator-Optimizer
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+import AISDKProviderUtils
+
+func translateWithFeedback(text: String, targetLanguage: String) async throws -> (final: String, iterations: Int) {
+  var current = try await generateText(
+    model: openai("gpt-4.1-mini"),
+    system: "You are an expert literary translator.",
+    prompt: "Translate this text to \(targetLanguage), preserving tone and cultural nuances:\n\(text)"
+  ).text
+
+  let evalSpec = Output.object(schema: FlexibleSchema(jsonSchema(.object(["additionalProperties": .bool(true)]))))
+  var iterations = 0
+  while iterations < 3 {
+    let evaluation = try await generateText(
+      model: openai("gpt-5"),
+      experimentalOutput: evalSpec,
+      system: "You are an expert in evaluating literary translations.",
+      prompt: "Evaluate this translation. Original: \(text)\nTranslation: \(current)"
+    )
+    let e = try evaluation.experimentalOutput
+    let score = e.asObject?["qualityScore"]?.asNumber ?? 0
+    if score >= 8 { break }
+    current = try await generateText(
+      model: openai("gpt-5"),
+      system: "You are an expert literary translator.",
+      prompt: "Improve this translation based on evaluation. Original: \(text)\nCurrent: \(current)"
+    ).text
+    iterations += 1
+  }
+  return (current, iterations)
+}
+```
