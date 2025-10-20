@@ -1,7 +1,7 @@
 # 🧪 Anthropic Provider - Test Coverage Audit
 
 **Date**: 2025-10-20
-**Last Updated**: 2025-10-20 15:30 UTC
+**Last Updated**: 2025-10-20 19:01 UTC
 **Status**: 🚧 **IN PROGRESS** - Batch testing active
 
 ---
@@ -11,12 +11,12 @@
 | Metric | Value |
 |--------|-------|
 | **Upstream Tests** | 147 tests |
-| **Swift Tests** | 63 tests ✅ (+5 from Batch 3) |
-| **Coverage** | **42.9%** (63/147) |
-| **Missing** | 84 tests |
+| **Swift Tests** | 68 tests ✅ (+2 from Batch 5) |
+| **Coverage** | **46.3%** (68/147) |
+| **Missing** | 79 tests |
 | **Status** | ⚠️ **NEEDS IMPROVEMENT** |
 
-**Progress**: 33.3% → 36.1% (+2.8% Batch 1) → 39.5% (+3.4% Batch 2) → 42.9% (+3.4% Batch 3)
+**Progress**: 33.3% → 36.1% (+2.8% Batch 1) → 39.5% (+3.4% Batch 2) → 42.9% (+3.4% Batch 3) → 44.9% (+2.0% Batch 4) → 46.3% (+1.4% Batch 5)
 
 ---
 
@@ -25,10 +25,10 @@
 | Test File | Upstream | Swift | Coverage | Status |
 |-----------|----------|-------|----------|--------|
 | anthropic-error.test.ts | 3 | 2 | 66.7% | ⚠️ Missing 1 |
-| **anthropic-messages-language-model.test.ts** | 78 | **28** ✅ | **35.9%** | 🚧 Batch 3 done |
+| **anthropic-messages-language-model.test.ts** | 78 | **33** ✅ | **42.3%** | 🚧 Batch 5 done |
 | anthropic-prepare-tools.test.ts | 20 | 15 | 75.0% | ⚠️ Missing 5 |
 | convert-to-anthropic-messages-prompt.test.ts | 46 | 17 | 37.0% | ❌ Missing 29 |
-| **TOTAL** | **147** | **63** ✅ | **42.9%** | 🚧 In progress |
+| **TOTAL** | **147** | **68** ✅ | **46.3%** | 🚧 In progress |
 
 ---
 
@@ -116,6 +116,71 @@
 
 ---
 
+### ✅ Batch 4: Provider Options & Request Body Tests (COMPLETE)
+
+**Date**: 2025-10-20
+**Tests Added**: 3 tests
+**Status**: ✅ **ALL PASS** (66/66 tests)
+
+**Ported Tests**:
+1. ✅ **"should pass json schema response format as a tool"** - JSON response format creates tool in request
+   - Verifies `tool_choice` with type="tool", name="json", disable_parallel_tool_use=true
+   - Verifies `tools` array contains json tool with input_schema
+2. ✅ **"should support cache control"** - Basic cache control with ephemeral type
+   - Sends `cache_control` in request content
+   - Verifies cache tokens in response metadata (cacheCreationInputTokens, usage.cache_creation_input_tokens)
+3. ✅ **"should support cache control and return extra fields in provider metadata"** - Cache control with TTL
+   - Sends `cache_control` with ttl="1h" parameter
+   - Verifies `cache_creation` field with ephemeral_5m_input_tokens and ephemeral_1h_input_tokens
+
+**Issues Fixed**:
+- **🐛 IMPLEMENTATION BUG DISCOVERED**: Missing `cacheCreation` field in `AnthropicUsage` struct and providerMetadata
+  - Upstream TypeScript casts entire `response.usage` as JSONObject, preserving ALL fields including `cache_creation`
+  - Swift implementation was manually building usage object field-by-field, missing the `cache_creation` field
+  - **Files Modified**:
+    1. `Sources/AnthropicProvider/AnthropicMessagesAPI.swift:76-100` - Added `CacheCreation` nested struct and `cacheCreation` field
+    2. `Sources/AnthropicProvider/AnthropicMessagesLanguageModel.swift:1178-1200` - Updated `makeProviderMetadata` to include `cache_creation` in usage object
+  - Verified against upstream TypeScript (line 617: `usage: response.usage as JSONObject`)
+
+**User Guidance Applied**: ✅ "ALWAYS check upstream if test wrongly written OR implementation bug"
+- Test failed on "Expected cache_creation in usage"
+- Checked upstream TypeScript test expectations (lines 793-800)
+- Confirmed upstream DOES expect `cache_creation` nested object in `usage`
+- Checked upstream implementation (line 617) - casts entire usage as JSON
+- Fixed implementation to match upstream exactly
+
+**Result**: Test coverage ✅ improved to 44.9%, implementation bug ✅ fixed for cache_creation field
+
+---
+
+### ✅ Batch 5: Basic Request & Error Handling Tests (COMPLETE)
+
+**Date**: 2025-10-20
+**Tests Added**: 2 tests
+**Status**: ✅ **ALL PASS** (68/68 tests)
+
+**Ported Tests**:
+1. ✅ **"should send request body"** - Verifies basic request format
+   - Confirms model, max_tokens, messages structure
+   - Checks user message with text content
+   - Verifies optional fields are absent (system, temperature, top_p, top_k, stop_sequences, tool_choice, tools)
+   - Ensures cache_control is not present when not specified
+2. ✅ **"should throw an api error when the server is overloaded"** - Error handling test
+   - Simulates HTTP 529 error response
+   - Verifies error is thrown with "Overloaded" message
+   - Tests error propagation from API layer
+
+**Issues Fixed**:
+- Fixed initialization: Added missing `providerOptions: nil` parameter to `.user()` calls
+- Swift Testing pattern: Removed incorrect `await` from `#expect(throws:)`
+- Error verification: Used do-catch pattern to verify error message content
+
+**User Guidance Applied**: ✅ Both tests simple and straightforward, no upstream verification needed
+
+**Result**: Test coverage ✅ improved to 46.3% (68/147 tests), basic request verification ✅ complete
+
+---
+
 ## 📋 Detailed File Analysis
 
 ### 1. ⚠️ AnthropicErrorTests.swift (2/3 tests - 66.7%)
@@ -134,16 +199,16 @@
 
 ---
 
-### 2. 🚧 AnthropicMessagesLanguageModelTests.swift (28/78 tests - 35.9%)
+### 2. 🚧 AnthropicMessagesLanguageModelTests.swift (33/78 tests - 42.3%)
 
 **Upstream**: `anthropic-messages-language-model.test.ts` (78 tests)
 **Swift**:
-- `AnthropicMessagesLanguageModelTests.swift` (17 tests - basic + Batch 1 + Batch 2 + Batch 3)
+- `AnthropicMessagesLanguageModelTests.swift` (22 tests - basic + Batch 1-5)
 - `AnthropicMessagesLanguageModelStreamAdvancedTests.swift` (11 tests - streaming)
 
-#### 2.1 doGenerate Tests (17/~35 tests - 48.6%)
+#### 2.1 doGenerate Tests (22/~35 tests - 62.9%)
 
-**Swift Tests** (17):
+**Swift Tests** (22):
 1. ✅ Maps basic response into content, usage and metadata
 2. ✅ Thinking enabled adjusts request and warnings
 3. ✅ **Batch 1**: Should send the model id and settings
@@ -160,17 +225,22 @@
 14. ✅ **Batch 3**: Should expose the raw response headers
 15. ✅ **Batch 3**: Should process PDF citation responses
 16. ✅ **Batch 3**: Should process text citation responses
-17. ✅ Streams text deltas and finish metadata
+17. ✅ **Batch 4**: Should pass json schema response format as a tool
+18. ✅ **Batch 4**: Should support cache control
+19. ✅ **Batch 4**: Should support cache control and return extra fields in provider metadata
+20. ✅ **Batch 5**: Should send request body
+21. ✅ **Batch 5**: Should throw an api error when the server is overloaded
+22. ✅ Streams text deltas and finish metadata
 
-**Missing from Upstream** (~18 tests):
+**Missing from Upstream** (~15 tests):
 
-**Request Body Tests** (~2 missing):
+**Request Body Tests** (ALL DONE ✅):
 - ✅ should send the model id and settings (PORTED - Batch 1)
 - ✅ should pass headers (PORTED - Batch 1)
 - ✅ should pass tools and toolChoice (PORTED - Batch 1)
 - ✅ should pass disableParallelToolUse (PORTED - Batch 1)
-- ❌ should pass json schema response format as a tool
-- ❌ should support cache control
+- ✅ should pass json schema response format as a tool (PORTED - Batch 4)
+- ✅ should support cache control (PORTED - Batch 4)
 
 **Response Parsing Tests** (ALL DONE ✅):
 - ✅ should extract reasoning response (PORTED - Batch 3)
@@ -184,9 +254,9 @@
 - ✅ should process PDF citation responses (PORTED - Batch 3)
 - ✅ should process text citation responses (PORTED - Batch 3)
 
-**Provider Options Tests** (~5 missing):
+**Provider Options Tests** (~4 missing):
 - ✅ thinking config (PORTED)
-- ❌ cacheControl with TTL
+- ✅ cacheControl with TTL (PORTED - Batch 4)
 - ❌ sendReasoning
 - ❌ file part provider options
 - ❌ beta tracking

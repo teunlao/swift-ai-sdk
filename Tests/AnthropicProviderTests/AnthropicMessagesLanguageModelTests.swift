@@ -1100,6 +1100,381 @@ struct AnthropicMessagesLanguageModelGenerateTests {
             Issue.record("Expected source citation content")
         }
     }
+
+    // MARK: - Batch 4: Provider Options & Request Body Tests
+
+    @Test("should pass json schema response format as a tool")
+    func passesJsonSchemaResponseFormatAsTool() async throws {
+        let capture = RequestCapture()
+        let responseJSON: [String: Any] = [
+            "id": "msg_123",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-3-haiku-20240307",
+            "content": [
+                [
+                    "type": "text",
+                    "text": "Some text\n\n"
+                ],
+                [
+                    "type": "tool_use",
+                    "id": "toolu_1",
+                    "name": "json",
+                    "input": ["name": "example value"]
+                ]
+            ],
+            "stop_reason": "tool_use",
+            "stop_sequence": NSNull(),
+            "usage": [
+                "input_tokens": 10,
+                "output_tokens": 20
+            ]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(url: URL(string: "https://api.anthropic.com/v1/messages")!,
+                                          statusCode: 200,
+                                          httpVersion: nil,
+                                          headerFields: ["content-type": "application/json"])!
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: makeConfig(fetch: fetch)
+        )
+
+        let schema: JSONValue = .object([
+            "type": .string("object"),
+            "properties": .object([
+                "name": .object(["type": .string("string")])
+            ]),
+            "required": .array([.string("name")]),
+            "additionalProperties": .bool(false),
+            "$schema": .string("http://json-schema.org/draft-07/schema#")
+        ])
+
+        _ = try await model.doGenerate(options: .init(
+            prompt: testPrompt,
+            responseFormat: .json(schema: schema, name: nil, description: nil)
+        ))
+
+        // Verify request body has JSON tool
+        if let request = await capture.current(),
+           let body = request.httpBody,
+           let json = try JSONSerialization.jsonObject(with: body) as? [String: Any] {
+
+            #expect(json["model"] as? String == "claude-3-haiku-20240307")
+            #expect(json["max_tokens"] as? Int == 4096)
+
+            // Check tool_choice
+            if let toolChoice = json["tool_choice"] as? [String: Any] {
+                #expect(toolChoice["type"] as? String == "tool")
+                #expect(toolChoice["name"] as? String == "json")
+                #expect(toolChoice["disable_parallel_tool_use"] as? Bool == true)
+            } else {
+                Issue.record("Expected tool_choice in request")
+            }
+
+            // Check tools array
+            if let tools = json["tools"] as? [[String: Any]],
+               let jsonTool = tools.first {
+                #expect(jsonTool["name"] as? String == "json")
+                #expect(jsonTool["description"] as? String == "Respond with a JSON object.")
+
+                if let inputSchema = jsonTool["input_schema"] as? [String: Any] {
+                    #expect(inputSchema["type"] as? String == "object")
+                    #expect(inputSchema["$schema"] as? String == "http://json-schema.org/draft-07/schema#")
+                    #expect(inputSchema["additionalProperties"] as? Bool == false)
+                }
+            } else {
+                Issue.record("Expected json tool in tools array")
+            }
+        } else {
+            Issue.record("Expected request body")
+        }
+    }
+
+    @Test("should support cache control")
+    func supportsCacheControl() async throws {
+        let capture = RequestCapture()
+        let responseJSON: [String: Any] = [
+            "id": "msg_123",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-3-haiku-20240307",
+            "content": [["type": "text", "text": ""]],
+            "stop_reason": "end_turn",
+            "stop_sequence": NSNull(),
+            "usage": [
+                "input_tokens": 20,
+                "output_tokens": 50,
+                "cache_creation_input_tokens": 10,
+                "cache_read_input_tokens": 5
+            ]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(url: URL(string: "https://api.anthropic.com/v1/messages")!,
+                                          statusCode: 200,
+                                          httpVersion: nil,
+                                          headerFields: ["content-type": "application/json"])!
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: makeConfig(fetch: fetch)
+        )
+
+        let result = try await model.doGenerate(options: .init(prompt: [
+            .user(
+                content: [.text(.init(text: "Hello"))],
+                providerOptions: [
+                    "anthropic": [
+                        "cacheControl": .object(["type": .string("ephemeral")])
+                    ]
+                ]
+            )
+        ]))
+
+        // Verify cache_control in request body
+        if let request = await capture.current(),
+           let body = request.httpBody,
+           let json = try JSONSerialization.jsonObject(with: body) as? [String: Any],
+           let messages = json["messages"] as? [[String: Any]],
+           let firstMessage = messages.first,
+           let content = firstMessage["content"] as? [[String: Any]],
+           let firstContent = content.first {
+
+            if let cacheControl = firstContent["cache_control"] as? [String: Any] {
+                #expect(cacheControl["type"] as? String == "ephemeral")
+            } else {
+                Issue.record("Expected cache_control in content")
+            }
+        } else {
+            Issue.record("Expected valid request body")
+        }
+
+        // Verify cache tokens in response metadata
+        #expect(result.providerMetadata != nil)
+        if let metadata = result.providerMetadata?["anthropic"] {
+            if let cacheTokens = metadata["cacheCreationInputTokens"], case .number(let tokens) = cacheTokens {
+                #expect(tokens == 10)
+            }
+
+            if let usage = metadata["usage"], case .object(let usageObj) = usage {
+                #expect(usageObj["cache_creation_input_tokens"] == .number(10))
+                #expect(usageObj["cache_read_input_tokens"] == .number(5))
+                #expect(usageObj["input_tokens"] == .number(20))
+                #expect(usageObj["output_tokens"] == .number(50))
+            }
+        } else {
+            Issue.record("Expected anthropic provider metadata")
+        }
+    }
+
+    @Test("should support cache control and return extra fields in provider metadata")
+    func supportsCacheControlWithTTL() async throws {
+        let capture = RequestCapture()
+        let responseJSON: [String: Any] = [
+            "id": "msg_123",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-3-haiku-20240307",
+            "content": [["type": "text", "text": ""]],
+            "stop_reason": "end_turn",
+            "stop_sequence": NSNull(),
+            "usage": [
+                "input_tokens": 20,
+                "output_tokens": 50,
+                "cache_creation_input_tokens": 10,
+                "cache_read_input_tokens": 5,
+                "cache_creation": [
+                    "ephemeral_5m_input_tokens": 0,
+                    "ephemeral_1h_input_tokens": 10
+                ]
+            ]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(url: URL(string: "https://api.anthropic.com/v1/messages")!,
+                                          statusCode: 200,
+                                          httpVersion: nil,
+                                          headerFields: ["content-type": "application/json"])!
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: makeConfig(fetch: fetch)
+        )
+
+        let result = try await model.doGenerate(options: .init(prompt: [
+            .user(
+                content: [.text(.init(text: "Hello"))],
+                providerOptions: [
+                    "anthropic": [
+                        "cacheControl": .object([
+                            "type": .string("ephemeral"),
+                            "ttl": .string("1h")
+                        ])
+                    ]
+                ]
+            )
+        ]))
+
+        // Verify cache_control with TTL in request body
+        if let request = await capture.current(),
+           let body = request.httpBody,
+           let json = try JSONSerialization.jsonObject(with: body) as? [String: Any],
+           let messages = json["messages"] as? [[String: Any]],
+           let firstMessage = messages.first,
+           let content = firstMessage["content"] as? [[String: Any]],
+           let firstContent = content.first {
+
+            if let cacheControl = firstContent["cache_control"] as? [String: Any] {
+                #expect(cacheControl["type"] as? String == "ephemeral")
+                #expect(cacheControl["ttl"] as? String == "1h")
+            } else {
+                Issue.record("Expected cache_control with ttl in content")
+            }
+        } else {
+            Issue.record("Expected valid request body")
+        }
+
+        // Verify extra cache fields in response metadata
+        #expect(result.providerMetadata != nil)
+        if let metadata = result.providerMetadata?["anthropic"] {
+            if let usage = metadata["usage"], case .object(let usageObj) = usage {
+                // Check cache_creation field
+                if let cacheCreation = usageObj["cache_creation"], case .object(let creation) = cacheCreation {
+                    #expect(creation["ephemeral_5m_input_tokens"] == .number(0))
+                    #expect(creation["ephemeral_1h_input_tokens"] == .number(10))
+                } else {
+                    Issue.record("Expected cache_creation in usage")
+                }
+            }
+        } else {
+            Issue.record("Expected anthropic provider metadata")
+        }
+    }
+
+    // MARK: - Batch 5: Basic Request & Error Handling Tests
+
+    @Test("should send request body")
+    func sendsRequestBody() async throws {
+        let capture = RequestCapture()
+        let responseJSON: [String: Any] = [
+            "id": "msg_123",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-3-haiku-20240307",
+            "content": [],
+            "stop_reason": "end_turn",
+            "stop_sequence": NSNull(),
+            "usage": [
+                "input_tokens": 20,
+                "output_tokens": 50
+            ]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(url: URL(string: "https://api.anthropic.com/v1/messages")!,
+                                          statusCode: 200,
+                                          httpVersion: nil,
+                                          headerFields: ["content-type": "application/json"])!
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: makeConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(options: .init(prompt: [
+            .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
+        ]))
+
+        // Verify request body structure
+        if let request = await capture.current(),
+           let body = request.httpBody,
+           let json = try JSONSerialization.jsonObject(with: body) as? [String: Any] {
+
+            #expect(json["model"] as? String == "claude-3-haiku-20240307")
+            #expect(json["max_tokens"] as? Int == 4096)
+
+            if let messages = json["messages"] as? [[String: Any]],
+               let firstMessage = messages.first {
+                #expect(firstMessage["role"] as? String == "user")
+
+                if let content = firstMessage["content"] as? [[String: Any]],
+                   let firstContent = content.first {
+                    #expect(firstContent["type"] as? String == "text")
+                    #expect(firstContent["text"] as? String == "Hello")
+
+                    // cache_control should not be present (or undefined/null)
+                    let hasCacheControl = firstContent["cache_control"] != nil
+                    #expect(hasCacheControl == false)
+                }
+            }
+
+            // Optional fields should not be present (or be null/undefined equivalent)
+            #expect((json["system"] as? NSNull) != nil || json["system"] == nil)
+            #expect((json["temperature"] as? NSNull) != nil || json["temperature"] == nil)
+            #expect((json["top_p"] as? NSNull) != nil || json["top_p"] == nil)
+            #expect((json["top_k"] as? NSNull) != nil || json["top_k"] == nil)
+            #expect((json["stop_sequences"] as? NSNull) != nil || json["stop_sequences"] == nil)
+            #expect((json["tool_choice"] as? NSNull) != nil || json["tool_choice"] == nil)
+            #expect((json["tools"] as? NSNull) != nil || json["tools"] == nil)
+        } else {
+            Issue.record("Expected valid request body")
+        }
+    }
+
+    @Test("should throw an api error when the server is overloaded")
+    func throwsApiErrorWhenOverloaded() async throws {
+        let errorJSON = """
+        {"type":"error","error":{"details":null,"type":"overloaded_error","message":"Overloaded"}}
+        """
+        let errorData = errorJSON.data(using: .utf8)!
+        let httpResponse = HTTPURLResponse(url: URL(string: "https://api.anthropic.com/v1/messages")!,
+                                          statusCode: 529,
+                                          httpVersion: nil,
+                                          headerFields: ["content-type": "application/json"])!
+
+        let fetch: FetchFunction = { _ in
+            return FetchResponse(body: .data(errorData), urlResponse: httpResponse)
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: makeConfig(fetch: fetch)
+        )
+
+        // Verify the error message contains "Overloaded"
+        do {
+            _ = try await model.doGenerate(options: .init(prompt: [
+                .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
+            ]))
+            Issue.record("Expected error to be thrown")
+        } catch {
+            let errorMessage = String(describing: error)
+            #expect(errorMessage.contains("Overloaded"))
+        }
+    }
 }
 
 @Suite("AnthropicMessagesLanguageModel doStream")

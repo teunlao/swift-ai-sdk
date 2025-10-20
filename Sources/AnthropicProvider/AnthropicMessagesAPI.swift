@@ -74,16 +74,28 @@ public struct AnthropicMessagesResponse: Codable, Sendable {
 }
 
 public struct AnthropicUsage: Codable, Sendable {
+    public struct CacheCreation: Codable, Sendable {
+        public let ephemeral5mInputTokens: Int?
+        public let ephemeral1hInputTokens: Int?
+
+        enum CodingKeys: String, CodingKey {
+            case ephemeral5mInputTokens = "ephemeral_5m_input_tokens"
+            case ephemeral1hInputTokens = "ephemeral_1h_input_tokens"
+        }
+    }
+
     public let inputTokens: Int
     public let outputTokens: Int
     public let cacheCreationInputTokens: Int?
     public let cacheReadInputTokens: Int?
+    public let cacheCreation: CacheCreation?
 
     enum CodingKeys: String, CodingKey {
         case inputTokens = "input_tokens"
         case outputTokens = "output_tokens"
         case cacheCreationInputTokens = "cache_creation_input_tokens"
         case cacheReadInputTokens = "cache_read_input_tokens"
+        case cacheCreation = "cache_creation"
     }
 }
 

@@ -1175,7 +1175,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
     ) -> SharedV3ProviderMetadata? {
         var anthropicMetadata: [String: JSONValue] = [:]
 
-        anthropicMetadata["usage"] = .object([
+        var usageObject: [String: JSONValue] = [
             "input_tokens": .number(Double(response.usage.inputTokens)),
             "output_tokens": .number(Double(response.usage.outputTokens)),
             "cache_creation_input_tokens": response.usage.cacheCreationInputTokens.map {
@@ -1184,7 +1184,20 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
             "cache_read_input_tokens": response.usage.cacheReadInputTokens.map {
                 .number(Double($0))
             } ?? .null,
-        ])
+        ]
+
+        if let cacheCreation = response.usage.cacheCreation {
+            usageObject["cache_creation"] = .object([
+                "ephemeral_5m_input_tokens": cacheCreation.ephemeral5mInputTokens.map {
+                    .number(Double($0))
+                } ?? .null,
+                "ephemeral_1h_input_tokens": cacheCreation.ephemeral1hInputTokens.map {
+                    .number(Double($0))
+                } ?? .null,
+            ])
+        }
+
+        anthropicMetadata["usage"] = .object(usageObject)
         anthropicMetadata["cacheCreationInputTokens"] =
             response.usage.cacheCreationInputTokens.map { .number(Double($0)) } ?? .null
         anthropicMetadata["stopReason"] = response.stopReason.map(JSONValue.string) ?? .null
