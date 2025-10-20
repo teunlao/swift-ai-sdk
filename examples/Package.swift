@@ -88,6 +88,42 @@ let package = Package(
       ]
     ),
 
+    .executableTarget(
+      name: "EmbeddingsExample",
+      dependencies: [
+        "ExamplesCore",
+        .product(name: "SwiftAISDK", package: "swift-ai-sdk"),
+        .product(name: "OpenAIProvider", package: "swift-ai-sdk"),
+      ]
+    ),
+
+    .executableTarget(
+      name: "ImageGenerationExample",
+      dependencies: [
+        "ExamplesCore",
+        .product(name: "SwiftAISDK", package: "swift-ai-sdk"),
+        .product(name: "OpenAIProvider", package: "swift-ai-sdk"),
+      ]
+    ),
+
+    .executableTarget(
+      name: "SpeechExample",
+      dependencies: [
+        "ExamplesCore",
+        .product(name: "SwiftAISDK", package: "swift-ai-sdk"),
+        .product(name: "OpenAIProvider", package: "swift-ai-sdk"),
+      ]
+    ),
+
+    .executableTarget(
+      name: "TranscriptionExample",
+      dependencies: [
+        "ExamplesCore",
+        .product(name: "SwiftAISDK", package: "swift-ai-sdk"),
+        .product(name: "OpenAIProvider", package: "swift-ai-sdk"),
+      ]
+    ),
+
     // MARK: - Zod Adapter Examples
 
     .executableTarget(
