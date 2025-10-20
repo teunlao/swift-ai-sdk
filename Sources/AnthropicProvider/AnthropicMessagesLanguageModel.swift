@@ -1,6 +1,6 @@
-import Foundation
 import AISDKProvider
 import AISDKProviderUtils
+import Foundation
 
 public struct AnthropicMessagesConfig: @unchecked Sendable {
     public struct RequestTransform: Sendable {
@@ -75,7 +75,9 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
         get async throws { config.supportedUrls() }
     }
 
-    public func doGenerate(options: LanguageModelV3CallOptions) async throws -> LanguageModelV3GenerateResult {
+    public func doGenerate(options: LanguageModelV3CallOptions) async throws
+        -> LanguageModelV3GenerateResult
+    {
         let prepared = try await prepareRequest(options: options)
         let requestURL = buildRequestURL(isStreaming: false)
         let headers = getHeaders(betas: prepared.betas, additional: options.headers)
@@ -87,7 +89,8 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
             headers: headers,
             body: JSONValue.object(body),
             failedResponseHandler: anthropicFailedResponseHandler,
-            successfulResponseHandler: createJsonResponseHandler(responseSchema: anthropicMessagesResponseSchema),
+            successfulResponseHandler: createJsonResponseHandler(
+                responseSchema: anthropicMessagesResponseSchema),
             isAborted: options.abortSignal,
             fetch: config.fetch
         )
@@ -124,7 +127,9 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
         )
     }
 
-    public func doStream(options: LanguageModelV3CallOptions) async throws -> LanguageModelV3StreamResult {
+    public func doStream(options: LanguageModelV3CallOptions) async throws
+        -> LanguageModelV3StreamResult
+    {
         let prepared = try await prepareRequest(options: options)
 
         var requestBody = prepared.body
@@ -136,7 +141,8 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
             headers: getHeaders(betas: prepared.betas, additional: options.headers),
             body: JSONValue.object(transformedBody),
             failedResponseHandler: anthropicFailedResponseHandler,
-            successfulResponseHandler: createEventSourceResponseHandler(chunkSchema: anthropicMessagesChunkSchema),
+            successfulResponseHandler: createEventSourceResponseHandler(
+                chunkSchema: anthropicMessagesChunkSchema),
             isAborted: options.abortSignal,
             fetch: config.fetch
         )
@@ -160,7 +166,8 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                         switch chunk {
                         case .success(let event, let rawValue):
                             if options.includeRawChunks == true,
-                               let rawJSON = try? jsonValue(from: rawValue) {
+                                let rawJSON = try? jsonValue(from: rawValue)
+                            {
                                 continuation.yield(.raw(rawValue: rawJSON))
                             }
 
@@ -209,16 +216,18 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                                     cacheCreationInputTokens = usageInfo.cacheCreationInputTokens
                                     rawUsage = anthropicUsageMetadata(usageInfo)
                                 }
-                                continuation.yield(.responseMetadata(
-                                    id: value.message.id,
-                                    modelId: value.message.model,
-                                    timestamp: nil
-                                ))
+                                continuation.yield(
+                                    .responseMetadata(
+                                        id: value.message.id,
+                                        modelId: value.message.model,
+                                        timestamp: nil
+                                    ))
 
                             case .messageDelta(let value):
                                 if let usageInfo = value.usage {
                                     let currentInput = usage.inputTokens ?? usageInfo.inputTokens
-                                    let cachedInput = usageInfo.cacheReadInputTokens ?? usage.cachedInputTokens
+                                    let cachedInput =
+                                        usageInfo.cacheReadInputTokens ?? usage.cachedInputTokens
                                     usage = LanguageModelV3Usage(
                                         inputTokens: currentInput,
                                         outputTokens: usageInfo.outputTokens,
@@ -247,8 +256,10 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                             case .messageStop:
                                 var metadata: [String: JSONValue] = [:]
                                 metadata["usage"] = rawUsage.map(JSONValue.object) ?? .null
-                                metadata["cacheCreationInputTokens"] = cacheCreationInputTokens.map { .number(Double($0)) } ?? .null
-                                metadata["stopSequence"] = stopSequence.map(JSONValue.string) ?? .null
+                                metadata["cacheCreationInputTokens"] =
+                                    cacheCreationInputTokens.map { .number(Double($0)) } ?? .null
+                                metadata["stopSequence"] =
+                                    stopSequence.map(JSONValue.string) ?? .null
 
                                 continuation.yield(
                                     .finish(
@@ -262,13 +273,16 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                                 if let errorJSON = encodeToJSONValue(value) {
                                     continuation.yield(.error(error: errorJSON))
                                 } else {
-                                    continuation.yield(.error(error: .string("Anthropic stream error")))
+                                    continuation.yield(
+                                        .error(error: .string("Anthropic stream error")))
                                 }
 
                             }
 
                         case .failure(let error, let rawValue):
-                            let errorJSON = rawValue.flatMap({ try? jsonValue(from: $0) }) ?? .string(String(describing: error))
+                            let errorJSON =
+                                rawValue.flatMap({ try? jsonValue(from: $0) })
+                                ?? .string(String(describing: error))
                             continuation.yield(.error(error: errorJSON))
                         }
                     }
@@ -282,12 +296,15 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
 
         let requestInfo = LanguageModelV3RequestInfo(body: requestBody)
         let responseInfo = LanguageModelV3StreamResponseInfo(headers: response.responseHeaders)
-        return LanguageModelV3StreamResult(stream: stream, request: requestInfo, response: responseInfo)
+        return LanguageModelV3StreamResult(
+            stream: stream, request: requestInfo, response: responseInfo)
     }
 
     // MARK: - Helpers
 
-    private func prepareRequest(options: LanguageModelV3CallOptions) async throws -> AnthropicRequestArguments {
+    private func prepareRequest(options: LanguageModelV3CallOptions) async throws
+        -> AnthropicRequestArguments
+    {
         var warnings: [LanguageModelV3CallWarning] = []
 
         if options.frequencyPenalty != nil {
@@ -308,14 +325,16 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                 warnings.append(
                     .unsupportedSetting(
                         setting: "responseFormat",
-                        details: "JSON response format requires a schema. The response format is ignored."
+                        details:
+                            "JSON response format requires a schema. The response format is ignored."
                     )
                 )
             } else if options.tools != nil {
                 warnings.append(
                     .unsupportedSetting(
                         setting: "tools",
-                        details: "JSON response format does not support tools. The provided tools are ignored."
+                        details:
+                            "JSON response format does not support tools. The provided tools are ignored."
                     )
                 )
             }
@@ -348,7 +367,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
 
         var args: [String: JSONValue] = [
             "model": .string(modelIdentifier.rawValue),
-            "messages": .array(conversion.prompt.messages.map { $0.toJSONValue() })
+            "messages": .array(conversion.prompt.messages.map { $0.toJSONValue() }),
         ]
 
         if let system = conversion.prompt.system, !system.isEmpty {
@@ -406,15 +425,17 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
 
             args["thinking"] = .object([
                 "type": .string("enabled"),
-                "budget_tokens": .number(Double(budget))
+                "budget_tokens": .number(Double(budget)),
             ])
             args["max_tokens"] = .number(Double(baseMaxTokens + budget))
         }
 
         let preparedTools = try await prepareAnthropicTools(
             tools: jsonResponseTool != nil ? [.function(jsonResponseTool!)] : options.tools,
-            toolChoice: jsonResponseTool != nil ? .tool(toolName: jsonResponseTool!.name) : options.toolChoice,
-            disableParallelToolUse: jsonResponseTool != nil ? true : anthropicOptions?.disableParallelToolUse
+            toolChoice: jsonResponseTool != nil
+                ? .tool(toolName: jsonResponseTool!.name) : options.toolChoice,
+            disableParallelToolUse: jsonResponseTool != nil
+                ? true : anthropicOptions?.disableParallelToolUse
         )
 
         warnings.append(contentsOf: preparedTools.warnings)
@@ -445,7 +466,8 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
     private func getHeaders(betas: Set<String>, additional: [String: String]?) -> [String: String] {
         var combined: [String: String?] = config.headers()
         if !betas.isEmpty {
-            combined = combineHeaders(combined, ["anthropic-beta": betas.sorted().joined(separator: ",")])
+            combined = combineHeaders(
+                combined, ["anthropic-beta": betas.sorted().joined(separator: ",")])
         }
         if let additional {
             combined = combineHeaders(combined, additional.mapValues { Optional($0) })
@@ -472,7 +494,9 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
 
                 if let citations = value.citations {
                     for citation in citations {
-                        if let source = createCitationSource(from: citation, documents: citationDocuments) {
+                        if let source = createCitationSource(
+                            from: citation, documents: citationDocuments)
+                        {
                             content.append(.source(source))
                         }
                     }
@@ -485,13 +509,16 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                         "anthropic": ["signature": .string(signature)]
                     ]
                 }
-                content.append(.reasoning(LanguageModelV3Reasoning(text: value.thinking, providerMetadata: metadata)))
+                content.append(
+                    .reasoning(
+                        LanguageModelV3Reasoning(text: value.thinking, providerMetadata: metadata)))
 
             case .redactedThinking(let value):
                 let metadata: SharedV3ProviderMetadata = [
                     "anthropic": ["redactedData": .string(value.data)]
                 ]
-                content.append(.reasoning(LanguageModelV3Reasoning(text: "", providerMetadata: metadata)))
+                content.append(
+                    .reasoning(LanguageModelV3Reasoning(text: "", providerMetadata: metadata)))
 
             case .toolUse(let value):
                 if usesJsonResponseTool {
@@ -506,7 +533,10 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                 }
 
             case .serverToolUse(let value):
-                guard value.name == "web_search" || value.name == "code_execution" || value.name == "web_fetch" else { continue }
+                guard
+                    value.name == "web_search" || value.name == "code_execution"
+                        || value.name == "web_fetch"
+                else { continue }
                 let toolCall = LanguageModelV3ToolCall(
                     toolCallId: value.id,
                     toolName: value.name,
@@ -517,16 +547,21 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
 
             case .webFetchResult(let value):
                 if case .object(let payload) = value.content,
-                   let type = payload["type"], case .string(let typeString) = type {
+                    let type = payload["type"], case .string(let typeString) = type
+                {
                     switch typeString {
                     case "web_fetch_result":
                         guard
                             let urlValue = payload["url"], case .string(let url) = urlValue,
                             let retrievedAtValue = payload["retrieved_at"],
-                            let contentValue = payload["content"], case .object(let resultContent) = contentValue,
-                            let sourceValue = resultContent["source"], case .object(let sourceObject) = sourceValue,
-                            let sourceTypeValue = sourceObject["type"], case .string(let sourceType) = sourceTypeValue,
-                            let mediaTypeValue = sourceObject["media_type"], case .string(let mediaType) = mediaTypeValue,
+                            let contentValue = payload["content"],
+                            case .object(let resultContent) = contentValue,
+                            let sourceValue = resultContent["source"],
+                            case .object(let sourceObject) = sourceValue,
+                            let sourceTypeValue = sourceObject["type"],
+                            case .string(let sourceType) = sourceTypeValue,
+                            let mediaTypeValue = sourceObject["media_type"],
+                            case .string(let mediaType) = mediaTypeValue,
                             let dataValue = sourceObject["data"], case .string(let data) = dataValue
                         else {
                             continue
@@ -535,7 +570,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                         var resultObject: [String: JSONValue] = [
                             "type": .string("web_fetch_result"),
                             "url": .string(url),
-                            "retrievedAt": retrievedAtValue
+                            "retrievedAt": retrievedAtValue,
                         ]
 
                         var contentObject: [String: JSONValue] = [
@@ -544,8 +579,8 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                             "source": .object([
                                 "type": .string(sourceType),
                                 "mediaType": .string(mediaType),
-                                "data": .string(data)
-                            ])
+                                "data": .string(data),
+                            ]),
                         ]
                         if let citations = resultContent["citations"] {
                             contentObject["citations"] = citations
@@ -567,7 +602,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                             toolName: "web_fetch",
                             result: .object([
                                 "type": .string("web_fetch_tool_result_error"),
-                                "errorCode": errorCode
+                                "errorCode": errorCode,
                             ]),
                             isError: true,
                             providerExecuted: true
@@ -588,27 +623,31 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                         guard
                             let urlValue = object["url"], case .string(let url) = urlValue,
                             let titleValue = object["title"], case .string(let title) = titleValue,
-                            let encryptedValue = object["encrypted_content"], case .string(let encrypted) = encryptedValue
+                            let encryptedValue = object["encrypted_content"],
+                            case .string(let encrypted) = encryptedValue
                         else { continue }
 
                         let pageAge = object["page_age"]
-                        array.append(.object([
-                            "url": .string(url),
-                            "title": .string(title),
-                            "pageAge": pageAge ?? .null,
-                            "encryptedContent": .string(encrypted),
-                            "type": object["type"] ?? .string("web_search_result")
-                        ]))
+                        array.append(
+                            .object([
+                                "url": .string(url),
+                                "title": .string(title),
+                                "pageAge": pageAge ?? .null,
+                                "encryptedContent": .string(encrypted),
+                                "type": object["type"] ?? .string("web_search_result"),
+                            ]))
 
                         let metadata: SharedV3ProviderMetadata = [
                             "anthropic": ["pageAge": pageAge ?? .null]
                         ]
-                        content.append(.source(.url(
-                            id: generateIdentifier(),
-                            url: url,
-                            title: title,
-                            providerMetadata: metadata
-                        )))
+                        content.append(
+                            .source(
+                                .url(
+                                    id: generateIdentifier(),
+                                    url: url,
+                                    title: title,
+                                    providerMetadata: metadata
+                                )))
                     }
 
                     let toolResult = LanguageModelV3ToolResult(
@@ -626,7 +665,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                         toolName: "web_search",
                         result: .object([
                             "type": .string("web_search_tool_result_error"),
-                            "errorCode": errorCode
+                            "errorCode": errorCode,
                         ]),
                         isError: true,
                         providerExecuted: true
@@ -639,7 +678,8 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
 
             case .codeExecutionResult(let value):
                 if case .object(let payload) = value.content,
-                   let type = payload["type"], case .string(let typeString) = type {
+                    let type = payload["type"], case .string(let typeString) = type
+                {
                     switch typeString {
                     case "code_execution_result":
                         let stdout = payload["stdout"] ?? .string("")
@@ -652,7 +692,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                                 "type": .string("code_execution_result"),
                                 "stdout": stdout,
                                 "stderr": stderr,
-                                "return_code": returnCode
+                                "return_code": returnCode,
                             ]),
                             providerExecuted: true
                         )
@@ -665,7 +705,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                             toolName: "code_execution",
                             result: .object([
                                 "type": .string("code_execution_tool_result_error"),
-                                "errorCode": errorCode
+                                "errorCode": errorCode,
                             ]),
                             isError: true,
                             providerExecuted: true
@@ -709,20 +749,21 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
         case toolCall(ToolCallState)
     }
 
-
-    private func extractCitationDocuments(from prompt: LanguageModelV3Prompt) -> [CitationDocument] {
+    private func extractCitationDocuments(from prompt: LanguageModelV3Prompt) -> [CitationDocument]
+    {
         var documents: [CitationDocument] = []
         for message in prompt {
             guard case let .user(parts, _) = message else { continue }
             for part in parts {
                 guard case let .file(filePart) = part else { continue }
-                guard filePart.mediaType == "application/pdf" || filePart.mediaType == "text/plain" else { continue }
+                guard filePart.mediaType == "application/pdf" || filePart.mediaType == "text/plain"
+                else { continue }
                 guard let anthropicOptions = filePart.providerOptions?["anthropic"],
-                      let citationsValue = anthropicOptions["citations"],
-                      case .object(let citationsObject) = citationsValue,
-                      let enabledValue = citationsObject["enabled"],
-                      case .bool(let enabled) = enabledValue,
-                      enabled
+                    let citationsValue = anthropicOptions["citations"],
+                    case .object(let citationsObject) = citationsValue,
+                    let enabledValue = citationsObject["enabled"],
+                    case .bool(let enabled) = enabledValue,
+                    enabled
                 else { continue }
 
                 documents.append(
@@ -737,7 +778,9 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
         return documents
     }
 
-    private func createCitationSource(from citation: AnthropicCitation, documents: [CitationDocument]) -> LanguageModelV3Source? {
+    private func createCitationSource(
+        from citation: AnthropicCitation, documents: [CitationDocument]
+    ) -> LanguageModelV3Source? {
         switch citation {
         case .webSearchResultLocation:
             return nil
@@ -748,7 +791,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                 "anthropic": [
                     "citedText": .string(info.citedText),
                     "startPageNumber": .number(Double(info.startPageNumber)),
-                    "endPageNumber": .number(Double(info.endPageNumber))
+                    "endPageNumber": .number(Double(info.endPageNumber)),
                 ]
             ]
             return .document(
@@ -765,7 +808,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                 "anthropic": [
                     "citedText": .string(info.citedText),
                     "startCharIndex": .number(Double(info.startCharIndex)),
-                    "endCharIndex": .number(Double(info.endCharIndex))
+                    "endCharIndex": .number(Double(info.endCharIndex)),
                 ]
             ]
             return .document(
@@ -819,16 +862,27 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                 contentBlocks[value.index] = .text
                 continuation.yield(.textStart(id: String(value.index), providerMetadata: nil))
             } else {
-                let state = ToolCallState(toolCallId: tool.id, toolName: tool.name, input: "", providerExecuted: false)
+                let state = ToolCallState(
+                    toolCallId: tool.id, toolName: tool.name, input: "", providerExecuted: false)
                 contentBlocks[value.index] = .toolCall(state)
-                continuation.yield(.toolInputStart(id: tool.id, toolName: tool.name, providerMetadata: nil, providerExecuted: false))
+                continuation.yield(
+                    .toolInputStart(
+                        id: tool.id, toolName: tool.name, providerMetadata: nil,
+                        providerExecuted: false))
             }
 
         case .serverToolUse(let tool):
-            guard tool.name == "web_fetch" || tool.name == "web_search" || tool.name == "code_execution" else { return }
-            let state = ToolCallState(toolCallId: tool.id, toolName: tool.name, input: "", providerExecuted: true)
+            guard
+                tool.name == "web_fetch" || tool.name == "web_search"
+                    || tool.name == "code_execution"
+            else { return }
+            let state = ToolCallState(
+                toolCallId: tool.id, toolName: tool.name, input: "", providerExecuted: true)
             contentBlocks[value.index] = .toolCall(state)
-            continuation.yield(.toolInputStart(id: tool.id, toolName: tool.name, providerMetadata: nil, providerExecuted: true))
+            continuation.yield(
+                .toolInputStart(
+                    id: tool.id, toolName: tool.name, providerMetadata: nil, providerExecuted: true)
+            )
 
         case .webFetchResult(let result):
             if let toolResult = convertWebFetchToolResult(result) {
@@ -836,7 +890,8 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
             }
 
         case .webSearchResult(let result):
-            let (toolResult, sources) = convertWebSearchToolResult(result, generateSourceId: generateIdentifier)
+            let (toolResult, sources) = convertWebSearchToolResult(
+                result, generateSourceId: generateIdentifier)
             if let toolResult {
                 continuation.yield(.toolResult(toolResult))
             }
@@ -862,23 +917,29 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
         switch value.delta {
         case .textDelta(let text):
             guard usesJsonResponseTool == false else { return }
-            continuation.yield(.textDelta(id: String(value.index), delta: text, providerMetadata: nil))
+            continuation.yield(
+                .textDelta(id: String(value.index), delta: text, providerMetadata: nil))
 
         case .thinkingDelta(let thinking):
-            continuation.yield(.reasoningDelta(id: String(value.index), delta: thinking, providerMetadata: nil))
+            continuation.yield(
+                .reasoningDelta(id: String(value.index), delta: thinking, providerMetadata: nil))
 
         case .signatureDelta(let signature):
             guard blockType == "thinking" else { return }
             let metadata: SharedV3ProviderMetadata = [
                 "anthropic": ["signature": .string(signature)]
             ]
-            continuation.yield(.reasoningDelta(id: String(value.index), delta: "", providerMetadata: metadata))
+            continuation.yield(
+                .reasoningDelta(id: String(value.index), delta: "", providerMetadata: metadata))
 
         case .inputJSONDelta(let partialJSON):
             if usesJsonResponseTool {
-                continuation.yield(.textDelta(id: String(value.index), delta: partialJSON, providerMetadata: nil))
+                continuation.yield(
+                    .textDelta(id: String(value.index), delta: partialJSON, providerMetadata: nil))
             } else if case .toolCall(var toolState) = contentBlocks[value.index] {
-                continuation.yield(.toolInputDelta(id: toolState.toolCallId, delta: partialJSON, providerMetadata: nil))
+                continuation.yield(
+                    .toolInputDelta(
+                        id: toolState.toolCallId, delta: partialJSON, providerMetadata: nil))
                 toolState.input += partialJSON
                 contentBlocks[value.index] = .toolCall(toolState)
             }
@@ -924,7 +985,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
     private func anthropicUsageMetadata(_ usage: AnthropicUsage) -> [String: JSONValue] {
         var metadata: [String: JSONValue] = [
             "input_tokens": .number(Double(usage.inputTokens)),
-            "output_tokens": .number(Double(usage.outputTokens))
+            "output_tokens": .number(Double(usage.outputTokens)),
         ]
         if let cacheCreation = usage.cacheCreationInputTokens {
             metadata["cache_creation_input_tokens"] = .number(Double(cacheCreation))
@@ -940,9 +1001,13 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
         return try? JSONDecoder().decode(JSONValue.self, from: data)
     }
 
-    private func convertWebFetchToolResult(_ content: WebFetchToolResultContent) -> LanguageModelV3ToolResult? {
+    private func convertWebFetchToolResult(_ content: WebFetchToolResultContent)
+        -> LanguageModelV3ToolResult?
+    {
         guard case .object(let payload) = content.content else { return nil }
-        guard let typeValue = payload["type"], case .string(let type) = typeValue else { return nil }
+        guard let typeValue = payload["type"], case .string(let type) = typeValue else {
+            return nil
+        }
 
         if type == "web_fetch_result" {
             let url = payload["url"] ?? .string("")
@@ -950,19 +1015,20 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
             var resultObject: [String: JSONValue] = [
                 "type": .string("web_fetch_result"),
                 "url": url,
-                "retrievedAt": retrievedAt
+                "retrievedAt": retrievedAt,
             ]
 
             if let contentValue = payload["content"], case .object(let inner) = contentValue,
-               let sourceValue = inner["source"], case .object(let sourceObject) = sourceValue {
+                let sourceValue = inner["source"], case .object(let sourceObject) = sourceValue
+            {
                 var mappedContent: [String: JSONValue] = [
                     "type": inner["type"] ?? .string("document"),
-                    "title": inner["title"] ?? .string("")
+                    "title": inner["title"] ?? .string(""),
                 ]
                 mappedContent["source"] = .object([
                     "type": sourceObject["type"] ?? .string("base64"),
                     "mediaType": sourceObject["media_type"] ?? .string(""),
-                    "data": sourceObject["data"] ?? .string("")
+                    "data": sourceObject["data"] ?? .string(""),
                 ])
                 if let citations = inner["citations"] {
                     mappedContent["citations"] = citations
@@ -984,7 +1050,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                 toolName: "web_fetch",
                 result: .object([
                     "type": .string("web_fetch_tool_result_error"),
-                    "errorCode": payload["error_code"] ?? .null
+                    "errorCode": payload["error_code"] ?? .null,
                 ]),
                 isError: true,
                 providerExecuted: true
@@ -1008,19 +1074,24 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                 let urlValue = object["url"] ?? .string("")
                 let titleValue = object["title"] ?? .string("")
                 let pageAge = object["page_age"] ?? .null
-                resultsJSON.append(.object([
-                    "url": urlValue,
-                    "title": titleValue,
-                    "pageAge": pageAge,
-                    "encryptedContent": object["encrypted_content"] ?? .string("")
-                ]))
+                resultsJSON.append(
+                    .object([
+                        "url": urlValue,
+                        "title": titleValue,
+                        "pageAge": pageAge,
+                        "encryptedContent": object["encrypted_content"] ?? .string(""),
+                    ]))
 
                 if case .string(let url) = urlValue,
-                   case .string(let title) = titleValue {
+                    case .string(let title) = titleValue
+                {
                     let metadata: SharedV3ProviderMetadata = [
                         "anthropic": ["pageAge": pageAge]
                     ]
-                    sources.append(.url(id: generateSourceId(), url: url, title: title, providerMetadata: metadata))
+                    sources.append(
+                        .url(
+                            id: generateSourceId(), url: url, title: title,
+                            providerMetadata: metadata))
                 }
             }
 
@@ -1038,7 +1109,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                 toolName: "web_search",
                 result: .object([
                     "type": .string("web_search_tool_result_error"),
-                    "errorCode": object["error_code"] ?? .null
+                    "errorCode": object["error_code"] ?? .null,
                 ]),
                 isError: true,
                 providerExecuted: true
@@ -1050,9 +1121,13 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
         }
     }
 
-    private func convertCodeExecutionToolResult(_ content: CodeExecutionToolResultContent) -> LanguageModelV3ToolResult? {
+    private func convertCodeExecutionToolResult(_ content: CodeExecutionToolResultContent)
+        -> LanguageModelV3ToolResult?
+    {
         guard case .object(let payload) = content.content else { return nil }
-        guard let typeValue = payload["type"], case .string(let type) = typeValue else { return nil }
+        guard let typeValue = payload["type"], case .string(let type) = typeValue else {
+            return nil
+        }
 
         if type == "code_execution_result" {
             return LanguageModelV3ToolResult(
@@ -1060,9 +1135,9 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                 toolName: "code_execution",
                 result: .object([
                     "type": .string("code_execution_result"),
-                    "stdout": payload["stdout"] ?? .string("") ,
-                    "stderr": payload["stderr"] ?? .string("") ,
-                    "return_code": payload["return_code"] ?? .number(0)
+                    "stdout": payload["stdout"] ?? .string(""),
+                    "stderr": payload["stderr"] ?? .string(""),
+                    "return_code": payload["return_code"] ?? .number(0),
                 ]),
                 providerExecuted: true
             )
@@ -1074,7 +1149,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                 toolName: "code_execution",
                 result: .object([
                     "type": .string("code_execution_tool_result_error"),
-                    "errorCode": payload["error_code"] ?? .null
+                    "errorCode": payload["error_code"] ?? .null,
                 ]),
                 isError: true,
                 providerExecuted: true
@@ -1085,12 +1160,13 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
     }
     private func stringifyJSON(_ value: JSONValue?) -> String {
         guard let value else { return "null" }
-        if let data = try? JSONEncoder().encode(value), let string = String(data: data, encoding: .utf8) {
+        if let data = try? JSONEncoder().encode(value),
+            let string = String(data: data, encoding: .utf8)
+        {
             return string
         }
         return "null"
     }
-
 
     private func makeProviderMetadata(
         response: AnthropicMessagesResponse,
@@ -1102,9 +1178,15 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
         anthropicMetadata["usage"] = .object([
             "input_tokens": .number(Double(response.usage.inputTokens)),
             "output_tokens": .number(Double(response.usage.outputTokens)),
-            "cache_creation_input_tokens": response.usage.cacheCreationInputTokens.map { .number(Double($0)) } ?? .null,
-            "cache_read_input_tokens": response.usage.cacheReadInputTokens.map { .number(Double($0)) } ?? .null
+            "cache_creation_input_tokens": response.usage.cacheCreationInputTokens.map {
+                .number(Double($0))
+            } ?? .null,
+            "cache_read_input_tokens": response.usage.cacheReadInputTokens.map {
+                .number(Double($0))
+            } ?? .null,
         ])
+        anthropicMetadata["cacheCreationInputTokens"] =
+            response.usage.cacheCreationInputTokens.map { .number(Double($0)) } ?? .null
         anthropicMetadata["stopReason"] = response.stopReason.map(JSONValue.string) ?? .null
         anthropicMetadata["stopSequence"] = response.stopSequence.map(JSONValue.string) ?? .null
         if !betas.isEmpty {
@@ -1115,8 +1197,8 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
     }
 }
 
-private extension Array {
-    subscript(safe index: Int) -> Element? {
+extension Array {
+    fileprivate subscript(safe index: Int) -> Element? {
         guard indices.contains(index) else { return nil }
         return self[index]
     }

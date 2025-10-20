@@ -458,6 +458,648 @@ struct AnthropicMessagesLanguageModelGenerateTests {
             Issue.record("Missing captured request")
         }
     }
+
+    // MARK: - Batch 2: Response Parsing Tests
+
+    @Test("should extract text response")
+    func extractsTextResponse() async throws {
+        let responseJSON: [String: Any] = [
+            "type": "message",
+            "id": "msg_017TfcQ4AgGxKyBduUpqYPZn",
+            "model": "claude-3-haiku-20240307",
+            "content": [["type": "text", "text": "Hello, World!"]],
+            "stop_reason": "end_turn",
+            "stop_sequence": NSNull(),
+            "usage": [
+                "input_tokens": 4,
+                "output_tokens": 30
+            ]
+        ]
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.anthropic.com/v1/messages")!,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: nil
+        )!
+
+        let fetch: FetchFunction = { _ in
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: makeConfig(fetch: fetch)
+        )
+
+        let result = try await model.doGenerate(options: .init(prompt: testPrompt))
+
+        #expect(result.content.count == 1)
+        if case .text(let textContent) = result.content.first {
+            #expect(textContent.text == "Hello, World!")
+        } else {
+            Issue.record("Expected text content")
+        }
+    }
+
+    @Test("should extract tool calls")
+    func extractsToolCalls() async throws {
+        let responseJSON: [String: Any] = [
+            "type": "message",
+            "id": "msg_017TfcQ4AgGxKyBduUpqYPZn",
+            "model": "claude-3-haiku-20240307",
+            "content": [
+                ["type": "text", "text": "Some text\n\n"],
+                [
+                    "type": "tool_use",
+                    "id": "toolu_1",
+                    "name": "test-tool",
+                    "input": ["value": "example value"]
+                ]
+            ],
+            "stop_reason": "tool_use",
+            "stop_sequence": NSNull(),
+            "usage": [
+                "input_tokens": 4,
+                "output_tokens": 30
+            ]
+        ]
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.anthropic.com/v1/messages")!,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: nil
+        )!
+
+        let fetch: FetchFunction = { _ in
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: makeConfig(fetch: fetch)
+        )
+
+        let result = try await model.doGenerate(options: .init(
+            prompt: testPrompt,
+            tools: [
+                .function(LanguageModelV3FunctionTool(
+                    name: "test-tool",
+                    inputSchema: .object([
+                        "type": .string("object"),
+                        "properties": .object([
+                            "value": .object(["type": .string("string")])
+                        ]),
+                        "required": .array([.string("value")]),
+                        "additionalProperties": .bool(false),
+                        "$schema": .string("http://json-schema.org/draft-07/schema#")
+                    ])
+                ))
+            ]
+        ))
+
+        #expect(result.content.count == 2)
+        #expect(result.finishReason == .toolCalls)
+
+        // First element: text
+        if case .text(let textContent) = result.content[0] {
+            #expect(textContent.text == "Some text\n\n")
+        } else {
+            Issue.record("Expected text content at index 0")
+        }
+
+        // Second element: tool call
+        if case .toolCall(let toolCall) = result.content[1] {
+            #expect(toolCall.toolCallId == "toolu_1")
+            #expect(toolCall.toolName == "test-tool")
+            #expect(toolCall.input == "{\"value\":\"example value\"}")
+        } else {
+            Issue.record("Expected tool call at index 1")
+        }
+    }
+
+    @Test("should extract usage")
+    func extractsUsage() async throws {
+        let responseJSON: [String: Any] = [
+            "type": "message",
+            "id": "msg_017TfcQ4AgGxKyBduUpqYPZn",
+            "model": "claude-3-haiku-20240307",
+            "content": [["type": "text", "text": ""]],
+            "stop_reason": "end_turn",
+            "stop_sequence": NSNull(),
+            "usage": [
+                "input_tokens": 20,
+                "output_tokens": 5
+            ]
+        ]
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.anthropic.com/v1/messages")!,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: nil
+        )!
+
+        let fetch: FetchFunction = { _ in
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: makeConfig(fetch: fetch)
+        )
+
+        let result = try await model.doGenerate(options: .init(prompt: testPrompt))
+
+        #expect(result.usage.inputTokens == 20)
+        #expect(result.usage.outputTokens == 5)
+        #expect(result.usage.totalTokens == 25)
+        #expect(result.usage.cachedInputTokens == nil)
+    }
+
+    @Test("should send additional response information")
+    func sendsAdditionalResponseInformation() async throws {
+        let responseJSON: [String: Any] = [
+            "type": "message",
+            "id": "test-id",
+            "model": "test-model",
+            "content": [["type": "text", "text": ""]],
+            "stop_reason": "end_turn",
+            "stop_sequence": NSNull(),
+            "usage": [
+                "input_tokens": 4,
+                "output_tokens": 30
+            ]
+        ]
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.anthropic.com/v1/messages")!,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: ["Content-Type": "application/json", "Content-Length": "203"]
+        )!
+
+        let fetch: FetchFunction = { _ in
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: makeConfig(fetch: fetch)
+        )
+
+        let result = try await model.doGenerate(options: .init(prompt: testPrompt))
+
+        #expect(result.response != nil)
+        if let response = result.response {
+            #expect(response.id == "test-id")
+            #expect(response.modelId == "test-model")
+            #expect(response.headers != nil)
+            #expect(response.headers?["content-type"] == "application/json")
+            #expect(response.headers?["content-length"] == "203")
+        } else {
+            Issue.record("Expected response metadata")
+        }
+    }
+
+    @Test("should include stop_sequence in provider metadata")
+    func includesStopSequenceInProviderMetadata() async throws {
+        let responseJSON: [String: Any] = [
+            "type": "message",
+            "id": "msg_017TfcQ4AgGxKyBduUpqYPZn",
+            "model": "claude-3-haiku-20240307",
+            "content": [["type": "text", "text": "Hello, World!"]],
+            "stop_reason": "stop_sequence",
+            "stop_sequence": "STOP",
+            "usage": [
+                "input_tokens": 4,
+                "output_tokens": 30
+            ]
+        ]
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.anthropic.com/v1/messages")!,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: nil
+        )!
+
+        let fetch: FetchFunction = { _ in
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: makeConfig(fetch: fetch)
+        )
+
+        let result = try await model.doGenerate(options: .init(
+            prompt: testPrompt,
+            stopSequences: ["STOP"]
+        ))
+
+        // Check providerMetadata matches upstream structure
+        if let metadata = result.providerMetadata?["anthropic"] {
+            // Check stopSequence
+            if let stopSeq = metadata["stopSequence"], case .string(let stopSeqValue) = stopSeq {
+                #expect(stopSeqValue == "STOP")
+            } else {
+                Issue.record("Expected stopSequence in metadata")
+            }
+
+            // Check usage object
+            if let usage = metadata["usage"], case .object(let usageObject) = usage {
+                #expect(usageObject["input_tokens"] == .number(4))
+                #expect(usageObject["output_tokens"] == .number(30))
+            } else {
+                Issue.record("Expected usage in metadata")
+            }
+
+            // Check cacheCreationInputTokens is null (top-level)
+            if let cacheTokens = metadata["cacheCreationInputTokens"], case .null = cacheTokens {
+                // Expected null value
+            } else {
+                Issue.record("Expected cacheCreationInputTokens to be null")
+            }
+        } else {
+            Issue.record("Expected anthropic provider metadata")
+        }
+    }
+
+    // MARK: - Batch 3: Advanced Response Parsing Tests
+
+    @Test("should extract reasoning response")
+    func extractsReasoningResponse() async throws {
+        let responseJSON: [String: Any] = [
+            "id": "msg_123",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-3-haiku-20240307",
+            "content": [
+                [
+                    "type": "thinking",
+                    "thinking": "I am thinking...",
+                    "signature": "1234567890"
+                ],
+                [
+                    "type": "text",
+                    "text": "Hello, World!"
+                ]
+            ],
+            "stop_reason": "end_turn",
+            "stop_sequence": NSNull(),
+            "usage": [
+                "input_tokens": 10,
+                "output_tokens": 20
+            ]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(url: URL(string: "https://api.anthropic.com/v1/messages")!,
+                                          statusCode: 200,
+                                          httpVersion: nil,
+                                          headerFields: ["content-type": "application/json"])!
+
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: makeConfig(fetch: fetch)
+        )
+
+        let result = try await model.doGenerate(options: .init(prompt: testPrompt))
+
+        #expect(result.content.count == 2)
+
+        // First content should be reasoning
+        if case .reasoning(let reasoning) = result.content[0] {
+            #expect(reasoning.text == "I am thinking...")
+            if let providerMetadata = reasoning.providerMetadata,
+               let anthropicMeta = providerMetadata["anthropic"],
+               let signature = anthropicMeta["signature"],
+               case .string(let sig) = signature {
+                #expect(sig == "1234567890")
+            } else {
+                Issue.record("Expected signature in reasoning provider metadata")
+            }
+        } else {
+            Issue.record("Expected first content to be reasoning, got: \(result.content[0])")
+        }
+
+        // Second content should be text
+        if case .text(let text) = result.content[1] {
+            #expect(text.text == "Hello, World!")
+        } else {
+            Issue.record("Expected second content to be text")
+        }
+    }
+
+    @Test("should return the json response")
+    func returnsJsonResponse() async throws {
+        let responseJSON: [String: Any] = [
+            "id": "msg_123",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-3-haiku-20240307",
+            "content": [
+                [
+                    "type": "text",
+                    "text": "Some text\n\n"
+                ],
+                [
+                    "type": "tool_use",
+                    "id": "toolu_1",
+                    "name": "json",
+                    "input": ["name": "example value"]
+                ]
+            ],
+            "stop_reason": "tool_use",
+            "stop_sequence": NSNull(),
+            "usage": [
+                "input_tokens": 10,
+                "output_tokens": 20
+            ]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(url: URL(string: "https://api.anthropic.com/v1/messages")!,
+                                          statusCode: 200,
+                                          httpVersion: nil,
+                                          headerFields: ["content-type": "application/json"])!
+
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: makeConfig(fetch: fetch)
+        )
+
+        let schema: JSONValue = .object([
+            "type": .string("object"),
+            "properties": .object([
+                "name": .object(["type": .string("string")])
+            ]),
+            "required": .array([.string("name")]),
+            "additionalProperties": .bool(false)
+        ])
+
+        let result = try await model.doGenerate(options: .init(
+            prompt: testPrompt,
+            responseFormat: .json(schema: schema, name: nil, description: nil)
+        ))
+
+        // JSON response format should return the tool input as text
+        #expect(result.content.count == 1)
+        if case .text(let text) = result.content[0] {
+            #expect(text.text == "{\"name\":\"example value\"}")
+        } else {
+            Issue.record("Expected text content with JSON string")
+        }
+    }
+
+    @Test("should expose the raw response headers")
+    func exposesRawResponseHeaders() async throws {
+        let responseJSON: [String: Any] = [
+            "id": "msg_123",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-3-haiku-20240307",
+            "content": [
+                ["type": "text", "text": "Hello!"]
+            ],
+            "stop_reason": "end_turn",
+            "stop_sequence": NSNull(),
+            "usage": [
+                "input_tokens": 10,
+                "output_tokens": 5
+            ]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(url: URL(string: "https://api.anthropic.com/v1/messages")!,
+                                          statusCode: 200,
+                                          httpVersion: nil,
+                                          headerFields: [
+                                            "content-type": "application/json",
+                                            "content-length": "237",
+                                            "test-header": "test-value"
+                                          ])!
+
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: makeConfig(fetch: fetch)
+        )
+
+        let result = try await model.doGenerate(options: .init(prompt: testPrompt))
+
+        // Check headers are exposed
+        #expect(result.response != nil)
+        if let response = result.response {
+            #expect(response.headers != nil)
+            #expect(response.headers?["content-type"] == "application/json")
+            #expect(response.headers?["content-length"] == "237")
+            #expect(response.headers?["test-header"] == "test-value")
+        } else {
+            Issue.record("Expected response metadata")
+        }
+    }
+
+    @Test("should process PDF citation responses")
+    func processesPdfCitationResponses() async throws {
+        let responseJSON: [String: Any] = [
+            "id": "msg_123",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-3-haiku-20240307",
+            "content": [
+                [
+                    "type": "text",
+                    "text": "Based on the document, the results show positive growth.",
+                    "citations": [
+                        [
+                            "type": "page_location",
+                            "cited_text": "Revenue increased by 25% year over year",
+                            "document_index": 0,
+                            "document_title": "Financial Report 2023",
+                            "start_page_number": 5,
+                            "end_page_number": 6
+                        ]
+                    ]
+                ]
+            ],
+            "stop_reason": "end_turn",
+            "stop_sequence": NSNull(),
+            "usage": [
+                "input_tokens": 100,
+                "output_tokens": 50
+            ]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(url: URL(string: "https://api.anthropic.com/v1/messages")!,
+                                          statusCode: 200,
+                                          httpVersion: nil,
+                                          headerFields: ["content-type": "application/json"])!
+
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: makeConfig(fetch: fetch)
+        )
+
+        let pdfFile = LanguageModelV3FilePart(
+            data: .base64("base64PDFdata"),
+            mediaType: "application/pdf",
+            filename: "financial-report.pdf",
+            providerOptions: ["anthropic": ["citations": .object(["enabled": .bool(true)])]]
+        )
+
+        let result = try await model.doGenerate(options: .init(prompt: [
+            .user(content: [
+                .file(pdfFile),
+                .text(.init(text: "What do the results show?"))
+            ], providerOptions: nil)
+        ]))
+
+        // Should have 2 content items: text + source citation
+        #expect(result.content.count == 2)
+
+        // First should be text
+        if case .text(let text) = result.content[0] {
+            #expect(text.text == "Based on the document, the results show positive growth.")
+        } else {
+            Issue.record("Expected text content")
+        }
+
+        // Second should be source citation
+        if case .source(.document(_, let mediaType, let title, _, let providerMetadata)) = result.content[1] {
+            #expect(title == "Financial Report 2023")
+            #expect(mediaType == "application/pdf")
+
+            // Check provider metadata for citation details
+            if let anthropicMeta = providerMetadata?["anthropic"] {
+                if let citedText = anthropicMeta["citedText"], case .string(let text) = citedText {
+                    #expect(text == "Revenue increased by 25% year over year")
+                }
+                if let startPage = anthropicMeta["startPageNumber"], case .number(let page) = startPage {
+                    #expect(page == 5)
+                }
+                if let endPage = anthropicMeta["endPageNumber"], case .number(let page) = endPage {
+                    #expect(page == 6)
+                }
+            } else {
+                Issue.record("Expected anthropic provider metadata in source")
+            }
+        } else {
+            Issue.record("Expected source citation content")
+        }
+    }
+
+    @Test("should process text citation responses")
+    func processesTextCitationResponses() async throws {
+        let responseJSON: [String: Any] = [
+            "id": "msg_123",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-3-haiku-20240307",
+            "content": [
+                [
+                    "type": "text",
+                    "text": "The text shows important information.",
+                    "citations": [
+                        [
+                            "type": "char_location",
+                            "cited_text": "important information",
+                            "document_index": 0,
+                            "document_title": "Test Document",
+                            "start_char_index": 15,
+                            "end_char_index": 35
+                        ]
+                    ]
+                ]
+            ],
+            "stop_reason": "end_turn",
+            "stop_sequence": NSNull(),
+            "usage": [
+                "input_tokens": 50,
+                "output_tokens": 30
+            ]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(url: URL(string: "https://api.anthropic.com/v1/messages")!,
+                                          statusCode: 200,
+                                          httpVersion: nil,
+                                          headerFields: ["content-type": "application/json"])!
+
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: makeConfig(fetch: fetch)
+        )
+
+        let textFile = LanguageModelV3FilePart(
+            data: .base64("VGVzdCBkb2N1bWVudCBjb250ZW50"),
+            mediaType: "text/plain",
+            filename: "test.txt",
+            providerOptions: ["anthropic": ["citations": .object(["enabled": .bool(true)])]]
+        )
+
+        let result = try await model.doGenerate(options: .init(prompt: [
+            .user(content: [
+                .file(textFile),
+                .text(.init(text: "What does this say?"))
+            ], providerOptions: nil)
+        ]))
+
+        // Should have 2 content items: text + source citation
+        #expect(result.content.count == 2)
+
+        // First should be text
+        if case .text(let text) = result.content[0] {
+            #expect(text.text == "The text shows important information.")
+        } else {
+            Issue.record("Expected text content")
+        }
+
+        // Second should be source citation
+        if case .source(.document(_, let mediaType, let title, _, let providerMetadata)) = result.content[1] {
+            #expect(title == "Test Document")
+            #expect(mediaType == "text/plain")
+
+            // Check provider metadata for citation details
+            if let anthropicMeta = providerMetadata?["anthropic"] {
+                if let citedText = anthropicMeta["citedText"], case .string(let text) = citedText {
+                    #expect(text == "important information")
+                }
+                if let startChar = anthropicMeta["startCharIndex"], case .number(let index) = startChar {
+                    #expect(index == 15)
+                }
+                if let endChar = anthropicMeta["endCharIndex"], case .number(let index) = endChar {
+                    #expect(index == 35)
+                }
+            } else {
+                Issue.record("Expected anthropic provider metadata in source")
+            }
+        } else {
+            Issue.record("Expected source citation content")
+        }
+    }
 }
 
 @Suite("AnthropicMessagesLanguageModel doStream")
