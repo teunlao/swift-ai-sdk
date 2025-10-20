@@ -1,0 +1,411 @@
+---
+title: Language Model Middleware
+description: Learn how to use middleware to enhance the behavior of language models
+---
+
+_This page adapts the original AI SDK documentation: [Language Model Middleware](https://ai-sdk.dev/docs/ai-sdk-core/middleware)._
+
+# Language Model Middleware
+
+Language model middleware is a way to enhance the behavior of language models
+by intercepting and modifying the calls to the language model.
+
+It can be used to add features like guardrails, RAG, caching, and logging
+in a language model agnostic way. Such middleware can be developed and
+distributed independently from the language models that they are applied to.
+
+## Using Language Model Middleware
+
+You can use language model middleware with the `wrapLanguageModel` function.
+It takes a language model and a language model middleware and returns a new
+language model that incorporates the middleware.
+
+```swift
+import SwiftAISDK
+
+let wrappedLanguageModel = wrapLanguageModel(
+  model: yourModel,
+  middleware: .single(yourLanguageModelMiddleware)
+)
+```
+
+The wrapped language model can be used just like any other language model, e.g. in `streamText`:
+
+```swift highlight="2"
+let result = try await streamText(
+  model: wrappedLanguageModel,
+  prompt: "What cities are in the United States?"
+)
+```
+
+## Multiple Middlewares
+
+You can provide multiple middlewares to the `wrapLanguageModel` function.
+The middlewares will be applied in the order they are provided.
+
+```swift
+let wrappedLanguageModel = wrapLanguageModel(
+  model: yourModel,
+  middleware: .multiple([firstMiddleware, secondMiddleware])
+)
+
+// applied as: firstMiddleware(secondMiddleware(yourModel))
+```
+
+## Built-in Middleware
+
+The AI SDK comes with several built-in middlewares that you can use to configure language models:
+
+- `extractReasoningMiddleware`: Extracts reasoning information from the generated text and exposes it as a `reasoning` property on the result.
+- `simulateStreamingMiddleware`: Simulates streaming behavior with responses from non-streaming language models.
+- `defaultSettingsMiddleware`: Applies default settings to a language model.
+
+### Extract Reasoning
+
+Some providers and models expose reasoning information in the generated text using special tags,
+e.g. `<think>` and `</think>`.
+
+The `extractReasoningMiddleware` function can be used to extract this reasoning information and expose it as a `reasoning` property on the result.
+
+```swift
+import SwiftAISDK
+
+let model = wrapLanguageModel(
+  model: yourModel,
+  middleware: .single(extractReasoningMiddleware(
+    options: ExtractReasoningOptions(tagName: "think")
+  ))
+)
+```
+
+You can then use that enhanced model in functions like `generateText` and `streamText`.
+
+The `extractReasoningMiddleware` function also includes a `startWithReasoning` option.
+When set to `true`, the reasoning tag will be prepended to the generated text.
+This is useful for models that do not include the reasoning tag at the beginning of the response.
+
+### Simulate Streaming
+
+The `simulateStreamingMiddleware` function can be used to simulate streaming behavior with responses from non-streaming language models.
+This is useful when you want to maintain a consistent streaming interface even when using models that only provide complete responses.
+
+```swift
+import SwiftAISDK
+
+let model = wrapLanguageModel(
+  model: yourModel,
+  middleware: .single(simulateStreamingMiddleware())
+)
+```
+
+### Default Settings
+
+The `defaultSettingsMiddleware` function can be used to apply default settings to a language model.
+
+```swift
+import SwiftAISDK
+
+let model = wrapLanguageModel(
+  model: yourModel,
+  middleware: .single(defaultSettingsMiddleware(
+    settings: DefaultSettings(
+      maxOutputTokens: 800,
+      temperature: 0.5,
+      providerOptions: ["openai": ["store": false]]
+    )
+  ))
+)
+```
+
+## Community Middleware
+
+The AI SDK provides a Language Model Middleware specification. Community members can develop middleware that adheres to this specification, making it compatible with the AI SDK ecosystem.
+
+> Note
+> Community middleware is currently primarily available for the TypeScript AI SDK. Swift middleware development is encouraged and will follow the same specification patterns.
+
+## Implementing Language Model Middleware
+
+> Warning
+> Implementing language model middleware is advanced functionality and requires
+> a solid understanding of the language model specification.
+
+You can implement any of the following three functions to modify the behavior of the language model:
+
+1. `transformParams`: Transforms the parameters before they are passed to the language model, for both `doGenerate` and `doStream`.
+2. `wrapGenerate`: Wraps the `doGenerate` method of the language model.
+   You can modify the parameters, call the language model, and modify the result.
+3. `wrapStream`: Wraps the `doStream` method of the language model.
+   You can modify the parameters, call the language model, and modify the result.
+
+Here are some examples of how to implement language model middleware:
+
+## Examples
+
+> Note
+> These examples are not meant to be used in production. They are just to show
+> how you can use middleware to enhance the behavior of language models.
+
+### Logging
+
+This example shows how to log the parameters and generated text of a language model call.
+
+```swift
+import Foundation
+import AISDKProvider
+
+func yourLogMiddleware() -> LanguageModelV3Middleware {
+  LanguageModelV3Middleware(
+    wrapGenerate: { doGenerate, _, params, _ in
+      print("doGenerate called")
+      print("params: \(params)")
+
+      let result = try await doGenerate()
+
+      print("doGenerate finished")
+
+      // Collect text from content
+      let text = result.content.compactMap { content -> String? in
+        if case .text(let textPart) = content {
+          return textPart.text
+        }
+        return nil
+      }.joined()
+
+      print("generated text: \(text)")
+
+      return result
+    },
+
+    wrapStream: { _, doStream, params, _ in
+      print("doStream called")
+      print("params: \(params)")
+
+      let result = try await doStream()
+
+      var generatedText = ""
+      var textBlocks: [String: String] = [:]
+
+      let transformedStream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+        Task {
+          do {
+            for try await chunk in result.stream {
+              switch chunk {
+              case .textStart(let id, _):
+                textBlocks[id] = ""
+
+              case .textDelta(let id, let delta, _):
+                let existing = textBlocks[id] ?? ""
+                textBlocks[id] = existing + delta
+                generatedText += delta
+
+              case .textEnd(let id, _):
+                print("Text block \(id) completed: \(textBlocks[id] ?? "")")
+
+              default:
+                break
+              }
+
+              continuation.yield(chunk)
+            }
+
+            print("doStream finished")
+            print("generated text: \(generatedText)")
+
+            continuation.finish()
+          } catch {
+            continuation.finish(throwing: error)
+          }
+        }
+      }
+
+      return LanguageModelV3StreamResult(
+        stream: transformedStream,
+        request: result.request,
+        response: result.response
+      )
+    }
+  )
+}
+```
+
+### Caching
+
+This example shows how to build a simple cache for the generated text of a language model call.
+
+```swift
+import Foundation
+import AISDKProvider
+
+actor CacheStorage {
+  private var cache: [String: LanguageModelV3GenerateResult] = [:]
+
+  func get(_ key: String) -> LanguageModelV3GenerateResult? {
+    cache[key]
+  }
+
+  func set(_ key: String, value: LanguageModelV3GenerateResult) {
+    cache[key] = value
+  }
+}
+
+func yourCacheMiddleware(cache: CacheStorage) -> LanguageModelV3Middleware {
+  LanguageModelV3Middleware(
+    wrapGenerate: { doGenerate, _, params, _ in
+      // Create cache key from params
+      let encoder = JSONEncoder()
+      let cacheKey = String(data: try! encoder.encode(params.prompt.description), encoding: .utf8)!
+
+      if let cached = await cache.get(cacheKey) {
+        return cached
+      }
+
+      let result = try await doGenerate()
+      await cache.set(cacheKey, value: result)
+
+      return result
+    }
+
+    // Here you would implement the caching logic for streaming
+  )
+}
+```
+
+### Retrieval Augmented Generation (RAG)
+
+This example shows how to use RAG as middleware.
+
+> Note
+> Helper functions like `getLastUserMessageText` and `findSources` are not part
+> of the AI SDK. They are just used in this example to illustrate the concept of
+> RAG.
+
+```swift
+import Foundation
+import AISDKProvider
+
+func yourRagMiddleware(findSources: @escaping (String) -> [String]) -> LanguageModelV3Middleware {
+  LanguageModelV3Middleware(
+    transformParams: { type, params, model in
+      // Extract last user message
+      let lastUserMessage = params.prompt.messages.last { message in
+        if case .user = message.role {
+          return true
+        }
+        return false
+      }
+
+      guard let userMessage = lastUserMessage,
+            let text = getLastUserMessageText(message: userMessage) else {
+        return params // do not use RAG (send unmodified parameters)
+      }
+
+      // Find relevant sources
+      let sources = findSources(text)
+      let instruction = """
+        Use the following information to answer the question:
+        \(sources.joined(separator: "\n"))
+        """
+
+      // Add instruction to last user message
+      return addToLastUserMessage(params: params, text: instruction)
+    }
+  )
+}
+
+// Helper function (example implementation)
+func getLastUserMessageText(message: LanguageModelV3Prompt.Message) -> String? {
+  if case .user(let content) = message.role {
+    if case .text(let text) = content.first {
+      return text
+    }
+  }
+  return nil
+}
+
+// Helper function (example implementation)
+func addToLastUserMessage(params: LanguageModelV3CallOptions, text: String) -> LanguageModelV3CallOptions {
+  // Implementation would modify the last user message to include the instruction
+  // This is simplified - actual implementation depends on your prompt structure
+  return params
+}
+```
+
+### Guardrails
+
+Guard rails are a way to ensure that the generated text of a language model call
+is safe and appropriate. This example shows how to use guardrails as middleware.
+
+```swift
+import Foundation
+import AISDKProvider
+
+func yourGuardrailMiddleware(badWords: [String]) -> LanguageModelV3Middleware {
+  LanguageModelV3Middleware(
+    wrapGenerate: { doGenerate, _, _, _ in
+      let result = try await doGenerate()
+
+      // Filter approach, e.g. for PII or other sensitive information
+      let cleanedContent = result.content.map { content -> LanguageModelV3Content in
+        if case .text(let textPart) = content {
+          var cleanedText = textPart.text
+          for badWord in badWords {
+            cleanedText = cleanedText.replacingOccurrences(of: badWord, with: "<REDACTED>")
+          }
+          return .text(LanguageModelV3Text(
+            text: cleanedText,
+            providerMetadata: textPart.providerMetadata
+          ))
+        }
+        return content
+      }
+
+      return LanguageModelV3GenerateResult(
+        content: cleanedContent,
+        finishReason: result.finishReason,
+        usage: result.usage,
+        providerMetadata: result.providerMetadata,
+        request: result.request,
+        response: result.response,
+        warnings: result.warnings
+      )
+    }
+
+    // Here you would implement the guardrail logic for streaming
+    // Note: streaming guardrails are difficult to implement, because
+    // you do not know the full content of the stream until it's finished.
+  )
+}
+```
+
+## Configuring Per Request Custom Metadata
+
+To send and access custom metadata in Middleware, you can use `providerOptions`. This is useful when building logging middleware where you want to pass additional context like user IDs, timestamps, or other contextual data that can help with tracking and debugging.
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+
+func yourLogMiddleware() -> LanguageModelV3Middleware {
+  LanguageModelV3Middleware(
+    wrapGenerate: { doGenerate, _, params, _ in
+      if let metadata = params.providerOptions?["yourLogMiddleware"] {
+        print("METADATA", metadata)
+      }
+      let result = try await doGenerate()
+      return result
+    }
+  )
+}
+
+let result = try await generateText(
+  model: wrapLanguageModel(
+    model: openai("gpt-4o"),
+    middleware: .single(yourLogMiddleware())
+  ),
+  prompt: "Invent a new holiday and describe its traditions.",
+  providerOptions: ["yourLogMiddleware": ["hello": "world"]]
+)
+
+print(result.text)
+```
