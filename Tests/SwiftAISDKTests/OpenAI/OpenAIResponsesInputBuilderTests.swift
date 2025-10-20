@@ -23,12 +23,7 @@ struct OpenAIResponsesInputBuilderTests {
         let expected: OpenAIResponsesInput = [
             .object([
                 "role": .string("system"),
-                "content": .array([
-                    .object([
-                        "type": .string("output_text"),
-                        "text": .string("Hello")
-                    ])
-                ])
+                "content": .string("Hello")
             ])
         ]
 
@@ -51,12 +46,7 @@ struct OpenAIResponsesInputBuilderTests {
         let expected: OpenAIResponsesInput = [
             .object([
                 "role": .string("developer"),
-                "content": .array([
-                    .object([
-                        "type": .string("output_text"),
-                        "text": .string("Hello")
-                    ])
-                ])
+                "content": .string("Hello")
             ])
         ]
 

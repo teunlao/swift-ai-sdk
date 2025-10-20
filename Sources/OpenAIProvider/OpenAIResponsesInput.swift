@@ -248,12 +248,7 @@ struct OpenAIResponsesInputBuilder {
     private static func systemItem(role: String, content: String) -> JSONValue {
         .object([
             "role": .string(role),
-            "content": .array([
-                .object([
-                    "type": .string("output_text"),
-                    "text": .string(content)
-                ])
-            ])
+            "content": .string(content)
         ])
     }
 
