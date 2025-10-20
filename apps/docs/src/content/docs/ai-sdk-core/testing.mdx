@@ -1,0 +1,237 @@
+---
+title: Testing
+description: Learn how to use AI SDK Core mock providers for testing.
+---
+
+_This page adapts the original AI SDK documentation: [Testing](https://ai-sdk.dev/docs/ai-sdk-core/testing)._
+
+## Testing
+
+Testing language models can be challenging, because they are non-deterministic and calling them is slow and expensive.
+
+To enable you to unit test your code that uses the AI SDK, the AI SDK Core includes mock providers and test helpers. You can import the following helpers from `SwiftAISDK`:
+
+- `MockLanguageModelV3`: A mock language model using the language model v3 specification
+- `MockImageModelV3`: A mock image model for testing image generation
+- `mockValues`: Iterates over an array of values with each call. Returns the last value when the array is exhausted
+- `simulateReadableStream`: Simulates a readable stream with delays
+
+With mock providers and test helpers, you can control the output of the AI SDK and test your code in a repeatable and deterministic way without actually calling a language model provider.
+
+## Examples
+
+You can use the test helpers with the AI Core functions in your unit tests:
+
+### generateText
+
+```swift
+import SwiftAISDK
+import AISDKProvider
+
+let result = try await generateText(
+  model: MockLanguageModelV3(
+    doGenerate: .function { _ in
+      LanguageModelV3GenerateResult(
+        content: [.text(LanguageModelV3Text(text: "Hello, world!"))],
+        finishReason: .stop,
+        usage: LanguageModelV3Usage(
+          inputTokens: 10,
+          outputTokens: 20
+        )
+      )
+    }
+  ),
+  prompt: "Hello, test!"
+)
+
+print(result.text) // "Hello, world!"
+```
+
+### streamText
+
+```swift
+import SwiftAISDK
+import AISDKProvider
+
+let result = try await streamText(
+  model: MockLanguageModelV3(
+    doStream: .function { _ in
+      LanguageModelV3StreamResult(
+        stream: simulateReadableStream(
+          chunks: [
+            .textStart(id: "text-1", providerMetadata: nil),
+            .textDelta(id: "text-1", delta: "Hello", providerMetadata: nil),
+            .textDelta(id: "text-1", delta: ", ", providerMetadata: nil),
+            .textDelta(id: "text-1", delta: "world!", providerMetadata: nil),
+            .textEnd(id: "text-1", providerMetadata: nil),
+            .finish(
+              finishReason: .stop,
+              usage: LanguageModelV3Usage(
+                inputTokens: 3,
+                outputTokens: 10
+              ),
+              providerMetadata: nil
+            )
+          ]
+        )
+      )
+    }
+  ),
+  prompt: "Hello, test!"
+)
+
+for try await textPart in result.textStream {
+  print(textPart, terminator: "")
+}
+// Prints: "Hello, world!"
+```
+
+### Recording Calls
+
+MockLanguageModelV3 records all calls to `doGenerate` and `doStream` for verification in tests:
+
+```swift
+import SwiftAISDK
+import AISDKProvider
+
+let mockModel = MockLanguageModelV3(
+  doGenerate: .function { _ in
+    LanguageModelV3GenerateResult(
+      content: [.text(LanguageModelV3Text(text: "Response"))],
+      finishReason: .stop,
+      usage: LanguageModelV3Usage(inputTokens: 5, outputTokens: 5)
+    )
+  }
+)
+
+// Make multiple calls
+let result1 = try await generateText(model: mockModel, prompt: "First call")
+let result2 = try await generateText(model: mockModel, prompt: "Second call")
+
+// Verify calls were recorded
+print(mockModel.doGenerateCalls.count) // 2
+```
+
+### Different Finish Reasons
+
+You can simulate different completion scenarios by returning different finish reasons:
+
+```swift
+import SwiftAISDK
+import AISDKProvider
+
+// Normal completion
+let stopModel = MockLanguageModelV3(
+  doGenerate: .function { _ in
+    LanguageModelV3GenerateResult(
+      content: [.text(LanguageModelV3Text(text: "Complete"))],
+      finishReason: .stop,
+      usage: LanguageModelV3Usage(inputTokens: 3, outputTokens: 2)
+    )
+  }
+)
+
+// Length limit reached
+let lengthModel = MockLanguageModelV3(
+  doGenerate: .function { _ in
+    LanguageModelV3GenerateResult(
+      content: [.text(LanguageModelV3Text(text: "Truncated..."))],
+      finishReason: .length,
+      usage: LanguageModelV3Usage(inputTokens: 3, outputTokens: 100)
+    )
+  }
+)
+
+let result1 = try await generateText(model: stopModel, prompt: "Test")
+print(result1.finishReason) // stop
+
+let result2 = try await generateText(model: lengthModel, prompt: "Test")
+print(result2.finishReason) // length
+```
+
+## Using mockValues Helper
+
+The `mockValues` helper is useful when you need to simulate different responses across multiple calls:
+
+```swift
+import SwiftAISDK
+import AISDKProvider
+
+// Create a mock that returns different values on each call
+let mockResponses = mockValues(
+  LanguageModelV3GenerateResult(
+    content: [.text(LanguageModelV3Text(text: "First response"))],
+    finishReason: .stop,
+    usage: LanguageModelV3Usage(inputTokens: 10, outputTokens: 5)
+  ),
+  LanguageModelV3GenerateResult(
+    content: [.text(LanguageModelV3Text(text: "Second response"))],
+    finishReason: .stop,
+    usage: LanguageModelV3Usage(inputTokens: 10, outputTokens: 5)
+  )
+)
+
+let model = MockLanguageModelV3(
+  doGenerate: .function { _ in mockResponses() }
+)
+
+// First call
+let result1 = try await generateText(model: model, prompt: "Test 1")
+print(result1.text) // "First response"
+
+// Second call
+let result2 = try await generateText(model: model, prompt: "Test 2")
+print(result2.text) // "Second response"
+
+// Third call - repeats last value
+let result3 = try await generateText(model: model, prompt: "Test 3")
+print(result3.text) // "Second response"
+```
+
+## Simulating Delays
+
+Use `simulateReadableStream` with delay parameters to simulate realistic streaming behavior:
+
+```swift
+import SwiftAISDK
+import AISDKProvider
+
+let result = try await streamText(
+  model: MockLanguageModelV3(
+    doStream: .function { _ in
+      LanguageModelV3StreamResult(
+        stream: simulateReadableStream(
+          chunks: [
+            .textStart(id: "text-1", providerMetadata: nil),
+            .textDelta(id: "text-1", delta: "Slow", providerMetadata: nil),
+            .textDelta(id: "text-1", delta: " stream", providerMetadata: nil),
+            .textEnd(id: "text-1", providerMetadata: nil),
+            .finish(
+              finishReason: .stop,
+              usage: LanguageModelV3Usage(inputTokens: 3, outputTokens: 2),
+              providerMetadata: nil
+            )
+          ],
+          initialDelayInMs: 1000, // Wait 1 second before first chunk
+          chunkDelayInMs: 300      // Wait 300ms between chunks
+        )
+      )
+    }
+  ),
+  prompt: "Hello"
+)
+
+for try await textPart in result.textStream {
+  print(textPart, terminator: "")
+}
+```
+
+## Best Practices
+
+1. **Use mocks for unit tests** - Test your business logic without calling real AI providers
+2. **Test edge cases** - Use mocks to simulate errors, empty responses, and unusual outputs
+3. **Verify call parameters** - Check `doGenerateCalls` and `doStreamCalls` on mock instances
+4. **Simulate realistic delays** - Use `simulateReadableStream` with delays to test timeout handling
+5. **Test with multiple responses** - Use `mockValues` to verify behavior across multiple calls
+6. **Keep tests fast** - Mock tests should run in milliseconds, not seconds
+7. **Test error handling** - Configure mocks to throw errors and verify your error handling code

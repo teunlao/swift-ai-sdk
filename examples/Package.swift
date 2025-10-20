@@ -153,6 +153,16 @@ let package = Package(
       ]
     ),
 
+    .executableTarget(
+      name: "TestingExample",
+      dependencies: [
+        "ExamplesCore",
+        .product(name: "SwiftAISDK", package: "swift-ai-sdk"),
+        .product(name: "AISDKProvider", package: "swift-ai-sdk"),
+        .product(name: "AISDKProviderUtils", package: "swift-ai-sdk"),
+      ]
+    ),
+
     // MARK: - Zod Adapter Examples
 
     .executableTarget(

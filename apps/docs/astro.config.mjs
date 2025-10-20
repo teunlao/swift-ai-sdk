@@ -44,7 +44,8 @@ export default defineConfig({
             { label: "Speech", link: "/ai-sdk-core/speech" },
             { label: "Language Model Middleware", link: "/ai-sdk-core/middleware" },
             { label: "Provider & Model Management", link: "/ai-sdk-core/provider-management" },
-            { label: "Error Handling", link: "/ai-sdk-core/error-handling" }
+            { label: "Error Handling", link: "/ai-sdk-core/error-handling" },
+            { label: "Testing", link: "/ai-sdk-core/testing" }
           ]
         },
         {
