@@ -24,30 +24,24 @@ struct GenerateObjectExample: CLIExample {
       .object([
         "type": .string("object"),
         "properties": .object([
-          "recipe": .object([
-            "type": .string("object"),
-            "properties": .object([
-              "name": .object(["type": .string("string")]),
-              "ingredients": .object([
-                "type": .string("array"),
-                "items": .object([
-                  "type": .string("object"),
-                  "properties": .object([
-                    "name": .object(["type": .string("string")]),
-                    "amount": .object(["type": .string("string")])
-                  ]),
-                  "required": .array([.string("name"), .string("amount")])
-                ])
+          "name": .object(["type": .string("string")]),
+          "ingredients": .object([
+            "type": .string("array"),
+            "items": .object([
+              "type": .string("object"),
+              "properties": .object([
+                "name": .object(["type": .string("string")]),
+                "amount": .object(["type": .string("string")])
               ]),
-              "steps": .object([
-                "type": .string("array"),
-                "items": .object(["type": .string("string")])
-              ])
-            ]),
-            "required": .array([.string("name"), .string("ingredients"), .string("steps")])
+              "required": .array([.string("name"), .string("amount")])
+            ])
+          ]),
+          "steps": .object([
+            "type": .string("array"),
+            "items": .object(["type": .string("string")])
           ])
         ]),
-        "required": .array([.string("recipe")])
+        "required": .array([.string("name"), .string("ingredients"), .string("steps")])
       ])
     ))
 
@@ -57,7 +51,9 @@ struct GenerateObjectExample: CLIExample {
     let result = try await generateObject(
       model: openai("gpt-4o"),
       schema: recipeSchema,
-      prompt: "Generate a lasagna recipe."
+      prompt: "Generate a lasagna recipe.",
+      schemaName: "recipe",
+      schemaDescription: "A recipe for lasagna."
     )
 
     // Display result
@@ -65,7 +61,7 @@ struct GenerateObjectExample: CLIExample {
     Helpers.printJSON(result.object)
 
     Logger.separator()
-    Logger.info("Tokens used: \(result.usage.totalTokens)")
+    Logger.info("Tokens used: \(result.usage.totalTokens ?? 0)")
     Logger.info("Finish reason: \(result.finishReason)")
   }
 }
