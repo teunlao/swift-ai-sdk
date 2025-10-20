@@ -4962,6 +4962,185 @@ struct OpenAIResponsesLanguageModelTests {
         #expect(filename == "file-abc123")
     }
 
+    // Port of openai-responses-language-model.test.ts: "should handle file_citation annotations only"
+    @Test("should handle file_citation annotations only")
+    func testShouldHandleFileCitationAnnotationsOnly() async throws {
+        let responseJSON: [String: Any] = [
+            "id": "resp_456",
+            "object": "response",
+            "created_at": 1234567890,
+            "status": "completed",
+            "error": NSNull(),
+            "incomplete_details": NSNull(),
+            "input": [],
+            "instructions": NSNull(),
+            "max_output_tokens": NSNull(),
+            "model": "gpt-4o",
+            "output": [
+                [
+                    "id": "msg_456",
+                    "type": "message",
+                    "status": "completed",
+                    "role": "assistant",
+                    "content": [
+                        [
+                            "type": "output_text",
+                            "text": "Based on the file content.",
+                            "annotations": [
+                                [
+                                    "type": "file_citation",
+                                    "start_index": 0,
+                                    "end_index": 20,
+                                    "file_id": "file-xyz789",
+                                    "quote": "Important information from document"
+                                ]
+                            ]
+                        ]
+                    ]
+                ]
+            ],
+            "parallel_tool_calls": true,
+            "previous_response_id": NSNull(),
+            "reasoning": ["effort": NSNull(), "summary": NSNull()],
+            "store": true,
+            "temperature": 0,
+            "text": ["format": ["type": "text"]],
+            "tool_choice": "auto",
+            "tools": [],
+            "top_p": 1,
+            "truncation": "disabled",
+            "usage": [
+                "input_tokens": 50,
+                "input_tokens_details": ["cached_tokens": 0],
+                "output_tokens": 25,
+                "output_tokens_details": ["reasoning_tokens": 0],
+                "total_tokens": 75
+            ],
+            "user": NSNull(),
+            "metadata": [:]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let fetch: FetchFunction = { request in
+            let httpResponse = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: samplePrompt))
+
+        #expect(result.content.count == 2)
+
+        guard case .text(let text) = result.content[0] else {
+            Issue.record("Expected text at index 0")
+            return
+        }
+        #expect(text.text == "Based on the file content.")
+
+        guard case .source(.document(_, let mediaType, let title, let filename, _)) = result.content[1] else {
+            Issue.record("Expected document source at index 1")
+            return
+        }
+        #expect(mediaType == "text/plain")
+        #expect(title == "Important information from document")
+        #expect(filename == "file-xyz789")
+    }
+
+    // Port of openai-responses-language-model.test.ts: "should handle file_citation annotations without optional fields"
+    @Test("should handle file_citation annotations without optional fields")
+    func testShouldHandleFileCitationAnnotationsWithoutOptionalFields() async throws {
+        let responseJSON: [String: Any] = [
+            "id": "resp_789",
+            "object": "response",
+            "created_at": 1234567890,
+            "status": "completed",
+            "error": NSNull(),
+            "incomplete_details": NSNull(),
+            "input": [],
+            "instructions": NSNull(),
+            "max_output_tokens": NSNull(),
+            "model": "gpt-4o",
+            "output": [
+                [
+                    "id": "msg_789",
+                    "type": "message",
+                    "status": "completed",
+                    "role": "assistant",
+                    "content": [
+                        [
+                            "type": "output_text",
+                            "text": "The data shows trends.",
+                            "annotations": [
+                                [
+                                    "type": "file_citation",
+                                    "file_id": "file-YRcoCqn3Fo2K4JgraG",
+                                    "filename": "resource1.json",
+                                    "index": 145
+                                ]
+                            ]
+                        ]
+                    ]
+                ]
+            ],
+            "parallel_tool_calls": true,
+            "previous_response_id": NSNull(),
+            "reasoning": ["effort": NSNull(), "summary": NSNull()],
+            "store": true,
+            "temperature": 0,
+            "text": ["format": ["type": "text"]],
+            "tool_choice": "auto",
+            "tools": [],
+            "top_p": 1,
+            "truncation": "disabled",
+            "usage": [
+                "input_tokens": 50,
+                "input_tokens_details": ["cached_tokens": 0],
+                "output_tokens": 25,
+                "output_tokens_details": ["reasoning_tokens": 0],
+                "total_tokens": 75
+            ],
+            "user": NSNull(),
+            "metadata": [:]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let fetch: FetchFunction = { request in
+            let httpResponse = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: samplePrompt))
+
+        #expect(result.content.count == 2)
+
+        guard case .source(.document(_, let mediaType, let title, let filename, _)) = result.content[1] else {
+            Issue.record("Expected document source at index 1")
+            return
+        }
+        #expect(mediaType == "text/plain")
+        #expect(title == "resource1.json")
+        #expect(filename == "resource1.json")
+    }
+
     // MARK: - Computer Use Tool Tests
     // Port of openai-responses-language-model.test.ts: "should handle computer use tool calls"
 
