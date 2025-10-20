@@ -8,21 +8,16 @@ on:
 
 jobs:
   test:
-    name: Swift ${{ matrix.swift }} on ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [macos-14, macos-15]
-        swift: ["6.0", "6.1"]
+    name: Tests
+    runs-on: macos-15
 
     steps:
     - uses: actions/checkout@v4
       with:
         submodules: recursive
 
-    - name: Select Xcode
+    - name: Select Xcode 16.1
       run: sudo xcode-select -s /Applications/Xcode_16.1.app
-      if: matrix.os == 'macos-15'
 
     - name: Swift version
       run: swift --version
