@@ -36,7 +36,9 @@ export default defineConfig({
             { label: "Generating Structured Data", link: "/ai-sdk-core/generating-structured-data" },
             { label: "Tools and Tool Calling", link: "/ai-sdk-core/tools-and-tool-calling" },
             { label: "Model Context Protocol (MCP) Tools", link: "/ai-sdk-core/mcp-tools" },
-            { label: "Prompt Engineering", link: "/ai-sdk-core/prompt-engineering" }
+            { label: "Prompt Engineering", link: "/ai-sdk-core/prompt-engineering" },
+            { label: "Settings", link: "/ai-sdk-core/settings" },
+            { label: "Embeddings", link: "/ai-sdk-core/embeddings" }
           ]
         },
         {

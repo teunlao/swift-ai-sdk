@@ -1,0 +1,225 @@
+
+---
+title: Embeddings
+description: Learn how to embed values with the AI SDK.
+---
+
+_This page adapts the original AI SDK documentation: [Embeddings](https://ai-sdk.dev/docs/ai-sdk-core/embeddings)._ 
+Embeddings are a way to represent words, phrases, or images as vectors in a high-dimensional space.
+In this space, similar words are close to each other, and the distance between words can be used to measure their similarity. In Swift you work with embeddings as `[Double]` values returned by `embed`/`embedMany`.
+
+## Embedding a Single Value
+
+The AI SDK provides the [`embed`](/docs/reference/ai-sdk-core/embed) function to embed single values, which is useful for tasks such as finding similar words
+or phrases or clustering text.
+You can use it with embeddings models, e.g. `openai.textEmbeddingModel('text-embedding-3-large')` or `mistral.textEmbeddingModel('mistral-embed')`.
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+
+let result = try await embed(
+  model: .v3(openai.textEmbeddingModel(modelId: "text-embedding-3-small")),
+  value: "sunny day at the beach"
+)
+
+let embedding = result.embedding // [Double]
+```
+
+## Embedding Many Values
+
+When loading data, e.g. when preparing a data store for retrieval-augmented generation (RAG),
+it is often useful to embed many values at once (batch embedding).
+
+The AI SDK provides the [`embedMany`](/docs/reference/ai-sdk-core/embed-many) function for this purpose.
+Similar to `embed`, you can use it with embeddings models,
+e.g. `openai.textEmbeddingModel('text-embedding-3-large')` or `mistral.textEmbeddingModel('mistral-embed')`.
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+
+let result = try await embedMany(
+  model: .v3(openai.textEmbeddingModel(modelId: "text-embedding-3-small")),
+  values: [
+    "sunny day at the beach",
+    "rainy afternoon in the city",
+    "snowy night in the mountains"
+  ]
+)
+
+// embeddings is [[Double]] and aligned with the input order
+let embeddings = result.embeddings
+```
+
+## Embedding Similarity
+
+After embedding values, you can calculate the similarity between them using the [`cosineSimilarity`](/docs/reference/ai-sdk-core/cosine-similarity) function.
+This is useful to e.g. find similar words or phrases in a dataset.
+You can also rank and filter related items based on their similarity.
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+
+let result = try await embedMany(
+  model: .v3(openai.textEmbeddingModel(modelId: "text-embedding-3-small")),
+  values: ["sunny day at the beach", "rainy afternoon in the city"]
+)
+
+let similarity = try cosineSimilarity(
+  vector1: result.embeddings[0],
+  vector2: result.embeddings[1]
+)
+print("cosine similarity: \(similarity)")
+```
+
+## Token Usage
+
+Many providers charge based on the number of tokens used to generate embeddings.
+Both `embed` and `embedMany` provide token usage information in the `usage` property of the result object:
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+
+let result = try await embed(
+  model: .v3(openai.textEmbeddingModel(modelId: "text-embedding-3-small")),
+  value: "sunny day at the beach"
+)
+
+print(result.usage.tokens)
+```
+
+## Settings
+
+### Provider Options
+
+Embedding model settings can be configured using `providerOptions` for provider-specific parameters:
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+
+let result = try await embed(
+  model: .v3(openai.textEmbeddingModel(modelId: "text-embedding-3-small")),
+  value: "sunny day at the beach",
+  providerOptions: .object([
+    "openai": .object([
+      "dimensions": .number(512)
+    ])
+  ])
+)
+
+let embedding = result.embedding
+```
+
+### Parallel Requests
+
+The `embedMany` function now supports parallel processing with configurable `maxParallelCalls` to optimize performance:
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+
+let parallelResult = try await embedMany(
+  model: .v3(openai.textEmbeddingModel(modelId: "text-embedding-3-small")),
+  values: [
+    "sunny day at the beach",
+    "rainy afternoon in the city",
+    "snowy night in the mountains"
+  ],
+  maxParallelCalls: 2
+)
+
+let usage = parallelResult.usage
+```
+
+### Retries
+
+Both `embed` and `embedMany` accept an optional `maxRetries` parameter of type `number`
+that you can use to set the maximum number of retries for the embedding process.
+It defaults to `2` retries (3 attempts in total). You can set it to `0` to disable retries.
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+
+let noRetry = try await embed(
+  model: .v3(openai.textEmbeddingModel(modelId: "text-embedding-3-small")),
+  value: "sunny day at the beach",
+  maxRetries: 0
+)
+```
+
+### Abort Signals and Timeouts
+
+Both `embed` and `embedMany` accept an optional `abortSignal` closure of type
+`@Sendable () -> Bool` that you can use to abort the embedding process or set a timeout.
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+
+let timeout = Date().addingTimeInterval(1)
+
+let embedding = try await embed(
+  model: .v3(openai.textEmbeddingModel(modelId: "text-embedding-3-small")),
+  value: "sunny day at the beach",
+  abortSignal: { Date() >= timeout }
+)
+```
+
+### Custom Headers
+
+Both `embed` and `embedMany` accept an optional `headers` parameter of type `Record<string, string>`
+that you can use to add custom headers to the embedding request.
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+
+let customHeader = try await embed(
+  model: .v3(openai.textEmbeddingModel(modelId: "text-embedding-3-small")),
+  value: "sunny day at the beach",
+  headers: ["X-Custom-Header": "custom-value"]
+)
+```
+
+## Response Information
+
+Both `embed` and `embedMany` return response information that includes the raw provider response:
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+
+let info = try await embed(
+  model: .v3(openai.textEmbeddingModel(modelId: "text-embedding-3-small")),
+  value: "sunny day at the beach"
+)
+
+print(String(describing: info.response)) // Raw provider response metadata/body
+```
+
+## Embedding Providers & Models
+
+Several providers offer embedding models:
+
+| Provider                                                                                  | Model                           | Embedding Dimensions |
+| ----------------------------------------------------------------------------------------- | ------------------------------- | -------------------- |
+| [OpenAI](/providers/ai-sdk-providers/openai#embedding-models)                             | `text-embedding-3-large`        | 3072                 |
+| [OpenAI](/providers/ai-sdk-providers/openai#embedding-models)                             | `text-embedding-3-small`        | 1536                 |
+| [OpenAI](/providers/ai-sdk-providers/openai#embedding-models)                             | `text-embedding-ada-002`        | 1536                 |
+| [Google Generative AI](/providers/ai-sdk-providers/google-generative-ai#embedding-models) | `gemini-embedding-001`          | 3072                 |
+| [Google Generative AI](/providers/ai-sdk-providers/google-generative-ai#embedding-models) | `text-embedding-004`            | 768                  |
+| [Mistral](/providers/ai-sdk-providers/mistral#embedding-models)                           | `mistral-embed`                 | 1024                 |
+| [Cohere](/providers/ai-sdk-providers/cohere#embedding-models)                             | `embed-english-v3.0`            | 1024                 |
+| [Cohere](/providers/ai-sdk-providers/cohere#embedding-models)                             | `embed-multilingual-v3.0`       | 1024                 |
+| [Cohere](/providers/ai-sdk-providers/cohere#embedding-models)                             | `embed-english-light-v3.0`      | 384                  |
+| [Cohere](/providers/ai-sdk-providers/cohere#embedding-models)                             | `embed-multilingual-light-v3.0` | 384                  |
+| [Cohere](/providers/ai-sdk-providers/cohere#embedding-models)                             | `embed-english-v2.0`            | 4096                 |
+| [Cohere](/providers/ai-sdk-providers/cohere#embedding-models)                             | `embed-english-light-v2.0`      | 1024                 |
+| [Cohere](/providers/ai-sdk-providers/cohere#embedding-models)                             | `embed-multilingual-v2.0`       | 768                  |
+| [Amazon Bedrock](/providers/ai-sdk-providers/amazon-bedrock#embedding-models)             | `amazon.titan-embed-text-v1`    | 1536                 |
+| [Amazon Bedrock](/providers/ai-sdk-providers/amazon-bedrock#embedding-models)             | `amazon.titan-embed-text-v2:0`  | 1024                 |

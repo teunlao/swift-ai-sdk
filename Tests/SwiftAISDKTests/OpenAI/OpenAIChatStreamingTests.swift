@@ -388,4 +388,5 @@ struct OpenAIChatStreamingTests {
         })
         #expect(hasFinish)
     }
+
 }
