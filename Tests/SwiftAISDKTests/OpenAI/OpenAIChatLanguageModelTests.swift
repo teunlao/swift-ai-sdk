@@ -3136,4 +3136,301 @@ struct OpenAIChatLanguageModelTests {
         // Consume stream
         for try await _ in streamResult.stream { }
     }
+
+    // MARK: - Batch 13: Streaming - Error Handling & O1 Models (3 tests)
+
+    @Test("Handle error stream parts")
+    func testHandleErrorStreamParts() async throws {
+        let events = [
+            "{\"error\":{\"message\":\"The server had an error processing your request. Sorry about that!\",\"type\":\"server_error\",\"param\":null,\"code\":null}}"
+        ]
+
+        let mockFetch: FetchFunction = { _ in
+            FetchResponse(
+                body: makeStreamBody(from: events),
+                urlResponse: HTTPURLResponse(
+                    url: URL(string: "https://api.openai.com")!,
+                    statusCode: 200,
+                    httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "text/event-stream"]
+                )!
+            )
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.chat",
+            url: { _ in "https://api.openai.com/v1/chat/completions" },
+            headers: { ["Authorization": "Bearer test-key"] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAIChatLanguageModel(modelId: "gpt-3.5-turbo", config: config)
+
+        let streamResult = try await model.doStream(
+            options: LanguageModelV3CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)]
+            )
+        )
+
+        var parts: [LanguageModelV3StreamPart] = []
+        for try await part in streamResult.stream {
+            parts.append(part)
+        }
+
+        // Verify we got error part
+        let hasError = parts.contains { part in
+            if case .error = part {
+                return true
+            }
+            return false
+        }
+        #expect(hasError)
+
+        // Verify finish with error reason
+        guard case let .finish(finishReason: finishReason, usage: _, providerMetadata: _) = parts.last else {
+            Issue.record("Expected finish part")
+            return
+        }
+
+        #expect(finishReason == .error)
+    }
+
+    @Test("O1 model stream text delta")
+    func testO1StreamTextDelta() async throws {
+        let events = [
+            "{\"id\":\"chatcmpl-96aZq\",\"object\":\"chat.completion.chunk\",\"created\":1702657020,\"model\":\"o1-preview\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":null}]}",
+            "{\"id\":\"chatcmpl-96aZq\",\"object\":\"chat.completion.chunk\",\"created\":1702657020,\"model\":\"o1-preview\",\"choices\":[{\"index\":1,\"delta\":{\"content\":\"Hello, World!\"},\"finish_reason\":null}]}",
+            "{\"id\":\"chatcmpl-96aZq\",\"object\":\"chat.completion.chunk\",\"created\":1702657020,\"model\":\"o1-preview\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}",
+            "{\"id\":\"chatcmpl-96aZq\",\"object\":\"chat.completion.chunk\",\"created\":1702657020,\"model\":\"o1-preview\",\"choices\":[],\"usage\":{\"prompt_tokens\":17,\"completion_tokens\":227,\"total_tokens\":244}}"
+        ]
+
+        let mockFetch: FetchFunction = { _ in
+            FetchResponse(
+                body: makeStreamBody(from: events),
+                urlResponse: HTTPURLResponse(
+                    url: URL(string: "https://api.openai.com")!,
+                    statusCode: 200,
+                    httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "text/event-stream"]
+                )!
+            )
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.chat",
+            url: { _ in "https://api.openai.com/v1/chat/completions" },
+            headers: { ["Authorization": "Bearer test-key"] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAIChatLanguageModel(modelId: "o1-preview", config: config)
+
+        let streamResult = try await model.doStream(
+            options: LanguageModelV3CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)]
+            )
+        )
+
+        var parts: [LanguageModelV3StreamPart] = []
+        for try await part in streamResult.stream {
+            parts.append(part)
+        }
+
+        // Verify text delta
+        let textDeltas = parts.compactMap { part -> String? in
+            if case .textDelta(_, let delta, _) = part {
+                return delta
+            }
+            return nil
+        }
+
+        #expect(textDeltas.contains("Hello, World!"))
+
+        // Verify finish
+        guard case let .finish(finishReason: finishReason, usage: usage, providerMetadata: _) = parts.last else {
+            Issue.record("Expected finish part")
+            return
+        }
+
+        #expect(finishReason == .stop)
+        #expect(usage.inputTokens == 17)
+        #expect(usage.outputTokens == 227)
+        #expect(usage.totalTokens == 244)
+    }
+
+    @Test("O1 model send reasoning tokens")
+    func testO1SendReasoningTokens() async throws {
+        let events = [
+            "{\"id\":\"chatcmpl-96aZq\",\"object\":\"chat.completion.chunk\",\"created\":1702657020,\"model\":\"o1-preview\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":null}]}",
+            "{\"id\":\"chatcmpl-96aZq\",\"object\":\"chat.completion.chunk\",\"created\":1702657020,\"model\":\"o1-preview\",\"choices\":[{\"index\":1,\"delta\":{\"content\":\"Hello, World!\"},\"finish_reason\":null}]}",
+            "{\"id\":\"chatcmpl-96aZq\",\"object\":\"chat.completion.chunk\",\"created\":1702657020,\"model\":\"o1-preview\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}",
+            "{\"id\":\"chatcmpl-96aZq\",\"object\":\"chat.completion.chunk\",\"created\":1702657020,\"model\":\"o1-preview\",\"choices\":[],\"usage\":{\"prompt_tokens\":15,\"completion_tokens\":20,\"total_tokens\":35,\"completion_tokens_details\":{\"reasoning_tokens\":10}}}"
+        ]
+
+        let mockFetch: FetchFunction = { _ in
+            FetchResponse(
+                body: makeStreamBody(from: events),
+                urlResponse: HTTPURLResponse(
+                    url: URL(string: "https://api.openai.com")!,
+                    statusCode: 200,
+                    httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "text/event-stream"]
+                )!
+            )
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.chat",
+            url: { _ in "https://api.openai.com/v1/chat/completions" },
+            headers: { ["Authorization": "Bearer test-key"] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAIChatLanguageModel(modelId: "o1-preview", config: config)
+
+        let streamResult = try await model.doStream(
+            options: LanguageModelV3CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)]
+            )
+        )
+
+        var parts: [LanguageModelV3StreamPart] = []
+        for try await part in streamResult.stream {
+            parts.append(part)
+        }
+
+        // Verify finish with reasoning tokens
+        guard case let .finish(finishReason: finishReason, usage: usage, providerMetadata: _) = parts.last else {
+            Issue.record("Expected finish part")
+            return
+        }
+
+        #expect(finishReason == .stop)
+        #expect(usage.inputTokens == 15)
+        #expect(usage.outputTokens == 20)
+        #expect(usage.totalTokens == 35)
+        #expect(usage.reasoningTokens == 10)
+    }
+
+    // MARK: - Batch 14: Streaming - includeRawChunks (2 tests)
+
+    @Test("Include raw chunks when includeRawChunks enabled")
+    func testIncludeRawChunksEnabled() async throws {
+        let events = [
+            "{\"id\":\"chatcmpl-96aZq\",\"object\":\"chat.completion.chunk\",\"created\":1702657020,\"model\":\"gpt-3.5-turbo-0613\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":null}]}",
+            "{\"id\":\"chatcmpl-96aZq\",\"object\":\"chat.completion.chunk\",\"created\":1702657020,\"model\":\"gpt-3.5-turbo-0613\",\"choices\":[{\"index\":1,\"delta\":{\"content\":\"Hello\"},\"finish_reason\":null}]}",
+            "{\"id\":\"chatcmpl-96aZq\",\"object\":\"chat.completion.chunk\",\"created\":1702657020,\"model\":\"gpt-3.5-turbo-0613\",\"choices\":[{\"index\":1,\"delta\":{\"content\":\" World!\"},\"finish_reason\":null}]}",
+            "{\"id\":\"chatcmpl-96aZq\",\"object\":\"chat.completion.chunk\",\"created\":1702657020,\"model\":\"gpt-3.5-turbo-0613\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}",
+            "{\"id\":\"chatcmpl-96aZq\",\"object\":\"chat.completion.chunk\",\"created\":1702657020,\"model\":\"gpt-3.5-turbo-0613\",\"choices\":[],\"usage\":{\"prompt_tokens\":17,\"completion_tokens\":227,\"total_tokens\":244}}"
+        ]
+
+        let mockFetch: FetchFunction = { _ in
+            FetchResponse(
+                body: makeStreamBody(from: events),
+                urlResponse: HTTPURLResponse(
+                    url: URL(string: "https://api.openai.com")!,
+                    statusCode: 200,
+                    httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "text/event-stream"]
+                )!
+            )
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.chat",
+            url: { _ in "https://api.openai.com/v1/chat/completions" },
+            headers: { ["Authorization": "Bearer test-key"] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAIChatLanguageModel(modelId: "gpt-3.5-turbo", config: config)
+
+        let streamResult = try await model.doStream(
+            options: LanguageModelV3CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+                includeRawChunks: true
+            )
+        )
+
+        var parts: [LanguageModelV3StreamPart] = []
+        for try await part in streamResult.stream {
+            parts.append(part)
+        }
+
+        // Verify we got raw chunks
+        let rawChunks = parts.compactMap { part -> JSONValue? in
+            if case .raw(let rawValue) = part {
+                return rawValue
+            }
+            return nil
+        }
+
+        // Should have 5 raw chunks (one for each event)
+        #expect(rawChunks.count == 5)
+
+        // Verify raw chunks contain expected data
+        for rawChunk in rawChunks {
+            if case .object(let obj) = rawChunk {
+                #expect(obj["id"] != nil)
+                #expect(obj["object"] != nil)
+                #expect(obj["model"] != nil)
+            } else {
+                Issue.record("Raw chunk is not an object")
+            }
+        }
+    }
+
+    @Test("Not include raw chunks when includeRawChunks false")
+    func testNotIncludeRawChunksFalse() async throws {
+        let events = [
+            "{\"id\":\"chatcmpl-96aZq\",\"object\":\"chat.completion.chunk\",\"created\":1702657020,\"model\":\"gpt-3.5-turbo-0613\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":null}]}",
+            "{\"id\":\"chatcmpl-96aZq\",\"object\":\"chat.completion.chunk\",\"created\":1702657020,\"model\":\"gpt-3.5-turbo-0613\",\"choices\":[{\"index\":1,\"delta\":{\"content\":\"Hello\"},\"finish_reason\":null}]}",
+            "{\"id\":\"chatcmpl-96aZq\",\"object\":\"chat.completion.chunk\",\"created\":1702657020,\"model\":\"gpt-3.5-turbo-0613\",\"choices\":[{\"index\":1,\"delta\":{\"content\":\" World!\"},\"finish_reason\":null}]}",
+            "{\"id\":\"chatcmpl-96aZq\",\"object\":\"chat.completion.chunk\",\"created\":1702657020,\"model\":\"gpt-3.5-turbo-0613\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}",
+            "{\"id\":\"chatcmpl-96aZq\",\"object\":\"chat.completion.chunk\",\"created\":1702657020,\"model\":\"gpt-3.5-turbo-0613\",\"choices\":[],\"usage\":{\"prompt_tokens\":17,\"completion_tokens\":227,\"total_tokens\":244}}"
+        ]
+
+        let mockFetch: FetchFunction = { _ in
+            FetchResponse(
+                body: makeStreamBody(from: events),
+                urlResponse: HTTPURLResponse(
+                    url: URL(string: "https://api.openai.com")!,
+                    statusCode: 200,
+                    httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "text/event-stream"]
+                )!
+            )
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.chat",
+            url: { _ in "https://api.openai.com/v1/chat/completions" },
+            headers: { ["Authorization": "Bearer test-key"] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAIChatLanguageModel(modelId: "gpt-3.5-turbo", config: config)
+
+        let streamResult = try await model.doStream(
+            options: LanguageModelV3CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+                includeRawChunks: false
+            )
+        )
+
+        var parts: [LanguageModelV3StreamPart] = []
+        for try await part in streamResult.stream {
+            parts.append(part)
+        }
+
+        // Verify we have NO raw chunks
+        let rawChunks = parts.compactMap { part -> JSONValue? in
+            if case .raw(let rawValue) = part {
+                return rawValue
+            }
+            return nil
+        }
+
+        #expect(rawChunks.count == 0)
+    }
 }

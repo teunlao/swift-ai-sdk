@@ -7,8 +7,8 @@
 | Metric                        | TypeScript Upstream    | Swift Port         | Status            |
 |-------------------------------|------------------------|--------------------|--------------------|
 | Total Test Files              | 13                     | 13                 | ✅ Files match    |
-| Total Test Cases              | 290                    | 133                | ❌ 54% missing    |
-| OpenAIChatLanguageModel       | 71 tests (3,152 lines) | 52 tests (3,140 lines) | ❌ 27% missing    |
+| Total Test Cases              | 290                    | 138                | ❌ 52% missing    |
+| OpenAIChatLanguageModel       | 71 tests (3,152 lines) | 57 tests (3,436 lines) | ❌ 20% missing    |
 | OpenAIResponsesLanguageModel  | 77 tests               | 25 tests           | ❌ 67% missing    |
 | OpenAIResponsesInput          | 48 tests               | 4 tests            | ❌ 92% missing    |
 | OpenAICompletionLanguageModel | 16 tests               | 3 tests            | ❌ 81% missing    |
@@ -73,7 +73,7 @@
 
 | File | Upstream | Swift | Coverage | Status |
 |------|----------|-------|----------|--------|
-| OpenAIChatLanguageModel | 71 | 52 | 73.2% | ✅ GOOD |
+| OpenAIChatLanguageModel | 71 | 57 | 80.3% | ✅ GOOD |
 | OpenAIResponsesLanguageModel | 77 | 25 | 32% | ⚠️ MAJOR |
 | OpenAIResponsesInput | 48 | 4 | 8% | ❌ CRITICAL |
 | OpenAICompletionLanguageModel | 16 | 3 | 19% | ⚠️ MAJOR |
@@ -87,7 +87,7 @@
 | OpenAIError | 1 | 1 | 100% | ✅ PERFECT |
 | OpenAIProvider | 3 | 1 | 33% | ⚠️ MODERATE |
 
-**TOTAL: 290 → 133 (45.9% coverage) ❌ INSUFFICIENT**
+**TOTAL: 290 → 138 (47.6% coverage) ❌ INSUFFICIENT**
 
 ---
 
@@ -151,10 +151,10 @@ While the implementation code appears correct (100% functional parity from previ
 
 **Started:** 2025-10-19
 **Target:** 100% test parity (290 tests)
-**Current:** 133/290 tests (45.9%)
+**Current:** 138/290 tests (47.6%)
 
 ### OpenAIChatLanguageModel (Priority 1 - CRITICAL)
-**Target:** 71 tests | **Current:** 52/71 (73.2%)
+**Target:** 71 tests | **Current:** 57/71 (80.3%)
 
 #### Batch 1: Settings & Configuration (5/5) ✅ COMPLETE
 - [x] Pass settings (logitBias, user, parallelToolCalls) - `testPassSettings`
@@ -231,6 +231,15 @@ While the implementation code appears correct (100% functional parity from previ
 - [x] Send serviceTier flex processing - `testServiceTierFlexProcessingStreaming`
 - [x] Send serviceTier priority processing - `testServiceTierPriorityProcessingStreaming`
 
+#### Batch 13: Streaming - Error Handling & O1 Models (3/3) ✅ COMPLETE
+- [x] Handle error stream parts - `testHandleErrorStreamParts`
+- [x] O1 model stream text delta - `testO1StreamTextDelta`
+- [x] O1 model send reasoning tokens - `testO1SendReasoningTokens`
+
+#### Batch 14: Streaming - includeRawChunks (2/2) ✅ COMPLETE
+- [x] Include raw chunks when includeRawChunks enabled - `testIncludeRawChunksEnabled`
+- [x] Not include raw chunks when includeRawChunks false - `testNotIncludeRawChunksFalse`
+
 ---
 
-**Last Updated:** 2025-10-20 03:45 UTC
+**Last Updated:** 2025-10-20 05:00 UTC
