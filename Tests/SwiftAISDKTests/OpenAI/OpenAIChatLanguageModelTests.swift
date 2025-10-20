@@ -2493,4 +2493,647 @@ struct OpenAIChatLanguageModelTests {
         // Verify no warnings
         #expect(result.warnings.isEmpty)
     }
+
+    // MARK: - Batch 10: Streaming Tests - Basic (first batch)
+
+    private func makeStreamBody(from events: [String]) -> ProviderHTTPResponseBody {
+        .stream(AsyncThrowingStream { continuation in
+            for event in events {
+                let payload = "data: \(event)\n\n"
+                continuation.yield(Data(payload.utf8))
+            }
+            continuation.yield(Data("data: [DONE]\n\n".utf8))
+            continuation.finish()
+        })
+    }
+
+    @Test("Stream text deltas")
+    func testStreamTextDeltas() async throws {
+        let events = [
+            "{\"id\":\"chatcmpl-96aZq\",\"object\":\"chat.completion.chunk\",\"created\":1702657020,\"model\":\"gpt-3.5-turbo-0613\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":null}]}",
+            "{\"id\":\"chatcmpl-96aZq\",\"object\":\"chat.completion.chunk\",\"created\":1702657020,\"model\":\"gpt-3.5-turbo-0613\",\"choices\":[{\"index\":1,\"delta\":{\"content\":\"Hello\"},\"finish_reason\":null}]}",
+            "{\"id\":\"chatcmpl-96aZq\",\"object\":\"chat.completion.chunk\",\"created\":1702657020,\"model\":\"gpt-3.5-turbo-0613\",\"choices\":[{\"index\":1,\"delta\":{\"content\":\", \"},\"finish_reason\":null}]}",
+            "{\"id\":\"chatcmpl-96aZq\",\"object\":\"chat.completion.chunk\",\"created\":1702657020,\"model\":\"gpt-3.5-turbo-0613\",\"choices\":[{\"index\":1,\"delta\":{\"content\":\"World!\"},\"finish_reason\":null}]}",
+            "{\"id\":\"chatcmpl-96aZq\",\"object\":\"chat.completion.chunk\",\"created\":1702657020,\"model\":\"gpt-3.5-turbo-0613\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}",
+            "{\"id\":\"chatcmpl-96aZq\",\"object\":\"chat.completion.chunk\",\"created\":1702657020,\"model\":\"gpt-3.5-turbo-0613\",\"choices\":[],\"usage\":{\"prompt_tokens\":17,\"completion_tokens\":227,\"total_tokens\":244}}"
+        ]
+
+        let mockFetch: FetchFunction = { _ in
+            FetchResponse(
+                body: makeStreamBody(from: events),
+                urlResponse: HTTPURLResponse(
+                    url: URL(string: "https://api.openai.com")!,
+                    statusCode: 200,
+                    httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "text/event-stream"]
+                )!
+            )
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.chat",
+            url: { _ in "https://api.openai.com/v1/chat/completions" },
+            headers: { ["Authorization": "Bearer test-key"] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAIChatLanguageModel(modelId: "gpt-3.5-turbo", config: config)
+
+        let streamResult = try await model.doStream(
+            options: LanguageModelV3CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)]
+            )
+        )
+
+        var parts: [LanguageModelV3StreamPart] = []
+        for try await part in streamResult.stream {
+            parts.append(part)
+        }
+
+        // Verify we got text deltas
+        let textDeltas = parts.compactMap { part -> String? in
+            if case .textDelta(_, let delta, _) = part {
+                return delta
+            }
+            return nil
+        }
+
+        #expect(textDeltas.contains("Hello"))
+        #expect(textDeltas.contains(", "))
+        #expect(textDeltas.contains("World!"))
+
+        // Verify finish part
+        let finishPart = parts.last
+        guard case let .finish(finishReason: finishReason, usage: usage, providerMetadata: _) = finishPart else {
+            Issue.record("Expected finish part")
+            return
+        }
+
+        #expect(finishReason == .stop)
+        #expect(usage.inputTokens == 17)
+        #expect(usage.outputTokens == 227)
+        #expect(usage.totalTokens == 244)
+    }
+
+    @Test("Expose raw response headers for streaming")
+    func testExposeRawResponseHeaders() async throws {
+        let events = [
+            "{\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"created\":1702657020,\"model\":\"gpt-3.5-turbo-0613\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":null}]}",
+            "{\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"created\":1702657020,\"model\":\"gpt-3.5-turbo-0613\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}",
+            "{\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"created\":1702657020,\"model\":\"gpt-3.5-turbo-0613\",\"choices\":[],\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1,\"total_tokens\":2}}"
+        ]
+
+        let mockFetch: FetchFunction = { _ in
+            FetchResponse(
+                body: makeStreamBody(from: events),
+                urlResponse: HTTPURLResponse(
+                    url: URL(string: "https://api.openai.com")!,
+                    statusCode: 200,
+                    httpVersion: "HTTP/1.1",
+                    headerFields: [
+                        "Content-Type": "text/event-stream",
+                        "test-header": "test-value"
+                    ]
+                )!
+            )
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.chat",
+            url: { _ in "https://api.openai.com/v1/chat/completions" },
+            headers: { ["Authorization": "Bearer test-key"] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAIChatLanguageModel(modelId: "gpt-3.5-turbo", config: config)
+
+        let streamResult = try await model.doStream(
+            options: LanguageModelV3CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)]
+            )
+        )
+
+        // Verify response headers
+        guard let headers = streamResult.response?.headers else {
+            Issue.record("Response headers not present")
+            return
+        }
+
+        // Headers may have different casing, check both
+        let contentType = headers["content-type"] ?? headers["Content-Type"]
+        #expect(contentType == "text/event-stream")
+
+        let testHeader = headers["test-header"] ?? headers["Test-Header"]
+        #expect(testHeader == "test-value")
+
+        // Consume stream to avoid warnings
+        for try await _ in streamResult.stream { }
+    }
+
+    @Test("Pass messages and model for streaming")
+    func testPassMessagesAndModelStreaming() async throws {
+        final class RequestCapture: @unchecked Sendable {
+            var body: [String: Any]?
+        }
+
+        let capture = RequestCapture()
+        let events = [
+            "{\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"created\":1702657020,\"model\":\"gpt-3.5-turbo\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":null}]}",
+            "{\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"created\":1702657020,\"model\":\"gpt-3.5-turbo\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}",
+            "{\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"created\":1702657020,\"model\":\"gpt-3.5-turbo\",\"choices\":[],\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1,\"total_tokens\":2}}"
+        ]
+
+        let mockFetch: FetchFunction = { request in
+            if let body = request.httpBody,
+               let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] {
+                capture.body = json
+            }
+            return FetchResponse(
+                body: makeStreamBody(from: events),
+                urlResponse: HTTPURLResponse(
+                    url: URL(string: "https://api.openai.com")!,
+                    statusCode: 200,
+                    httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "text/event-stream"]
+                )!
+            )
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.chat",
+            url: { _ in "https://api.openai.com/v1/chat/completions" },
+            headers: { ["Authorization": "Bearer test-key"] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAIChatLanguageModel(modelId: "gpt-3.5-turbo", config: config)
+
+        let streamResult = try await model.doStream(
+            options: LanguageModelV3CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)]
+            )
+        )
+
+        // Verify request body
+        guard let bodyDict = capture.body else {
+            Issue.record("Request body not captured")
+            return
+        }
+
+        #expect(bodyDict["model"] as? String == "gpt-3.5-turbo")
+        #expect(bodyDict["stream"] as? Bool == true)
+
+        guard let streamOptions = bodyDict["stream_options"] as? [String: Any] else {
+            Issue.record("stream_options not found")
+            return
+        }
+        #expect(streamOptions["include_usage"] as? Bool == true)
+
+        guard let messages = bodyDict["messages"] as? [[String: Any]] else {
+            Issue.record("Messages not found in request")
+            return
+        }
+
+        #expect(messages.count == 1)
+        #expect(messages[0]["role"] as? String == "user")
+        #expect(messages[0]["content"] as? String == "Hello")
+
+        // Consume stream
+        for try await _ in streamResult.stream { }
+    }
+
+    // MARK: - Batch 11: Streaming - Metadata & Headers (3 tests)
+
+    @Test("Pass headers for streaming")
+    func testPassHeadersStreaming() async throws {
+        final class RequestCapture: @unchecked Sendable {
+            var headers: [String: String]?
+        }
+
+        let capture = RequestCapture()
+        let events = [
+            "{\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"created\":1702657020,\"model\":\"gpt-3.5-turbo\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":null}]}",
+            "{\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"created\":1702657020,\"model\":\"gpt-3.5-turbo\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}",
+            "{\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"created\":1702657020,\"model\":\"gpt-3.5-turbo\",\"choices\":[],\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1,\"total_tokens\":2}}"
+        ]
+
+        let mockFetch: FetchFunction = { request in
+            capture.headers = request.allHTTPHeaderFields
+            return FetchResponse(
+                body: makeStreamBody(from: events),
+                urlResponse: HTTPURLResponse(
+                    url: URL(string: "https://api.openai.com")!,
+                    statusCode: 200,
+                    httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "text/event-stream"]
+                )!
+            )
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.chat",
+            url: { _ in "https://api.openai.com/v1/chat/completions" },
+            headers: { ["Authorization": "Bearer test-key", "Custom-Provider-Header": "provider-value"] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAIChatLanguageModel(modelId: "gpt-3.5-turbo", config: config)
+
+        let streamResult = try await model.doStream(
+            options: LanguageModelV3CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+                headers: ["Custom-Request-Header": "request-value"]
+            )
+        )
+
+        // Verify request headers (case-insensitive)
+        guard let headers = capture.headers else {
+            Issue.record("Request headers not captured")
+            return
+        }
+
+        // Create case-insensitive lookup
+        let lowercaseHeaders = headers.reduce(into: [String: String]()) { result, pair in
+            result[pair.key.lowercased()] = pair.value
+        }
+
+        #expect(lowercaseHeaders["authorization"] == "Bearer test-key")
+        #expect(lowercaseHeaders["custom-provider-header"] == "provider-value")
+        #expect(lowercaseHeaders["custom-request-header"] == "request-value")
+
+        // Consume stream
+        for try await _ in streamResult.stream { }
+    }
+
+    @Test("Return cached tokens in providerMetadata for streaming")
+    func testReturnCachedTokensStreaming() async throws {
+        let events = [
+            "{\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"created\":1702657020,\"model\":\"gpt-4o-mini\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":null}]}",
+            "{\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"created\":1702657020,\"model\":\"gpt-4o-mini\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}",
+            "{\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"created\":1702657020,\"model\":\"gpt-4o-mini\",\"choices\":[],\"usage\":{\"prompt_tokens\":15,\"completion_tokens\":20,\"total_tokens\":35,\"prompt_tokens_details\":{\"cached_tokens\":1152}}}"
+        ]
+
+        let mockFetch: FetchFunction = { _ in
+            FetchResponse(
+                body: makeStreamBody(from: events),
+                urlResponse: HTTPURLResponse(
+                    url: URL(string: "https://api.openai.com")!,
+                    statusCode: 200,
+                    httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "text/event-stream"]
+                )!
+            )
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.chat",
+            url: { _ in "https://api.openai.com/v1/chat/completions" },
+            headers: { ["Authorization": "Bearer test-key"] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAIChatLanguageModel(modelId: "gpt-4o-mini", config: config)
+
+        let streamResult = try await model.doStream(
+            options: LanguageModelV3CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)]
+            )
+        )
+
+        var parts: [LanguageModelV3StreamPart] = []
+        for try await part in streamResult.stream {
+            parts.append(part)
+        }
+
+        // Verify finish part with cached tokens
+        guard case let .finish(finishReason: finishReason, usage: usage, providerMetadata: _) = parts.last else {
+            Issue.record("Expected finish part")
+            return
+        }
+
+        #expect(finishReason == .stop)
+        #expect(usage.inputTokens == 15)
+        #expect(usage.outputTokens == 20)
+        #expect(usage.totalTokens == 35)
+        #expect(usage.cachedInputTokens == 1152)
+    }
+
+    @Test("Return prediction tokens in providerMetadata for streaming")
+    func testReturnPredictionTokensStreaming() async throws {
+        let events = [
+            "{\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"created\":1702657020,\"model\":\"gpt-4o-mini\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":null}]}",
+            "{\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"created\":1702657020,\"model\":\"gpt-4o-mini\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}",
+            "{\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"created\":1702657020,\"model\":\"gpt-4o-mini\",\"choices\":[],\"usage\":{\"prompt_tokens\":15,\"completion_tokens\":20,\"total_tokens\":35,\"completion_tokens_details\":{\"accepted_prediction_tokens\":123,\"rejected_prediction_tokens\":456}}}"
+        ]
+
+        let mockFetch: FetchFunction = { _ in
+            FetchResponse(
+                body: makeStreamBody(from: events),
+                urlResponse: HTTPURLResponse(
+                    url: URL(string: "https://api.openai.com")!,
+                    statusCode: 200,
+                    httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "text/event-stream"]
+                )!
+            )
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.chat",
+            url: { _ in "https://api.openai.com/v1/chat/completions" },
+            headers: { ["Authorization": "Bearer test-key"] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAIChatLanguageModel(modelId: "gpt-4o-mini", config: config)
+
+        let streamResult = try await model.doStream(
+            options: LanguageModelV3CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)]
+            )
+        )
+
+        var parts: [LanguageModelV3StreamPart] = []
+        for try await part in streamResult.stream {
+            parts.append(part)
+        }
+
+        // Verify finish part with prediction tokens
+        guard case let .finish(finishReason: finishReason, usage: usage, providerMetadata: providerMetadata) = parts.last else {
+            Issue.record("Expected finish part")
+            return
+        }
+
+        #expect(finishReason == .stop)
+        #expect(usage.inputTokens == 15)
+        #expect(usage.outputTokens == 20)
+        #expect(usage.totalTokens == 35)
+
+        // Verify provider metadata
+        guard let metadata = providerMetadata else {
+            Issue.record("Provider metadata not present")
+            return
+        }
+
+        guard let openaiMetadata = metadata["openai"] else {
+            Issue.record("OpenAI metadata not found")
+            return
+        }
+
+        if case .number(let accepted) = openaiMetadata["acceptedPredictionTokens"] {
+            #expect(Int(accepted) == 123)
+        } else {
+            Issue.record("acceptedPredictionTokens not found")
+        }
+
+        if case .number(let rejected) = openaiMetadata["rejectedPredictionTokens"] {
+            #expect(Int(rejected) == 456)
+        } else {
+            Issue.record("rejectedPredictionTokens not found")
+        }
+    }
+
+    // MARK: - Batch 12: Streaming - Extensions & Service Tier (4 tests)
+
+    @Test("Send store extension setting for streaming")
+    func testSendStoreExtensionStreaming() async throws {
+        final class RequestCapture: @unchecked Sendable {
+            var body: [String: Any]?
+        }
+
+        let capture = RequestCapture()
+        let events = [
+            "{\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"created\":1702657020,\"model\":\"gpt-3.5-turbo\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":null}]}",
+            "{\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"created\":1702657020,\"model\":\"gpt-3.5-turbo\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}",
+            "{\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"created\":1702657020,\"model\":\"gpt-3.5-turbo\",\"choices\":[],\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1,\"total_tokens\":2}}"
+        ]
+
+        let mockFetch: FetchFunction = { request in
+            if let body = request.httpBody,
+               let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] {
+                capture.body = json
+            }
+            return FetchResponse(
+                body: makeStreamBody(from: events),
+                urlResponse: HTTPURLResponse(
+                    url: URL(string: "https://api.openai.com")!,
+                    statusCode: 200,
+                    httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "text/event-stream"]
+                )!
+            )
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.chat",
+            url: { _ in "https://api.openai.com/v1/chat/completions" },
+            headers: { ["Authorization": "Bearer test-key"] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAIChatLanguageModel(modelId: "gpt-3.5-turbo", config: config)
+
+        let streamResult = try await model.doStream(
+            options: LanguageModelV3CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+                providerOptions: ["openai": ["store": JSONValue.bool(true)]]
+            )
+        )
+
+        // Verify request body
+        guard let bodyDict = capture.body else {
+            Issue.record("Request body not captured")
+            return
+        }
+
+        #expect(bodyDict["model"] as? String == "gpt-3.5-turbo")
+        #expect(bodyDict["stream"] as? Bool == true)
+        #expect(bodyDict["store"] as? Bool == true)
+
+        // Consume stream
+        for try await _ in streamResult.stream { }
+    }
+
+    @Test("Send metadata extension values for streaming")
+    func testSendMetadataExtensionStreaming() async throws {
+        final class RequestCapture: @unchecked Sendable {
+            var body: [String: Any]?
+        }
+
+        let capture = RequestCapture()
+        let events = [
+            "{\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"created\":1702657020,\"model\":\"gpt-3.5-turbo\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":null}]}",
+            "{\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"created\":1702657020,\"model\":\"gpt-3.5-turbo\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}",
+            "{\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"created\":1702657020,\"model\":\"gpt-3.5-turbo\",\"choices\":[],\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1,\"total_tokens\":2}}"
+        ]
+
+        let mockFetch: FetchFunction = { request in
+            if let body = request.httpBody,
+               let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] {
+                capture.body = json
+            }
+            return FetchResponse(
+                body: makeStreamBody(from: events),
+                urlResponse: HTTPURLResponse(
+                    url: URL(string: "https://api.openai.com")!,
+                    statusCode: 200,
+                    httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "text/event-stream"]
+                )!
+            )
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.chat",
+            url: { _ in "https://api.openai.com/v1/chat/completions" },
+            headers: { ["Authorization": "Bearer test-key"] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAIChatLanguageModel(modelId: "gpt-3.5-turbo", config: config)
+
+        let streamResult = try await model.doStream(
+            options: LanguageModelV3CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+                providerOptions: ["openai": ["metadata": JSONValue.object(["custom": JSONValue.string("value")])]]
+            )
+        )
+
+        // Verify request body
+        guard let bodyDict = capture.body else {
+            Issue.record("Request body not captured")
+            return
+        }
+
+        #expect(bodyDict["model"] as? String == "gpt-3.5-turbo")
+        #expect(bodyDict["stream"] as? Bool == true)
+
+        guard let metadata = bodyDict["metadata"] as? [String: Any] else {
+            Issue.record("Metadata not found")
+            return
+        }
+
+        #expect(metadata["custom"] as? String == "value")
+
+        // Consume stream
+        for try await _ in streamResult.stream { }
+    }
+
+    @Test("Send serviceTier flex processing for streaming")
+    func testServiceTierFlexProcessingStreaming() async throws {
+        final class RequestCapture: @unchecked Sendable {
+            var body: [String: Any]?
+        }
+
+        let capture = RequestCapture()
+        let events = [
+            "{\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"created\":1702657020,\"model\":\"o3-mini\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":null}]}",
+            "{\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"created\":1702657020,\"model\":\"o3-mini\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}",
+            "{\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"created\":1702657020,\"model\":\"o3-mini\",\"choices\":[],\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1,\"total_tokens\":2}}"
+        ]
+
+        let mockFetch: FetchFunction = { request in
+            if let body = request.httpBody,
+               let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] {
+                capture.body = json
+            }
+            return FetchResponse(
+                body: makeStreamBody(from: events),
+                urlResponse: HTTPURLResponse(
+                    url: URL(string: "https://api.openai.com")!,
+                    statusCode: 200,
+                    httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "text/event-stream"]
+                )!
+            )
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.chat",
+            url: { _ in "https://api.openai.com/v1/chat/completions" },
+            headers: { ["Authorization": "Bearer test-key"] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAIChatLanguageModel(modelId: "o3-mini", config: config)
+
+        let streamResult = try await model.doStream(
+            options: LanguageModelV3CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+                providerOptions: ["openai": ["serviceTier": JSONValue.string("flex")]]
+            )
+        )
+
+        // Verify request body
+        guard let bodyDict = capture.body else {
+            Issue.record("Request body not captured")
+            return
+        }
+
+        #expect(bodyDict["model"] as? String == "o3-mini")
+        #expect(bodyDict["stream"] as? Bool == true)
+        #expect(bodyDict["service_tier"] as? String == "flex")
+
+        // Consume stream
+        for try await _ in streamResult.stream { }
+    }
+
+    @Test("Send serviceTier priority processing for streaming")
+    func testServiceTierPriorityProcessingStreaming() async throws {
+        final class RequestCapture: @unchecked Sendable {
+            var body: [String: Any]?
+        }
+
+        let capture = RequestCapture()
+        let events = [
+            "{\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"created\":1702657020,\"model\":\"gpt-4o-mini\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":null}]}",
+            "{\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"created\":1702657020,\"model\":\"gpt-4o-mini\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}",
+            "{\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"created\":1702657020,\"model\":\"gpt-4o-mini\",\"choices\":[],\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1,\"total_tokens\":2}}"
+        ]
+
+        let mockFetch: FetchFunction = { request in
+            if let body = request.httpBody,
+               let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] {
+                capture.body = json
+            }
+            return FetchResponse(
+                body: makeStreamBody(from: events),
+                urlResponse: HTTPURLResponse(
+                    url: URL(string: "https://api.openai.com")!,
+                    statusCode: 200,
+                    httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "text/event-stream"]
+                )!
+            )
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.chat",
+            url: { _ in "https://api.openai.com/v1/chat/completions" },
+            headers: { ["Authorization": "Bearer test-key"] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAIChatLanguageModel(modelId: "gpt-4o-mini", config: config)
+
+        let streamResult = try await model.doStream(
+            options: LanguageModelV3CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+                providerOptions: ["openai": ["serviceTier": JSONValue.string("priority")]]
+            )
+        )
+
+        // Verify request body
+        guard let bodyDict = capture.body else {
+            Issue.record("Request body not captured")
+            return
+        }
+
+        #expect(bodyDict["model"] as? String == "gpt-4o-mini")
+        #expect(bodyDict["stream"] as? Bool == true)
+        #expect(bodyDict["service_tier"] as? String == "priority")
+
+        // Consume stream
+        for try await _ in streamResult.stream { }
+    }
 }
