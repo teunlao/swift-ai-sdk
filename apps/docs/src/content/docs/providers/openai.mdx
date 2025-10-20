@@ -149,7 +149,7 @@ import SwiftAISDK
 import OpenAIProvider
 
 let result = try await generateText(
-  model: openai("gpt-5"), // or openai.responses("gpt-5")
+  model: openai("gpt-5"), // or openai.responses(modelId: "gpt-5")
   providerOptions: [
     "openai": [
       "parallelToolCalls": false,
@@ -225,7 +225,7 @@ The OpenAI responses provider also returns provider-specific metadata:
 
 ```swift
 let result = try await generateText(
-  model: openai.responses("gpt-5")
+  model: openai.responses(modelId: "gpt-5")
 )
 
 let openaiMetadata = result.providerMetadata?.openai
@@ -489,7 +489,7 @@ import SwiftAISDK
 import OpenAIProvider
 
 let result = try await generateText(
-  model: openai.responses("gpt-5-codex"),
+  model: openai.responses(modelId: "gpt-5-codex"),
   tools: [
     "local_shell": openai.tools.localShell(
       execute: { action in
@@ -660,7 +660,7 @@ The first argument is the model id, e.g. `gpt-4`.
 The OpenAI chat models support tool calls and some have multi-modal capabilities.
 
 ```swift
-let model = openai.chat("gpt-5")
+let model = openai.chat(modelId: "gpt-5")
 ```
 
 OpenAI chat models support also some model specific provider options that are not part of the [standard call settings](/docs/ai-sdk-core/settings).
@@ -670,7 +670,7 @@ You can pass them in the `providerOptions` argument:
 import SwiftAISDK
 import OpenAIProvider
 
-let model = openai.chat("gpt-5")
+let model = openai.chat(modelId: "gpt-5")
 
 let result = try await generateText(
   model: model,
@@ -798,7 +798,7 @@ import SwiftAISDK
 import OpenAIProvider
 
 let result = try await generateText(
-  model: openai.chat("gpt-5"),
+  model: openai.chat(modelId: "gpt-5"),
   prompt: "Invent a new holiday and describe its traditions.",
   providerOptions: [
     "openai": [
@@ -864,7 +864,7 @@ let recipeSchema = FlexibleSchema(jsonSchema(
 ))
 
 let result = try await generateObject(
-  model: openai.chat("gpt-4o-2024-08-06"),
+  model: openai.chat(modelId: "gpt-4o-2024-08-06"),
   schema: recipeSchema,
   prompt: "Generate a lasagna recipe.",
   schemaName: "recipe",
@@ -900,7 +900,7 @@ import SwiftAISDK
 import OpenAIProvider
 
 let result = try await generateText(
-  model: openai.chat("gpt-5"),
+  model: openai.chat(modelId: "gpt-5"),
   prompt: "Write a vegetarian lasagna recipe for 4 people.",
   providerOptions: [
     "openai": [
@@ -922,7 +922,7 @@ You can pass Image files as part of the message content using the 'image' type:
 
 ```swift
 let result = try await generateText(
-  model: openai.chat("gpt-5"),
+  model: openai.chat(modelId: "gpt-5"),
   messages: [
     [
       "role": "user",
@@ -960,7 +960,7 @@ You can pass PDF files as part of the message content using the `file` type:
 
 ```swift
 let result = try await generateText(
-  model: openai.chat("gpt-5"),
+  model: openai.chat(modelId: "gpt-5"),
   messages: [
     [
       "role": "user",
@@ -1015,7 +1015,7 @@ You can enable predicted outputs by adding the `prediction` option to the `provi
 
 ```swift highlight="15-18"
 let result = try streamText(
-  model: openai.chat("gpt-5"),
+  model: openai.chat(modelId: "gpt-5"),
   messages: [
     [
       "role": "user",
@@ -1059,7 +1059,7 @@ You can use the `openai` provider option to set the [image input detail](https:/
 
 ```swift highlight="13-16"
 let result = try await generateText(
-  model: openai.chat("gpt-5"),
+  model: openai.chat(modelId: "gpt-5"),
   messages: [
     [
       "role": "user",
@@ -1100,7 +1100,7 @@ import OpenAIProvider
 
 func main() async throws {
   let result = try await generateText(
-    model: openai.chat("gpt-4o-mini"),
+    model: openai.chat(modelId: "gpt-4o-mini"),
     prompt: "Who worked on the original macintosh?",
     providerOptions: [
       "openai": [
@@ -1137,7 +1137,7 @@ import SwiftAISDK
 import OpenAIProvider
 
 let result = try await generateText(
-  model: openai.chat("gpt-4o-mini"),
+  model: openai.chat(modelId: "gpt-4o-mini"),
   prompt: "A 1024-token or longer prompt..."
 )
 
@@ -1156,7 +1156,7 @@ import SwiftAISDK
 import OpenAIProvider
 
 let result = try await generateText(
-  model: openai.chat("gpt-5"),
+  model: openai.chat(modelId: "gpt-5"),
   prompt: "A 1024-token or longer prompt...",
   providerOptions: [
     "openai": [
@@ -1187,7 +1187,7 @@ import SwiftAISDK
 import OpenAIProvider
 
 let result = try await generateText(
-  model: openai.chat("gpt-4o-audio-preview"),
+  model: openai.chat(modelId: "gpt-4o-audio-preview"),
   messages: [
     [
       "role": "user",
@@ -1400,7 +1400,7 @@ using the `.transcription()` factory method.
 The first argument is the model id e.g. `whisper-1`.
 
 ```swift
-let model = openai.transcription("whisper-1")
+let model = openai.transcription(modelId: "whisper-1")
 ```
 
 You can also pass additional provider-specific options using the `providerOptions` argument. For example, supplying the input language in ISO-639-1 (e.g. `en`) format will improve accuracy and latency.
@@ -1410,7 +1410,7 @@ import SwiftAISDK
 import OpenAIProvider
 
 let result = try await transcribe(
-  model: openai.transcription("whisper-1"),
+  model: openai.transcription(modelId: "whisper-1"),
   audio: Data([1, 2, 3, 4]),
   providerOptions: ["openai": ["language": "en"]]
 )
@@ -1423,7 +1423,7 @@ import SwiftAISDK
 import OpenAIProvider
 
 let result = try await transcribe(
-  model: openai.transcription("whisper-1"),
+  model: openai.transcription(modelId: "whisper-1"),
   audio: Data([1, 2, 3, 4]),
   providerOptions: [
     "openai": [
@@ -1477,7 +1477,7 @@ using the `.speech()` factory method.
 The first argument is the model id e.g. `tts-1`.
 
 ```swift
-let model = openai.speech("tts-1")
+let model = openai.speech(modelId: "tts-1")
 ```
 
 You can also pass additional provider-specific options using the `providerOptions` argument. For example, supplying a voice to use for the generated audio.
@@ -1487,7 +1487,7 @@ import SwiftAISDK
 import OpenAIProvider
 
 let result = try await generateSpeech(
-  model: openai.speech("tts-1"),
+  model: openai.speech(modelId: "tts-1"),
   text: "Hello, world!",
   providerOptions: ["openai": [:]]
 )
