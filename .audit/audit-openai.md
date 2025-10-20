@@ -79,15 +79,15 @@
 | OpenAICompletionLanguageModel | 16 | 16 | 100% | ✅ PERFECT |
 | OpenAITranscriptionModel | 13 | 14 | 108% | ✅ EXCELLENT |
 | OpenAIEmbeddingModel | 6 | 6 | 100% | ✅ PERFECT |
-| OpenAIImageModel | 10 | 4 | 40% | ⚠️ MODERATE |
-| OpenAISpeechModel | 8 | 2 | 25% | ⚠️ MODERATE |
+| OpenAIImageModel | 10 | 10 | 100% | ✅ PERFECT |
+| OpenAISpeechModel | 8 | 9 | 113% | ✅ EXCELLENT |
 | OpenAIChatMessages | 19 | 17 | 89% | ✅ GOOD |
 | OpenAIResponsesPrepareTools | 10 | 13 | 130% | ✅ EXCELLENT |
 | OpenAIChatPrepareTools | 8 | 7 | 88% | ✅ GOOD |
 | OpenAIError | 1 | 1 | 100% | ✅ PERFECT |
 | OpenAIProvider | 3 | 1 | 33% | ⚠️ MODERATE |
 
-**TOTAL: 290 → 260 (89.7% coverage) ✅ EXCELLENT**
+**TOTAL: 290 → 273 (94.1% coverage) ✅ EXCELLENT**
 
 ---
 
@@ -369,4 +369,65 @@ Added 35 tests covering: basic generation, response formats, provider options, r
 
 ---
 
-**Last Updated:** 2025-10-20 06:00 UTC
+### OpenAISpeechModel (Priority 7 - EXCEEDS UPSTREAM ✅)
+**Target:** 8 tests | **Current:** 9/8 (113%)
+
+**Note:** Already completed! Audit was outdated. All 9 tests passing.
+
+#### Test Coverage (9/9):
+- [x] Pass model and text - `testPassesModelAndText`
+- [x] Pass headers correctly - `testPassesHeaders`
+- [x] Send JSON request with options - `testSendsJsonRequest`
+- [x] Report warnings for unsupported options - `testWarningForUnsupportedOptions`
+- [x] Return audio data with correct content type - `testReturnsAudioDataWithCorrectContentType`
+- [x] Include response data (timestamp, modelId, headers) - `testIncludeResponseData`
+- [x] Use real date when no custom provider - `testUseRealDate`
+- [x] Handle different audio formats - `testHandleDifferentAudioFormats`
+- [x] Include empty warnings array when no warnings - `testIncludeEmptyWarningsArray`
+
+**Enhanced Coverage:** Swift implementation splits upstream "warnings" test into 2 tests:
+- With warnings (unsupported options)
+- Without warnings (empty array)
+
+---
+
+### OpenAIImageModel (Priority 8 - COMPLETE ✅ + BUG FIX 🐛)
+**Target:** 10 tests | **Current:** 10/10 (100%)
+
+#### Added Tests (6/6) ✅ COMPLETE
+
+- [x] Pass model and text - `testDoGenerateReturnsImagesWarningsMetadata`
+- [x] Pass headers - `testDoGeneratePassesCustomHeaders`
+- [x] Pass provider options - `testDoGenerateSendsRequestBody`
+- [x] Return image metadata with revised prompts - `testDoGenerateReturnsImageMetadata`
+- [x] Include response data - `testDoGenerateIncludesResponseMetadata`
+- [x] Use real date - `testDoGenerateUsesRealDate`
+- [x] Respect custom date provider - `testDoGenerateRespectsCustomDate`
+- [x] Respect maxImagesPerCall - `testMaxImagesPerCall`
+- [x] response_format included for dall-e-3 - `testResponseFormatIncludedForDallE3`
+- [x] response_format omitted for gpt-image-1 - `testResponseFormatOmittedForGptImage1`
+
+#### 🐛 BUG FIXED: maxImagesPerCall for unknown models
+
+**Issue**: OpenAIImageModel returned `.default` for unknown models instead of `.value(1)`
+
+**Upstream TypeScript:**
+```typescript
+return modelMaxImagesPerCall[this.modelId] ?? 1;  // Fallback: 1
+```
+
+**Swift BEFORE (WRONG):**
+```swift
+return .default  // ❌ Incorrect - doesn't match upstream
+```
+
+**Swift AFTER (CORRECT):**
+```swift
+return .value(1)  // ✅ Matches upstream fallback behavior
+```
+
+**File Changed:** `Sources/OpenAIProvider/Image/OpenAIImageModel.swift:22`
+
+---
+
+**Last Updated:** 2025-10-20 07:00 UTC

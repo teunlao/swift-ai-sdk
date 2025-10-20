@@ -18,7 +18,8 @@ public final class OpenAIImageModel: ImageModelV3 {
         if let limit = openAIImageModelMaxImagesPerCall[modelIdentifier] {
             return .value(limit)
         }
-        return .default
+        // Upstream TypeScript: return modelMaxImagesPerCall[this.modelId] ?? 1
+        return .value(1)
     }
 
     public func doGenerate(options: ImageModelV3CallOptions) async throws -> ImageModelV3GenerateResult {
