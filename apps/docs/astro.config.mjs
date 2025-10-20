@@ -42,7 +42,8 @@ export default defineConfig({
             { label: "Image Generation", link: "/ai-sdk-core/image-generation" },
             { label: "Transcription", link: "/ai-sdk-core/transcription" },
             { label: "Speech", link: "/ai-sdk-core/speech" },
-            { label: "Language Model Middleware", link: "/ai-sdk-core/middleware" }
+            { label: "Language Model Middleware", link: "/ai-sdk-core/middleware" },
+            { label: "Provider & Model Management", link: "/ai-sdk-core/provider-management" }
           ]
         },
         {
