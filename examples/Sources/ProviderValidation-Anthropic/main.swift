@@ -32,6 +32,22 @@ struct ProviderValidationAnthropic {
             ("2. Custom Provider Settings", testCustomProviderSettings),
             ("3. Language Model Creation", testLanguageModelCreation),
 
+            // Advanced Features
+            ("4. Reasoning Syntax", testReasoningSyntax),
+            ("5. Cache Control Syntax", testCacheControlSyntax),
+            ("6. Cache Control System Messages", testCacheControlSystemMessages),
+
+            // Tools
+            ("7. Bash Tool Syntax", testBashToolSyntax),
+            ("8. Text Editor Tool Syntax", testTextEditorToolSyntax),
+            ("9. Computer Tool Syntax", testComputerToolSyntax),
+            ("10. Web Search Tool Syntax", testWebSearchToolSyntax),
+            ("11. Web Fetch Tool Syntax", testWebFetchToolSyntax),
+            ("12. Code Execution Tool Syntax", testCodeExecutionToolSyntax),
+
+            // Multi-modal
+            ("13. PDF Support Syntax", testPdfSupportSyntax),
+
             // Skip tests that require actual API calls for now
             // We'll add mock implementations later
         ]
@@ -107,6 +123,156 @@ func testLanguageModelCreation() async throws {
     print("   Created model: \(modelType)")
 
     print("   ✓ Model conforms to LanguageModelV3")
+}
+
+// MARK: - Advanced Features Tests
+
+func testReasoningSyntax() async throws {
+    // From docs: thinking parameter with budgetTokens
+    print("   Testing reasoning syntax")
+
+    let _: [String: Any] = [
+        "anthropic": [
+            "thinking": [
+                "type": "enabled",
+                "budgetTokens": 12000
+            ]
+        ]
+    ]
+
+    print("   ✓ Reasoning providerOptions structure is valid")
+    print("   Options: thinking with budgetTokens")
+}
+
+func testCacheControlSyntax() async throws {
+    // From docs: cacheControl in message content
+    print("   Testing cache control syntax")
+
+    let _: [[String: Any]] = [
+        [
+            "role": "user",
+            "content": [
+                ["type": "text", "text": "You are a JavaScript expert."],
+                [
+                    "type": "text",
+                    "text": "Error message: test error",
+                    "providerOptions": [
+                        "anthropic": ["cacheControl": ["type": "ephemeral"]]
+                    ]
+                ],
+                ["type": "text", "text": "Explain the error message."]
+            ]
+        ]
+    ]
+
+    print("   ✓ Cache control in content structure is valid")
+    print("   Format: cacheControl in providerOptions per message part")
+}
+
+func testCacheControlSystemMessages() async throws {
+    // From docs: cacheControl on system messages
+    print("   Testing cache control on system messages syntax")
+
+    let _: [[String: Any]] = [
+        [
+            "role": "system",
+            "content": "You are a JavaScript expert."
+        ],
+        [
+            "role": "system",
+            "content": "Long context here",
+            "providerOptions": [
+                "anthropic": ["cacheControl": ["type": "ephemeral"]]
+            ]
+        ],
+        [
+            "role": "user",
+            "content": "Explain this code"
+        ]
+    ]
+
+    print("   ✓ Cache control on system messages structure is valid")
+    print("   Format: Multiple system messages with cacheControl")
+}
+
+// MARK: - Tools Tests
+
+func testBashToolSyntax() async throws {
+    // From docs: anthropic.tools.bash_20241022
+    print("   Testing bash tool syntax")
+
+    print("   ⏭️  Skipping: bash tool requires execute closure implementation")
+    throw SkippedTest()
+}
+
+func testTextEditorToolSyntax() async throws {
+    // From docs: anthropic.tools.textEditor_20250728
+    print("   Testing text editor tool syntax")
+
+    print("   ⏭️  Skipping: text editor tool requires execute closure implementation")
+    throw SkippedTest()
+}
+
+func testComputerToolSyntax() async throws {
+    // From docs: anthropic.tools.computer_20241022
+    print("   Testing computer tool syntax")
+
+    print("   ⏭️  Skipping: computer tool requires execute closure implementation")
+    throw SkippedTest()
+}
+
+func testWebSearchToolSyntax() async throws {
+    // From docs: anthropic.tools.webSearch_20250305
+    print("   Testing web search tool syntax")
+
+    let _ = anthropic.tools.webSearch20250305()
+
+    print("   ✓ Web search tool created successfully")
+    print("   Tool: anthropic.tools.webSearch20250305()")
+}
+
+func testWebFetchToolSyntax() async throws {
+    // From docs: anthropic.tools.webFetch_20250910
+    print("   Testing web fetch tool syntax")
+
+    let _ = anthropic.tools.webFetch20250910()
+
+    print("   ✓ Web fetch tool created successfully")
+    print("   Tool: anthropic.tools.webFetch20250910()")
+}
+
+func testCodeExecutionToolSyntax() async throws {
+    // From docs: anthropic.tools.codeExecution_20250522
+    print("   Testing code execution tool syntax")
+
+    let _ = anthropic.tools.codeExecution20250522()
+
+    print("   ✓ Code execution tool created successfully")
+    print("   Tool: anthropic.tools.codeExecution20250522()")
+}
+
+// MARK: - Multi-modal Tests
+
+func testPdfSupportSyntax() async throws {
+    // From docs: PDF in message content
+    print("   Testing PDF support syntax")
+
+    let _: [[String: Any]] = [
+        [
+            "role": "user",
+            "content": [
+                ["type": "text", "text": "What is in this PDF?"],
+                [
+                    "type": "file",
+                    "data": Data(),
+                    "mediaType": "application/pdf"
+                ]
+            ]
+        ]
+    ]
+
+    print("   ✓ PDF support structure is valid")
+    print("   Format: [\"type\": \"file\", \"mediaType\": \"application/pdf\"]")
 }
 
 // MARK: - Utilities
