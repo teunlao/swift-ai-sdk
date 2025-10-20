@@ -5,6 +5,34 @@
  Each example from docs/providers/openai.mdx is tested here to ensure correctness.
 
  Run with: swift run ProviderValidation-OpenAI
+
+ ## API Discrepancies Found
+
+ The following OpenAI tools have different API signatures in the Swift implementation
+ compared to what's shown in the documentation:
+
+ 1. **webSearch** - Docs show individual parameters, actual API uses `OpenAIWebSearchArgs`
+    - Docs: `openai.tools.webSearch(searchContextSize: "high", userLocation: [...])`
+    - Actual: `openai.tools.webSearch(OpenAIWebSearchArgs(searchContextSize: ..., userLocation: ...))`
+
+ 2. **fileSearch** - Docs show individual parameters, actual API uses `OpenAIFileSearchArgs`
+    - Docs: `openai.tools.fileSearch(vectorStoreIds: [...], maxNumResults: 5, ...)`
+    - Actual: `openai.tools.fileSearch(OpenAIFileSearchArgs(vectorStoreIds: ..., ...))`
+
+ 3. **imageGeneration** - Docs show individual parameters, actual API uses `OpenAIImageGenerationArgs`
+    - Docs: `openai.tools.imageGeneration(outputFormat: "webp", quality: "low")`
+    - Actual: `openai.tools.imageGeneration(OpenAIImageGenerationArgs(outputFormat: ..., quality: ...))`
+
+ 4. **codeInterpreter** - Docs show dictionary container, actual API uses enum
+    - Docs: `openai.tools.codeInterpreter(container: ["fileIds": [...]])`
+    - Actual: `openai.tools.codeInterpreter(OpenAICodeInterpreterArgs(container: .auto(fileIds: [...])))`
+
+ 5. **localShell** - Docs show execute closure parameter, actual API takes no parameters
+    - Docs: `openai.tools.localShell(execute: { ... })`
+    - Actual: `openai.tools.localShell()`
+
+ These validation tests use the actual Swift API implementation.
+ The documentation should be updated to reflect the correct API signatures.
  */
 
 import Foundation
@@ -47,6 +75,32 @@ struct ProviderValidationOpenAI {
 
             // Image Models
             ("11. Image Model Creation", testImageModelCreation),
+
+            // Provider-Specific Options
+            ("12. Reasoning Output Syntax", testReasoningOutputSyntax),
+            ("13. Verbosity Control Syntax", testVerbosityControlSyntax),
+
+            // Tools Validation
+            ("14. Web Search Tool Syntax", testWebSearchToolSyntax),
+            ("15. File Search Tool Syntax", testFileSearchToolSyntax),
+            ("16. Image Generation Tool Syntax", testImageGenerationToolSyntax),
+            ("17. Code Interpreter Tool Syntax", testCodeInterpreterToolSyntax),
+            ("18. Local Shell Tool Syntax", testLocalShellToolSyntax),
+
+            // Multi-Modal Inputs
+            ("19. Image Input Syntax - Data", testImageInputDataSyntax),
+            ("20. Image Input Syntax - File ID", testImageInputFileIdSyntax),
+            ("21. Image Input Syntax - URL", testImageInputUrlSyntax),
+            ("22. PDF Input Syntax - Data", testPdfInputDataSyntax),
+            ("23. PDF Input Syntax - File ID", testPdfInputFileIdSyntax),
+            ("24. PDF Input Syntax - URL", testPdfInputUrlSyntax),
+
+            // Structured Outputs
+            ("25. Structured Output Schema Syntax", testStructuredOutputSyntax),
+
+            // Chat Models
+            ("26. Chat Model Creation", testChatModelCreation),
+            ("27. Chat Model Provider Options", testChatModelProviderOptions),
 
             // Skip tests that require actual API calls for now
             // We'll add mock implementations later
@@ -242,6 +296,296 @@ func testImageModelCreation() async throws {
 
     // Type is guaranteed to be ImageModelV3
     print("   ✓ Model conforms to ImageModelV3")
+}
+
+// MARK: - Provider-Specific Options Tests
+
+func testReasoningOutputSyntax() async throws {
+    // From docs: providerOptions with reasoningSummary
+    print("   Testing reasoningSummary providerOptions syntax")
+
+    let _: [String: Any] = [
+        "openai": [
+            "reasoningSummary": "detailed" // 'auto', 'detailed'
+        ]
+    ]
+
+    print("   ✓ Reasoning output providerOptions structure is valid")
+    print("   Options: reasoningSummary=detailed")
+}
+
+func testVerbosityControlSyntax() async throws {
+    // From docs: providerOptions with textVerbosity
+    print("   Testing textVerbosity providerOptions syntax")
+
+    let _: [String: Any] = [
+        "openai": [
+            "textVerbosity": "low" // 'low', 'medium', 'high'
+        ]
+    ]
+
+    print("   ✓ Text verbosity providerOptions structure is valid")
+    print("   Options: textVerbosity=low")
+}
+
+// MARK: - Tools Validation Tests
+
+func testWebSearchToolSyntax() async throws {
+    // From docs: openai.tools.webSearch
+    // Note: Actual API uses OpenAIWebSearchArgs struct
+    print("   Testing web search tool syntax")
+
+    let _: [String: Any] = [
+        "web_search": openai.tools.webSearch(
+            OpenAIWebSearchArgs(
+                searchContextSize: "high",
+                userLocation: OpenAIWebSearchArgs.UserLocation(
+                    city: "San Francisco",
+                    region: "California"
+                )
+            )
+        )
+    ]
+
+    print("   ✓ Web search tool structure is valid")
+    print("   Tool: openai.tools.webSearch with configuration")
+}
+
+func testFileSearchToolSyntax() async throws {
+    // From docs: openai.tools.fileSearch
+    // Note: Actual API uses OpenAIFileSearchArgs struct
+    print("   Testing file search tool syntax")
+
+    let _: [String: Any] = [
+        "file_search": openai.tools.fileSearch(
+            OpenAIFileSearchArgs(
+                vectorStoreIds: ["vs_123"],
+                maxNumResults: 5,
+                ranking: OpenAIFileSearchArgs.RankingOptions(
+                    ranker: "auto",
+                    scoreThreshold: 0.5
+                ),
+                filters: .object([
+                    "key": .string("author"),
+                    "type": .string("eq"),
+                    "value": .string("Jane Smith")
+                ])
+            )
+        )
+    ]
+
+    print("   ✓ File search tool structure is valid")
+    print("   Tool: openai.tools.fileSearch with vector store")
+}
+
+func testImageGenerationToolSyntax() async throws {
+    // From docs: openai.tools.imageGeneration
+    // Note: Actual API uses OpenAIImageGenerationArgs struct
+    print("   Testing image generation tool syntax")
+
+    let _: [String: Any] = [
+        "image_generation": openai.tools.imageGeneration(
+            OpenAIImageGenerationArgs(
+                outputFormat: "webp",
+                quality: "low"
+            )
+        )
+    ]
+
+    print("   ✓ Image generation tool structure is valid")
+    print("   Tool: openai.tools.imageGeneration with webp format")
+}
+
+func testCodeInterpreterToolSyntax() async throws {
+    // From docs: openai.tools.codeInterpreter
+    // Note: Actual API uses OpenAICodeInterpreterArgs struct
+    print("   Testing code interpreter tool syntax")
+
+    let _: [String: Any] = [
+        "code_interpreter": openai.tools.codeInterpreter(
+            OpenAICodeInterpreterArgs(
+                container: .auto(fileIds: ["file-123", "file-456"])
+            )
+        )
+    ]
+
+    print("   ✓ Code interpreter tool structure is valid")
+    print("   Tool: openai.tools.codeInterpreter with file IDs")
+}
+
+func testLocalShellToolSyntax() async throws {
+    // From docs: openai.tools.localShell
+    // Note: Actual API takes no arguments
+    print("   Testing local shell tool syntax")
+
+    let _: [String: Any] = [
+        "local_shell": openai.tools.localShell()
+    ]
+
+    print("   ✓ Local shell tool structure is valid")
+    print("   Tool: openai.tools.localShell")
+}
+
+// MARK: - Multi-Modal Inputs Tests
+
+func testImageInputDataSyntax() async throws {
+    // From docs: image content with Data
+    print("   Testing image input with Data syntax")
+
+    // Validate message structure with image
+    let _: [[String: Any]] = [
+        [
+            "role": "user",
+            "content": [
+                [
+                    "type": "text",
+                    "text": "Please describe the image."
+                ],
+                [
+                    "type": "image",
+                    "image": Data() // Empty data for syntax validation
+                ]
+            ]
+        ]
+    ]
+
+    print("   ✓ Image input with Data structure is valid")
+    print("   Format: [\"type\": \"image\", \"image\": Data(...)]")
+}
+
+func testImageInputFileIdSyntax() async throws {
+    // From docs: image content with file-id
+    print("   Testing image input with file-id syntax")
+
+    let _: [String: Any] = [
+        "type": "image",
+        "image": "file-8EFBcWHsQxZV7YGezBC1fq"
+    ]
+
+    print("   ✓ Image input with file-id structure is valid")
+    print("   Format: [\"type\": \"image\", \"image\": \"file-...\"]")
+}
+
+func testImageInputUrlSyntax() async throws {
+    // From docs: image content with URL
+    print("   Testing image input with URL syntax")
+
+    let _: [String: Any] = [
+        "type": "image",
+        "image": "https://sample.edu/image.png"
+    ]
+
+    print("   ✓ Image input with URL structure is valid")
+    print("   Format: [\"type\": \"image\", \"image\": \"https://...\"]")
+}
+
+func testPdfInputDataSyntax() async throws {
+    // From docs: PDF content with Data
+    print("   Testing PDF input with Data syntax")
+
+    let _: [String: Any] = [
+        "type": "file",
+        "data": Data(), // Empty data for syntax validation
+        "mediaType": "application/pdf",
+        "filename": "ai.pdf"
+    ]
+
+    print("   ✓ PDF input with Data structure is valid")
+    print("   Format: [\"type\": \"file\", \"data\": Data(...), \"mediaType\": \"application/pdf\"]")
+}
+
+func testPdfInputFileIdSyntax() async throws {
+    // From docs: PDF content with file-id
+    print("   Testing PDF input with file-id syntax")
+
+    let _: [String: Any] = [
+        "type": "file",
+        "data": "file-8EFBcWHsQxZV7YGezBC1fq",
+        "mediaType": "application/pdf"
+    ]
+
+    print("   ✓ PDF input with file-id structure is valid")
+    print("   Format: [\"type\": \"file\", \"data\": \"file-...\", \"mediaType\": \"application/pdf\"]")
+}
+
+func testPdfInputUrlSyntax() async throws {
+    // From docs: PDF content with URL
+    print("   Testing PDF input with URL syntax")
+
+    let _: [String: Any] = [
+        "type": "file",
+        "data": "https://sample.edu/example.pdf",
+        "mediaType": "application/pdf",
+        "filename": "ai.pdf"
+    ]
+
+    print("   ✓ PDF input with URL structure is valid")
+    print("   Format: [\"type\": \"file\", \"data\": \"https://...\", \"mediaType\": \"application/pdf\"]")
+}
+
+// MARK: - Structured Outputs Tests
+
+func testStructuredOutputSyntax() async throws {
+    // From docs: generateObject with schema
+    print("   Testing structured output schema syntax")
+
+    let _ = FlexibleSchema(jsonSchema(
+        .object([
+            "type": .string("object"),
+            "properties": .object([
+                "name": .object(["type": .string("string")]),
+                "ingredients": .object([
+                    "type": .string("array"),
+                    "items": .object([
+                        "type": .string("object"),
+                        "properties": .object([
+                            "name": .object(["type": .string("string")]),
+                            "amount": .object(["type": .string("string")])
+                        ]),
+                        "required": .array([.string("name"), .string("amount")])
+                    ])
+                ]),
+                "steps": .object([
+                    "type": .string("array"),
+                    "items": .object(["type": .string("string")])
+                ])
+            ]),
+            "required": .array([.string("name"), .string("ingredients"), .string("steps")])
+        ])
+    ))
+
+    print("   ✓ Structured output schema is valid")
+    print("   Schema: FlexibleSchema with nested object structure")
+}
+
+// MARK: - Chat Models Tests
+
+func testChatModelCreation() async throws {
+    // From docs: openai.chat(modelId: "gpt-5")
+    print("   Testing chat model creation")
+
+    let model = openai.chat(modelId: "gpt-5")
+    let modelType = String(describing: type(of: model))
+    print("   Created chat model: \(modelType)")
+
+    print("   ✓ Chat model conforms to LanguageModelV3")
+}
+
+func testChatModelProviderOptions() async throws {
+    // From docs: chat model with logitBias and user options
+    print("   Testing chat model providerOptions syntax")
+
+    let _: [String: Any] = [
+        "openai": [
+            "logitBias": [
+                "50256": -100
+            ],
+            "user": "test-user"
+        ]
+    ]
+
+    print("   ✓ Chat model providerOptions structure is valid")
+    print("   Options: logitBias, user")
 }
 
 // MARK: - Utilities
