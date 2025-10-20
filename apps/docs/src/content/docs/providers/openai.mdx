@@ -328,13 +328,13 @@ let result = try await generateText(
   prompt: "What happened in San Francisco last week?",
   tools: [
     "web_search": openai.tools.webSearch(
-      // optional configuration:
-      searchContextSize: "high",
-      userLocation: [
-        "type": "approximate",
-        "city": "San Francisco",
-        "region": "California"
-      ]
+      OpenAIWebSearchArgs(
+        searchContextSize: "high",
+        userLocation: OpenAIWebSearchArgs.UserLocation(
+          city: "San Francisco",
+          region: "California"
+        )
+      )
     )
   ],
   // Force web search tool (optional):
@@ -357,18 +357,19 @@ let result = try await generateText(
   prompt: "What does the document say about user authentication?",
   tools: [
     "file_search": openai.tools.fileSearch(
-      vectorStoreIds: ["vs_123"],
-      // configuration below is optional:
-      maxNumResults: 5,
-      filters: [
-        "key": "author",
-        "type": "eq",
-        "value": "Jane Smith"
-      ],
-      ranking: [
-        "ranker": "auto",
-        "scoreThreshold": 0.5
-      ]
+      OpenAIFileSearchArgs(
+        vectorStoreIds: ["vs_123"],
+        maxNumResults: 5,
+        ranking: OpenAIFileSearchArgs.RankingOptions(
+          ranker: "auto",
+          scoreThreshold: 0.5
+        ),
+        filters: .object([
+          "key": .string("author"),
+          "type": .string("eq"),
+          "value": .string("Jane Smith")
+        ])
+      )
     )
   ],
   providerOptions: [
@@ -401,7 +402,9 @@ let result = try await generateText(
   model: openai("gpt-5"),
   prompt: "Generate an image of an echidna swimming across the Mozambique channel.",
   tools: [
-    "image_generation": openai.tools.imageGeneration(outputFormat: "webp")
+    "image_generation": openai.tools.imageGeneration(
+      OpenAIImageGenerationArgs(outputFormat: "webp")
+    )
   ]
 )
 
@@ -421,8 +424,10 @@ let result = try streamText(
   prompt: "Generate an image of an echidna swimming across the Mozambique channel.",
   tools: [
     "image_generation": openai.tools.imageGeneration(
-      outputFormat: "webp",
-      quality: "low"
+      OpenAIImageGenerationArgs(
+        outputFormat: "webp",
+        quality: "low"
+      )
     )
   ]
 )
@@ -460,10 +465,9 @@ let result = try await generateText(
   prompt: "Write and run Python code to calculate the factorial of 10",
   tools: [
     "code_interpreter": openai.tools.codeInterpreter(
-      // optional configuration:
-      container: [
-        "fileIds": ["file-123", "file-456"] // optional file IDs to make available
-      ]
+      OpenAICodeInterpreterArgs(
+        container: .auto(fileIds: ["file-123", "file-456"])
+      )
     )
   ]
 )
@@ -491,12 +495,7 @@ import OpenAIProvider
 let result = try await generateText(
   model: openai.responses(modelId: "gpt-5-codex"),
   tools: [
-    "local_shell": openai.tools.localShell(
-      execute: { action in
-        // ... your implementation, e.g. sandbox access ...
-        return ["output": stdout]
-      }
-    )
+    "local_shell": openai.tools.localShell()
   ],
   prompt: "List the files in my home directory.",
   stopWhen: stepCountIs(2)
