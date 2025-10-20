@@ -24,7 +24,17 @@ export default defineConfig({
           items: [
             { label: "Overview", link: "/agents/overview" },
             { label: "Building Agents", link: "/agents/building-agents" },
-            { label: "Workflow Patterns", link: "/agents/workflows" }
+            { label: "Workflow Patterns", link: "/agents/workflows" },
+            { label: "Loop Control", link: "/agents/loop-control" }
+          ]
+        },
+        {
+          label: "AI SDK Core",
+          items: [
+            { label: "Overview", link: "/ai-sdk-core/overview" },
+            { label: "Generating & Streaming Text", link: "/ai-sdk-core/generating-text" },
+            { label: "Generating Structured Data", link: "/ai-sdk-core/generating-structured-data" },
+            { label: "Tools and Tool Calling", link: "/ai-sdk-core/tools-and-tool-calling" }
           ]
         },
         {

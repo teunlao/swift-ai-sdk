@@ -1,0 +1,311 @@
+---
+title: Loop Control
+description: Control agent execution with built-in loop management using stopWhen and prepareStep
+---
+_This page adapts the original AI SDK documentation: [Loop Control](https://ai-sdk.dev/docs/agents/loop-control)._ 
+
+You can control both the execution flow and the settings at each step of the agent loop. The AI SDK provides built-in loop control through two parameters: `stopWhen` for defining stopping conditions and `prepareStep` for modifying settings (model, tools, messages, and more) between steps.
+
+## Stop Conditions
+
+The `stopWhen` parameter controls when to stop execution when there are tool results in the last step. By default, agents stop after 20 steps using `stepCountIs(20)`.
+
+When you provide `stopWhen`, the agent continues executing after tool calls until a stopping condition is met. When the condition is an array, execution stops when any of the conditions are met.
+
+### Use Built-in Conditions
+
+The AI SDK provides several built-in stopping conditions:
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+
+// Tool set defined elsewhere
+let toolset: ToolSet = [:]
+
+let agent = Agent<Never, Never>(settings: .init(
+  model: openai("gpt-5"),
+  tools: toolset,
+  // Default behaviour in Agent is stepCountIs(20), shown here explicitly
+  stopWhen: [stepCountIs(20)]
+))
+
+let result = try await agent.generate(prompt: .text(
+  "Analyze this dataset and create a summary report"
+))
+```
+
+### Combine Multiple Conditions
+
+Combine multiple stopping conditions. The loop stops when it meets any condition:
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+
+let agent = Agent<Never, Never>(settings: .init(
+  model: openai("gpt-5"),
+  tools: toolset,
+  stopWhen: [
+    stepCountIs(20),            // Maximum 20 steps
+    hasToolCall("someTool"),    // Stop after calling 'someTool'
+  ]
+))
+
+let result = try await agent.generate(prompt: .text(
+  "Research and analyze the topic"
+))
+```
+
+### Create Custom Conditions
+
+Build custom stopping conditions for specific requirements:
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+
+// Stop when the model generates text containing "ANSWER:"
+let hasAnswer: StopCondition = { steps in
+  return steps.contains { $0.text.contains("ANSWER:") }
+}
+
+let agent = Agent<Never, Never>(settings: .init(
+  model: openai("gpt-5"),
+  tools: toolset,
+  stopWhen: [hasAnswer]
+))
+
+let result = try await agent.generate(prompt: .text(
+  "Find the answer and respond with \"ANSWER: [your answer]\""
+))
+```
+
+Custom conditions receive step information across all steps:
+
+```swift
+// Stop when a simple cost estimate exceeds $0.50
+let budgetExceeded: StopCondition = { steps in
+  var input = 0
+  var output = 0
+  for step in steps {
+    input += step.usage.inputTokens ?? 0
+    output += step.usage.outputTokens ?? 0
+  }
+  let costEstimate = (Double(input) * 0.01 + Double(output) * 0.03) / 1000.0
+  return costEstimate > 0.5
+}
+```
+
+## Prepare Step
+
+The `prepareStep` callback runs before each step in the loop and defaults to the initial settings if you don't return any changes. Use it to modify settings, manage context, or implement dynamic behavior based on execution history.
+
+### Dynamic Model Selection
+
+Switch models based on step requirements:
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+
+let agent = Agent<Never, Never>(settings: .init(
+  model: openai("gpt-4o-mini"), // Default model
+  tools: toolset,
+  prepareStep: { options in
+    // Use a stronger model for complex reasoning after initial steps
+    if options.stepNumber > 2 && options.messages.count > 10 {
+      return PrepareStepResult(model: openai("gpt-4o"))
+    }
+    // Continue with default settings
+    return nil
+  }
+))
+
+let result = try await agent.generate(prompt: .text("..."))
+```
+
+### Context Management
+
+Manage growing conversation history in long-running loops:
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+
+let agent = Agent<Never, Never>(settings: .init(
+  model: openai("gpt-4o"),
+  tools: toolset,
+  prepareStep: { options in
+    // Keep only recent messages to stay within context limits
+    if options.messages.count > 20 {
+      var recent = Array(options.messages.suffix(10))
+      // Optionally keep system via `system:` override instead of first message
+      return PrepareStepResult(messages: recent)
+    }
+    return nil
+  }
+))
+
+let result = try await agent.generate(prompt: .text("..."))
+```
+
+### Tool Selection
+
+Control which tools are available at each step:
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+
+let tools: ToolSet = [
+  "search": searchTool,
+  "analyze": analyzeTool,
+  "summarize": summarizeTool,
+]
+
+let agent = Agent<Never, Never>(settings: .init(
+  model: openai("gpt-4o"),
+  tools: tools,
+  prepareStep: { options in
+    // Search phase (steps 0-2)
+    if options.stepNumber <= 2 {
+      return PrepareStepResult(activeTools: ["search"], toolChoice: .required)
+    }
+    // Analysis phase (steps 3-5)
+    if options.stepNumber <= 5 {
+      return PrepareStepResult(activeTools: ["analyze"])
+    }
+    // Summary phase (step 6+)
+    return PrepareStepResult(activeTools: ["summarize"], toolChoice: .required)
+  }
+))
+
+let result = try await agent.generate(prompt: .text("..."))
+```
+
+You can also force a specific tool to be used:
+
+```swift
+prepareStep: { options in
+  if options.stepNumber == 0 {             // Force the search tool to be used first
+    return PrepareStepResult(toolChoice: .tool(toolName: "search"))
+  }
+  if options.stepNumber == 5 {             // Force the summarize tool after analysis
+    return PrepareStepResult(toolChoice: .tool(toolName: "summarize"))
+  }
+  return nil
+}
+```
+
+### Message Modification
+
+Transform messages before sending them to the model:
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+import AISDKProviderUtils
+
+func summarizeToolContent(_ parts: [ToolContentPart]) -> [ToolContentPart] {
+  // Replace with your summarization logic
+  return parts
+}
+
+let agent = Agent<Never, Never>(settings: .init(
+  model: openai("gpt-4o"),
+  tools: toolset,
+  prepareStep: { options in
+    // Summarize large tool results to reduce token usage
+    let processed = options.messages.map { message in
+      switch message {
+      case .tool(let tool):
+        if tool.content.count > 1000 {
+          return .tool(ToolModelMessage(content: summarizeToolContent(tool.content)))
+        }
+        return message
+      default:
+        return message
+      }
+    }
+    return PrepareStepResult(messages: processed)
+  }
+))
+
+let result = try await agent.generate(prompt: .text("..."))
+```
+
+## Access Step Information
+
+Both `stopWhen` and `prepareStep` receive detailed information about the current execution:
+
+```swift
+prepareStep: { options in
+  // Access previous tool calls and results
+  let previousToolCalls = options.steps.flatMap { $0.toolCalls }
+  let _ = options.steps.flatMap { $0.toolResults }
+
+  // Make decisions based on execution history
+  if previousToolCalls.contains(where: { call in
+    switch call { case .static(let c): return c.toolName == "dataAnalysis"
+                  case .dynamic(let c): return c.toolName == "dataAnalysis" }
+  }) {
+    return PrepareStepResult(toolChoice: .tool(toolName: "reportGenerator"))
+  }
+
+  return nil
+}
+```
+
+## Manual Loop Control
+
+For scenarios requiring complete control over the agent loop, you can use core functions (`generateText` and `streamText`) to implement your own loop management instead of using `stopWhen` and `prepareStep`. This approach provides maximum flexibility for complex workflows.
+
+### Implementing a Manual Loop
+
+Build your own agent loop when you need full control over execution:
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+import AISDKProviderUtils
+
+var messages: [ModelMessage] = [
+  .user(UserModelMessage(content: .text("..."), providerOptions: nil))
+]
+
+var step = 0
+let maxSteps = 10
+
+while step < maxSteps {
+  let result = try await generateText(
+    model: openai("gpt-4o"),
+    messages: messages,
+    tools: toolset
+  )
+
+  // Append model responses (assistant/tool) back into the conversation
+  let responseMessages = result.steps.last?.response.messages ?? []
+  let followUps: [ModelMessage] = responseMessages.map { msg in
+    switch msg {
+    case .assistant(let a): return .assistant(a)
+    case .tool(let t): return .tool(t)
+    }
+  }
+  messages.append(contentsOf: followUps)
+
+  if !result.text.isEmpty {
+    break // Stop when model generates final text
+  }
+
+  step += 1
+}
+```
+
+This manual approach gives you complete control over:
+
+- Message history management
+- Step-by-step decision making
+- Custom stopping conditions
+- Dynamic tool and model selection
+- Error handling and recovery

@@ -1,0 +1,478 @@
+---
+title: Generating Text
+description: Learn how to generate and stream text with the Swift AI SDK.
+---
+
+_This page adapts the original AI SDK documentation: [Generating and Streaming Text](https://ai-sdk.dev/docs/ai-sdk-core/generating-text)._ 
+
+Large language models (LLMs) can generate text in response to a prompt, which can contain instructions and information to process.
+For example, you can ask a model to come up with a recipe, draft an email, or summarize a document.
+
+The AI SDK Core provides two functions to generate text and stream it from LLMs:
+
+- [`generateText`](#generatetext): Generates text for a given prompt and model.
+- [`streamText`](#streamtext): Streams text from a given prompt and model.
+
+Advanced LLM features such as [tool calling](./tools-and-tool-calling) and [structured data generation](./generating-structured-data) are built on top of text generation.
+
+## `generateText`
+
+You can generate text using the [`generateText`](/docs/reference/ai-sdk-core/generate-text) function. This function is ideal for non-interactive use cases where you need to write text (e.g. drafting email or summarizing web pages) and for agents that use tools.
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+
+let result = try await generateText(
+  model: openai("gpt-5"),
+  prompt: "Write a vegetarian lasagna recipe for 4 people."
+)
+print(result.text)
+```
+
+You can use more [advanced prompts](./prompts) to generate text with more complex instructions and content:
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+
+let result = try await generateText(
+  model: openai("gpt-5"),
+  system: "You are a professional writer. You write simple, clear, and concise content.",
+  prompt: "Summarize the following article in 3-5 sentences: \(article)"
+)
+print(result.text)
+```
+
+The result object of `generateText` contains several promises that resolve when all required data is available:
+
+- `result.content`: The content that was generated in the last step.
+- `result.text`: The generated text.
+- `result.reasoning`: The full reasoning that the model has generated in the last step.
+- `result.reasoningText`: The reasoning text of the model (only available for some models).
+- `result.files`: The files that were generated in the last step.
+- `result.sources`: Sources that have been used as references in the last step (only available for some models).
+- `result.toolCalls`: The tool calls that were made in the last step.
+- `result.toolResults`: The results of the tool calls from the last step.
+- `result.finishReason`: The reason the model finished generating text.
+- `result.usage`: The usage of the model during the final step of text generation.
+- `result.totalUsage`: The total usage across all steps (for multi-step generations).
+- `result.warnings`: Warnings from the model provider (e.g. unsupported settings).
+- `result.request`: Additional request information.
+- `result.response`: Additional response information, including response messages and body.
+- `result.providerMetadata`: Additional provider-specific metadata.
+- `result.steps`: Details for all steps, useful for getting information about intermediate steps.
+- `result.experimental_output`: The generated structured output using the `experimental_output` specification.
+
+### Accessing response headers & body
+
+Sometimes you need access to the full response from the model provider,
+e.g. to access some provider-specific headers or body content.
+
+You can access the raw response headers and body using the `response` property:
+
+```swift
+let result = try await generateText(
+  model: openai("gpt-5"),
+  prompt: "..."
+)
+print(String(describing: result.response.headers))
+print(String(describing: result.response.body))
+```
+
+### `onFinish` callback
+
+When using `generateText`, you can provide an `onFinish` callback that is triggered after the last step is finished (
+[API Reference](/docs/reference/ai-sdk-core/generate-text#on-finish)
+).
+It contains the text, usage information, finish reason, messages, steps, total usage, and more:
+
+```swift
+let _ = try await generateText(
+  model: openai("gpt-5"),
+  prompt: "Invent a new holiday and describe its traditions.",
+  onFinish: { event in
+    let messages = event.response.messages
+    _ = messages
+  }
+)
+```
+
+## `streamText`
+
+Depending on your model and prompt, it can take a large language model (LLM) up to a minute to finish generating its response. This delay can be unacceptable for interactive use cases such as chatbots or real-time applications, where users expect immediate responses.
+
+AI SDK Core provides the [`streamText`](/docs/reference/ai-sdk-core/stream-text) function which simplifies streaming text from LLMs:
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+
+const result = try streamText(
+  model: openai("gpt-5"),
+  prompt: "Invent a new holiday and describe its traditions."
+)
+
+for try await textPart in result.textStream {
+  print(textPart)
+}
+```
+
+> Note
+> In Swift, `textStream` is an `AsyncThrowingStream<String, Error>` that you iterate with `for try await`.
+
+> Warning
+> `streamText` starts streaming immediately. Use `onError` to log errors.
+
+You can use `streamText` on its own or in combination with [AI SDK
+UI](/examples/next-pages/basics/streaming-text-generation) and [AI SDK
+RSC](/examples/next-app/basics/streaming-text-generation).
+The result object contains several helper functions to make the integration into [AI SDK UI](/docs/ai-sdk-ui) easier:
+
+- `result.toUIMessageStreamResponse()`: Creates a UI Message stream HTTP response (with tool calls etc.) that can be used in a Next.js App Router API route.
+- `result.pipeUIMessageStreamToResponse()`: Writes UI Message stream delta output to a Node.js response-like object.
+- `result.toTextStreamResponse()`: Creates a simple text stream HTTP response.
+- `result.pipeTextStreamToResponse()`: Writes text delta output to a Node.js response-like object.
+
+> Note
+> `streamText` uses backpressure and generates tokens as requested. You must consume the stream for it to finish.
+
+It also provides several promises that resolve when the stream is finished:
+
+- `result.content`: The content that was generated in the last step.
+- `result.text`: The generated text.
+- `result.reasoning`: The full reasoning that the model has generated.
+- `result.reasoningText`: The reasoning text of the model (only available for some models).
+- `result.files`: Files that have been generated by the model in the last step.
+- `result.sources`: Sources that have been used as references in the last step (only available for some models).
+- `result.toolCalls`: The tool calls that have been executed in the last step.
+- `result.toolResults`: The tool results that have been generated in the last step.
+- `result.finishReason`: The reason the model finished generating text.
+- `result.usage`: The usage of the model during the final step of text generation.
+- `result.totalUsage`: The total usage across all steps (for multi-step generations).
+- `result.warnings`: Warnings from the model provider (e.g. unsupported settings).
+- `result.steps`: Details for all steps, useful for getting information about intermediate steps.
+- `result.request`: Additional request information from the last step.
+- `result.response`: Additional response information from the last step.
+- `result.providerMetadata`: Additional provider-specific metadata from the last step.
+
+### `onError` callback
+
+`streamText` immediately starts streaming to enable sending data without waiting for the model.
+Errors become part of the stream and are not thrown to prevent e.g. servers from crashing.
+
+To log errors, you can provide an `onError` callback that is triggered when an error occurs.
+
+```swift
+let _ = try streamText(
+  model: openai("gpt-5"),
+  prompt: "Invent a new holiday and describe its traditions.",
+  onError: { error in
+    print("Stream error: \(error)")
+  }
+)
+```
+
+### `onChunk` callback
+
+When using `streamText`, you can provide an `onChunk` callback that is triggered for each chunk of the stream.
+
+It receives the following chunk types:
+
+- `text`
+- `reasoning`
+- `source`
+- `tool-call`
+- `tool-input-start`
+- `tool-input-delta`
+- `tool-result`
+- `raw`
+
+```swift
+let _ = try streamText(
+  model: openai("gpt-5"),
+  prompt: "Invent a new holiday and describe its traditions.",
+  onChunk: { part in
+    if case .textDelta(_, let text, _) = part { print(text) }
+  }
+)
+```
+
+### `onFinish` callback
+
+When using `streamText`, you can provide an `onFinish` callback that is triggered when the stream is finished (
+[API Reference](/docs/reference/ai-sdk-core/stream-text#on-finish)
+).
+It contains the text, usage information, finish reason, messages, steps, total usage, and more:
+
+```swift
+let _ = try streamText(
+  model: openai("gpt-5"),
+  prompt: "Invent a new holiday and describe its traditions.",
+  onFinish: { finalStep, steps, totalUsage, finishReason in
+    let messages = finalStep.response.messages
+    _ = messages
+  }
+)
+```
+
+### `fullStream` property
+
+You can read a stream with all events using the `fullStream` property.
+This can be useful if you want to implement your own UI or handle the stream in a different way.
+Here is an example of how to use the `fullStream` property:
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+import AISDKProviderUtils
+
+let cityAttractions = dynamicTool(
+  description: "List attractions for a city",
+  inputSchema: FlexibleSchema(jsonSchema(.object([
+    "type": .string("object"),
+    "properties": .object(["city": .object(["type": .string("string")])])
+  ]))),
+  execute: { input, _ in
+    return .object(["attractions": .array([.string("attraction1"), .string("attraction2"), .string("attraction3")])])
+  }
+)
+
+let result = try streamText(
+  model: openai("gpt-4.1"),
+  tools: ["cityAttractions": cityAttractions],
+  prompt: "What are some San Francisco tourist attractions?"
+)
+
+for await (const part of result.fullStream) {
+  switch (part.type) {
+    case 'start': {
+      // handle start of stream
+      break;
+    }
+    case 'start-step': {
+      // handle start of step
+      break;
+    }
+    case 'text-start': {
+      // handle text start
+      break;
+    }
+    case 'text-delta': {
+      // handle text delta here
+      break;
+    }
+    case 'text-end': {
+      // handle text end
+      break;
+    }
+    case 'reasoning-start': {
+      // handle reasoning start
+      break;
+    }
+    case 'reasoning-delta': {
+      // handle reasoning delta here
+      break;
+    }
+    case 'reasoning-end': {
+      // handle reasoning end
+      break;
+    }
+    case 'source': {
+      // handle source here
+      break;
+    }
+    case 'file': {
+      // handle file here
+      break;
+    }
+    case 'tool-call': {
+      switch (part.toolName) {
+        case 'cityAttractions': {
+          // handle tool call here
+          break;
+        }
+      }
+      break;
+    }
+    case 'tool-input-start': {
+      // handle tool input start
+      break;
+    }
+    case 'tool-input-delta': {
+      // handle tool input delta
+      break;
+    }
+    case 'tool-input-end': {
+      // handle tool input end
+      break;
+    }
+    case 'tool-result': {
+      switch (part.toolName) {
+        case 'cityAttractions': {
+          // handle tool result here
+          break;
+        }
+      }
+      break;
+    }
+    case 'tool-error': {
+      // handle tool error
+      break;
+    }
+    case 'finish-step': {
+      // handle finish step
+      break;
+    }
+    case 'finish': {
+      // handle finish here
+      break;
+    }
+    case 'error': {
+      // handle error here
+      break;
+    }
+    case 'raw': {
+      // handle raw value
+      break;
+    }
+  }
+}
+```
+
+### Stream transformation
+
+You can use the `experimental_transform` option to transform the stream.
+This is useful for e.g. filtering, changing, or smoothing the text stream.
+
+The transformations are applied before the callbacks are invoked and the promises are resolved.
+If you e.g. have a transformation that changes all text to uppercase, the `onFinish` callback will receive the transformed text.
+
+#### Smoothing streams
+
+The AI SDK Core provides a [`smoothStream` function](/docs/reference/ai-sdk-core/smooth-stream) that
+can be used to smooth out text streaming.
+
+> Note
+> A smoothing helper is coming to the Swift port. You can build custom transforms today (see below).
+
+#### Custom transformations
+
+You can also implement your own custom transformations.
+The transformation function receives the tools that are available to the model,
+and returns a function that is used to transform the stream.
+Tools can either be generic or limited to the tools that you are using.
+
+Here is an example of how to implement a custom transformation that converts
+all text to uppercase:
+
+```swift
+let upperCaseTransform: StreamTextTransform = { stream, _ in
+  createAsyncIterableStream(source: AsyncThrowingStream<TextStreamPart, Error> { continuation in
+    let task = Task {
+      do {
+        var it = stream.makeAsyncIterator()
+        while let part = try await it.next() {
+          if case .textDelta(let id, let text, let meta) = part {
+            continuation.yield(.textDelta(id: id, text: text.uppercased(), providerMetadata: meta))
+          } else {
+            continuation.yield(part)
+          }
+        }
+        continuation.finish()
+      } catch { continuation.finish(throwing: error) }
+    }
+    continuation.onTermination = { _ in task.cancel() }
+  })
+}
+```
+
+You can also stop the stream using the `stopStream` function.
+This is e.g. useful if you want to stop the stream when model guardrails are violated, e.g. by generating inappropriate content.
+
+When you invoke `stopStream`, it is important to simulate the `step-finish` and `finish` events to guarantee that a well-formed stream is returned
+and all callbacks are invoked.
+
+```swift
+let stopWordTransform: StreamTextTransform = { stream, opts in
+  createAsyncIterableStream(source: AsyncThrowingStream<TextStreamPart, Error> { continuation in
+    let task = Task {
+      do {
+        var it = stream.makeAsyncIterator()
+        while let part = try await it.next() {
+          if case .textDelta(_, let text, _) = part, text.contains("STOP") {
+            opts.stopStream()
+            break
+          }
+          continuation.yield(part)
+        }
+        continuation.finish()
+      } catch { continuation.finish(throwing: error) }
+    }
+    continuation.onTermination = { _ in task.cancel() }
+  })
+}
+```
+
+#### Multiple transformations
+
+You can also provide multiple transformations. They are applied in the order they are provided.
+
+```swift
+let result = try streamText(
+  model: openai("gpt-5"),
+  prompt: "...",
+  experimentalTransform: [upperCaseTransform, stopWordTransform]
+)
+```
+
+## Sources
+
+Some providers such as [Perplexity](/providers/ai-sdk-providers/perplexity#sources) and
+[Google Generative AI](/providers/ai-sdk-providers/google-generative-ai#sources) include sources in the response.
+
+Currently sources are limited to web pages that ground the response.
+You can access them using the `sources` property of the result.
+
+Each `url` source contains the following properties:
+
+- `id`: The ID of the source.
+- `url`: The URL of the source.
+- `title`: The optional title of the source.
+- `providerMetadata`: Provider metadata for the source.
+
+When you use `generateText`, you can access the sources using the `sources` property:
+
+```swift
+let g = try await generateText(
+  model: openai("gpt-5"),
+  prompt: "List the top 5 San Francisco news from the past week."
+)
+for source in g.sources { print(source) }
+```
+
+When you use `streamText`, you can access the sources using the `fullStream` property:
+
+```swift
+let s = try streamText(
+  model: openai("gpt-5"),
+  prompt: "List the top 5 San Francisco news from the past week."
+)
+for try await part in s.fullStream {
+  if case .source(let src) = part { print(src) }
+}
+```
+
+The sources are also available in the `result.sources` promise.
+
+## Examples
+
+You can see `generateText` and `streamText` in action using various frameworks in the following examples:
+
+### `generateText`
+
+> Examples for Swift will be added in a dedicated Quickstarts section (iOS/macOS, Vapor, CLI). Node/Next.js links are omitted in the Swift port.
+
+### `streamText`
+
+> Examples for Swift will be added in a dedicated Quickstarts section (iOS/macOS, Vapor, CLI). Node/Next.js links are omitted in the Swift port.

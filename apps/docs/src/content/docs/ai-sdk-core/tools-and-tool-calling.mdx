@@ -1,0 +1,752 @@
+---
+title: Tool Calling
+description: Learn about tool calling and multi-step calls (using stopWhen) with the Swift AI SDK.
+---
+
+_This page adapts the original AI SDK documentation: [Tool Calling](https://ai-sdk.dev/docs/ai-sdk-core/tools-and-tool-calling)._ 
+
+As covered under Foundations, [tools](/docs/foundations/tools) are objects that can be called by the model to perform a specific task.
+AI SDK Core tools contain three elements:
+
+- **`description`**: An optional description of the tool that can influence when the tool is picked.
+- **`inputSchema`**: A [Zod schema](/docs/foundations/tools#schemas) or a [JSON schema](/docs/reference/ai-sdk-core/json-schema) that defines the input parameters. The schema is consumed by the LLM, and also used to validate the LLM tool calls.
+- **`execute`**: An optional async function that is called with the inputs from the tool call. It produces a value of type `RESULT` (generic type). It is optional because you might want to forward tool calls to the client or to a queue instead of executing them in the same process.
+
+> Note
+> In the Swift port, define tools with `dynamicTool(...)` or static `tool(...)` equivalents from AISDKProviderUtils.
+
+The `tools` parameter of `generateText` and `streamText` is an object that has the tool names as keys and the tools as values:
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+import AISDKProviderUtils
+
+let weather = dynamicTool(
+  description: "Get the weather in a location",
+  inputSchema: FlexibleSchema(jsonSchema(.object([
+    "type": .string("object"),
+    "properties": .object([
+      "location": .object(["type": .string("string"), "description": .string("The location to get the weather for")])
+    ])
+  ]))),
+  execute: { input, _ in
+    let location = input["location"]?.stringValue ?? "unknown"
+    let temp = 72 + Int.random(in: -10...10)
+    return .object(["location": .string(location), "temperature": .number(Double(temp))])
+  }
+)
+
+let result = try await generateText(
+  model: openai("gpt-4o"),
+  tools: ["weather": weather],
+  prompt: "What is the weather in San Francisco?"
+)
+print(result.text)
+```
+
+> Note
+> When a model uses a tool, it is a "tool call"; the tool's output is a "tool result".
+
+Tool calling is not restricted to only text generation.
+You can also use it to render user interfaces (Generative UI).
+
+## Multi-Step Calls (using stopWhen)
+
+With the `stopWhen` setting, you can enable multi-step calls in `generateText` and `streamText`. When `stopWhen` is set and the model generates a tool call, the AI SDK will trigger a new generation passing in the tool result until there are no further tool calls or the stopping condition is met.
+
+> Note
+> `stopWhen` conditions are evaluated only when the last step contains tool results.
+
+By default, when you use `generateText` or `streamText`, it triggers a single generation. This works well for many use cases where you can rely on the model's training data to generate a response. However, when you provide tools, the model now has the choice to either generate a normal text response, or generate a tool call. If the model generates a tool call, it's generation is complete and that step is finished.
+
+You may want the model to generate text after the tool has been executed, either to summarize the tool results in the context of the users query. In many cases, you may also want the model to use multiple tools in a single response. This is where multi-step calls come in.
+
+You can think of multi-step calls in a similar way to a conversation with a human. When you ask a question, if the person does not have the requisite knowledge in their common knowledge (a model's training data), the person may need to look up information (use a tool) before they can provide you with an answer. In the same way, the model may need to call a tool to get the information it needs to answer your question where each generation (tool call or text generation) is a step.
+
+### Example
+
+In the following example, there are two steps:
+
+1. **Step 1**
+   1. The prompt `'What is the weather in San Francisco?'` is sent to the model.
+   1. The model generates a tool call.
+   1. The tool call is executed.
+1. **Step 2**
+   1. The tool result is sent to the model.
+   1. The model generates a response considering the tool result.
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+import AISDKProviderUtils
+
+let weather = dynamicTool(
+  description: "Get the weather in a location",
+  inputSchema: FlexibleSchema(jsonSchema(.object([
+    "type": .string("object"),
+    "properties": .object([
+      "location": .object(["type": .string("string"), "description": .string("The location to get the weather for")])
+    ])
+  ]))),
+  execute: { input, _ in
+    let location = input["location"]?.stringValue ?? "unknown"
+    let temperature = 72 + Int.random(in: -10...10)
+    return .object(["location": .string(location), "temperature": .number(Double(temperature))])
+  }
+)
+
+let out = try await generateText(
+  model: openai("gpt-4o"),
+  tools: ["weather": weather],
+  stopWhen: [stepCountIs(5)], // stop after max 5 steps if tools were called
+  prompt: "What is the weather in San Francisco?"
+)
+print(out.text)
+```
+
+> Note
+> You can use `streamText` in a similar way.
+
+### Steps
+
+To access intermediate tool calls and results, you can use the `steps` property in the result object
+or the `streamText` `onFinish` callback.
+It contains all the text, tool calls, tool results, and more from each step.
+
+#### Example: Extract tool results from all steps
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+
+let rr = try await generateText(
+  model: openai("gpt-4o"),
+  stopWhen: [stepCountIs(10)]
+)
+let steps = rr.steps
+// extract all tool calls from the steps:
+let allToolCalls = steps.flatMap { $0.toolCalls }
+```
+
+### `onStepFinish` callback
+
+When using `generateText` or `streamText`, you can provide an `onStepFinish` callback that
+is triggered when a step is finished,
+i.e. all text deltas, tool calls, and tool results for the step are available.
+When you have multiple steps, the callback is triggered for each step.
+
+```swift
+let _ = try await generateText(
+  model: openai("gpt-5"),
+  prompt: "...",
+  onStepFinish: { step in
+    // your own logic, e.g., logging toolCalls/toolResults
+    _ = (step.toolCalls, step.toolResults, step.finishReason, step.usage)
+  }
+)
+```
+
+### `prepareStep` callback
+
+The `prepareStep` callback is called before a step is started.
+
+It is called with the following parameters:
+
+- `model`: The model that was passed into `generateText`.
+- `stopWhen`: The stopping condition that was passed into `generateText`.
+- `stepNumber`: The number of the step that is being executed.
+- `steps`: The steps that have been executed so far.
+- `messages`: The messages that will be sent to the model for the current step.
+
+You can use it to provide different settings for a step, including modifying the input messages.
+
+```swift
+let _ = try await generateText(
+  model: openai("gpt-5"),
+  prompt: "...",
+  prepareStep: { options in
+    if options.stepNumber == 0 {
+      return PrepareStepResult(
+        model: openai("gpt-5-reasoner"),
+        toolChoice: .tool(toolName: "tool1"),
+        // limit the tools that are available for this step:
+        activeTools: ['tool1'],
+      };
+    }
+
+    // when nothing is returned, the default settings are used
+  },
+});
+```
+
+#### Message Modification for Longer Agentic Loops
+
+In longer agentic loops, you can use the `messages` parameter to modify the input messages for each step. This is particularly useful for prompt compression:
+
+```swift
+prepareStep: { options in
+  // Compress conversation history for longer loops
+  if options.messages.count > 20 {
+    return PrepareStepResult(messages: Array(options.messages.suffix(10)))
+  }
+  return nil
+}
+```
+
+## Response Messages
+
+Adding the generated assistant and tool messages to your conversation history is a common task,
+especially if you are using multi-step tool calls.
+
+Both `generateText` and `streamText` have a `response.messages` property that you can use to
+add the assistant and tool messages to your conversation history.
+It is also available in the `onFinish` callback of `streamText`.
+
+The `response.messages` property contains an array of `ModelMessage` objects that you can add to your conversation history:
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+import AISDKProviderUtils
+
+var messages: [ModelMessage] = [
+  .user(UserModelMessage(content: .text("..."), providerOptions: nil))
+]
+
+let out = try await generateText(
+  model: openai("gpt-5"),
+  messages: messages
+)
+
+// add the response messages to your conversation history:
+messages.append(contentsOf: out.response.messages)
+```
+
+## Dynamic Tools
+
+AI SDK Core supports dynamic tools for scenarios where tool schemas are not known at compile time. This is useful for:
+
+- MCP (Model Context Protocol) tools without schemas
+- User-defined functions at runtime
+- Tools loaded from external sources
+
+### Using dynamicTool
+
+The `dynamicTool` helper creates tools with unknown input/output types:
+
+```swift
+import SwiftAISDK
+import AISDKProviderUtils
+
+let customTool = dynamicTool(
+  description: "Execute a custom function",
+  inputSchema: FlexibleSchema(jsonSchema(.object(["type": .string("object"), "properties": .object([:])]))),
+  execute: { input, _ in
+    // input is JSONValue; validate/cast at runtime
+    let action = input["action"]?.stringValue ?? "unknown"
+    return .object(["result": .string("Executed \(action)")])
+  }
+)
+```
+
+### Type-Safe Handling
+
+When using both static and dynamic tools, use the `dynamic` flag for type narrowing:
+
+```swift
+let result = try await generateText(
+  model: 'openai/gpt-4o',
+  tools: {
+    // Static tool with known types
+    weather: weatherTool,
+    // Dynamic tool
+    custom: dynamicTool({
+      /* ... */
+    }),
+  },
+  onStepFinish: ({ toolCalls, toolResults }) => {
+    // Type-safe iteration
+    for (const toolCall of toolCalls) {
+      if (toolCall.dynamic) {
+        // Dynamic tool: input is 'unknown'
+        console.log('Dynamic:', toolCall.toolName, toolCall.input);
+        continue;
+      }
+
+      // Static tool: full type inference
+      switch (toolCall.toolName) {
+        case 'weather':
+          console.log(toolCall.input.location); // typed as string
+          break;
+      }
+    }
+  },
+)
+```
+
+## Preliminary Tool Results
+
+You can return an `AsyncIterable` over multiple results.
+In this case, the last value from the iterable is the final tool result.
+
+This can be used in combination with generator functions to e.g. stream status information
+during the tool execution:
+
+```swift
+import AISDKProviderUtils
+
+let weatherStreaming = dynamicTool(
+  description: "Get the current weather.",
+  inputSchema: FlexibleSchema(jsonSchema(.object([
+    "type": .string("object"),
+    "properties": .object(["location": .object(["type": .string("string")])])
+  ]))),
+  execute: { input, _ in
+    let location = input["location"]?.stringValue ?? "unknown"
+    let stream = AsyncThrowingStream<JSONValue, Error> { continuation in
+      // preliminary
+      continuation.yield(.object([
+        "status": .string("loading"),
+        "text": .string("Getting weather for \(location)"),
+        "weather": .null
+      ]))
+      // simulate async work
+      Task {
+        try? await Task.sleep(nanoseconds: 3_000_000_000)
+        let temperature = 72 + Int.random(in: -10...10)
+        continuation.yield(.object([
+          "status": .string("success"),
+          "text": .string("The weather in \(location) is \(temperature)°F"),
+          "temperature": .number(Double(temperature))
+        ]))
+        continuation.finish()
+      }
+    }
+    return .stream(stream)
+  }
+)
+```
+
+## Tool Choice
+
+You can use the `toolChoice` setting to influence when a tool is selected.
+It supports the following settings:
+
+- `auto` (default): the model can choose whether and which tools to call.
+- `required`: the model must call a tool. It can choose which tool to call.
+- `none`: the model must not call tools
+- `{ type: 'tool', toolName: string (typed) }`: the model must call the specified tool
+
+```swift
+let weather = dynamicTool(
+  description: "Get the weather in a location",
+  inputSchema: FlexibleSchema(jsonSchema(.object([
+    "type": .string("object"),
+    "properties": .object([
+      "location": .object(["type": .string("string"), "description": .string("The location to get the weather for")])
+    ])
+  ]))),
+  execute: { input, _ in
+    .object(["location": input["location"] ?? .string("unknown"), "temperature": .number(72)])
+  }
+)
+
+let forced = try await generateText(
+  model: openai("gpt-4o"),
+  tools: ["weather": weather],
+  toolChoice: .required,
+  prompt: "What is the weather in San Francisco?"
+)
+```
+
+## Tool Execution Options
+
+When tools are called, they receive additional options as a second parameter.
+
+### Tool Call ID
+
+The ID of the tool call is forwarded to the tool execution.
+You can use it e.g. when sending tool-call related information with stream data.
+
+```swift
+// Pseudocode for forwarding toolCallId in a Swift server
+let stream = createUIMessageStream { writer in
+  let result = try streamText(
+    model: openai("gpt-5"),
+    messages: messages,
+    tools: [
+      "myTool": dynamicTool(
+        description: "...",
+        inputSchema: FlexibleSchema(jsonSchema(.object(["type": .string("object")]))),
+        execute: { args, ctx in
+          writer.write(["type": .string("data-tool-status"), "id": .string(ctx.toolCallId ?? ""), "data": .object(["name": .string("myTool"), "status": .string("in-progress")])])
+          return .object(["ok": .bool(true)])
+        }
+      )
+    ]
+  )
+  writer.merge(result.toUIMessageStream())
+}
+let response = createUIMessageStreamResponse(stream: stream)
+```
+
+### Messages
+
+The messages that were sent to the language model to initiate the response that contained the tool call are forwarded to the tool execution.
+You can access them in the second parameter of the `execute` function.
+In multi-step calls, the messages contain the text, tool calls, and tool results from all previous steps.
+
+```swift
+let myTool = dynamicTool(
+  description: "...",
+  inputSchema: FlexibleSchema(jsonSchema(.object(["type": .string("object")]))),
+  execute: { args, ctx in
+    let history = ctx.messages
+    // use message history in calls to other models/services
+    return .object(["ok": .bool(true)])
+  }
+)
+let _ = try await generateText(model: openai("gpt-5"), tools: ["myTool": myTool], prompt: "...")
+```
+
+### Abort Signals
+
+The abort signals from `generateText` and `streamText` are forwarded to the tool execution.
+You can access them in the second parameter of the `execute` function and e.g. abort long-running computations or forward them to fetch calls inside tools.
+
+```swift
+let weather = dynamicTool(
+  description: "Get the weather in a location",
+  inputSchema: FlexibleSchema(jsonSchema(.object(["type": .string("object"), "properties": .object(["location": .object(["type": .string("string")])])]))),
+  execute: { args, ctx in
+    let location = args["location"]?.stringValue ?? "SF"
+    // Forward abort via ctx.abortSignal() if your code supports it
+    return .object(["location": .string(location), "temperature": .number(72)])
+  }
+)
+let _ = try await generateText(
+  model: openai("gpt-4.1"),
+  tools: ["weather": weather],
+  prompt: "What is the weather in San Francisco?",
+  settings: CallSettings(abortSignal: myAbortSignal)
+)
+```
+
+### Context (experimental)
+
+You can pass in arbitrary context from `generateText` or `streamText` via the `experimental_context` setting.
+This context is available in the `experimental_context` tool execution option.
+
+```swift
+let someTool = dynamicTool(
+  description: "...",
+  inputSchema: FlexibleSchema(jsonSchema(.object(["type": .string("object")]))),
+  execute: { input, options in
+    let context = options.experimentalContext // JSONValue?
+    // validate/cast context if needed
+    _ = context
+    return .object(["ok": .bool(true)])
+  }
+)
+
+let result = try await generateText(
+  model: openai("gpt-5"),
+  tools: ["someTool": someTool],
+  experimentalContext: .object(["example": .string("123")])
+)
+```
+
+## Types
+
+Modularizing your code often requires defining types to ensure type safety and reusability.
+To enable this, the AI SDK provides several helper types for tools, tool calls, and tool results.
+
+You can use them to strongly type your variables, function parameters, and return types
+in parts of the code that are not directly related to `streamText` or `generateText`.
+
+Each tool call is typed with `ToolCall<NAME extends string, ARGS>`, depending
+on the tool that has been invoked.
+Similarly, the tool results are typed with `ToolResult<NAME extends string, ARGS, RESULT>`.
+
+The tools in `streamText` and `generateText` are defined as a `ToolSet`.
+The type inference helpers `TypedToolCall<TOOLS extends ToolSet>`
+and `TypedToolResult<TOOLS extends ToolSet>` can be used to
+extract the tool call and tool result types from the tools.
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+import AISDKProviderUtils
+
+let myToolSet: ToolSet = [
+  "firstTool": dynamicTool(
+    description: "Greets the user",
+    inputSchema: FlexibleSchema(jsonSchema(.object(["type": .string("object"), "properties": .object(["name": .object(["type": .string("string")])])]))),
+    execute: { args, _ in .object(["greeting": .string("Hello, \(args["name"]?.stringValue ?? "there")!")]) }
+  ),
+  "secondTool": dynamicTool(
+    description: "Tells the user their age",
+    inputSchema: FlexibleSchema(jsonSchema(.object(["type": .string("object"), "properties": .object(["age": .object(["type": .string("number")])])]))),
+    execute: { args, _ in .object(["message": .string("You are \(Int(args["age"]?.numberValue ?? 0)) years old!")]) }
+  )
+]
+
+struct GeneratedData { let text: String; let toolCalls: [TypedToolCall]; let toolResults: [TypedToolResult] }
+
+func generateSomething(prompt: String) async throws -> GeneratedData {
+  let out = try await generateText(
+    model: openai("gpt-4.1"),
+    tools: myToolSet,
+    prompt,
+  });
+}
+```
+
+## Handling Errors
+
+The AI SDK has three tool-call related errors:
+
+- [`NoSuchToolError`](/docs/reference/ai-sdk-errors/ai-no-such-tool-error): the model tries to call a tool that is not defined in the tools object
+- [`InvalidToolInputError`](/docs/reference/ai-sdk-errors/ai-invalid-tool-input-error): the model calls a tool with inputs that do not match the tool's input schema
+- [`ToolCallRepairError`](/docs/reference/ai-sdk-errors/ai-tool-call-repair-error): an error that occurred during tool call repair
+
+When tool execution fails (errors thrown by your tool's `execute` function), the AI SDK adds them as `tool-error` content parts to enable automated LLM roundtrips in multi-step scenarios.
+
+### `generateText`
+
+`generateText` throws errors for tool schema validation issues and other errors, and can be handled using a `try`/`catch` block. Tool execution errors appear as `tool-error` parts in the result steps:
+
+```swift
+do {
+  _ = try await generateText(model: openai("gpt-5"), prompt: "...")
+} catch is NoSuchToolError {
+  // handle no such tool error
+} catch is InvalidToolInputError {
+  // handle invalid tool inputs
+} catch {
+  // handle other errors
+}
+```
+
+Tool execution errors are available in the result steps:
+
+```swift
+let out2 = try await generateText(model: openai("gpt-5"), prompt: "...")
+let steps2 = out2.steps
+let toolErrors = steps2.flatMap { step in
+  step.content.compactMap { part -> ToolErrorContentPart? in
+    if case .toolError(let err) = part { return err }
+    return nil
+  }
+}
+for e in toolErrors {
+  print("Tool error:", e.error)
+  print("Tool name:", e.toolName)
+  print("Tool input:", e.input)
+}
+```
+
+### `streamText`
+
+`streamText` sends errors as part of the full stream. Tool execution errors appear as `tool-error` parts, while other errors appear as `error` parts.
+
+When using `toUIMessageStreamResponse`, you can pass an `onError` function to extract the error message from the error part and forward it as part of the stream response:
+
+```ts
+const result = streamText({
+  // ...
+});
+
+return result.toUIMessageStreamResponse({
+  onError: error => {
+    if (NoSuchToolError.isInstance(error)) {
+      return 'The model tried to call a unknown tool.';
+    } else if (InvalidToolInputError.isInstance(error)) {
+      return 'The model called a tool with invalid inputs.';
+    } else {
+      return 'An unknown error occurred.';
+    }
+  },
+});
+```
+
+## Tool Call Repair
+
+> Warning
+  The tool call repair feature is experimental and may change in the future.
+
+
+Language models sometimes fail to generate valid tool calls,
+especially when the input schema is complex or the model is smaller.
+
+If you use multiple steps, those failed tool calls will be sent back to the LLM
+in the next step to give it an opportunity to fix it.
+However, you may want to control how invalid tool calls are repaired without requiring
+additional steps that pollute the message history.
+
+You can use the `experimental_repairToolCall` function to attempt to repair the tool call
+with a custom function.
+
+You can use different strategies to repair the tool call:
+
+- Use a model with structured outputs to generate the inputs.
+- Send the messages, system prompt, and tool schema to a stronger model to generate the inputs.
+- Provide more specific repair instructions based on which tool was called.
+
+### Example: Use a model with structured outputs for repair
+
+```swift
+
+let _ = try await generateText(
+  model,
+  tools,
+  prompt,
+
+  experimentalRepairToolCall: { toolCall, tools, inputSchema, error in
+    if error is NoSuchToolError { return nil } // do not attempt to fix invalid tool names
+    // Use generateObject to repair inputs based on the tool's schema
+    let tool = tools[toolCall.toolName]
+    let repaired = try await generateObject(
+      model: openai("gpt-4.1"),
+      schema: tool?.inputSchema ?? FlexibleSchema(jsonSchema(.object([:]))),
+      prompt: "Please fix the inputs for tool \(toolCall.toolName) given: \(String(describing: toolCall.input))"
+    )
+    return ToolCallRepair(
+      toolCallType: .function,
+      toolCallId: toolCall.toolCallId,
+      toolName: toolCall.toolName,
+      input: jsonString(from: repaired.object) ?? "{}"
+    )
+  }
+)
+```
+
+### Example: Use the re-ask strategy for repair
+
+```swift
+
+let _ = try await generateText(
+  model,
+  tools,
+  prompt,
+
+  experimentalRepairToolCall: { toolCall, tools, error, messages, system in
+    let syntheticMessages = messages + [.assistant(AssistantModelMessage(content: .parts([.toolCall(.init(toolCallId: toolCall.toolCallId, toolName: toolCall.toolName, input: toolCall.input))]))), .tool(ToolModelMessage(content: [.toolResult(.init(toolCallId: toolCall.toolCallId, toolName: toolCall.toolName, output: .string(String(describing: error))))]))]
+    let result = try await generateText(
+      model: openai("gpt-5"),
+      system: system,
+      messages: syntheticMessages,
+      tools: tools
+    )
+    if let newCall = result.toolCalls.first(where: { $0.toolName == toolCall.toolName }) {
+      return ToolCallRepair(toolCallType: .function, toolCallId: toolCall.toolCallId, toolName: toolCall.toolName, input: jsonString(from: newCall.input) ?? "{}")
+    }
+    return nil
+  }
+)
+```
+
+## Active Tools
+
+Language models can only handle a limited number of tools at a time, depending on the model.
+To allow for static typing using a large number of tools and limiting the available tools to the model at the same time,
+the AI SDK provides the `activeTools` property.
+
+It is an array of tool names that are currently active.
+By default, the value is `undefined` and all tools are active.
+
+```swift
+let out = try await generateText(model: openai("gpt-4.1"), tools: myToolSet, activeTools: ["firstTool"]) 
+print(out.text)
+```
+
+## Multi-modal Tool Results
+
+> Warning
+  Multi-modal tool results are experimental and only supported by Anthropic.
+
+
+In order to send multi-modal tool results, e.g. screenshots, back to the model,
+they need to be converted into a specific format.
+
+AI SDK Core tools have an optional `toModelOutput` function
+that converts the tool result into a content part.
+
+Here is an example for converting a screenshot into a content part:
+
+```swift
+let computer = dynamicTool(
+  description: "Computer tool",
+  inputSchema: FlexibleSchema(jsonSchema(.object(["type": .string("object")]))),
+  execute: { args, _ in
+    // Return a PNG screenshot encoded as base64
+    let pngBase64 = "..."
+    return .image(.init(data: pngBase64))
+  },
+  toModelOutput: { result in
+    switch result {
+    case .string(let text):
+      return .content([.text(.init(text: text))])
+    case .image(let img):
+      return .content([.image(data: img.data, mediaType: "image/png")])
+    default:
+      return .content([.text(.init(text: String(describing: result)))])
+    }
+  }
+)
+let result = try await generateText(model: openai("gpt-5"), tools: ["computer": computer], prompt: "...")
+```
+
+## Extracting Tools
+
+Once you start having many tools, you might want to extract them into separate files.
+The `tool` helper function is crucial for this, because it ensures correct type inference.
+
+Here is an example of an extracted tool:
+
+```swift filename="Tools/WeatherTool.swift"
+import AISDKProviderUtils
+
+public let weatherTool: Tool = dynamicTool(
+  description: "Get the weather in a location",
+  inputSchema: FlexibleSchema(jsonSchema(.object([
+    "type": .string("object"),
+    "properties": .object([
+      "location": .object(["type": .string("string"), "description": .string("The location to get the weather for")])
+    ])
+  ]))),
+  execute: { input, _ in
+    let location = input["location"]?.stringValue ?? "unknown"
+    let temp = 72 + Int.random(in: -10...10)
+    return .object(["location": .string(location), "temperature": .number(Double(temp))])
+  }
+)
+```
+
+## MCP Tools
+
+The AI SDK supports connecting to Model Context Protocol (MCP) servers to access their tools.
+MCP enables your AI applications to discover and use tools across various services through a standardized interface.
+
+For detailed information about MCP tools, including initialization, transport options, and usage patterns, see the [MCP Tools documentation](/docs/ai-sdk-core/mcp-tools).
+
+### AI SDK Tools vs MCP Tools
+
+In most cases, you should define your own AI SDK tools for production applications. They provide full control, type safety, and optimal performance. MCP tools are best suited for rapid development iteration and scenarios where users bring their own tools.
+
+| Aspect                 | AI SDK Tools                                              | MCP Tools                                             |
+| ---------------------- | --------------------------------------------------------- | ----------------------------------------------------- |
+| **Type Safety**        | Full static typing end-to-end                             | Dynamic discovery at runtime                          |
+| **Execution**          | Same process as your request (low latency)                | Separate server (network overhead)                    |
+| **Prompt Control**     | Full control over descriptions and schemas                | Controlled by MCP server owner                        |
+| **Schema Control**     | You define and optimize for your model                    | Controlled by MCP server owner                        |
+| **Version Management** | Full visibility over updates                              | Can update independently (version skew risk)          |
+| **Authentication**     | Same process, no additional auth required                 | Separate server introduces additional auth complexity |
+| **Best For**           | Production applications requiring control and performance | Development iteration, user-provided tools            |
+
+## Examples
+
+You can see tools in action using various frameworks in the following examples:
+
+> Examples for Swift will be added in Quickstarts (iOS/macOS, Vapor, CLI). Node/Next.js links are omitted in the Swift port.

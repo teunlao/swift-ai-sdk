@@ -194,8 +194,8 @@ func implementFeature(_ feature: String) async throws -> (plan: JSONValue, chang
 Add quality control to workflows with dedicated evaluation steps that assess intermediate results. Based on the evaluation, the workflow proceeds, retries with adjusted parameters, or takes corrective action. This creates robust workflows capable of self-improvement and error recovery.
 
 ```swift
-import { generateText, generateObject } from 'ai';
-import { z } from 'zod';
+import SwiftAISDK
+import OpenAIProvider
 
 async function translateWithFeedback(text: string, targetLanguage: string) {
   let currentTranslation = '';
@@ -215,41 +215,47 @@ async function translateWithFeedback(text: string, targetLanguage: string) {
   // Evaluation-optimization loop
   while (iterations < MAX_ITERATIONS) {
     // Evaluate current translation
-    const { object: evaluation } = await generateObject({
-      model: 'openai/gpt-4o', // use a larger model to evaluate
-      schema: z.object({
-        qualityScore: z.number().min(1).max(10),
-        preservesTone: z.boolean(),
-        preservesNuance: z.boolean(),
-        culturallyAccurate: z.boolean(),
-        specificIssues: z.array(z.string()),
-        improvementSuggestions: z.array(z.string()),
-      }),
-      system: 'You are an expert in evaluating literary translations.',
-      prompt: `Evaluate this translation:
+    let evalSchema = FlexibleSchema(jsonSchema(.object([
+      "type": .string("object"),
+      "properties": .object([
+        "qualityScore": .object(["type": .string("number")]),
+        "preservesTone": .object(["type": .string("boolean")]),
+        "preservesNuance": .object(["type": .string("boolean")]),
+        "culturallyAccurate": .object(["type": .string("boolean")]),
+        "specificIssues": .object(["type": .string("array"), "items": .object(["type": .string("string")])]),
+        "improvementSuggestions": .object(["type": .string("array"), "items": .object(["type": .string("string")])])
+      ])
+    ])))
+    let evalOut = try await generateObject(
+      model: openai("gpt-4.1"),
+      schema: evalSchema,
+      system: "You are an expert in evaluating literary translations.",
+      prompt: """
+      Evaluate this translation:
 
-      Original: ${text}
-      Translation: ${currentTranslation}
+      Original: \(text)
+      Translation: \(currentTranslation)
 
       Consider:
       1. Overall quality
       2. Preservation of tone
       3. Preservation of nuance
-      4. Cultural accuracy`,
-    });
+      4. Cultural accuracy
+      """
+    )
+    let evaluation = evalOut.object
 
     // Check if quality meets threshold
-    if (
-      evaluation.qualityScore >= 8 &&
-      evaluation.preservesTone &&
-      evaluation.preservesNuance &&
-      evaluation.culturallyAccurate
-    ) {
-      break;
+    if let score = evaluation["qualityScore"]?.numberValue,
+       let tone = evaluation["preservesTone"]?.boolValue,
+       let nuance = evaluation["preservesNuance"]?.boolValue,
+       let culture = evaluation["culturallyAccurate"]?.boolValue,
+       score >= 8, tone, nuance, culture {
+      break
     }
 
     // Generate improved translation based on feedback
-    const { text: improvedTranslation } = await generateText({
+    let improved = try await generateText(
       model: 'openai/gpt-4o', // use a larger model
       system: 'You are an expert literary translator.',
       prompt: `Improve this translation based on the following feedback:

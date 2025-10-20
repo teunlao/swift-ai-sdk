@@ -1,194 +1,208 @@
 # Swift AI SDK
 
-> ⚠️ **WORK IN PROGRESS** ⚠️
->
-> **This project is currently under active development and is NOT production-ready.**
+Unified AI SDK for Swift — a 1:1 port of the Vercel AI SDK with the same API and behavior.
 
-<!-- Branch isolation check: temporary comment for Task 10.1 experiment -->
->
-> - ❌ **NOT functional yet** - Core functionality is still being implemented
-> - ❌ **NOT stable** - APIs will change without notice
-> - ❌ **NOT suitable for production use**
->
-> This is an experimental port. Use at your own risk.
+- SwiftPM package set: `SwiftAISDK`, `AISDKProvider`, `AISDKProviderUtils`, provider modules (`OpenAIProvider`, `AnthropicProvider`, `GoogleProvider`, `GroqProvider`, `OpenAICompatibleProvider`).
+- Platforms: iOS 16+, macOS 13+, tvOS 16+, watchOS 9+. See `Package.swift` for source of truth.
+- Upstream parity target: Vercel AI SDK 6.0.0-beta.42 (commit `77db222ee`).
 
-Unofficial Swift port of the Vercel AI SDK. The goal is to mirror the original TypeScript implementation 1:1 (API, behavior, tests), adapting it to Swift and SwiftPM conventions.
+## Installation (SwiftPM)
 
-## Package Structure
+Add the package to your `Package.swift`:
 
-This SDK is organized into **3 separate SwiftPM packages** matching upstream `@ai-sdk` architecture:
-
-### 📦 AISDKProvider
-**Foundation types and protocols** (no dependencies)
-- LanguageModel V2/V3 protocols and types
-- EmbeddingModel V2/V3, ImageModel V2/V3
-- SpeechModel V2/V3, TranscriptionModel V2/V3
-- Provider error types
-- JSONValue universal JSON type
-- Core middleware interfaces
-
-**Import**: `import AISDKProvider`
-
-### 🔧 AISDKProviderUtils
-**Utility functions and helpers** (depends on AISDKProvider)
-- HTTP client utilities (GET/POST, headers, retries)
-- JSON parsing and validation
-- Schema definitions and type validation
-- Tool definitions and utilities
-- SSE event stream parsing
-- ID generation, delays, user-agent handling
-
-**Import**: `import AISDKProviderUtils`
-
-### 🚀 SwiftAISDK
-**Main AI SDK** (depends on AISDKProvider + AISDKProviderUtils + EventSourceParser)
-- `generateText()` / `streamText()` high-level functions
-- Prompt conversion and standardization
-- Tool execution and MCP integration
-- Provider registry and model resolution
-- Telemetry and logging
-- Middleware (default settings, reasoning extraction, streaming simulation)
-
-**Import**: `import SwiftAISDK`
-
-### Project Files
-- `Package.swift` – SwiftPM manifest with 3 library targets
-- `Sources/AISDKProvider/` – Foundation package (79 files, 7,131 lines)
-- `Sources/AISDKProviderUtils/` – Utilities package (36 files, 3,936 lines)
-- `Sources/SwiftAISDK/` – Main SDK package (125 files, 14,834 lines)
-- `Sources/EventSourceParser/` – SSE parser (3 files, 299 lines)
-- `Tests/` – Test suites for each package (85 files, 21,655 lines)
-- `external/` – Upstream Vercel AI SDK sources (ignored by Git) for reference
-- `plan/` – Development documentation (ignored by Git)
-
-## Playground CLI
-
-The repository now contains an executable target `SwiftAISDKPlayground` that provides a lightweight CLI for manual smoke-tests against real providers.
-
-### Build & Run
-
-```bash
-swift build
-swift run playground chat --model gpt-4o-mini --prompt "Hello" --stream
-# direct call to OpenAI provider
-swift run playground chat --provider openai --model gpt-4o-mini --prompt "Привет" --stream
+```swift
+// Package.swift
+dependencies: [
+  .package(url: "https://github.com/teunlao/swift-ai-sdk.git", branch: "main")
+],
+targets: [
+  .target(
+    name: "YourApp",
+    dependencies: [
+      .product(name: "SwiftAISDK", package: "swift-ai-sdk"),
+      .product(name: "OpenAIProvider", package: "swift-ai-sdk")
+    ]
+  )
+]
 ```
 
-Command options:
+## Quickstart
 
-- `-P, --provider` – provider alias (`gateway` by default)
-- `--model` – model identifier (required)
-- `--prompt` / `--input-file` / `--stdin` – prompt sources
-- `--stream` – stream deltas to stdout (macOS 12+)
-- `--json-output` – emit final result as JSON
-- `--verbose` / `--env-file` – global flags available before the subcommand
+Minimal text generation and streaming with OpenAI:
 
-### Configuration
+```swift
+import SwiftAISDK
+import OpenAIProvider
 
-Credentials are read from environment variables and `.env` (see `.env.sample`). For gateway-based flows set:
+@main
+struct Demo {
+  static func main() async throws {
+    // Set OPENAI_API_KEY in your environment (loaded lazily by the provider).
 
-```env
-VERCEL_AI_API_KEY=your_token_here
-# optional overrides
-AI_GATEWAY_BASE_URL=https://ai-gateway.vercel.sh/v1/ai
+    // Streaming text
+    let stream = try streamText(
+      model: openai("gpt-5"),
+      prompt: "Stream one sentence about structured outputs."
+    )
+    for try await delta in stream.textStream {
+      print(delta, terminator: "")
+    }
+  }
+}
 ```
 
-For direct OpenAI access provide:
+More examples (tools, structured output, telemetry, middleware) are available in the documentation.
 
-```env
-OPENAI_API_KEY=sk-...
-# optional overrides
-OPENAI_BASE_URL=https://api.openai.com/v1
-OPENAI_ORGANIZATION=org-id
-OPENAI_PROJECT=project-id
+## Unified Provider Architecture
+
+Write once, swap providers without changing your app logic — same idea as the upstream AI SDK.
+
+- Add only the provider modules you need via SwiftPM products (`OpenAIProvider`, `AnthropicProvider`, `GoogleProvider`, `GroqProvider`, `OpenAICompatibleProvider`).
+- Use the convenience facade `openai("model-id")` or build a provider with settings via `createOpenAIProvider(settings:)`.
+
+Minimal provider setup and call:
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+
+let provider = createOpenAIProvider(settings: .init(
+  baseURL: ProcessInfo.processInfo.environment["OPENAI_BASE_URL"],
+  apiKey: ProcessInfo.processInfo.environment["OPENAI_API_KEY"]
+))
+
+let model = provider("gpt-5") // alias of languageModel(modelId:)
+let result = try await generateText(model: .v3(model), prompt: "Ping")
+print(result.text)
 ```
 
-If a required key is missing, the CLI reports a descriptive error. Streaming uses Server-Sent Events via `URLSession` + `EventSourceParser` and is available on macOS 12 or newer.
+## Features
 
-## Status
-**Active Development** - Core provider infrastructure is being implemented.
+- Unified provider architecture with consistent APIs across vendors.
+- Text generation (`generateText`) and streaming (`streamText`) with SSE.
+- Tool calls (static and dynamic), retries, stop conditions, usage accounting.
+- Structured output with schemas, JSON mode, and partial output streams.
+- Middleware and telemetry hooks mirroring upstream behavior.
 
-### Completed ✅
-- **AISDKProvider Package** (79 files, 7,131 lines):
-  - LanguageModelV2 (17 types) - 100% parity
-  - LanguageModelV3 (17 types) - 100% parity
-  - EmbeddingModel V2/V3, ImageModel V2/V3
-  - SpeechModel V2/V3, TranscriptionModel V2/V3
-  - Provider errors (26 error types)
-  - JSONValue universal JSON type
-  - Middleware protocols
+## Platforms & Requirements
 
-- **AISDKProviderUtils Package** (36 files, 3,936 lines):
-  - HTTP client utilities (GET/POST, headers, retries)
-  - JSON parsing, schema validation, type validation
-  - Tool definitions and utilities
-  - ID generation, delays, user-agent handling
-  - Data URL parsing, media type detection
-  - SSE event stream parsing integration
+- Swift 6.1 toolchain (see `swift-tools-version` in `Package.swift`).
+- iOS 16+, macOS 13+, tvOS 16+, watchOS 9+ (source of truth: `Package.swift`).
 
-- **SwiftAISDK Package** (125 files, 14,834 lines):
-  - Prompt conversion and standardization
-  - Tool execution framework
-  - Provider registry and model resolution
-  - Middleware (default settings, reasoning, streaming)
-  - Core error types and response handling
-  - Mock models for testing
-  - `generateText()` complete implementation (1,218 lines)
+## Upstream & Parity
 
-- **EventSourceParser** (3 files, 299 lines) - 100% parity with `eventsource-parser@3.0.6`
+- Source of truth: Vercel AI SDK 6.0.0-beta.42 (commit `77db222ee`).
+- Goal: identical public API, behaviors, and error messages; any intentional deviations are documented in `plan/design-decisions.md`.
 
-### Current Stats
-- ✅ Build: `swift build` — ~2.3s (3 packages)
-- ✅ Tests: **905/907 passed (99.8% pass rate)**
-  - 907 individual test cases across all packages
-  - 2 known failures in SerialJobExecutor (concurrent execution tests)
-  - EventSourceParser: 30 tests
-  - AISDKProvider: ~210 tests
-  - AISDKProviderUtils: ~200 tests
-  - SwiftAISDK: ~467 tests
-- 📊 **Total: 26,200 lines of code across 243 files**
-- 🧪 **Test coverage: 21,655 lines of test code across 85 test files**
+### Compatibility Notes
+- Swift 6.1, iOS 16+/macOS 13+; see `Package.swift` for authoritative constraints.
+- Error messages mirror upstream text where applicable.
+- HTTP `statusText` may differ due to Foundation APIs; see docs.
+- JS‑only schema vendors (zod/arktype/effect/valibot) are not bundled; use `Schema.codable` or JSON Schema.
+- Streaming uses URLSession + SSE; cancellation propagates via `AbortSignal` equivalent.
+- Telemetry spans mirror upstream operation names (e.g., `ai.generateText`).
+- Gateway usage is supported by pointing `baseURL` to your proxy.
 
-## Swift vs TypeScript Comparison
+## Security & Responsible Use
 
-Comparison with upstream **Vercel AI SDK 6.0.0-beta.42**:
+- Keep provider API keys in environment/Keychain; avoid logging secrets.
+- Follow each provider’s Terms and data-handling policies.
 
-| Metric | TypeScript (Upstream) | Swift (Port) | Difference |
-|--------|----------------------|--------------|------------|
-| **Source Files** | 445 files | 243 files | -45% |
-| **Source Lines** | 31,581 lines | 26,200 lines | -17% |
-| **Test Files** | 109 files | 85 files | -22% |
-| **Test Lines** | 59,241 lines | 21,655 lines | -63% |
-| **Test Count** | N/A | 907 tests | - |
-| **Test Pass Rate** | N/A | 99.8% (905/907) | - |
+## Contributing
 
-### By Package
+Contributions are welcome. See CONTRIBUTING.md for guidelines (issues, PR workflow, code style, tests). Do not edit `external/` — it mirrors upstream and is read‑only.
 
-| Package | TypeScript | Swift | Difference |
-|---------|-----------|-------|------------|
-| **Provider** | 114 files, 4,298 lines | 79 files, 7,131 lines | +66% lines |
-| **ProviderUtils** | 100 files, 4,824 lines | 36 files, 3,936 lines | -18% lines |
-| **AI/SwiftAISDK** | 226 files, 21,995 lines | 125 files, 14,834 lines | -33% lines |
-| **EventSourceParser** | 5 files, 464 lines | 3 files, 299 lines | -36% lines |
+## License & Trademarks
 
-## Known Limitations & Parity Deviations
+Licensed under Apache 2.0 (see `LICENSE`). This project is independent and not affiliated with Vercel or any model provider. “Vercel”, “OpenAI”, and other names are trademarks of their respective owners. Portions of the code are adapted from the Vercel AI SDK under Apache 2.0.
 
-### Schema/Validation
-- **Zod/ArkType/Effect/Valibot not ported**: JS-specific libraries have no Swift equivalents. Using vendor `"zod"` throws `UnsupportedStandardSchemaVendorError`.
-- **Solution**: Use `Schema.codable()` for Decodable types or provide custom JSON Schema + validation closure.
+## Usage: Structured Data (generateObject)
 
-### HTTP Response
-- **statusText**: TypeScript uses server's HTTP reason phrase; Swift uses localized system string due to Foundation API limitation.
-- **Impact**: Minimal - custom error messages are in response body, not status line.
+Generate structured data validated by JSON Schema or `Codable`.
 
-### Error Structure
-- **ValidateTypes**: Swift uses single-level TypeValidationError wrapping vs TypeScript's double-wrapping.
-- **Impact**: Error introspection differs but functional behavior identical.
+Example: extract a release summary into a `Release` type using `Schema.codable`.
 
-## Upstream Reference
-- Vercel AI SDK 6.0.0-beta.42 (`77db222eeded7a936a8a268bf7795ff86c060c2f`).
+```swift
+import SwiftAISDK, OpenAIProvider, AISDKProviderUtils
 
-## License
-Swift AI SDK is an independent port of the Vercel AI SDK (Apache License 2.0).  
-This repository is distributed under the **Apache License 2.0**—see [`LICENSE`](LICENSE) for the full text.  
-Portions of the code are adapted from the upstream Vercel AI SDK project; all modifications are documented within this repo.
+struct Release: Codable, Sendable { let name, version: String; let changes: [String] }
+
+let schema: Schema<Release> = .codable(
+  Release.self,
+  jsonSchema: .object([
+    "type": .string("object"),
+    "properties": .object([
+      "name": .object(["type": .string("string")]),
+      "version": .object(["type": .string("string")]),
+      "changes": .object(["type": .string("array"), "items": .object(["type": .string("string")])])
+    ]),
+    "required": .array([.string("name"), .string("version"), .string("changes")])
+  ])
+)
+
+let result = try await generateObject(
+  model: openai("gpt-5"),
+  schema: .init(schema),
+  prompt: "Summarize Swift AI SDK 0.1.0: streaming + tools."
+)
+print(result.object)
+```
+
+Notes: use `generateObjectNoSchema(...)` for raw `JSONValue`; arrays/enums via `generateObjectArray` / `generateObjectEnum`.
+
+## Usage: Agents & Tools
+
+Models can call tools. Minimal calculator example:
+
+```swift
+import SwiftAISDK, OpenAIProvider, AISDKProviderUtils
+
+let calculate = tool(
+  description: "Basic math",
+  inputSchema: .jsonSchema(
+    .object([
+      "type": .string("object"),
+      "properties": .object([
+        "op": .object(["type": .string("string"), "enum": .array([.string("add"), .string("mul")])]),
+        "a": .object(["type": .string("number")]),
+        "b": .object(["type": .string("number")])
+      ]),
+      "required": .array([.string("op"), .string("a"), .string("b")])
+    ])
+  )
+) { input, _ in
+  guard case .object(let o) = input,
+        case .string(let op) = o["op"],
+        case .number(let a) = o["a"],
+        case .number(let b) = o["b"] else {
+    return .value(["error": .string("invalid input")])
+  }
+  let res = (op == "add") ? (a + b) : (a * b)
+  return .value(["result": .number(res)])
+}
+
+let result = try await generateText(
+  model: openai("gpt-5"),
+  tools: ["calculate": calculate],
+  prompt: "Use tools to compute 25*4."
+)
+print(result.text)
+```
+
+Notes: supports static and dynamic tool calls; for streaming with tools, use `streamText(..., tools: ...)` and consume `fullStream`.
+
+## UI Integration (JS‑only)
+
+React/Next.js AI SDK UI is JS‑only and not part of this Swift package. See the upstream AI SDK UI docs if you build hybrid apps.
+
+## Templates & Examples
+
+See `examples/` in this repo and the docs site under `apps/docs`.
+
+## Community & Support
+
+Use GitHub Issues for bugs/ideas; report vulnerabilities privately (see Security).
+
+## Authors / About
+
+Inspired by the Vercel AI SDK. This independent port brings a unified, strongly‑typed AI SDK to the Swift ecosystem while preserving upstream behavior.

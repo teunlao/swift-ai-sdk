@@ -1,0 +1,37 @@
+---
+title: Overview
+description: An overview of AI SDK Core.
+---
+_This page adapts the original AI SDK documentation: [AI SDK Core → Overview](https://ai-sdk.dev/docs/ai-sdk-core)._ 
+
+Large Language Models (LLMs) are advanced programs that can understand, create, and engage with human language on a large scale.
+They are trained on vast amounts of written material to recognize patterns in language and predict what might come next in a given piece of text.
+
+AI SDK Core **simplifies working with LLMs by offering a standardized way of integrating them into your app** — so you can focus on product logic rather than integration plumbing.
+
+For example, basic text generation in Swift:
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+
+let result = try await generateText(
+  model: openai("gpt-5"),
+  prompt: "Write a 1‑sentence product tagline for a time‑tracking app."
+)
+print(result.text)
+```
+
+## AI SDK Core Functions
+
+AI SDK Core includes functions for [text generation](./generating-text), [structured data generation](./generating-structured-data), and [tool usage](./tools-and-tool-calling).
+They use a standardized approach to [prompts](/foundations/prompts) and [settings](./settings), making it easier to work with different models.
+
+- `generateText` — non‑streamed text generation and [tool calling](./tools-and-tool-calling). Great for automation (draft emails, summarization) and agent workflows.
+- `streamText` — streamed text and tool calls. Ideal for interactive UIs (chat, progressive responses). See also [Streaming](/foundations/streaming).
+- `generateObject` — generate a typed object matching a schema. In the Swift port, prefer `FlexibleSchema`/`jsonSchema` or `Schema.codable(...)` for your `Decodable` types.
+- `streamObject` — stream a structured object that matches a schema (useful for incremental UI rendering on your side).
+
+## API Reference
+
+See the [AI SDK Core API Reference](/docs/reference/ai-sdk-core) for details on each function.
