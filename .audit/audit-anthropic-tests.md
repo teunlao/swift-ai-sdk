@@ -1,8 +1,8 @@
 # 🧪 Anthropic Provider - Test Coverage Audit
 
 **Date**: 2025-10-20
-**Last Updated**: 2025-10-20 20:15 UTC
-**Status**: 🚧 **IN PROGRESS** - Batch 8 complete, 52.4% coverage
+**Last Updated**: 2025-10-20 21:45 UTC
+**Status**: 🚧 **IN PROGRESS** - Batch 9-12 complete, 60.5% coverage
 
 ---
 
@@ -11,12 +11,12 @@
 | Metric | Value |
 |--------|-------|
 | **Upstream Tests** | 147 tests |
-| **Swift Tests** | 77 tests ✅ (+3 from Batch 8) |
-| **Coverage** | **52.4%** (77/147) |
-| **Missing** | 70 tests |
+| **Swift Tests** | 89 tests ✅ (+12 from Batch 9-12) |
+| **Coverage** | **60.5%** (89/147) |
+| **Missing** | 58 tests |
 | **Status** | ⚠️ **NEEDS IMPROVEMENT** |
 
-**Progress**: 33.3% → 36.1% (+2.8% Batch 1) → 39.5% (+3.4% Batch 2) → 42.9% (+3.4% Batch 3) → 44.9% (+2.0% Batch 4) → 46.3% (+1.4% Batch 5) → 48.3% (+2.0% Batch 6) → 50.3% (+2.0% Batch 7) → 52.4% (+2.0% Batch 8)
+**Progress**: 33.3% → 36.1% (+2.8% Batch 1) → 39.5% (+3.4% Batch 2) → 42.9% (+3.4% Batch 3) → 44.9% (+2.0% Batch 4) → 46.3% (+1.4% Batch 5) → 48.3% (+2.0% Batch 6) → 50.3% (+2.0% Batch 7) → 52.4% (+2.0% Batch 8) → 60.5% (+8.1% Batch 9-12)
 
 ---
 
@@ -25,10 +25,10 @@
 | Test File | Upstream | Swift | Coverage | Status |
 |-----------|----------|-------|----------|--------|
 | anthropic-error.test.ts | 3 | 2 | 66.7% | ⚠️ Missing 1 |
-| **anthropic-messages-language-model.test.ts** | 78 | **42** ✅ | **53.8%** | 🚧 Batch 8 done |
+| **anthropic-messages-language-model.test.ts** | 78 | **54** ✅ | **69.2%** | 🚧 Batch 9-12 done |
 | anthropic-prepare-tools.test.ts | 20 | 15 | 75.0% | ⚠️ Missing 5 |
 | convert-to-anthropic-messages-prompt.test.ts | 46 | 17 | 37.0% | ❌ Missing 29 |
-| **TOTAL** | **147** | **77** ✅ | **52.4%** | 🚧 In progress |
+| **TOTAL** | **147** | **89** ✅ | **60.5%** | 🚧 In progress |
 
 ---
 
@@ -317,6 +317,50 @@
 - Fixed implementation to match doGenerate behavior
 
 **Result**: Test coverage ✅ improved to 52.4% (77/147 tests), implementation bug ✅ fixed for cache_creation in streaming metadata
+
+---
+
+### ✅ Batch 9-12: Advanced Streaming Tests (COMPLETE)
+
+**Date**: 2025-10-20
+**Tests Added**: 12 tests (combined batch - 15-20 test strategy)
+**Status**: ✅ **ALL PASS** (89/89 tests)
+
+**Ported Tests**:
+1. ✅ **"should pass json schema response format as a tool"** (doGenerate) - JSON schema sent as tool
+2. ✅ **"should stream the response"** (doStream) - JSON schema streaming with text deltas
+3. ✅ **"should stream reasoning deltas"** - Reasoning blocks with signature_delta metadata
+4. ✅ **"should stream redacted reasoning"** - Redacted thinking blocks with redacted_reasoning metadata
+5. ✅ **"should ignore signatures on text deltas"** - Text deltas with signature metadata ignored
+6. ✅ **"should stream tool deltas"** - Tool input deltas (toolInputStart, toolInputDelta, toolCall)
+7. ✅ **"should forward error chunks"** - Error events in streaming
+8. ✅ **"should expose the raw response headers"** - Response headers in doStream
+9. ✅ **"should include raw chunks when includeRawChunks is enabled"** - Raw chunk inclusion
+10. ✅ **"should not include raw chunks when includeRawChunks is false"** - Raw chunks excluded
+11. ✅ **"should throw an api error when the server is overloaded"** - APICallError with 529 status
+12. ✅ **"should forward overloaded error during streaming"** - Error event propagation
+
+**Issues Fixed**:
+- SSE event formatting: Added `\n\n` separator in `makeStream` helper (fixed both occurrences)
+  - Events need double newlines for proper SSE parsing
+  - Changed: `continuation.yield(Data(event.utf8))` → `continuation.yield(Data((event + "\n\n").utf8))`
+- Type ambiguity errors: Added explicit type annotations `(part: LanguageModelV3StreamPart) -> Bool`
+- Pattern matching errors:
+  - `.responseMetadata(id, modelId)` → `.responseMetadata(id, modelId, _)` (3 parameters)
+  - `.toolInputStart(id, toolName)` → `.toolInputStart(id, toolName, _, _)` (4 parameters)
+  - `.toolInputDelta(_, delta)` → `.toolInputDelta(_, delta, _)` (3 parameters)
+- ToolCall access: `.id`, `.name` → `.toolCallId`, `.toolName`
+- APICallError parameter order: Corrected to `message, url, requestBodyValues, statusCode, ...`
+- Missing model declaration in `throwsApiErrorWhenOverloaded` test
+- **Test expectation corrections**:
+  - Reasoning deltas: Should include empty delta with signature (`["I am", "thinking...", ""]`)
+  - JSON schema stream: Should NOT include "Okay", "!" text deltas (only JSON content as text)
+
+**User Guidance Applied**: ✅ "Use Read and Edit tools manually, no Python scripts"
+- Fixed all errors manually using Read/Edit tools as instructed
+- No automation scripts used for bulk changes
+
+**Result**: Test coverage ✅ improved to 60.5% (89/147 tests), reached 60% milestone! 🎉
 
 ---
 

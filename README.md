@@ -6,6 +6,17 @@ Unified AI SDK for Swift — a 1:1 port of the Vercel AI SDK with the same API a
 - Platforms: iOS 16+, macOS 13+, tvOS 16+, watchOS 9+. See `Package.swift` for source of truth.
 - Upstream parity target: Vercel AI SDK 6.0.0-beta.42 (commit `77db222ee`).
 
+## Parity Dashboard
+
+![Upstream parity](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/teunlao/swift-ai-sdk/main/parity/conformance.json&label=Parity)
+
+<!-- parity:start -->
+- Parity progress: **0%** (0 / 6 features verified).
+- Providers tracked: OpenAI, Anthropic, Google, Groq.
+- Tests mirrored: 763 / 763 passing.
+- Status notes: Initial scaffold; statuses marked `todo`.
+<!-- parity:end -->
+
 ## Installation (SwiftPM)
 
 Add the package to your `Package.swift`:

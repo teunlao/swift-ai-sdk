@@ -1,0 +1,47 @@
+{
+  "upstream": {
+    "repo": "vercel/ai",
+    "commit": "77db222eeded7a936a8a268bf7795ff86c060c2f",
+    "compat": ">=6.0.0-beta.42,<7"
+  },
+  "parity": {
+    "overall": 0.0,
+    "featuresTotal": 6,
+    "featuresDone": 0
+  },
+  "features": [
+    { "id": "generateText", "title": "Generate Text", "status": "todo", "notes": "Pending detailed assessment." },
+    { "id": "streamText", "title": "Stream Text", "status": "todo", "notes": "Pending detailed assessment." },
+    { "id": "toolCalls.static", "title": "Tool Calls (Static)", "status": "todo", "notes": "Pending detailed assessment." },
+    { "id": "toolCalls.dynamic", "title": "Tool Calls (Dynamic)", "status": "todo", "notes": "Pending detailed assessment." },
+    { "id": "structuredOutput", "title": "Structured Output", "status": "todo", "notes": "Pending detailed assessment." },
+    { "id": "dataStreamProtocol", "title": "Data Stream Protocol", "status": "todo", "notes": "Pending detailed assessment." }
+  ],
+  "providers": {
+    "openai": {
+      "generateText": "todo",
+      "tools": "todo",
+      "structuredOutput": "todo"
+    },
+    "anthropic": {
+      "generateText": "todo",
+      "tools": "todo",
+      "structuredOutput": "todo"
+    },
+    "google": {
+      "generateText": "todo",
+      "tools": "todo",
+      "structuredOutput": "todo"
+    },
+    "groq": {
+      "generateText": "todo"
+    }
+  },
+  "tests": {
+    "total": 763,
+    "passed": 763
+  },
+  "notes": [
+    "Initial scaffold created; statuses marked as 'todo' pending verification."
+  ]
+}

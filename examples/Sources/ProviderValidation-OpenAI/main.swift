@@ -47,6 +47,14 @@ import ExamplesCore
 @main
 struct ProviderValidationOpenAI {
     static func main() async {
+        // Load environment variables from .env file
+        do {
+            try EnvLoader.load()
+        } catch {
+            print("⚠️  Warning: Could not load .env file: \(error)")
+            print("   Continuing with system environment variables...")
+        }
+
         printHeader("OpenAI Provider Documentation Validation")
 
         var passed = 0

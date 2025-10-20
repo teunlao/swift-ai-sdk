@@ -19,6 +19,14 @@ import ExamplesCore
 @main
 struct ProviderValidationAnthropic {
     static func main() async {
+        // Load environment variables from .env file
+        do {
+            try EnvLoader.load()
+        } catch {
+            print("⚠️  Warning: Could not load .env file: \(error)")
+            print("   Continuing with system environment variables...")
+        }
+
         printHeader("Anthropic Provider Documentation Validation")
 
         var passed = 0
@@ -32,24 +40,25 @@ struct ProviderValidationAnthropic {
             ("2. Custom Provider Settings", testCustomProviderSettings),
             ("3. Language Model Creation", testLanguageModelCreation),
 
+            // Language Models - Generation (require API)
+            ("4. Generate Text Basic", testGenerateTextBasic),
+            ("5. Stream Text Basic", testStreamTextBasic),
+
             // Advanced Features
-            ("4. Reasoning Syntax", testReasoningSyntax),
-            ("5. Cache Control Syntax", testCacheControlSyntax),
-            ("6. Cache Control System Messages", testCacheControlSystemMessages),
+            ("6. Reasoning Syntax", testReasoningSyntax),
+            ("7. Cache Control Syntax", testCacheControlSyntax),
+            ("8. Cache Control System Messages", testCacheControlSystemMessages),
 
             // Tools
-            ("7. Bash Tool Syntax", testBashToolSyntax),
-            ("8. Text Editor Tool Syntax", testTextEditorToolSyntax),
-            ("9. Computer Tool Syntax", testComputerToolSyntax),
-            ("10. Web Search Tool Syntax", testWebSearchToolSyntax),
-            ("11. Web Fetch Tool Syntax", testWebFetchToolSyntax),
-            ("12. Code Execution Tool Syntax", testCodeExecutionToolSyntax),
+            ("9. Bash Tool Syntax", testBashToolSyntax),
+            ("10. Text Editor Tool Syntax", testTextEditorToolSyntax),
+            ("11. Computer Tool Syntax", testComputerToolSyntax),
+            ("12. Web Search Tool Syntax", testWebSearchToolSyntax),
+            ("13. Web Fetch Tool Syntax", testWebFetchToolSyntax),
+            ("14. Code Execution Tool Syntax", testCodeExecutionToolSyntax),
 
             // Multi-modal
-            ("13. PDF Support Syntax", testPdfSupportSyntax),
-
-            // Skip tests that require actual API calls for now
-            // We'll add mock implementations later
+            ("15. PDF Support Syntax", testPdfSupportSyntax),
         ]
 
         for (name, test) in tests {
@@ -123,6 +132,42 @@ func testLanguageModelCreation() async throws {
     print("   Created model: \(modelType)")
 
     print("   ✓ Model conforms to LanguageModelV3")
+}
+
+// MARK: - Language Models - Basic Generation Tests
+
+func testGenerateTextBasic() async throws {
+    // From docs (line 95-98): Basic text generation with Claude
+    print("   Testing generate text with Claude API...")
+
+    let result = try await generateText(
+        model: anthropic("claude-3-haiku-20240307"),
+        prompt: "Write a vegetarian lasagna recipe for 4 people."
+    )
+
+    print("   ✓ Generated text: \(result.text.prefix(100))...")
+    print("   ✓ Tokens used: \(result.usage.totalTokens ?? 0)")
+    print("   ✓ Finish reason: \(result.finishReason)")
+}
+
+func testStreamTextBasic() async throws {
+    // From docs: Stream text generation
+    print("   Testing stream text with Claude API...")
+
+    let stream = try streamText(
+        model: anthropic("claude-3-haiku-20240307"),
+        prompt: "Write a 2-sentence description of Swift programming language."
+    )
+
+    var chunkCount = 0
+    for try await chunk in stream.textStream {
+        chunkCount += 1
+        if chunkCount <= 3 {
+            print("   Chunk \(chunkCount): \(chunk.prefix(50))...")
+        }
+    }
+
+    print("   ✓ Received \(chunkCount) text chunks")
 }
 
 // MARK: - Advanced Features Tests
