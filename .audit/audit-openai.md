@@ -75,7 +75,7 @@
 |------|----------|-------|----------|--------|
 | OpenAIChatLanguageModel | 71 | 71 | 100% | ✅ PERFECT |
 | OpenAIResponsesInput | 48 | 48 | 100% | ✅ PERFECT |
-| OpenAIResponsesLanguageModel | 77 | 60 | 78% | ✅ GOOD |
+| OpenAIResponsesLanguageModel | 77 | 64 | 83% | ✅ GOOD |
 | OpenAICompletionLanguageModel | 16 | 16 | 100% | ✅ PERFECT |
 | OpenAITranscriptionModel | 13 | 14 | 108% | ✅ EXCELLENT |
 | OpenAIEmbeddingModel | 6 | 6 | 100% | ✅ PERFECT |
@@ -87,7 +87,7 @@
 | OpenAIError | 1 | 1 | 100% | ✅ PERFECT |
 | OpenAIProvider | 3 | 3 | 100% | ✅ PERFECT |
 
-**TOTAL: 290 → 279 (96.2% coverage) ✅ EXCELLENT**
+**TOTAL: 290 → 283 (97.6% coverage) ✅ EXCELLENT**
 
 ---
 

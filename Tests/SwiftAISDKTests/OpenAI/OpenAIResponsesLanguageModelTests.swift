@@ -23,7 +23,7 @@ private final class SequentialIdGenerator: @unchecked Sendable {
 
 @Suite("OpenAIResponsesLanguageModel")
 struct OpenAIResponsesLanguageModelTests {
-    private func makeConfig(fetch: @escaping FetchFunction) -> OpenAIConfig {
+    private func makeConfig(fetch: @escaping FetchFunction, fileIdPrefixes: [String]? = ["file-"]) -> OpenAIConfig {
         let generator = SequentialIdGenerator()
         return OpenAIConfig(
             provider: "openai.responses",
@@ -31,7 +31,7 @@ struct OpenAIResponsesLanguageModelTests {
             headers: { [:] },
             fetch: fetch,
             generateId: { generator.next() },
-            fileIdPrefixes: ["file-"]
+            fileIdPrefixes: fileIdPrefixes
         )
     }
 
@@ -4340,6 +4340,320 @@ struct OpenAIResponsesLanguageModelTests {
         let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: samplePrompt))
 
         #expect(result.finishReason == .toolCalls)
+    }
+
+    // MARK: - fileIdPrefixes Configuration Tests
+    // Port of openai-responses-language-model.test.ts: fileIdPrefixes configuration section
+
+    @Test("fileIdPrefixes passes file IDs when prefix matches")
+    func testFileIdPrefixesPassesFileIds() async throws {
+        actor RequestCapture {
+            var bodyData: Data?
+            func store(_ data: Data?) { bodyData = data }
+            func current() -> Data? { bodyData }
+        }
+
+        let capture = RequestCapture()
+        let fetch: FetchFunction = { request in
+            await capture.store(request.httpBody)
+            let responseJSON: [String: Any] = [
+                "id": "resp_test",
+                "object": "response",
+                "created_at": 1_741_257_730,
+                "status": "completed",
+                "model": "gpt-4o",
+                "output": [
+                    [
+                        "id": "msg_test",
+                        "type": "message",
+                        "status": "completed",
+                        "role": "assistant",
+                        "content": [
+                            [
+                                "type": "output_text",
+                                "text": "I can see the image.",
+                                "annotations": []
+                            ]
+                        ]
+                    ]
+                ],
+                "usage": ["input_tokens": 10, "output_tokens": 5, "total_tokens": 15],
+                "incomplete_details": NSNull()
+            ]
+            let responseData = try! JSONSerialization.data(withJSONObject: responseJSON)
+            let httpResponse = HTTPURLResponse(
+                url: URL(string: "https://api.openai.com/v1/responses")!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch, fileIdPrefixes: ["file-"])
+        )
+
+        let prompt: LanguageModelV3Prompt = [
+            LanguageModelV3Message.user(
+                content: [
+                    .text(LanguageModelV3TextPart(text: "Analyze this image")),
+                    .file(LanguageModelV3FilePart(data: .base64("file-abc123"), mediaType: "image/jpeg"))
+                ],
+                providerOptions: nil
+            )
+        ]
+
+        _ = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: prompt))
+
+        guard let bodyData = await capture.current(),
+              let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any],
+              let input = json["input"] as? [[String: Any]],
+              let firstMessage = input.first,
+              let content = firstMessage["content"] as? [[String: Any]] else {
+            Issue.record("Failed to extract request input")
+            return
+        }
+
+        #expect(content.count == 2)
+        #expect(content[0]["type"] as? String == "input_text")
+        #expect(content[1]["type"] as? String == "input_image")
+        #expect(content[1]["file_id"] as? String == "file-abc123")
+    }
+
+    @Test("fileIdPrefixes handles multiple prefixes")
+    func testFileIdPrefixesMultiplePrefixes() async throws {
+        actor RequestCapture {
+            var bodyData: Data?
+            func store(_ data: Data?) { bodyData = data }
+            func current() -> Data? { bodyData }
+        }
+
+        let capture = RequestCapture()
+        let fetch: FetchFunction = { request in
+            await capture.store(request.httpBody)
+            let responseJSON: [String: Any] = [
+                "id": "resp_test",
+                "object": "response",
+                "created_at": 1_741_257_730,
+                "status": "completed",
+                "model": "gpt-4o",
+                "output": [
+                    [
+                        "id": "msg_test",
+                        "type": "message",
+                        "status": "completed",
+                        "role": "assistant",
+                        "content": [
+                            [
+                                "type": "output_text",
+                                "text": "I can see both images.",
+                                "annotations": []
+                            ]
+                        ]
+                    ]
+                ],
+                "usage": ["input_tokens": 10, "output_tokens": 5, "total_tokens": 15],
+                "incomplete_details": NSNull()
+            ]
+            let responseData = try! JSONSerialization.data(withJSONObject: responseJSON)
+            let httpResponse = HTTPURLResponse(
+                url: URL(string: "https://api.openai.com/v1/responses")!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch, fileIdPrefixes: ["file-", "custom-"])
+        )
+
+        let prompt: LanguageModelV3Prompt = [
+            LanguageModelV3Message.user(
+                content: [
+                    .text(LanguageModelV3TextPart(text: "Compare these images")),
+                    .file(LanguageModelV3FilePart(data: .base64("file-abc123"), mediaType: "image/jpeg")),
+                    .file(LanguageModelV3FilePart(data: .base64("custom-xyz789"), mediaType: "image/jpeg"))
+                ],
+                providerOptions: nil
+            )
+        ]
+
+        _ = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: prompt))
+
+        guard let bodyData = await capture.current(),
+              let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any],
+              let input = json["input"] as? [[String: Any]],
+              let firstMessage = input.first,
+              let content = firstMessage["content"] as? [[String: Any]] else {
+            Issue.record("Failed to extract request input")
+            return
+        }
+
+        #expect(content.count == 3)
+        #expect(content[0]["type"] as? String == "input_text")
+        #expect(content[1]["type"] as? String == "input_image")
+        #expect(content[1]["file_id"] as? String == "file-abc123")
+        #expect(content[2]["type"] as? String == "input_image")
+        #expect(content[2]["file_id"] as? String == "custom-xyz789")
+    }
+
+    @Test("fileIdPrefixes falls back to base64 when undefined")
+    func testFileIdPrefixesFallbackWhenUndefined() async throws {
+        actor RequestCapture {
+            var bodyData: Data?
+            func store(_ data: Data?) { bodyData = data }
+            func current() -> Data? { bodyData }
+        }
+
+        let capture = RequestCapture()
+        let fetch: FetchFunction = { request in
+            await capture.store(request.httpBody)
+            let responseJSON: [String: Any] = [
+                "id": "resp_test",
+                "object": "response",
+                "created_at": 1_741_257_730,
+                "status": "completed",
+                "model": "gpt-4o",
+                "output": [
+                    [
+                        "id": "msg_test",
+                        "type": "message",
+                        "status": "completed",
+                        "role": "assistant",
+                        "content": [
+                            [
+                                "type": "output_text",
+                                "text": "I can see the image.",
+                                "annotations": []
+                            ]
+                        ]
+                    ]
+                ],
+                "usage": ["input_tokens": 10, "output_tokens": 5, "total_tokens": 15],
+                "incomplete_details": NSNull()
+            ]
+            let responseData = try! JSONSerialization.data(withJSONObject: responseJSON)
+            let httpResponse = HTTPURLResponse(
+                url: URL(string: "https://api.openai.com/v1/responses")!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch, fileIdPrefixes: nil) // No fileIdPrefixes
+        )
+
+        let prompt: LanguageModelV3Prompt = [
+            LanguageModelV3Message.user(
+                content: [
+                    .text(LanguageModelV3TextPart(text: "Analyze this image")),
+                    .file(LanguageModelV3FilePart(data: .base64("file-abc123"), mediaType: "image/jpeg"))
+                ],
+                providerOptions: nil
+            )
+        ]
+
+        _ = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: prompt))
+
+        guard let bodyData = await capture.current(),
+              let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any],
+              let input = json["input"] as? [[String: Any]],
+              let firstMessage = input.first,
+              let content = firstMessage["content"] as? [[String: Any]] else {
+            Issue.record("Failed to extract request input")
+            return
+        }
+
+        #expect(content.count == 2)
+        #expect(content[0]["type"] as? String == "input_text")
+        #expect(content[1]["type"] as? String == "input_image")
+        #expect(content[1]["image_url"] as? String == "data:image/jpeg;base64,file-abc123")
+    }
+
+    @Test("fileIdPrefixes falls back to base64 when prefix doesn't match")
+    func testFileIdPrefixesFallbackWhenPrefixDoesNotMatch() async throws {
+        actor RequestCapture {
+            var bodyData: Data?
+            func store(_ data: Data?) { bodyData = data }
+            func current() -> Data? { bodyData }
+        }
+
+        let capture = RequestCapture()
+        let fetch: FetchFunction = { request in
+            await capture.store(request.httpBody)
+            let responseJSON: [String: Any] = [
+                "id": "resp_test",
+                "object": "response",
+                "created_at": 1_741_257_730,
+                "status": "completed",
+                "model": "gpt-4o",
+                "output": [
+                    [
+                        "id": "msg_test",
+                        "type": "message",
+                        "status": "completed",
+                        "role": "assistant",
+                        "content": [
+                            [
+                                "type": "output_text",
+                                "text": "I can see the image.",
+                                "annotations": []
+                            ]
+                        ]
+                    ]
+                ],
+                "usage": ["input_tokens": 10, "output_tokens": 5, "total_tokens": 15],
+                "incomplete_details": NSNull()
+            ]
+            let responseData = try! JSONSerialization.data(withJSONObject: responseJSON)
+            let httpResponse = HTTPURLResponse(
+                url: URL(string: "https://api.openai.com/v1/responses")!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch, fileIdPrefixes: ["other-"]) // Different prefix
+        )
+
+        let prompt: LanguageModelV3Prompt = [
+            LanguageModelV3Message.user(
+                content: [
+                    .text(LanguageModelV3TextPart(text: "Analyze this image")),
+                    .file(LanguageModelV3FilePart(data: .base64("file-abc123"), mediaType: "image/jpeg"))
+                ],
+                providerOptions: nil
+            )
+        ]
+
+        _ = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: prompt))
+
+        guard let bodyData = await capture.current(),
+              let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any],
+              let input = json["input"] as? [[String: Any]],
+              let firstMessage = input.first,
+              let content = firstMessage["content"] as? [[String: Any]] else {
+            Issue.record("Failed to extract request input")
+            return
+        }
+
+        #expect(content.count == 2)
+        #expect(content[0]["type"] as? String == "input_text")
+        #expect(content[1]["type"] as? String == "input_image")
+        #expect(content[1]["image_url"] as? String == "data:image/jpeg;base64,file-abc123")
     }
 
 }
