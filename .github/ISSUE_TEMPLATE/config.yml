@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Question or Discussion
+    url: https://github.com/teunlao/swift-ai-sdk/discussions
+    about: Ask questions or discuss ideas
