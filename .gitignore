@@ -39,6 +39,7 @@ parity/
 git-local-config.md
 AGENTS.md
 CLAUDE.md
+.claude/
 
 # Logs
 logs
