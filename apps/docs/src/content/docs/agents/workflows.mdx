@@ -196,24 +196,27 @@ Add quality control to workflows with dedicated evaluation steps that assess int
 ```swift
 import SwiftAISDK
 import OpenAIProvider
+import AISDKProviderUtils
 
-async function translateWithFeedback(text: string, targetLanguage: string) {
-  let currentTranslation = '';
-  let iterations = 0;
-  const MAX_ITERATIONS = 3;
+struct TranslationResult { let finalTranslation: String; let iterationsRequired: Int }
 
-  // Initial translation
-  const { text: translation } = await generateText({
-    model: 'openai/gpt-4o-mini', // use small model for first attempt
-    system: 'You are an expert literary translator.',
-    prompt: `Translate this text to ${targetLanguage}, preserving tone and cultural nuances:
-    ${text}`,
-  });
+func translateWithFeedback(text: String, targetLanguage: String) async throws -> TranslationResult {
+  var currentTranslation = ""
+  var iterations = 0
+  let maxIterations = 3
 
-  currentTranslation = translation;
+  // Initial translation (smaller model)
+  let first = try await generateText(
+    model: openai("gpt-4o-mini"),
+    system: "You are an expert literary translator.",
+    prompt: """
+    Translate this text to \(targetLanguage), preserving tone and cultural nuances:
+    \(text)
+    """
+  )
+  currentTranslation = first.text
 
-  // Evaluation-optimization loop
-  while (iterations < MAX_ITERATIONS) {
+  while iterations < maxIterations {
     // Evaluate current translation
     let evalSchema = FlexibleSchema(jsonSchema(.object([
       "type": .string("object"),
@@ -226,7 +229,8 @@ async function translateWithFeedback(text: string, targetLanguage: string) {
         "improvementSuggestions": .object(["type": .string("array"), "items": .object(["type": .string("string")])])
       ])
     ])))
-    let evalOut = try await generateObject(
+
+    let evaluationOut = try await generateObject(
       model: openai("gpt-4.1"),
       schema: evalSchema,
       system: "You are an expert in evaluating literary translations.",
@@ -243,75 +247,39 @@ async function translateWithFeedback(text: string, targetLanguage: string) {
       4. Cultural accuracy
       """
     )
-    let evaluation = evalOut.object
+    let evaluation = evaluationOut.object
 
-    // Check if quality meets threshold
-    if let score = evaluation["qualityScore"]?.numberValue,
-       let tone = evaluation["preservesTone"]?.boolValue,
-       let nuance = evaluation["preservesNuance"]?.boolValue,
-       let culture = evaluation["culturallyAccurate"]?.boolValue,
-       score >= 8, tone, nuance, culture {
-      break
-    }
+    // Threshold check
+    let score = evaluation["qualityScore"]?.numberValue ?? 0
+    let tone = evaluation["preservesTone"]?.boolValue ?? false
+    let nuance = evaluation["preservesNuance"]?.boolValue ?? false
+    let culture = evaluation["culturallyAccurate"]?.boolValue ?? false
+    if score >= 8, tone, nuance, culture { break }
 
-    // Generate improved translation based on feedback
+    // Build feedback strings
+    let specific = (evaluation["specificIssues"]?.arrayValue ?? []).compactMap { $0.stringValue }.joined(separator: "\n")
+    let suggestions = (evaluation["improvementSuggestions"]?.arrayValue ?? []).compactMap { $0.stringValue }.joined(separator: "\n")
+
+    // Improve using larger model
     let improved = try await generateText(
-      model: 'openai/gpt-4o', // use a larger model
-      system: 'You are an expert literary translator.',
-      prompt: `Improve this translation based on the following feedback:
-      ${evaluation.specificIssues.join('\n')}
-      ${evaluation.improvementSuggestions.join('\n')}
+      model: openai("gpt-4o"),
+      system: "You are an expert literary translator.",
+      prompt: """
+      Improve this translation based on the following feedback:
+      \(specific)
+      \(suggestions)
 
-      Original: ${text}
-      Current Translation: ${currentTranslation}`,
-    });
-
-    currentTranslation = improvedTranslation;
-    iterations++;
+      Original: \(text)
+      Current Translation: \(currentTranslation)
+      """
+    )
+    currentTranslation = improved.text
+    iterations += 1
   }
 
-  return {
-    finalTranslation: currentTranslation,
-    iterationsRequired: iterations,
-  };
+  return TranslationResult(finalTranslation: currentTranslation, iterationsRequired: iterations)
 }
 ```
----
-title: Workflow Patterns
-description: Learn workflow patterns for building reliable agents with the Swift AI SDK.
----
-
-_This page adapts the original AI SDK documentation: [Workflow Patterns](https://ai-sdk.dev/docs/agents/workflows)._ 
-
-# Workflow Patterns
-
-Combine the building blocks from the [overview](/agents/overview) with these patterns to add structure and reliability to your agents:
-
-- [Sequential Processing](#sequential-processing-chains) — Steps executed in order
-- [Parallel Processing](#parallel-processing) — Independent tasks run simultaneously
-- [Evaluation/Feedback Loops](#evaluator-optimizer) — Results checked and improved iteratively
-- [Orchestrator-Worker](#orchestrator-worker) — Coordinating multiple components
-- [Routing](#routing) — Directing work based on context
-
-## Choose Your Approach
-
-Consider these key factors:
-
-- Flexibility vs Control — How much freedom does the LLM need vs how tightly you must constrain its actions?
-- Error Tolerance — What are the consequences of mistakes in your use case?
-- Cost Considerations — More complex systems typically mean more LLM calls and higher costs
-- Maintenance — Simpler architectures are easier to debug and modify
-
-Start with the simplest approach that meets your needs. Add complexity only when required by:
-
-1. Breaking down tasks into clear steps
-2. Adding tools for specific capabilities
-3. Implementing feedback loops for quality control
-4. Introducing multiple agents for complex workflows
-
-The examples below translate the original patterns to Swift.
-
-## Sequential Processing (Chains)
 
 The simplest workflow pattern executes steps in a predefined order. Each step's output becomes input for the next step, creating a clear chain of operations. Use this pattern for tasks with well-defined sequences, like content generation pipelines or data transformation processes.
 

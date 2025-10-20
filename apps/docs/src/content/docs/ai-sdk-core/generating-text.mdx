@@ -108,7 +108,7 @@ AI SDK Core provides the [`streamText`](/docs/reference/ai-sdk-core/stream-text)
 import SwiftAISDK
 import OpenAIProvider
 
-const result = try streamText(
+let result = try streamText(
   model: openai("gpt-5"),
   prompt: "Invent a new holiday and describe its traditions."
 )
@@ -124,15 +124,13 @@ for try await textPart in result.textStream {
 > Warning
 > `streamText` starts streaming immediately. Use `onError` to log errors.
 
-You can use `streamText` on its own or in combination with [AI SDK
-UI](/examples/next-pages/basics/streaming-text-generation) and [AI SDK
-RSC](/examples/next-app/basics/streaming-text-generation).
-The result object contains several helper functions to make the integration into [AI SDK UI](/docs/ai-sdk-ui) easier:
+You can use `streamText` on its own or integrate it with your Swift HTTP framework.
+The result object provides helpers for server responses:
 
-- `result.toUIMessageStreamResponse()`: Creates a UI Message stream HTTP response (with tool calls etc.) that can be used in a Next.js App Router API route.
-- `result.pipeUIMessageStreamToResponse()`: Writes UI Message stream delta output to a Node.js response-like object.
-- `result.toTextStreamResponse()`: Creates a simple text stream HTTP response.
-- `result.pipeTextStreamToResponse()`: Writes text delta output to a Node.js response-like object.
+- `result.toUIMessageStreamResponse(...)`: Creates a UI Message stream HTTP response (includes tool calls) as a typed response value.
+- `result.pipeUIMessageStreamToResponse(...)`: Pipes UI Message stream deltas to any response conforming to `StreamTextResponseWriter` (e.g., a Vapor response adapter).
+- `result.toTextStreamResponse(...)`: Creates a simple text stream HTTP response.
+- `result.pipeTextStreamToResponse(...)`: Pipes text deltas to any `StreamTextResponseWriter`.
 
 > Note
 > `streamText` uses backpressure and generates tokens as requested. You must consume the stream for it to finish.
@@ -234,7 +232,7 @@ let cityAttractions = dynamicTool(
     "properties": .object(["city": .object(["type": .string("string")])])
   ]))),
   execute: { input, _ in
-    return .object(["attractions": .array([.string("attraction1"), .string("attraction2"), .string("attraction3")])])
+    .object(["attractions": .array([.string("attraction1"), .string("attraction2"), .string("attraction3")])])
   }
 )
 
@@ -244,98 +242,57 @@ let result = try streamText(
   prompt: "What are some San Francisco tourist attractions?"
 )
 
-for await (const part of result.fullStream) {
-  switch (part.type) {
-    case 'start': {
-      // handle start of stream
-      break;
+for try await part in result.fullStream {
+  switch part {
+  case .start:
+    // handle start of stream
+    break
+  case .startStep:
+    // handle start of step
+    break
+  case .textStart:
+    // handle text start
+    break
+  case .textDelta(_, let text, _):
+    // handle text delta here
+    print(text)
+  case .textEnd:
+    // handle text end
+    break
+  case .reasoningStart, .reasoningDelta, .reasoningEnd:
+    // handle reasoning parts
+    break
+  case .source(let src):
+    // handle source
+    print(src)
+  case .file(let file):
+    // handle file
+    print(file)
+  case .toolCall(let call, _):
+    if call.toolName == "cityAttractions" {
+      // handle tool call
     }
-    case 'start-step': {
-      // handle start of step
-      break;
-    }
-    case 'text-start': {
-      // handle text start
-      break;
-    }
-    case 'text-delta': {
-      // handle text delta here
-      break;
-    }
-    case 'text-end': {
-      // handle text end
-      break;
-    }
-    case 'reasoning-start': {
-      // handle reasoning start
-      break;
-    }
-    case 'reasoning-delta': {
-      // handle reasoning delta here
-      break;
-    }
-    case 'reasoning-end': {
-      // handle reasoning end
-      break;
-    }
-    case 'source': {
-      // handle source here
-      break;
-    }
-    case 'file': {
-      // handle file here
-      break;
-    }
-    case 'tool-call': {
-      switch (part.toolName) {
-        case 'cityAttractions': {
-          // handle tool call here
-          break;
-        }
-      }
-      break;
-    }
-    case 'tool-input-start': {
-      // handle tool input start
-      break;
-    }
-    case 'tool-input-delta': {
-      // handle tool input delta
-      break;
-    }
-    case 'tool-input-end': {
-      // handle tool input end
-      break;
-    }
-    case 'tool-result': {
-      switch (part.toolName) {
-        case 'cityAttractions': {
-          // handle tool result here
-          break;
-        }
-      }
-      break;
-    }
-    case 'tool-error': {
-      // handle tool error
-      break;
-    }
-    case 'finish-step': {
-      // handle finish step
-      break;
-    }
-    case 'finish': {
-      // handle finish here
-      break;
-    }
-    case 'error': {
-      // handle error here
-      break;
-    }
-    case 'raw': {
-      // handle raw value
-      break;
-    }
+  case .toolInputStart, .toolInputDelta, .toolInputEnd:
+    // handle tool input phases
+    break
+  case .toolResult(let result, _):
+    // handle tool result
+    print(result)
+  case .toolError(let err):
+    // handle tool error
+    print(err)
+  case .finishStep:
+    // handle finish step
+    break
+  case .finish:
+    // handle finish
+    break
+  case .error(let error):
+    // handle stream error
+    print(error)
+  case .raw:
+    // handle raw
+    break
   }
 }
 ```

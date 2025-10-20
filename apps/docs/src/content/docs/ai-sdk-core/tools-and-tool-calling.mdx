@@ -252,36 +252,37 @@ let customTool = dynamicTool(
 
 ### Type-Safe Handling
 
-When using both static and dynamic tools, use the `dynamic` flag for type narrowing:
+When combining static and dynamic tools, use the `dynamic` flag for narrowing and handle inputs accordingly in `onStepFinish`:
 
 ```swift
+import SwiftAISDK
+import OpenAIProvider
+import AISDKProviderUtils
+
 let result = try await generateText(
-  model: 'openai/gpt-4o',
-  tools: {
-    // Static tool with known types
-    weather: weatherTool,
-    // Dynamic tool
-    custom: dynamicTool({
-      /* ... */
-    }),
-  },
-  onStepFinish: ({ toolCalls, toolResults }) => {
-    // Type-safe iteration
-    for (const toolCall of toolCalls) {
-      if (toolCall.dynamic) {
-        // Dynamic tool: input is 'unknown'
-        console.log('Dynamic:', toolCall.toolName, toolCall.input);
-        continue;
+  model: openai("gpt-4o"),
+  tools: [
+    "weather": weatherTool,                 // static tool (known schema/types)
+    "custom": customTool                    // dynamic tool (runtime‑validated)
+  ],
+  onStepFinish: { step in
+    for call in step.toolCalls {
+      if call.dynamic == true {
+        // Dynamic tool: input is JSONValue; validate at runtime
+        print("Dynamic:", call.toolName, call.input)
+        continue
       }
 
-      // Static tool: full type inference
-      switch (toolCall.toolName) {
-        case 'weather':
-          console.log(toolCall.input.location); // typed as string
-          break;
+      // Static tool: you can safely access expected fields
+      switch call.toolName {
+      case "weather":
+        let location = call.input["location"]?.stringValue ?? "(unknown)"
+        print("Weather input location:", location)
+      default:
+        break
       }
     }
-  },
+  }
 )
 ```
 
@@ -551,24 +552,33 @@ for e in toolErrors {
 
 `streamText` sends errors as part of the full stream. Tool execution errors appear as `tool-error` parts, while other errors appear as `error` parts.
 
-When using `toUIMessageStreamResponse`, you can pass an `onError` function to extract the error message from the error part and forward it as part of the stream response:
+When using `toUIMessageStreamResponse`, you can pass an `onError` closure to extract a human‑readable message from an error part and include it in the stream response:
 
-```ts
-const result = streamText({
-  // ...
-});
+```swift
+import SwiftAISDK
+import OpenAIProvider
 
-return result.toUIMessageStreamResponse({
-  onError: error => {
-    if (NoSuchToolError.isInstance(error)) {
-      return 'The model tried to call a unknown tool.';
-    } else if (InvalidToolInputError.isInstance(error)) {
-      return 'The model called a tool with invalid inputs.';
-    } else {
-      return 'An unknown error occurred.';
+let stream = try streamText(
+  model: openai("gpt-5"),
+  tools: tools,
+  prompt: "..."
+)
+
+let response = stream.toUIMessageStreamResponse(options: StreamTextUIResponseOptions(
+  streamOptions: UIMessageStreamOptions(
+    onError: { error in
+      if error is NoSuchToolError {
+        return "The model tried to call an unknown tool."
+      } else if error is InvalidToolInputError {
+        return "The model called a tool with invalid inputs."
+      } else {
+        return "An unknown error occurred."
+      }
     }
-  },
-});
+  )
+))
+
+// return `response` from your HTTP handler or pipe it to a response writer
 ```
 
 ## Tool Call Repair
