@@ -104,11 +104,9 @@ import OpenAIProvider
 let result = try await embed(
   model: .v3(openai.textEmbeddingModel(modelId: "text-embedding-3-small")),
   value: "sunny day at the beach",
-  providerOptions: .object([
-    "openai": .object([
-      "dimensions": .number(512)
-    ])
-  ])
+  providerOptions: ["openai": [
+    "dimensions": 512
+  ]]
 )
 
 let embedding = result.embedding

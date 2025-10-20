@@ -16,7 +16,7 @@ import SwiftAISDK
 import OpenAIProvider
 
 let audio = try await generateSpeech(
-  model: openai.speech("tts-1"),
+  model: openai.speech(modelId: "tts-1"),
   text: "Hello, world!",
   voice: "alloy"
 )
@@ -52,13 +52,12 @@ You can set model-specific settings with the `providerOptions` parameter.
 
 ```swift highlight="7-11"
 let customized = try await generateSpeech(
-  model: openai.speech("tts-1"),
+  model: openai.speech(modelId: "tts-1"),
   text: "Hello, world!",
-  providerOptions: .object([
-    "openai": .object([
-      // ... provider-specific keys
-    ])
-  ])
+  voice: "alloy",
+  providerOptions: ["openai": [
+    "speed": 1.0
+  ]]
 )
 ```
 

@@ -16,7 +16,7 @@ import SwiftAISDK
 import OpenAIProvider
 
 let transcript = try await transcribe(
-  model: openai.transcription("whisper-1"),
+  model: openai.transcription(modelId: "whisper-1"),
   audio: .data(try Data(contentsOf: URL(fileURLWithPath: "audio.mp3")))
 )
 ```
@@ -40,13 +40,11 @@ Transcription models often have provider or model-specific settings which you ca
 
 ```swift highlight="8-12"
 let detailed = try await transcribe(
-  model: openai.transcription("whisper-1"),
+  model: openai.transcription(modelId: "whisper-1"),
   audio: .data(try Data(contentsOf: URL(fileURLWithPath: "audio.mp3"))),
-  providerOptions: .object([
-    "openai": .object([
-      "timestampGranularities": .array([.string("word")])
-    ])
-  ])
+  providerOptions: ["openai": [
+    "timestampGranularities": ["word"]
+  ]]
 )
 ```
 

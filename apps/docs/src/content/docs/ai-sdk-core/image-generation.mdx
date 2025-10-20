@@ -117,12 +117,10 @@ let vivid = try await generateImage(
   model: openai.image("dall-e-3"),
   prompt: "Santa Claus driving a Cadillac",
   size: "1024x1024",
-  providerOptions: .object([
-    "openai": .object([
-      "style": .string("vivid"),
-      "quality": .string("hd")
-    ])
-  ])
+  providerOptions: ["openai": [
+    "style": "vivid",
+    "quality": "hd"
+  ]]
 )
 ```
 
