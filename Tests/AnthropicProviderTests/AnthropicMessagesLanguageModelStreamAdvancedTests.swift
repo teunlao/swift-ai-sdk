@@ -53,8 +53,10 @@ private func events(from payloads: [String], appendDone: Bool = false) -> [Strin
 }
 
 private func loadFixtureEvents(_ name: String) throws -> [String] {
-    let path = "external/vercel-ai-sdk/packages/anthropic/src/__fixtures__/\(name).chunks.txt"
-    let contents = try String(contentsOfFile: path, encoding: .utf8)
+    guard let url = Bundle.module.url(forResource: name, withExtension: "chunks.txt", subdirectory: "Fixtures") else {
+        throw NSError(domain: "TestError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Fixture file not found: \(name).chunks.txt"])
+    }
+    let contents = try String(contentsOf: url, encoding: .utf8)
     let payloads = contents.split(separator: "\n").map(String.init)
     return events(from: payloads, appendDone: true)
 }
