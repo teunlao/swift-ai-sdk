@@ -1,8 +1,8 @@
 # 🧪 Anthropic Provider - Test Coverage Audit
 
 **Date**: 2025-10-20
-**Last Updated**: 2025-10-20 21:45 UTC
-**Status**: 🚧 **IN PROGRESS** - Batch 9-12 complete, 60.5% coverage
+**Last Updated**: 2025-10-20 22:30 UTC
+**Status**: 🚧 **IN PROGRESS** - Batch 13 complete, 64.6% coverage
 
 ---
 
@@ -11,12 +11,12 @@
 | Metric | Value |
 |--------|-------|
 | **Upstream Tests** | 147 tests |
-| **Swift Tests** | 89 tests ✅ (+12 from Batch 9-12) |
-| **Coverage** | **60.5%** (89/147) |
-| **Missing** | 58 tests |
+| **Swift Tests** | 95 tests ✅ (+6 from Batch 13) |
+| **Coverage** | **64.6%** (95/147) |
+| **Missing** | 52 tests |
 | **Status** | ⚠️ **NEEDS IMPROVEMENT** |
 
-**Progress**: 33.3% → 36.1% (+2.8% Batch 1) → 39.5% (+3.4% Batch 2) → 42.9% (+3.4% Batch 3) → 44.9% (+2.0% Batch 4) → 46.3% (+1.4% Batch 5) → 48.3% (+2.0% Batch 6) → 50.3% (+2.0% Batch 7) → 52.4% (+2.0% Batch 8) → 60.5% (+8.1% Batch 9-12)
+**Progress**: 33.3% → 36.1% (+2.8% Batch 1) → 39.5% (+3.4% Batch 2) → 42.9% (+3.4% Batch 3) → 44.9% (+2.0% Batch 4) → 46.3% (+1.4% Batch 5) → 48.3% (+2.0% Batch 6) → 50.3% (+2.0% Batch 7) → 52.4% (+2.0% Batch 8) → 60.5% (+8.1% Batch 9-12) → 64.6% (+4.1% Batch 13)
 
 ---
 
@@ -25,10 +25,10 @@
 | Test File | Upstream | Swift | Coverage | Status |
 |-----------|----------|-------|----------|--------|
 | anthropic-error.test.ts | 3 | 2 | 66.7% | ⚠️ Missing 1 |
-| **anthropic-messages-language-model.test.ts** | 78 | **54** ✅ | **69.2%** | 🚧 Batch 9-12 done |
+| **anthropic-messages-language-model.test.ts** | 78 | **60** ✅ | **76.9%** | 🚧 Batch 13 done |
 | anthropic-prepare-tools.test.ts | 20 | 15 | 75.0% | ⚠️ Missing 5 |
 | convert-to-anthropic-messages-prompt.test.ts | 46 | 17 | 37.0% | ❌ Missing 29 |
-| **TOTAL** | **147** | **89** ✅ | **60.5%** | 🚧 In progress |
+| **TOTAL** | **147** | **95** ✅ | **64.6%** | 🚧 In progress |
 
 ---
 
@@ -361,6 +361,37 @@
 - No automation scripts used for bulk changes
 
 **Result**: Test coverage ✅ improved to 60.5% (89/147 tests), reached 60% milestone! 🎉
+
+---
+
+### ✅ Batch 13: Thinking Config + Web Search (COMPLETE)
+
+**Date**: 2025-10-20
+**Tests Added**: 6 tests
+**Status**: ✅ **ALL PASS** (95/95 tests)
+
+**Ported Tests**:
+1. ✅ **"should pass thinking config; add budget tokens; clear out temperature, top_p, top_k; and return warnings"** - Thinking configuration with budget tokens
+2. ✅ **"should throw an api error when the server is overloaded"** (doGenerate) - API error handling for overload
+3. ✅ **"should enable server-side web search when using anthropic.tools.webSearch_20250305"** - Web search with allowed domains
+4. ✅ **"should pass web search configuration with blocked domains"** - Web search with blocked domains
+5. ✅ **"should handle web search with user location"** - Web search with full user location (city, region, country, timezone)
+6. ✅ **"should handle web search with partial user location (city + country)"** - Web search with partial location
+
+**Issues Fixed**:
+- Warning enum pattern matching: Changed from `.type == .unsupportedSetting` to `case .unsupportedSetting(let setting, _)`
+- topK type: Changed from `0.1` (Double) to `10` (Int) to match Swift API
+- Removed unused httpResponse variable in error test
+- Provider-defined tool args structure: Proper JSONValue formatting for nested objects
+
+**Key Features Tested**:
+- **Thinking config**: Budget tokens addition (maxTokens + budgetTokens), clearing temperature/topP/topK when thinking enabled
+- **Warnings**: Proper unsupportedSetting warnings for incompatible parameters
+- **Web search tool**: Provider-defined tool transformation (anthropic.web_search_20250305)
+- **Domain filtering**: allowedDomains and blockedDomains arrays
+- **User location**: Full and partial location objects with proper field mapping
+
+**Result**: Test coverage ✅ improved to 64.6% (95/147 tests)
 
 ---
 
