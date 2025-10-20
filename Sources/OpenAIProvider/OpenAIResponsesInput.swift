@@ -146,6 +146,8 @@ struct OpenAIResponsesInputBuilder {
                         }
 
                         var accumulator = reasoningMessages[reasoningId]
+                        let isFirstPart = accumulator == nil
+
                         if accumulator == nil {
                             let newAccumulator = ReasoningAccumulator(
                                 id: reasoningId,
@@ -167,10 +169,12 @@ struct OpenAIResponsesInputBuilder {
                             ]))
                             items[existing.itemIndex] = existing.asJSONValue()
                             reasoningMessages[reasoningId] = existing
-                        } else {
+                        } else if !isFirstPart {
+                            // Only warn when appending empty text to existing sequence
                             let partDescription = stringifyReasoningPart(reasoningPart)
                             warnings.append(.other(message: "Cannot append empty reasoning part to existing reasoning sequence. Skipping reasoning part: \(partDescription)."))
                         }
+                        // For first part with empty text, we already added the accumulator with empty summary - no warning needed
 
                     case .file:
                         continue
@@ -368,7 +372,42 @@ struct OpenAIResponsesInputBuilder {
             }
         }
 
-        let data = try JSONSerialization.data(withJSONObject: toAny(value), options: [])
+        // JSONSerialization requires top-level object to be Array or Dictionary
+        // For primitive values, we need to handle them specially
+        let anyValue = toAny(value)
+        let data: Data
+
+        if anyValue is [Any] || anyValue is [String: Any] {
+            data = try JSONSerialization.data(withJSONObject: anyValue, options: [])
+        } else {
+            // For primitives (number, string, bool, null), encode them directly
+            switch value {
+            case .null:
+                return "null"
+            case .bool(let bool):
+                return bool ? "true" : "false"
+            case .number(let number):
+                // Handle integer vs decimal
+                if number.truncatingRemainder(dividingBy: 1) == 0 {
+                    return String(format: "%.0f", number)
+                } else {
+                    return String(number)
+                }
+            case .string(let string):
+                // Need to properly escape the string as JSON
+                data = try JSONSerialization.data(withJSONObject: [string], options: [])
+                guard let arrayString = String(data: data, encoding: .utf8),
+                      arrayString.hasPrefix("[\""),
+                      arrayString.hasSuffix("\"]") else {
+                    throw UnsupportedFunctionalityError(functionality: "Unable to encode JSON string")
+                }
+                return String(arrayString.dropFirst(2).dropLast(2))
+            case .array, .object:
+                // Should not reach here due to earlier check
+                data = try JSONSerialization.data(withJSONObject: anyValue, options: [])
+            }
+        }
+
         guard let string = String(data: data, encoding: .utf8) else {
             throw UnsupportedFunctionalityError(functionality: "Unable to encode JSON value")
         }
