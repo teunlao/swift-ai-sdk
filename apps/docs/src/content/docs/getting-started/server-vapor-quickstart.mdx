@@ -1,0 +1,68 @@
+---
+title: Server Quickstart (Vapor)
+description: Stream AI responses from a Swift Vapor server using the Swift AI SDK.
+---
+
+This guide shows how to add the Swift AI SDK to a Vapor app and expose a streaming endpoint.
+
+## 1) Package.swift
+
+```swift
+// swift-tools-version: 5.10
+import PackageDescription
+
+let package = Package(
+  name: "AIService",
+  platforms: [.macOS(.v13)],
+  dependencies: [
+    .package(url: "https://github.com/vapor/vapor", from: "4.96.0"),
+    .package(url: "https://github.com/teunlao/swift-ai-sdk", branch: "main")
+  ],
+  targets: [
+    .executableTarget(
+      name: "AIService",
+      dependencies: [
+        .product(name: "Vapor", package: "vapor"),
+        .product(name: "SwiftAISDK", package: "swift-ai-sdk"),
+        .product(name: "OpenAIProvider", package: "swift-ai-sdk")
+      ]
+    )
+  ]
+)
+```
+
+## 2) Configure API Key
+
+Set `OPENAI_API_KEY` in your environment.
+
+## 3) Streaming route (SSE)
+
+```swift
+import Vapor
+import SwiftAISDK
+import OpenAIProvider
+
+func routes(_ app: Application) throws {
+  app.get("stream") { req async throws -> Response in
+    let stream = try streamText(
+      model: openai("gpt-5"),
+      prompt: req.query[String.self, at: "q"] ?? "Hello"
+    )
+
+    let sse = makeStreamTextSSEStream(stream.fullStream, includeUsage: false)
+
+    let res = Response(status: .ok)
+    res.headers.replaceOrAdd(name: .contentType, value: "text/event-stream")
+
+    // Pipe chunks
+    for try await line in sse {
+      try await res.body.write(.init(string: "data: \(line)\n\n"))
+      try await res.body.flush()
+    }
+    return res
+  }
+}
+```
+
+> Tip: You can also use `pipeTextStreamToResponse` with a small adapter that conforms to `StreamTextResponseWriter`.
+

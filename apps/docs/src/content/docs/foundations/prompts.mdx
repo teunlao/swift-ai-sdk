@@ -1,0 +1,558 @@
+---
+title: Prompts
+description: Learn about the Prompt structure used in the AI SDK.
+---
+
+_This page adapts the original AI SDK documentation: [Prompts](https://ai-sdk.dev/docs/foundations/prompts)._ 
+
+Prompts are instructions that you give a [large language model (LLM)](/docs/foundations/overview#large-language-models) to tell it what to do.
+It's like when you ask someone for directions; the clearer your question, the better the directions you'll get.
+
+Many LLM providers offer complex interfaces for specifying prompts. They involve different roles and message types.
+While these interfaces are powerful, they can be hard to use and understand.
+
+In order to simplify prompting, the AI SDK supports text, message, and system prompts.
+
+## Text Prompts
+
+Text prompts are strings.
+They are ideal for simple generation use cases,
+e.g. repeatedly generating content for variants of the same prompt text.
+
+You can set text prompts using the `prompt` property made available by AI SDK functions like [`streamText`](/docs/reference/ai-sdk-core/stream-text) or [`generateObject`](/docs/reference/ai-sdk-core/generate-object).
+You can structure the text in any way and inject variables, e.g. using a template literal.
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+
+let result = try await generateText(
+  model: openai("gpt-5"),
+  prompt: "Invent a new holiday and describe its traditions."
+)
+print(result.text)
+```
+
+You can also use template literals to provide dynamic data to your prompt.
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+
+let destination = "Kyoto"
+let lengthOfStay = 5
+
+let result = try await generateText(
+  model: openai("gpt-5"),
+  prompt: "I am planning a trip to \(destination) for \(lengthOfStay) days. " +
+          "Please suggest the best tourist activities for me to do."
+)
+print(result.text)
+```
+
+## System Prompts
+
+System prompts are the initial set of instructions given to models that help guide and constrain the models' behaviors and responses.
+You can set system prompts using the `system` property.
+System prompts work with both the `prompt` and the `messages` properties.
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+
+let destination = "Kyoto"
+let lengthOfStay = 5
+
+let result = try await generateText(
+  model: openai("gpt-5"),
+  system: "You help planning travel itineraries. Respond to the users' request with a list of the best stops to make in their destination.",
+  prompt: "I am planning a trip to \(destination) for \(lengthOfStay) days. " +
+          "Please suggest the best tourist activities for me to do."
+)
+print(result.text)
+```
+
+> Note: When you use a message prompt, you can also use system messages instead of a system prompt.
+
+## Message Prompts
+
+A message prompt is an array of user, assistant, and tool messages.
+They are great for chat interfaces and more complex, multi-modal prompts.
+You can use the `messages` property to set message prompts.
+
+Each message has a `role` and a `content` property. The content can either be text (for user and assistant messages), or an array of relevant parts (data) for that message type.
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+
+let result = try await generateText(
+  model: openai("gpt-5"),
+  messages: [
+    .user(UserModelMessage(content: .text("Hi!"))),
+    .assistant(AssistantModelMessage(content: .text("Hello, how can I help?"))),
+    .user(UserModelMessage(content: .text("Where can I buy the best Currywurst in Berlin?")))
+  ]
+)
+print(result.text)
+```
+
+Instead of sending a text in the `content` property, you can send an array of parts that includes a mix of text and other content parts.
+
+> Warning: Not all language models support all message and content types. For example, some models might not be capable of handling multi-modal inputs or tool messages. [Learn more about the capabilities of select models](./providers-and-models#model-capabilities).
+
+### Provider Options
+
+You can pass through additional provider-specific metadata to enable provider-specific functionality at 3 levels.
+
+#### Function Call Level
+
+Functions like [`streamText`](/docs/reference/ai-sdk-core/stream-text#provider-options) or [`generateText`](/docs/reference/ai-sdk-core/generate-text#provider-options) accept a `providerOptions` property.
+
+Adding provider options at the function call level should be used when you do not need granular control over where the provider options are applied.
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+
+let result = try await generateText(
+  model: openai("gpt-5"),
+  providerOptions: [
+    "openai": [
+      "reasoningEffort": .string("low")
+    ]
+  ]
+)
+print(result.text)
+```
+
+#### Message Level
+
+For granular control over applying provider options at the message level, you can pass `providerOptions` to the message object:
+
+```swift
+import SwiftAISDK
+
+let messages: [ModelMessage] = [
+  .system(SystemModelMessage(
+    content: "Cached system message",
+    providerOptions: [
+      // Sets a cache control breakpoint on the system message
+      "anthropic": [
+        "cacheControl": .object(["type": .string("ephemeral")])
+      ]
+    ]
+  ))
+]
+```
+
+#### Message Part Level
+
+Certain provider-specific options require configuration at the message part level:
+
+```swift
+import SwiftAISDK
+
+let messages: [ModelMessage] = [
+  .user(UserModelMessage(
+    content: .parts([
+      .text(TextPart(
+        text: "Describe the image in detail.",
+        providerOptions: ["openai": ["imageDetail": .string("low")]]
+      )),
+      .image(ImagePart(
+        image: .url(URL(string: "https://github.com/vercel/ai/blob/main/examples/ai-core/data/comic-cat.png?raw=true")!),
+        providerOptions: ["openai": ["imageDetail": .string("low")]]
+      ))
+    ])
+  ))
+]
+```
+
+
+
+### User Messages
+
+#### Text Parts
+
+Text content is the most common type of content. It is a string that is passed to the model.
+
+If you only need to send text content in a message, the `content` property can be a string,
+but you can also use it to send multiple content parts.
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+
+let result = try await generateText(
+  model: openai("gpt-5"),
+  messages: [
+    .user(UserModelMessage(content: .parts([
+      .text(TextPart(text: "Where can I buy the best Currywurst in Berlin?"))
+    ])))
+  ]
+)
+print(result.text)
+```
+
+#### Image Parts
+
+User messages can include image parts. An image can be one of the following:
+
+- base64-encoded image:
+  - `string` with base-64 encoded content
+  - data URL `string`, e.g. `data:image/png;base64,...`
+- binary image:
+  - `ArrayBuffer`
+  - `Uint8Array`
+  - `Buffer`
+- URL:
+  - http(s) URL `string`, e.g. `https://example.com/image.png`
+  - `URL` object, e.g. `new URL('https://example.com/image.png')`
+
+##### Example: Binary image (Buffer)
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+import Foundation
+
+let data = try Data(contentsOf: URL(fileURLWithPath: "./data/comic-cat.png"))
+let result = try await generateText(
+  model: openai("gpt-5"),
+  messages: [
+    .user(UserModelMessage(content: .parts([
+      .text(TextPart(text: "Describe the image in detail.")),
+      .image(ImagePart(image: .data(data)))
+    ])))
+  ]
+)
+print(result.text)
+```
+
+##### Example: Base-64 encoded image (string)
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+import Foundation
+
+let base64 = try Data(contentsOf: URL(fileURLWithPath: "./data/comic-cat.png")).base64EncodedString()
+let result = try await generateText(
+  model: openai("gpt-5"),
+  messages: [
+    .user(UserModelMessage(content: .parts([
+      .text(TextPart(text: "Describe the image in detail.")),
+      .image(ImagePart(image: .string(base64)))
+    ])))
+  ]
+)
+print(result.text)
+```
+
+##### Example: Image URL (string)
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+
+let result = try await generateText(
+  model: openai("gpt-5"),
+  messages: [
+    .user(UserModelMessage(content: .parts([
+      .text(TextPart(text: "Describe the image in detail.")),
+      .image(ImagePart(image: .url(URL(string: "https://github.com/vercel/ai/blob/main/examples/ai-core/data/comic-cat.png?raw=true")!)))
+    ])))
+  ]
+)
+print(result.text)
+```
+
+#### File Parts
+
+> Warning: Only a few providers and models currently support file parts: [Google Generative AI](/providers/ai-sdk-providers/google-generative-ai), [Google Vertex AI](/providers/ai-sdk-providers/google-vertex), [OpenAI](/providers/ai-sdk-providers/openai) (for `wav` and `mp3` audio with `gpt-4o-audio-preview`), [Anthropic](/providers/ai-sdk-providers/anthropic), [OpenAI](/providers/ai-sdk-providers/openai) (for `pdf`).
+
+User messages can include file parts. A file can be one of the following:
+
+- base64-encoded file:
+  - `string` with base-64 encoded content
+  - data URL `string`, e.g. `data:image/png;base64,...`
+- binary data:
+  - `ArrayBuffer`
+  - `Uint8Array`
+  - `Buffer`
+- URL:
+  - http(s) URL `string`, e.g. `https://example.com/some.pdf`
+  - `URL` object, e.g. `new URL('https://example.com/some.pdf')`
+
+You need to specify the MIME type of the file you are sending.
+
+##### Example: PDF file from Buffer
+
+```swift
+import SwiftAISDK
+import GoogleProvider
+import Foundation
+
+let pdf = try Data(contentsOf: URL(fileURLWithPath: "./data/example.pdf"))
+let result = try await generateText(
+  model: google("gemini-1.5-flash"),
+  messages: [
+    .user(UserModelMessage(content: .parts([
+      .text(TextPart(text: "What is the file about?")),
+      .file(FilePart(
+        data: .data(pdf),
+        mediaType: "application/pdf",
+        filename: "example.pdf"
+      ))
+    ])))
+  ]
+)
+print(result.text)
+```
+
+##### Example: mp3 audio file from Buffer
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+import Foundation
+
+let mp3 = try Data(contentsOf: URL(fileURLWithPath: "./data/galileo.mp3"))
+let result = try await generateText(
+  model: openai("gpt-4o-audio-preview"),
+  messages: [
+    .user(UserModelMessage(content: .parts([
+      .text(TextPart(text: "What is the audio saying?")),
+      .file(FilePart(data: .data(mp3), mediaType: "audio/mpeg"))
+    ])))
+  ]
+)
+print(result.text)
+```
+
+#### Custom Download Function (Experimental)
+
+You can use custom download functions to implement throttling, retries, authentication, caching, and more.
+
+The default download implementation automatically downloads files in parallel when they are not supported by the model.
+
+Custom download function can be passed via the `experimental_download` property:
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+
+let customDownload: DownloadFunction = { requests in
+  return try await withThrowingTaskGroup(of: (Int, DownloadResult?).self) { group in
+    for (i, req) in requests.enumerated() {
+      group.addTask {
+        if req.isUrlSupportedByModel { return (i, nil) }
+        let (data, mediaType) = try await download(req.url) // add auth/retries as needed
+        return (i, DownloadResult(data: data, mediaType: mediaType))
+      }
+    }
+    var results = Array<DownloadResult?>(repeating: nil, count: requests.count)
+    for try await (i, res) in group { results[i] = res }
+    return results
+  }
+}
+
+let result = try await generateText(
+  model: openai("gpt-4o"),
+  experimentalDownload: customDownload,
+  messages: [
+    .user(UserModelMessage(content: .parts([
+      .file(FilePart(
+        data: .url(URL(string: "https://api.company.com/private/document.pdf")!),
+        mediaType: "application/pdf"
+      ))
+    ])))
+  ]
+)
+```
+
+> Note: The `experimental_download` option is experimental and may change in future releases.
+
+### Assistant Messages
+
+Assistant messages are messages that have a role of `assistant`.
+They are typically previous responses from the assistant
+and can contain text, reasoning, and tool call parts.
+
+#### Example: Assistant message with text content
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+
+let result = try await generateText(
+  model: openai("gpt-5"),
+  messages: [
+    .user(UserModelMessage(content: .text("Hi!"))),
+    .assistant(AssistantModelMessage(content: .text("Hello, how can I help?")))
+  ]
+)
+```
+
+#### Example: Assistant message with text content in array
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+
+let result = try await generateText(
+  model: openai("gpt-5"),
+  messages: [
+    .user(UserModelMessage(content: .text("Hi!"))),
+    .assistant(AssistantModelMessage(content: .parts([
+      .text(TextPart(text: "Hello, how can I help?"))
+    ])))
+  ]
+)
+```
+
+#### Example: Assistant message with tool call content
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+
+let result = try await generateText(
+  model: openai("gpt-5"),
+  messages: [
+    .user(UserModelMessage(content: .text("How many calories are in this block of cheese?"))),
+    .assistant(AssistantModelMessage(content: .parts([
+      .toolCall(ToolCallPart(
+        toolCallId: "12345",
+        toolName: "get-nutrition-data",
+        input: .object(["cheese": .string("Roquefort")])
+      ))
+    ])))
+  ]
+)
+```
+
+#### Example: Assistant message with file content
+
+> Note: This content part is for model-generated files. Only a few models support this, and only for file types that they can generate.
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+import Foundation
+
+let data = try Data(contentsOf: URL(fileURLWithPath: "./data/roquefort.jpg"))
+let result = try await generateText(
+  model: openai("gpt-5"),
+  messages: [
+    .user(UserModelMessage(content: .text("Generate an image of a roquefort cheese!"))),
+    .assistant(AssistantModelMessage(content: .parts([
+      .file(FilePart(data: .data(data), mediaType: "image/png"))
+    ])))
+  ]
+)
+```
+
+### Tool messages
+
+> Note: [Tools](/docs/foundations/tools) (also known as function calling) are programs that you can provide an LLM to extend its built-in functionality. This can be anything from calling an external API to calling functions within your UI. Learn more about Tools in [the next section](/docs/foundations/tools).
+
+For models that support [tool](/docs/foundations/tools) calls, assistant messages can contain tool call parts, and tool messages can contain tool output parts.
+A single assistant message can call multiple tools, and a single tool message can contain multiple tool results.
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+import Foundation
+
+let image = try Data(contentsOf: URL(fileURLWithPath: "./data/roquefort.jpg"))
+let result = try await generateText(
+  model: openai("gpt-5"),
+  messages: [
+    .user(UserModelMessage(content: .parts([
+      .text(TextPart(text: "How many calories are in this block of cheese?")),
+      .image(ImagePart(image: .data(image)))
+    ]))),
+    .assistant(AssistantModelMessage(content: .parts([
+      .toolCall(ToolCallPart(
+        toolCallId: "12345",
+        toolName: "get-nutrition-data",
+        input: .object(["cheese": .string("Roquefort")])
+      ))
+    ]))),
+    .tool(ToolModelMessage(content: [
+      .toolResult(ToolResultPart(
+        toolCallId: "12345",
+        toolName: "get-nutrition-data",
+        output: .json(value: .object([
+          "name": .string("Cheese, roquefort"),
+          "calories": .number(369),
+          "fat": .number(31),
+          "protein": .number(22)
+        ]))
+      ))
+    ]))
+  ]
+)
+```
+
+#### Multi-modal Tool Results
+
+> Warning: Multi-part tool results are experimental and only supported by Anthropic.
+
+Tool results can be multi-part and multi-modal, e.g. a text and an image.
+You can use the `experimental_content` property on tool parts to specify multi-part tool results.
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+import Foundation
+
+let png = try Data(contentsOf: URL(fileURLWithPath: "./data/roquefort-nutrition-data.png")).base64EncodedString()
+let result = try await generateText(
+  model: openai("gpt-5"),
+  messages: [
+    .tool(ToolModelMessage(content: [
+      // JSON output for non-multipart models
+      .toolResult(ToolResultPart(
+        toolCallId: "12345",
+        toolName: "get-nutrition-data",
+        output: .json(value: .object([
+          "name": .string("Cheese, roquefort"),
+          "calories": .number(369),
+          "fat": .number(31),
+          "protein": .number(22)
+        ]))
+      )),
+      // Multipart content for supported models (e.g., Anthropic)
+      .toolResult(ToolResultPart(
+        toolCallId: "12345",
+        toolName: "get-nutrition-data",
+        output: .content(value: [
+          .text(text: "Here is an image of the nutrition data for the cheese:"),
+          .media(data: png, mediaType: "image/png")
+        ])
+      ))
+    ]))
+  ]
+)
+```
+
+### System Messages
+
+System messages are messages that are sent to the model before the user messages to guide the assistant's behavior.
+You can alternatively use the `system` property.
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+
+let result = try await generateText(
+  model: openai("gpt-5"),
+  messages: [
+    .system(SystemModelMessage(content: "You help planning travel itineraries.")),
+    .user(UserModelMessage(content: .text("I am planning a trip to Berlin for 3 days. Please suggest the best tourist activities for me to do.")))
+  ]
+)
+```

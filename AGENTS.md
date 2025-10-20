@@ -19,6 +19,54 @@ Port **Vercel AI SDK** from TypeScript to Swift with **100% upstream parity**.
 6. **One page at a time** — complete copy → adapt → build cycle for a single document before starting the next. Store any temporary upstream dumps in `.staging/` if needed; keep `apps/docs/src/content/docs` clean and buildable.
 7. **Validation** — run `pnpm run docs:check` and `pnpm run docs:build` after adapting each page. Do not commit documentation changes until both commands are green.
 
+### Strict Copy‑Then‑Adapt Protocol (Docs)
+
+This section makes the copy→adapt flow explicit to avoid accidental “write‑from‑scratch”. Always follow these exact steps for every single page.
+
+1) Copy (verbatim)
+- Source file: `external/vercel-ai-sdk/content/**/<section>/<file>.mdx`.
+- Target path: `apps/docs/src/content/docs/<section>/<file>.mdx` (rename only when our routing requires it; keep frontmatter intact).
+- Command example:
+  ```bash
+  mkdir -p apps/docs/src/content/docs/<section>
+  cp external/vercel-ai-sdk/content/docs/<section>/<file>.mdx \
+     apps/docs/src/content/docs/<section>/<file>.mdx
+  ```
+
+2) First build pass (no edits yet)
+- Run `pnpm run docs:check` then `pnpm run docs:build`.
+- Expect failures due to upstream React‑only components. Do not skip this step; it proves the copy happened before adaptation.
+
+3) Adapt for Starlight + Swift
+- Replace upstream React/MDX components that are unsupported in Starlight:
+  - Common removals: `<Card>`, `<Cards>`, `<InlinePrompt>`, `<PreviewSwitchProviders/>`, `<Tabs>/<Tab>` (use Starlight Tabs only if already configured), bespoke imports.
+  - Icon components like `<Check />` / `<Cross />` → plain unicode `✓` / `✗` or simple text.
+  - `<Note>` blocks → Markdown blockquotes prefixed with `> Note:` or `> Warning:`.
+- Add the adaptation banner directly after frontmatter:
+  - `_This page adapts the original AI SDK documentation: [Title](<original-url>)._
+  - Remove duplicate H1 if present (Starlight uses `title` from frontmatter).
+- Convert all TypeScript examples to Swift:
+  - Use Swift AI SDK facades: `import SwiftAISDK`, `import OpenAIProvider`, `openai("gpt-5")`, etc.
+  - Map TS unions/options to Swift equivalents as defined in “TypeScript → Swift Patterns”.
+  - Keep semantics and behavior 1:1; note intentional deviations briefly.
+- JS‑only content policy:
+  - References to “AI SDK UI” hooks (e.g., `useChat`, `useCompletion`) and “AI SDK RSC” are JS‑specific.
+  - In Swift docs: either remove them or mark them as “JS‑only, not part of Swift AI SDK”.
+
+4) Sidebar wiring
+- Add the new page to `apps/docs/astro.config.mjs` so navigation mirrors upstream structure.
+
+5) Build gate (must be green)
+- Run: `pnpm run docs:check && pnpm run docs:build`.
+- Only proceed to the next page after both are green.
+
+Do / Don’t (hard rules)
+- Do copy upstream first, then edit locally — never author from scratch.
+- Do keep frontmatter unchanged (title/description/slug).
+- Do adapt examples to Swift before declaring the page done.
+- Don’t leave React‑specific components or UI‑hook references in Swift docs.
+- Don’t proceed to the next page with a failing build.
+
 ## Code Audit & Parity Verification Workflow
 
 1. **Enumerate and read** — iterate through every upstream `.ts`/`.tsx` source (excluding tests) under the target package, and immediately inspect the matching Swift implementation. No summaries or mappings; check and understand the real code.

@@ -1,15 +1,13 @@
 ---
 title: Providers and Models
-description: Learn about the providers and models available in the Swift AI SDK.
+description: Learn about the providers and model families that ship with the Swift AI SDK.
 ---
 
 _This page adapts the original AI SDK documentation: [Providers and Models](https://ai-sdk.dev/docs/foundations/providers-and-models)._ 
 
-import { Tabs, TabItem } from '@astrojs/starlight/components';
+Companies such as OpenAI, Anthropic, Google, and Groq offer access to families of large language models (LLMs) through distinct APIs. Each API has its own authentication story, request/response schema, streaming protocol, and feature gates—making it hard to switch providers without rewriting application code.
 
-Companies such as OpenAI, Anthropic, Google, and Groq ("providers") expose families of large language models (LLMs) via their individual APIs. Each API comes with its own authentication, payload shapes, and feature flags, which can make switching providers laborious and increase the risk of vendor lock-in.
-
-The Swift AI SDK removes that friction by mirroring the AI SDK language-model specification in Swift (`AISDKProvider`). You interact with every provider through the same strongly typed Swift surface area—`generateText`, `generateObject`, streaming helpers, tool execution—while the provider modules handle the protocol details.
+The Swift AI SDK mirrors the AI SDK language-model specification (`AISDKProvider`). Every provider module implements the same typed surface area, so calls like `generateText`, `generateObject`, and the streaming helpers stay identical even when you swap vendors.
 
 <picture>
   <source
@@ -18,130 +16,43 @@ The Swift AI SDK removes that friction by mirroring the AI SDK language-model sp
   />
   <img
     src="https://ai-sdk.dev/images/ai-sdk-diagram.png"
-    alt="Swift AI SDK provider architecture diagram"
+    alt="AI SDK provider architecture diagram"
   />
 </picture>
 
 <small>Illustration reused from the original AI SDK documentation.</small>
 
-## Built-in provider modules
+## Swift AI SDK provider modules
 
-The repository ships with Swift-native ports of the core AI SDK providers. Each module exports a lazily configured global shortcut as well as a factory for full control over configuration.
+The Swift port currently ships with the following provider packages. Each module exports a lazily configured global shortcut plus a factory for advanced configuration, matching the TypeScript behavior.
 
-- `OpenAIProvider` — `import OpenAIProvider` and call `openai("gpt-5")` or `createOpenAIProvider(settings:)`.
-- `AnthropicProvider` — `import AnthropicProvider` and call `anthropic("claude-3-5-sonnet")` or `createAnthropicProvider(settings:)`.
-- `GoogleProvider` — `import GoogleProvider` and call `google("gemini-1.5-pro")` or `createGoogleGenerativeAI(settings:)`.
-- `GroqProvider` — `import GroqProvider` and call `groq("llama-3.1-8b-instant")` or `createGroqProvider(settings:)`.
-- `OpenAICompatibleProvider` — `import OpenAICompatibleProvider` and build a provider for any OpenAI-compatible endpoint via `createOpenAICompatibleProvider(settings:)`.
+- [OpenAI Provider](/providers/ai-sdk-providers/openai) — `import OpenAIProvider`, then call `openai("gpt-5")` or `createOpenAIProvider(settings:)`.
+- [Anthropic Provider](/providers/ai-sdk-providers/anthropic) — `import AnthropicProvider`, use `anthropic("claude-3-5-sonnet")` or `createAnthropicProvider(settings:)`.
+- [Google Generative AI Provider](/providers/ai-sdk-providers/google-generative-ai) — `import GoogleProvider`, use `google("gemini-1.5-pro")` or `createGoogleGenerativeAI(settings:)`.
+- [Groq Provider](/providers/ai-sdk-providers/groq) — `import GroqProvider`, use `groq("llama-3.1-8b-instant")` or `createGroqProvider(settings:)`.
+- [OpenAI Compatible Provider](/providers/openai-compatible-providers) — `import OpenAICompatibleProvider`, call `createOpenAICompatibleProvider(settings:)` for any OpenAI-compatible gateway.
 
-Each shortcut loads API keys lazily (matching the TypeScript behavior) and returns a ready-to-use `LanguageModelV3` that plugs directly into `generateText` and other Swift AI SDK entry points.
+Each shortcut performs lazy API-key loading (via environment variables such as `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, `GROQ_API_KEY`) and returns a ready-to-use `LanguageModelV3` instance for the higher-level Swift AI SDK APIs.
 
-## Switching providers in code
+## Self-hosted and upstream-compatible APIs
 
-<Tabs syncKey="provider-switching">
-  <TabItem label="OpenAI">
+If you are integrating with a custom gateway that implements the OpenAI API surface (for example LM Studio or Together.ai), use the OpenAI Compatible provider. Override the base URL, API key, and optional headers in `OpenAICompatibleProviderSettings` and the rest of your Swift code stays identical.
 
-```swift
-import SwiftAISDK
-import OpenAIProvider
+The TypeScript AI SDK community also maintains dozens of additional providers (Amazon Bedrock, Mistral, Cohere, DeepSeek, and more). These have not yet been ported to Swift; visit the upstream documentation for details and to track parity:
 
-let response = try await generateText(
-  model: openai("gpt-5"),
-  prompt: "Summarize the Swift concurrency model."
-)
-print(response.text)
-```
+- [Community providers list](https://ai-sdk.dev/providers/community-providers)
+- [Custom provider guide](https://ai-sdk.dev/providers/community-providers/custom-providers)
 
-  </TabItem>
-  <TabItem label="Anthropic">
+## Model capabilities overview
 
-```swift
-import SwiftAISDK
-import AnthropicProvider
-
-let response = try await generateText(
-  model: anthropic("claude-3-5-sonnet"),
-  prompt: "Summarize the Swift concurrency model."
-)
-print(response.text)
-```
-
-  </TabItem>
-  <TabItem label="Google">
-
-```swift
-import SwiftAISDK
-import GoogleProvider
-
-let response = try await generateText(
-  model: google("gemini-1.5-pro"),
-  prompt: "Summarize the Swift concurrency model."
-)
-print(response.text)
-```
-
-  </TabItem>
-  <TabItem label="Groq">
-
-```swift
-import SwiftAISDK
-import GroqProvider
-
-let response = try await generateText(
-  model: groq("llama-3.1-8b-instant"),
-  prompt: "Summarize the Swift concurrency model."
-)
-print(response.text)
-```
-
-  </TabItem>
-</Tabs>
-
-Switching providers is a one-line change: the rest of the call site stays identical, and advanced options (abort handlers, tool execution, structured outputs) behave uniformly across providers.
-
-## OpenAI-compatible endpoints
-
-The `OpenAICompatibleProvider` lets you target any service that speaks the OpenAI API shape (including local gateways such as LM Studio or hosted services such as Together). Supply the base URL, name, optional headers, and structured-output support, and the Swift AI SDK will handle the rest:
-
-```swift
-import SwiftAISDK
-import OpenAICompatibleProvider
-
-let custom = createOpenAICompatibleProvider(
-  settings: .init(
-    baseURL: "https://gateway.example.com/v1",
-    name: "gateway",
-    apiKey: ProcessInfo.processInfo.environment["GATEWAY_KEY"]
-  )
-)
-
-let result = try await generateText(
-  model: .v3(custom.languageModel(modelId: "gpt-5-compatible")),
-  prompt: "List three safety checks to run before deploying a rocket."
-)
-print(result.text)
-```
-
-## Creating custom providers
-
-Because the Swift AI SDK mirrors the AI SDK provider contracts, you can build your own provider by implementing the `ProviderV3` interfaces from `AISDKProvider`. This gives you:
-
-- Shared streaming utilities (`StreamText`, SSE helpers).
-- Tool execution and JSON schema utilities from `AISDKProviderUtils`.
-- Compatibility with higher-level conveniences such as `generateObject` and the UI toolkit.
-
-Start by exploring the existing provider packages in `Sources/` and the [language model specification](https://github.com/vercel/ai/tree/main/packages/provider/src/language-model/v2). You can follow the same patterns (request builders, response parsers, telemetry hooks) to bring additional services to Swift.
-
-## Capability highlights
-
-| Provider | Typical text models | Text | Embeddings | Images | Audio |
+| Provider | Typical model identifiers | Text | Embeddings | Images | Audio |
 | --- | --- | --- | --- | --- | --- |
 | OpenAI (`openai`) | `gpt-5`, `gpt-4.1-mini`, `gpt-4o-audio-preview` | ✅ | ✅ | ✅ | ✅ |
 | Anthropic (`anthropic`) | `claude-3-5-sonnet`, `claude-3-opus` | ✅ | ❌ | ❌ | ❌ |
 | Google Generative AI (`google`) | `gemini-1.5-pro`, `gemini-2.0-flash-exp` | ✅ | ✅ | ✅ | ❌ |
 | Groq (`groq`) | `llama-3.1-8b-instant`, `mixtral-8x7b-32768` | ✅ | ❌ | ❌ | ✅ (transcription) |
-| OpenAI-compatible | Depends on upstream service | ✅ | ✅ | ✅ | ✅ |
+| OpenAI-compatible (`createOpenAICompatibleProvider`) | Depends on upstream service | ✅ | ✅ | ✅ | ✅ |
 
-> The exact model catalog evolves quickly. Refer to each provider package for the authoritative list of model identifiers and helper types (`OpenAIChatModelId`, `GoogleGenerativeAIModelId`, `GroqChatModelId`, and others).
+> Model catalogs evolve quickly. Inspect the individual provider modules (`Sources/OpenAIProvider`, `Sources/AnthropicProvider`, `Sources/GoogleProvider`, `Sources/GroqProvider`, and `Sources/OpenAICompatibleProvider`) for authoritative `ModelId` helpers and supported feature sets.
 
-By standardizing on the Swift AI SDK provider interfaces you can mix and match services, experiment rapidly, and keep your application code portable across vendors.
+By standardizing provider integrations behind the Swift AI SDK interfaces you can experiment with multiple vendors, fail over between services, or mix models in the same application without rewriting business logic.

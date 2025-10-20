@@ -1,0 +1,176 @@
+---
+title: Tools
+description: Learn about tools with the Swift AI SDK.
+---
+
+_This page adapts the original AI SDK documentation: [Tools](https://ai-sdk.dev/docs/foundations/tools)._ 
+
+While large language models (LLMs) have incredible generation capabilities, they struggle with discrete tasks (e.g., mathematics) and interacting with the outside world (e.g., getting the weather).
+
+Tools are actions that an LLM can invoke. The results of these actions can be reported back to the LLM to be considered in the next response.
+
+For example, when you ask an LLM for the “weather in London”, and there is a weather tool available, it could call a tool with London as the argument. The tool would then fetch the weather data and return it to the LLM. The LLM can then use this information in its response.
+
+## What is a tool?
+
+A tool is an object that can be called by the model to perform a specific task. You can use tools with `generateText` and `streamText` by passing one or more tools to the `tools` parameter.
+
+A tool consists of three main properties:
+
+- `description`: Optional description influencing when the tool is chosen.
+- `inputSchema`: JSON Schema (via `jsonSchema(...)`) describing the input parameters. Used by the model and to validate tool calls.
+- `execute`: Optional async function that receives the arguments and returns a result.
+
+> Note: Swift has no Zod. Use JSON Schema builders from `AISDKProviderUtils` (`jsonSchema`, `FlexibleSchema`) or `Schema.codable` for `Decodable` types.
+
+If the LLM decides to use a tool, it emits a tool call. Tools with `execute` run automatically; results come back as tool‑result parts and can be fed into the next step (multi‑step calls).
+
+## Schemas
+
+Schemas define tool parameters and validate tool calls. In Swift, use `jsonSchema(JSONValue)` and `FlexibleSchema`.
+
+Example schema for a weather tool:
+
+```swift
+import AISDKProviderUtils
+
+let weatherInputSchema = FlexibleSchema(
+  jsonSchema(
+    .object([
+      "type": .string("object"),
+      "properties": .object([
+        "city": .object(["type": .string("string")]),
+        "unit": .object([
+          "type": .string("string"),
+          "enum": .array([.string("c"), .string("f")])
+        ])
+      ]),
+      "required": .array([.string("city")]),
+      "additionalProperties": .bool(false)
+    ])
+  )
+)
+```
+
+> Note: You can also define schemas with `Schema.codable(...)` for your own `Decodable` types.
+
+## Creating a tool
+
+Basic tool returning an immediate (`.value`) result:
+
+```swift
+import SwiftAISDK
+import AISDKProviderUtils
+
+let getWeather = tool(
+  description: "Fetch current weather by city",
+  inputSchema: weatherInputSchema,
+  execute: { input, options in
+    guard case .object(let obj) = input,
+          case .string(let city)? = obj["city"] else {
+      struct ValidationError: Error {}
+      throw ValidationError()
+    }
+
+    // ... fetch weather for `city` (omitted)
+    let output: JSONValue = .object([
+      "city": .string(city),
+      "temperature": .number(21),
+      "unit": .string("c")
+    ])
+    return .value(output)
+  }
+)
+```
+
+### Dynamic tool
+
+Dynamic tool (type `.dynamic`) via `dynamicTool(...)`:
+
+```swift
+let echo = dynamicTool(
+  description: "Echo input back",
+  inputSchema: FlexibleSchema(jsonSchema(.object(["additionalProperties": .bool(true)]))),
+  execute: { input, _ in .value(input) }
+)
+```
+
+### Streaming tool output
+
+A tool can stream results via `ToolExecutionResult.stream`:
+
+```swift
+let countToThree = tool(
+  description: "Stream numbers 1..3",
+  inputSchema: FlexibleSchema(jsonSchema(.object(["additionalProperties": .bool(false)]))),
+  execute: { _, _ in
+    .stream(AsyncThrowingStream<JSONValue, Error> { continuation in
+      Task {
+        for i in 1...3 {
+          continuation.yield(.number(Double(i)))
+          try? await Task.sleep(nanoseconds: 200_000_000)
+        }
+        continuation.finish()
+      }
+    })
+  }
+)
+```
+
+> Note: To normalize streaming outputs, use `executeTool(...)` which yields `.preliminary` for each element and one `.final`.
+
+### Approval (needsApproval)
+
+Built‑in approval support:
+
+```swift
+let sensitiveTool = tool(
+  description: "Access sensitive resource",
+  inputSchema: FlexibleSchema(jsonSchema(.object(["additionalProperties": .bool(true)]))),
+  needsApproval: .conditional { input, _ in
+    if case .object(let obj) = input, case .bool(let isSensitive)? = obj["sensitive"] { return isSensitive }
+    return true
+  },
+  execute: { input, _ in .value(input) }
+)
+```
+
+## Using tools with generateText/streamText
+
+You can automatically pass tool results back to the model in multi‑step calls:
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+
+let result = try await generateText(
+  model: openai("gpt-5"),
+  tools: ["getWeather": getWeather],
+  prompt: "What's the weather in London?"
+)
+print(result.text)
+```
+
+Or with streaming:
+
+```swift
+let stream = try streamText(
+  model: openai("gpt-5"),
+  tools: [
+    "getWeather": getWeather,
+    "countToThree": countToThree
+  ],
+  messages: [.user(UserModelMessage(content: .text("Count and tell weather")))]
+)
+```
+
+## Toolkits
+
+In the TypeScript ecosystem there are many toolkits; these primarily target JS/TS. The Swift port already exposes several provider‑defined tools (e.g., Google/Groq/Anthropic web/code tools) inside their packages (`Sources/*Provider/Tool/*`).
+
+> Note: The third‑party toolkit list in the original article is TS‑specific and may not match Swift yet.
+
+## Learn more
+
+- More on tool calling: Tools and Tool Calling (AI SDK Core)
+- Agents overview: Agents

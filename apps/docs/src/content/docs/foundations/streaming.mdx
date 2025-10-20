@@ -1,0 +1,59 @@
+---
+title: Streaming
+description: Why use streaming for AI applications?
+---
+
+_This page adapts the original AI SDK documentation: [Streaming](https://ai-sdk.dev/docs/foundations/streaming)._ 
+
+Streaming conversational text UIs have become popular because they improve perceived latency by displaying parts of the response as soon as they are available.
+
+Large language models can be slow for long outputs. With a blocking UI, users may wait many seconds before seeing anything. Streaming mitigates this by emitting partial text progressively.
+
+> Note: If your use case is well‑served by a smaller, faster model, a non‑streaming flow can be simpler to implement and operate.
+
+## Swift example
+
+Below is a minimal example that streams text from an OpenAI model using `streamText`. You can iterate the `textStream` to render output as it arrives.
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+
+let stream = try streamText(
+  model: openai("gpt-5"),
+  prompt: "Write a poem about embedding models."
+)
+
+for try await chunk in stream.textStream {
+  print(chunk)
+}
+```
+
+You can also pass a full prompt with messages, enable tools, or attach callbacks (`onChunk`, `onFinish`) for side effects and telemetry.
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+
+let result = try streamText(
+  model: openai("gpt-5"),
+  messages: [
+    .user(UserModelMessage(content: .text("Give me three rhymes for 'vector'.")))
+  ],
+  onChunk: { part in
+    // Observe low-level stream parts if needed (text, reasoning, tools, etc.)
+  },
+  onFinish: { event in
+    // Access final usage, text, tool calls, and metadata
+    print("finish reason: \(event.finishReason)")
+  }
+)
+
+for try await delta in result.textStream {
+  // Render streamed text
+  print(delta)
+}
+```
+
+For a broader introduction to streaming UIs and the SDK, see the Getting Started guides.
+

@@ -1,0 +1,68 @@
+---
+title: CLI Quickstart
+description: Build a Swift command-line tool that streams AI output to stdout.
+---
+
+This guide shows how to create a SwiftPM executable that calls the Swift AI SDK and streams text to the terminal.
+
+## 1) Create package
+
+```bash
+swift package init --type executable --name aicli
+cd aicli
+```
+
+Edit `Package.swift`:
+
+```swift
+// swift-tools-version: 5.10
+import PackageDescription
+
+let package = Package(
+  name: "aicli",
+  platforms: [.macOS(.v13)],
+  dependencies: [
+    .package(url: "https://github.com/teunlao/swift-ai-sdk", branch: "main")
+  ],
+  targets: [
+    .executableTarget(
+      name: "aicli",
+      dependencies: [
+        .product(name: "SwiftAISDK", package: "swift-ai-sdk"),
+        .product(name: "OpenAIProvider", package: "swift-ai-sdk")
+      ]
+    )
+  ]
+)
+```
+
+## 2) Main.swift
+
+```swift
+import Foundation
+import SwiftAISDK
+import OpenAIProvider
+
+@main
+struct App {
+  static func main() async {
+    let prompt = CommandLine.arguments.dropFirst().joined(separator: " ")
+    guard !prompt.isEmpty else {
+      print("Usage: aicli <prompt>")
+      return
+    }
+    do {
+      let stream = try streamText(model: openai("gpt-5"), prompt: prompt)
+      for try await delta in stream.textStream { print(delta, terminator: "") }
+      print()
+    } catch { fputs("Error: \(error)\n", stderr) }
+  }
+}
+```
+
+Export `OPENAI_API_KEY` and run:
+
+```bash
+OPENAI_API_KEY=sk-... swift run aicli "Write a limerick about SwiftPM"
+```
+

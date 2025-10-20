@@ -1,0 +1,103 @@
+---
+title: iOS & macOS Quickstart
+description: Build a SwiftUI app that uses the Swift AI SDK for text generation and streaming.
+---
+
+This guide shows how to add the Swift AI SDK to an iOS or macOS app, call models, and stream results into your UI.
+
+## 1) Install via Swift Package Manager
+
+In Xcode: File → Add Package Dependencies…
+
+- Package URL: https://github.com/teunlao/swift-ai-sdk
+- Add products: `SwiftAISDK`, `OpenAIProvider` (and other providers as needed)
+
+## 2) Configure API Keys
+
+Set environment variables in your scheme or via a secure configuration:
+
+```text
+OPENAI_API_KEY=sk-...
+```
+
+The default provider shortcuts (e.g., `openai`) read standard env vars automatically.
+
+## 3) Minimal call (blocking)
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+
+let result = try await generateText(
+  model: openai("gpt-5"),
+  prompt: "Hello from Swift!"
+)
+print(result.text)
+```
+
+## 4) Streaming in SwiftUI
+
+```swift
+import SwiftUI
+import SwiftAISDK
+import OpenAIProvider
+
+@MainActor
+final class ChatViewModel: ObservableObject {
+  @Published var output: String = ""
+  @Published var isLoading = false
+
+  func send(_ prompt: String) {
+    isLoading = true
+    output = ""
+    Task {
+      do {
+        let stream = try streamText(
+          model: openai("gpt-5"),
+          prompt: prompt
+        )
+        for try await delta in stream.textStream {
+          output += delta
+        }
+      } catch {
+        output = "Error: \(error)"
+      }
+      isLoading = false
+    }
+  }
+}
+
+struct ChatView: View {
+  @StateObject var vm = ChatViewModel()
+  @State var input = "Write a haiku about vectors"
+
+  var body: some View {
+    VStack(alignment: .leading) {
+      TextEditor(text: $input).frame(height: 120)
+      Button(vm.isLoading ? "Streaming…" : "Send") { vm.send(input) }
+      ScrollView { Text(vm.output).monospaced() }
+    }
+    .padding()
+  }
+}
+```
+
+## 5) Tools (optional)
+
+```swift
+import AISDKProviderUtils
+
+let echo = tool(
+  inputSchema: FlexibleSchema(jsonSchema(.object(["additionalProperties": .bool(true)]))),
+  execute: { input, _ in .value(input) }
+)
+
+let result = try await generateText(
+  model: openai("gpt-5"),
+  tools: ["echo": echo],
+  prompt: "Call echo with {\"hello\":\"world\"}"
+)
+```
+
+> Note: Keep long‑running work off the main actor; UI updates should be marshalled on the main thread.
+

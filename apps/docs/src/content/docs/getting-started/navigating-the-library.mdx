@@ -1,0 +1,51 @@
+---
+title: Navigating the Library
+description: Learn how to navigate the AI SDK.
+---
+
+_This page adapts the original AI SDK documentation: [Navigating the Library](https://ai-sdk.dev/docs/getting-started/navigating-the-library). It reflects the Swift AI SDK packages and environments._
+
+The Swift AI SDK is a powerful toolkit for building AI applications in Swift. This page will help you pick the right tools for your requirements.
+
+Let’s start with a quick overview. In the TypeScript docs the SDK is presented as three parts; in Swift we focus on the Core equivalent:
+
+- **Swift AI SDK Core (SwiftAISDK):** A unified API for generating text, structured objects, and tool calls with LLMs in Swift.
+
+> Note: UI libraries (AI SDK UI, RSC) are JavaScript-only and do not apply to the Swift AI SDK.
+
+## Choosing the Right Tool for Your Environment
+
+When deciding which part of the Swift AI SDK to use, your first consideration should be the environment and existing stack you are working with.
+
+| Library (Swift)        | Purpose                                                                                                       | Environment Compatibility                         |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| Swift AI SDK Core      | Call LLMs with unified API (e.g. generateText/streamText, tools, structured output)                           | iOS, macOS, watchOS, tvOS, server-side Swift     |
+
+## Environment Compatibility
+
+These tools have been designed to work together. Pick based on your environment and stack:
+
+The following table outlines AI SDK compatibility based on environment:
+
+| Environment                      | Swift AI SDK Core |
+| -------------------------------- | ----------------- |
+| iOS / iPadOS / macOS apps        | ✓                 |
+| Server-side Swift (e.g., Vapor)  | ✓                 |
+| watchOS / tvOS                   | ✓                 |
+| JavaScript runtimes (Node/Deno)  | ✗                 |
+
+## When to use Swift AI SDK
+
+Use the Swift AI SDK when building AI features in Swift apps or servers. It offers:
+
+- Streaming and non‑streaming text generation
+- Structured outputs and tool calling
+- Provider‑agnostic model access (OpenAI, Anthropic, Google, Groq, OpenAI‑compatible)
+
+## UI Libraries (JS‑only)
+
+> Note: React/Vue/Svelte hooks (AI SDK UI) are not part of the Swift AI SDK. If you need UI hooks, use the TypeScript SDK within a JS frontend.
+
+## RSC (JS‑only)
+
+> Note: AI SDK RSC (React Server Components utilities) is JavaScript‑specific and not included in the Swift AI SDK.
