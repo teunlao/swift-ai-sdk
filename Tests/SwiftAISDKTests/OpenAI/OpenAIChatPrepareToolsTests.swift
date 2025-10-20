@@ -129,6 +129,32 @@ struct OpenAIChatPrepareToolsTests {
         #expect(result.toolChoice == .string("required"))
     }
 
+    // Port of openai-chat-prepare-tools.test.ts: "should handle tool choice 'none'"
+    @Test("tool choice none maps to string")
+    func toolChoiceNone() {
+        let tool = LanguageModelV3Tool.function(
+            LanguageModelV3FunctionTool(
+                name: "testFunction",
+                inputSchema: .object([:]),
+                description: "Test"
+            )
+        )
+
+        let result = OpenAIChatToolPreparer.prepare(
+            tools: [tool],
+            toolChoice: .none,
+            structuredOutputs: false,
+            strictJsonSchema: false
+        )
+
+        // Debug
+        print("result.tools: \(String(describing: result.tools))")
+        print("result.toolChoice: \(String(describing: result.toolChoice))")
+        print("result.warnings: \(result.warnings)")
+
+        #expect(result.toolChoice == .string("none"))
+    }
+
     @Test("tool choice for specific function maps to function entry")
     func toolChoiceForFunction() {
         let result = OpenAIChatToolPreparer.prepare(

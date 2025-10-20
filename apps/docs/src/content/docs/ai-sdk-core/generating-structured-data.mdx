@@ -35,35 +35,35 @@ let recipeSchema = FlexibleSchema(jsonSchema(
   .object([
     "type": .string("object"),
     "properties": .object([
-      "recipe": .object([
-        "type": .string("object"),
-        "properties": .object([
-          "name": .object(["type": .string("string")]),
-          "ingredients": .object([
-            "type": .string("array"),
-            "items": .object([
-              "type": .string("object"),
-              "properties": .object([
-                "name": .object(["type": .string("string")]),
-                "amount": .object(["type": .string("string")])
-              ]),
-              "required": .array([.string("name"), .string("amount")])
-            ])
+      "name": .object(["type": .string("string")]),
+      "ingredients": .object([
+        "type": .string("array"),
+        "items": .object([
+          "type": .string("object"),
+          "properties": .object([
+            "name": .object(["type": .string("string")]),
+            "amount": .object(["type": .string("string")])
           ]),
-          "steps": .object(["type": .string("array"), "items": .object(["type": .string("string")])])
-        ]),
-        "required": .array([.string("name"), .string("ingredients"), .string("steps")])
+          "required": .array([.string("name"), .string("amount")])
+        ])
+      ]),
+      "steps": .object([
+        "type": .string("array"),
+        "items": .object(["type": .string("string")])
       ])
     ]),
-    "required": .array([.string("recipe")])
+    "required": .array([.string("name"), .string("ingredients"), .string("steps")])
   ])
 ))
 
-let { object } = try await generateObject(
-  model: openai("gpt-5"),
+let result = try await generateObject(
+  model: openai("gpt-4o"),
   schema: recipeSchema,
-  prompt: "Generate a lasagna recipe."
+  prompt: "Generate a lasagna recipe.",
+  schemaName: "recipe",
+  schemaDescription: "A recipe for lasagna."
 )
+print(result.object)
 ```
 
 > Note
@@ -78,9 +78,11 @@ You can access the raw response headers and body using the `response` property:
 
 ```swift
 let result = try await generateObject(
-  model: openai("gpt-5"),
+  model: openai("gpt-4o"),
   schema: recipeSchema,
-  prompt: "Generate a lasagna recipe."
+  prompt: "Generate a lasagna recipe.",
+  schemaName: "recipe",
+  schemaDescription: "A recipe for lasagna."
 )
 print(String(describing: result.response.headers))
 print(String(describing: result.response.body))
@@ -97,9 +99,11 @@ import OpenAIProvider
 import AISDKProviderUtils
 
 let stream = try streamObject(
-  model: openai("gpt-5"),
+  model: openai("gpt-4o"),
   schema: recipeSchema,
-  prompt: "Generate a lasagna recipe."
+  prompt: "Generate a lasagna recipe.",
+  schemaName: "recipe",
+  schemaDescription: "A recipe for lasagna."
 )
 
 for try await partial in stream.partialObjectStream {
@@ -121,9 +125,11 @@ To log errors, you can provide an `onError` callback that is triggered when an e
 
 ```swift
 let _ = try streamObject(
-  model: openai("gpt-5"),
+  model: openai("gpt-4o"),
   schema: recipeSchema,
   prompt: "Generate a lasagna recipe.",
+  schemaName: "recipe",
+  schemaDescription: "A recipe for lasagna.",
   onError: { error in
     print("Stream error: \(error)")
   }
@@ -159,10 +165,12 @@ let heroSchema = FlexibleSchema(jsonSchema(
 ))
 
 let arrayStream = try streamObject(
-  model: openai("gpt-5"),
+  model: openai("gpt-4o"),
   output: .array,
   schema: heroSchema,
-  prompt: "Generate 3 hero descriptions for a fantasy role playing game."
+  prompt: "Generate 3 hero descriptions for a fantasy role playing game.",
+  schemaName: "hero",
+  schemaDescription: "A hero character for a fantasy RPG."
 )
 
 for try await hero in arrayStream.elementStream {
@@ -182,7 +190,7 @@ and provide a list of possible values in the `enum` parameter.
 ```swift
 let genres = ["action","comedy","drama","horror","sci-fi"]
 let enumResult = try await generateObject(
-  model: openai("gpt-5"),
+  model: openai("gpt-4o"),
   output: .enum(cases: genres),
   prompt: "Classify the genre of this movie plot: 'A group of astronauts travel through a wormhole in search of a new habitable planet for humanity.'"
 )
@@ -198,7 +206,7 @@ and omit the schema parameter.
 
 ```swift
 let noSchema = try await generateObject(
-  model: openai("gpt-5"),
+  model: openai("gpt-4o"),
   output: .noSchema,
   prompt: "Generate a lasagna recipe."
 )
@@ -211,11 +219,11 @@ You can optionally specify a name and description for the schema. These are used
 
 ```swift
 let named = try await generateObject(
-  model: openai("gpt-5"),
-  schemaName: "Recipe",
-  schemaDescription: "A recipe for a dish.",
+  model: openai("gpt-4o"),
   schema: recipeSchema,
-  prompt: "Generate a lasagna recipe."
+  prompt: "Generate a lasagna recipe.",
+  schemaName: "recipe",
+  schemaDescription: "A recipe for a dish."
 )
 print(named.object)
 ```
@@ -226,9 +234,11 @@ You can access the reasoning used by the language model to generate the object v
 
 ```swift
 let reasoning = try await generateObject(
-  model: openai("gpt-5"),
+  model: openai("gpt-4o"),
   schema: recipeSchema,
   prompt: "Generate a lasagna recipe.",
+  schemaName: "recipe",
+  schemaDescription: "A recipe for lasagna.",
   providerOptions: [
     "openai": [
       "strictJsonSchema": .bool(true),
@@ -261,7 +271,12 @@ The error preserves the following information to help you log the issue:
 import SwiftAISDK
 
 do {
-  _ = try await generateObject(model: openai("gpt-5"), schema: recipeSchema, prompt: "...")
+  _ = try await generateObject(
+    model: openai("gpt-4o"),
+    schema: recipeSchema,
+    prompt: "...",
+    schemaName: "recipe"
+  )
 } catch let error as NoObjectGeneratedError {
   print("NoObjectGeneratedError")
   print("Cause:", error.cause as Any)
@@ -285,9 +300,10 @@ You can then attempt to repair the text and return the repaired text.
 
 ```swift
 let repaired = try await generateObject(
-  model: openai("gpt-5"),
+  model: openai("gpt-4o"),
   schema: recipeSchema,
   prompt: "...",
+  schemaName: "recipe",
   experimentalRepairText: { text, error in
     return text + "}"
   }
@@ -327,7 +343,7 @@ let personSchema = FlexibleSchema(jsonSchema(
 ))
 
 let gt = try await generateText(
-  model: openai("gpt-5"),
+  model: openai("gpt-4o"),
   experimentalOutput: Output.object(schema: personSchema),
   prompt: "Generate an example person for testing."
 )
@@ -338,7 +354,7 @@ let person = try gt.experimentalOutput
 
 ```swift
 let st = try streamText(
-  model: openai("gpt-5"),
+  model: openai("gpt-4o"),
   experimentalOutput: Output.object(schema: personSchema),
   prompt: "Generate an example person for testing."
 )
