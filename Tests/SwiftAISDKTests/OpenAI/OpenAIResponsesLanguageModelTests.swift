@@ -4656,4 +4656,124 @@ struct OpenAIResponsesLanguageModelTests {
         #expect(content[1]["image_url"] as? String == "data:image/jpeg;base64,file-abc123")
     }
 
+    // MARK: - Computer Use Tool Tests
+    // Port of openai-responses-language-model.test.ts: "should handle computer use tool calls"
+
+    @Test("should handle computer use tool calls")
+    func testShouldHandleComputerUseToolCalls() async throws {
+        let responseJSON: [String: Any] = [
+            "id": "resp_computer_test",
+            "object": "response",
+            "created_at": 1_741_630_255,
+            "status": "completed",
+            "error": NSNull(),
+            "incomplete_details": NSNull(),
+            "instructions": NSNull(),
+            "max_output_tokens": NSNull(),
+            "model": "gpt-4o-mini",
+            "output": [
+                [
+                    "type": "computer_call",
+                    "id": "computer_67cf2b3051e88190b006770db6fdb13d",
+                    "status": "completed"
+                ],
+                [
+                    "type": "message",
+                    "id": "msg_computer_test",
+                    "status": "completed",
+                    "role": "assistant",
+                    "content": [
+                        [
+                            "type": "output_text",
+                            "text": "I've completed the computer task.",
+                            "annotations": []
+                        ]
+                    ]
+                ]
+            ],
+            "usage": ["input_tokens": 100, "output_tokens": 50]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let fetch: FetchFunction = { _ in
+            let httpResponse = HTTPURLResponse(
+                url: URL(string: "https://api.openai.com/v1/responses")!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o-mini",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let prompt: LanguageModelV3Prompt = [
+            LanguageModelV3Message.user(
+                content: [
+                    .text(LanguageModelV3TextPart(text: "Use the computer to complete a task."))
+                ],
+                providerOptions: nil
+            )
+        ]
+
+        let tools: [LanguageModelV3Tool] = [
+            .providerDefined(LanguageModelV3ProviderDefinedTool(
+                id: "openai.computer_use",
+                name: "computer_use",
+                args: [:]
+            ))
+        ]
+
+        let result = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(prompt: prompt, tools: tools)
+        )
+
+        // Verify content structure
+        #expect(result.content.count == 3)
+
+        // First: tool-call
+        guard case .toolCall(let toolCall) = result.content[0] else {
+            Issue.record("Expected tool-call at index 0")
+            return
+        }
+        #expect(toolCall.toolCallId == "computer_67cf2b3051e88190b006770db6fdb13d")
+        #expect(toolCall.toolName == "computer_use")
+        #expect(toolCall.providerExecuted == true)
+        #expect(toolCall.input == "")
+
+        // Second: tool-result
+        guard case .toolResult(let toolResult) = result.content[1] else {
+            Issue.record("Expected tool-result at index 1")
+            return
+        }
+        #expect(toolResult.toolCallId == "computer_67cf2b3051e88190b006770db6fdb13d")
+        #expect(toolResult.toolName == "computer_use")
+        #expect(toolResult.providerExecuted == true)
+
+        // Verify result structure
+        if case .object(let resultObj) = toolResult.result {
+            #expect(resultObj["type"] == .string("computer_use_tool_result"))
+            #expect(resultObj["status"] == .string("completed"))
+        } else {
+            Issue.record("Expected result to be an object")
+        }
+
+        // Third: text
+        guard case .text(let textPart) = result.content[2] else {
+            Issue.record("Expected text at index 2")
+            return
+        }
+        #expect(textPart.text == "I've completed the computer task.")
+
+        // Verify provider metadata
+        if let metadata = textPart.providerMetadata,
+           let openai = metadata["openai"],
+           case .string(let itemId) = openai["itemId"] {
+            #expect(itemId == "msg_computer_test")
+        }
+    }
+
 }
