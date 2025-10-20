@@ -1,51 +1,171 @@
 ---
 title: Navigating the Library
-description: Learn how to navigate the AI SDK.
+description: Learn about the Swift AI SDK structure and components.
 ---
 
-_This page adapts the original AI SDK documentation: [Navigating the Library](https://ai-sdk.dev/docs/getting-started/navigating-the-library). It reflects the Swift AI SDK packages and environments._
+_This page describes the Swift AI SDK structure. It differs from the [original TypeScript SDK](https://ai-sdk.dev/docs/getting-started/navigating-the-library) which includes web-specific UI libraries._
 
-The Swift AI SDK is a powerful toolkit for building AI applications in Swift. This page will help you pick the right tools for your requirements.
+The Swift AI SDK is a comprehensive toolkit for building AI applications in Swift across all Apple platforms and server-side Swift. This page explains the structure and available components.
 
-Let’s start with a quick overview. In the TypeScript docs the SDK is presented as three parts; in Swift we focus on the Core equivalent:
+## What's Included
 
-- **Swift AI SDK Core (SwiftAISDK):** A unified API for generating text, structured objects, and tool calls with LLMs in Swift.
+The Swift AI SDK ports the **AI SDK Core** from the TypeScript AI SDK, providing:
 
-> Note: UI libraries (AI SDK UI, RSC) are JavaScript-only and do not apply to the Swift AI SDK.
+- **AI SDK Core (SwiftAISDK):** Unified API for generating text, structured objects, and tool calls with LLMs
+- **Provider System:** Pre-built integrations for OpenAI, Anthropic, Google, Groq, and OpenAI-compatible providers
+- **Foundation Types (AISDKProvider):** Language model interfaces, provider protocols, and shared types
+- **Utilities (AISDKProviderUtils):** HTTP clients, JSON handling, schema validation, retry logic
+- **Zod Adapter (AISDKZodAdapter):** Zod-like schema DSL for structured data validation
 
-## Choosing the Right Tool for Your Environment
+## What's Not Included
 
-When deciding which part of the Swift AI SDK to use, your first consideration should be the environment and existing stack you are working with.
+The Swift AI SDK focuses on core AI functionality and does not include web-specific libraries:
 
-| Library (Swift)        | Purpose                                                                                                       | Environment Compatibility                         |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| Swift AI SDK Core      | Call LLMs with unified API (e.g. generateText/streamText, tools, structured output)                           | iOS, macOS, watchOS, tvOS, server-side Swift     |
+- **AI SDK UI** (React/Svelte/Vue hooks like `useChat`, `useCompletion`) - JavaScript/TypeScript only
+- **AI SDK RSC** (React Server Components utilities) - Next.js specific
 
-## Environment Compatibility
+If you're building hybrid applications with Swift backends and JavaScript frontends, you can use the TypeScript AI SDK UI with Swift AI SDK Core on the server.
 
-These tools have been designed to work together. Pick based on your environment and stack:
+## Package Structure
 
-The following table outlines AI SDK compatibility based on environment:
+The Swift AI SDK is organized into focused packages:
 
-| Environment                      | Swift AI SDK Core |
-| -------------------------------- | ----------------- |
-| iOS / iPadOS / macOS apps        | ✓                 |
-| Server-side Swift (e.g., Vapor)  | ✓                 |
-| watchOS / tvOS                   | ✓                 |
-| JavaScript runtimes (Node/Deno)  | ✗                 |
+| Package                    | Purpose                                                    | Dependencies           |
+| -------------------------- | ---------------------------------------------------------- | ---------------------- |
+| **AISDKProvider**          | Foundation types and protocols (LanguageModelV3, etc.)     | None                   |
+| **AISDKProviderUtils**     | HTTP, JSON, schema, validation, retry utilities            | AISDKProvider          |
+| **SwiftAISDK**             | Core API (`generateText`, `streamText`, `generateObject`)  | Provider, ProviderUtils|
+| **OpenAIProvider**         | OpenAI integration (GPT-4, GPT-3.5, embeddings, etc.)      | Provider, ProviderUtils|
+| **AnthropicProvider**      | Anthropic Claude integration                               | Provider, ProviderUtils|
+| **GoogleProvider**         | Google Gemini integration                                  | Provider, ProviderUtils|
+| **GroqProvider**           | Groq integration                                           | Provider, ProviderUtils|
+| **OpenAICompatibleProvider**| OpenAI-compatible API integration                         | Provider, ProviderUtils|
+| **AISDKZodAdapter**        | Zod-like schema DSL for structured data                    | AISDKProvider          |
+| **EventSourceParser**      | Server-Sent Events (SSE) parsing (internal utility)        | None                   |
 
-## When to use Swift AI SDK
+## Platform Compatibility
 
-Use the Swift AI SDK when building AI features in Swift apps or servers. It offers:
+Swift AI SDK works across all Apple platforms and server-side Swift:
 
-- Streaming and non‑streaming text generation
-- Structured outputs and tool calling
-- Provider‑agnostic model access (OpenAI, Anthropic, Google, Groq, OpenAI‑compatible)
+| Platform               | Support |
+| ---------------------- | ------- |
+| iOS / iPadOS           | ✓       |
+| macOS                  | ✓       |
+| watchOS                | ✓       |
+| tvOS                   | ✓       |
+| Server-side Swift      | ✓       |
+| Linux (Swift on Linux) | ✓       |
 
-## UI Libraries (JS‑only)
+**Minimum versions:**
+- macOS 13+
+- iOS 16+
+- watchOS 9+
+- tvOS 16+
 
-> Note: React/Vue/Svelte hooks (AI SDK UI) are not part of the Swift AI SDK. If you need UI hooks, use the TypeScript SDK within a JS frontend.
+## Core Features
 
-## RSC (JS‑only)
+### Text Generation
 
-> Note: AI SDK RSC (React Server Components utilities) is JavaScript‑specific and not included in the Swift AI SDK.
+```swift
+import SwiftAISDK
+import OpenAIProvider
+
+let result = try await generateText(
+  model: openai("gpt-4o"),
+  prompt: "Write a short story about a cat."
+)
+print(result.text)
+```
+
+### Streaming
+
+```swift
+let stream = try await streamText(
+  model: openai("gpt-4o"),
+  prompt: "Count to 10."
+)
+
+for try await textPart in stream.textStream {
+  print(textPart, terminator: "")
+}
+```
+
+### Structured Data
+
+```swift
+import AISDKZodAdapter
+
+let schema = z.object([
+  "name": z.string(),
+  "age": z.number()
+])
+
+let result = try await generateObject(
+  model: openai("gpt-4o"),
+  schema: schema,
+  prompt: "Generate a person profile."
+)
+print(result.object)
+```
+
+### Tool Calling
+
+```swift
+let result = try await generateText(
+  model: openai("gpt-4o"),
+  tools: [
+    "getWeather": tool(
+      description: "Get weather for a location",
+      parameters: z.object(["location": z.string()])
+    ) { args in
+      return "Sunny, 72°F"
+    }
+  ],
+  prompt: "What's the weather in San Francisco?"
+)
+```
+
+### Embeddings
+
+```swift
+let result = try await embed(
+  model: openai.embedding("text-embedding-3-small"),
+  value: "Hello, world!"
+)
+print(result.embedding) // [0.123, -0.456, ...]
+```
+
+## Getting Started
+
+Choose a quickstart based on your environment:
+
+- **[iOS & macOS Apps](/getting-started/ios-macos-quickstart)** - Building native apps with SwiftUI or UIKit
+- **[Server (Vapor)](/getting-started/server-vapor-quickstart)** - Building server-side Swift APIs
+- **[CLI](/getting-started/cli-quickstart)** - Building command-line tools
+
+## Integration with Web Frontends
+
+If you're building a web application with a Swift backend:
+
+1. **Backend (Swift):** Use Swift AI SDK Core for LLM calls, embeddings, and structured data generation
+2. **Frontend (JavaScript/TypeScript):** Use [AI SDK UI](https://sdk.vercel.ai/docs/ai-sdk-ui) for React/Vue/Svelte chat interfaces
+
+The two SDKs are designed to work together seamlessly through HTTP APIs.
+
+## Documentation Structure
+
+- **Getting Started:** Platform-specific quickstarts and setup guides
+- **AI SDK Core:** Core functions (`generateText`, `streamText`, `generateObject`, tools, embeddings)
+- **Agents:** Building autonomous AI agents with workflow patterns
+- **Zod Adapter:** Zod-like schema DSL for structured data validation
+- **Foundations:** Understanding providers, models, prompts, tools, and streaming
+
+## Next Steps
+
+Ready to start building? Pick a quickstart guide:
+
+- [iOS & macOS Quickstart](/getting-started/ios-macos-quickstart)
+- [Server (Vapor) Quickstart](/getting-started/server-vapor-quickstart)
+- [CLI Quickstart](/getting-started/cli-quickstart)
+
+Or explore the [AI SDK Core overview](/ai-sdk-core/overview) to learn about core concepts.
