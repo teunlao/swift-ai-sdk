@@ -74,8 +74,8 @@
 | File | Upstream | Swift | Coverage | Status |
 |------|----------|-------|----------|--------|
 | OpenAIChatLanguageModel | 71 | 71 | 100% | ✅ PERFECT |
+| OpenAIResponsesInput | 48 | 48 | 100% | ✅ PERFECT |
 | OpenAIResponsesLanguageModel | 77 | 25 | 32% | ⚠️ MAJOR |
-| OpenAIResponsesInput | 48 | 4 | 8% | ❌ CRITICAL |
 | OpenAICompletionLanguageModel | 16 | 3 | 19% | ⚠️ MAJOR |
 | OpenAITranscriptionModel | 13 | 2 | 15% | ⚠️ MAJOR |
 | OpenAIEmbeddingModel | 6 | 2 | 33% | ⚠️ MODERATE |
@@ -87,7 +87,7 @@
 | OpenAIError | 1 | 1 | 100% | ✅ PERFECT |
 | OpenAIProvider | 3 | 1 | 33% | ⚠️ MODERATE |
 
-**TOTAL: 290 → 152 (52.4% coverage) ⚠️ NEEDS IMPROVEMENT**
+**TOTAL: 290 → 196 (67.6% coverage) ⚠️ GOOD PROGRESS**
 
 ---
 
@@ -151,10 +151,13 @@ While the implementation code appears correct (100% functional parity from previ
 
 **Started:** 2025-10-19
 **Target:** 100% test parity (290 tests)
-**Current:** 152/290 tests (52.4%)
+**Current:** 196/290 tests (67.6%)
 
 ### OpenAIChatLanguageModel (Priority 1 - COMPLETE ✅)
 **Target:** 71 tests | **Current:** 71/71 (100%)
+
+### OpenAIResponsesInput (Priority 2 - COMPLETE ✅)
+**Target:** 48 tests | **Current:** 48/48 (100%)
 
 #### Batch 1: Settings & Configuration (5/5) ✅ COMPLETE
 - [x] Pass settings (logitBias, user, parallelToolCalls) - `testPassSettings`
@@ -264,4 +267,4 @@ While the implementation code appears correct (100% functional parity from previ
 
 ---
 
-**Last Updated:** 2025-10-20 05:20 UTC
+**Last Updated:** 2025-10-20 03:30 UTC
