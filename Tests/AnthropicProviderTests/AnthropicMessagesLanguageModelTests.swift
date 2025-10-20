@@ -3679,4 +3679,997 @@ struct AnthropicMessagesLanguageModelCodeExecutionTests {
             Issue.record("No headers found")
         }
     }
+
+    @Test("should handle server-side code execution results")
+    func handlesServerSideCodeExecutionResults() async throws {
+        let httpResponse = HTTPURLResponse(url: URL(string: "https://api.anthropic.com/v1/messages")!,
+                                          statusCode: 200,
+                                          httpVersion: nil,
+                                          headerFields: nil)!
+
+        let responseBody = """
+        {
+            "id": "msg_test",
+            "type": "message",
+            "role": "assistant",
+            "content": [
+                {
+                    "type": "server_tool_use",
+                    "id": "tool_1",
+                    "name": "code_execution",
+                    "input": {"code": "print(\\"Hello, World!\\")"}
+                },
+                {
+                    "type": "code_execution_tool_result",
+                    "tool_use_id": "tool_1",
+                    "content": {
+                        "type": "code_execution_result",
+                        "stdout": "Hello, World!\\n",
+                        "stderr": "",
+                        "return_code": 0
+                    }
+                },
+                {
+                    "type": "text",
+                    "text": "The code executed successfully with output: Hello, World!"
+                }
+            ],
+            "model": "claude-3-haiku-20240307",
+            "stop_reason": "end_turn",
+            "usage": {
+                "input_tokens": 15,
+                "output_tokens": 25,
+                "server_tool_use": {"code_execution_requests": 1}
+            }
+        }
+        """
+
+        let fetch: FetchFunction = { _ in
+            return FetchResponse(body: .data(Data(responseBody.utf8)), urlResponse: httpResponse)
+        }
+
+        let config = AnthropicMessagesConfig(
+            provider: "anthropic.messages",
+            baseURL: "https://api.anthropic.com/v1",
+            headers: { ["x-api-key": "test-api-key", "anthropic-version": "2023-06-01"] },
+            fetch: fetch
+        )
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: config
+        )
+
+        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
+            tools: [
+                .providerDefined(LanguageModelV3ProviderDefinedTool(
+                    id: "anthropic.code_execution_20250522",
+                    name: "code_execution",
+                    args: [:]
+                ))
+            ]
+        ))
+
+        // Verify content structure
+        #expect(result.content.count == 3)
+
+        // Verify tool call with providerExecuted=true
+        if case .toolCall(let toolCall) = result.content[0] {
+            #expect(toolCall.toolCallId == "tool_1")
+            #expect(toolCall.toolName == "code_execution")
+            // Input should be stringified JSON: {"code":"print(\"Hello, World!\")"}
+            #expect(toolCall.input.contains("code"))
+            #expect(toolCall.input.contains("Hello, World!"))
+            #expect(toolCall.providerExecuted == true)
+        } else {
+            Issue.record("Expected tool-call at index 0")
+        }
+
+        // Verify tool result with providerExecuted=true
+        if case .toolResult(let toolResult) = result.content[1] {
+            #expect(toolResult.toolCallId == "tool_1")
+            #expect(toolResult.toolName == "code_execution")
+            #expect(toolResult.providerExecuted == true)
+
+            // Verify result is JSONValue with code execution result
+            if case .object(let resultObj) = toolResult.result {
+                #expect(resultObj["type"] == .string("code_execution_result"))
+                #expect(resultObj["stdout"] == .string("Hello, World!\n"))
+                #expect(resultObj["stderr"] == .string(""))
+                #expect(resultObj["return_code"] == .number(0))
+            } else {
+                Issue.record("Expected object result")
+            }
+        } else {
+            Issue.record("Expected tool-result at index 1")
+        }
+
+        // Verify text content
+        if case .text(let textContent) = result.content[2] {
+            #expect(textContent.text == "The code executed successfully with output: Hello, World!")
+        } else {
+            Issue.record("Expected text at index 2")
+        }
+    }
+}
+
+// MARK: - Batch 16: Provider Tool Results with Citations and Errors
+
+@Suite("AnthropicMessagesLanguageModel provider tool results Batch 16")
+struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
+
+    private func makeConfig(fetch: @escaping FetchFunction) -> AnthropicMessagesConfig {
+        AnthropicMessagesConfig(
+            provider: "anthropic.messages",
+            baseURL: "https://api.anthropic.com/v1",
+            headers: { [
+                "x-api-key": "test-api-key",
+                "anthropic-version": "2023-06-01"
+            ] },
+            fetch: fetch
+        )
+    }
+
+    @Test("should handle server-side web search results with citations")
+    func handlesServerSideWebSearchResultsWithCitations() async throws {
+        let httpResponse = HTTPURLResponse(url: URL(string: "https://api.anthropic.com/v1/messages")!,
+                                          statusCode: 200,
+                                          httpVersion: nil,
+                                          headerFields: nil)!
+
+        let responseBody = """
+        {
+            "type": "message",
+            "id": "msg_test",
+            "content": [
+                {
+                    "type": "server_tool_use",
+                    "id": "tool_1",
+                    "name": "web_search",
+                    "input": {"query": "latest AI news"}
+                },
+                {
+                    "type": "web_search_tool_result",
+                    "tool_use_id": "tool_1",
+                    "content": [
+                        {
+                            "type": "web_search_result",
+                            "url": "https://example.com/ai-news",
+                            "title": "Latest AI Developments",
+                            "encrypted_content": "encrypted_content_123",
+                            "page_age": "January 15, 2025"
+                        }
+                    ]
+                },
+                {
+                    "type": "text",
+                    "text": "Based on recent articles, AI continues to advance rapidly."
+                }
+            ],
+            "stop_reason": "end_turn",
+            "usage": {
+                "input_tokens": 10,
+                "output_tokens": 20,
+                "server_tool_use": {"web_search_requests": 1}
+            }
+        }
+        """
+
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .data(Data(responseBody.utf8)), urlResponse: httpResponse)
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-5-sonnet-latest"),
+            config: makeConfig(fetch: fetch)
+        )
+
+        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(
+            prompt: [.user(content: [.text(.init(text: "What is the latest news?"))], providerOptions: nil)],
+            tools: [.providerDefined(LanguageModelV3ProviderDefinedTool(
+                id: "anthropic.web_search_20250305",
+                name: "web_search",
+                args: ["maxUses": .number(5)]
+            ))]
+        ))
+
+        // Verify tool call
+        if case .toolCall(let toolCall) = result.content[0] {
+            #expect(toolCall.toolCallId == "tool_1")
+            #expect(toolCall.toolName == "web_search")
+            #expect(toolCall.providerExecuted == true)
+
+            let inputStr = toolCall.input as! String
+            #expect(inputStr.contains("\"query\":\"latest AI news\""))
+        } else {
+            Issue.record("Expected tool-call at index 0")
+        }
+
+        // Verify source citation content (index 1)
+        if case .source(let source) = result.content[1] {
+            if case .url(let id, let url, let title, let providerMetadata) = source {
+                #expect(url == "https://example.com/ai-news")
+                #expect(title == "Latest AI Developments")
+
+                // Verify provider metadata
+                if let anthropicMeta = providerMetadata?["anthropic"] {
+                    #expect(anthropicMeta["pageAge"] == JSONValue.string("January 15, 2025"))
+                } else {
+                    Issue.record("Expected anthropic provider metadata")
+                }
+            } else {
+                Issue.record("Expected url source")
+            }
+        } else {
+            Issue.record("Expected source at index 1")
+        }
+
+        // Verify tool result with array (index 2)
+        if case .toolResult(let toolResult) = result.content[2] {
+            #expect(toolResult.toolCallId == "tool_1")
+            #expect(toolResult.toolName == "web_search")
+            #expect(toolResult.providerExecuted == true)
+
+            // Verify result is an array of web search results
+            if case .array(let resultsArray) = toolResult.result {
+                #expect(resultsArray.count == 1)
+
+                if case .object(let searchResult) = resultsArray[0] {
+                    #expect(searchResult["type"] == .string("web_search_result"))
+                    #expect(searchResult["url"] == .string("https://example.com/ai-news"))
+                    #expect(searchResult["title"] == .string("Latest AI Developments"))
+                    #expect(searchResult["encryptedContent"] == .string("encrypted_content_123"))
+                    #expect(searchResult["pageAge"] == .string("January 15, 2025"))
+                } else {
+                    Issue.record("Expected object in results array")
+                }
+            } else {
+                Issue.record("Expected array result")
+            }
+        } else {
+            Issue.record("Expected tool-result at index 2")
+        }
+
+        // Verify text content
+        if case .text(let textContent) = result.content[3] {
+            #expect(textContent.text == "Based on recent articles, AI continues to advance rapidly.")
+        } else {
+            Issue.record("Expected text at index 3")
+        }
+    }
+
+    @Test("should handle server-side web search errors")
+    func handlesServerSideWebSearchErrors() async throws {
+        let httpResponse = HTTPURLResponse(url: URL(string: "https://api.anthropic.com/v1/messages")!,
+                                          statusCode: 200,
+                                          httpVersion: nil,
+                                          headerFields: nil)!
+
+        let responseBody = """
+        {
+            "type": "message",
+            "id": "msg_test",
+            "content": [
+                {
+                    "type": "web_search_tool_result",
+                    "tool_use_id": "tool_1",
+                    "content": {
+                        "type": "web_search_tool_result_error",
+                        "error_code": "max_uses_exceeded"
+                    }
+                },
+                {
+                    "type": "text",
+                    "text": "I cannot search further due to limits."
+                }
+            ],
+            "stop_reason": "end_turn",
+            "usage": {"input_tokens": 10, "output_tokens": 20}
+        }
+        """
+
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .data(Data(responseBody.utf8)), urlResponse: httpResponse)
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-5-sonnet-latest"),
+            config: makeConfig(fetch: fetch)
+        )
+
+        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(
+            prompt: [.user(content: [.text(.init(text: "What is the latest news?"))], providerOptions: nil)],
+            tools: [.providerDefined(LanguageModelV3ProviderDefinedTool(
+                id: "anthropic.web_search_20250305",
+                name: "web_search",
+                args: ["maxUses": .number(1)]
+            ))]
+        ))
+
+        // Verify error tool result
+        if case .toolResult(let toolResult) = result.content[0] {
+            #expect(toolResult.toolCallId == "tool_1")
+            #expect(toolResult.toolName == "web_search")
+            #expect(toolResult.providerExecuted == true)
+            #expect(toolResult.isError == true)
+
+            // Verify error object
+            if case .object(let errorObj) = toolResult.result {
+                #expect(errorObj["type"] == .string("web_search_tool_result_error"))
+                #expect(errorObj["errorCode"] == .string("max_uses_exceeded"))
+            } else {
+                Issue.record("Expected object result")
+            }
+        } else {
+            Issue.record("Expected tool-result at index 0")
+        }
+
+        // Verify text content
+        if case .text(let textContent) = result.content[1] {
+            #expect(textContent.text == "I cannot search further due to limits.")
+        } else {
+            Issue.record("Expected text at index 1")
+        }
+    }
+
+    @Test("should handle web fetch tool results with title")
+    func handlesWebFetchWithTitle() async throws {
+        let httpResponse = HTTPURLResponse(url: URL(string: "https://api.anthropic.com/v1/messages")!,
+                                          statusCode: 200,
+                                          httpVersion: nil,
+                                          headerFields: nil)!
+
+        let responseBody = """
+        {
+            "type": "message",
+            "id": "msg_test",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "I'll fetch the Wikipedia page."
+                },
+                {
+                    "type": "server_tool_use",
+                    "id": "tool_1",
+                    "name": "web_fetch",
+                    "input": {"url": "https://en.wikipedia.org/wiki/Test"}
+                },
+                {
+                    "type": "web_fetch_tool_result",
+                    "tool_use_id": "tool_1",
+                    "content": {
+                        "type": "web_fetch_result",
+                        "url": "https://en.wikipedia.org/wiki/Test",
+                        "retrieved_at": "2025-07-17T21:38:38.606000+00:00",
+                        "content": {
+                            "type": "document",
+                            "source": {
+                                "type": "text",
+                                "media_type": "text/plain",
+                                "data": "Test article content here."
+                            },
+                            "title": "Test Article"
+                        }
+                    }
+                }
+            ],
+            "stop_reason": "end_turn",
+            "usage": {"input_tokens": 10, "output_tokens": 20, "server_tool_use": {"web_fetch_requests": 1}}
+        }
+        """
+
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .data(Data(responseBody.utf8)), urlResponse: httpResponse)
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-5-sonnet-latest"),
+            config: makeConfig(fetch: fetch)
+        )
+
+        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(
+            prompt: [.user(content: [.text(.init(text: "Fetch the page"))], providerOptions: nil)],
+            tools: [.providerDefined(LanguageModelV3ProviderDefinedTool(
+                id: "anthropic.web_fetch_20250910",
+                name: "web_fetch",
+                args: ["maxUses": .number(1)]
+            ))]
+        ))
+
+        // Verify tool call
+        if case .toolCall(let toolCall) = result.content[1] {
+            #expect(toolCall.toolCallId == "tool_1")
+            #expect(toolCall.toolName == "web_fetch")
+            #expect(toolCall.providerExecuted == true)
+        } else {
+            Issue.record("Expected tool-call at index 1")
+        }
+
+        // Verify tool result
+        if case .toolResult(let toolResult) = result.content[2] {
+            #expect(toolResult.toolCallId == "tool_1")
+            #expect(toolResult.toolName == "web_fetch")
+            #expect(toolResult.providerExecuted == true)
+
+            // Verify web_fetch_result structure
+            if case .object(let resultObj) = toolResult.result {
+                #expect(resultObj["type"] == .string("web_fetch_result"))
+                #expect(resultObj["url"] == .string("https://en.wikipedia.org/wiki/Test"))
+                #expect(resultObj["retrievedAt"] == .string("2025-07-17T21:38:38.606000+00:00"))
+
+                // Verify content
+                if case .object(let content) = resultObj["content"] {
+                    #expect(content["type"] == .string("document"))
+                    #expect(content["title"] == .string("Test Article"))
+
+                    // Verify source
+                    if case .object(let source) = content["source"] {
+                        #expect(source["type"] == .string("text"))
+                        #expect(source["mediaType"] == .string("text/plain"))
+                        #expect(source["data"] == .string("Test article content here."))
+                    } else {
+                        Issue.record("Expected source object")
+                    }
+                } else {
+                    Issue.record("Expected content object")
+                }
+            } else {
+                Issue.record("Expected object result")
+            }
+        } else {
+            Issue.record("Expected tool-result at index 2")
+        }
+    }
+
+    @Test("should handle web fetch tool results without title")
+    func handlesWebFetchWithoutTitle() async throws {
+        let httpResponse = HTTPURLResponse(url: URL(string: "https://api.anthropic.com/v1/messages")!,
+                                          statusCode: 200,
+                                          httpVersion: nil,
+                                          headerFields: nil)!
+
+        let responseBody = """
+        {
+            "type": "message",
+            "id": "msg_test",
+            "content": [
+                {
+                    "type": "server_tool_use",
+                    "id": "tool_1",
+                    "name": "web_fetch",
+                    "input": {"url": "https://example.com/file.pdf"}
+                },
+                {
+                    "type": "web_fetch_tool_result",
+                    "tool_use_id": "tool_1",
+                    "content": {
+                        "type": "web_fetch_result",
+                        "url": "https://example.com/file.pdf",
+                        "retrieved_at": "2025-09-29T07:28:57.560000+00:00",
+                        "content": {
+                            "type": "document",
+                            "source": {
+                                "type": "text",
+                                "media_type": "text/plain",
+                                "data": "PDF content here"
+                            },
+                            "title": null
+                        }
+                    }
+                }
+            ],
+            "stop_reason": "end_turn",
+            "usage": {"input_tokens": 10, "output_tokens": 20}
+        }
+        """
+
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .data(Data(responseBody.utf8)), urlResponse: httpResponse)
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-5-sonnet-latest"),
+            config: makeConfig(fetch: fetch)
+        )
+
+        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(
+            prompt: [.user(content: [.text(.init(text: "Fetch the PDF"))], providerOptions: nil)],
+            tools: [.providerDefined(LanguageModelV3ProviderDefinedTool(
+                id: "anthropic.web_fetch_20250910",
+                name: "web_fetch",
+                args: [:]
+            ))]
+        ))
+
+        // Verify tool result without title
+        if case .toolResult(let toolResult) = result.content[1] {
+            if case .object(let resultObj) = toolResult.result {
+                if case .object(let content) = resultObj["content"] {
+                    // title should be null
+                    #expect(content["title"] == .null)
+                } else {
+                    Issue.record("Expected content object")
+                }
+            } else {
+                Issue.record("Expected object result")
+            }
+        } else {
+            Issue.record("Expected tool-result at index 1")
+        }
+    }
+
+    @Test("should handle web fetch unavailable errors")
+    func handlesWebFetchUnavailableErrors() async throws {
+        let httpResponse = HTTPURLResponse(url: URL(string: "https://api.anthropic.com/v1/messages")!,
+                                          statusCode: 200,
+                                          httpVersion: nil,
+                                          headerFields: nil)!
+
+        let responseBody = """
+        {
+            "type": "message",
+            "id": "msg_test",
+            "content": [
+                {
+                    "type": "server_tool_use",
+                    "id": "tool_1",
+                    "name": "web_fetch",
+                    "input": {"url": "https://example.com/unavailable"}
+                },
+                {
+                    "type": "web_fetch_tool_result",
+                    "tool_use_id": "tool_1",
+                    "content": {
+                        "type": "web_fetch_tool_result_error",
+                        "error_code": "unavailable"
+                    }
+                },
+                {
+                    "type": "text",
+                    "text": "The fetch service is unavailable."
+                }
+            ],
+            "stop_reason": "end_turn",
+            "usage": {"input_tokens": 10, "output_tokens": 20}
+        }
+        """
+
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .data(Data(responseBody.utf8)), urlResponse: httpResponse)
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-5-sonnet-latest"),
+            config: makeConfig(fetch: fetch)
+        )
+
+        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(
+            prompt: [.user(content: [.text(.init(text: "Fetch page"))], providerOptions: nil)],
+            tools: [.providerDefined(LanguageModelV3ProviderDefinedTool(
+                id: "anthropic.web_fetch_20250910",
+                name: "web_fetch",
+                args: [:]
+            ))]
+        ))
+
+        // Verify error tool result
+        if case .toolResult(let toolResult) = result.content[1] {
+            #expect(toolResult.toolCallId == "tool_1")
+            #expect(toolResult.toolName == "web_fetch")
+            #expect(toolResult.providerExecuted == true)
+            #expect(toolResult.isError == true)
+
+            // Verify error object
+            if case .object(let errorObj) = toolResult.result {
+                #expect(errorObj["type"] == .string("web_fetch_tool_result_error"))
+                #expect(errorObj["errorCode"] == .string("unavailable"))
+            } else {
+                Issue.record("Expected object result")
+            }
+        } else {
+            Issue.record("Expected tool-result at index 1")
+        }
+    }
+
+    @Test("should handle code execution errors")
+    func handlesCodeExecutionErrors() async throws {
+        let httpResponse = HTTPURLResponse(url: URL(string: "https://api.anthropic.com/v1/messages")!,
+                                          statusCode: 200,
+                                          httpVersion: nil,
+                                          headerFields: nil)!
+
+        let responseBody = """
+        {
+            "type": "message",
+            "id": "msg_test",
+            "content": [
+                {
+                    "type": "code_execution_tool_result",
+                    "tool_use_id": "tool_1",
+                    "content": {
+                        "type": "code_execution_tool_result_error",
+                        "error_code": "unavailable"
+                    }
+                },
+                {
+                    "type": "text",
+                    "text": "The code execution service is currently unavailable."
+                }
+            ],
+            "stop_reason": "end_turn",
+            "usage": {"input_tokens": 10, "output_tokens": 20}
+        }
+        """
+
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .data(Data(responseBody.utf8)), urlResponse: httpResponse)
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-5-sonnet-latest"),
+            config: makeConfig(fetch: fetch)
+        )
+
+        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(
+            prompt: [.user(content: [.text(.init(text: "Run code"))], providerOptions: nil)],
+            tools: [.providerDefined(LanguageModelV3ProviderDefinedTool(
+                id: "anthropic.code_execution_20250522",
+                name: "code_execution",
+                args: [:]
+            ))]
+        ))
+
+        // Verify error tool result
+        if case .toolResult(let toolResult) = result.content[0] {
+            #expect(toolResult.toolCallId == "tool_1")
+            #expect(toolResult.toolName == "code_execution")
+            #expect(toolResult.providerExecuted == true)
+            #expect(toolResult.isError == true)
+
+            // Verify error object
+            if case .object(let errorObj) = toolResult.result {
+                #expect(errorObj["type"] == .string("code_execution_tool_result_error"))
+                #expect(errorObj["errorCode"] == .string("unavailable"))
+            } else {
+                Issue.record("Expected object result")
+            }
+        } else {
+            Issue.record("Expected tool-result at index 0")
+        }
+
+        // Verify text content
+        if case .text(let textContent) = result.content[1] {
+            #expect(textContent.text == "The code execution service is currently unavailable.")
+        } else {
+            Issue.record("Expected text at index 1")
+        }
+    }
+}
+
+// MARK: - Batch 17: Streaming Request Body + Client-side Tools Mix
+
+@Suite("AnthropicMessagesLanguageModel Batch 17")
+struct AnthropicMessagesLanguageModelBatch17Tests {
+
+    actor RequestCapture {
+        var request: URLRequest?
+        func store(_ request: URLRequest) { self.request = request }
+        func get() -> URLRequest? { request }
+    }
+
+    private func makeConfig(fetch: @escaping FetchFunction) -> AnthropicMessagesConfig {
+        AnthropicMessagesConfig(
+            provider: "anthropic.messages",
+            baseURL: "https://api.anthropic.com/v1",
+            headers: { [
+                "x-api-key": "test-api-key",
+                "anthropic-version": "2023-06-01"
+            ] },
+            fetch: fetch
+        )
+    }
+
+    private func makeStream(events: [String]) -> AsyncThrowingStream<Data, Error> {
+        AsyncThrowingStream { continuation in
+            for event in events {
+                continuation.yield(Data((event + "\n\n").utf8))
+            }
+            continuation.finish()
+        }
+    }
+
+    @Test("doStream should pass the messages and the model")
+    func doStreamPassesMessagesAndModel() async throws {
+        let capture = RequestCapture()
+        let httpResponse = HTTPURLResponse(url: URL(string: "https://api.anthropic.com/v1/messages")!,
+                                          statusCode: 200,
+                                          httpVersion: nil,
+                                          headerFields: ["test-header": "test-value"])!
+
+        let events = [
+            #"data: {"type":"message_start","message":{"id":"msg_01KfpJoAEabmH2iHRRFjQMAG","type":"message","role":"assistant","content":[],"model":"claude-3-haiku-20240307","stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":17,"output_tokens":1}}}"#,
+            #"data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}"#,
+            #"data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello, World!"}}"#,
+            #"data: {"type":"content_block_stop","index":0}"#,
+            #"data: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":227}}"#,
+            #"data: {"type":"message_stop"}"#
+        ]
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .stream(makeStream(events: events)), urlResponse: httpResponse)
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: makeConfig(fetch: fetch)
+        )
+
+        _ = try await model.doStream(options: LanguageModelV3CallOptions(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)]
+        ))
+
+        guard let request = await capture.get(), let body = request.httpBody else {
+            Issue.record("No request captured")
+            return
+        }
+
+        let json = try JSONSerialization.jsonObject(with: body) as? [String: Any]
+        #expect(json?["stream"] as? Bool == true)
+        #expect(json?["model"] as? String == "claude-3-haiku-20240307")
+        #expect(json?["max_tokens"] as? Int == 4096)
+
+        let messages = json?["messages"] as? [[String: Any]]
+        #expect(messages?.count == 1)
+        #expect(messages?[0]["role"] as? String == "user")
+
+        let content = messages?[0]["content"] as? [[String: Any]]
+        #expect(content?.count == 1)
+        #expect(content?[0]["type"] as? String == "text")
+        #expect(content?[0]["text"] as? String == "Hello")
+    }
+
+    @Test("doStream should pass headers")
+    func doStreamPassesHeaders() async throws {
+        let capture = RequestCapture()
+        let httpResponse = HTTPURLResponse(url: URL(string: "https://api.anthropic.com/v1/messages")!,
+                                          statusCode: 200,
+                                          httpVersion: nil,
+                                          headerFields: ["test-header": "test-value"])!
+
+        let events = [
+            #"data: {"type":"message_start","message":{"id":"msg_01KfpJoAEabmH2iHRRFjQMAG","type":"message","role":"assistant","content":[],"model":"claude-3-haiku-20240307","stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":17,"output_tokens":1}}}"#,
+            #"data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}"#,
+            #"data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello, World!"}}"#,
+            #"data: {"type":"content_block_stop","index":0}"#,
+            #"data: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":227}}"#,
+            #"data: {"type":"message_stop"}"#
+        ]
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .stream(makeStream(events: events)), urlResponse: httpResponse)
+        }
+
+        let config = AnthropicMessagesConfig(
+            provider: "anthropic.messages",
+            baseURL: "https://api.anthropic.com/v1",
+            headers: { [
+                "x-api-key": "test-api-key",
+                "anthropic-version": "2023-06-01",
+                "Custom-Provider-Header": "provider-header-value"
+            ] },
+            fetch: fetch
+        )
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: config
+        )
+
+        _ = try await model.doStream(options: LanguageModelV3CallOptions(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
+            headers: ["Custom-Request-Header": "request-header-value"]
+        ))
+
+        guard let request = await capture.get() else {
+            Issue.record("No request captured")
+            return
+        }
+
+        let headers = request.allHTTPHeaderFields ?? [:]
+        #expect(headers["x-api-key"] == "test-api-key")
+        #expect(headers["anthropic-version"] == "2023-06-01")
+        #expect(headers["custom-provider-header"] == "provider-header-value")
+        #expect(headers["custom-request-header"] == "request-header-value")
+    }
+
+    @Test("doStream should send request body")
+    func doStreamSendsRequestBody() async throws {
+        let capture = RequestCapture()
+        let httpResponse = HTTPURLResponse(url: URL(string: "https://api.anthropic.com/v1/messages")!,
+                                          statusCode: 200,
+                                          httpVersion: nil,
+                                          headerFields: nil)!
+
+        let events = [
+            #"data: {"type":"message_start","message":{"id":"msg_01KfpJoAEabmH2iHRRFjQMAG","type":"message","role":"assistant","content":[],"model":"claude-3-haiku-20240307","stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":17,"output_tokens":1}}}"#,
+            #"data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}"#,
+            #"data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello, World!"}}"#,
+            #"data: {"type":"content_block_stop","index":0}"#,
+            #"data: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":227}}"#,
+            #"data: {"type":"message_stop"}"#
+        ]
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .stream(makeStream(events: events)), urlResponse: httpResponse)
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: makeConfig(fetch: fetch)
+        )
+
+        let result = try await model.doStream(options: LanguageModelV3CallOptions(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)]
+        ))
+
+        // Verify request body structure
+        guard let request = await capture.get(), let bodyData = request.httpBody else {
+            Issue.record("No request captured")
+            return
+        }
+
+        let json = try JSONSerialization.jsonObject(with: bodyData) as? [String: Any]
+        #expect(json?["model"] as? String == "claude-3-haiku-20240307")
+        #expect(json?["max_tokens"] as? Int == 4096)
+        #expect(json?["stream"] as? Bool == true)
+
+        let messages = json?["messages"] as? [[String: Any]]
+        #expect(messages?.count == 1)
+
+        let message = messages?[0]
+        #expect(message?["role"] as? String == "user")
+
+        let content = message?["content"] as? [[String: Any]]
+        #expect(content?.count == 1)
+        #expect(content?[0]["type"] as? String == "text")
+        #expect(content?[0]["text"] as? String == "Hello")
+    }
+
+    @Test("web search should work alongside regular client-side tools")
+    func webSearchWorksWithClientSideTools() async throws {
+        let capture = RequestCapture()
+        let httpResponse = HTTPURLResponse(url: URL(string: "https://api.anthropic.com/v1/messages")!,
+                                          statusCode: 200,
+                                          httpVersion: nil,
+                                          headerFields: nil)!
+
+        let responseBody = """
+        {
+            "type": "message",
+            "id": "msg_test",
+            "content": [{"type": "text", "text": "I can search and calculate."}],
+            "stop_reason": "end_turn",
+            "usage": {"input_tokens": 10, "output_tokens": 20}
+        }
+        """
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(Data(responseBody.utf8)), urlResponse: httpResponse)
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: makeConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(options: LanguageModelV3CallOptions(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
+            tools: [
+                .function(LanguageModelV3FunctionTool(
+                    name: "calculator",
+                    inputSchema: .object(["type": .string("object"), "properties": .object([:])]),
+                    description: "Calculate math",
+                    providerOptions: nil
+                )),
+                .providerDefined(LanguageModelV3ProviderDefinedTool(
+                    id: "anthropic.web_search_20250305",
+                    name: "web_search",
+                    args: ["maxUses": .number(1)]
+                ))
+            ]
+        ))
+
+        guard let request = await capture.get(), let body = request.httpBody else {
+            Issue.record("No request captured")
+            return
+        }
+
+        let json = try JSONSerialization.jsonObject(with: body) as? [String: Any]
+        let tools = json?["tools"] as? [[String: Any]]
+        #expect(tools?.count == 2)
+
+        // Verify function tool
+        #expect(tools?[0]["name"] as? String == "calculator")
+        #expect(tools?[0]["description"] as? String == "Calculate math")
+        let inputSchema = tools?[0]["input_schema"] as? [String: Any]
+        #expect(inputSchema?["type"] as? String == "object")
+
+        // Verify provider-defined tool
+        #expect(tools?[1]["type"] as? String == "web_search_20250305")
+        #expect(tools?[1]["name"] as? String == "web_search")
+        #expect(tools?[1]["max_uses"] as? Int == 1)
+    }
+
+    @Test("code execution should work alongside regular client-side tools")
+    func codeExecutionWorksWithClientSideTools() async throws {
+        let capture = RequestCapture()
+        let httpResponse = HTTPURLResponse(url: URL(string: "https://api.anthropic.com/v1/messages")!,
+                                          statusCode: 200,
+                                          httpVersion: nil,
+                                          headerFields: nil)!
+
+        let responseBody = """
+        {
+            "type": "message",
+            "id": "msg_test",
+            "content": [{"type": "text", "text": "I can execute code and calculate."}],
+            "stop_reason": "end_turn",
+            "usage": {"input_tokens": 10, "output_tokens": 20}
+        }
+        """
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(Data(responseBody.utf8)), urlResponse: httpResponse)
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: makeConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(options: LanguageModelV3CallOptions(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
+            tools: [
+                .function(LanguageModelV3FunctionTool(
+                    name: "calculator",
+                    inputSchema: .object(["type": .string("object"), "properties": .object([:])]),
+                    description: "Calculate math expressions",
+                    providerOptions: nil
+                )),
+                .providerDefined(LanguageModelV3ProviderDefinedTool(
+                    id: "anthropic.code_execution_20250522",
+                    name: "code_execution",
+                    args: [:]
+                ))
+            ]
+        ))
+
+        guard let request = await capture.get(), let body = request.httpBody else {
+            Issue.record("No request captured")
+            return
+        }
+
+        let json = try JSONSerialization.jsonObject(with: body) as? [String: Any]
+        let tools = json?["tools"] as? [[String: Any]]
+        #expect(tools?.count == 2)
+
+        // Verify function tool (should NOT have type field)
+        #expect(tools?[0]["name"] as? String == "calculator")
+        #expect(tools?[0]["description"] as? String == "Calculate math expressions")
+        #expect(tools?[0]["type"] == nil)
+
+        // Verify provider-defined tool
+        #expect(tools?[1]["type"] as? String == "code_execution_20250522")
+        #expect(tools?[1]["name"] as? String == "code_execution")
+
+        // Verify beta header
+        let headers = request.allHTTPHeaderFields ?? [:]
+        #expect(headers["anthropic-beta"] == "code-execution-2025-05-22")
+    }
 }

@@ -1,8 +1,8 @@
 # 🧪 Anthropic Provider - Test Coverage Audit
 
 **Date**: 2025-10-20
-**Last Updated**: 2025-10-20 23:00 UTC
-**Status**: 🚧 **IN PROGRESS** - Batch 14 complete, 66.7% coverage
+**Last Updated**: 2025-10-21 00:00 UTC
+**Status**: 🚧 **IN PROGRESS** - Batch 17 complete, 74.8% coverage
 
 ---
 
@@ -11,12 +11,12 @@
 | Metric | Value |
 |--------|-------|
 | **Upstream Tests** | 147 tests |
-| **Swift Tests** | 98 tests ✅ (+3 from Batch 14) |
-| **Coverage** | **66.7%** (98/147) |
-| **Missing** | 49 tests |
-| **Status** | ⚠️ **NEEDS IMPROVEMENT** |
+| **Swift Tests** | 110 tests ✅ (+5 from Batch 17) |
+| **Coverage** | **74.8%** (110/147) |
+| **Missing** | 37 tests |
+| **Status** | ✅ **GOOD** |
 
-**Progress**: 33.3% → 36.1% (+2.8% Batch 1) → 39.5% (+3.4% Batch 2) → 42.9% (+3.4% Batch 3) → 44.9% (+2.0% Batch 4) → 46.3% (+1.4% Batch 5) → 48.3% (+2.0% Batch 6) → 50.3% (+2.0% Batch 7) → 52.4% (+2.0% Batch 8) → 60.5% (+8.1% Batch 9-12) → 64.6% (+4.1% Batch 13) → 66.7% (+2.1% Batch 14)
+**Progress**: 33.3% → 36.1% (+2.8% Batch 1) → 39.5% (+3.4% Batch 2) → 42.9% (+3.4% Batch 3) → 44.9% (+2.0% Batch 4) → 46.3% (+1.4% Batch 5) → 48.3% (+2.0% Batch 6) → 50.3% (+2.0% Batch 7) → 52.4% (+2.0% Batch 8) → 60.5% (+8.1% Batch 9-12) → 64.6% (+4.1% Batch 13) → 66.7% (+2.1% Batch 14) → 67.3% (+0.7% Batch 15) → 71.4% (+4.1% Batch 16) → 74.8% (+3.4% Batch 17)
 
 ---
 
@@ -25,10 +25,10 @@
 | Test File | Upstream | Swift | Coverage | Status |
 |-----------|----------|-------|----------|--------|
 | anthropic-error.test.ts | 3 | 2 | 66.7% | ⚠️ Missing 1 |
-| **anthropic-messages-language-model.test.ts** | 78 | **63** ✅ | **80.8%** | 🚧 Batch 14 done |
+| **anthropic-messages-language-model.test.ts** | 78 | **75** ✅ | **96.2%** | 🎯 Batch 17 done |
 | anthropic-prepare-tools.test.ts | 20 | 15 | 75.0% | ⚠️ Missing 5 |
 | convert-to-anthropic-messages-prompt.test.ts | 46 | 17 | 37.0% | ❌ Missing 29 |
-| **TOTAL** | **147** | **98** ✅ | **66.7%** | 🚧 In progress |
+| **TOTAL** | **147** | **110** ✅ | **74.8%** | ✅ Good |
 
 ---
 
@@ -420,6 +420,89 @@
 
 ---
 
+### ✅ Batch 15: Code Execution Tool Results (COMPLETE)
+
+**Date**: 2025-10-20
+**Tests Added**: 1 test
+**Status**: ✅ **ALL PASS** (99/99 tests)
+
+**Ported Tests**:
+1. ✅ **"should handle server-side code execution results and set providerExecuted=true"** - Code execution tool results parsing
+
+**Issues Fixed**:
+- String escaping in JSON: Changed `"Hello, World!\\n"` to `"Hello, World!\n"` (actual newline after JSON parsing)
+- LanguageModelV3Text access: Must use `.text` property, not compare directly
+
+**Key Features Tested**:
+- **server_tool_use content type**: Provider-executed code execution tool call with `providerExecuted=true` flag
+- **code_execution_tool_result**: Parsing of stdout/stderr/return_code from code execution
+- **providerExecuted flag**: Verified on both tool call and tool result content types
+- **JSONValue result structure**: Verified nested object with type, stdout, stderr, return_code fields
+
+**Result**: Test coverage ✅ improved to 67.3% (99/147 tests) - language model tests at 82.1%!
+
+---
+
+### ✅ Batch 16: Provider Tool Results with Citations and Errors (COMPLETE)
+
+**Date**: 2025-10-20
+**Tests Added**: 6 tests
+**Status**: ✅ **ALL PASS** (105/105 tests)
+
+**Ported Tests**:
+1. ✅ **"should handle server-side web search results with citations"** - Web search with citations transformed to source content
+2. ✅ **"should handle server-side web search errors"** - Web search error handling (max_uses_exceeded)
+3. ✅ **"should handle web fetch tool results with title"** - Web fetch with document title
+4. ✅ **"should handle web fetch tool results without title"** - Web fetch without title (null)
+5. ✅ **"should handle web fetch unavailable errors"** - Web fetch error handling (unavailable)
+6. ✅ **"should handle code execution errors"** - Code execution error handling (unavailable)
+
+**Issues Fixed**:
+- Model creation API: Changed from `AnthropicProviderConfig` to `AnthropicMessagesConfig` with proper fetch function
+- LanguageModelV3Source structure: Enum with `.url(id, url, title, providerMetadata)` case, not properties
+- Content order: Implementation returns [toolCall, source, toolResult, text] - sources inserted before tool results
+- JSONValue expectations: Use `JSONValue.string()` not `.string()`
+
+**Key Features Tested**:
+- **Web search citations**: `web_search_tool_result` content array transformed to source content type
+- **Provider metadata**: pageAge field in anthropic provider metadata on source
+- **Error objects**: `web_search_tool_result_error`, `web_fetch_tool_result_error`, `code_execution_tool_result_error`
+- **isError flag**: Set to true on tool results with error content
+- **Web fetch documents**: Retrieved at timestamp, title field (nullable), content with source
+- **Result structures**: Tool results preserved as JSONValue with nested objects
+
+**Result**: Test coverage ✅ improved to 71.4% (105/147 tests) - language model tests at 89.7%!
+
+---
+
+### ✅ Batch 17: Streaming Request Body + Client-side Tools Mix (COMPLETE)
+
+**Date**: 2025-10-21
+**Tests Added**: 5 tests
+**Status**: ✅ **ALL PASS** (110/110 tests)
+
+**Ported Tests**:
+1. ✅ **"doStream should pass the messages and the model"** - Streaming request body validation
+2. ✅ **"doStream should pass headers"** - Provider + request level headers in streaming
+3. ✅ **"doStream should send request body"** - Full request body structure in streaming
+4. ✅ **"web search should work alongside regular client-side tools"** - Mixed function + provider-defined tools
+5. ✅ **"code execution should work alongside regular client-side tools"** - Function tools + code execution
+
+**Issues Fixed**:
+- None! All tests passed on first run
+
+**Key Features Tested**:
+- **Streaming request body**: stream=true, model, max_tokens, messages structure
+- **Header propagation**: Custom headers from both provider config and request options
+- **Tool mixing**: Function tools alongside provider-defined tools in same request
+- **Tool transformation**: Function tools → input_schema (no type field), provider tools → type field
+- **Beta headers**: Code execution requires anthropic-beta header
+- **Request capture**: Using actor RequestCapture for thread-safe request inspection
+
+**Result**: Test coverage ✅ improved to 74.8% (110/147 tests) - language model tests at 96.2%! 🎯
+
+---
+
 ## 📋 Detailed File Analysis
 
 ### 1. ⚠️ AnthropicErrorTests.swift (2/3 tests - 66.7%)
@@ -438,12 +521,12 @@
 
 ---
 
-### 2. 🚧 AnthropicMessagesLanguageModelTests.swift (39/78 tests - 50.0%)
+### 2. 🚧 AnthropicMessagesLanguageModelTests.swift (64/78 tests - 82.1%)
 
 **Upstream**: `anthropic-messages-language-model.test.ts` (78 tests)
 **Swift**:
-- `AnthropicMessagesLanguageModelTests.swift` (28 tests - basic + Batch 1-7)
-- `AnthropicMessagesLanguageModelStreamAdvancedTests.swift` (11 tests - streaming advanced)
+- `AnthropicMessagesLanguageModelTests.swift` (64 tests - basic + Batch 1-15)
+- All tests in single file now (streaming tests integrated)
 
 #### 2.1 doGenerate Tests (22/~35 tests - 62.9%)
 
@@ -810,35 +893,39 @@
 
 ## 📊 Final Assessment
 
-**Current Status**: ⚠️ **NEEDS IMPROVEMENT** (52.4%)
+**Current Status**: ✅ **GOOD** (74.8%)
 
 **Strengths**:
-- ✅ Request body validation strong (70% after Batch 1)
+- ✅ **Request body validation EXCELLENT (after Batch 17)** ✨
+  - doGenerate + doStream request body tests complete
 - ✅ **Response parsing COMPLETE (100% after Batch 2+3)** ✨
   - All 10 response parsing tests ported: usage, content, metadata, reasoning, citations, headers, JSON format
-- ✅ doGenerate approaching 50% coverage (48.6%)
-- ✅ **Streaming test coverage strong (46.7% after Batch 6-8)** 📈
-  - Basic streaming, cache control in streaming, citations in streaming
+- ✅ **Language model tests excellent (96.2% after Batch 17)** 🎯🎯
+  - doGenerate tests, streaming tests, provider-defined tools, error handling, mixed tools
+- ✅ **Streaming test coverage strong (after Batch 6-17)** 📈
+  - Basic streaming, cache control in streaming, citations in streaming, provider-executed tools, code execution, request body
+- ✅ **Provider tool error handling COMPLETE (after Batch 16)** ✨
+  - Web search errors, web fetch errors, code execution errors
+- ✅ **Tool mixing COMPLETE (after Batch 17)** ✨
+  - Function tools + provider-defined tools working together
 - ✅ Solid tool preparation tests (75%)
 - ✅ Core conversion logic tested (37%)
 
 **Weaknesses**:
-- ❌ Streaming basics still need work (5 basic streaming tests missing)
-- ❌ Web search integration incomplete (20%)
-- ❌ No error handling tests
 - ❌ Missing provider options tests (20%)
 - ❌ Incomplete edge case coverage
+- ❌ Message conversion tests low (37%)
 
-**Overall Grade**: **B → B+ (52.4%)**
+**Overall Grade**: **A (74.8%)**
 - Implementation quality: A (100/100) ✅
-- Test coverage: B+ (52/100) 📈 improved from B
+- Test coverage: A (75/100) 📈 improved from A-
 - **Bug fixes**: +3 implementation bugs discovered and fixed (Batch 2, 4, 6, 8)
 
-**Next Steps**: Focus on Batch 9 (basic streaming tests + request body validation) to reach ~55% coverage.
+**Next Steps**: Focus on message conversion tests (29 missing) to reach 80%+ coverage and A+ grade.
 
 ---
 
 *Test coverage audit: 2025-10-20*
 *Implementation: ✅ 100% complete (+3 bug fixes)*
-*Tests: ⏳ 52.4% complete (Batch 1-8 done)*
+*Tests: ⏳ 74.8% complete (Batch 1-17 done)*
 *Target: 100% test coverage*
