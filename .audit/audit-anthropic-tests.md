@@ -1,8 +1,8 @@
 # 🧪 Anthropic Provider - Test Coverage Audit
 
 **Date**: 2025-10-20
-**Last Updated**: 2025-10-20 22:30 UTC
-**Status**: 🚧 **IN PROGRESS** - Batch 13 complete, 64.6% coverage
+**Last Updated**: 2025-10-20 23:00 UTC
+**Status**: 🚧 **IN PROGRESS** - Batch 14 complete, 66.7% coverage
 
 ---
 
@@ -11,12 +11,12 @@
 | Metric | Value |
 |--------|-------|
 | **Upstream Tests** | 147 tests |
-| **Swift Tests** | 95 tests ✅ (+6 from Batch 13) |
-| **Coverage** | **64.6%** (95/147) |
-| **Missing** | 52 tests |
+| **Swift Tests** | 98 tests ✅ (+3 from Batch 14) |
+| **Coverage** | **66.7%** (98/147) |
+| **Missing** | 49 tests |
 | **Status** | ⚠️ **NEEDS IMPROVEMENT** |
 
-**Progress**: 33.3% → 36.1% (+2.8% Batch 1) → 39.5% (+3.4% Batch 2) → 42.9% (+3.4% Batch 3) → 44.9% (+2.0% Batch 4) → 46.3% (+1.4% Batch 5) → 48.3% (+2.0% Batch 6) → 50.3% (+2.0% Batch 7) → 52.4% (+2.0% Batch 8) → 60.5% (+8.1% Batch 9-12) → 64.6% (+4.1% Batch 13)
+**Progress**: 33.3% → 36.1% (+2.8% Batch 1) → 39.5% (+3.4% Batch 2) → 42.9% (+3.4% Batch 3) → 44.9% (+2.0% Batch 4) → 46.3% (+1.4% Batch 5) → 48.3% (+2.0% Batch 6) → 50.3% (+2.0% Batch 7) → 52.4% (+2.0% Batch 8) → 60.5% (+8.1% Batch 9-12) → 64.6% (+4.1% Batch 13) → 66.7% (+2.1% Batch 14)
 
 ---
 
@@ -25,10 +25,10 @@
 | Test File | Upstream | Swift | Coverage | Status |
 |-----------|----------|-------|----------|--------|
 | anthropic-error.test.ts | 3 | 2 | 66.7% | ⚠️ Missing 1 |
-| **anthropic-messages-language-model.test.ts** | 78 | **60** ✅ | **76.9%** | 🚧 Batch 13 done |
+| **anthropic-messages-language-model.test.ts** | 78 | **63** ✅ | **80.8%** | 🚧 Batch 14 done |
 | anthropic-prepare-tools.test.ts | 20 | 15 | 75.0% | ⚠️ Missing 5 |
 | convert-to-anthropic-messages-prompt.test.ts | 46 | 17 | 37.0% | ❌ Missing 29 |
-| **TOTAL** | **147** | **95** ✅ | **64.6%** | 🚧 In progress |
+| **TOTAL** | **147** | **98** ✅ | **66.7%** | 🚧 In progress |
 
 ---
 
@@ -392,6 +392,31 @@
 - **User location**: Full and partial location objects with proper field mapping
 
 **Result**: Test coverage ✅ improved to 64.6% (95/147 tests)
+
+---
+
+### ✅ Batch 14: Provider-Defined Tools (COMPLETE)
+
+**Date**: 2025-10-20
+**Tests Added**: 3 tests
+**Status**: ✅ **ALL PASS** (98/98 tests)
+
+**Ported Tests**:
+1. ✅ **"should handle web search with minimal user location (country only)"** - Web search with country-only location
+2. ✅ **"should send request body with web fetch tool"** - Web fetch tool configuration
+3. ✅ **"should enable server-side code execution when using anthropic.tools.codeExecution_20250522"** - Code execution tool with beta header
+
+**Issues Fixed**:
+- All tests passed on first run - no compilation errors
+- Proper beta header verification for code execution tool
+
+**Key Features Tested**:
+- **Web search minimal location**: Country-only user location (no city, region, timezone)
+- **Web fetch tool**: Basic provider-defined tool transformation (anthropic.web_fetch_20250910)
+- **Code execution tool**: Provider-defined tool with beta header (code-execution-2025-05-22)
+- **Request body validation**: Proper tool type and name mapping
+
+**Result**: Test coverage ✅ improved to 66.7% (98/147 tests) - language model tests at 80.8%!
 
 ---
 
