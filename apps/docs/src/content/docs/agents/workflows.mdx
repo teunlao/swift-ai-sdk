@@ -1,5 +1,277 @@
 ---
 title: Workflow Patterns
+description: Learn workflow patterns for building reliable agents with the AI SDK.
+---
+
+_This page adapts the original AI SDK documentation: [Workflow Patterns](https://ai-sdk.dev/docs/agents/workflows)._ 
+
+# Workflow Patterns
+
+Combine the building blocks from the [overview](/docs/agents/overview) with these patterns to add structure and reliability to your agents:
+
+- [Sequential Processing](#sequential-processing-chains) - Steps executed in order
+- [Parallel Processing](#parallel-processing) - Independent tasks run simultaneously
+- [Evaluation/Feedback Loops](#evaluator-optimizer) - Results checked and improved iteratively
+- [Orchestration](#orchestrator-worker) - Coordinating multiple components
+- [Routing](#routing) - Directing work based on context
+
+## Choose Your Approach
+
+Consider these key factors:
+
+- **Flexibility vs Control** - How much freedom does the LLM need vs how tightly you must constrain its actions?
+- **Error Tolerance** - What are the consequences of mistakes in your use case?
+- **Cost Considerations** - More complex systems typically mean more LLM calls and higher costs
+- **Maintenance** - Simpler architectures are easier to debug and modify
+
+**Start with the simplest approach that meets your needs**. Add complexity only when required by:
+
+1. Breaking down tasks into clear steps
+2. Adding tools for specific capabilities
+3. Implementing feedback loops for quality control
+4. Introducing multiple agents for complex workflows
+
+Let's look at examples of these patterns in action.
+
+## Patterns with Examples
+
+These patterns, adapted from [Anthropic's guide on building effective agents](https://www.anthropic.com/research/building-effective-agents), serve as building blocks you can combine to create comprehensive workflows. Each pattern addresses specific aspects of task execution. Combine them thoughtfully to build reliable solutions for complex problems.
+
+## Sequential Processing (Chains)
+
+The simplest workflow pattern executes steps in a predefined order. Each step's output becomes input for the next step, creating a clear chain of operations. Use this pattern for tasks with well-defined sequences, like content generation pipelines or data transformation processes.
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+import AISDKProviderUtils
+
+struct MarketingResult { let copy: String; let quality: JSONValue }
+
+func generateMarketingCopy(_ input: String) async throws -> MarketingResult {
+  let copy = try await generateText(
+    model: openai("gpt-5"),
+    prompt: "Write persuasive marketing copy for: \(input). Focus on benefits and emotional appeal."
+  ).text
+
+  let qualitySchema = FlexibleSchema(jsonSchema(.object([
+    "type": .string("object"),
+    "properties": .object([
+      "hasCallToAction": .object(["type": .string("boolean")]),
+      "emotionalAppeal": .object(["type": .string("number")]),
+      "clarity": .object(["type": .string("number")])
+    ])
+  ])))
+  let spec = Output.object(schema: qualitySchema)
+
+  let evaluated = try await generateText(
+    model: openai("gpt-5"),
+    experimentalOutput: spec,
+    prompt: """
+    Evaluate this marketing copy for:
+    1. Presence of call to action (true/false)
+    2. Emotional appeal (1-10)
+    3. Clarity (1-10)
+
+    Copy to evaluate: \(copy)
+    """
+  )
+  let quality = try evaluated.experimentalOutput
+
+  let hasCTA = quality.asObject?["hasCallToAction"]?.asBool ?? false
+  let emotional = quality.asObject?["emotionalAppeal"]?.asNumber ?? 0
+  let clarity = quality.asObject?["clarity"]?.asNumber ?? 0
+
+  if !hasCTA || emotional < 7 || clarity < 7 {
+    let improved = try await generateText(
+      model: openai("gpt-5"),
+      prompt: "Rewrite this marketing copy with a clear CTA, stronger emotional appeal, and improved clarity. Original: \(copy)"
+    )
+    return .init(copy: improved.text, quality: quality)
+  }
+
+  return .init(copy: copy, quality: quality)
+}
+```
+
+## Routing
+
+This pattern lets the model decide which path to take through a workflow based on context and intermediate results. The model acts as an intelligent router, directing the flow of execution between different branches of your workflow. Use this when handling varied inputs that require different processing approaches. In the example below, the first LLM call's results determine the second call's model size and system prompt.
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+import AISDKProviderUtils
+
+func handleCustomerQuery(_ query: String) async throws -> (String, JSONValue) {
+  let schema = FlexibleSchema(jsonSchema(.object([
+    "type": .string("object"),
+    "properties": .object([
+      "reasoning": .object(["type": .string("string")]),
+      "type": .object(["type": .string("string")]),
+      "complexity": .object(["type": .string("string")])
+    ])
+  ])))
+  let spec = Output.object(schema: schema)
+  let cls = try await generateText(
+    model: openai("gpt-5"),
+    experimentalOutput: spec,
+    prompt: "Classify this customer query and explain your reasoning: \(query)"
+  )
+  let c = try cls.experimentalOutput
+  let type = c.asObject?["type"]?.asString ?? "general"
+  let complexity = c.asObject?["complexity"]?.asString ?? "simple"
+
+  let systemMap: [String: String] = [
+    "general": "You are an expert customer service agent handling general inquiries.",
+    "refund": "You are a customer service agent specializing in refund requests. Follow company policy and collect necessary information.",
+    "technical": "You are a technical support specialist with deep product knowledge. Focus on clear step-by-step troubleshooting."
+  ]
+  let model = complexity == "simple" ? openai("gpt-4.1-mini") : openai("o4-mini")
+  let response = try await generateText(model: model, system: systemMap[type], prompt: query)
+  return (response.text, c)
+}
+```
+
+## Parallel Processing
+
+Break down tasks into independent subtasks that execute simultaneously. This pattern uses parallel execution to improve efficiency while maintaining the benefits of structured workflows. For example, analyze multiple documents or process different aspects of a single input concurrently (like code review).
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+import AISDKProviderUtils
+
+struct Review: Sendable { let kind: String; let data: JSONValue }
+
+func parallelCodeReview(_ code: String) async throws -> (reviews: [Review], summary: String) {
+  let reviewSchema = FlexibleSchema(jsonSchema(.object(["additionalProperties": .bool(true)])))
+  let spec = Output.object(schema: reviewSchema)
+
+  async let security = generateText(model: openai("gpt-5"), experimentalOutput: spec, system: "Security expert.", prompt: "Review:\n\(code)")
+  async let performance = generateText(model: openai("gpt-5"), experimentalOutput: spec, system: "Performance expert.", prompt: "Review:\n\(code)")
+  async let quality = generateText(model: openai("gpt-5"), experimentalOutput: spec, system: "Code quality expert.", prompt: "Review:\n\(code)")
+
+  let r1 = try Review(kind: "security", data: try security.experimentalOutput)
+  let r2 = try Review(kind: "performance", data: try performance.experimentalOutput)
+  let r3 = try Review(kind: "maintainability", data: try quality.experimentalOutput)
+  let reviews = [r1, r2, r3]
+
+  let summary = try await generateText(
+    model: openai("gpt-5"),
+    system: "You are a technical lead summarizing multiple code reviews.",
+    prompt: "Synthesize these code review results into a concise summary with key actions:\n\(reviews)"
+  ).text
+  return (reviews, summary)
+}
+```
+
+## Orchestrator-Worker
+
+A primary model (orchestrator) coordinates the execution of specialized workers. Each worker optimizes for a specific subtask, while the orchestrator maintains overall context and ensures coherent results. This pattern excels at complex tasks requiring different types of expertise or processing.
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+import AISDKProviderUtils
+
+func implementFeature(_ feature: String) async throws -> (plan: JSONValue, changes: [JSONValue]) {
+  let planSpec = Output.object(schema: FlexibleSchema(jsonSchema(.object(["additionalProperties": .bool(true)]))))
+  let planText = try await generateText(
+    model: openai("o4-mini"),
+    experimentalOutput: planSpec,
+    system: "You are a senior software architect planning feature implementations.",
+    prompt: "Analyze this feature request and create an implementation plan: \(feature)"
+  )
+  let plan = try planText.experimentalOutput
+  // Worker steps would implement each file change based on plan.files
+  return (plan, [])
+}
+```
+
+## Evaluator-Optimizer
+
+Add quality control to workflows with dedicated evaluation steps that assess intermediate results. Based on the evaluation, the workflow proceeds, retries with adjusted parameters, or takes corrective action. This creates robust workflows capable of self-improvement and error recovery.
+
+```swift
+import { generateText, generateObject } from 'ai';
+import { z } from 'zod';
+
+async function translateWithFeedback(text: string, targetLanguage: string) {
+  let currentTranslation = '';
+  let iterations = 0;
+  const MAX_ITERATIONS = 3;
+
+  // Initial translation
+  const { text: translation } = await generateText({
+    model: 'openai/gpt-4o-mini', // use small model for first attempt
+    system: 'You are an expert literary translator.',
+    prompt: `Translate this text to ${targetLanguage}, preserving tone and cultural nuances:
+    ${text}`,
+  });
+
+  currentTranslation = translation;
+
+  // Evaluation-optimization loop
+  while (iterations < MAX_ITERATIONS) {
+    // Evaluate current translation
+    const { object: evaluation } = await generateObject({
+      model: 'openai/gpt-4o', // use a larger model to evaluate
+      schema: z.object({
+        qualityScore: z.number().min(1).max(10),
+        preservesTone: z.boolean(),
+        preservesNuance: z.boolean(),
+        culturallyAccurate: z.boolean(),
+        specificIssues: z.array(z.string()),
+        improvementSuggestions: z.array(z.string()),
+      }),
+      system: 'You are an expert in evaluating literary translations.',
+      prompt: `Evaluate this translation:
+
+      Original: ${text}
+      Translation: ${currentTranslation}
+
+      Consider:
+      1. Overall quality
+      2. Preservation of tone
+      3. Preservation of nuance
+      4. Cultural accuracy`,
+    });
+
+    // Check if quality meets threshold
+    if (
+      evaluation.qualityScore >= 8 &&
+      evaluation.preservesTone &&
+      evaluation.preservesNuance &&
+      evaluation.culturallyAccurate
+    ) {
+      break;
+    }
+
+    // Generate improved translation based on feedback
+    const { text: improvedTranslation } = await generateText({
+      model: 'openai/gpt-4o', // use a larger model
+      system: 'You are an expert literary translator.',
+      prompt: `Improve this translation based on the following feedback:
+      ${evaluation.specificIssues.join('\n')}
+      ${evaluation.improvementSuggestions.join('\n')}
+
+      Original: ${text}
+      Current Translation: ${currentTranslation}`,
+    });
+
+    currentTranslation = improvedTranslation;
+    iterations++;
+  }
+
+  return {
+    finalTranslation: currentTranslation,
+    iterationsRequired: iterations,
+  };
+}
+```
+---
+title: Workflow Patterns
 description: Learn workflow patterns for building reliable agents with the Swift AI SDK.
 ---
 
@@ -31,9 +303,11 @@ Start with the simplest approach that meets your needs. Add complexity only when
 3. Implementing feedback loops for quality control
 4. Introducing multiple agents for complex workflows
 
-The examples below show these patterns in action, translated to Swift.
+The examples below translate the original patterns to Swift.
 
 ## Sequential Processing (Chains)
+
+The simplest workflow pattern executes steps in a predefined order. Each step's output becomes input for the next step, creating a clear chain of operations. Use this pattern for tasks with well-defined sequences, like content generation pipelines or data transformation processes.
 
 ```swift
 import SwiftAISDK
@@ -43,11 +317,13 @@ import AISDKProviderUtils
 struct MarketingResult { let copy: String; let quality: JSONValue }
 
 func generateMarketingCopy(_ input: String) async throws -> MarketingResult {
+  // Step 1: generate copy
   let copy = try await generateText(
     model: openai("gpt-5"),
     prompt: "Write persuasive marketing copy for: \(input). Focus on benefits and emotional appeal."
   ).text
 
+  // Step 2: evaluate copy as JSON
   let qualitySchema = FlexibleSchema(jsonSchema(.object([
     "type": .string("object"),
     "properties": .object([
@@ -57,14 +333,20 @@ func generateMarketingCopy(_ input: String) async throws -> MarketingResult {
     ])
   ])))
   let spec = Output.object(schema: qualitySchema)
-
-  let quality = try await generateText(
+  let qualityRes = try await generateText(
     model: openai("gpt-5"),
     experimentalOutput: spec,
-    prompt: "Evaluate this marketing copy for CTA, emotional appeal (1-10), clarity (1-10). Copy: \(copy)"
-  )
+    prompt: """
+    Evaluate this marketing copy for:
+    1. Presence of call to action (true/false)
+    2. Emotional appeal (1-10)
+    3. Clarity (1-10)
 
-  let q = try quality.experimentalOutput
+    Copy to evaluate: \(copy)
+    """
+  )
+  let q = try qualityRes.experimentalOutput
+
   let needRewrite = (q.asObject?["hasCallToAction"]?.asBool == false)
     || (q.asObject?["emotionalAppeal"]?.asNumber ?? 0) < 7
     || (q.asObject?["clarity"]?.asNumber ?? 0) < 7
@@ -72,15 +354,17 @@ func generateMarketingCopy(_ input: String) async throws -> MarketingResult {
   if needRewrite {
     let improved = try await generateText(
       model: openai("gpt-5"),
-      prompt: "Rewrite to add clear CTA, stronger emotional appeal, and clarity. Original: \(copy)"
+      prompt: "Rewrite this marketing copy with a clear CTA, stronger emotional appeal, and improved clarity. Original: \(copy)"
     )
-    return .init(copy: improved.text, quality: q)
+    return MarketingResult(copy: improved.text, quality: q)
   }
-  return .init(copy: copy, quality: q)
+  return MarketingResult(copy: copy, quality: q)
 }
 ```
 
 ## Routing
+
+This pattern lets the model decide which path to take through a workflow based on context and intermediate results. The model acts as an intelligent router, directing the flow of execution between different branches of your workflow. Use this when handling varied inputs that require different processing approaches. In the example below, the first LLM call's results determine the second call's model size and system prompt.
 
 ```swift
 import SwiftAISDK
@@ -119,6 +403,8 @@ func handleCustomerQuery(_ query: String) async throws -> (String, JSONValue) {
 
 ## Parallel Processing
 
+Break down tasks into independent subtasks that execute simultaneously. This pattern uses parallel execution to improve efficiency while maintaining the benefits of structured workflows. For example, analyze multiple documents or process different aspects of a single input concurrently (like code review).
+
 ```swift
 import SwiftAISDK
 import OpenAIProvider
@@ -142,13 +428,15 @@ func parallelCodeReview(_ code: String) async throws -> (reviews: [Review], summ
   let summary = try await generateText(
     model: openai("gpt-5"),
     system: "You are a technical lead summarizing multiple code reviews.",
-    prompt: "Synthesize these results into key actions:\n\(reviews)"
+    prompt: "Synthesize these code review results into a concise summary with key actions:\n\(reviews)"
   ).text
   return (reviews, summary)
 }
 ```
 
 ## Orchestrator-Worker
+
+A primary model (orchestrator) coordinates the execution of specialized workers. Each worker optimizes for a specific subtask, while the orchestrator maintains overall context and ensures coherent results. This pattern excels at complex tasks requiring different types of expertise or processing.
 
 ```swift
 import SwiftAISDK
@@ -164,12 +452,14 @@ func implementFeature(_ feature: String) async throws -> (plan: JSONValue, chang
     prompt: "Analyze this feature request and create an implementation plan: \(feature)"
   )
   let plan = try planText.experimentalOutput
-  // Workers could implement per-file changes; omitted for brevity.
+  // Workers would implement per-file changes; omitted for brevity.
   return (plan, [])
 }
 ```
 
 ## Evaluator-Optimizer
+
+Add quality control to workflows with dedicated evaluation steps that assess intermediate results. Based on the evaluation, the workflow proceeds, retries with adjusted parameters, or takes corrective action. This creates robust workflows capable of self-improvement and error recovery.
 
 ```swift
 import SwiftAISDK
