@@ -1,0 +1,278 @@
+---
+title: Image Generation
+description: Learn how to generate images with the AI SDK.
+---
+
+_This page adapts the original AI SDK documentation: [Image Generation](https://ai-sdk.dev/docs/ai-sdk-core/image-generation)._ 
+
+> Warning
+> Image generation is an experimental feature.
+
+The AI SDK provides the [`generateImage`](/docs/reference/ai-sdk-core/generate-image)
+function to generate images based on a given prompt using an image model.
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+
+let result = try await generateImage(
+  model: openai.image("dall-e-3"),
+  prompt: "Santa Claus driving a Cadillac"
+)
+
+let image = result.image
+```
+
+You can access the image data using the `base64` or `data` helpers:
+
+```swift
+let base64 = image.base64    // Base64 image data
+let data = image.data        // `Data` binary payload
+```
+
+## Settings
+
+### Size and Aspect Ratio
+
+Depending on the model, you can either specify the size or the aspect ratio.
+
+##### Size
+
+The size is specified as a string in the format `{width}x{height}`.
+Models only support a few sizes, and the supported sizes are different for each model and provider.
+
+```swift highlight="7"
+let sized = try await generateImage(
+  model: openai.image("dall-e-3"),
+  prompt: "Santa Claus driving a Cadillac",
+  size: "1024x1024"
+)
+```
+
+##### Aspect Ratio
+
+The aspect ratio is specified as a string in the format `{width}:{height}`.
+Models only support a few aspect ratios, and the supported aspect ratios are different for each model and provider.
+
+```swift highlight="7"
+import GoogleProvider
+
+let wide = try await generateImage(
+  model: GoogleProvider.image("imagen-3.0-generate-002"),
+  prompt: "Santa Claus driving a Cadillac",
+  aspectRatio: "16:9"
+)
+```
+
+### Generating Multiple Images
+
+`generateImage` also supports generating multiple images at once:
+
+```swift highlight="7"
+let multiple = try await generateImage(
+  model: openai.image("dall-e-2"),
+  prompt: "Santa Claus driving a Cadillac",
+  n: 4
+)
+
+let images = multiple.images
+```
+
+> Note
+> `generateImage` automatically issues additional calls (in parallel when supported) to satisfy `numberOfImages`.
+
+Each image model has an internal limit on how many images it can generate in a single API call. The AI SDK manages this automatically by batching requests appropriately when you request multiple images using the `numberOfImages` parameter. By default, the SDK uses provider-documented limits (for example, DALL-E 3 can only generate 1 image per call, while DALL-E 2 supports up to 10).
+
+If needed, you can override this behavior using the `maxImagesPerCall` setting when generating your image. This is particularly useful when working with new or custom models where the default batch size might not be optimal:
+
+```swift
+let forcedBatch = try await generateImage(
+  model: openai.image("dall-e-2"),
+  prompt: "Santa Claus driving a Cadillac",
+  maxImagesPerCall: 5,
+  n: 10
+)
+```
+
+### Providing a Seed
+
+You can provide a seed to the `generateImage` function to control the output of the image generation process.
+If supported by the model, the same seed will always produce the same image.
+
+```swift highlight="7"
+let seeded = try await generateImage(
+  model: openai.image("dall-e-3"),
+  prompt: "Santa Claus driving a Cadillac",
+  seed: 1_234_567_890
+)
+```
+
+### Provider-specific Settings
+
+Image models often have provider- or even model-specific settings.
+You can pass such settings to the `generateImage` function using the `providerOptions` parameter. The options for the provider become request body properties.
+
+```swift highlight="9"
+let vivid = try await generateImage(
+  model: openai.image("dall-e-3"),
+  prompt: "Santa Claus driving a Cadillac",
+  size: "1024x1024",
+  providerOptions: .object([
+    "openai": .object([
+      "style": .string("vivid"),
+      "quality": .string("hd")
+    ])
+  ])
+)
+```
+
+### Abort Signals and Timeouts
+
+`generateImage` accepts an optional `abortSignal` closure of type `@Sendable () -> Bool`
+that you can use to abort the image generation process or set a timeout.
+
+```swift highlight="7"
+let deadline = Date().addingTimeInterval(1)
+
+let timed = try await generateImage(
+  model: openai.image("dall-e-3"),
+  prompt: "Santa Claus driving a Cadillac",
+  abortSignal: { Date() >= deadline }
+)
+```
+
+### Custom Headers
+
+`generateImage` accepts an optional `headers` parameter of type `[String: String]`
+that you can use to add custom headers to the image generation request.
+
+```swift highlight="7"
+let withHeaders = try await generateImage(
+  model: openai.image("dall-e-3"),
+  prompt: "Santa Claus driving a Cadillac",
+  headers: ["X-Custom-Header": "custom-value"]
+)
+```
+
+### Warnings
+
+If the model returns warnings, e.g. for unsupported parameters, they will be available in the `warnings` property of the response.
+
+```swift
+let warned = try await generateImage(
+  model: openai.image("dall-e-3"),
+  prompt: "Santa Claus driving a Cadillac"
+)
+
+print(warned.warnings ?? [])
+```
+
+### Additional provider-specific metadata
+
+Some providers expose additional metadata for the result overall or per image.
+
+```swift
+let prompt = "Santa Claus driving a Cadillac"
+
+let generated = try await generateImage(
+  model: openai.image("dall-e-3"),
+  prompt: prompt
+)
+
+if let openAI = generated.providerMetadata["openai"],
+   let first = openAI.images.first,
+   case let .object(meta) = first,
+   case let .string(revised) = meta["revisedPrompt"] {
+  print(["prompt": prompt, "revised": revised])
+}
+```
+
+The outer key of the returned `providerMetadata` is the provider name. The inner values are the metadata. An `images` key is always present in the metadata and is an array with the same length as the top level `images` key.
+
+### Error Handling
+
+When `generateImage` cannot generate a valid image, it throws a [`AI_NoImageGeneratedError`](/docs/reference/ai-sdk-errors/ai-no-image-generated-error).
+
+This error occurs when the AI provider fails to generate an image. It can arise due to the following reasons:
+
+- The model failed to generate a response
+- The model generated a response that could not be parsed
+
+The error preserves the following information to help you log the issue:
+
+- `responses`: Metadata about the image model responses, including timestamp, model, and headers.
+- `cause`: The cause of the error. You can use this for more detailed error handling
+
+```swift
+import SwiftAISDK
+
+let promptText = "Santa Claus driving a Cadillac"
+
+do {
+  _ = try await generateImage(model: openai.image("dall-e-3"), prompt: promptText)
+} catch let error as NoImageGeneratedError {
+  print("NoImageGeneratedError")
+  print("Cause:", error.cause ?? "none")
+  print("Responses:", error.responses)
+}
+```
+
+## Generating Images with Language Models
+
+Some language models such as Google `gemini-2.5-flash-image-preview` support multi-modal outputs including images.
+With such models, you can access the generated images using the `files` property of the response.
+
+```swift
+import SwiftAISDK
+import GoogleProvider
+
+let result = try await generateText(
+  model: google("gemini-2.5-flash-image-preview"),
+  prompt: "Generate an image of a comic cat"
+)
+
+for file in result.files {
+  if file.mediaType.starts(with: "image/") {
+    // Access image data: file.base64(), file.data(), etc.
+  }
+}
+```
+
+## Image Models
+
+| Provider                                                                  | Model                                                        | Support sizes (`width x height`) or aspect ratios (`width : height`)                                                                                                |
+| ------------------------------------------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [xAI Grok](/providers/ai-sdk-providers/xai#image-models)                  | `grok-2-image`                                               | 1024x768 (default)                                                                                                                                                  |
+| [OpenAI](/providers/ai-sdk-providers/openai#image-models)                 | `gpt-image-1`                                                | 1024x1024, 1536x1024, 1024x1536                                                                                                                                     |
+| [OpenAI](/providers/ai-sdk-providers/openai#image-models)                 | `dall-e-3`                                                   | 1024x1024, 1792x1024, 1024x1792                                                                                                                                     |
+| [OpenAI](/providers/ai-sdk-providers/openai#image-models)                 | `dall-e-2`                                                   | 256x256, 512x512, 1024x1024                                                                                                                                         |
+| [Amazon Bedrock](/providers/ai-sdk-providers/amazon-bedrock#image-models) | `amazon.nova-canvas-v1:0`                                    | 320-4096 (multiples of 16), 1:4 to 4:1, max 4.2M pixels                                                                                                             |
+| [Fal](/providers/ai-sdk-providers/fal#image-models)                       | `fal-ai/flux/dev`                                            | 1:1, 3:4, 4:3, 9:16, 16:9, 9:21, 21:9                                                                                                                               |
+| [Fal](/providers/ai-sdk-providers/fal#image-models)                       | `fal-ai/flux-lora`                                           | 1:1, 3:4, 4:3, 9:16, 16:9, 9:21, 21:9                                                                                                                               |
+| [Fal](/providers/ai-sdk-providers/fal#image-models)                       | `fal-ai/fast-sdxl`                                           | 1:1, 3:4, 4:3, 9:16, 16:9, 9:21, 21:9                                                                                                                               |
+| [Fal](/providers/ai-sdk-providers/fal#image-models)                       | `fal-ai/flux-pro`                                            | 1:1, 3:4, 4:3, 9:16, 16:9, 9:21, 21:9                                                                                                                               |
+| [Fal](/providers/ai-sdk-providers/fal#image-models)                       | `fal-ai/flux-pro-1.1`                                        | 1:1, 3:4, 4:3, 9:16, 16:9, 9:21, 21:9                                                                                                                               |
+| [Google Vertex AI](/providers/ai-sdk-providers/google-vertex#image-models)| `imagen-3.0-generate-002`                                    | 16:9, 9:16, 1:1, 4:3, 3:4, 2:3, 3:2, 5:4, 4:5                                                                                                                       |
+| [Google Vertex AI](/providers/ai-sdk-providers/google-vertex#image-models)| `imagen-3.0-fast-generate-002`                              | 16:9, 9:16, 1:1, 4:3, 3:4, 2:3, 3:2, 5:4, 4:5                                                                                                                       |
+| [Google Vertex AI](/providers/ai-sdk-providers/google-vertex#image-models)| `imagen-2.0-generate-001`                                   | 1024x1024, 512x512                                                                                                                                                |
+| [Google Vertex AI](/providers/ai-sdk-providers/google-vertex#image-models)| `imagen-2.0-fast-generate-001`                              | 1024x1024, 512x512                                                                                                                                                |
+| [Stability AI](/providers/ai-sdk-providers/stability#image-models)        | `stable-image-ultra`                                         | 1:1, 2:3, 3:2, 3:4, 4:3, 5:4, 4:5, 9:16, 16:9, 1:2                                                                                                                  |
+| [Stability AI](/providers/ai-sdk-providers/stability#image-models)        | `stable-image-core`                                          | 1:1, 2:3, 3:2, 3:4, 4:3, 5:4, 4:5, 9:16, 16:9, 1:2                                                                                                                  |
+| [Stability AI](/providers/ai-sdk-providers/stability#image-models)        | `sd3.5-large`                                                | 1:1, 16:9, 9:16, 3:4, 4:3, 5:4, 4:5                                                                                                                                |
+| [Stability AI](/providers/ai-sdk-providers/stability#image-models)        | `sd3.5-large-turbo`                                          | 1:1, 16:9, 9:16, 3:4, 4:3, 5:4, 4:5                                                                                                                                |
+| [Stability AI](/providers/ai-sdk-providers/stability#image-models)        | `sd3.5-medium`                                               | 1:1, 16:9, 9:16, 3:4, 4:3, 5:4, 4:5                                                                                                                                |
+| [Stability AI](/providers/ai-sdk-providers/stability#image-models)        | `sd3.5-medium-turbo`                                         | 1:1, 16:9, 9:16, 3:4, 4:3, 5:4, 4:5                                                                                                                                |
+| [Stability AI](/providers/ai-sdk-providers/stability#image-models)        | `sd3-large`                                                  | 1:1, 16:9, 9:16, 3:4, 4:3, 5:4, 4:5                                                                                                                                |
+| [Stability AI](/providers/ai-sdk-providers/stability#image-models)        | `sd3-large-turbo`                                            | 1:1, 16:9, 9:16, 3:4, 4:3, 5:4, 4:5                                                                                                                                |
+| [Stability AI](/providers/ai-sdk-providers/stability#image-models)        | `stable-diffusion-xl-lightning`                             | 1:1, 16:9, 9:16                                                                                                                                                   |
+| [Stability AI](/providers/ai-sdk-providers/stability#image-models)        | `stable-diffusion-xl-base-1.0`                               | 1:1, 16:9, 9:16                                                                                                                                                   |
+| [Mistral](/providers/ai-sdk-providers/mistral#image-models)               | `mistral-small-latest`                                       | 1:1, 3:4, 4:3, 9:16, 16:9                                                                                                                                        |
+| [Mistral](/providers/ai-sdk-providers/mistral#image-models)               | `mistral-medium-latest`                                      | 1:1, 3:4, 4:3, 9:16, 16:9                                                                                                                                        |
+| [Mistral](/providers/ai-sdk-providers/mistral#image-models)               | `mistral-large-latest`                                       | 1:1, 3:4, 4:3, 9:16, 16:9                                                                                                                                        |
+| [Replicate](/providers/ai-sdk-providers/replicate#image-models)           | `black-forest-labs/flux-schnell`                             | 1:1, 3:4, 4:3, 9:16, 16:9, 9:21, 21:9                                                                                                                             |
+| [Replicate](/providers/ai-sdk-providers/replicate#image-models)           | `black-forest-labs/flux-pro`                                 | 1:1, 3:4, 4:3, 9:16, 16:9, 9:21, 21:9                                                                                                                             |
+| [Replicate](/providers/ai-sdk-providers/replicate#image-models)           | `stability-ai/stable-diffusion-xl`                           | 1:1, 16:9, 9:16                                                                                                                                                   |
+| [Replicate](/providers/ai-sdk-providers/replicate#image-models)           | `stability-ai/stable-diffusion-3`                            | 1:1, 16:9, 9:16                                                                                                                                                   |
+| [Replicate](/providers/ai-sdk-providers/replicate#image-models)           | `recraft-ai/recraft-v3`                                      | 1:1, 3:4, 4:3, 9:16, 16:9, 9:21, 21:9                                                                                                                             |
+| [Replicate](/providers/ai-sdk-providers/replicate#image-models)           | `invoke-ai/invokeai`                                        | 1:1, 16:9, 9:16                                                                                                                                                   |
+| [Perplexity](/providers/ai-sdk-providers/perplexity#image-models)         | `llama-3.1-70b-versatile`                                    | 1:1, 3:4, 4:3, 9:16, 16:9                                                                                                                                         |

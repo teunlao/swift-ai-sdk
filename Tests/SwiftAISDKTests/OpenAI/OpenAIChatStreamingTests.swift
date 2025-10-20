@@ -389,4 +389,85 @@ struct OpenAIChatStreamingTests {
         #expect(hasFinish)
     }
 
+    @Test("Send request body for streaming")
+    func testSendRequestBodyStreaming() async throws {
+        final class RequestCapture: @unchecked Sendable {
+            var body: [String: Any]?
+            func store(_ body: [String: Any]) { self.body = body }
+            func value() -> [String: Any]? { body }
+        }
+
+        let capture = RequestCapture()
+
+        let events = [
+            "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"created\":1702657020,\"model\":\"gpt-3.5-turbo\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":null}]}",
+            "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"created\":1702657020,\"model\":\"gpt-3.5-turbo\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}",
+            "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"created\":1702657020,\"model\":\"gpt-3.5-turbo\",\"choices\":[],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":5,\"total_tokens\":15}}",
+            "data: [DONE]"
+        ]
+
+        let mockFetch: FetchFunction = { request in
+            if let bodyData = request.httpBody,
+               let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any] {
+                await capture.store(json)
+            }
+
+            let streamBody = ProviderHTTPResponseBody.stream(AsyncThrowingStream { continuation in
+                for event in events {
+                    continuation.yield(Data(event.utf8))
+                    continuation.yield(Data("\n\n".utf8))
+                }
+                continuation.finish()
+            })
+
+            return FetchResponse(
+                body: streamBody,
+                urlResponse: HTTPURLResponse(
+                    url: URL(string: "https://api.openai.com")!,
+                    statusCode: 200,
+                    httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "text/event-stream"]
+                )!
+            )
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.chat",
+            url: { _ in "https://api.openai.com/v1/chat/completions" },
+            headers: { ["Authorization": "Bearer test-key"] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAIChatLanguageModel(modelId: "gpt-3.5-turbo", config: config)
+
+        _ = try await model.doStream(
+            options: LanguageModelV3CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+                includeRawChunks: false
+            )
+        )
+
+        guard let body = await capture.value() else {
+            Issue.record("Expected request body")
+            return
+        }
+
+        #expect(body["model"] as? String == "gpt-3.5-turbo")
+        #expect(body["stream"] as? Bool == true)
+
+        if let streamOptions = body["stream_options"] as? [String: Any] {
+            #expect(streamOptions["include_usage"] as? Bool == true)
+        } else {
+            Issue.record("Expected stream_options")
+        }
+
+        if let messages = body["messages"] as? [[String: Any]] {
+            #expect(messages.count == 1)
+            #expect(messages[0]["role"] as? String == "user")
+            #expect(messages[0]["content"] as? String == "Hello")
+        } else {
+            Issue.record("Expected messages array")
+        }
+    }
+
 }

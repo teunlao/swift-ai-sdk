@@ -169,6 +169,538 @@ struct OpenAIChatLanguageModelTests {
         }
     }
 
+    // MARK: - Batch 17: Basic Response Parsing (5 tests)
+
+    @Test("Extract text response")
+    func testExtractTextResponse() async throws {
+        let responseJSON: [String: Any] = [
+            "id": "chatcmpl-test",
+            "created": 1_711_115_037,
+            "model": "gpt-3.5-turbo",
+            "choices": [
+                [
+                    "index": 0,
+                    "message": [
+                        "content": "Hello, World!",
+                        "role": "assistant"
+                    ],
+                    "finish_reason": "stop"
+                ]
+            ],
+            "usage": ["prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15]
+        ]
+
+        let mockData = try JSONSerialization.data(withJSONObject: responseJSON)
+
+        let mockFetch: FetchFunction = { request in
+            FetchResponse(
+                body: .data(mockData),
+                urlResponse: HTTPURLResponse(
+                    url: request.url!,
+                    statusCode: 200,
+                    httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "application/json"]
+                )!
+            )
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.chat",
+            url: { _ in "https://api.openai.com/v1/chat/completions" },
+            headers: { ["Authorization": "Bearer test-key"] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAIChatLanguageModel(modelId: "gpt-3.5-turbo", config: config)
+
+        let result = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)]
+            )
+        )
+
+        #expect(result.content.count == 1)
+        if case .text(let textContent) = result.content[0] {
+            #expect(textContent.text == "Hello, World!")
+        } else {
+            Issue.record("Expected text content")
+        }
+    }
+
+    @Test("Extract usage")
+    func testExtractUsage() async throws {
+        let responseJSON: [String: Any] = [
+            "id": "chatcmpl-test",
+            "created": 1_711_115_037,
+            "model": "gpt-3.5-turbo",
+            "choices": [
+                [
+                    "index": 0,
+                    "message": ["content": "", "role": "assistant"],
+                    "finish_reason": "stop"
+                ]
+            ],
+            "usage": [
+                "prompt_tokens": 20,
+                "completion_tokens": 5,
+                "total_tokens": 25
+            ]
+        ]
+
+        let mockData = try JSONSerialization.data(withJSONObject: responseJSON)
+
+        let mockFetch: FetchFunction = { request in
+            FetchResponse(
+                body: .data(mockData),
+                urlResponse: HTTPURLResponse(
+                    url: request.url!,
+                    statusCode: 200,
+                    httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "application/json"]
+                )!
+            )
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.chat",
+            url: { _ in "https://api.openai.com/v1/chat/completions" },
+            headers: { ["Authorization": "Bearer test-key"] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAIChatLanguageModel(modelId: "gpt-3.5-turbo", config: config)
+
+        let result = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)]
+            )
+        )
+
+        #expect(result.usage.inputTokens == 20)
+        #expect(result.usage.outputTokens == 5)
+        #expect(result.usage.totalTokens == 25)
+        #expect(result.usage.cachedInputTokens == nil)
+        #expect(result.usage.reasoningTokens == nil)
+    }
+
+    @Test("Extract logprobs")
+    func testExtractLogprobs() async throws {
+        let logprobsData: [String: Any] = [
+            "content": [
+                [
+                    "token": "Hello",
+                    "logprob": -0.0009994634,
+                    "top_logprobs": [
+                        ["token": "Hello", "logprob": -0.0009994634]
+                    ]
+                ],
+                [
+                    "token": "!",
+                    "logprob": -0.13410144,
+                    "top_logprobs": [
+                        ["token": "!", "logprob": -0.13410144]
+                    ]
+                ]
+            ]
+        ]
+
+        let responseJSON: [String: Any] = [
+            "id": "chatcmpl-test",
+            "created": 1_711_115_037,
+            "model": "gpt-3.5-turbo",
+            "choices": [
+                [
+                    "index": 0,
+                    "message": ["content": "Hello!", "role": "assistant"],
+                    "finish_reason": "stop",
+                    "logprobs": logprobsData
+                ]
+            ],
+            "usage": ["prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15]
+        ]
+
+        let mockData = try JSONSerialization.data(withJSONObject: responseJSON)
+
+        let mockFetch: FetchFunction = { request in
+            FetchResponse(
+                body: .data(mockData),
+                urlResponse: HTTPURLResponse(
+                    url: request.url!,
+                    statusCode: 200,
+                    httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "application/json"]
+                )!
+            )
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.chat",
+            url: { _ in "https://api.openai.com/v1/chat/completions" },
+            headers: { ["Authorization": "Bearer test-key"] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAIChatLanguageModel(modelId: "gpt-3.5-turbo", config: config)
+
+        let result = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+                providerOptions: ["openai": ["logprobs": 1]]
+            )
+        )
+
+        guard let metadata = result.providerMetadata?["openai"] else {
+            Issue.record("Expected openai metadata")
+            return
+        }
+
+        guard case .object(let logprobsObj) = metadata["logprobs"],
+              case .array(let logprobsArray) = logprobsObj["content"] else {
+            Issue.record("Expected logprobs.content in provider metadata")
+            return
+        }
+
+        #expect(logprobsArray.count == 2)
+        if case .object(let firstToken) = logprobsArray[0] {
+            #expect(firstToken["token"] == .string("Hello"))
+            #expect(firstToken["logprob"] == .number(-0.0009994634))
+        }
+    }
+
+    @Test("Extract finish reason")
+    func testExtractFinishReason() async throws {
+        let responseJSON: [String: Any] = [
+            "id": "chatcmpl-test",
+            "created": 1_711_115_037,
+            "model": "gpt-3.5-turbo",
+            "choices": [
+                [
+                    "index": 0,
+                    "message": ["content": "", "role": "assistant"],
+                    "finish_reason": "stop"
+                ]
+            ],
+            "usage": ["prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15]
+        ]
+
+        let mockData = try JSONSerialization.data(withJSONObject: responseJSON)
+
+        let mockFetch: FetchFunction = { request in
+            FetchResponse(
+                body: .data(mockData),
+                urlResponse: HTTPURLResponse(
+                    url: request.url!,
+                    statusCode: 200,
+                    httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "application/json"]
+                )!
+            )
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.chat",
+            url: { _ in "https://api.openai.com/v1/chat/completions" },
+            headers: { ["Authorization": "Bearer test-key"] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAIChatLanguageModel(modelId: "gpt-3.5-turbo", config: config)
+
+        let result = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)]
+            )
+        )
+
+        #expect(result.finishReason == .stop)
+    }
+
+    @Test("Parse tool results")
+    func testParseToolResults() async throws {
+        let responseJSON: [String: Any] = [
+            "id": "chatcmpl-test",
+            "created": 1_711_115_037,
+            "model": "gpt-3.5-turbo",
+            "choices": [
+                [
+                    "index": 0,
+                    "message": [
+                        "content": NSNull(),
+                        "role": "assistant",
+                        "tool_calls": [
+                            [
+                                "id": "call_O17Uplv4lJvD6DVdIvFFeRMw",
+                                "type": "function",
+                                "function": [
+                                    "name": "test-tool",
+                                    "arguments": "{\"value\":\"Spark\"}"
+                                ]
+                            ]
+                        ]
+                    ],
+                    "finish_reason": "tool_calls"
+                ]
+            ],
+            "usage": ["prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15]
+        ]
+
+        let mockData = try JSONSerialization.data(withJSONObject: responseJSON)
+
+        let mockFetch: FetchFunction = { request in
+            FetchResponse(
+                body: .data(mockData),
+                urlResponse: HTTPURLResponse(
+                    url: request.url!,
+                    statusCode: 200,
+                    httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "application/json"]
+                )!
+            )
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.chat",
+            url: { _ in "https://api.openai.com/v1/chat/completions" },
+            headers: { ["Authorization": "Bearer test-key"] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAIChatLanguageModel(modelId: "gpt-3.5-turbo", config: config)
+
+        let testTool = LanguageModelV3FunctionTool(
+            name: "test-tool",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object(["value": .object(["type": .string("string")])]),
+                "required": .array([.string("value")]),
+                "additionalProperties": .bool(false),
+                "$schema": .string("http://json-schema.org/draft-07/schema#")
+            ]),
+            description: nil,
+            providerOptions: nil
+        )
+
+        let result = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+                tools: [.function(testTool)],
+                toolChoice: .required
+            )
+        )
+
+        #expect(result.content.count == 1)
+        if case .toolCall(let toolCall) = result.content[0] {
+            #expect(toolCall.toolCallId == "call_O17Uplv4lJvD6DVdIvFFeRMw")
+            #expect(toolCall.toolName == "test-tool")
+            #expect(toolCall.input == "{\"value\":\"Spark\"}")
+        } else {
+            Issue.record("Expected tool call content")
+        }
+    }
+
+    // MARK: - Batch 18: Headers & Annotations (4 tests)
+
+    @Test("Expose raw response headers (non-streaming)")
+    func testExposeRawResponseHeadersNonStreaming() async throws {
+        let responseJSON: [String: Any] = [
+            "id": "chatcmpl-test",
+            "created": 1_711_115_037,
+            "model": "gpt-3.5-turbo",
+            "choices": [
+                [
+                    "index": 0,
+                    "message": ["content": "", "role": "assistant"],
+                    "finish_reason": "stop"
+                ]
+            ],
+            "usage": ["prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15]
+        ]
+
+        let mockData = try JSONSerialization.data(withJSONObject: responseJSON)
+
+        let mockFetch: FetchFunction = { request in
+            FetchResponse(
+                body: .data(mockData),
+                urlResponse: HTTPURLResponse(
+                    url: request.url!,
+                    statusCode: 200,
+                    httpVersion: "HTTP/1.1",
+                    headerFields: [
+                        "Content-Type": "application/json",
+                        "Content-Length": "321",
+                        "test-header": "test-value"
+                    ]
+                )!
+            )
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.chat",
+            url: { _ in "https://api.openai.com/v1/chat/completions" },
+            headers: { ["Authorization": "Bearer test-key"] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAIChatLanguageModel(modelId: "gpt-3.5-turbo", config: config)
+
+        let result = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)]
+            )
+        )
+
+        guard let response = result.response,
+              let headers = response.headers else {
+            Issue.record("Expected response headers")
+            return
+        }
+
+        #expect(headers["content-type"] == "application/json")
+        #expect(headers["content-length"] == "321")
+        #expect(headers["test-header"] == "test-value")
+    }
+
+    @Test("Pass headers (non-streaming)")
+    func testPassHeaders() async throws {
+        actor RequestCapture {
+            var headers: [String: String]?
+            func store(_ headers: [String: String]) { self.headers = headers }
+            func value() -> [String: String]? { headers }
+        }
+
+        let capture = RequestCapture()
+
+        let responseJSON: [String: Any] = [
+            "id": "chatcmpl-test",
+            "created": 1_711_115_037,
+            "model": "gpt-3.5-turbo",
+            "choices": [
+                [
+                    "index": 0,
+                    "message": ["content": "", "role": "assistant"],
+                    "finish_reason": "stop"
+                ]
+            ],
+            "usage": ["prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15]
+        ]
+
+        let mockData = try JSONSerialization.data(withJSONObject: responseJSON)
+
+        let mockFetch: FetchFunction = { request in
+            await capture.store(request.allHTTPHeaderFields ?? [:])
+            return FetchResponse(
+                body: .data(mockData),
+                urlResponse: HTTPURLResponse(
+                    url: request.url!,
+                    statusCode: 200,
+                    httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "application/json"]
+                )!
+            )
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.chat",
+            url: { _ in "https://api.openai.com/v1/chat/completions" },
+            headers: { ["Authorization": "Bearer test-key", "Custom-Provider-Header": "provider-value"] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAIChatLanguageModel(modelId: "gpt-3.5-turbo", config: config)
+
+        _ = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+                headers: ["Custom-Request-Header": "request-value"]
+            )
+        )
+
+        guard let headers = await capture.value() else {
+            Issue.record("Expected request headers")
+            return
+        }
+
+        let normalized = Dictionary(uniqueKeysWithValues: headers.map { ($0.key.lowercased(), $0.value) })
+        #expect(normalized["authorization"] == "Bearer test-key")
+        #expect(normalized["custom-provider-header"] == "provider-value")
+        #expect(normalized["custom-request-header"] == "request-value")
+        #expect(normalized["content-type"] == "application/json")
+    }
+
+    @Test("Parse annotations/citations (non-streaming)")
+    func testParseAnnotations() async throws {
+        let responseJSON: [String: Any] = [
+            "id": "chatcmpl-test",
+            "created": 1_711_115_037,
+            "model": "gpt-3.5-turbo",
+            "choices": [
+                [
+                    "index": 0,
+                    "message": [
+                        "content": "Based on the search results [doc1], I found information.",
+                        "role": "assistant",
+                        "annotations": [
+                            [
+                                "type": "url_citation",
+                                "start_index": 24,
+                                "end_index": 29,
+                                "url": "https://example.com/doc1.pdf",
+                                "title": "Document 1"
+                            ]
+                        ]
+                    ],
+                    "finish_reason": "stop"
+                ]
+            ],
+            "usage": ["prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15]
+        ]
+
+        let mockData = try JSONSerialization.data(withJSONObject: responseJSON)
+
+        let mockFetch: FetchFunction = { request in
+            FetchResponse(
+                body: .data(mockData),
+                urlResponse: HTTPURLResponse(
+                    url: request.url!,
+                    statusCode: 200,
+                    httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "application/json"]
+                )!
+            )
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.chat",
+            url: { _ in "https://api.openai.com/v1/chat/completions" },
+            headers: { ["Authorization": "Bearer test-key"] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAIChatLanguageModel(modelId: "gpt-3.5-turbo", config: config)
+
+        let result = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)]
+            )
+        )
+
+        #expect(result.content.count == 2)
+
+        if case .text(let textContent) = result.content[0] {
+            #expect(textContent.text == "Based on the search results [doc1], I found information.")
+        } else {
+            Issue.record("Expected text content")
+        }
+
+        if case .source(let source) = result.content[1],
+           case .url(id: _, url: let sourceUrl, title: let sourceTitle, providerMetadata: _) = source {
+            #expect(sourceTitle == "Document 1")
+            #expect(sourceUrl == "https://example.com/doc1.pdf")
+        } else {
+            Issue.record("Expected source content with url type")
+        }
+    }
+
     // MARK: - Batch 1: Settings & Configuration
 
     @Test("Pass provider settings (logitBias, user, parallelToolCalls)")

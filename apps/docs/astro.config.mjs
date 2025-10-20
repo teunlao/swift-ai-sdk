@@ -3,7 +3,7 @@ import { defineConfig } from "astro/config";
 
 export default defineConfig({
   site: "https://swift-ai-sdk.dev",
-	integrations: [
+ 	integrations: [
 		starlight({
 			title: "Swift AI SDK",
     social: [
@@ -38,7 +38,10 @@ export default defineConfig({
             { label: "Model Context Protocol (MCP) Tools", link: "/ai-sdk-core/mcp-tools" },
             { label: "Prompt Engineering", link: "/ai-sdk-core/prompt-engineering" },
             { label: "Settings", link: "/ai-sdk-core/settings" },
-            { label: "Embeddings", link: "/ai-sdk-core/embeddings" }
+            { label: "Embeddings", link: "/ai-sdk-core/embeddings" },
+            { label: "Image Generation", link: "/ai-sdk-core/image-generation" },
+            { label: "Transcription", link: "/ai-sdk-core/transcription" },
+            { label: "Speech", link: "/ai-sdk-core/speech" }
           ]
         },
         {

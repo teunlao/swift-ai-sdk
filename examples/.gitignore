@@ -1,0 +1,24 @@
+# Environment variables
+.env
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+
+# Xcode
+*.xcodeproj
+*.xcworkspace
+xcuserdata/
+DerivedData/
+
+# macOS
+.DS_Store
+
+# Test outputs
+*.log
+test-results/
+
+# Example outputs
+output/
+*.tmp

@@ -6,10 +6,11 @@ import Foundation
  Port of `@ai-sdk/provider-utils/src/extract-response-headers.ts`
 
  - Parameter response: The HTTP response object to extract headers from.
- - Returns: The headers as a `[String: String]` dictionary.
+ - Returns: The headers as a `[String: String]` dictionary with lowercase keys.
 
  - Note: This function safely casts `HTTPURLResponse.allHeaderFields` (which has type
          `[AnyHashable: Any]`) to `[String: String]`. Non-string keys or values are filtered out.
+         Header keys are normalized to lowercase to match JavaScript Headers API behavior.
  */
 public func extractResponseHeaders(from response: HTTPURLResponse) -> [String: String] {
     return Dictionary(
@@ -18,7 +19,7 @@ public func extractResponseHeaders(from response: HTTPURLResponse) -> [String: S
                   let valueString = value as? String else {
                 return nil
             }
-            return (keyString, valueString)
+            return (keyString.lowercased(), valueString)
         }
     )
 }

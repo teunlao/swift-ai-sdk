@@ -1,0 +1,93 @@
+// swift-tools-version: 5.10
+import PackageDescription
+
+let package = Package(
+  name: "SwiftAISDKExamples",
+  platforms: [
+    .macOS(.v13),
+    .iOS(.v16),
+  ],
+  products: [
+    // ExamplesCore - shared utilities
+    .library(
+      name: "ExamplesCore",
+      targets: ["ExamplesCore"]
+    ),
+  ],
+  dependencies: [
+    // Local Swift AI SDK dependency
+    .package(path: "../"),
+  ],
+  targets: [
+    // MARK: - Core Utilities
+
+    .target(
+      name: "ExamplesCore",
+      dependencies: []
+    ),
+
+    // MARK: - Getting Started Examples
+
+    .executableTarget(
+      name: "BasicGeneration",
+      dependencies: [
+        "ExamplesCore",
+        .product(name: "SwiftAISDK", package: "swift-ai-sdk"),
+        .product(name: "OpenAIProvider", package: "swift-ai-sdk"),
+        .product(name: "AISDKProvider", package: "swift-ai-sdk"),
+      ]
+    ),
+
+    .executableTarget(
+      name: "StreamingExample",
+      dependencies: [
+        "ExamplesCore",
+        .product(name: "SwiftAISDK", package: "swift-ai-sdk"),
+        .product(name: "OpenAIProvider", package: "swift-ai-sdk"),
+      ]
+    ),
+
+    .executableTarget(
+      name: "ToolsExample",
+      dependencies: [
+        "ExamplesCore",
+        .product(name: "SwiftAISDK", package: "swift-ai-sdk"),
+        .product(name: "OpenAIProvider", package: "swift-ai-sdk"),
+        .product(name: "AISDKProviderUtils", package: "swift-ai-sdk"),
+      ]
+    ),
+
+    .executableTarget(
+      name: "BasicCLI",
+      dependencies: [
+        "ExamplesCore",
+        .product(name: "SwiftAISDK", package: "swift-ai-sdk"),
+        .product(name: "OpenAIProvider", package: "swift-ai-sdk"),
+      ]
+    ),
+
+    // MARK: - AI SDK Core Examples
+
+    .executableTarget(
+      name: "BasicTextGeneration",
+      dependencies: [
+        "ExamplesCore",
+        .product(name: "SwiftAISDK", package: "swift-ai-sdk"),
+        .product(name: "OpenAIProvider", package: "swift-ai-sdk"),
+      ]
+    ),
+
+    .executableTarget(
+      name: "GenerateObjectExample",
+      dependencies: [
+        "ExamplesCore",
+        .product(name: "SwiftAISDK", package: "swift-ai-sdk"),
+        .product(name: "OpenAIProvider", package: "swift-ai-sdk"),
+        .product(name: "AISDKProviderUtils", package: "swift-ai-sdk"),
+      ]
+    ),
+
+    // MARK: - Tests
+    // TODO: Add test targets later
+  ]
+)

@@ -73,7 +73,7 @@
 
 | File | Upstream | Swift | Coverage | Status |
 |------|----------|-------|----------|--------|
-| OpenAIChatLanguageModel | 71 | 62 | 87.3% | ✅ EXCELLENT |
+| OpenAIChatLanguageModel | 71 | 71 | 100% | ✅ PERFECT |
 | OpenAIResponsesLanguageModel | 77 | 25 | 32% | ⚠️ MAJOR |
 | OpenAIResponsesInput | 48 | 4 | 8% | ❌ CRITICAL |
 | OpenAICompletionLanguageModel | 16 | 3 | 19% | ⚠️ MAJOR |
@@ -87,7 +87,7 @@
 | OpenAIError | 1 | 1 | 100% | ✅ PERFECT |
 | OpenAIProvider | 3 | 1 | 33% | ⚠️ MODERATE |
 
-**TOTAL: 290 → 143 (49.3% coverage) ❌ INSUFFICIENT**
+**TOTAL: 290 → 152 (52.4% coverage) ⚠️ NEEDS IMPROVEMENT**
 
 ---
 
@@ -151,10 +151,10 @@ While the implementation code appears correct (100% functional parity from previ
 
 **Started:** 2025-10-19
 **Target:** 100% test parity (290 tests)
-**Current:** 143/290 tests (49.3%)
+**Current:** 152/290 tests (52.4%)
 
-### OpenAIChatLanguageModel (Priority 1 - CRITICAL)
-**Target:** 71 tests | **Current:** 62/71 (87.3%)
+### OpenAIChatLanguageModel (Priority 1 - COMPLETE ✅)
+**Target:** 71 tests | **Current:** 71/71 (100%)
 
 #### Batch 1: Settings & Configuration (5/5) ✅ COMPLETE
 - [x] Pass settings (logitBias, user, parallelToolCalls) - `testPassSettings`
@@ -249,6 +249,19 @@ While the implementation code appears correct (100% functional parity from previ
 - [x] Not duplicate tool calls when empty chunk after completion - `testNotDuplicateToolCallsWithEmptyChunk`
 - [x] Stream tool call that is sent in one chunk - `testStreamToolCallInOneChunk`
 
+#### Batch 17: Basic Response Parsing (5/5) ✅ COMPLETE
+- [x] Extract text response - `testExtractTextResponse`
+- [x] Extract usage - `testExtractUsage`
+- [x] Extract logprobs - `testExtractLogprobs`
+- [x] Extract finish reason - `testExtractFinishReason`
+- [x] Parse tool results - `testParseToolResults`
+
+#### Batch 18: Headers & Annotations (4/4) ✅ COMPLETE
+- [x] Expose raw response headers (non-streaming) - `testExposeRawResponseHeadersNonStreaming`
+- [x] Pass headers (non-streaming) - `testPassHeaders`
+- [x] Parse annotations/citations (non-streaming) - `testParseAnnotations`
+- [x] Send request body for streaming - `testSendRequestBodyStreaming`
+
 ---
 
-**Last Updated:** 2025-10-20 05:12 UTC
+**Last Updated:** 2025-10-20 05:20 UTC
