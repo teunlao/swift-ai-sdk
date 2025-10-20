@@ -1964,4 +1964,230 @@ struct AnthropicMessagesLanguageModelStreamTests {
             Issue.record("Expected finish part")
         }
     }
+
+    @Test("should support cache control")
+    func supportsCacheControlInStreaming() async throws {
+        let events = [
+            "data: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_01KfpJoAEabmH2iHRRFjQMAG\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-3-haiku-20240307\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":17,\"output_tokens\":1,\"cache_creation_input_tokens\":10,\"cache_read_input_tokens\":5}}}\n\n",
+            "data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "data: {\"type\": \"ping\"}\n\n",
+            "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hello\"}}\n\n",
+            "data: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+            "data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":227}}\n\n",
+            "data: {\"type\":\"message_stop\"}\n\n"
+        ]
+
+        let httpResponse = HTTPURLResponse(url: URL(string: "https://api.anthropic.com/v1/messages")!,
+                                          statusCode: 200,
+                                          httpVersion: nil,
+                                          headerFields: nil)!
+
+        let config = makeConfig { _ in
+            FetchResponse(body: .stream(makeStream(events: events)), urlResponse: httpResponse)
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: config
+        )
+
+        let result = try await model.doStream(options: .init(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)]
+        ))
+
+        var parts: [LanguageModelV3StreamPart] = []
+        for try await part in result.stream {
+            parts.append(part)
+        }
+
+        // Verify finish with cache metadata
+        let finishParts = parts.filter { part in
+            if case .finish = part { return true }
+            return false
+        }
+        #expect(finishParts.count == 1)
+
+        if case .finish(let finishReason, let usage, let providerMetadata) = finishParts[0] {
+            #expect(finishReason == .stop)
+            #expect(usage.inputTokens == 17)
+            #expect(usage.outputTokens == 227)
+            #expect(usage.totalTokens == 244)
+            #expect(usage.cachedInputTokens == 5)
+
+            // Verify provider metadata includes cache tokens
+            if let providerMetadata = providerMetadata,
+               let metaObj = providerMetadata["anthropic"] {
+                #expect(metaObj["cacheCreationInputTokens"] == JSONValue.number(10))
+                #expect(metaObj["stopSequence"] == JSONValue.null)
+                if case .object(let usageObj) = metaObj["usage"] {
+                    #expect(usageObj["cache_creation_input_tokens"] == JSONValue.number(10))
+                    #expect(usageObj["cache_read_input_tokens"] == JSONValue.number(5))
+                    #expect(usageObj["input_tokens"] == JSONValue.number(17))
+                    #expect(usageObj["output_tokens"] == JSONValue.number(227))
+                }
+            }
+        } else {
+            Issue.record("Expected finish part")
+        }
+    }
+
+    @Test("should support cache control and return extra fields in provider metadata")
+    func supportsCacheControlWithExtraFields() async throws {
+        let events = [
+            "data: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_01KfpJoAEabmH2iHRRFjQMAG\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-3-haiku-20240307\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":17,\"output_tokens\":1,\"cache_creation_input_tokens\":10,\"cache_read_input_tokens\":5,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":10}}}}\n\n",
+            "data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "data: {\"type\": \"ping\"}\n\n",
+            "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hello\"}}\n\n",
+            "data: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+            "data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":227}}\n\n",
+            "data: {\"type\":\"message_stop\"}\n\n"
+        ]
+
+        let httpResponse = HTTPURLResponse(url: URL(string: "https://api.anthropic.com/v1/messages")!,
+                                          statusCode: 200,
+                                          httpVersion: nil,
+                                          headerFields: nil)!
+
+        let config = makeConfig { _ in
+            FetchResponse(body: .stream(makeStream(events: events)), urlResponse: httpResponse)
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: config
+        )
+
+        let result = try await model.doStream(options: .init(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)]
+        ))
+
+        var parts: [LanguageModelV3StreamPart] = []
+        for try await part in result.stream {
+            parts.append(part)
+        }
+
+        // Verify finish with cache_creation metadata
+        let finishParts = parts.filter { part in
+            if case .finish = part { return true }
+            return false
+        }
+        #expect(finishParts.count == 1)
+
+        if case .finish(let finishReason, let usage, let providerMetadata) = finishParts[0] {
+            #expect(finishReason == .stop)
+            #expect(usage.inputTokens == 17)
+            #expect(usage.outputTokens == 227)
+            #expect(usage.cachedInputTokens == 5)
+
+            // Verify provider metadata includes cache_creation
+            if let providerMetadata = providerMetadata,
+               let metaObj = providerMetadata["anthropic"] {
+                #expect(metaObj["cacheCreationInputTokens"] == JSONValue.number(10))
+                if case .object(let usageObj) = metaObj["usage"] {
+                    #expect(usageObj["cache_creation_input_tokens"] == JSONValue.number(10))
+                    #expect(usageObj["cache_read_input_tokens"] == JSONValue.number(5))
+                    // Verify cache_creation nested object
+                    if let cacheCreation = usageObj["cache_creation"], case .object(let cacheCreationObj) = cacheCreation {
+                        #expect(cacheCreationObj["ephemeral_5m_input_tokens"] == JSONValue.number(0))
+                        #expect(cacheCreationObj["ephemeral_1h_input_tokens"] == JSONValue.number(10))
+                    } else {
+                        Issue.record("Expected cache_creation object in usage. Got: \(usageObj.keys.sorted())")
+                    }
+                }
+            }
+        } else {
+            Issue.record("Expected finish part")
+        }
+    }
+
+    @Test("should process PDF citation responses in streaming")
+    func processesPDFCitationsInStreaming() async throws {
+        let events = [
+            "data: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_01KfpJoAEabmH2iHRRFjQMAG\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-3-haiku-20240307\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":17,\"output_tokens\":1}}}\n\n",
+            "data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Based on the document\"}}\n\n",
+            "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\", results show growth.\"}}\n\n",
+            "data: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+            "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"citations_delta\",\"citation\":{\"type\":\"page_location\",\"cited_text\":\"Revenue increased by 25% year over year\",\"document_index\":0,\"document_title\":\"Financial Report 2023\",\"start_page_number\":5,\"end_page_number\":6}}}\n\n",
+            "data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":227}}\n\n",
+            "data: {\"type\":\"message_stop\"}\n\n"
+        ]
+
+        let httpResponse = HTTPURLResponse(url: URL(string: "https://api.anthropic.com/v1/messages")!,
+                                          statusCode: 200,
+                                          httpVersion: nil,
+                                          headerFields: nil)!
+
+        let config = makeConfig { _ in
+            FetchResponse(body: .stream(makeStream(events: events)), urlResponse: httpResponse)
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: config
+        )
+
+        let pdfFile = LanguageModelV3FilePart(
+            data: .base64("base64PDFdata"),
+            mediaType: "application/pdf",
+            filename: "financial-report.pdf",
+            providerOptions: ["anthropic": ["citations": JSONValue.object(["enabled": JSONValue.bool(true)])]]
+        )
+
+        let result = try await model.doStream(options: .init(
+            prompt: [
+                .user(content: [
+                    .file(pdfFile),
+                    .text(.init(text: "What do the results show?"))
+                ], providerOptions: nil)
+            ]
+        ))
+
+        var parts: [LanguageModelV3StreamPart] = []
+        for try await part in result.stream {
+            parts.append(part)
+        }
+
+        // Verify text deltas
+        let textDeltas = parts.compactMap { part -> String? in
+            if case .textDelta(_, let delta, _) = part { return delta }
+            return nil
+        }
+        #expect(textDeltas == ["Based on the document", ", results show growth."])
+
+        // Verify source (citation)
+        let sources = parts.compactMap { part -> LanguageModelV3Source? in
+            if case .source(let source) = part { return source }
+            return nil
+        }
+        #expect(sources.count == 1)
+
+        if let source = sources.first,
+           case .document(let id, let mediaType, let title, let filename, let providerMetadata) = source {
+            #expect(mediaType == "application/pdf")
+            #expect(title == "Financial Report 2023")
+            #expect(filename == "financial-report.pdf")
+
+            // Verify citation metadata
+            if let providerMetadata = providerMetadata,
+               let anthropicMeta = providerMetadata["anthropic"],
+               case .object(let citationObj) = anthropicMeta["citation"] {
+                #expect(citationObj["type"] == JSONValue.string("page_location"))
+                #expect(citationObj["cited_text"] == JSONValue.string("Revenue increased by 25% year over year"))
+                #expect(citationObj["document_index"] == JSONValue.number(0))
+                #expect(citationObj["start_page_number"] == JSONValue.number(5))
+                #expect(citationObj["end_page_number"] == JSONValue.number(6))
+            }
+        } else {
+            Issue.record("Expected document source with page location citation")
+        }
+
+        // Verify finish
+        #expect(parts.contains(where: { part in
+            if case .finish(let finishReason, _, _) = part {
+                return finishReason == .stop
+            }
+            return false
+        }))
+    }
 }

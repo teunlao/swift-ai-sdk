@@ -997,6 +997,16 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
         if let cacheRead = usage.cacheReadInputTokens {
             metadata["cache_read_input_tokens"] = .number(Double(cacheRead))
         }
+        if let cacheCreation = usage.cacheCreation {
+            metadata["cache_creation"] = .object([
+                "ephemeral_5m_input_tokens": cacheCreation.ephemeral5mInputTokens.map {
+                    .number(Double($0))
+                } ?? .null,
+                "ephemeral_1h_input_tokens": cacheCreation.ephemeral1hInputTokens.map {
+                    .number(Double($0))
+                } ?? .null,
+            ])
+        }
         return metadata
     }
 
