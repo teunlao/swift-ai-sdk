@@ -5,6 +5,8 @@
 [![Platforms](https://img.shields.io/badge/Platforms-iOS%20|%20macOS%20|%20tvOS%20|%20watchOS-blue.svg)](https://swift.org)
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/teunlao/swift-ai-sdk)](https://github.com/teunlao/swift-ai-sdk/releases)
+[![](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2Fteunlao%2Fswift-ai-sdk%2Fbadge%3Ftype%3Dswift-versions)](https://swiftpackageindex.com/teunlao/swift-ai-sdk)
+[![](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2Fteunlao%2Fswift-ai-sdk%2Fbadge%3Ftype%3Dplatforms)](https://swiftpackageindex.com/teunlao/swift-ai-sdk)
 
 Unified AI SDK for Swift — a 1:1 port of the Vercel AI SDK with the same API and behavior.
 
@@ -132,6 +134,8 @@ TOTAL:            ███████████████████░�
 ---
 
 ## Installation (SwiftPM)
+
+Available on [Swift Package Index](https://swiftpackageindex.com/teunlao/swift-ai-sdk).
 
 Add the package to your `Package.swift`:
 

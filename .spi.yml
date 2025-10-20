@@ -1,0 +1,12 @@
+version: 1
+builder:
+  configs:
+    - documentation_targets: [SwiftAISDK, AISDKProvider, AISDKProviderUtils, OpenAIProvider, AnthropicProvider, GoogleProvider, GroqProvider]
+      platform: macos
+      swift_version: 6.0
+    - platform: ios
+      swift_version: 6.0
+    - platform: tvos
+      swift_version: 6.0
+    - platform: watchos
+      swift_version: 6.0
