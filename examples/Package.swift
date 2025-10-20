@@ -163,6 +163,15 @@ let package = Package(
       ]
     ),
 
+    .executableTarget(
+      name: "TelemetryExample",
+      dependencies: [
+        "ExamplesCore",
+        .product(name: "SwiftAISDK", package: "swift-ai-sdk"),
+        .product(name: "OpenAIProvider", package: "swift-ai-sdk"),
+      ]
+    ),
+
     // MARK: - Zod Adapter Examples
 
     .executableTarget(
