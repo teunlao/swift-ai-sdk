@@ -1,7 +1,7 @@
 # 🧪 Anthropic Provider - Test Coverage Audit
 
 **Date**: 2025-10-20
-**Last Updated**: 2025-10-20 19:01 UTC
+**Last Updated**: 2025-10-20 19:28 UTC
 **Status**: 🚧 **IN PROGRESS** - Batch testing active
 
 ---
@@ -11,12 +11,12 @@
 | Metric | Value |
 |--------|-------|
 | **Upstream Tests** | 147 tests |
-| **Swift Tests** | 68 tests ✅ (+2 from Batch 5) |
-| **Coverage** | **46.3%** (68/147) |
-| **Missing** | 79 tests |
+| **Swift Tests** | 74 tests ✅ (+3 from Batch 7) |
+| **Coverage** | **50.3%** (74/147) |
+| **Missing** | 73 tests |
 | **Status** | ⚠️ **NEEDS IMPROVEMENT** |
 
-**Progress**: 33.3% → 36.1% (+2.8% Batch 1) → 39.5% (+3.4% Batch 2) → 42.9% (+3.4% Batch 3) → 44.9% (+2.0% Batch 4) → 46.3% (+1.4% Batch 5)
+**Progress**: 33.3% → 36.1% (+2.8% Batch 1) → 39.5% (+3.4% Batch 2) → 42.9% (+3.4% Batch 3) → 44.9% (+2.0% Batch 4) → 46.3% (+1.4% Batch 5) → 48.3% (+2.0% Batch 6) → 50.3% (+2.0% Batch 7)
 
 ---
 
@@ -25,10 +25,10 @@
 | Test File | Upstream | Swift | Coverage | Status |
 |-----------|----------|-------|----------|--------|
 | anthropic-error.test.ts | 3 | 2 | 66.7% | ⚠️ Missing 1 |
-| **anthropic-messages-language-model.test.ts** | 78 | **33** ✅ | **42.3%** | 🚧 Batch 5 done |
+| **anthropic-messages-language-model.test.ts** | 78 | **39** ✅ | **50.0%** | 🚧 Batch 7 done |
 | anthropic-prepare-tools.test.ts | 20 | 15 | 75.0% | ⚠️ Missing 5 |
 | convert-to-anthropic-messages-prompt.test.ts | 46 | 17 | 37.0% | ❌ Missing 29 |
-| **TOTAL** | **147** | **68** ✅ | **46.3%** | 🚧 In progress |
+| **TOTAL** | **147** | **74** ✅ | **50.3%** | 🚧 In progress |
 
 ---
 
@@ -181,6 +181,90 @@
 
 ---
 
+### ✅ Batch 6: Basic Streaming Tests (COMPLETE)
+
+**Date**: 2025-10-20
+**Tests Added**: 3 tests
+**Status**: ✅ **ALL PASS** (71/71 tests)
+
+**Ported Tests**:
+1. ✅ **"should pass the messages and the model"** (doStream) - Verifies streaming request format
+   - Confirms `stream: true` in request body
+   - Verifies model, max_tokens, messages structure in streaming request
+2. ✅ **"should pass headers"** (doStream) - Custom headers in streaming requests
+   - Tests both provider-level and request-level headers
+   - Verifies all headers are included in streaming HTTP request
+3. ✅ **"should stream text deltas"** - Basic text streaming with usage tracking
+   - Streams message_start, content_block_start, text deltas, message_delta events
+   - Verifies text delta accumulation ("Hello", ", ", "World!")
+   - Tests finish reason (stop) and usage token tracking (inputTokens: 17, outputTokens: 227)
+
+**Issues Fixed**:
+- **TEST ERROR**: Headers test used lowercase "content-type" instead of "Content-Type"
+  - Checked against working test at line 299
+  - Fixed: Changed `["content-type"]` to `["Content-Type"]` (line 1695)
+- **🐛 IMPLEMENTATION BUG DISCOVERED**: `AnthropicUsage` fields not optional for partial usage in `message_delta`
+  - Upstream TypeScript: `message_delta` usage has ONLY `output_tokens`, NOT `input_tokens` (line 537)
+  - Swift implementation: `inputTokens: Int` and `outputTokens: Int` were required fields
+  - Problem: Decoding `message_delta` usage failed because `input_tokens` was missing
+  - **Files Modified**:
+    1. `Sources/AnthropicProvider/AnthropicMessagesAPI.swift:87-88` - Made `inputTokens` and `outputTokens` optional
+    2. `Sources/AnthropicProvider/AnthropicMessagesLanguageModel.swift:228-235` - Added nil coalescing for optional fields
+    3. `Sources/AnthropicProvider/AnthropicMessagesLanguageModel.swift:724-726` - Added nil coalescing in doGenerate
+    4. `Sources/AnthropicProvider/AnthropicMessagesLanguageModel.swift:987-993` - Made metadata function handle optional fields
+    5. `Sources/AnthropicProvider/AnthropicMessagesLanguageModel.swift:1183-1184` - Fixed makeProviderMetadata for optionals
+
+**User Guidance Applied**: ✅ "ALWAYS check upstream if test wrongly written OR implementation bug"
+- **Headers test**: Compared with working test (line 299) → confirmed TEST ERROR (case sensitivity)
+- **Stream text deltas test**:
+  1. Error: `usage.outputTokens == nil` instead of 227
+  2. Checked working streaming test (lines 1543-1546) - has BOTH input_tokens and output_tokens
+  3. Checked upstream TypeScript test (line 2090) - has ONLY output_tokens in message_delta
+  4. Checked upstream schema (lines 535-537) - confirmed message_delta usage has only output_tokens
+  5. Conclusion: **IMPLEMENTATION BUG** - AnthropicUsage fields must be optional for partial usage
+  6. Applied fix: Made fields optional, added proper nil handling throughout codebase
+
+**Result**: Test coverage ✅ improved to 48.3% (71/147 tests), implementation bug ✅ fixed for streaming partial usage
+
+---
+
+### ✅ Batch 7: Streaming Request & Metadata Tests (COMPLETE)
+
+**Date**: 2025-10-20
+**Tests Added**: 3 tests
+**Status**: ✅ **ALL PASS** (74/74 tests)
+
+**Ported Tests**:
+1. ✅ **"should send request body"** (doStream) - Streaming request structure validation
+   - Verifies `stream: true` in request body
+   - Checks model, max_tokens, messages structure
+   - Confirms optional fields are absent (system, temperature, etc.)
+2. ✅ **"should handle stop_reason:pause_turn"** - Maps pause_turn to stop finishReason
+   - Tests that pause_turn stop reason converts to .stop finishReason
+   - Verifies usage tracking (inputTokens: 17, outputTokens: 227)
+   - Validates providerMetadata structure (cacheCreationInputTokens, stopSequence, usage)
+3. ✅ **"should include stop_sequence in provider metadata"** - stopSequence in metadata
+   - Sends stopSequences: ["STOP"] in options
+   - Verifies stopSequence="STOP" in providerMetadata
+   - Confirms usage and other metadata fields
+
+**Issues Fixed**:
+- Compilation errors due to wrong FetchResponse init pattern
+  - Fixed: Use `FetchResponse(body: .stream(...), urlResponse: httpResponse)`
+  - Created HTTPURLResponse explicitly
+- Wrong parameter names: `id` → `modelId`
+- Type annotation issues for `doStream(options:)` call
+- **providerMetadata pattern matching** - discovered that `SharedV3ProviderMetadata = [String: [String: JSONValue]]`
+  - `providerMetadata["anthropic"]` is already `[String: JSONValue]?`, not `JSONValue?`
+  - Fixed: Direct unwrap without `.object` pattern match
+  - Use `JSONValue.null`, `JSONValue.string()`, `JSONValue.number()` for comparisons
+
+**User Guidance Applied**: ✅ Simple tests, no upstream verification needed for straightforward functionality
+
+**Result**: Test coverage ✅ improved to 50.3% (74/147 tests), reached 50% milestone! 🎉
+
+---
+
 ## 📋 Detailed File Analysis
 
 ### 1. ⚠️ AnthropicErrorTests.swift (2/3 tests - 66.7%)
@@ -199,12 +283,12 @@
 
 ---
 
-### 2. 🚧 AnthropicMessagesLanguageModelTests.swift (33/78 tests - 42.3%)
+### 2. 🚧 AnthropicMessagesLanguageModelTests.swift (39/78 tests - 50.0%)
 
 **Upstream**: `anthropic-messages-language-model.test.ts` (78 tests)
 **Swift**:
-- `AnthropicMessagesLanguageModelTests.swift` (22 tests - basic + Batch 1-5)
-- `AnthropicMessagesLanguageModelStreamAdvancedTests.swift` (11 tests - streaming)
+- `AnthropicMessagesLanguageModelTests.swift` (28 tests - basic + Batch 1-7)
+- `AnthropicMessagesLanguageModelStreamAdvancedTests.swift` (11 tests - streaming advanced)
 
 #### 2.1 doGenerate Tests (22/~35 tests - 62.9%)
 

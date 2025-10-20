@@ -225,13 +225,14 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
 
                             case .messageDelta(let value):
                                 if let usageInfo = value.usage {
-                                    let currentInput = usage.inputTokens ?? usageInfo.inputTokens
+                                    let currentInput = usage.inputTokens ?? usageInfo.inputTokens ?? 0
+                                    let currentOutput = usageInfo.outputTokens ?? 0
                                     let cachedInput =
                                         usageInfo.cacheReadInputTokens ?? usage.cachedInputTokens
                                     usage = LanguageModelV3Usage(
                                         inputTokens: currentInput,
-                                        outputTokens: usageInfo.outputTokens,
-                                        totalTokens: currentInput + usageInfo.outputTokens,
+                                        outputTokens: currentOutput,
+                                        totalTokens: currentInput + currentOutput,
                                         reasoningTokens: usage.reasoningTokens,
                                         cachedInputTokens: cachedInput
                                     )
@@ -720,9 +721,9 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
         }
 
         let usage = LanguageModelV3Usage(
-            inputTokens: response.usage.inputTokens,
-            outputTokens: response.usage.outputTokens,
-            totalTokens: response.usage.inputTokens + response.usage.outputTokens,
+            inputTokens: response.usage.inputTokens ?? 0,
+            outputTokens: response.usage.outputTokens ?? 0,
+            totalTokens: (response.usage.inputTokens ?? 0) + (response.usage.outputTokens ?? 0),
             reasoningTokens: nil,
             cachedInputTokens: response.usage.cacheReadInputTokens
         )
@@ -983,10 +984,13 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
     }
 
     private func anthropicUsageMetadata(_ usage: AnthropicUsage) -> [String: JSONValue] {
-        var metadata: [String: JSONValue] = [
-            "input_tokens": .number(Double(usage.inputTokens)),
-            "output_tokens": .number(Double(usage.outputTokens)),
-        ]
+        var metadata: [String: JSONValue] = [:]
+        if let inputTokens = usage.inputTokens {
+            metadata["input_tokens"] = .number(Double(inputTokens))
+        }
+        if let outputTokens = usage.outputTokens {
+            metadata["output_tokens"] = .number(Double(outputTokens))
+        }
         if let cacheCreation = usage.cacheCreationInputTokens {
             metadata["cache_creation_input_tokens"] = .number(Double(cacheCreation))
         }
@@ -1176,8 +1180,8 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
         var anthropicMetadata: [String: JSONValue] = [:]
 
         var usageObject: [String: JSONValue] = [
-            "input_tokens": .number(Double(response.usage.inputTokens)),
-            "output_tokens": .number(Double(response.usage.outputTokens)),
+            "input_tokens": response.usage.inputTokens.map { .number(Double($0)) } ?? .null,
+            "output_tokens": response.usage.outputTokens.map { .number(Double($0)) } ?? .null,
             "cache_creation_input_tokens": response.usage.cacheCreationInputTokens.map {
                 .number(Double($0))
             } ?? .null,

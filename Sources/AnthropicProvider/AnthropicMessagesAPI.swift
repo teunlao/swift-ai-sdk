@@ -84,8 +84,8 @@ public struct AnthropicUsage: Codable, Sendable {
         }
     }
 
-    public let inputTokens: Int
-    public let outputTokens: Int
+    public let inputTokens: Int?
+    public let outputTokens: Int?
     public let cacheCreationInputTokens: Int?
     public let cacheReadInputTokens: Int?
     public let cacheCreation: CacheCreation?

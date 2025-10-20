@@ -1479,6 +1479,12 @@ struct AnthropicMessagesLanguageModelGenerateTests {
 
 @Suite("AnthropicMessagesLanguageModel doStream")
 struct AnthropicMessagesLanguageModelStreamTests {
+    actor RequestCapture {
+        var request: URLRequest?
+        func store(_ request: URLRequest) { self.request = request }
+        func current() -> URLRequest? { request }
+    }
+
     private func makeStream(events: [String]) -> AsyncThrowingStream<Data, Error> {
         AsyncThrowingStream { continuation in
             for event in events {
@@ -1486,6 +1492,18 @@ struct AnthropicMessagesLanguageModelStreamTests {
             }
             continuation.finish()
         }
+    }
+
+    private func makeConfig(fetch: @escaping FetchFunction) -> AnthropicMessagesConfig {
+        AnthropicMessagesConfig(
+            provider: "anthropic.messages",
+            baseURL: "https://api.anthropic.com/v1",
+            headers: { [
+                "x-api-key": "test-api-key",
+                "anthropic-version": "2023-06-01"
+            ] },
+            fetch: fetch
+        )
     }
 
     @Test("streams text deltas and finish metadata")
@@ -1551,7 +1569,7 @@ struct AnthropicMessagesLanguageModelStreamTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let result = try await model.doStream(options: .init(prompt: testPrompt))
+        let result = try await model.doStream(options: LanguageModelV3CallOptions(prompt: testPrompt))
         var parts: [LanguageModelV3StreamPart] = []
         for try await part in result.stream {
             parts.append(part)
@@ -1567,5 +1585,383 @@ struct AnthropicMessagesLanguageModelStreamTests {
             }
             return false
         }))
+    }
+
+    // MARK: - Batch 6: Basic Streaming Tests
+
+    @Test("should pass the messages and the model")
+    func passesMessagesAndModel() async throws {
+        let capture = RequestCapture()
+        let events = [
+            "data: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_123\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-3-haiku-20240307\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":17,\"output_tokens\":1}}}\n\n",
+            "data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hello, World!\"}}\n\n",
+            "data: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+            "data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":227}}\n\n",
+            "data: {\"type\":\"message_stop\"}\n\n"
+        ]
+
+        let httpResponse = HTTPURLResponse(url: URL(string: "https://api.anthropic.com/v1/messages")!,
+                                          statusCode: 200,
+                                          httpVersion: nil,
+                                          headerFields: ["content-type": "text/event-stream"])!
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .stream(makeStream(events: events)), urlResponse: httpResponse)
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: makeConfig(fetch: fetch)
+        )
+
+        _ = try await model.doStream(options: LanguageModelV3CallOptions(prompt: [
+            .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
+        ]))
+
+        // Verify request body
+        if let request = await capture.current(),
+           let body = request.httpBody,
+           let json = try JSONSerialization.jsonObject(with: body) as? [String: Any] {
+
+            #expect(json["stream"] as? Bool == true)
+            #expect(json["model"] as? String == "claude-3-haiku-20240307")
+            #expect(json["max_tokens"] as? Int == 4096)
+
+            if let messages = json["messages"] as? [[String: Any]],
+               let firstMessage = messages.first {
+                #expect(firstMessage["role"] as? String == "user")
+                if let content = firstMessage["content"] as? [[String: Any]],
+                   let firstContent = content.first {
+                    #expect(firstContent["type"] as? String == "text")
+                    #expect(firstContent["text"] as? String == "Hello")
+                }
+            }
+        } else {
+            Issue.record("Expected valid request body")
+        }
+    }
+
+    @Test("should pass headers")
+    func passesHeaders() async throws {
+        let capture = RequestCapture()
+        let events = [
+            "data: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_123\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-3-haiku-20240307\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":17,\"output_tokens\":1}}}\n\n",
+            "data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hello, World!\"}}\n\n",
+            "data: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+            "data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":227}}\n\n",
+            "data: {\"type\":\"message_stop\"}\n\n"
+        ]
+
+        let httpResponse = HTTPURLResponse(url: URL(string: "https://api.anthropic.com/v1/messages")!,
+                                          statusCode: 200,
+                                          httpVersion: nil,
+                                          headerFields: ["content-type": "text/event-stream"])!
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .stream(makeStream(events: events)), urlResponse: httpResponse)
+        }
+
+        let config = AnthropicMessagesConfig(
+            provider: "anthropic.messages",
+            baseURL: "https://api.anthropic.com/v1",
+            headers: { [
+                "x-api-key": "test-api-key",
+                "anthropic-version": "2023-06-01",
+                "custom-provider-header": "provider-header-value"
+            ] },
+            fetch: fetch
+        )
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: config
+        )
+
+        _ = try await model.doStream(options: LanguageModelV3CallOptions(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
+            headers: ["Custom-Request-Header": "request-header-value"]
+        ))
+
+        // Verify headers
+        if let request = await capture.current() {
+            #expect(request.allHTTPHeaderFields?["custom-provider-header"] == "provider-header-value")
+            #expect(request.allHTTPHeaderFields?["custom-request-header"] == "request-header-value")
+            #expect(request.allHTTPHeaderFields?["x-api-key"] == "test-api-key")
+            #expect(request.allHTTPHeaderFields?["anthropic-version"] == "2023-06-01")
+            #expect(request.allHTTPHeaderFields?["Content-Type"] == "application/json")
+        } else {
+            Issue.record("Expected valid request")
+        }
+    }
+
+    @Test("should stream text deltas")
+    func streamsTextDeltas() async throws {
+        let events = [
+            "data: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_123\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-3-haiku-20240307\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":17,\"output_tokens\":1}}}\n\n",
+            "data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hello\"}}\n\n",
+            "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\", \"}}\n\n",
+            "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"World!\"}}\n\n",
+            "data: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+            "data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":227}}\n\n",
+            "data: {\"type\":\"message_stop\"}\n\n"
+        ]
+
+        let httpResponse = HTTPURLResponse(url: URL(string: "https://api.anthropic.com/v1/messages")!,
+                                          statusCode: 200,
+                                          httpVersion: nil,
+                                          headerFields: ["content-type": "text/event-stream"])!
+
+        let fetch: FetchFunction = { _ in
+            return FetchResponse(body: .stream(makeStream(events: events)), urlResponse: httpResponse)
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: makeConfig(fetch: fetch)
+        )
+
+        let result = try await model.doStream(options: LanguageModelV3CallOptions(prompt: [
+            .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
+        ]))
+
+        var parts: [LanguageModelV3StreamPart] = []
+        for try await part in result.stream {
+            parts.append(part)
+        }
+
+        // Verify stream-start
+        #expect(parts.contains(where: { part in
+            if case .streamStart = part { return true }
+            return false
+        }))
+
+        // Verify response-metadata
+        #expect(parts.contains(where: { part in
+            if case .responseMetadata(let id, let modelId, _) = part {
+                return id == "msg_123" && modelId == "claude-3-haiku-20240307"
+            }
+            return false
+        }))
+
+        // Verify text-start
+        #expect(parts.contains(where: { part in
+            if case .textStart = part { return true }
+            return false
+        }))
+
+        // Verify text deltas in order
+        let textDeltas = parts.compactMap { part -> String? in
+            if case .textDelta(_, let delta, _) = part { return delta }
+            return nil
+        }
+        #expect(textDeltas == ["Hello", ", ", "World!"])
+
+        // Verify text-end
+        #expect(parts.contains(where: { part in
+            if case .textEnd = part { return true }
+            return false
+        }))
+
+        // Verify finish
+        #expect(parts.contains(where: { part in
+            if case .finish(let finishReason, let usage, _) = part {
+                return finishReason == .stop && usage.inputTokens == 17 && usage.outputTokens == 227
+            }
+            return false
+        }))
+    }
+
+    @Test("should send request body")
+    func sendsStreamRequestBody() async throws {
+        let capture = RequestCapture()
+        let events = [
+            "data: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_01KfpJoAEabmH2iHRRFjQMAG\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-3-haiku-20240307\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":17,\"output_tokens\":1}}}\n\n",
+            "data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hello, World!\"}}\n\n",
+            "data: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+            "data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":227}}\n\n",
+            "data: {\"type\":\"message_stop\"}\n\n"
+        ]
+
+        let httpResponse = HTTPURLResponse(url: URL(string: "https://api.anthropic.com/v1/messages")!,
+                                          statusCode: 200,
+                                          httpVersion: nil,
+                                          headerFields: ["test-header": "test-value"])!
+
+        let config = makeConfig { request in
+            await capture.store(request)
+            return FetchResponse(body: .stream(makeStream(events: events)), urlResponse: httpResponse)
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: config
+        )
+
+        _ = try await model.doStream(options: .init(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)]
+        ))
+
+        if let request = await capture.current(),
+           let bodyData = request.httpBody,
+           let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any] {
+            // Verify stream: true
+            #expect(json["stream"] as? Bool == true)
+            // Verify model and max_tokens
+            #expect(json["model"] as? String == "claude-3-haiku-20240307")
+            #expect(json["max_tokens"] as? Int == 4096)
+            // Verify messages structure
+            if let messages = json["messages"] as? [[String: Any]],
+               let firstMessage = messages.first {
+                #expect(firstMessage["role"] as? String == "user")
+                if let content = firstMessage["content"] as? [[String: Any]],
+                   let firstContent = content.first {
+                    #expect(firstContent["type"] as? String == "text")
+                    #expect(firstContent["text"] as? String == "Hello")
+                }
+            }
+            // Verify optional fields are absent
+            #expect((json["system"] as? NSNull) != nil || json["system"] == nil)
+            #expect((json["temperature"] as? NSNull) != nil || json["temperature"] == nil)
+            #expect((json["top_p"] as? NSNull) != nil || json["top_p"] == nil)
+            #expect((json["top_k"] as? NSNull) != nil || json["top_k"] == nil)
+            #expect((json["stop_sequences"] as? NSNull) != nil || json["stop_sequences"] == nil)
+            #expect((json["tool_choice"] as? NSNull) != nil || json["tool_choice"] == nil)
+            #expect((json["tools"] as? NSNull) != nil || json["tools"] == nil)
+        } else {
+            Issue.record("Expected valid request with body")
+        }
+    }
+
+    @Test("should handle stop_reason:pause_turn")
+    func handlesPauseTurn() async throws {
+        let events = [
+            "data: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_01KfpJoAEabmH2iHRRFjQMAG\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-3-haiku-20240307\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":17,\"output_tokens\":1}}}\n\n",
+            "data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hello\"}}\n\n",
+            "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\", \"}}\n\n",
+            "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"World!\"}}\n\n",
+            "data: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+            "data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"pause_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":227}}\n\n",
+            "data: {\"type\":\"message_stop\"}\n\n"
+        ]
+
+        let httpResponse = HTTPURLResponse(url: URL(string: "https://api.anthropic.com/v1/messages")!,
+                                          statusCode: 200,
+                                          httpVersion: nil,
+                                          headerFields: nil)!
+
+        let config = makeConfig { _ in
+            FetchResponse(body: .stream(makeStream(events: events)), urlResponse: httpResponse)
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: config
+        )
+
+        let result = try await model.doStream(options: .init(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)]
+        ))
+
+        var parts: [LanguageModelV3StreamPart] = []
+        for try await part in result.stream {
+            parts.append(part)
+        }
+
+        // Verify finish with stop reason (pause_turn maps to stop)
+        let finishParts = parts.filter { part in
+            if case .finish = part { return true }
+            return false
+        }
+        #expect(finishParts.count == 1)
+
+        if case .finish(let finishReason, let usage, let providerMetadata) = finishParts[0] {
+            #expect(finishReason == .stop)
+            #expect(usage.inputTokens == 17)
+            #expect(usage.outputTokens == 227)
+            #expect(usage.totalTokens == 244)
+
+            // Verify provider metadata
+            if let providerMetadata = providerMetadata,
+               let metaObj = providerMetadata["anthropic"] {
+                #expect(metaObj["cacheCreationInputTokens"] == JSONValue.null)
+                #expect(metaObj["stopSequence"] == JSONValue.null)
+                if case .object(let usageObj) = metaObj["usage"] {
+                    #expect(usageObj["input_tokens"] == JSONValue.number(17))
+                    #expect(usageObj["output_tokens"] == JSONValue.number(227))
+                }
+            }
+        } else {
+            Issue.record("Expected finish part")
+        }
+    }
+
+    @Test("should include stop_sequence in provider metadata")
+    func includesStopSequenceInMetadata() async throws {
+        let events = [
+            "data: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_01KfpJoAEabmH2iHRRFjQMAG\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-3-haiku-20240307\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":17,\"output_tokens\":1}}}\n\n",
+            "data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hello\"}}\n\n",
+            "data: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+            "data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"stop_sequence\",\"stop_sequence\":\"STOP\"},\"usage\":{\"output_tokens\":227}}\n\n",
+            "data: {\"type\":\"message_stop\"}\n\n"
+        ]
+
+        let httpResponse = HTTPURLResponse(url: URL(string: "https://api.anthropic.com/v1/messages")!,
+                                          statusCode: 200,
+                                          httpVersion: nil,
+                                          headerFields: nil)!
+
+        let config = makeConfig { _ in
+            FetchResponse(body: .stream(makeStream(events: events)), urlResponse: httpResponse)
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: config
+        )
+
+        let result = try await model.doStream(options: .init(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
+            stopSequences: ["STOP"]
+        ))
+
+        var parts: [LanguageModelV3StreamPart] = []
+        for try await part in result.stream {
+            parts.append(part)
+        }
+
+        // Verify finish with stop_sequence metadata
+        let finishParts = parts.filter { part in
+            if case .finish = part { return true }
+            return false
+        }
+        #expect(finishParts.count == 1)
+
+        if case .finish(let finishReason, let usage, let providerMetadata) = finishParts[0] {
+            #expect(finishReason == .stop)
+            #expect(usage.inputTokens == 17)
+            #expect(usage.outputTokens == 227)
+            #expect(usage.totalTokens == 244)
+
+            // Verify provider metadata includes stopSequence
+            if let providerMetadata = providerMetadata,
+               let metaObj = providerMetadata["anthropic"] {
+                #expect(metaObj["cacheCreationInputTokens"] == JSONValue.null)
+                #expect(metaObj["stopSequence"] == JSONValue.string("STOP"))
+                if case .object(let usageObj) = metaObj["usage"] {
+                    #expect(usageObj["input_tokens"] == JSONValue.number(17))
+                    #expect(usageObj["output_tokens"] == JSONValue.number(227))
+                }
+            }
+        } else {
+            Issue.record("Expected finish part")
+        }
     }
 }
