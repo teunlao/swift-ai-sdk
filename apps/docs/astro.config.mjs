@@ -41,7 +41,8 @@ export default defineConfig({
             { label: "Embeddings", link: "/ai-sdk-core/embeddings" },
             { label: "Image Generation", link: "/ai-sdk-core/image-generation" },
             { label: "Transcription", link: "/ai-sdk-core/transcription" },
-            { label: "Speech", link: "/ai-sdk-core/speech" }
+            { label: "Speech", link: "/ai-sdk-core/speech" },
+            { label: "Language Model Middleware", link: "/ai-sdk-core/middleware" }
           ]
         },
         {
