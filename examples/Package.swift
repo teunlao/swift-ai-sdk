@@ -231,6 +231,17 @@ let package = Package(
       ]
     ),
 
+    .executableTarget(
+      name: "ProviderValidation-Anthropic",
+      dependencies: [
+        "ExamplesCore",
+        .product(name: "SwiftAISDK", package: "swift-ai-sdk"),
+        .product(name: "AnthropicProvider", package: "swift-ai-sdk"),
+        .product(name: "AISDKProvider", package: "swift-ai-sdk"),
+        .product(name: "AISDKProviderUtils", package: "swift-ai-sdk"),
+      ]
+    ),
+
     // MARK: - Tests
     // TODO: Add test targets later
   ]
