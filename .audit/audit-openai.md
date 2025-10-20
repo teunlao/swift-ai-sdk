@@ -7,8 +7,8 @@
 | Metric                        | TypeScript Upstream    | Swift Port         | Status            |
 |-------------------------------|------------------------|--------------------|--------------------|
 | Total Test Files              | 13                     | 13                 | ✅ Files match    |
-| Total Test Cases              | 290                    | 138                | ❌ 52% missing    |
-| OpenAIChatLanguageModel       | 71 tests (3,152 lines) | 57 tests (3,436 lines) | ❌ 20% missing    |
+| Total Test Cases              | 290                    | 143                | ❌ 51% missing    |
+| OpenAIChatLanguageModel       | 71 tests (3,152 lines) | 62 tests (3,795 lines) | ❌ 13% missing (9 tests) |
 | OpenAIResponsesLanguageModel  | 77 tests               | 25 tests           | ❌ 67% missing    |
 | OpenAIResponsesInput          | 48 tests               | 4 tests            | ❌ 92% missing    |
 | OpenAICompletionLanguageModel | 16 tests               | 3 tests            | ❌ 81% missing    |
@@ -73,7 +73,7 @@
 
 | File | Upstream | Swift | Coverage | Status |
 |------|----------|-------|----------|--------|
-| OpenAIChatLanguageModel | 71 | 57 | 80.3% | ✅ GOOD |
+| OpenAIChatLanguageModel | 71 | 62 | 87.3% | ✅ EXCELLENT |
 | OpenAIResponsesLanguageModel | 77 | 25 | 32% | ⚠️ MAJOR |
 | OpenAIResponsesInput | 48 | 4 | 8% | ❌ CRITICAL |
 | OpenAICompletionLanguageModel | 16 | 3 | 19% | ⚠️ MAJOR |
@@ -87,7 +87,7 @@
 | OpenAIError | 1 | 1 | 100% | ✅ PERFECT |
 | OpenAIProvider | 3 | 1 | 33% | ⚠️ MODERATE |
 
-**TOTAL: 290 → 138 (47.6% coverage) ❌ INSUFFICIENT**
+**TOTAL: 290 → 143 (49.3% coverage) ❌ INSUFFICIENT**
 
 ---
 
@@ -151,10 +151,10 @@ While the implementation code appears correct (100% functional parity from previ
 
 **Started:** 2025-10-19
 **Target:** 100% test parity (290 tests)
-**Current:** 138/290 tests (47.6%)
+**Current:** 143/290 tests (49.3%)
 
 ### OpenAIChatLanguageModel (Priority 1 - CRITICAL)
-**Target:** 71 tests | **Current:** 57/71 (80.3%)
+**Target:** 71 tests | **Current:** 62/71 (87.3%)
 
 #### Batch 1: Settings & Configuration (5/5) ✅ COMPLETE
 - [x] Pass settings (logitBias, user, parallelToolCalls) - `testPassSettings`
@@ -240,6 +240,15 @@ While the implementation code appears correct (100% functional parity from previ
 - [x] Include raw chunks when includeRawChunks enabled - `testIncludeRawChunksEnabled`
 - [x] Not include raw chunks when includeRawChunks false - `testNotIncludeRawChunksFalse`
 
+#### Batch 15: Streaming - Annotations & Tool Deltas (2/2) ✅ COMPLETE
+- [x] Stream annotations/citations - `testStreamAnnotationsCitations`
+- [x] Stream tool deltas - `testStreamToolDeltas`
+
+#### Batch 16: Tool Call Edge Cases (3/3) ✅ COMPLETE
+- [x] Stream tool deltas with arguments in first chunk - `testStreamToolDeltasArgumentsInFirstChunk`
+- [x] Not duplicate tool calls when empty chunk after completion - `testNotDuplicateToolCallsWithEmptyChunk`
+- [x] Stream tool call that is sent in one chunk - `testStreamToolCallInOneChunk`
+
 ---
 
-**Last Updated:** 2025-10-20 05:00 UTC
+**Last Updated:** 2025-10-20 05:12 UTC

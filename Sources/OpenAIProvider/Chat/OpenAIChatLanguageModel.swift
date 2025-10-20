@@ -584,8 +584,8 @@ public final class OpenAIChatLanguageModel: LanguageModelV3 {
 
                 continuation.yield(.toolInputStart(id: id, toolName: name, providerMetadata: nil, providerExecuted: nil))
 
-                if !state.arguments.isEmpty {
-                    continuation.yield(.toolInputDelta(id: id, delta: state.arguments, providerMetadata: nil))
+                if let args = delta.function?.arguments {
+                    continuation.yield(.toolInputDelta(id: id, delta: args, providerMetadata: nil))
                     if isParsableJson(state.arguments) {
                         continuation.yield(.toolInputEnd(id: id, providerMetadata: nil))
                         continuation.yield(.toolCall(LanguageModelV3ToolCall(
@@ -615,18 +615,18 @@ public final class OpenAIChatLanguageModel: LanguageModelV3 {
             if let argumentDelta = delta.function?.arguments {
                 state.arguments += argumentDelta
                 continuation.yield(.toolInputDelta(id: state.toolCallId, delta: argumentDelta, providerMetadata: nil))
-            }
 
-            if isParsableJson(state.arguments) {
-                continuation.yield(.toolInputEnd(id: state.toolCallId, providerMetadata: nil))
-                continuation.yield(.toolCall(LanguageModelV3ToolCall(
-                    toolCallId: state.toolCallId,
-                    toolName: state.toolName,
-                    input: state.arguments,
-                    providerExecuted: nil,
-                    providerMetadata: nil
-                )))
-                state.hasFinished = true
+                if isParsableJson(state.arguments) {
+                    continuation.yield(.toolInputEnd(id: state.toolCallId, providerMetadata: nil))
+                    continuation.yield(.toolCall(LanguageModelV3ToolCall(
+                        toolCallId: state.toolCallId,
+                        toolName: state.toolName,
+                        input: state.arguments,
+                        providerExecuted: nil,
+                        providerMetadata: nil
+                    )))
+                    state.hasFinished = true
+                }
             }
 
             toolCalls[index] = state
