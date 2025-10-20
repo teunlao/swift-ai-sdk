@@ -1,0 +1,219 @@
+---
+title: Error Handling
+description: Learn how to handle errors in the AI SDK Core
+---
+
+_This page adapts the original AI SDK documentation: [Error Handling](https://ai-sdk.dev/docs/ai-sdk-core/error-handling)._
+
+## Handling Regular Errors
+
+Regular errors are thrown and can be handled using the `do-catch` block.
+
+```swift highlight="3,8-10"
+import SwiftAISDK
+import OpenAIProvider
+
+do {
+  let result = try await generateText(
+    model: openai("gpt-4o"),
+    prompt: "Write a vegetarian lasagna recipe for 4 people."
+  )
+} catch {
+  // Handle error
+  print("Error: \(error)")
+}
+```
+
+See Error Types reference for more information on the different types of errors that may be thrown.
+
+## Handling Streaming Errors (Simple Streams)
+
+When errors occur during streams that do not support error chunks,
+the error is thrown as a regular error.
+You can handle these errors using the `do-catch` block.
+
+```swift highlight="3,12-14"
+import SwiftAISDK
+import OpenAIProvider
+
+do {
+  let result = try await streamText(
+    model: openai("gpt-4o"),
+    prompt: "Write a vegetarian lasagna recipe for 4 people."
+  )
+
+  for try await textPart in result.textStream {
+    print(textPart, terminator: "")
+  }
+} catch {
+  // Handle error
+  print("Error: \(error)")
+}
+```
+
+## Handling Streaming Errors (Streaming with Error Support)
+
+Full streams support error parts.
+You can handle those parts similar to other parts.
+It is recommended to also add a do-catch block for errors that
+happen outside of the streaming.
+
+```swift highlight="13-21"
+import SwiftAISDK
+import OpenAIProvider
+
+do {
+  let result = try await streamText(
+    model: openai("gpt-4o"),
+    prompt: "Write a vegetarian lasagna recipe for 4 people."
+  )
+
+  for try await part in result.fullStream {
+    switch part {
+    // ... handle other part types
+
+    case .error(let error):
+      // Handle error
+      print("Stream error: \(error)")
+
+    case .abort:
+      // Handle stream abort
+      print("Stream aborted")
+
+    case .toolError(let toolCallId, let error):
+      // Handle tool error
+      print("Tool error for \(toolCallId): \(error)")
+
+    default:
+      break
+    }
+  }
+} catch {
+  // Handle error
+  print("Error: \(error)")
+}
+```
+
+## Handling Stream Aborts
+
+When streams are aborted (e.g., via chat stop button), you may want to perform cleanup operations like updating stored messages in your UI. Use the `onAbort` callback to handle these cases.
+
+The `onAbort` callback is called when a stream is aborted via abort signal, but `onFinish` is not called. This ensures you can still update your UI state appropriately.
+
+```swift highlight="5-9"
+import SwiftAISDK
+import OpenAIProvider
+
+let result = try await streamText(
+  model: openai("gpt-4o"),
+  prompt: "Write a vegetarian lasagna recipe for 4 people.",
+  onAbort: { steps in
+    // Update stored messages or perform cleanup
+    print("Stream aborted after \(steps.count) steps")
+  },
+  onFinish: { finishResult in
+    // This is called on normal completion
+    print("Stream completed normally")
+  }
+)
+
+for try await textPart in result.textStream {
+  print(textPart, terminator: "")
+}
+```
+
+The `onAbort` callback receives:
+
+- `steps`: An array of all completed steps before the abort
+
+You can also handle abort events directly in the stream:
+
+```swift highlight="10-13"
+import SwiftAISDK
+import OpenAIProvider
+
+let result = try await streamText(
+  model: openai("gpt-4o"),
+  prompt: "Write a vegetarian lasagna recipe for 4 people."
+)
+
+for try await chunk in result.fullStream {
+  switch chunk {
+  case .abort:
+    // Handle abort directly in stream
+    print("Stream was aborted")
+
+  // ... handle other part types
+  default:
+    break
+  }
+}
+```
+
+## Common Error Types
+
+The AI SDK defines several error types that you may encounter:
+
+### APICallError
+
+Thrown when an API call fails (network errors, rate limits, etc.):
+
+```swift
+do {
+  let result = try await generateText(
+    model: openai("gpt-4o"),
+    prompt: "Hello"
+  )
+} catch let error as APICallError {
+  print("API call failed: \(error.message)")
+  print("Status code: \(error.statusCode ?? 0)")
+  print("Response headers: \(error.responseHeaders ?? [:])")
+} catch {
+  print("Other error: \(error)")
+}
+```
+
+### InvalidArgumentError
+
+Thrown when invalid arguments are provided:
+
+```swift
+do {
+  let result = try await generateText(
+    model: openai("gpt-4o"),
+    prompt: "",  // Empty prompt
+    maxOutputTokens: -1  // Invalid token count
+  )
+} catch let error as InvalidArgumentError {
+  print("Invalid argument: \(error.message)")
+} catch {
+  print("Other error: \(error)")
+}
+```
+
+### NoContentGeneratedError
+
+Thrown when the model fails to generate content:
+
+```swift
+do {
+  let result = try await generateText(
+    model: openai("gpt-4o"),
+    prompt: "Hello"
+  )
+} catch is NoContentGeneratedError {
+  print("No content was generated")
+} catch {
+  print("Other error: \(error)")
+}
+```
+
+## Best Practices
+
+1. **Always use do-catch blocks** - Wrap AI SDK calls in do-catch to handle errors gracefully
+2. **Check specific error types** - Use pattern matching to handle different error types differently
+3. **Handle stream errors** - Use both do-catch and fullStream error parts for comprehensive error handling
+4. **Implement onAbort** - Clean up resources when streams are aborted
+5. **Log errors appropriately** - Include error details for debugging but sanitize sensitive information
+6. **Retry on transient errors** - Implement retry logic for network errors and rate limits
+7. **Provide user feedback** - Show meaningful error messages to users rather than raw error text
