@@ -8,11 +8,33 @@
 [![](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2Fteunlao%2Fswift-ai-sdk%2Fbadge%3Ftype%3Dswift-versions)](https://swiftpackageindex.com/teunlao/swift-ai-sdk)
 [![](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2Fteunlao%2Fswift-ai-sdk%2Fbadge%3Ftype%3Dplatforms)](https://swiftpackageindex.com/teunlao/swift-ai-sdk)
 
-Unified AI SDK for Swift — a 1:1 port of the Vercel AI SDK with the same API and behavior.
+A unified AI SDK for Swift, bringing the power of [Vercel AI SDK](https://github.com/vercel/ai) to Apple platforms with 100% API parity.
 
-- SwiftPM package set: `SwiftAISDK`, `AISDKProvider`, `AISDKProviderUtils`, provider modules (`OpenAIProvider`, `AnthropicProvider`, `GoogleProvider`, `GroqProvider`, `OpenAICompatibleProvider`).
-- Platforms: iOS 16+, macOS 13+, tvOS 16+, watchOS 9+. See `Package.swift` for source of truth.
-- Upstream parity target: Vercel AI SDK 6.0.0-beta.42 (commit `77db222ee`).
+## ✨ Features
+
+- **Text Generation** - Streaming and non-streaming text generation
+- **Structured Outputs** - Type-safe object generation with schemas
+- **Tool Calling** - Function calling and MCP tools support
+- **Multi-Provider** - OpenAI, Anthropic, Google, Groq, and more
+- **Middleware System** - Extensible request/response processing
+- **Telemetry** - Built-in observability and monitoring
+- **Cross-Platform** - iOS 16+, macOS 13+, tvOS 16+, watchOS 9+
+
+## 📦 Packages
+
+**Core SDK:**
+- `SwiftAISDK` - Main AI SDK with text generation, streaming, tools
+- `AISDKProvider` - Foundation types and interfaces
+- `AISDKProviderUtils` - Provider utilities and helpers
+
+**Providers:**
+- `OpenAIProvider` - OpenAI (GPT-4, GPT-3.5, etc.)
+- `AnthropicProvider` - Anthropic Claude
+- `GoogleProvider` - Google Gemini
+- `GroqProvider` - Groq
+- `OpenAICompatibleProvider` - OpenAI-compatible APIs
+
+**Upstream:** Based on Vercel AI SDK 6.0.0-beta.42 (commit `77db222ee`)
 
 ---
 
