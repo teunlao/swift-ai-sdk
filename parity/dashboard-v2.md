@@ -8,9 +8,11 @@
 
 | Metric | Upstream | Swift | Coverage |
 |--------|----------|-------|----------|
-| **Packages (Impl)** | 44 | 11 | 25% |
-| **Packages (Tests ≥95%)** | 44 | 4 | 9.1% |
-| **Tests** | 3323 | 2002 | 60.3% |
+| **Packages** | 35* | 11 | 31.4% |
+| **Tests** | 2928** | 2002 | 68.4% |
+
+_* Excludes 7 frontend frameworks (React, Angular, etc.) and 4 infrastructure packages (codemod, rsc, etc.) not applicable to Swift_
+_** Core SDK (1519) + Providers (1409), excludes frameworks/infrastructure_
 
 ---
 
@@ -26,6 +28,8 @@
 ---
 
 ## 🔌 Providers (5/32 ported)
+
+**Test counts** (Upstream = TypeScript tests | Swift = Swift tests ported)
 
 | Provider | Impl | Tests | Upstream | Swift | Coverage |
 |----------|:----:|:-----:|----------|-------|----------|
@@ -104,14 +108,15 @@
 
 ## 📊 Complete Summary
 
-| Category | Impl | Tests ≥95% | Upstream | Swift | Coverage |
-|----------|:----:|:----------:|----------|-------|----------|
-| **Core SDK** | 3/3 | 2/3 | 1519 | 1547 | 101.8% |
-| **Providers** | 5/32 | 2/32 | 1409 | 455 | 32.3% |
-| **Swift-specific** | 4 | - | - | 37 | - |
-| **Frameworks** | 0/7 | 0/7 | 93 | 0 | 0% |
-| **Infrastructure** | 0/4 | 0/4 | 300 | 0 | 0% |
-| **TOTAL** | **12/46** | **4/46** | **3323** | **2002** | **60.3%** |
+| Category | Packages | Upstream | Swift | Coverage | Status |
+|----------|:--------:|----------|-------|----------|:------:|
+| **Core SDK** | 3/3 | 1519 | 1547 | 101.8% | ✅ |
+| **Providers** | 5/32 | 1409 | 455 | 32.3% | 🔴 |
+| **Swift-specific** | 4 | - | 37 | - | 🎯 |
+| **Frameworks** | 0/7 | 93 | 0 | N/A | ⏳ |
+| **Infrastructure** | 0/4 | 300 | 0 | N/A | ⏳ |
+| **TOTAL (all)** | **12/46** | **3323** | **2002** | **60.3%** | **⚠️** |
+| **TOTAL (relevant)** | **11/35** | **2928** | **2002** | **68.4%** | **⚠️** |
 
 ---
 
