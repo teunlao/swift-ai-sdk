@@ -1,0 +1,188 @@
+---
+title: Model Context Protocol (MCP) Tools
+description: Learn how to connect to Model Context Protocol (MCP) servers and use their tools with AI SDK Core.
+---
+
+_This page adapts the original AI SDK documentation: [Model Context Protocol (MCP) Tools](https://ai-sdk.dev/docs/ai-sdk-core/mcp-tools)._ 
+
+> Warning
+> The MCP tools feature is experimental and may change in the future.
+
+The AI SDK supports connecting to [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) servers to access their tools.
+This enables your AI applications to discover and use tools across various services through a standardized interface.
+
+## Initializing an MCP Client
+
+The Swift AI SDK currently ships with an HTTP-based SSE transport. Use it for production deployments. If you need a different execution environment, provide a custom type that conforms to `MCPTransport`.
+
+Create an MCP client using one of the following transport options:
+
+- **SSE transport (Recommended)**: Uses `SseMCPTransport` to connect to an MCP server over HTTP(S)
+- **Custom transport**: Implement `MCPTransport` for specialised requirements (for example an internal proxy)
+
+### SSE Transport (Recommended)
+
+```swift
+import SwiftAISDK
+
+let client = try await createMCPClient(
+  config: MCPClientConfig(
+    transport: .config(MCPTransportConfig(
+      type: "sse",                         // only "sse" is supported by the built-in factory
+      url: "https://your-server.com/mcp",
+      headers: ["Authorization": "Bearer YOUR_TOKEN"]
+    ))
+  )
+)
+```
+
+### Custom Transport
+
+You can also bring your own transport by implementing the `MCPTransport` interface for requirements not covered by the standard transport.
+
+```swift
+import SwiftAISDK
+
+final class MyTransport: MCPTransport {
+  var onclose: (() -> Void)?
+  var onerror: ((Error) -> Void)?
+  var onmessage: ((JSONRPCMessage) -> Void)?
+
+  func start() async throws {
+    // open connection
+  }
+
+  func send(message: JSONRPCMessage) async throws {
+    // forward JSON-RPC message to the server
+  }
+
+  func close() async throws {
+    // close connection
+  }
+}
+
+let client = try await createMCPClient(
+  config: MCPClientConfig(transport: .custom(MyTransport()))
+)
+```
+
+> Note
+> The client returned by `createMCPClient` is a lightweight adapter intended for tool conversion. It currently does not include every feature of the full MCP spec (authorization, session management, resumable streams, notifications, etc.).
+
+### Closing the MCP Client
+
+After initialization, you should close the MCP client based on your usage pattern:
+
+- For short-lived usage (e.g., single requests), close the client when the response is finished
+- For long-running clients (e.g., command line apps), keep the client open but ensure it's closed when the application terminates
+
+When streaming responses, you can close the client when the LLM response has finished. For example, when using `streamText`, provide an `onFinish` callback that closes the client after the final step:
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+
+let client = try await createMCPClient(
+  config: MCPClientConfig(transport: .config(MCPTransportConfig(url: "https://your-server.com/mcp")))
+)
+
+let tools = try await client.tools(options: nil)
+
+let stream = try streamText(
+  model: openai("gpt-4.1"),
+  tools: tools,
+  prompt: "What is the weather in Brooklyn, New York?",
+  onFinish: { _ in
+    Task { try? await client.close() }
+  }
+)
+
+for try await delta in stream.textStream {
+  print(delta, terminator: "")
+}
+```
+
+When generating responses without streaming, you can use `defer` (or another cleanup mechanism) to close the client:
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+
+let client = try await createMCPClient(
+  config: MCPClientConfig(transport: .config(MCPTransportConfig(url: "https://your-server.com/mcp")))
+)
+defer { Task { try? await client.close() } }
+
+let output = try await generateText(
+  model: openai("gpt-4.1"),
+  tools: try await client.tools(options: nil),
+  prompt: "Describe the current Brooklyn weather in one sentence."
+)
+print(output.text)
+```
+
+## Using MCP Tools
+
+The client's `tools` method acts as an adapter between MCP tools and AI SDK tools. It supports two approaches for working with tool schemas:
+
+### Schema Discovery
+
+With schema discovery, all tools offered by the server are automatically listed, and input parameter types are inferred based on the schemas provided by the server:
+
+```swift
+import SwiftAISDK
+
+let tools = try await client.tools(options: nil) // same as automatic discovery
+```
+
+This approach is simple to implement and automatically stays in sync with server changes. However, you will not have compile-time type information for inputs, and every tool exposed by the server becomes available to the model.
+
+### Schema Definition
+
+For better type safety and control, you can define the tools and their input schemas explicitly in your client code:
+
+```swift
+import SwiftAISDK
+import AISDKProviderUtils
+
+let getDataSchema = FlexibleSchema(
+  jsonSchema(
+    .object([
+      "type": .string("object"),
+      "properties": .object([
+        "query": .object([
+          "type": .string("string"),
+          "description": .string("The data query")
+        ]),
+        "format": .object([
+          "type": .string("string"),
+          "enum": .array([.string("json"), .string("text")])
+        ])
+      ]),
+      "required": .array([.string("query")])
+    ])
+  )
+)
+
+let emptyArgsSchema = FlexibleSchema(
+  jsonSchema(.object([
+    "type": .string("object"),
+    "properties": .object([:])
+  ]))
+)
+
+let tools = try await client.tools(options: MCPToolsOptions(
+  schemas: .schemas([
+    "get-data": ToolSchemaDefinition(inputSchema: getDataSchema),
+    "tool-with-no-args": ToolSchemaDefinition(inputSchema: emptyArgsSchema)
+  ])
+))
+```
+
+This approach gives you explicit control over tool interfaces and enables stronger validation: the schemas you provide are enforced at runtime, and only the tools you enumerate are retrieved from the server.
+
+## Examples
+
+You can see MCP tools in action in the following example:
+
+- [Learn to use MCP tools in Node.js](/cookbook/node/mcp-tools) — the concepts are the same; adapt the transport section to Swift as shown above.

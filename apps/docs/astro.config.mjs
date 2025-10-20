@@ -34,7 +34,8 @@ export default defineConfig({
             { label: "Overview", link: "/ai-sdk-core/overview" },
             { label: "Generating & Streaming Text", link: "/ai-sdk-core/generating-text" },
             { label: "Generating Structured Data", link: "/ai-sdk-core/generating-structured-data" },
-            { label: "Tools and Tool Calling", link: "/ai-sdk-core/tools-and-tool-calling" }
+            { label: "Tools and Tool Calling", link: "/ai-sdk-core/tools-and-tool-calling" },
+            { label: "Model Context Protocol (MCP) Tools", link: "/ai-sdk-core/mcp-tools" }
           ]
         },
         {
