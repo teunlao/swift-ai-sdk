@@ -218,6 +218,19 @@ let package = Package(
       ]
     ),
 
+    // MARK: - Documentation Validation
+
+    .executableTarget(
+      name: "ProviderValidation-OpenAI",
+      dependencies: [
+        "ExamplesCore",
+        .product(name: "SwiftAISDK", package: "swift-ai-sdk"),
+        .product(name: "OpenAIProvider", package: "swift-ai-sdk"),
+        .product(name: "AISDKProvider", package: "swift-ai-sdk"),
+        .product(name: "AISDKProviderUtils", package: "swift-ai-sdk"),
+      ]
+    ),
+
     // MARK: - Tests
     // TODO: Add test targets later
   ]
