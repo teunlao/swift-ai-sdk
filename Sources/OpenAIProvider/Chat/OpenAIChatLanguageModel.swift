@@ -204,7 +204,7 @@ public final class OpenAIChatLanguageModel: LanguageModelV3 {
                                 }
 
                                 if let delta = choice.delta {
-                                    if let text = delta.content, !text.isEmpty {
+                                    if let text = delta.content {
                                         if !isActiveText {
                                             isActiveText = true
                                             continuation.yield(.textStart(id: "0", providerMetadata: nil))
@@ -604,13 +604,15 @@ public final class OpenAIChatLanguageModel: LanguageModelV3 {
             }
 
             var state = toolCalls[index]!
-            if state.hasFinished { continue }
+            if state.hasFinished {
+                continue
+            }
 
             if let name = delta.function?.name, !name.isEmpty {
                 state.toolName = name
             }
 
-            if let argumentDelta = delta.function?.arguments, !argumentDelta.isEmpty {
+            if let argumentDelta = delta.function?.arguments {
                 state.arguments += argumentDelta
                 continuation.yield(.toolInputDelta(id: state.toolCallId, delta: argumentDelta, providerMetadata: nil))
             }
