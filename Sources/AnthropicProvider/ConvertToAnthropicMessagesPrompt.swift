@@ -23,6 +23,12 @@ func convertToAnthropicMessagesPrompt(
 
         switch block {
         case .system(let systemMessages):
+            if systemContent != nil {
+                throw UnsupportedFunctionalityError(
+                    functionality: "Multiple system messages that are separated by user/assistant messages"
+                )
+            }
+
             var aggregated = systemContent ?? []
 
             for case let .system(text, providerOptions) in systemMessages {
@@ -581,13 +587,14 @@ private func stringifyJSONValue(_ value: JSONValue) -> String {
 
 private func cacheControlJSON(from cacheControl: AnthropicCacheControl?) -> JSONValue? {
     guard let cacheControl else { return nil }
-    var payload: [String: JSONValue] = [
-        "type": .string(cacheControl.type)
-    ]
+    var payload = cacheControl.additionalFields
+    if let type = cacheControl.type {
+        payload["type"] = .string(type)
+    }
     if let ttl = cacheControl.ttl {
         payload["ttl"] = .string(ttl.rawValue)
     }
-    return .object(payload)
+    return payload.isEmpty ? nil : .object(payload)
 }
 
 private extension LanguageModelV3Message {

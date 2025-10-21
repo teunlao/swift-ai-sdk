@@ -101,11 +101,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
             usesJsonResponseTool: prepared.usesJsonResponseTool
         )
 
-        let providerMetadata = makeProviderMetadata(
-            response: response.value,
-            usage: usageAndContent.usage,
-            betas: prepared.betas
-        )
+        let providerMetadata = makeProviderMetadata(response: response.value)
 
         return LanguageModelV3GenerateResult(
             content: usageAndContent.content,
@@ -725,10 +721,17 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
             }
         }
 
+        let totalTokens: Int?
+        if let input = response.usage.inputTokens, let output = response.usage.outputTokens {
+            totalTokens = input + output
+        } else {
+            totalTokens = nil
+        }
+
         let usage = LanguageModelV3Usage(
-            inputTokens: response.usage.inputTokens ?? 0,
-            outputTokens: response.usage.outputTokens ?? 0,
-            totalTokens: (response.usage.inputTokens ?? 0) + (response.usage.outputTokens ?? 0),
+            inputTokens: response.usage.inputTokens,
+            outputTokens: response.usage.outputTokens,
+            totalTokens: totalTokens,
             reasoningTokens: nil,
             cachedInputTokens: response.usage.cacheReadInputTokens
         )
@@ -1188,42 +1191,19 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
     }
 
     private func makeProviderMetadata(
-        response: AnthropicMessagesResponse,
-        usage: LanguageModelV3Usage,
-        betas: Set<String>
+        response: AnthropicMessagesResponse
     ) -> SharedV3ProviderMetadata? {
-        var anthropicMetadata: [String: JSONValue] = [:]
+        guard let usageJSON = encodeToJSONValue(response.usage) else {
+            return nil
+        }
 
-        var usageObject: [String: JSONValue] = [
-            "input_tokens": response.usage.inputTokens.map { .number(Double($0)) } ?? .null,
-            "output_tokens": response.usage.outputTokens.map { .number(Double($0)) } ?? .null,
-            "cache_creation_input_tokens": response.usage.cacheCreationInputTokens.map {
+        let anthropicMetadata: [String: JSONValue] = [
+            "usage": usageJSON,
+            "cacheCreationInputTokens": response.usage.cacheCreationInputTokens.map {
                 .number(Double($0))
             } ?? .null,
-            "cache_read_input_tokens": response.usage.cacheReadInputTokens.map {
-                .number(Double($0))
-            } ?? .null,
+            "stopSequence": response.stopSequence.map(JSONValue.string) ?? .null
         ]
-
-        if let cacheCreation = response.usage.cacheCreation {
-            usageObject["cache_creation"] = .object([
-                "ephemeral_5m_input_tokens": cacheCreation.ephemeral5mInputTokens.map {
-                    .number(Double($0))
-                } ?? .null,
-                "ephemeral_1h_input_tokens": cacheCreation.ephemeral1hInputTokens.map {
-                    .number(Double($0))
-                } ?? .null,
-            ])
-        }
-
-        anthropicMetadata["usage"] = .object(usageObject)
-        anthropicMetadata["cacheCreationInputTokens"] =
-            response.usage.cacheCreationInputTokens.map { .number(Double($0)) } ?? .null
-        anthropicMetadata["stopReason"] = response.stopReason.map(JSONValue.string) ?? .null
-        anthropicMetadata["stopSequence"] = response.stopSequence.map(JSONValue.string) ?? .null
-        if !betas.isEmpty {
-            anthropicMetadata["betas"] = .array(betas.sorted().map(JSONValue.string))
-        }
 
         return ["anthropic": anthropicMetadata]
     }

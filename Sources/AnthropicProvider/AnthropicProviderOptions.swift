@@ -43,12 +43,18 @@ public struct AnthropicCacheControl: Sendable, Equatable {
         case oneHour = "1h"
     }
 
-    public var type: String
+    public var type: String?
     public var ttl: TTL?
+    public var additionalFields: [String: JSONValue]
 
-    public init(type: String = "ephemeral", ttl: TTL? = nil) {
+    public init(
+        type: String? = "ephemeral",
+        ttl: TTL? = nil,
+        additionalFields: [String: JSONValue] = [:]
+    ) {
         self.type = type
         self.ttl = ttl
+        self.additionalFields = additionalFields
     }
 }
 
@@ -181,7 +187,17 @@ public let anthropicProviderOptionsSchema = FlexibleSchema(
                         ttl = parsed
                     }
 
-                    options.cacheControl = AnthropicCacheControl(type: "ephemeral", ttl: ttl)
+                    var additional = cacheDict
+                    additional.removeValue(forKey: "type")
+                    if ttl != nil {
+                        additional.removeValue(forKey: "ttl")
+                    }
+
+                    options.cacheControl = AnthropicCacheControl(
+                        type: typeString,
+                        ttl: ttl,
+                        additionalFields: additional
+                    )
                 }
 
                 return .success(value: options)

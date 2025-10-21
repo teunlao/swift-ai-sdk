@@ -17,13 +17,14 @@ private func foundationArgs(_ args: [String: JSONValue]) -> [String: Any] {
 
 private func cacheControlJSON(from cacheControl: AnthropicCacheControl?) -> JSONValue? {
     guard let cacheControl else { return nil }
-    var payload: [String: JSONValue] = [
-        "type": .string(cacheControl.type)
-    ]
+    var payload = cacheControl.additionalFields
+    if let type = cacheControl.type {
+        payload["type"] = .string(type)
+    }
     if let ttl = cacheControl.ttl {
         payload["ttl"] = .string(ttl.rawValue)
     }
-    return .object(payload)
+    return payload.isEmpty ? nil : .object(payload)
 }
 
 private func numberValue(_ value: JSONValue?) -> Double? {

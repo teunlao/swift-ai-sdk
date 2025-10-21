@@ -102,8 +102,7 @@ public func createAnthropicProvider(settings: AnthropicProviderSettings = .init(
 
     let supportedURLs: @Sendable () -> [String: [NSRegularExpression]] = {
         [
-            "image/*": [anthropicHTTPSRegex],
-            "application/pdf": [anthropicHTTPSRegex]
+            "image/*": [anthropicHTTPSRegex]
         ]
     }
 
