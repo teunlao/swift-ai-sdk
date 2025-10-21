@@ -52,6 +52,130 @@ private func collectStream(_ stream: AsyncThrowingStream<LanguageModelV3StreamPa
 
 @Suite("GoogleGenerativeAILanguageModel")
 struct GoogleGenerativeAILanguageModelTests {
+    // MARK: - Schema Validation Tests
+
+    @Test("validates complete grounding metadata with web search results")
+    func testValidateCompleteGroundingMetadataWithWebSearch() async throws {
+        let schema = getGroundingMetadataSchema()
+
+        let metadata: [String: Any] = [
+            "webSearchQueries": ["What's the weather in Chicago this weekend?"],
+            "searchEntryPoint": [
+                "renderedContent": "Sample rendered content for search results"
+            ],
+            "groundingChunks": [
+                [
+                    "web": [
+                        "uri": "https://example.com/weather",
+                        "title": "Chicago Weather Forecast"
+                    ]
+                ]
+            ],
+            "groundingSupports": [
+                [
+                    "segment": [
+                        "startIndex": 0,
+                        "endIndex": 65,
+                        "text": "Chicago weather changes rapidly, so layers let you adjust easily."
+                    ],
+                    "groundingChunkIndices": [0],
+                    "confidenceScores": [0.99]
+                ]
+            ],
+            "retrievalMetadata": [
+                "webDynamicRetrievalScore": 0.96879
+            ]
+        ]
+
+        let result = await schema.validate(metadata)
+        #expect(result.value != nil)
+    }
+
+    @Test("validates complete grounding metadata with Vertex AI Search results")
+    func testValidateCompleteGroundingMetadataWithVertexAISearch() async throws {
+        let schema = getGroundingMetadataSchema()
+
+        let metadata: [String: Any] = [
+            "retrievalQueries": ["How to make appointment to renew driving license?"],
+            "groundingChunks": [
+                [
+                    "retrievedContext": [
+                        "uri": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AXiHM.....QTN92V5ePQ==",
+                        "title": "dmv"
+                    ]
+                ]
+            ],
+            "groundingSupports": [
+                [
+                    "segment": [
+                        "startIndex": 25,
+                        "endIndex": 147
+                    ],
+                    "segment_text": "ipsum lorem ...",
+                    "supportChunkIndices": [1, 2],
+                    "confidenceScore": [0.9541752, 0.97726375]
+                ]
+            ]
+        ]
+
+        let result = await schema.validate(metadata)
+        #expect(result.value != nil)
+    }
+
+    @Test("validates partial grounding metadata")
+    func testValidatePartialGroundingMetadata() async throws {
+        let schema = getGroundingMetadataSchema()
+
+        let metadata: [String: Any] = [
+            "webSearchQueries": ["sample query"]
+        ]
+
+        let result = await schema.validate(metadata)
+        #expect(result.value != nil)
+    }
+
+    @Test("validates empty grounding metadata")
+    func testValidateEmptyGroundingMetadata() async throws {
+        let schema = getGroundingMetadataSchema()
+
+        let metadata: [String: Any] = [:]
+
+        let result = await schema.validate(metadata)
+        #expect(result.value != nil)
+    }
+
+    @Test("validates metadata with empty retrievalMetadata")
+    func testValidateMetadataWithEmptyRetrievalMetadata() async throws {
+        let schema = getGroundingMetadataSchema()
+
+        let metadata: [String: Any] = [
+            "webSearchQueries": ["sample query"],
+            "retrievalMetadata": [:]
+        ]
+
+        let result = await schema.validate(metadata)
+        #expect(result.value != nil)
+    }
+
+    @Test("rejects invalid data types")
+    func testRejectInvalidDataTypes() async throws {
+        let schema = getGroundingMetadataSchema()
+
+        let metadata: [String: Any] = [
+            "webSearchQueries": "not an array",
+            "groundingSupports": [
+                [
+                    "confidenceScores": "not an array"
+                ]
+            ]
+        ]
+
+        let result = await schema.validate(metadata)
+        #expect(result.error != nil)
+    }
+
+    // MARK: - Integration Tests
+
     @Test("doGenerate maps text, reasoning, tools, files, usage and metadata")
     func testDoGenerateMapping() async throws {
         actor RequestCapture {
