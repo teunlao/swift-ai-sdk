@@ -31,16 +31,10 @@ public final class OpenAICompatibleImageModel: ImageModelV3 {
     public let specificationVersion: String = "v3"
     public let modelIdentifier: OpenAICompatibleImageModelId
     private let config: OpenAICompatibleImageModelConfig
-    private let providerOptionsName: String
 
     public init(modelId: OpenAICompatibleImageModelId, config: OpenAICompatibleImageModelConfig) {
         self.modelIdentifier = modelId
         self.config = config
-        if let prefix = config.provider.split(separator: ".").first {
-            self.providerOptionsName = String(prefix)
-        } else {
-            self.providerOptionsName = "openai-compatible"
-        }
     }
 
     public var provider: String { config.provider }
@@ -63,7 +57,8 @@ public final class OpenAICompatibleImageModel: ImageModelV3 {
         let requestHeaders = options.headers?.mapValues { Optional($0) }
         let headers = combineHeaders(defaultHeaders, requestHeaders).compactMapValues { $0 }
 
-        let providerSpecific = options.providerOptions?[providerOptionsName] ?? [:]
+        // Use hardcoded "openai" to match upstream TypeScript behavior (line 79 in upstream)
+        let providerSpecific = options.providerOptions?["openai"] ?? [:]
         var body: [String: JSONValue] = [
             "model": .string(modelIdentifier.rawValue),
             "prompt": .string(options.prompt),

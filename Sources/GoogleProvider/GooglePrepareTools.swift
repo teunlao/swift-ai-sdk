@@ -48,7 +48,7 @@ func prepareGoogleTools(
     }
 
     if hasProviderDefinedTools {
-        var googleToolsPayload: [String: JSONValue] = [:]
+        var googleToolsEntries: [JSONValue] = []
 
         for tool in tools {
             guard case .providerDefined(let providerTool) = tool else { continue }
@@ -56,7 +56,9 @@ func prepareGoogleTools(
             switch providerTool.id {
             case "google.google_search":
                 if isGemini2 {
-                    googleToolsPayload["googleSearch"] = .object([:])
+                    googleToolsEntries.append(.object([
+                        "googleSearch": .object([:])
+                    ]))
                 } else if supportsDynamicRetrieval {
                     var config: [String: JSONValue] = [:]
                     if let modeValue = providerTool.args["mode"], case .string(let mode) = modeValue {
@@ -65,16 +67,22 @@ func prepareGoogleTools(
                     if let thresholdValue = providerTool.args["dynamicThreshold"], case .number(let number) = thresholdValue {
                         config["dynamicThreshold"] = .number(number)
                     }
-                    googleToolsPayload["googleSearchRetrieval"] = .object([
-                        "dynamicRetrievalConfig": .object(config)
-                    ])
+                    googleToolsEntries.append(.object([
+                        "googleSearchRetrieval": .object([
+                            "dynamicRetrievalConfig": .object(config)
+                        ])
+                    ]))
                 } else {
-                    googleToolsPayload["googleSearchRetrieval"] = .object([:])
+                    googleToolsEntries.append(.object([
+                        "googleSearchRetrieval": .object([:])
+                    ]))
                 }
 
             case "google.url_context":
                 if isGemini2 {
-                    googleToolsPayload["urlContext"] = .object([:])
+                    googleToolsEntries.append(.object([
+                        "urlContext": .object([:])
+                    ]))
                 } else {
                     warnings.append(
                         .unsupportedTool(
@@ -86,7 +94,9 @@ func prepareGoogleTools(
 
             case "google.code_execution":
                 if isGemini2 {
-                    googleToolsPayload["codeExecution"] = .object([:])
+                    googleToolsEntries.append(.object([
+                        "codeExecution": .object([:])
+                    ]))
                 } else {
                     warnings.append(
                         .unsupportedTool(
@@ -101,7 +111,7 @@ func prepareGoogleTools(
             }
         }
 
-        let toolsValue = googleToolsPayload.isEmpty ? nil : JSONValue.object(googleToolsPayload)
+        let toolsValue = googleToolsEntries.isEmpty ? nil : JSONValue.array(googleToolsEntries)
         return GooglePreparedTools(tools: toolsValue, toolConfig: nil, toolWarnings: warnings)
     }
 

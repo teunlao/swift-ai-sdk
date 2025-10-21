@@ -131,13 +131,15 @@ final class GoogleGenerativeAIImageModel: ImageModelV3 {
         let timestamp = config.currentDate()
 
         let images = response.value.predictions.map { $0.bytesBase64Encoded }
+        let metadataImages = response.value.predictions.map { _ in JSONValue.object([:]) }
+        let providerMetadata: ImageModelV3ProviderMetadata = [
+            "google": ImageModelV3ProviderMetadataValue(images: metadataImages)
+        ]
 
         return ImageModelV3GenerateResult(
             images: .base64(images),
             warnings: warnings,
-            providerMetadata: [
-                "google": ImageModelV3ProviderMetadataValue(images: [])
-            ],
+            providerMetadata: providerMetadata,
             response: ImageModelV3ResponseInfo(
                 timestamp: timestamp,
                 modelId: modelIdentifier.rawValue,

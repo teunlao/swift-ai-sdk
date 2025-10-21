@@ -133,8 +133,8 @@ func convertToGoogleGenerativeAIMessages(
                             converted.append(.inlineData(.init(mimeType: mediaType, data: data)))
                             converted.append(.text(.init(text: "Tool executed successfully and returned this image as a response")))
                         @unknown default:
-                            // Fallback for unknown content part types (matches upstream JSON.stringify)
-                            let jsonString = String(describing: contentPart)
+                            // Fallback for future enum cases mirrors upstream JSON.stringify behaviour
+                            let jsonString = stringifyToolResultContentPart(contentPart)
                             converted.append(.text(.init(text: jsonString)))
                         }
                     }
@@ -208,4 +208,13 @@ private func googleThoughtSignature(from providerOptions: SharedV3ProviderOption
         return nil
     }
     return signature
+}
+
+private func stringifyToolResultContentPart(_ part: LanguageModelV3ToolResultContentPart) -> String {
+    let encoder = JSONEncoder()
+    if let data = try? encoder.encode(part),
+       let string = String(data: data, encoding: .utf8) {
+        return string
+    }
+    return String(describing: part)
 }

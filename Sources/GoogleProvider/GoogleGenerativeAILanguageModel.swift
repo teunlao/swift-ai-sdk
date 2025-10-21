@@ -258,7 +258,7 @@ public final class GoogleGenerativeAILanguageModel: LanguageModelV3 {
 
         if googleOptions?.thinkingConfig?.includeThoughts == true,
            !config.provider.hasPrefix("google.vertex.") {
-            warnings.append(.other(message: "The 'includeThoughts' option is only supported with the Google Vertex provider and might not be supported with the current provider (\(config.provider))."))
+            warnings.append(.other(message: "The 'includeThoughts' option is only supported with the Google Vertex provider and might not be supported or could behave unexpectedly with the current Google provider (\(config.provider))."))
         }
 
         let isGemmaModel = modelIdentifier.rawValue.lowercased().hasPrefix("gemma-")
@@ -323,6 +323,16 @@ public final class GoogleGenerativeAILanguageModel: LanguageModelV3 {
             generationConfig["mediaResolution"] = .string(mediaResolution.rawValue)
         }
 
+        if let imageConfig = googleOptions?.imageConfig {
+            var configObject: [String: JSONValue] = [:]
+            if let aspectRatio = imageConfig.aspectRatio {
+                configObject["aspectRatio"] = .string(aspectRatio.rawValue)
+            }
+            if !configObject.isEmpty {
+                generationConfig["imageConfig"] = .object(configObject)
+            }
+        }
+
         var body: [String: JSONValue] = [
             "contents": promptJSON.contents
         ]
@@ -331,9 +341,8 @@ public final class GoogleGenerativeAILanguageModel: LanguageModelV3 {
             body["systemInstruction"] = systemInstruction
         }
 
-        if !generationConfig.isEmpty {
-            body["generationConfig"] = .object(generationConfig)
-        }
+        // Always include generationConfig, even if empty (matches upstream behavior)
+        body["generationConfig"] = .object(generationConfig)
 
         if let safetySettings = googleOptions?.safetySettings, !safetySettings.isEmpty {
             body["safetySettings"] = .array(safetySettings.map { setting in
@@ -911,4 +920,139 @@ private extension JSONEncoder {
         let raw = try JSONSerialization.jsonObject(with: data, options: [])
         return try jsonValue(from: raw)
     }
+}
+
+// MARK: - Schema Validation Functions
+
+/**
+ Returns a schema for validating grounding metadata.
+
+ Port of `@ai-sdk/google/src/google-generative-ai-language-model.ts` getGroundingMetadataSchema().
+
+ Used to validate grounding metadata from Google Generative AI responses containing
+ web search results or Vertex AI Search results.
+ */
+public func getGroundingMetadataSchema() -> Schema<JSONValue> {
+    let schema: JSONValue = .object([
+        "type": .string("object"),
+        "properties": .object([
+            "webSearchQueries": .object([
+                "type": .string("array"),
+                "items": .object(["type": .string("string")])
+            ]),
+            "retrievalQueries": .object([
+                "type": .string("array"),
+                "items": .object(["type": .string("string")])
+            ]),
+            "searchEntryPoint": .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "renderedContent": .object(["type": .string("string")])
+                ])
+            ]),
+            "groundingChunks": .object([
+                "type": .string("array"),
+                "items": .object([
+                    "type": .string("object"),
+                    "properties": .object([
+                        "web": .object([
+                            "type": .string("object"),
+                            "properties": .object([
+                                "uri": .object(["type": .string("string")]),
+                                "title": .object(["type": .string("string")])
+                            ])
+                        ]),
+                        "retrievedContext": .object([
+                            "type": .string("object"),
+                            "properties": .object([
+                                "uri": .object(["type": .string("string")]),
+                                "title": .object(["type": .string("string")])
+                            ])
+                        ])
+                    ])
+                ])
+            ]),
+            "groundingSupports": .object([
+                "type": .string("array"),
+                "items": .object([
+                    "type": .string("object"),
+                    "properties": .object([
+                        "segment": .object([
+                            "type": .string("object"),
+                            "properties": .object([
+                                "startIndex": .object(["type": .string("number")]),
+                                "endIndex": .object(["type": .string("number")]),
+                                "text": .object(["type": .string("string")])
+                            ])
+                        ]),
+                        "segment_text": .object(["type": .string("string")]),
+                        "groundingChunkIndices": .object([
+                            "type": .string("array"),
+                            "items": .object(["type": .string("number")])
+                        ]),
+                        "supportChunkIndices": .object([
+                            "type": .string("array"),
+                            "items": .object(["type": .string("number")])
+                        ]),
+                        "confidenceScores": .object([
+                            "type": .string("array"),
+                            "items": .object(["type": .string("number")])
+                        ]),
+                        "confidenceScore": .object([
+                            "type": .string("array"),
+                            "items": .object(["type": .string("number")])
+                        ])
+                    ])
+                ])
+            ]),
+            "retrievalMetadata": .object([
+                "oneOf": .array([
+                    .object([
+                        "type": .string("object"),
+                        "properties": .object([
+                            "webDynamicRetrievalScore": .object(["type": .string("number")])
+                        ])
+                    ]),
+                    .object([
+                        "type": .string("object"),
+                        "properties": .object([:])
+                    ])
+                ])
+            ])
+        ]),
+        "additionalProperties": .bool(true)
+    ])
+
+    return jsonSchema(schema)
+}
+
+/**
+ Returns a schema for validating URL context metadata.
+
+ Port of `@ai-sdk/google/src/google-generative-ai-language-model.ts` getUrlContextMetadataSchema().
+
+ Used to validate URL context metadata from Google Generative AI responses.
+ Reference: https://ai.google.dev/api/generate-content#UrlRetrievalMetadata
+ */
+public func getUrlContextMetadataSchema() -> Schema<JSONValue> {
+    let schema: JSONValue = .object([
+        "type": .string("object"),
+        "properties": .object([
+            "urlMetadata": .object([
+                "type": .string("array"),
+                "items": .object([
+                    "type": .string("object"),
+                    "properties": .object([
+                        "retrievedUrl": .object(["type": .string("string")]),
+                        "urlRetrievalStatus": .object(["type": .string("string")])
+                    ]),
+                    "required": .array([.string("retrievedUrl"), .string("urlRetrievalStatus")])
+                ])
+            ])
+        ]),
+        "required": .array([.string("urlMetadata")]),
+        "additionalProperties": .bool(true)
+    ])
+
+    return jsonSchema(schema)
 }
