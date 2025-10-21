@@ -255,7 +255,6 @@ struct GoogleGenerativeAILanguageModelTests {
             headerFields: ["Content-Type": "application/json"]
         )!
 
-        var idCounter = 0
         let fetch: FetchFunction = { request in
             await capture.store(request)
             return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
@@ -645,7 +644,6 @@ struct GoogleGenerativeAILanguageModelTests {
         }
 
         let capture = RequestCapture()
-        var streamCounter = 0
 
         let payloads = [
             #"{"candidates":[{"content":{"parts":[{"text":"Hel"}]}}],"usageMetadata":{}}"#,

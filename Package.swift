@@ -75,7 +75,8 @@ let package = Package(
                 "GoogleProvider",
                 "GroqProvider",
                 .product(name: "ArgumentParser", package: "swift-argument-parser")
-            ]
+            ],
+            exclude: ["README.md"]
         )
     ]
 )

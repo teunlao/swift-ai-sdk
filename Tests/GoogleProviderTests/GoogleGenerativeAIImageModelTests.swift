@@ -16,6 +16,106 @@ private func makeImageConfig(fetch: @escaping FetchFunction) -> GoogleGenerative
 
 @Suite("GoogleGenerativeAIImageModel")
 struct GoogleGenerativeAIImageModelTests {
+    @Test("should pass headers")
+    func passHeaders() async throws {
+        actor RequestCapture {
+            var request: URLRequest?
+            func store(_ request: URLRequest) { self.request = request }
+            func value() -> URLRequest? { request }
+        }
+
+        let capture = RequestCapture()
+        let responseJSON: [String: Any] = [
+            "predictions": [
+                ["bytesBase64Encoded": Data([0x01]).base64EncodedString()],
+                ["bytesBase64Encoded": Data([0x02]).base64EncodedString()]
+            ]
+        ]
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.example.com/v1beta/models/imagen-3.0-generate-002:predict")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let modelWithHeaders = GoogleGenerativeAIImageModel(
+            modelId: GoogleGenerativeAIImageModelId(rawValue: "imagen-3.0-generate-002"),
+            settings: GoogleGenerativeAIImageSettings(),
+            config: GoogleGenerativeAIImageModelConfig(
+                provider: "google.generative-ai",
+                baseURL: "https://api.example.com/v1beta",
+                headers: { ["Custom-Provider-Header": "provider-header-value"] },
+                fetch: fetch
+            )
+        )
+
+        _ = try await modelWithHeaders.doGenerate(options: ImageModelV3CallOptions(
+            prompt: "A cute baby sea otter",
+            n: 2,
+            providerOptions: [:],
+            headers: ["Custom-Request-Header": "request-header-value"]
+        ))
+
+        guard let request = await capture.value() else {
+            Issue.record("Expected request to be captured")
+            return
+        }
+
+        // Normalize headers to lowercase for comparison (matching upstream behavior)
+        let headers = (request.allHTTPHeaderFields ?? [:]).reduce(into: [String: String]()) { result, pair in
+            result[pair.key.lowercased()] = pair.value
+        }
+        #expect(headers["content-type"] == "application/json")
+        #expect(headers["custom-provider-header"] == "provider-header-value")
+        #expect(headers["custom-request-header"] == "request-header-value")
+    }
+
+    @Test("should respect maxImagesPerCall setting")
+    func respectMaxImagesPerCallSetting() {
+        let customModel = GoogleGenerativeAIImageModel(
+            modelId: GoogleGenerativeAIImageModelId(rawValue: "imagen-3.0-generate-002"),
+            settings: GoogleGenerativeAIImageSettings(maxImagesPerCall: 2),
+            config: GoogleGenerativeAIImageModelConfig(
+                provider: "google.generative-ai",
+                baseURL: "https://api.example.com/v1beta",
+                headers: { ["api-key": "test-api-key"] },
+                fetch: nil
+            )
+        )
+
+        if case let .value(maxImages) = customModel.maxImagesPerCall {
+            #expect(maxImages == 2)
+        } else {
+            Issue.record("Expected maxImagesPerCall to be .value(2)")
+        }
+    }
+
+    @Test("should use default maxImagesPerCall when not specified")
+    func useDefaultMaxImagesPerCall() {
+        let defaultModel = GoogleGenerativeAIImageModel(
+            modelId: GoogleGenerativeAIImageModelId(rawValue: "imagen-3.0-generate-002"),
+            settings: GoogleGenerativeAIImageSettings(),
+            config: GoogleGenerativeAIImageModelConfig(
+                provider: "google.generative-ai",
+                baseURL: "https://api.example.com/v1beta",
+                headers: { ["api-key": "test-api-key"] },
+                fetch: nil
+            )
+        )
+
+        if case let .value(maxImages) = defaultModel.maxImagesPerCall {
+            #expect(maxImages == 4)
+        } else {
+            Issue.record("Expected maxImagesPerCall to be .value(4)")
+        }
+    }
+
     @Test("issues warnings for unsupported settings and maps response")
     func warningsAndResponse() async throws {
         actor RequestCapture {
