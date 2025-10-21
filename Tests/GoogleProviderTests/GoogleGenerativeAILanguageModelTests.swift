@@ -748,6 +748,88 @@ struct GoogleGenerativeAILanguageModelTests {
         }
     }
 
+    @Test("should pass tools and toolChoice with required mode")
+    func testPassToolsAndToolChoiceRequired() async throws {
+        actor RequestCapture {
+            var request: URLRequest?
+            func store(_ request: URLRequest) { self.request = request }
+            func value() -> URLRequest? { request }
+        }
+
+        let capture = RequestCapture()
+
+        let responseJSON: [String: Any] = [
+            "candidates": [
+                [
+                    "content": ["parts": [["text": "response"]], "role": "model"],
+                    "finishReason": "STOP"
+                ]
+            ]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-pro"),
+            config: makeLanguageModelConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(options: .init(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
+            tools: [
+                .function(LanguageModelV3FunctionTool(
+                    name: "test-tool",
+                    inputSchema: [
+                        "type": .string("object"),
+                        "properties": .object([
+                            "property1": .object(["type": .string("string")]),
+                            "property2": .object(["type": .string("number")])
+                        ]),
+                        "required": .array([.string("property1"), .string("property2")]),
+                        "additionalProperties": .bool(false)
+                    ]
+                ))
+            ],
+            toolChoice: .required
+        ))
+
+        guard let request = await capture.value() else {
+            Issue.record("Missing captured request")
+            return
+        }
+
+        let json = try decodeRequestBody(request)
+
+        // Check toolConfig with mode ANY
+        if let toolConfig = json["toolConfig"] as? [String: Any],
+           let functionCallingConfig = toolConfig["functionCallingConfig"] as? [String: Any] {
+            #expect(functionCallingConfig["mode"] as? String == "ANY")
+        } else {
+            Issue.record("Missing toolConfig in request")
+        }
+
+        // Check tools are present
+        if let tools = json["tools"] as? [String: Any],
+           let functionDeclarations = tools["functionDeclarations"] as? [[String: Any]],
+           let firstFunction = functionDeclarations.first {
+            #expect(firstFunction["name"] as? String == "test-tool")
+            #expect(firstFunction["description"] as? String == "")
+        } else {
+            Issue.record("Missing tools in request")
+        }
+    }
+
     @Test("should set response mime type with responseFormat")
     func testResponseFormat() async throws {
         actor RequestCapture {
