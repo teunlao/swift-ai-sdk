@@ -2664,4 +2664,695 @@ struct GoogleGenerativeAILanguageModelTests {
             Issue.record("Expected text at index 2")
         }
     }
+
+    // MARK: - doStream Tests
+
+    @Test("should stream text deltas")
+    func testStreamTextDeltas() async throws {
+        let payloads = [
+            #"{"candidates":[{"content":{"parts":[{"text":"Hello"}]}}]}"#,
+            #"{"candidates":[{"content":{"parts":[{"text":", "}]}}]}"#,
+            #"{"candidates":[{"content":{"parts":[{"text":"world!"}]}}]}"#,
+            #"{"candidates":[{"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":294,"candidatesTokenCount":233,"totalTokenCount":527}}"#
+        ]
+        let events = sseEvents(from: payloads)
+
+        let fetch: FetchFunction = { _ in
+            let response = HTTPURLResponse(
+                url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:streamGenerateContent?alt=sse")!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "text/event-stream"]
+            )!
+            return FetchResponse(body: .stream(makeSSEStream(from: events)), urlResponse: response)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-pro"),
+            config: makeLanguageModelConfig(fetch: fetch, generateId: { "0" })
+        )
+
+        let result = try await model.doStream(options: .init(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
+            includeRawChunks: false
+        ))
+
+        let parts = try await collectStream(result.stream)
+
+        // Check for stream-start
+        guard let streamStart = parts.first, case .streamStart = streamStart else {
+            Issue.record("Expected stream-start at beginning")
+            return
+        }
+
+        // Check for text deltas
+        let textDeltas = parts.compactMap { part -> String? in
+            if case .textDelta(_, let delta, _) = part {
+                return delta
+            }
+            return nil
+        }
+
+        #expect(textDeltas == ["Hello", ", ", "world!"])
+
+        // Check for finish
+        guard let finish = parts.last(where: { if case .finish = $0 { return true } else { return false } }) else {
+            Issue.record("Missing finish part")
+            return
+        }
+
+        if case let .finish(finishReason, usage, _) = finish {
+            #expect(finishReason == .stop)
+            #expect(usage.inputTokens == 294)
+            #expect(usage.outputTokens == 233)
+            #expect(usage.totalTokens == 527)
+        }
+    }
+
+    @Test("should stream source events")
+    func testStreamSourceEvents() async throws {
+        let groundingMetadata = #"{"groundingChunks":[{"web":{"uri":"https://source.example.com","title":"Source Title"}}]}"#
+        let payloads = [
+            #"{"candidates":[{"content":{"parts":[{"text":"Some initial text"}]},"groundingMetadata":\#(groundingMetadata)}],"usageMetadata":{"promptTokenCount":294,"candidatesTokenCount":233,"totalTokenCount":527}}"#
+        ]
+        let events = sseEvents(from: payloads)
+
+        let fetch: FetchFunction = { _ in
+            let response = HTTPURLResponse(
+                url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:streamGenerateContent?alt=sse")!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "text/event-stream"]
+            )!
+            return FetchResponse(body: .stream(makeSSEStream(from: events)), urlResponse: response)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-pro"),
+            config: makeLanguageModelConfig(fetch: fetch, generateId: { "test-id" })
+        )
+
+        let result = try await model.doStream(options: .init(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
+            includeRawChunks: false
+        ))
+
+        let parts = try await collectStream(result.stream)
+
+        // Check for source events
+        let sources = parts.compactMap { part -> (String, String)? in
+            if case .source(let source) = part,
+               case let .url(_, url, title, _) = source {
+                return (url, title ?? "")
+            }
+            return nil
+        }
+
+        #expect(sources.count == 1)
+        #expect(sources[0].0 == "https://source.example.com")
+        #expect(sources[0].1 == "Source Title")
+    }
+
+    @Test("should stream sources during intermediate chunks")
+    func testStreamSourcesDuringIntermediateChunks() async throws {
+        let groundingMeta1 = #"{"groundingChunks":[{"web":{"uri":"https://a.com","title":"A"}},{"web":{"uri":"https://b.com","title":"B"}}]}"#
+        let payloads = [
+            #"{"candidates":[{"content":{"parts":[{"text":"text"}]},"groundingMetadata":\#(groundingMeta1)}]}"#,
+            #"{"candidates":[{"content":{"parts":[{"text":"more"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":2,"totalTokenCount":3}}"#
+        ]
+        let events = sseEvents(from: payloads)
+
+        let fetch: FetchFunction = { _ in
+            let response = HTTPURLResponse(
+                url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:streamGenerateContent?alt=sse")!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "text/event-stream"]
+            )!
+            return FetchResponse(body: .stream(makeSSEStream(from: events)), urlResponse: response)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-pro"),
+            config: makeLanguageModelConfig(fetch: fetch, generateId: { "test-id" })
+        )
+
+        let result = try await model.doStream(options: .init(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
+            includeRawChunks: false
+        ))
+
+        let parts = try await collectStream(result.stream)
+
+        // Check for source events
+        let sources = parts.compactMap { part -> (String, String)? in
+            if case .source(let source) = part,
+               case let .url(_, url, title, _) = source {
+                return (url, title ?? "")
+            }
+            return nil
+        }
+
+        #expect(sources.count == 2)
+        #expect(sources[0].0 == "https://a.com")
+        #expect(sources[0].1 == "A")
+        #expect(sources[1].0 == "https://b.com")
+        #expect(sources[1].1 == "B")
+    }
+
+    @Test("should deduplicate sources across chunks")
+    func testDeduplicateSourcesAcrossChunks() async throws {
+        let groundingMeta1 = #"{"groundingChunks":[{"web":{"uri":"https://example.com","title":"Example"}},{"web":{"uri":"https://unique.com","title":"Unique"}}]}"#
+        let groundingMeta2 = #"{"groundingChunks":[{"web":{"uri":"https://example.com","title":"Example Duplicate"}},{"web":{"uri":"https://another.com","title":"Another"}}]}"#
+        let payloads = [
+            #"{"candidates":[{"content":{"parts":[{"text":"first chunk"}]},"groundingMetadata":\#(groundingMeta1)}]}"#,
+            #"{"candidates":[{"content":{"parts":[{"text":"second chunk"}]},"groundingMetadata":\#(groundingMeta2)}]}"#,
+            #"{"candidates":[{"content":{"parts":[{"text":"final chunk"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":2,"totalTokenCount":3}}"#
+        ]
+        let events = sseEvents(from: payloads)
+
+        let fetch: FetchFunction = { _ in
+            let response = HTTPURLResponse(
+                url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:streamGenerateContent?alt=sse")!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "text/event-stream"]
+            )!
+            return FetchResponse(body: .stream(makeSSEStream(from: events)), urlResponse: response)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-pro"),
+            config: makeLanguageModelConfig(fetch: fetch, generateId: { "test-id" })
+        )
+
+        let result = try await model.doStream(options: .init(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
+            includeRawChunks: false
+        ))
+
+        let parts = try await collectStream(result.stream)
+
+        // Check for source events - should be deduplicated by URL
+        let sources = parts.compactMap { part -> String? in
+            if case .source(let source) = part,
+               case let .url(_, url, _, _) = source {
+                return url
+            }
+            return nil
+        }
+
+        // Only unique URLs should appear: https://example.com (first occurrence), https://unique.com, https://another.com
+        #expect(sources.count == 3)
+        #expect(sources.contains("https://example.com"))
+        #expect(sources.contains("https://unique.com"))
+        #expect(sources.contains("https://another.com"))
+        // Verify example.com appears only once despite being in both chunks
+        #expect(sources.filter { $0 == "https://example.com" }.count == 1)
+    }
+
+    @Test("should stream files")
+    func testStreamFiles() async throws {
+        let payloads = [
+            #"{"candidates":[{"content":{"parts":[{"inlineData":{"data":"test","mimeType":"text/plain"}}]},"finishReason":"STOP"}]}"#,
+            #"{"usageMetadata":{"promptTokenCount":294,"candidatesTokenCount":233,"totalTokenCount":527}}"#
+        ]
+        let events = sseEvents(from: payloads)
+
+        let fetch: FetchFunction = { _ in
+            let response = HTTPURLResponse(
+                url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:streamGenerateContent?alt=sse")!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "text/event-stream"]
+            )!
+            return FetchResponse(body: .stream(makeSSEStream(from: events)), urlResponse: response)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-pro"),
+            config: makeLanguageModelConfig(fetch: fetch, generateId: { "test-id" })
+        )
+
+        let result = try await model.doStream(options: .init(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
+            includeRawChunks: false
+        ))
+
+        let parts = try await collectStream(result.stream)
+
+        // Check for file event
+        let files = parts.compactMap { part -> (String, String)? in
+            if case .file(let file) = part {
+                if case .base64(let data) = file.data {
+                    return (file.mediaType, data)
+                }
+            }
+            return nil
+        }
+
+        #expect(files.count == 1)
+        #expect(files[0].0 == "text/plain")
+        #expect(files[0].1 == "test")
+    }
+
+    @Test("should set finishReason to tool-calls when chunk contains functionCall")
+    func testSetFinishReasonToToolCallsWhenChunkContainsFunctionCall() async throws {
+        let functionCall = #"{"name":"get_weather","args":{"location":"Paris"}}"#
+        let payloads = [
+            #"{"candidates":[{"content":{"parts":[{"functionCall":\#(functionCall)}]}}]}"#,
+            #"{"candidates":[{"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":5,"totalTokenCount":15}}"#
+        ]
+        let events = sseEvents(from: payloads)
+
+        let fetch: FetchFunction = { _ in
+            let response = HTTPURLResponse(
+                url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:streamGenerateContent?alt=sse")!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "text/event-stream"]
+            )!
+            return FetchResponse(body: .stream(makeSSEStream(from: events)), urlResponse: response)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-pro"),
+            config: makeLanguageModelConfig(fetch: fetch, generateId: { "test-id" })
+        )
+
+        let result = try await model.doStream(options: .init(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
+            includeRawChunks: false
+        ))
+
+        let parts = try await collectStream(result.stream)
+
+        // Check for finish with tool-calls reason
+        guard let finish = parts.last(where: { if case .finish = $0 { return true } else { return false } }) else {
+            Issue.record("Missing finish part")
+            return
+        }
+
+        if case let .finish(finishReason, _, _) = finish {
+            #expect(finishReason == .toolCalls)
+        }
+    }
+
+    @Test("should expose safety ratings in provider metadata on finish")
+    func testExposeSafetyRatingsInProviderMetadataOnFinish() async throws {
+        let safetyRatings = #"[{"category":"HARM_CATEGORY_DANGEROUS_CONTENT","probability":"NEGLIGIBLE","probabilityScore":0.1,"severity":"LOW","severityScore":0.2,"blocked":false}]"#
+        let payloads = [
+            #"{"candidates":[{"content":{"parts":[{"text":"test"}]},"finishReason":"STOP","safetyRatings":\#(safetyRatings)}]}"#
+        ]
+        let events = sseEvents(from: payloads)
+
+        let fetch: FetchFunction = { _ in
+            let response = HTTPURLResponse(
+                url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:streamGenerateContent?alt=sse")!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "text/event-stream"]
+            )!
+            return FetchResponse(body: .stream(makeSSEStream(from: events)), urlResponse: response)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-pro"),
+            config: makeLanguageModelConfig(fetch: fetch, generateId: { "test-id" })
+        )
+
+        let result = try await model.doStream(options: .init(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
+            includeRawChunks: false
+        ))
+
+        let parts = try await collectStream(result.stream)
+
+        // Check for finish event with safety ratings in provider metadata
+        guard let finish = parts.last(where: { if case .finish = $0 { return true } else { return false } }) else {
+            Issue.record("Missing finish part")
+            return
+        }
+
+        if case let .finish(_, _, providerMetadata) = finish {
+            guard let metadata = providerMetadata,
+                  let googleMeta = metadata["google"],
+                  let safetyRatingsValue = googleMeta["safetyRatings"],
+                  case .array(let ratings) = safetyRatingsValue else {
+                Issue.record("Expected safetyRatings in provider metadata")
+                return
+            }
+
+            #expect(ratings.count == 1)
+            if case .object(let rating) = ratings[0] {
+                #expect(rating["category"] == .string("HARM_CATEGORY_DANGEROUS_CONTENT"))
+                #expect(rating["probability"] == .string("NEGLIGIBLE"))
+            }
+        }
+    }
+
+    @Test("should expose PromptFeedback in provider metadata on finish")
+    func testExposePromptFeedbackInProviderMetadataOnFinish() async throws {
+        let promptFeedback = #"{"blockReason":"SAFETY","safetyRatings":[{"category":"HARM_CATEGORY_DANGEROUS_CONTENT","probability":"HIGH"}]}"#
+        let payloads = [
+            #"{"candidates":[{"content":{"parts":[{"text":"test"}]},"finishReason":"STOP"}],"promptFeedback":\#(promptFeedback)}"#
+        ]
+        let events = sseEvents(from: payloads)
+
+        let fetch: FetchFunction = { _ in
+            let response = HTTPURLResponse(
+                url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:streamGenerateContent?alt=sse")!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "text/event-stream"]
+            )!
+            return FetchResponse(body: .stream(makeSSEStream(from: events)), urlResponse: response)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-pro"),
+            config: makeLanguageModelConfig(fetch: fetch, generateId: { "test-id" })
+        )
+
+        let result = try await model.doStream(options: .init(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
+            includeRawChunks: false
+        ))
+
+        let parts = try await collectStream(result.stream)
+
+        // Check for finish event with promptFeedback in provider metadata
+        guard let finish = parts.last(where: { if case .finish = $0 { return true } else { return false } }) else {
+            Issue.record("Missing finish part")
+            return
+        }
+
+        if case let .finish(_, _, providerMetadata) = finish {
+            guard let metadata = providerMetadata,
+                  let googleMeta = metadata["google"],
+                  let promptFeedbackValue = googleMeta["promptFeedback"],
+                  case .object(let feedback) = promptFeedbackValue else {
+                Issue.record("Expected promptFeedback in provider metadata")
+                return
+            }
+
+            #expect(feedback["blockReason"] == .string("SAFETY"))
+        }
+    }
+
+    @Test("should expose grounding metadata in provider metadata on finish")
+    func testExposeGroundingMetadataInProviderMetadataOnFinish() async throws {
+        let groundingMetadata = #"{"webSearchQueries":["What's the weather in Chicago this weekend?"],"searchEntryPoint":{"renderedContent":"Sample rendered content"}}"#
+        let payloads = [
+            #"{"candidates":[{"content":{"parts":[{"text":"test"}]},"finishReason":"STOP","groundingMetadata":\#(groundingMetadata)}],"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":2,"totalTokenCount":3}}"#
+        ]
+        let events = sseEvents(from: payloads)
+
+        let fetch: FetchFunction = { _ in
+            let response = HTTPURLResponse(
+                url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:streamGenerateContent?alt=sse")!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "text/event-stream"]
+            )!
+            return FetchResponse(body: .stream(makeSSEStream(from: events)), urlResponse: response)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-pro"),
+            config: makeLanguageModelConfig(fetch: fetch, generateId: { "test-id" })
+        )
+
+        let result = try await model.doStream(options: .init(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
+            includeRawChunks: false
+        ))
+
+        let parts = try await collectStream(result.stream)
+
+        // Check for finish event with grounding metadata
+        guard let finish = parts.last(where: { if case .finish = $0 { return true } else { return false } }) else {
+            Issue.record("Missing finish part")
+            return
+        }
+
+        if case let .finish(_, _, providerMetadata) = finish {
+            guard let metadata = providerMetadata,
+                  let googleMeta = metadata["google"],
+                  let groundingMetaValue = googleMeta["groundingMetadata"],
+                  case .object(let groundingMeta) = groundingMetaValue else {
+                Issue.record("Expected groundingMetadata in provider metadata")
+                return
+            }
+
+            if case .array(let queries) = groundingMeta["webSearchQueries"] {
+                #expect(queries.count == 1)
+                #expect(queries[0] == .string("What's the weather in Chicago this weekend?"))
+            }
+        }
+    }
+
+    @Test("should expose url context metadata in provider metadata on finish")
+    func testExposeUrlContextMetadataInProviderMetadataOnFinish() async throws {
+        let urlContextMetadata = #"{"urlMetadata":[{"retrievedUrl":"https://example.com/weather","urlRetrievalStatus":"URL_RETRIEVAL_STATUS_SUCCESS"}]}"#
+        let payloads = [
+            #"{"candidates":[{"content":{"parts":[{"text":"test"}]},"finishReason":"STOP","urlContextMetadata":\#(urlContextMetadata)}],"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":2,"totalTokenCount":3}}"#
+        ]
+        let events = sseEvents(from: payloads)
+
+        let fetch: FetchFunction = { _ in
+            let response = HTTPURLResponse(
+                url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:streamGenerateContent?alt=sse")!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "text/event-stream"]
+            )!
+            return FetchResponse(body: .stream(makeSSEStream(from: events)), urlResponse: response)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-pro"),
+            config: makeLanguageModelConfig(fetch: fetch, generateId: { "test-id" })
+        )
+
+        let result = try await model.doStream(options: .init(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
+            includeRawChunks: false
+        ))
+
+        let parts = try await collectStream(result.stream)
+
+        // Check for finish event with url context metadata
+        guard let finish = parts.last(where: { if case .finish = $0 { return true } else { return false } }) else {
+            Issue.record("Missing finish part")
+            return
+        }
+
+        if case let .finish(_, _, providerMetadata) = finish {
+            guard let metadata = providerMetadata,
+                  let googleMeta = metadata["google"],
+                  let urlContextMetaValue = googleMeta["urlContextMetadata"],
+                  case .object(let urlContextMeta) = urlContextMetaValue else {
+                Issue.record("Expected urlContextMetadata in provider metadata")
+                return
+            }
+
+            if case .array(let urlMetadata) = urlContextMeta["urlMetadata"] {
+                #expect(urlMetadata.count == 1)
+            }
+        }
+    }
+
+    @Test("should stream reasoning parts separately from text parts")
+    func testStreamReasoningPartsSeparatelyFromTextParts() async throws {
+        let payloads = [
+            #"{"candidates":[{"content":{"parts":[{"text":"Visible text 1"}]}}]}"#,
+            #"{"candidates":[{"content":{"parts":[{"text":"This is reasoning","thought":true}]}}]}"#,
+            #"{"candidates":[{"content":{"parts":[{"text":"Visible text 2"}]}}]}"#,
+            #"{"candidates":[{"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":5,"totalTokenCount":15}}"#
+        ]
+        let events = sseEvents(from: payloads)
+
+        let fetch: FetchFunction = { _ in
+            let response = HTTPURLResponse(
+                url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:streamGenerateContent?alt=sse")!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "text/event-stream"]
+            )!
+            return FetchResponse(body: .stream(makeSSEStream(from: events)), urlResponse: response)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-pro"),
+            config: makeLanguageModelConfig(fetch: fetch, generateId: { "test-id" })
+        )
+
+        let result = try await model.doStream(options: .init(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
+            includeRawChunks: false
+        ))
+
+        let parts = try await collectStream(result.stream)
+
+        // Check for text deltas (visible text)
+        let textDeltas = parts.compactMap { part -> String? in
+            if case .textDelta(_, let delta, _) = part {
+                return delta
+            }
+            return nil
+        }
+
+        // Check for reasoning deltas
+        let reasoningDeltas = parts.compactMap { part -> String? in
+            if case .reasoningDelta(_, let delta, _) = part {
+                return delta
+            }
+            return nil
+        }
+
+        #expect(textDeltas.contains("Visible text 1"))
+        #expect(textDeltas.contains("Visible text 2"))
+        #expect(reasoningDeltas.contains("This is reasoning"))
+    }
+
+    @Test("should stream thought signatures with reasoning and text parts")
+    func testStreamThoughtSignaturesWithReasoningAndTextParts() async throws {
+        let payloads = [
+            #"{"candidates":[{"content":{"parts":[{"text":"Visible 1","thoughtSignature":"sig1"}]}}]}"#,
+            #"{"candidates":[{"content":{"parts":[{"text":"Reasoning","thought":true,"thoughtSignature":"sig2"}]}}]}"#,
+            #"{"candidates":[{"content":{"parts":[{"text":"Visible 2","thoughtSignature":"sig3"}]}}]}"#,
+            #"{"candidates":[{"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":5,"totalTokenCount":15}}"#
+        ]
+        let events = sseEvents(from: payloads)
+
+        let fetch: FetchFunction = { _ in
+            let response = HTTPURLResponse(
+                url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:streamGenerateContent?alt=sse")!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "text/event-stream"]
+            )!
+            return FetchResponse(body: .stream(makeSSEStream(from: events)), urlResponse: response)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-pro"),
+            config: makeLanguageModelConfig(fetch: fetch, generateId: { "test-id" })
+        )
+
+        let result = try await model.doStream(options: .init(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
+            includeRawChunks: false
+        ))
+
+        let parts = try await collectStream(result.stream)
+
+        // Check that text parts have thoughtSignature in metadata
+        let textWithSignatures = parts.compactMap { part -> String? in
+            if case .textDelta(_, _, let metadata) = part,
+               let meta = metadata,
+               let googleMeta = meta["google"],
+               case .string = googleMeta["thoughtSignature"] {
+                return "found"
+            }
+            return nil
+        }
+
+        #expect(textWithSignatures.count >= 2) // Should have at least 2 text deltas with signatures
+
+        // Check that reasoning parts have thoughtSignature in metadata
+        let reasoningWithSignatures = parts.compactMap { part -> String? in
+            if case .reasoningDelta(_, _, let metadata) = part,
+               let meta = metadata,
+               let googleMeta = meta["google"],
+               let thoughtSig = googleMeta["thoughtSignature"],
+               case .string(let sig) = thoughtSig {
+                return sig
+            }
+            return nil
+        }
+
+        #expect(reasoningWithSignatures.contains("sig2"))
+    }
+
+    @Test("should include raw chunks when includeRawChunks is enabled")
+    func testIncludeRawChunksWhenEnabled() async throws {
+        let payloads = [
+            #"{"candidates":[{"content":{"parts":[{"text":"Hello"}]}}]}"#
+        ]
+        let events = sseEvents(from: payloads)
+
+        let fetch: FetchFunction = { _ in
+            let response = HTTPURLResponse(
+                url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:streamGenerateContent?alt=sse")!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "text/event-stream"]
+            )!
+            return FetchResponse(body: .stream(makeSSEStream(from: events)), urlResponse: response)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-pro"),
+            config: makeLanguageModelConfig(fetch: fetch, generateId: { "test-id" })
+        )
+
+        let result = try await model.doStream(options: .init(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
+            includeRawChunks: true
+        ))
+
+        let parts = try await collectStream(result.stream)
+
+        // Check that raw chunks are included
+        let hasRawChunk = parts.contains { part in
+            if case .raw = part {
+                return true
+            }
+            return false
+        }
+
+        #expect(hasRawChunk == true)
+    }
+
+    @Test("should not include raw chunks when includeRawChunks is false")
+    func testNotIncludeRawChunksWhenDisabled() async throws {
+        let payloads = [
+            #"{"candidates":[{"content":{"parts":[{"text":"Hello"}]}}]}"#
+        ]
+        let events = sseEvents(from: payloads)
+
+        let fetch: FetchFunction = { _ in
+            let response = HTTPURLResponse(
+                url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:streamGenerateContent?alt=sse")!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "text/event-stream"]
+            )!
+            return FetchResponse(body: .stream(makeSSEStream(from: events)), urlResponse: response)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-pro"),
+            config: makeLanguageModelConfig(fetch: fetch, generateId: { "test-id" })
+        )
+
+        let result = try await model.doStream(options: .init(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
+            includeRawChunks: false
+        ))
+
+        let parts = try await collectStream(result.stream)
+
+        // Check that raw chunks are NOT included
+        let hasRawChunk = parts.contains { part in
+            if case .raw = part {
+                return true
+            }
+            return false
+        }
+
+        #expect(hasRawChunk == false)
+    }
 }
