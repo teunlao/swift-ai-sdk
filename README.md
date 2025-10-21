@@ -67,6 +67,9 @@ _** Core SDK (1519) + Providers (1409), excludes frameworks/infrastructure_
 
 ### 🔌 Providers (5/32 ported)
 
+<details>
+<summary>📋 Provider Test Coverage Details</summary>
+
 **Test counts** (Upstream = TypeScript tests | Swift = Swift tests ported)
 
 | Provider | Impl | Tests | Upstream | Swift | Coverage |
@@ -102,6 +105,8 @@ _** Core SDK (1519) + Providers (1409), excludes frameworks/infrastructure_
 | **revai** | ❌ | ❌ | 6 | 0 | 0% |
 | **vercel** | ❌ | ❌ | 4 | 0 | 0% |
 | **TOTAL** | **5/32** | **3/32** | **1409** | **624** | **44.3%** |
+
+</details>
 
 <details>
 <summary>📊 Complete Summary & Progress Bars</summary>
