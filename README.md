@@ -250,33 +250,6 @@ print(result.text)
 - Swift 6.1 toolchain (see `swift-tools-version` in `Package.swift`).
 - iOS 16+, macOS 13+, tvOS 16+, watchOS 9+ (source of truth: `Package.swift`).
 
-## Upstream & Parity
-
-- Source of truth: Vercel AI SDK 6.0.0-beta.42 (commit `77db222ee`).
-- Goal: identical public API, behaviors, and error messages; any intentional deviations are documented in `plan/design-decisions.md`.
-
-### Compatibility Notes
-- Swift 6.1, iOS 16+/macOS 13+; see `Package.swift` for authoritative constraints.
-- Error messages mirror upstream text where applicable.
-- HTTP `statusText` may differ due to Foundation APIs; see docs.
-- JS‑only schema vendors (zod/arktype/effect/valibot) are not bundled; use `Schema.codable` or JSON Schema.
-- Streaming uses URLSession + SSE; cancellation propagates via `AbortSignal` equivalent.
-- Telemetry spans mirror upstream operation names (e.g., `ai.generateText`).
-- Gateway usage is supported by pointing `baseURL` to your proxy.
-
-## Security & Responsible Use
-
-- Keep provider API keys in environment/Keychain; avoid logging secrets.
-- Follow each provider’s Terms and data-handling policies.
-
-## Contributing
-
-Contributions are welcome. See CONTRIBUTING.md for guidelines (issues, PR workflow, code style, tests). Do not edit `external/` — it mirrors upstream and is read‑only.
-
-## License & Trademarks
-
-Licensed under Apache 2.0 (see `LICENSE`). This project is independent and not affiliated with Vercel or any model provider. “Vercel”, “OpenAI”, and other names are trademarks of their respective owners. Portions of the code are adapted from the Vercel AI SDK under Apache 2.0.
-
 ## Usage: Structured Data (generateObject)
 
 Generate structured data validated by JSON Schema or `Codable`.
@@ -359,6 +332,35 @@ See `examples/` in this repo and the docs site under `apps/docs`.
 ## Community & Support
 
 Use GitHub Issues for bugs/ideas
+
+---
+
+## Upstream & Parity
+
+- Source of truth: Vercel AI SDK 6.0.0-beta.42 (commit `77db222ee`).
+- Goal: identical public API, behaviors, and error messages; any intentional deviations are documented in `plan/design-decisions.md`.
+
+### Compatibility Notes
+- Swift 6.1, iOS 16+/macOS 13+; see `Package.swift` for authoritative constraints.
+- Error messages mirror upstream text where applicable.
+- HTTP `statusText` may differ due to Foundation APIs; see docs.
+- JS‑only schema vendors (zod/arktype/effect/valibot) are not bundled; use `Schema.codable` or JSON Schema.
+- Streaming uses URLSession + SSE; cancellation propagates via `AbortSignal` equivalent.
+- Telemetry spans mirror upstream operation names (e.g., `ai.generateText`).
+- Gateway usage is supported by pointing `baseURL` to your proxy.
+
+## Security & Responsible Use
+
+- Keep provider API keys in environment/Keychain; avoid logging secrets.
+- Follow each provider's Terms and data-handling policies.
+
+## Contributing
+
+Contributions are welcome. See CONTRIBUTING.md for guidelines (issues, PR workflow, code style, tests). Do not edit `external/` — it mirrors upstream and is read‑only.
+
+## License & Trademarks
+
+Licensed under Apache 2.0 (see `LICENSE`). This project is independent and not affiliated with Vercel or any model provider. "Vercel", "OpenAI", and other names are trademarks of their respective owners. Portions of the code are adapted from the Vercel AI SDK under Apache 2.0.
 
 ## Authors / About
 
