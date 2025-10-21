@@ -36,11 +36,7 @@ public final class OpenAICompatibleImageModel: ImageModelV3 {
     public init(modelId: OpenAICompatibleImageModelId, config: OpenAICompatibleImageModelConfig) {
         self.modelIdentifier = modelId
         self.config = config
-        if let prefix = config.provider.split(separator: ".").first {
-            self.providerOptionsName = String(prefix)
-        } else {
-            self.providerOptionsName = "openai-compatible"
-        }
+        self.providerOptionsName = config.provider.split(separator: ".").first.map(String.init) ?? ""
     }
 
     public var provider: String { config.provider }

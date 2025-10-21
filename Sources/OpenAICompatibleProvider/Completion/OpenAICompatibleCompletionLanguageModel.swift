@@ -36,11 +36,7 @@ public final class OpenAICompatibleCompletionLanguageModel: LanguageModelV3 {
     public init(modelId: OpenAICompatibleCompletionModelId, config: OpenAICompatibleCompletionConfig) {
         self.modelIdentifier = modelId
         self.config = config
-        if let prefix = config.provider.split(separator: ".").first {
-            self.providerOptionsName = String(prefix)
-        } else {
-            self.providerOptionsName = "openai-compatible"
-        }
+        self.providerOptionsName = config.provider.split(separator: ".").first.map(String.init) ?? ""
     }
 
     public var provider: String { config.provider }
