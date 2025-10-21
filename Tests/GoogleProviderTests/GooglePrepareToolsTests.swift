@@ -244,6 +244,111 @@ struct GooglePrepareToolsTests {
         #expect(functionConfig["mode"] == .string("NONE"))
     }
 
+    @Test("should handle tool choice \"tool\"")
+    func handleToolChoiceTool() {
+        let functionTool = LanguageModelV3Tool.function(LanguageModelV3FunctionTool(
+            name: "testFunction",
+            inputSchema: .object([:]),
+            description: "Test"
+        ))
+
+        let prepared = prepareGoogleTools(
+            tools: [functionTool],
+            toolChoice: .tool(toolName: "testFunction"),
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-2.5-flash")
+        )
+
+        guard case let .object(toolConfig)? = prepared.toolConfig,
+              case let .object(functionConfig)? = toolConfig["functionCallingConfig"] else {
+            Issue.record("Expected functionCallingConfig")
+            return
+        }
+
+        #expect(functionConfig["mode"] == JSONValue.string("ANY"))
+
+        if let allowedValue = functionConfig["allowedFunctionNames"],
+           case let .array(allowed) = allowedValue {
+            #expect(allowed == [JSONValue.string("testFunction")])
+        } else {
+            Issue.record("Expected allowedFunctionNames array")
+        }
+    }
+
+    @Test("should handle tool choice with mixed tools (provider-defined tools only)")
+    func handleToolChoiceWithMixedTools() {
+        let functionTool = LanguageModelV3Tool.function(LanguageModelV3FunctionTool(
+            name: "testFunction",
+            inputSchema: .object(["type": .string("object"), "properties": .object([:])]),
+            description: "A test function"
+        ))
+        let providerTool = LanguageModelV3Tool.providerDefined(LanguageModelV3ProviderDefinedTool(
+            id: "google.google_search",
+            name: "google_search",
+            args: [:]
+        ))
+
+        let prepared = prepareGoogleTools(
+            tools: [functionTool, providerTool],
+            toolChoice: .auto,
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-2.5-flash")
+        )
+
+        // Should only include provider-defined tools as array
+        guard case let .array(toolsArray)? = prepared.tools else {
+            Issue.record("Expected tools array")
+            return
+        }
+
+        #expect(toolsArray.count == 1)
+        if case let .object(obj) = toolsArray[0] {
+            #expect(obj["googleSearch"] != nil)
+        } else {
+            Issue.record("Expected googleSearch tool")
+        }
+
+        // Should apply tool choice to provider-defined tools (undefined for provider tools)
+        #expect(prepared.toolConfig == nil)
+
+        // Should have warning about mixed tool types
+        #expect(prepared.toolWarnings.count == 1)
+        if case let .unsupportedTool(unsupportedTool, details) = prepared.toolWarnings[0],
+           case .function = unsupportedTool {
+            #expect(details == "Cannot mix function tools with provider-defined tools in the same request. Please use either function tools or provider-defined tools, but not both.")
+        } else {
+            Issue.record("Expected unsupported-tool warning for function tool")
+        }
+    }
+
+    @Test("should handle latest modelId for provider-defined tools correctly")
+    func handleLatestModelIdForProviderDefinedTools() {
+        let tool = LanguageModelV3Tool.providerDefined(LanguageModelV3ProviderDefinedTool(
+            id: "google.google_search",
+            name: "google_search",
+            args: [:]
+        ))
+
+        let prepared = prepareGoogleTools(
+            tools: [tool],
+            toolChoice: nil,
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-flash-latest")
+        )
+
+        guard case let .array(toolsArray)? = prepared.tools else {
+            Issue.record("Expected tools array")
+            return
+        }
+
+        #expect(toolsArray.count == 1)
+        if case let .object(obj) = toolsArray[0] {
+            #expect(obj["googleSearch"] != nil)
+        } else {
+            Issue.record("Expected googleSearch tool")
+        }
+
+        #expect(prepared.toolConfig == nil)
+        #expect(prepared.toolWarnings.isEmpty)
+    }
+
     @Test("returns empty payload when tools absent")
     func noTools() {
         let prepared = prepareGoogleTools(
