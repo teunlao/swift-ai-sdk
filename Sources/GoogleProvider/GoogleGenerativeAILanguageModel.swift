@@ -657,6 +657,8 @@ private func makeProviderMetadata(
 
     if let usageMetadata, let usageJSON = try? JSONEncoder().encodeToJSONValue(usageMetadata) {
         metadata["usageMetadata"] = usageJSON
+    } else {
+        metadata["usageMetadata"] = .null
     }
 
     return metadata.isEmpty ? nil : ["google": metadata]

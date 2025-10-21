@@ -132,6 +132,10 @@ func convertToGoogleGenerativeAIMessages(
                         case .media(let data, let mediaType):
                             converted.append(.inlineData(.init(mimeType: mediaType, data: data)))
                             converted.append(.text(.init(text: "Tool executed successfully and returned this image as a response")))
+                        @unknown default:
+                            // Fallback for unknown content part types (matches upstream JSON.stringify)
+                            let jsonString = String(describing: contentPart)
+                            converted.append(.text(.init(text: jsonString)))
                         }
                     }
 
