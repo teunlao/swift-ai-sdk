@@ -3617,4 +3617,72 @@ struct GoogleGenerativeAILanguageModelTests {
         }
         #expect(secondPartText == "Hello")
     }
+
+    @Test("should stream code execution tool calls and results")
+    func testStreamCodeExecutionToolCallsAndResults() async throws {
+        let payloads = [
+            #"{"candidates":[{"content":{"parts":[{"executableCode":{"language":"PYTHON","code":"print(\"hello\")"}}]}}]}"#,
+            #"{"candidates":[{"content":{"parts":[{"codeExecutionResult":{"outcome":"OUTCOME_OK","output":"hello\n"}}]},"finishReason":"STOP"}]}"#
+        ]
+        let events = sseEvents(from: payloads)
+
+        let fetch: FetchFunction = { _ in
+            let response = HTTPURLResponse(
+                url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-pro:streamGenerateContent?alt=sse")!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "text/event-stream"]
+            )!
+            return FetchResponse(body: .stream(makeSSEStream(from: events)), urlResponse: response)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-2.0-pro"),
+            config: makeLanguageModelConfig(fetch: fetch, generateId: { "test-id" })
+        )
+
+        let result = try await model.doStream(options: .init(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
+            tools: [.providerDefined(LanguageModelV3ProviderDefinedTool(
+                id: "code_execution",
+                name: "code_execution",
+                args: [:]
+            ))],
+            includeRawChunks: false
+        ))
+
+        let parts = try await collectStream(result.stream)
+
+        // Check for tool-call event
+        let toolCalls = parts.compactMap { part -> (String, String, String, Bool)? in
+            if case .toolCall(let call) = part {
+                return (call.toolCallId, call.toolName, call.input, call.providerExecuted ?? false)
+            }
+            return nil
+        }
+
+        #expect(toolCalls.count == 1)
+        #expect(toolCalls[0].0 == "test-id")
+        #expect(toolCalls[0].1 == "code_execution")
+        #expect(toolCalls[0].2.contains("PYTHON"))
+        #expect(toolCalls[0].2.contains("print"))
+        #expect(toolCalls[0].3 == true)
+
+        // Check for tool-result event - result.result is JSONValue!
+        let toolResults = parts.compactMap { part -> (String, String, Bool)? in
+            if case .toolResult(let result) = part {
+                if case .object(let dict) = result.result,
+                   case .string(let outcome) = dict["outcome"],
+                   case .string(let output) = dict["output"] {
+                    return (outcome, output, result.providerExecuted ?? false)
+                }
+            }
+            return nil
+        }
+
+        #expect(toolResults.count == 1)
+        #expect(toolResults[0].0 == "OUTCOME_OK")
+        #expect(toolResults[0].1 == "hello\n")
+        #expect(toolResults[0].2 == true)
+    }
 }
