@@ -28,10 +28,12 @@ private let googleSearchInputSchema = FlexibleSchema(
                     "enum": .array([
                         .string(GoogleSearchArgs.Mode.modeDynamic.rawValue),
                         .string(GoogleSearchArgs.Mode.modeUnspecified.rawValue)
-                    ])
+                    ]),
+                    "default": .string(GoogleSearchArgs.Mode.modeUnspecified.rawValue)
                 ]),
                 "dynamicThreshold": .object([
-                    "type": .array([.string("number"), .string("null")])
+                    "type": .array([.string("number"), .string("null")]),
+                    "default": .number(1)
                 ])
             ])
         ])
@@ -45,13 +47,12 @@ public let googleSearchToolFactory = createProviderDefinedToolFactory(
     mapOptions: { (args: GoogleSearchArgs) in
         var payload = ProviderDefinedToolFactoryOptions(args: [:])
 
-        if let mode = args.mode {
-            payload.args["mode"] = .string(mode.rawValue)
-        }
+        // Apply defaults matching upstream (mode: MODE_UNSPECIFIED, dynamicThreshold: 1)
+        let mode = args.mode ?? .modeUnspecified
+        let threshold = args.dynamicThreshold ?? 1
 
-        if let threshold = args.dynamicThreshold {
-            payload.args["dynamicThreshold"] = .number(threshold)
-        }
+        payload.args["mode"] = .string(mode.rawValue)
+        payload.args["dynamicThreshold"] = .number(threshold)
 
         return payload
     }

@@ -67,6 +67,9 @@ final class GoogleGenerativeAIImageModel: ImageModelV3 {
     public func doGenerate(options: ImageModelV3CallOptions) async throws -> ImageModelV3GenerateResult {
         var warnings: [ImageModelV3CallWarning] = []
 
+        // Default aspectRatio to '1:1' matching upstream
+        let defaultAspectRatio = "1:1"
+
         if options.size != nil {
             warnings.append(
                 .unsupportedSetting(
@@ -95,19 +98,15 @@ final class GoogleGenerativeAIImageModel: ImageModelV3 {
             "sampleCount": .number(Double(options.n))
         ]
 
-        if let size = options.size {
-            // Модель не поддерживает size — пробрасываем его как aspectRatio, как того ждут тесты
-            parameters["aspectRatio"] = .string(size)
-        } else if let aspectRatio = options.aspectRatio {
-            parameters["aspectRatio"] = .string(aspectRatio)
-        }
+        // Use aspectRatio with default '1:1' (ignore size completely)
+        let aspectRatio = options.aspectRatio ?? defaultAspectRatio
+        parameters["aspectRatio"] = .string(aspectRatio)
 
+        // Allow providerOptions to override aspectRatio (Object.assign behavior)
         if let providerOptions {
-            // Сливаем провайдерские опции, но не перезаписываем aspectRatio, если он уже выставлен из size
             let dict = providerOptions.toDictionary()
             for (k, v) in dict {
-                if k == "aspectRatio", parameters["aspectRatio"] != nil { continue }
-                parameters[k] = v
+                parameters[k] = v  // Overwrite any existing values including aspectRatio
             }
         }
 
@@ -136,7 +135,9 @@ final class GoogleGenerativeAIImageModel: ImageModelV3 {
         return ImageModelV3GenerateResult(
             images: .base64(images),
             warnings: warnings,
-            providerMetadata: nil,
+            providerMetadata: [
+                "google": ImageModelV3ProviderMetadataValue(images: [])
+            ],
             response: ImageModelV3ResponseInfo(
                 timestamp: timestamp,
                 modelId: modelIdentifier.rawValue,

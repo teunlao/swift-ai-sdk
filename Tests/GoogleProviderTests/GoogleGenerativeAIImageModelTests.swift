@@ -84,7 +84,8 @@ struct GoogleGenerativeAIImageModelTests {
         #expect(json["instances"] != nil)
         if let parameters = json["parameters"] as? [String: Any] {
             #expect(parameters["sampleCount"] as? Int == 2)
-            #expect(parameters["aspectRatio"] as? String == "1024x1024")
+            // aspectRatio should be "16:9" from providerOptions (size is ignored)
+            #expect(parameters["aspectRatio"] as? String == "16:9")
             #expect(parameters["personGeneration"] as? String == "allow_all")
         } else {
             Issue.record("Expected parameters object")

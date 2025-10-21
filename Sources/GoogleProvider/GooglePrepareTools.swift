@@ -29,10 +29,9 @@ func prepareGoogleTools(
         "gemini-pro-latest"
     ]
     let modelIdString = modelId.rawValue
-    let lowercasedId = modelIdString.lowercased()
 
-    let isGemini2 = lowercasedId.contains("gemini-2") || latestIds.contains(modelIdString)
-    let supportsDynamicRetrieval = lowercasedId.contains("gemini-1.5-flash") && !lowercasedId.contains("-8b")
+    let isGemini2 = modelIdString.contains("gemini-2") || latestIds.contains(modelIdString)
+    let supportsDynamicRetrieval = modelIdString.contains("gemini-1.5-flash") && !modelIdString.contains("-8b")
 
     let hasFunctionTools = tools.contains { if case .function = $0 { return true } else { return false } }
     let hasProviderDefinedTools = tools.contains { if case .providerDefined = $0 { return true } else { return false } }

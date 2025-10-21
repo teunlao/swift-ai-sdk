@@ -257,7 +257,7 @@ public final class GoogleGenerativeAILanguageModel: LanguageModelV3 {
         )
 
         if googleOptions?.thinkingConfig?.includeThoughts == true,
-           !config.provider.lowercased().hasPrefix("google.vertex.") {
+           !config.provider.hasPrefix("google.vertex.") {
             warnings.append(.other(message: "The 'includeThoughts' option is only supported with the Google Vertex provider and might not be supported with the current provider (\(config.provider))."))
         }
 
@@ -498,10 +498,14 @@ private func mapGenerateResponse(
             if let executableCode = part.executableCode, let code = executableCode.code {
                 let toolCallId = generateId()
                 lastCodeExecutionToolCallId = toolCallId
-                let argsObject: JSONValue = .object([
-                    "language": .string(executableCode.language ?? "python"),
-                    "code": .string(code)
-                ])
+
+                // Serialize executableCode as-is without adding defaults
+                var argsDict: [String: JSONValue] = ["code": .string(code)]
+                if let language = executableCode.language {
+                    argsDict["language"] = .string(language)
+                }
+                let argsObject: JSONValue = .object(argsDict)
+
                 content.append(
                     .toolCall(
                         LanguageModelV3ToolCall(
@@ -515,10 +519,15 @@ private func mapGenerateResponse(
                 )
                 hasToolCalls = true
             } else if let result = part.codeExecutionResult, let toolCallId = lastCodeExecutionToolCallId {
-                let resultObject: JSONValue = .object([
-                    "outcome": .string(result.outcome ?? ""),
-                    "output": .string(result.output ?? "")
-                ])
+                // Use actual values without defaults - omit keys if nil
+                var resultDict: [String: JSONValue] = [:]
+                if let outcome = result.outcome {
+                    resultDict["outcome"] = .string(outcome)
+                }
+                if let output = result.output {
+                    resultDict["output"] = .string(output)
+                }
+                let resultObject: JSONValue = .object(resultDict)
                 content.append(
                     .toolResult(
                         LanguageModelV3ToolResult(
@@ -802,10 +811,14 @@ private func handleStreamingParts(
         if let executableCode = part.executableCode, let code = executableCode.code {
             let toolCallId = generateId()
             lastCodeExecutionToolCallId = toolCallId
-            let argsObject: JSONValue = .object([
-                "language": .string(executableCode.language ?? "python"),
-                "code": .string(code)
-            ])
+
+            // Serialize executableCode as-is without adding defaults
+            var argsDict: [String: JSONValue] = ["code": .string(code)]
+            if let language = executableCode.language {
+                argsDict["language"] = .string(language)
+            }
+            let argsObject: JSONValue = .object(argsDict)
+
             continuation.yield(
                 .toolCall(
                     LanguageModelV3ToolCall(
@@ -819,10 +832,15 @@ private func handleStreamingParts(
             )
             hasToolCalls = true
         } else if let result = part.codeExecutionResult, let toolCallId = lastCodeExecutionToolCallId {
-            let resultObject: JSONValue = .object([
-                "outcome": .string(result.outcome ?? ""),
-                "output": .string(result.output ?? "")
-            ])
+            // Use actual values without defaults - omit keys if nil
+            var resultDict: [String: JSONValue] = [:]
+            if let outcome = result.outcome {
+                resultDict["outcome"] = .string(outcome)
+            }
+            if let output = result.output {
+                resultDict["output"] = .string(output)
+            }
+            let resultObject: JSONValue = .object(resultDict)
             continuation.yield(
                 .toolResult(
                     LanguageModelV3ToolResult(
