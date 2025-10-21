@@ -3040,6 +3040,236 @@ struct GoogleGenerativeAILanguageModelTests {
         }
     }
 
+    @Test("should use googleSearch for gemini-2.0-pro")
+    func testUseGoogleSearchForGemini20ProStream() async throws {
+        actor RequestCapture {
+            var request: URLRequest?
+            func store(_ request: URLRequest) { self.request = request }
+            func value() -> URLRequest? { request }
+        }
+
+        let capture = RequestCapture()
+
+        let payloads = [
+            #"{"candidates":[{"content":{"parts":[{"text":""}]}}]}"#
+        ]
+        let events = sseEvents(from: payloads)
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            let response = HTTPURLResponse(
+                url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-pro:streamGenerateContent?alt=sse")!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "text/event-stream"]
+            )!
+            return FetchResponse(body: .stream(makeSSEStream(from: events)), urlResponse: response)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-2.0-pro"),
+            config: makeLanguageModelConfig(fetch: fetch)
+        )
+
+        _ = try await model.doStream(options: .init(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
+            tools: [.providerDefined(LanguageModelV3ProviderDefinedTool(
+                id: "google.google_search",
+                name: "google_search",
+                args: [:]
+            ))],
+            includeRawChunks: false
+        ))
+
+        guard let request = await capture.value() else {
+            Issue.record("Missing captured request")
+            return
+        }
+
+        let json = try decodeRequestBody(request)
+
+        // Check that googleSearch tool is used
+        if let tools = json["tools"] as? [String: Any] {
+            #expect(tools["googleSearch"] != nil)
+        } else {
+            Issue.record("Missing tools in request")
+        }
+    }
+
+    @Test("should use googleSearch for gemini-2.0-flash-exp")
+    func testUseGoogleSearchForGemini20FlashExpStream() async throws {
+        actor RequestCapture {
+            var request: URLRequest?
+            func store(_ request: URLRequest) { self.request = request }
+            func value() -> URLRequest? { request }
+        }
+
+        let capture = RequestCapture()
+
+        let payloads = [
+            #"{"candidates":[{"content":{"parts":[{"text":""}]}}]}"#
+        ]
+        let events = sseEvents(from: payloads)
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            let response = HTTPURLResponse(
+                url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:streamGenerateContent?alt=sse")!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "text/event-stream"]
+            )!
+            return FetchResponse(body: .stream(makeSSEStream(from: events)), urlResponse: response)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-2.0-flash-exp"),
+            config: makeLanguageModelConfig(fetch: fetch)
+        )
+
+        _ = try await model.doStream(options: .init(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
+            tools: [.providerDefined(LanguageModelV3ProviderDefinedTool(
+                id: "google.google_search",
+                name: "google_search",
+                args: [:]
+            ))],
+            includeRawChunks: false
+        ))
+
+        guard let request = await capture.value() else {
+            Issue.record("Missing captured request")
+            return
+        }
+
+        let json = try decodeRequestBody(request)
+
+        // Check that googleSearch tool is used
+        if let tools = json["tools"] as? [String: Any] {
+            #expect(tools["googleSearch"] != nil)
+        } else {
+            Issue.record("Missing tools in request")
+        }
+    }
+
+    @Test("should use googleSearchRetrieval for non-gemini-2 models")
+    func testUseGoogleSearchRetrievalForNonGemini2Stream() async throws {
+        actor RequestCapture {
+            var request: URLRequest?
+            func store(_ request: URLRequest) { self.request = request }
+            func value() -> URLRequest? { request }
+        }
+
+        let capture = RequestCapture()
+
+        let payloads = [
+            #"{"candidates":[{"content":{"parts":[{"text":""}]}}]}"#
+        ]
+        let events = sseEvents(from: payloads)
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            let response = HTTPURLResponse(
+                url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.0-pro:streamGenerateContent?alt=sse")!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "text/event-stream"]
+            )!
+            return FetchResponse(body: .stream(makeSSEStream(from: events)), urlResponse: response)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-1.0-pro"),
+            config: makeLanguageModelConfig(fetch: fetch)
+        )
+
+        _ = try await model.doStream(options: .init(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
+            tools: [.providerDefined(LanguageModelV3ProviderDefinedTool(
+                id: "google.google_search",
+                name: "google_search",
+                args: [:]
+            ))],
+            includeRawChunks: false
+        ))
+
+        guard let request = await capture.value() else {
+            Issue.record("Missing captured request")
+            return
+        }
+
+        let json = try decodeRequestBody(request)
+
+        // Check that googleSearchRetrieval tool is used
+        if let tools = json["tools"] as? [String: Any] {
+            #expect(tools["googleSearchRetrieval"] != nil)
+        } else {
+            Issue.record("Missing tools in request")
+        }
+    }
+
+    @Test("should use dynamic retrieval for gemini-1.5")
+    func testUseDynamicRetrievalForGemini15Stream() async throws {
+        actor RequestCapture {
+            var request: URLRequest?
+            func store(_ request: URLRequest) { self.request = request }
+            func value() -> URLRequest? { request }
+        }
+
+        let capture = RequestCapture()
+
+        let payloads = [
+            #"{"candidates":[{"content":{"parts":[{"text":""}]}}]}"#
+        ]
+        let events = sseEvents(from: payloads)
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            let response = HTTPURLResponse(
+                url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:streamGenerateContent?alt=sse")!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "text/event-stream"]
+            )!
+            return FetchResponse(body: .stream(makeSSEStream(from: events)), urlResponse: response)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-1.5-flash"),
+            config: makeLanguageModelConfig(fetch: fetch)
+        )
+
+        _ = try await model.doStream(options: .init(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
+            tools: [.providerDefined(LanguageModelV3ProviderDefinedTool(
+                id: "google.google_search",
+                name: "google_search",
+                args: [
+                    "mode": .string("MODE_DYNAMIC"),
+                    "dynamicThreshold": .number(1)
+                ]
+            ))],
+            includeRawChunks: false
+        ))
+
+        guard let request = await capture.value() else {
+            Issue.record("Missing captured request")
+            return
+        }
+
+        let json = try decodeRequestBody(request)
+
+        // Check that googleSearchRetrieval with dynamic config is used
+        if let tools = json["tools"] as? [String: Any],
+           let googleSearchRetrieval = tools["googleSearchRetrieval"] as? [String: Any],
+           let dynamicRetrievalConfig = googleSearchRetrieval["dynamicRetrievalConfig"] as? [String: Any] {
+            #expect(dynamicRetrievalConfig["mode"] as? String == "MODE_DYNAMIC")
+            #expect(dynamicRetrievalConfig["dynamicThreshold"] as? Int == 1)
+        } else {
+            Issue.record("Missing googleSearchRetrieval with dynamic config in request")
+        }
+    }
+
     @Test("should expose safety ratings in provider metadata on finish")
     func testExposeSafetyRatingsInProviderMetadataOnFinish() async throws {
         let safetyRatings = #"[{"category":"HARM_CATEGORY_DANGEROUS_CONTENT","probability":"NEGLIGIBLE","probabilityScore":0.1,"severity":"LOW","severityScore":0.2,"blocked":false}]"#
