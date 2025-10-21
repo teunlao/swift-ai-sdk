@@ -331,9 +331,8 @@ public final class GoogleGenerativeAILanguageModel: LanguageModelV3 {
             body["systemInstruction"] = systemInstruction
         }
 
-        if !generationConfig.isEmpty {
-            body["generationConfig"] = .object(generationConfig)
-        }
+        // Always include generationConfig, even if empty (matches upstream behavior)
+        body["generationConfig"] = .object(generationConfig)
 
         if let safetySettings = googleOptions?.safetySettings, !safetySettings.isEmpty {
             body["safetySettings"] = .array(safetySettings.map { setting in
