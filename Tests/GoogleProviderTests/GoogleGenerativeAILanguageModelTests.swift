@@ -178,6 +178,274 @@ struct GoogleGenerativeAILanguageModelTests {
         }
     }
 
+    @Test("should extract text response")
+    func testExtractTextResponse() async throws {
+        let responseJSON: [String: Any] = [
+            "candidates": [
+                [
+                    "content": [
+                        "parts": [["text": "Hello, World!"]],
+                        "role": "model"
+                    ],
+                    "finishReason": "STOP",
+                    "index": 0,
+                    "safetyRatings": [
+                        ["category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "probability": "NEGLIGIBLE"]
+                    ]
+                ]
+            ],
+            "promptFeedback": [
+                "safetyRatings": [
+                    ["category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "probability": "NEGLIGIBLE"]
+                ]
+            ],
+            "usageMetadata": [
+                "promptTokenCount": 1,
+                "candidatesTokenCount": 2,
+                "totalTokenCount": 3
+            ]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-pro"),
+            config: makeLanguageModelConfig(fetch: fetch)
+        )
+
+        let result = try await model.doGenerate(options: .init(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)]
+        ))
+
+        #expect(result.content.count == 1)
+        if case let .text(text) = result.content[0] {
+            #expect(text.text == "Hello, World!")
+        } else {
+            Issue.record("Expected text content")
+        }
+    }
+
+    @Test("should extract usage")
+    func testExtractUsage() async throws {
+        let responseJSON: [String: Any] = [
+            "candidates": [
+                [
+                    "content": [
+                        "parts": [["text": "response"]],
+                        "role": "model"
+                    ],
+                    "finishReason": "STOP"
+                ]
+            ],
+            "usageMetadata": [
+                "promptTokenCount": 20,
+                "candidatesTokenCount": 5,
+                "totalTokenCount": 25
+            ]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-pro"),
+            config: makeLanguageModelConfig(fetch: fetch)
+        )
+
+        let result = try await model.doGenerate(options: .init(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)]
+        ))
+
+        #expect(result.usage.inputTokens == 20)
+        #expect(result.usage.outputTokens == 5)
+        #expect(result.usage.totalTokens == 25)
+    }
+
+    @Test("should handle MALFORMED_FUNCTION_CALL finish reason and empty content object")
+    func testMalformedFunctionCall() async throws {
+        let responseJSON: [String: Any] = [
+            "candidates": [
+                [
+                    "content": [:],
+                    "finishReason": "MALFORMED_FUNCTION_CALL"
+                ]
+            ],
+            "usageMetadata": [
+                "promptTokenCount": 9056,
+                "totalTokenCount": 9056
+            ]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-pro"),
+            config: makeLanguageModelConfig(fetch: fetch)
+        )
+
+        let result = try await model.doGenerate(options: .init(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)]
+        ))
+
+        #expect(result.content.isEmpty)
+        #expect(result.finishReason == .error)
+    }
+
+    @Test("should extract tool calls")
+    func testExtractToolCalls() async throws {
+        let responseJSON: [String: Any] = [
+            "candidates": [
+                [
+                    "content": [
+                        "parts": [
+                            [
+                                "functionCall": [
+                                    "name": "test-tool",
+                                    "args": ["value": "example value"]
+                                ]
+                            ]
+                        ],
+                        "role": "model"
+                    ],
+                    "finishReason": "STOP",
+                    "index": 0,
+                    "safetyRatings": [
+                        ["category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "probability": "NEGLIGIBLE"]
+                    ]
+                ]
+            ],
+            "promptFeedback": [
+                "safetyRatings": [
+                    ["category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "probability": "NEGLIGIBLE"]
+                ]
+            ]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-pro"),
+            config: makeLanguageModelConfig(fetch: fetch, generateId: { "test-id" })
+        )
+
+        let result = try await model.doGenerate(options: .init(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
+            tools: [
+                .function(LanguageModelV3FunctionTool(
+                    name: "test-tool",
+                    inputSchema: [
+                        "type": .string("object"),
+                        "properties": .object(["value": .object(["type": .string("string")])]),
+                        "required": .array([.string("value")]),
+                        "additionalProperties": .bool(false),
+                        "$schema": .string("http://json-schema.org/draft-07/schema#")
+                    ]
+                ))
+            ]
+        ))
+
+        #expect(result.content.count == 1)
+        if case let .toolCall(toolCall) = result.content[0] {
+            #expect(toolCall.toolName == "test-tool")
+            #expect(toolCall.toolCallId == "test-id")
+            #expect(toolCall.input.contains("example value"))
+        } else {
+            Issue.record("Expected tool call content")
+        }
+        #expect(result.finishReason == .toolCalls)
+    }
+
+    @Test("should expose the raw response headers")
+    func testRawResponseHeaders() async throws {
+        let responseJSON: [String: Any] = [
+            "candidates": [
+                [
+                    "content": [
+                        "parts": [["text": "response"]],
+                        "role": "model"
+                    ],
+                    "finishReason": "STOP"
+                ]
+            ],
+            "usageMetadata": [
+                "promptTokenCount": 1,
+                "candidatesTokenCount": 2,
+                "totalTokenCount": 3
+            ]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: [
+                "Content-Type": "application/json",
+                "Test-Header": "test-value"
+            ]
+        )!
+
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-pro"),
+            config: makeLanguageModelConfig(fetch: fetch)
+        )
+
+        let result = try await model.doGenerate(options: .init(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)]
+        ))
+
+        guard let response = result.response, let headers = response.headers else {
+            Issue.record("Expected response headers")
+            return
+        }
+
+        #expect(headers["content-type"] == "application/json")
+        #expect(headers["test-header"] == "test-value")
+    }
+
     @Test("doStream emits text, reasoning, tool events and raw chunks")
     func testDoStream() async throws {
         actor RequestCapture {
@@ -245,5 +513,372 @@ struct GoogleGenerativeAILanguageModelTests {
             #expect(usage.inputTokens == 5)
             #expect(usage.outputTokens == 7)
         }
+    }
+
+    @Test("should pass the model, messages, and options")
+    func testPassModelMessagesOptions() async throws {
+        actor RequestCapture {
+            var request: URLRequest?
+            func store(_ request: URLRequest) { self.request = request }
+            func value() -> URLRequest? { request }
+        }
+
+        let capture = RequestCapture()
+
+        let responseJSON: [String: Any] = [
+            "candidates": [
+                [
+                    "content": ["parts": [["text": "response"]], "role": "model"],
+                    "finishReason": "STOP"
+                ]
+            ],
+            "usageMetadata": [
+                "promptTokenCount": 1,
+                "candidatesTokenCount": 2,
+                "totalTokenCount": 3
+            ]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-pro"),
+            config: makeLanguageModelConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(options: .init(
+            prompt: [
+                .system(content: "test system instruction", providerOptions: nil),
+                .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
+            ],
+            temperature: 0.5,
+            seed: 123
+        ))
+
+        guard let request = await capture.value() else {
+            Issue.record("Missing captured request")
+            return
+        }
+
+        let json = try decodeRequestBody(request)
+        #expect(json["systemInstruction"] != nil)
+        if let systemInstruction = json["systemInstruction"] as? [String: Any],
+           let parts = systemInstruction["parts"] as? [[String: Any]],
+           let text = parts.first?["text"] as? String {
+            #expect(text == "test system instruction")
+        }
+
+        if let contents = json["contents"] as? [[String: Any]],
+           let firstContent = contents.first {
+            #expect(firstContent["role"] as? String == "user")
+        }
+
+        if let generationConfig = json["generationConfig"] as? [String: Any] {
+            #expect(generationConfig["seed"] as? Int == 123)
+            #expect(generationConfig["temperature"] as? Double == 0.5)
+        } else {
+            Issue.record("Missing generationConfig")
+        }
+    }
+
+    @Test("should only pass valid provider options")
+    func testValidProviderOptions() async throws {
+        actor RequestCapture {
+            var request: URLRequest?
+            func store(_ request: URLRequest) { self.request = request }
+            func value() -> URLRequest? { request }
+        }
+
+        let capture = RequestCapture()
+
+        let responseJSON: [String: Any] = [
+            "candidates": [
+                [
+                    "content": ["parts": [["text": "response"]], "role": "model"],
+                    "finishReason": "STOP"
+                ]
+            ]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-pro"),
+            config: makeLanguageModelConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(options: .init(
+            prompt: [
+                .system(content: "test system instruction", providerOptions: nil),
+                .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
+            ],
+            temperature: 0.5,
+            seed: 123,
+            providerOptions: [
+                "google": [
+                    "foo": .string("bar"),
+                    "responseModalities": .array([.string("TEXT"), .string("IMAGE")])
+                ]
+            ]
+        ))
+
+        guard let request = await capture.value() else {
+            Issue.record("Missing captured request")
+            return
+        }
+
+        let json = try decodeRequestBody(request)
+        if let generationConfig = json["generationConfig"] as? [String: Any] {
+            #expect(generationConfig["seed"] as? Int == 123)
+            #expect(generationConfig["temperature"] as? Double == 0.5)
+            if let responseModalities = generationConfig["responseModalities"] as? [String] {
+                #expect(responseModalities == ["TEXT", "IMAGE"])
+            } else {
+                Issue.record("Missing responseModalities")
+            }
+            // "foo" should be filtered out (not valid)
+            #expect(generationConfig["foo"] == nil)
+        } else {
+            Issue.record("Missing generationConfig")
+        }
+    }
+
+    @Test("should pass tools and toolChoice")
+    func testPassToolsAndToolChoice() async throws {
+        actor RequestCapture {
+            var request: URLRequest?
+            func store(_ request: URLRequest) { self.request = request }
+            func value() -> URLRequest? { request }
+        }
+
+        let capture = RequestCapture()
+
+        let responseJSON: [String: Any] = [
+            "candidates": [
+                [
+                    "content": ["parts": [["text": "response"]], "role": "model"],
+                    "finishReason": "STOP"
+                ]
+            ]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-pro"),
+            config: makeLanguageModelConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(options: .init(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
+            tools: [
+                .function(LanguageModelV3FunctionTool(
+                    name: "test-tool",
+                    inputSchema: [
+                        "type": .string("object"),
+                        "properties": .object(["value": .object(["type": .string("string")])]),
+                        "required": .array([.string("value")]),
+                        "additionalProperties": .bool(false),
+                        "$schema": .string("http://json-schema.org/draft-07/schema#")
+                    ]
+                ))
+            ],
+            toolChoice: .tool(toolName: "test-tool")
+        ))
+
+        guard let request = await capture.value() else {
+            Issue.record("Missing captured request")
+            return
+        }
+
+        let json = try decodeRequestBody(request)
+        if let tools = json["tools"] as? [String: Any],
+           let functionDeclarations = tools["functionDeclarations"] as? [[String: Any]],
+           let firstFunction = functionDeclarations.first {
+            #expect(firstFunction["name"] as? String == "test-tool")
+            #expect(firstFunction["description"] as? String == "")
+            if let parameters = firstFunction["parameters"] as? [String: Any] {
+                #expect(parameters["type"] as? String == "object")
+            }
+        } else {
+            Issue.record("Missing tools in request")
+        }
+
+        if let toolConfig = json["toolConfig"] as? [String: Any],
+           let functionCallingConfig = toolConfig["functionCallingConfig"] as? [String: Any] {
+            #expect(functionCallingConfig["mode"] as? String == "ANY")
+            if let allowedFunctionNames = functionCallingConfig["allowedFunctionNames"] as? [String] {
+                #expect(allowedFunctionNames == ["test-tool"])
+            }
+        } else {
+            Issue.record("Missing toolConfig in request")
+        }
+    }
+
+    @Test("should set response mime type with responseFormat")
+    func testResponseFormat() async throws {
+        actor RequestCapture {
+            var request: URLRequest?
+            func store(_ request: URLRequest) { self.request = request }
+            func value() -> URLRequest? { request }
+        }
+
+        let capture = RequestCapture()
+
+        let responseJSON: [String: Any] = [
+            "candidates": [
+                [
+                    "content": ["parts": [["text": "{\"location\":\"Paris\"}"]], "role": "model"],
+                    "finishReason": "STOP"
+                ]
+            ]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-pro"),
+            config: makeLanguageModelConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(options: .init(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
+            responseFormat: .json(
+                schema: [
+                    "type": .string("object"),
+                    "properties": .object(["location": .object(["type": .string("string")])])
+                ],
+                name: nil,
+                description: nil
+            )
+        ))
+
+        guard let request = await capture.value() else {
+            Issue.record("Missing captured request")
+            return
+        }
+
+        let json = try decodeRequestBody(request)
+        if let generationConfig = json["generationConfig"] as? [String: Any] {
+            #expect(generationConfig["responseMimeType"] as? String == "application/json")
+            if let responseSchema = generationConfig["responseSchema"] as? [String: Any] {
+                #expect(responseSchema["type"] as? String == "object")
+                #expect(responseSchema["properties"] != nil)
+            } else {
+                Issue.record("Missing responseSchema")
+            }
+        } else {
+            Issue.record("Missing generationConfig")
+        }
+    }
+
+    @Test("should pass headers")
+    func testPassHeaders() async throws {
+        actor RequestCapture {
+            var request: URLRequest?
+            func store(_ request: URLRequest) { self.request = request }
+            func value() -> URLRequest? { request }
+        }
+
+        let capture = RequestCapture()
+
+        let responseJSON: [String: Any] = [
+            "candidates": [
+                [
+                    "content": ["parts": [["text": "response"]], "role": "model"],
+                    "finishReason": "STOP"
+                ]
+            ]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-pro"),
+            config: GoogleGenerativeAILanguageModel.Config(
+                provider: "google.generative-ai",
+                baseURL: "https://generativelanguage.googleapis.com/v1beta",
+                headers: { [
+                    "x-goog-api-key": "test-api-key",
+                    "Custom-Provider-Header": "provider-header-value"
+                ] },
+                fetch: fetch,
+                generateId: { UUID().uuidString },
+                supportedUrls: { [:] }
+            )
+        )
+
+        _ = try await model.doGenerate(options: .init(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
+            headers: [
+                "Custom-Request-Header": "request-header-value"
+            ]
+        ))
+
+        guard let request = await capture.value() else {
+            Issue.record("Missing captured request")
+            return
+        }
+
+        let headers = request.allHTTPHeaderFields ?? [:]
+        #expect(headers["Content-Type"] == "application/json" || headers["content-type"] == "application/json")
+        #expect(headers["Custom-Provider-Header"] == "provider-header-value" || headers["custom-provider-header"] == "provider-header-value")
+        #expect(headers["Custom-Request-Header"] == "request-header-value" || headers["custom-request-header"] == "request-header-value")
+        #expect(headers["x-goog-api-key"] == "test-api-key")
     }
 }
