@@ -3355,4 +3355,266 @@ struct GoogleGenerativeAILanguageModelTests {
 
         #expect(hasRawChunk == false)
     }
+
+    // MARK: - GEMMA Model Tests
+
+    @Test("should NOT send systemInstruction for GEMMA-3-12b-it model")
+    func testNotSendSystemInstructionForGEMMA12b() async throws {
+        actor RequestCapture {
+            var request: URLRequest?
+            func store(_ request: URLRequest) { self.request = request }
+            func value() -> URLRequest? { request }
+        }
+
+        let capture = RequestCapture()
+
+        let responseJSON: [String: Any] = [
+            "candidates": [
+                [
+                    "content": ["parts": [["text": "Hello!"]], "role": "model"],
+                    "finishReason": "STOP"
+                ]
+            ]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemma-3-12b-it:generateContent")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemma-3-12b-it"),
+            config: makeLanguageModelConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(options: .init(
+            prompt: [
+                .system(content: "You are a helpful assistant.", providerOptions: nil),
+                .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
+            ]
+        ))
+
+        guard let request = await capture.value() else {
+            Issue.record("Missing captured request")
+            return
+        }
+
+        let json = try decodeRequestBody(request)
+
+        // Verify that systemInstruction was NOT sent for GEMMA model
+        #expect(json["systemInstruction"] == nil)
+    }
+
+    @Test("should NOT send systemInstruction for GEMMA-3-27b-it model")
+    func testNotSendSystemInstructionForGEMMA27b() async throws {
+        actor RequestCapture {
+            var request: URLRequest?
+            func store(_ request: URLRequest) { self.request = request }
+            func value() -> URLRequest? { request }
+        }
+
+        let capture = RequestCapture()
+
+        let responseJSON: [String: Any] = [
+            "candidates": [
+                [
+                    "content": ["parts": [["text": "Hello!"]], "role": "model"],
+                    "finishReason": "STOP"
+                ]
+            ]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemma-3-27b-it:generateContent")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemma-3-27b-it"),
+            config: makeLanguageModelConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(options: .init(
+            prompt: [
+                .system(content: "You are a helpful assistant.", providerOptions: nil),
+                .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
+            ]
+        ))
+
+        guard let request = await capture.value() else {
+            Issue.record("Missing captured request")
+            return
+        }
+
+        let json = try decodeRequestBody(request)
+
+        // Verify that systemInstruction was NOT sent for GEMMA model
+        #expect(json["systemInstruction"] == nil)
+    }
+
+    @Test("should still send systemInstruction for Gemini models (regression test)")
+    func testStillSendSystemInstructionForGemini() async throws {
+        actor RequestCapture {
+            var request: URLRequest?
+            func store(_ request: URLRequest) { self.request = request }
+            func value() -> URLRequest? { request }
+        }
+
+        let capture = RequestCapture()
+
+        let responseJSON: [String: Any] = [
+            "candidates": [
+                [
+                    "content": ["parts": [["text": "Hello!"]], "role": "model"],
+                    "finishReason": "STOP"
+                ]
+            ]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-pro"),
+            config: makeLanguageModelConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(options: .init(
+            prompt: [
+                .system(content: "You are a helpful assistant.", providerOptions: nil),
+                .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
+            ]
+        ))
+
+        guard let request = await capture.value() else {
+            Issue.record("Missing captured request")
+            return
+        }
+
+        let json = try decodeRequestBody(request)
+
+        // Verify that systemInstruction WAS sent for Gemini model
+        guard let systemInstruction = json["systemInstruction"] as? [String: Any] else {
+            Issue.record("Expected systemInstruction for Gemini model")
+            return
+        }
+
+        guard let parts = systemInstruction["parts"] as? [[String: Any]] else {
+            Issue.record("Expected parts in systemInstruction")
+            return
+        }
+
+        #expect(parts.count == 1)
+        #expect(parts[0]["text"] as? String == "You are a helpful assistant.")
+    }
+
+    @Test("should prepend system instruction to first user message for GEMMA models")
+    func testPrependSystemInstructionToFirstUserMessageForGEMMA() async throws {
+        actor RequestCapture {
+            var request: URLRequest?
+            func store(_ request: URLRequest) { self.request = request }
+            func value() -> URLRequest? { request }
+        }
+
+        let capture = RequestCapture()
+
+        let responseJSON: [String: Any] = [
+            "candidates": [
+                [
+                    "content": ["parts": [["text": "Hi there!"]], "role": "model"],
+                    "finishReason": "STOP"
+                ]
+            ]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemma-3-12b-it:generateContent")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemma-3-12b-it"),
+            config: makeLanguageModelConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(options: .init(
+            prompt: [
+                .system(content: "You are a helpful assistant.", providerOptions: nil),
+                .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
+            ]
+        ))
+
+        guard let request = await capture.value() else {
+            Issue.record("Missing captured request")
+            return
+        }
+
+        let json = try decodeRequestBody(request)
+
+        // Verify systemInstruction was NOT sent
+        #expect(json["systemInstruction"] == nil)
+
+        // Verify system message was prepended to first user message
+        guard let contents = json["contents"] as? [[String: Any]] else {
+            Issue.record("Expected contents array")
+            return
+        }
+
+        #expect(contents.count >= 1)
+
+        guard let firstMessage = contents.first,
+              let parts = firstMessage["parts"] as? [[String: Any]],
+              parts.count >= 2 else {
+            Issue.record("Expected at least 2 parts in first message")
+            return
+        }
+
+        // First part should be system instruction
+        guard let firstPartText = parts[0]["text"] as? String else {
+            Issue.record("Expected text in first part")
+            return
+        }
+        #expect(firstPartText.contains("You are a helpful assistant."))
+
+        // Second part should be user message
+        guard let secondPartText = parts[1]["text"] as? String else {
+            Issue.record("Expected text in second part")
+            return
+        }
+        #expect(secondPartText == "Hello")
+    }
 }
