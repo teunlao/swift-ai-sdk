@@ -1,6 +1,7 @@
 # Swift AI SDK
 
 [![Tests](https://github.com/teunlao/swift-ai-sdk/actions/workflows/test.yml/badge.svg)](https://github.com/teunlao/swift-ai-sdk/actions/workflows/test.yml)
+[![codecov](https://codecov.io/gh/teunlao/swift-ai-sdk/graph/badge.svg?token=381f5745-12c8-4720-93c7-9748cbb96359)](https://codecov.io/gh/teunlao/swift-ai-sdk)
 [![Swift Version](https://img.shields.io/badge/Swift-6.0-orange.svg)](https://swift.org)
 [![Platforms](https://img.shields.io/badge/Platforms-iOS%20|%20macOS%20|%20tvOS%20|%20watchOS-blue.svg)](https://swift.org)
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
