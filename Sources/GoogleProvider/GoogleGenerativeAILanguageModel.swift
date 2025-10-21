@@ -258,7 +258,7 @@ public final class GoogleGenerativeAILanguageModel: LanguageModelV3 {
 
         if googleOptions?.thinkingConfig?.includeThoughts == true,
            !config.provider.hasPrefix("google.vertex.") {
-            warnings.append(.other(message: "The 'includeThoughts' option is only supported with the Google Vertex provider and might not be supported with the current provider (\(config.provider))."))
+            warnings.append(.other(message: "The 'includeThoughts' option is only supported with the Google Vertex provider and might not be supported or could behave unexpectedly with the current Google provider (\(config.provider))."))
         }
 
         let isGemmaModel = modelIdentifier.rawValue.lowercased().hasPrefix("gemma-")

@@ -3685,4 +3685,202 @@ struct GoogleGenerativeAILanguageModelTests {
         #expect(toolResults[0].1 == "hello\n")
         #expect(toolResults[0].2 == true)
     }
+
+    // MARK: - includeThoughts Warning Tests
+
+    @Test("should generate a warning if includeThoughts is true for a non-Vertex provider")
+    func testGenerateWarningIfIncludeThoughtsForNonVertex() async throws {
+        let responseJSON: [String: Any] = [
+            "candidates": [
+                [
+                    "content": ["parts": [["text": "test"]], "role": "model"],
+                    "finishReason": "STOP"
+                ]
+            ]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { _ in
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-pro"),
+            config: GoogleGenerativeAILanguageModel.Config(
+                provider: "google.generative-ai.chat",
+                baseURL: "https://generativelanguage.googleapis.com/v1beta",
+                headers: { [:] },
+                fetch: fetch,
+                generateId: { "test-id" },
+                supportedUrls: { [:] }
+            )
+        )
+
+        let result = try await model.doGenerate(options: .init(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
+            providerOptions: [
+                "google": [
+                    "thinkingConfig": .object([
+                        "includeThoughts": .bool(true),
+                        "thinkingBudget": .number(500)
+                    ])
+                ]
+            ]
+        ))
+
+        #expect(result.warnings.count == 1)
+        if case .other(let message) = result.warnings[0] {
+            #expect(message == "The 'includeThoughts' option is only supported with the Google Vertex provider and might not be supported or could behave unexpectedly with the current Google provider (google.generative-ai.chat).")
+        }
+    }
+
+    @Test("should NOT generate a warning if includeThoughts is true for a Vertex provider")
+    func testNotGenerateWarningIfIncludeThoughtsForVertex() async throws {
+        let responseJSON: [String: Any] = [
+            "candidates": [
+                [
+                    "content": ["parts": [["text": "test"]], "role": "model"],
+                    "finishReason": "STOP"
+                ]
+            ]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { _ in
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-pro"),
+            config: GoogleGenerativeAILanguageModel.Config(
+                provider: "google.vertex.chat",
+                baseURL: "https://generativelanguage.googleapis.com/v1beta",
+                headers: { [:] },
+                fetch: fetch,
+                generateId: { "test-id" },
+                supportedUrls: { [:] }
+            )
+        )
+
+        let result = try await model.doGenerate(options: .init(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
+            providerOptions: [
+                "google": [
+                    "thinkingConfig": .object([
+                        "includeThoughts": .bool(true),
+                        "thinkingBudget": .number(500)
+                    ])
+                ]
+            ]
+        ))
+
+        #expect(result.warnings.isEmpty)
+    }
+
+    @Test("should NOT generate a warning if includeThoughts is false for a non-Vertex provider")
+    func testNotGenerateWarningIfIncludeThoughtsFalseForNonVertex() async throws {
+        let responseJSON: [String: Any] = [
+            "candidates": [
+                [
+                    "content": ["parts": [["text": "test"]], "role": "model"],
+                    "finishReason": "STOP"
+                ]
+            ]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { _ in
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-pro"),
+            config: GoogleGenerativeAILanguageModel.Config(
+                provider: "google.generative-ai.chat",
+                baseURL: "https://generativelanguage.googleapis.com/v1beta",
+                headers: { [:] },
+                fetch: fetch,
+                generateId: { "test-id" },
+                supportedUrls: { [:] }
+            )
+        )
+
+        let result = try await model.doGenerate(options: .init(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
+            providerOptions: [
+                "google": [
+                    "thinkingConfig": .object([
+                        "includeThoughts": .bool(false),
+                        "thinkingBudget": .number(500)
+                    ])
+                ]
+            ]
+        ))
+
+        #expect(result.warnings.isEmpty)
+    }
+
+    @Test("should NOT generate a warning if thinkingConfig is not provided for a non-Vertex provider")
+    func testNotGenerateWarningIfThinkingConfigNotProvided() async throws {
+        let responseJSON: [String: Any] = [
+            "candidates": [
+                [
+                    "content": ["parts": [["text": "test"]], "role": "model"],
+                    "finishReason": "STOP"
+                ]
+            ]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { _ in
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-pro"),
+            config: GoogleGenerativeAILanguageModel.Config(
+                provider: "google.generative-ai.chat",
+                baseURL: "https://generativelanguage.googleapis.com/v1beta",
+                headers: { [:] },
+                fetch: fetch,
+                generateId: { "test-id" },
+                supportedUrls: { [:] }
+            )
+        )
+
+        let result = try await model.doGenerate(options: .init(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
+            providerOptions: ["google": [:]]
+        ))
+
+        #expect(result.warnings.isEmpty)
+    }
 }
