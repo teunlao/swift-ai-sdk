@@ -185,10 +185,9 @@ public final class GroqTranscriptionModel: TranscriptionModelV3 {
             if let temperature = groqOptions.temperature {
                 builder.appendField(name: "temperature", value: String(temperature))
             }
-            if let granularities = groqOptions.timestampGranularities {
-                for granularity in granularities {
-                    builder.appendField(name: "timestamp_granularities[]", value: granularity)
-                }
+            if let granularities = groqOptions.timestampGranularities, !granularities.isEmpty {
+                let joined = granularities.joined(separator: ",")
+                builder.appendField(name: "timestamp_granularities", value: joined)
             }
         }
 
