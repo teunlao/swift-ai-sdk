@@ -3534,6 +3534,95 @@ struct GoogleGenerativeAILanguageModelTests {
         #expect(parts[0]["text"] as? String == "You are a helpful assistant.")
     }
 
+    @Test("should NOT generate warning when GEMMA model is used without system instructions")
+    func testNotGenerateWarningWhenGEMMAWithoutSystemInstructions() async throws {
+        let responseJSON: [String: Any] = [
+            "candidates": [
+                [
+                    "content": ["parts": [["text": "Hello!"]], "role": "model"],
+                    "finishReason": "STOP",
+                    "index": 0
+                ]
+            ]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemma-3-12b-it:generateContent")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { _ in
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemma-3-12b-it"),
+            config: GoogleGenerativeAILanguageModel.Config(
+                provider: "google.generative-ai",
+                baseURL: "https://generativelanguage.googleapis.com/v1beta",
+                headers: { ["x-goog-api-key": "test-api-key"] },
+                fetch: fetch,
+                generateId: { "test-id" },
+                supportedUrls: { [:] }
+            )
+        )
+
+        let result = try await model.doGenerate(options: .init(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)]
+        ))
+
+        #expect(result.warnings.isEmpty)
+    }
+
+    @Test("should NOT generate warning when Gemini model is used with system instructions")
+    func testNotGenerateWarningWhenGeminiWithSystemInstructions() async throws {
+        let responseJSON: [String: Any] = [
+            "candidates": [
+                [
+                    "content": ["parts": [["text": "Hello!"]], "role": "model"],
+                    "finishReason": "STOP",
+                    "index": 0
+                ]
+            ]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { _ in
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-pro"),
+            config: GoogleGenerativeAILanguageModel.Config(
+                provider: "google.generative-ai",
+                baseURL: "https://generativelanguage.googleapis.com/v1beta",
+                headers: { ["x-goog-api-key": "test-api-key"] },
+                fetch: fetch,
+                generateId: { "test-id" },
+                supportedUrls: { [:] }
+            )
+        )
+
+        let result = try await model.doGenerate(options: .init(
+            prompt: [
+                .system(content: "You are a helpful assistant.", providerOptions: nil),
+                .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
+            ]
+        ))
+
+        #expect(result.warnings.isEmpty)
+    }
+
     @Test("should prepend system instruction to first user message for GEMMA models")
     func testPrependSystemInstructionToFirstUserMessageForGEMMA() async throws {
         actor RequestCapture {
