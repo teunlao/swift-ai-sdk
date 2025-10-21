@@ -55,6 +55,27 @@ public enum GoogleGenerativeAIMediaResolution: String, Sendable, Equatable {
     case high = "MEDIA_RESOLUTION_HIGH"
 }
 
+public enum GoogleGenerativeAIImageConfigAspectRatio: String, Sendable, Equatable {
+    case oneToOne = "1:1"
+    case twoToThree = "2:3"
+    case threeToTwo = "3:2"
+    case threeToFour = "3:4"
+    case fourToThree = "4:3"
+    case fourToFive = "4:5"
+    case fiveToFour = "5:4"
+    case nineToSixteen = "9:16"
+    case sixteenToNine = "16:9"
+    case twentyOneToNine = "21:9"
+}
+
+public struct GoogleGenerativeAIImageConfig: Sendable, Equatable {
+    public var aspectRatio: GoogleGenerativeAIImageConfigAspectRatio?
+
+    public init(aspectRatio: GoogleGenerativeAIImageConfigAspectRatio? = nil) {
+        self.aspectRatio = aspectRatio
+    }
+}
+
 public struct GoogleGenerativeAIProviderOptions: Sendable, Equatable {
     public var responseModalities: [GoogleGenerativeAIResponseModality]?
     public var thinkingConfig: GoogleGenerativeAIThinkingConfig?
@@ -65,6 +86,7 @@ public struct GoogleGenerativeAIProviderOptions: Sendable, Equatable {
     public var audioTimestamp: Bool?
     public var labels: [String: String]?
     public var mediaResolution: GoogleGenerativeAIMediaResolution?
+    public var imageConfig: GoogleGenerativeAIImageConfig?
 
     public init(
         responseModalities: [GoogleGenerativeAIResponseModality]? = nil,
@@ -75,7 +97,8 @@ public struct GoogleGenerativeAIProviderOptions: Sendable, Equatable {
         threshold: GoogleGenerativeAISafetyThreshold? = nil,
         audioTimestamp: Bool? = nil,
         labels: [String: String]? = nil,
-        mediaResolution: GoogleGenerativeAIMediaResolution? = nil
+        mediaResolution: GoogleGenerativeAIMediaResolution? = nil,
+        imageConfig: GoogleGenerativeAIImageConfig? = nil
     ) {
         self.responseModalities = responseModalities
         self.thinkingConfig = thinkingConfig
@@ -86,6 +109,7 @@ public struct GoogleGenerativeAIProviderOptions: Sendable, Equatable {
         self.audioTimestamp = audioTimestamp
         self.labels = labels
         self.mediaResolution = mediaResolution
+        self.imageConfig = imageConfig
     }
 }
 
@@ -314,6 +338,32 @@ public let googleGenerativeAIProviderOptionsSchema = FlexibleSchema(
                     mediaResolution = parsed
                 }
 
+                var imageConfig: GoogleGenerativeAIImageConfig? = nil
+                if let imageConfigValue = dict["imageConfig"], imageConfigValue != .null {
+                    guard case .object(let imageConfigDict) = imageConfigValue else {
+                        let error = SchemaValidationIssuesError(
+                            vendor: "google",
+                            issues: "imageConfig must be an object"
+                        )
+                        return .failure(error: TypeValidationError.wrap(value: imageConfigValue, cause: error))
+                    }
+
+                    var aspectRatio: GoogleGenerativeAIImageConfigAspectRatio? = nil
+                    if let aspectValue = imageConfigDict["aspectRatio"], aspectValue != .null {
+                        guard case .string(let aspectRaw) = aspectValue,
+                              let parsed = GoogleGenerativeAIImageConfigAspectRatio(rawValue: aspectRaw) else {
+                            let error = SchemaValidationIssuesError(
+                                vendor: "google",
+                                issues: "imageConfig.aspectRatio must be a supported ratio"
+                            )
+                            return .failure(error: TypeValidationError.wrap(value: aspectValue, cause: error))
+                        }
+                        aspectRatio = parsed
+                    }
+
+                    imageConfig = GoogleGenerativeAIImageConfig(aspectRatio: aspectRatio)
+                }
+
                 let options = GoogleGenerativeAIProviderOptions(
                     responseModalities: responseModalities,
                     thinkingConfig: thinkingConfig,
@@ -323,7 +373,8 @@ public let googleGenerativeAIProviderOptionsSchema = FlexibleSchema(
                     threshold: threshold,
                     audioTimestamp: audioTimestamp,
                     labels: labels,
-                    mediaResolution: mediaResolution
+                    mediaResolution: mediaResolution,
+                    imageConfig: imageConfig
                 )
 
                 return .success(value: options)
@@ -386,6 +437,16 @@ extension GoogleGenerativeAIProviderOptions {
 
         if let mediaResolution {
             result["mediaResolution"] = mediaResolution.rawValue
+        }
+
+        if let imageConfig {
+            var config: [String: Any] = [:]
+            if let aspectRatio = imageConfig.aspectRatio {
+                config["aspectRatio"] = aspectRatio.rawValue
+            }
+            if !config.isEmpty {
+                result["imageConfig"] = config
+            }
         }
 
         return result

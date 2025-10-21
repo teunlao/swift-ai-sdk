@@ -323,6 +323,16 @@ public final class GoogleGenerativeAILanguageModel: LanguageModelV3 {
             generationConfig["mediaResolution"] = .string(mediaResolution.rawValue)
         }
 
+        if let imageConfig = googleOptions?.imageConfig {
+            var configObject: [String: JSONValue] = [:]
+            if let aspectRatio = imageConfig.aspectRatio {
+                configObject["aspectRatio"] = .string(aspectRatio.rawValue)
+            }
+            if !configObject.isEmpty {
+                generationConfig["imageConfig"] = .object(configObject)
+            }
+        }
+
         var body: [String: JSONValue] = [
             "contents": promptJSON.contents
         ]

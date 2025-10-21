@@ -280,6 +280,73 @@ struct GoogleGenerativeAILanguageModelTests {
         #expect(result.usage.totalTokens == 25)
     }
 
+    @Test("includes imageConfig provider option in generation config")
+    func testImageConfigProviderOption() async throws {
+        actor RequestCapture {
+            var request: URLRequest?
+            func store(_ request: URLRequest) { self.request = request }
+            func value() -> URLRequest? { request }
+        }
+
+        let capture = RequestCapture()
+
+        let responseJSON: [String: Any] = [
+            "candidates": [
+                [
+                    "content": [
+                        "parts": [["text": "ok"]],
+                        "role": "model"
+                    ],
+                    "finishReason": "STOP"
+                ]
+            ]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-2.5-flash"),
+            config: makeLanguageModelConfig(fetch: fetch)
+        )
+
+        let prompt: LanguageModelV3Prompt = [
+            .user(content: [.text(.init(text: "Describe an image"))], providerOptions: nil)
+        ]
+
+        _ = try await model.doGenerate(options: .init(
+            prompt: prompt,
+            providerOptions: [
+                "google": [
+                    "imageConfig": .object([
+                        "aspectRatio": .string("21:9")
+                    ])
+                ]
+            ]
+        ))
+
+        guard let request = await capture.value(),
+              let body = request.httpBody,
+              let json = try JSONSerialization.jsonObject(with: body) as? [String: Any],
+              let generationConfig = json["generationConfig"] as? [String: Any],
+              let imageConfig = generationConfig["imageConfig"] as? [String: Any] else {
+            Issue.record("Missing imageConfig in request body")
+            return
+        }
+
+        #expect(imageConfig["aspectRatio"] as? String == "21:9")
+    }
+
     @Test("should handle MALFORMED_FUNCTION_CALL finish reason and empty content object")
     func testMalformedFunctionCall() async throws {
         let responseJSON: [String: Any] = [
@@ -1484,12 +1551,12 @@ struct GoogleGenerativeAILanguageModelTests {
 
         let json = try decodeRequestBody(request)
 
-        guard let tools = json["tools"] as? [String: Any] else {
+        guard let toolsArray = json["tools"] as? [[String: Any]] else {
             Issue.record("Missing tools in request")
             return
         }
 
-        #expect(tools["googleSearch"] != nil)
+        #expect(toolsArray.contains { $0["googleSearch"] != nil })
     }
 
     @Test("should use googleSearchRetrieval for non-gemini-2 models")
@@ -1547,12 +1614,12 @@ struct GoogleGenerativeAILanguageModelTests {
 
         let json = try decodeRequestBody(request)
 
-        guard let tools = json["tools"] as? [String: Any] else {
+        guard let toolsArray = json["tools"] as? [[String: Any]] else {
             Issue.record("Missing tools in request")
             return
         }
 
-        #expect(tools["googleSearchRetrieval"] != nil)
+        #expect(toolsArray.contains { $0["googleSearchRetrieval"] != nil })
     }
 
     @Test("should pass response format")
@@ -1879,8 +1946,9 @@ struct GoogleGenerativeAILanguageModelTests {
 
         let json = try decodeRequestBody(request)
 
-        guard let tools = json["tools"] as? [String: Any],
-              let googleSearchRetrieval = tools["googleSearchRetrieval"] as? [String: Any],
+        guard let toolsArray = json["tools"] as? [[String: Any]],
+              let googleSearchEntry = toolsArray.first(where: { $0["googleSearchRetrieval"] != nil }),
+              let googleSearchRetrieval = googleSearchEntry["googleSearchRetrieval"] as? [String: Any],
               let dynamicRetrievalConfig = googleSearchRetrieval["dynamicRetrievalConfig"] as? [String: Any] else {
             Issue.record("Missing googleSearchRetrieval with dynamicRetrievalConfig")
             return
@@ -1945,12 +2013,11 @@ struct GoogleGenerativeAILanguageModelTests {
 
         let json = try decodeRequestBody(request)
 
-        guard let tools = json["tools"] as? [String: Any] else {
+        guard let toolsArray = json["tools"] as? [[String: Any]],
+              toolsArray.contains(where: { $0["urlContext"] != nil }) else {
             Issue.record("Missing tools in request")
             return
         }
-
-        #expect(tools["urlContext"] != nil)
     }
 
     @Test("should pass responseModalities in provider options")
@@ -2516,12 +2583,12 @@ struct GoogleGenerativeAILanguageModelTests {
 
         let json = try decodeRequestBody(request)
 
-        guard let tools = json["tools"] as? [String: Any] else {
+        guard let toolsArray = json["tools"] as? [[String: Any]] else {
             Issue.record("Missing tools in request")
             return
         }
 
-        #expect(tools["googleSearch"] != nil)
+        #expect(toolsArray.contains { $0["googleSearch"] != nil })
     }
 
     @Test("should pass specification with responseFormat and structuredOutputs = true (default)")
@@ -3089,8 +3156,8 @@ struct GoogleGenerativeAILanguageModelTests {
         let json = try decodeRequestBody(request)
 
         // Check that googleSearch tool is used
-        if let tools = json["tools"] as? [String: Any] {
-            #expect(tools["googleSearch"] != nil)
+        if let toolsArray = json["tools"] as? [[String: Any]] {
+            #expect(toolsArray.contains { $0["googleSearch"] != nil })
         } else {
             Issue.record("Missing tools in request")
         }
@@ -3145,8 +3212,8 @@ struct GoogleGenerativeAILanguageModelTests {
         let json = try decodeRequestBody(request)
 
         // Check that googleSearch tool is used
-        if let tools = json["tools"] as? [String: Any] {
-            #expect(tools["googleSearch"] != nil)
+        if let toolsArray = json["tools"] as? [[String: Any]] {
+            #expect(toolsArray.contains { $0["googleSearch"] != nil })
         } else {
             Issue.record("Missing tools in request")
         }
@@ -3201,8 +3268,8 @@ struct GoogleGenerativeAILanguageModelTests {
         let json = try decodeRequestBody(request)
 
         // Check that googleSearchRetrieval tool is used
-        if let tools = json["tools"] as? [String: Any] {
-            #expect(tools["googleSearchRetrieval"] != nil)
+        if let toolsArray = json["tools"] as? [[String: Any]] {
+            #expect(toolsArray.contains { $0["googleSearchRetrieval"] != nil })
         } else {
             Issue.record("Missing tools in request")
         }
@@ -3260,8 +3327,8 @@ struct GoogleGenerativeAILanguageModelTests {
         let json = try decodeRequestBody(request)
 
         // Check that googleSearchRetrieval with dynamic config is used
-        if let tools = json["tools"] as? [String: Any],
-           let googleSearchRetrieval = tools["googleSearchRetrieval"] as? [String: Any],
+        if let toolsArray = json["tools"] as? [[String: Any]],
+           let googleSearchRetrieval = toolsArray.first(where: { $0["googleSearchRetrieval"] != nil })?["googleSearchRetrieval"] as? [String: Any],
            let dynamicRetrievalConfig = googleSearchRetrieval["dynamicRetrievalConfig"] as? [String: Any] {
             #expect(dynamicRetrievalConfig["mode"] as? String == "MODE_DYNAMIC")
             #expect(dynamicRetrievalConfig["dynamicThreshold"] as? Int == 1)

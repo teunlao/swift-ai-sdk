@@ -74,6 +74,12 @@ struct GoogleGenerativeAIImageModelTests {
         }
         #expect(result.response.timestamp == Date(timeIntervalSince1970: 1_700_000_000))
 
+        if let metadata = result.providerMetadata?["google"] {
+            #expect(metadata.images.count == 2)
+        } else {
+            Issue.record("Expected provider metadata for google")
+        }
+
         guard let request = await capture.value(),
               let body = request.httpBody,
               let json = try JSONSerialization.jsonObject(with: body) as? [String: Any] else {

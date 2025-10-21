@@ -59,13 +59,20 @@ struct GooglePrepareToolsTests {
             modelId: GoogleGenerativeAIModelId(rawValue: "gemini-1.5-flash")
         )
 
-        guard case let .object(toolsObject)? = prepared.tools else {
-            Issue.record("Expected tools object")
+        guard case let .array(toolsArray)? = prepared.tools else {
+            Issue.record("Expected tools array")
             return
         }
 
-        #expect(toolsObject["googleSearchRetrieval"] != nil)
-        let retrieval = toolsObject["googleSearchRetrieval"]
+        #expect(toolsArray.count == 1)
+
+        guard case let .object(toolObject) = toolsArray.first else {
+            Issue.record("Expected tool object entry")
+            return
+        }
+
+        #expect(toolObject["googleSearchRetrieval"] != nil)
+        let retrieval = toolObject["googleSearchRetrieval"]
         guard case let .object(config)? = retrieval,
               case let .object(dynamicConfig)? = config["dynamicRetrievalConfig"] else {
             Issue.record("Expected dynamic retrieval config")
