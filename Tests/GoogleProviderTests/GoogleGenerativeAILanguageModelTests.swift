@@ -3245,6 +3245,70 @@ struct GoogleGenerativeAILanguageModelTests {
         }
     }
 
+    @Test("should only pass valid provider options")
+    func testOnlyPassValidProviderOptionsStream() async throws {
+        actor RequestCapture {
+            var request: URLRequest?
+            func store(_ request: URLRequest) { self.request = request }
+            func value() -> URLRequest? { request }
+        }
+
+        let capture = RequestCapture()
+
+        let payloads = [
+            #"{"candidates":[{"content":{"parts":[{"text":""}]}}]}"#
+        ]
+        let events = sseEvents(from: payloads)
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            let response = HTTPURLResponse(
+                url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:streamGenerateContent?alt=sse")!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "text/event-stream"]
+            )!
+            return FetchResponse(body: .stream(makeSSEStream(from: events)), urlResponse: response)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-pro"),
+            config: makeLanguageModelConfig(fetch: fetch)
+        )
+
+        _ = try await model.doStream(options: .init(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
+            includeRawChunks: false,
+            providerOptions: [
+                "google": [
+                    "foo": .string("bar"), // invalid option, should be ignored
+                    "responseModalities": .array([.string("TEXT"), .string("IMAGE")])
+                ]
+            ]
+        ))
+
+        guard let request = await capture.value() else {
+            Issue.record("Missing captured request")
+            return
+        }
+
+        let json = try decodeRequestBody(request)
+
+        // Check that only valid options are passed
+        if let generationConfig = json["generationConfig"] as? [String: Any],
+           let responseModalities = generationConfig["responseModalities"] as? [String] {
+            #expect(responseModalities == ["TEXT", "IMAGE"])
+        } else {
+            Issue.record("Missing responseModalities in generationConfig")
+        }
+
+        // Check that foo is not in the request
+        #expect(json["foo"] == nil)
+        if let generationConfig = json["generationConfig"] as? [String: Any] {
+            #expect(generationConfig["foo"] == nil)
+        }
+    }
+
     @Test("should stream reasoning parts separately from text parts")
     func testStreamReasoningPartsSeparatelyFromTextParts() async throws {
         let payloads = [
