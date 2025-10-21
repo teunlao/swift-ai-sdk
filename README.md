@@ -5,10 +5,13 @@
 [![Platforms](https://img.shields.io/badge/Platforms-iOS%20|%20macOS%20|%20tvOS%20|%20watchOS-blue.svg)](https://swift.org)
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/teunlao/swift-ai-sdk)](https://github.com/teunlao/swift-ai-sdk/releases)
+[![Documentation](https://img.shields.io/badge/docs-swift--ai--sdk-blue)](https://swift-ai-sdk-docs.vercel.app)
 [![](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2Fteunlao%2Fswift-ai-sdk%2Fbadge%3Ftype%3Dswift-versions)](https://swiftpackageindex.com/teunlao/swift-ai-sdk)
 [![](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2Fteunlao%2Fswift-ai-sdk%2Fbadge%3Ftype%3Dplatforms)](https://swiftpackageindex.com/teunlao/swift-ai-sdk)
 
 A unified AI SDK for Swift, bringing the power of [Vercel AI SDK](https://github.com/vercel/ai) to Apple platforms with 100% API parity.
+
+📖 **[Documentation](https://swift-ai-sdk-docs.vercel.app)** | 🚀 **[Getting Started](https://swift-ai-sdk-docs.vercel.app/getting-started/ios-macos-quickstart)** | 💬 **[Discussions](https://github.com/teunlao/swift-ai-sdk/discussions)**
 
 ## ✨ Features
 

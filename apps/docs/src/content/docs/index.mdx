@@ -1,0 +1,54 @@
+---
+title: Swift AI SDK
+description: A unified AI SDK for Swift, bringing the power of Vercel AI SDK to Apple platforms with 100% API parity.
+template: splash
+hero:
+  title: Swift AI SDK
+  tagline: A unified AI SDK for Swift, bringing the power of Vercel AI SDK to Apple platforms with 100% API parity.
+  actions:
+    - text: Get Started
+      link: /getting-started/ios-macos-quickstart
+      icon: right-arrow
+      variant: primary
+    - text: View on GitHub
+      link: https://github.com/teunlao/swift-ai-sdk
+      icon: github
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+## Quick Start
+
+<CardGrid>
+  <Card title="iOS & macOS" icon="apple">
+    Build AI-powered apps for iOS and macOS
+
+    [Get Started →](/getting-started/ios-macos-quickstart)
+  </Card>
+  <Card title="Server (Vapor)" icon="rocket">
+    Create AI endpoints with Vapor
+
+    [Get Started →](/getting-started/server-vapor-quickstart)
+  </Card>
+  <Card title="CLI" icon="seti:shell">
+    Build command-line AI tools
+
+    [Get Started →](/getting-started/cli-quickstart)
+  </Card>
+  <Card title="Providers" icon="puzzle">
+    OpenAI, Anthropic, Google, and more
+
+    [View Providers →](/providers/openai)
+  </Card>
+</CardGrid>
+
+## Features
+
+- **Text Generation** - Streaming and non-streaming text generation
+- **Structured Outputs** - Type-safe object generation with schemas
+- **Tool Calling** - Function calling and MCP tools support
+- **Multi-Provider** - OpenAI, Anthropic, Google, Groq, and more
+- **Middleware System** - Extensible request/response processing
+- **Telemetry** - Built-in observability and monitoring
+- **Cross-Platform** - iOS 16+, macOS 13+, tvOS 16+, watchOS 9+
