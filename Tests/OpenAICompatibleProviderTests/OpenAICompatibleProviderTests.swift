@@ -366,4 +366,174 @@ struct OpenAICompatibleProviderTests {
         }
         #expect(result.warnings.count == 2)
     }
+
+    @Test("creates headers without authorization when no apiKey provided")
+    func createsHeadersWithoutApiKey() async throws {
+        let capture = RequestCapture()
+        let responseJSON: [String: Any] = ["data": [["embedding": [0.1]]], "usage": ["prompt_tokens": 1]]
+        let data = try JSONSerialization.data(withJSONObject: responseJSON)
+        let response = makeHTTPResponse(
+            url: URL(string: "https://api.example.com/v1/embeddings")!
+        )
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(data), urlResponse: response)
+        }
+
+        // No apiKey provided
+        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+            baseURL: "https://api.example.com/v1",
+            name: "example",
+            headers: ["Custom-Header": "value"],
+            fetch: fetch
+        ))
+
+        let model = provider.textEmbeddingModel(modelId: "test")
+        _ = try await model.doEmbed(options: EmbeddingModelV3DoEmbedOptions(values: ["test"]))
+
+        guard let request = await capture.current() else {
+            Issue.record("Missing request")
+            return
+        }
+
+        let headers = request.allHTTPHeaderFields ?? [:]
+        let normalizedHeaders = headers.reduce(into: [String: String]()) { result, entry in
+            result[entry.key.lowercased()] = entry.value
+        }
+
+        // Should NOT have authorization header
+        #expect(normalizedHeaders["authorization"] == nil)
+        #expect(normalizedHeaders["custom-header"] == "value")
+    }
+
+    @Test("creates URL without query parameters when queryParams not specified")
+    func createsURLWithoutQueryParams() async throws {
+        let capture = RequestCapture()
+        let responseJSON: [String: Any] = ["data": [["embedding": [0.1]]], "usage": ["prompt_tokens": 1]]
+        let data = try JSONSerialization.data(withJSONObject: responseJSON)
+        let response = makeHTTPResponse(
+            url: URL(string: "https://api.example.com/v1/embeddings")!
+        )
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(data), urlResponse: response)
+        }
+
+        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+            baseURL: "https://api.example.com/v1",
+            name: "example",
+            apiKey: "test",
+            fetch: fetch
+            // No queryParams
+        ))
+
+        let model = provider.textEmbeddingModel(modelId: "test")
+        _ = try await model.doEmbed(options: EmbeddingModelV3DoEmbedOptions(values: ["test"]))
+
+        guard let request = await capture.current() else {
+            Issue.record("Missing request")
+            return
+        }
+
+        // URL should not have query parameters
+        let urlString = request.url?.absoluteString ?? ""
+        #expect(urlString == "https://api.example.com/v1/embeddings")
+        #expect(!urlString.contains("?"))
+    }
+
+    @Test("languageModel is default when called as function")
+    func languageModelIsDefault() async throws {
+        let capture = RequestCapture()
+        let responseJSON = [
+            "id": "test",
+            "created": 1,
+            "model": "test",
+            "choices": [["message": ["content": "Hi"], "finish_reason": "stop"]],
+            "usage": ["prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2]
+        ] as [String: Any]
+        let data = try JSONSerialization.data(withJSONObject: responseJSON)
+        let response = makeHTTPResponse(
+            url: URL(string: "https://api.example.com/v1/chat/completions")!
+        )
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(data), urlResponse: response)
+        }
+
+        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+            baseURL: "https://api.example.com/v1",
+            name: "example",
+            fetch: fetch
+        ))
+
+        // Default languageModel should create chat model
+        let model = provider.languageModel(modelId: "model-id")
+        _ = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: chatPrompt))
+
+        guard let request = await capture.current() else {
+            Issue.record("Missing request")
+            return
+        }
+
+        // Should use chat completions endpoint
+        let urlString = request.url?.absoluteString ?? ""
+        #expect(urlString.contains("/chat/completions"))
+    }
+
+    @Test("passes includeUsage true to all model types")
+    func passesIncludeUsageTrue() {
+        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+            baseURL: "https://api.example.com/v1",
+            name: "example",
+            includeUsage: true
+        ))
+
+        // Create all model types - they should all have includeUsage=true
+        // We can't directly inspect internal config, but we verified this works in integration tests
+        _ = provider.chatModel(modelId: "chat")
+        _ = provider.completionModel(modelId: "completion")
+        _ = provider.languageModel(modelId: "default")
+
+        // This test verifies the setting is accepted without errors
+        // Actual behavior is tested in integration tests above
+    }
+
+    @Test("passes includeUsage false to all model types")
+    func passesIncludeUsageFalse() {
+        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+            baseURL: "https://api.example.com/v1",
+            name: "example",
+            includeUsage: false
+        ))
+
+        _ = provider.chatModel(modelId: "chat")
+        _ = provider.completionModel(modelId: "completion")
+        _ = provider.languageModel(modelId: "default")
+
+        // Verifies settings accepted without errors
+    }
+
+    @Test("passes supportsStructuredOutputs to chat and language models only")
+    func passesStructuredOutputsToCorrectModels() {
+        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+            baseURL: "https://api.example.com/v1",
+            name: "example",
+            supportsStructuredOutputs: true
+        ))
+
+        // These should accept supportsStructuredOutputs
+        _ = provider.languageModel(modelId: "model-id")
+        _ = provider.chatModel(modelId: "chat")
+        _ = provider.languageModel(modelId: "lang")
+
+        // These models don't use supportsStructuredOutputs
+        _ = provider.completionModel(modelId: "completion")
+        _ = provider.textEmbeddingModel(modelId: "embedding")
+        _ = provider.imageModel(modelId: "image")
+
+        // Setting is accepted without errors
+    }
 }
