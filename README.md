@@ -12,7 +12,7 @@
 
 A unified AI SDK for Swift, bringing the power of [Vercel AI SDK](https://github.com/vercel/ai) to Apple platforms with 100% API parity.
 
-📖 **[Documentation](https://swift-ai-sdk-docs.vercel.app)** | 🚀 **[Getting Started](https://swift-ai-sdk-docs.vercel.app/getting-started/ios-macos-quickstart)** | 💬 **[Discussions](https://github.com/teunlao/swift-ai-sdk/discussions)**
+📖 **[Documentation](https://swift-ai-sdk-docs.vercel.app)** | 🚀 **[Getting Started](https://swift-ai-sdk-docs.vercel.app/getting-started/ios-macos-quickstart)** | 💡 **[Examples](examples/)** | 💬 **[Discussions](https://github.com/teunlao/swift-ai-sdk/discussions)**
 
 ## ✨ Features
 
