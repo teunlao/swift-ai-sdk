@@ -87,7 +87,9 @@ public final class OpenAICompatibleChatLanguageModel: LanguageModelV3 {
             content.append(.text(LanguageModelV3Text(text: text)))
         }
 
-        if let reasoning = choice.message.reasoningContent ?? choice.message.reasoning, !reasoning.isEmpty {
+        // Note: In doGenerate, only reasoning_content is used (not reasoning field)
+        // The reasoning field is only used in streaming
+        if let reasoning = choice.message.reasoningContent, !reasoning.isEmpty {
             content.append(.reasoning(LanguageModelV3Reasoning(text: reasoning)))
         }
 
@@ -314,7 +316,10 @@ public final class OpenAICompatibleChatLanguageModel: LanguageModelV3 {
 
         let messages = try convertToOpenAICompatibleChatMessages(prompt: options.prompt)
 
-        if case .json(_, _, _) = options.responseFormat, !config.supportsStructuredOutputs {
+        // Warning only if schema is present but structuredOutputs not supported
+        if case let .json(schema, _, _) = options.responseFormat,
+           schema != nil,
+           !config.supportsStructuredOutputs {
             warnings.append(.unsupportedSetting(
                 setting: "responseFormat",
                 details: "JSON response format schema is only supported with structuredOutputs"
@@ -362,9 +367,10 @@ public final class OpenAICompatibleChatLanguageModel: LanguageModelV3 {
             case .text:
                 break
             case let .json(schema, name, description):
-                if config.supportsStructuredOutputs {
+                // Only use json_schema if BOTH supportsStructuredOutputs AND schema are present
+                if config.supportsStructuredOutputs, let schema {
                     var payload: [String: JSONValue] = [
-                        "schema": schema ?? .object([:]),
+                        "schema": schema,
                         "name": .string(name ?? "response")
                     ]
                     if let description {
@@ -375,6 +381,7 @@ public final class OpenAICompatibleChatLanguageModel: LanguageModelV3 {
                         "json_schema": .object(payload)
                     ])
                 } else {
+                    // Use json_object if either condition is false
                     body["response_format"] = .object(["type": .string("json_object")])
                 }
             }
