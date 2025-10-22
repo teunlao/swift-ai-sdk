@@ -1476,4 +1476,110 @@ struct OpenAICompatibleChatLanguageModelTests {
         #expect(result.usage.cachedInputTokens == 5)
         #expect(result.usage.reasoningTokens == 10)
     }
+
+    // MARK: - doStream Tests
+
+    private func makeStreamChunks(
+        content: [String] = [],
+        finishReason: String = "stop",
+        reasoning: [(field: String, content: String)] = []
+    ) -> String {
+        var chunks: [String] = []
+
+        // First chunk with role
+        if !reasoning.isEmpty {
+            let reasoningField = reasoning[0].field
+            let reasoningContent = reasoning[0].content
+            chunks.append("""
+            data: {"id":"chatcmpl-stream-test","object":"chat.completion.chunk","created":1702657020,"model":"grok-beta",\
+            "system_fingerprint":null,"choices":[{"index":0,"delta":{"role":"assistant","content":"","\(reasoningField)":"\(reasoningContent)"},"finish_reason":null}]}
+
+            """)
+
+            // Additional reasoning chunks
+            for i in 1..<reasoning.count {
+                let reasoningField = reasoning[i].field
+                let reasoningContent = reasoning[i].content
+                chunks.append("""
+                data: {"id":"chatcmpl-stream-test","object":"chat.completion.chunk","created":1702657020,"model":"grok-beta",\
+                "system_fingerprint":null,"choices":[{"index":0,"delta":{"content":"","\(reasoningField)":"\(reasoningContent)"},"finish_reason":null}]}
+
+                """)
+            }
+        } else {
+            chunks.append("""
+            data: {"id":"chatcmpl-stream-test","object":"chat.completion.chunk","created":1702657020,"model":"grok-beta",\
+            "system_fingerprint":null,"choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}
+
+            """)
+        }
+
+        // Content chunks
+        for text in content {
+            chunks.append("""
+            data: {"id":"chatcmpl-stream-test","object":"chat.completion.chunk","created":1702657020,"model":"grok-beta",\
+            "system_fingerprint":null,"choices":[{"index":1,"delta":{"content":"\(text)"},"finish_reason":null}]}
+
+            """)
+        }
+
+        // Finish chunk
+        chunks.append("""
+        data: {"id":"chatcmpl-stream-test","object":"chat.completion.chunk","created":1702657020,"model":"grok-beta",\
+        "system_fingerprint":null,"choices":[{"index":0,"delta":{},"finish_reason":"\(finishReason)"}]}
+
+        """)
+
+        // Usage chunk
+        chunks.append("""
+        data: {"id":"chatcmpl-stream-test","object":"chat.completion.chunk","created":1729171479,"model":"grok-beta",\
+        "system_fingerprint":"fp_test","choices":[{"index":0,"delta":{},"finish_reason":"\(finishReason)"}],\
+        "usage":{"prompt_tokens":18,"completion_tokens":439,"total_tokens":457}}
+
+        """)
+
+        // DONE chunk
+        chunks.append("data: [DONE]\n\n")
+
+        return chunks.joined()
+    }
+
+    @Test("should respect the includeUsage option")
+    func respectIncludeUsageOption() async throws {
+        let streamChunks = makeStreamChunks(content: ["Hello", ", ", "World!"])
+        let data = Data(streamChunks.utf8)
+        let targetURL = URL(string: "https://my.api.com/v1/chat/completions")!
+        let httpResponse = makeHTTPResponse(url: targetURL)
+
+        let requestCapture = RequestCapture()
+
+        let fetch: FetchFunction = { request in
+            await requestCapture.store(request)
+            return FetchResponse(body: .data(data), urlResponse: httpResponse)
+        }
+
+        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+            baseURL: "https://my.api.com/v1/",
+            name: "test-provider",
+            headers: ["Authorization": "Bearer test-api-key"],
+            fetch: fetch,
+            includeUsage: true
+        ))
+
+        let model = provider.chatModel(modelId: "grok-beta")
+        _ = try await model.doStream(options: LanguageModelV3CallOptions(prompt: testPrompt))
+
+        let capturedRequest = await requestCapture.current()
+        let bodyData = try #require(capturedRequest?.httpBody)
+        let body = try JSONDecoder().decode([String: JSONValue].self, from: bodyData)
+
+        #expect(body["stream"] == JSONValue.bool(true))
+        guard let streamOptionsValue = body["stream_options"],
+              case let .object(streamOptions) = streamOptionsValue else {
+            Issue.record("Expected stream_options object")
+            return
+        }
+
+        #expect(streamOptions["include_usage"] == JSONValue.bool(true))
+    }
 }
