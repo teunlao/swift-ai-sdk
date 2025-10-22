@@ -1346,4 +1346,134 @@ struct OpenAICompatibleChatLanguageModelTests {
             Issue.record("Expected response_format")
         }
     }
+
+    // MARK: - Usage Details Tests
+
+    @Test("should extract detailed token usage when available")
+    func extractDetailedTokenUsage() async throws {
+        let usage: [String: Any] = [
+            "prompt_tokens": 20,
+            "completion_tokens": 30,
+            "total_tokens": 50,
+            "prompt_tokens_details": [
+                "cached_tokens": 5
+            ],
+            "completion_tokens_details": [
+                "reasoning_tokens": 10,
+                "accepted_prediction_tokens": 15,
+                "rejected_prediction_tokens": 5
+            ]
+        ]
+
+        let responseJSON = makeChatResponse(usage: usage)
+        let data = try JSONSerialization.data(withJSONObject: responseJSON)
+        let targetURL = URL(string: "https://my.api.com/v1/chat/completions")!
+        let httpResponse = makeHTTPResponse(url: targetURL)
+
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .data(data), urlResponse: httpResponse)
+        }
+
+        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+            baseURL: "https://my.api.com/v1/",
+            name: "test-provider",
+            headers: ["Authorization": "Bearer test-api-key"],
+            fetch: fetch
+        ))
+
+        let model = provider.chatModel(modelId: "grok-beta")
+        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: testPrompt))
+
+        #expect(result.usage.inputTokens == 20)
+        #expect(result.usage.outputTokens == 30)
+        #expect(result.usage.totalTokens == 50)
+        #expect(result.usage.cachedInputTokens == 5)
+        #expect(result.usage.reasoningTokens == 10)
+
+        // Check provider metadata
+        guard let providerMetadata = result.providerMetadata,
+              let testProviderData = providerMetadata["test-provider"] else {
+            Issue.record("Expected provider metadata")
+            return
+        }
+
+        #expect(testProviderData["acceptedPredictionTokens"] == JSONValue.number(15))
+        #expect(testProviderData["rejectedPredictionTokens"] == JSONValue.number(5))
+    }
+
+    @Test("should handle missing token details")
+    func handleMissingTokenDetails() async throws {
+        let usage: [String: Any] = [
+            "prompt_tokens": 20,
+            "completion_tokens": 30
+        ]
+
+        let responseJSON = makeChatResponse(usage: usage)
+        let data = try JSONSerialization.data(withJSONObject: responseJSON)
+        let targetURL = URL(string: "https://my.api.com/v1/chat/completions")!
+        let httpResponse = makeHTTPResponse(url: targetURL)
+
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .data(data), urlResponse: httpResponse)
+        }
+
+        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+            baseURL: "https://my.api.com/v1/",
+            name: "test-provider",
+            headers: ["Authorization": "Bearer test-api-key"],
+            fetch: fetch
+        ))
+
+        let model = provider.chatModel(modelId: "grok-beta")
+        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: testPrompt))
+
+        // Provider metadata should be empty object when no details
+        guard let providerMetadata = result.providerMetadata,
+              let testProviderData = providerMetadata["test-provider"] else {
+            Issue.record("Expected provider metadata")
+            return
+        }
+
+        #expect(testProviderData.isEmpty)
+    }
+
+    @Test("should handle partial token details")
+    func handlePartialTokenDetails() async throws {
+        let usage: [String: Any] = [
+            "prompt_tokens": 20,
+            "completion_tokens": 30,
+            "total_tokens": 50,
+            "prompt_tokens_details": [
+                "cached_tokens": 5
+            ],
+            "completion_tokens_details": [
+                "reasoning_tokens": 10
+            ]
+        ]
+
+        let responseJSON = makeChatResponse(usage: usage)
+        let data = try JSONSerialization.data(withJSONObject: responseJSON)
+        let targetURL = URL(string: "https://my.api.com/v1/chat/completions")!
+        let httpResponse = makeHTTPResponse(url: targetURL)
+
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .data(data), urlResponse: httpResponse)
+        }
+
+        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+            baseURL: "https://my.api.com/v1/",
+            name: "test-provider",
+            headers: ["Authorization": "Bearer test-api-key"],
+            fetch: fetch
+        ))
+
+        let model = provider.chatModel(modelId: "grok-beta")
+        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: testPrompt))
+
+        #expect(result.usage.inputTokens == 20)
+        #expect(result.usage.outputTokens == 30)
+        #expect(result.usage.totalTokens == 50)
+        #expect(result.usage.cachedInputTokens == 5)
+        #expect(result.usage.reasoningTokens == 10)
+    }
 }

@@ -434,11 +434,10 @@ public final class OpenAICompatibleChatLanguageModel: LanguageModelV3 {
             providerEntry["rejectedPredictionTokens"] = .number(Double(rejected))
         }
 
-        if !providerEntry.isEmpty {
-            metadata[providerOptionsName] = providerEntry
-        }
+        // Always set the provider entry, even if empty
+        metadata[providerOptionsName] = providerEntry
 
-        return metadata.isEmpty ? nil : metadata
+        return metadata
     }
 
     private func responseMetadata(id: String?, model: String?, created: Double?) -> (id: String?, modelId: String?, timestamp: Date?) {
