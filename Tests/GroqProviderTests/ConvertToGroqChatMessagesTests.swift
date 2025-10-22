@@ -115,4 +115,62 @@ struct ConvertToGroqChatMessagesTests {
             Issue.record("Expected string content")
         }
     }
+
+    @Test("should convert messages with image parts from Uint8Array")
+    func userImageFromData() throws {
+        let data = Data([0, 1, 2, 3])
+        let prompt: LanguageModelV3Prompt = [
+            .user(content: [
+                .text(.init(text: "Hi")),
+                .file(.init(data: .data(data), mediaType: "image/png"))
+            ], providerOptions: nil)
+        ]
+
+        let messages = try convertToGroqChatMessages(prompt)
+        guard case let .object(message) = messages.first,
+              case let .array(contentParts)? = message["content"] else {
+            Issue.record("Unexpected message structure")
+            return
+        }
+
+        #expect(message["role"] == .string("user"))
+        #expect(contentParts.count == 2)
+
+        // First part: text
+        if case let .object(textPart) = contentParts[0] {
+            #expect(textPart["type"] == .string("text"))
+            #expect(textPart["text"] == .string("Hi"))
+        } else {
+            Issue.record("Expected text part")
+        }
+
+        // Second part: image
+        if case let .object(imagePart) = contentParts[1],
+           case let .object(imageURL)? = imagePart["image_url"],
+           case let .string(url)? = imageURL["url"] {
+            #expect(imagePart["type"] == .string("image_url"))
+            #expect(url == "data:image/png;base64,AAECAw==")
+        } else {
+            Issue.record("Expected image part with correct base64")
+        }
+    }
+
+    @Test("should not include reasoning field when no reasoning content is present")
+    func noReasoningField() throws {
+        let prompt: LanguageModelV3Prompt = [
+            .assistant(content: [
+                .text(.init(text: "Hello, how can I help you?"))
+            ], providerOptions: nil)
+        ]
+
+        let messages = try convertToGroqChatMessages(prompt)
+        guard case let .object(message) = messages.first else {
+            Issue.record("Expected assistant message object")
+            return
+        }
+
+        #expect(message["role"] == .string("assistant"))
+        #expect(message["content"] == .string("Hello, how can I help you?"))
+        #expect(message["reasoning"] == nil, "Reasoning field should not be present")
+    }
 }

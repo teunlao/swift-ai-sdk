@@ -13,6 +13,150 @@ struct GroqPrepareToolsTests {
         #expect(prepared.toolWarnings.isEmpty)
     }
 
+    @Test("should return undefined tools and toolChoice when tools are empty")
+    func emptyTools() {
+        let prepared = prepareGroqTools(tools: [], toolChoice: nil, modelId: GroqChatModelId(rawValue: "gemma2-9b-it"))
+        #expect(prepared.tools == nil)
+        #expect(prepared.toolChoice == nil)
+        #expect(prepared.toolWarnings.isEmpty)
+    }
+
+    @Test("should correctly prepare function tools")
+    func prepareFunctionTools() {
+        let functionTool = LanguageModelV3Tool.function(LanguageModelV3FunctionTool(
+            name: "testFunction",
+            inputSchema: .object(["type": .string("object"), "properties": .object([:])] ),
+            description: "A test function"
+        ))
+
+        let prepared = prepareGroqTools(
+            tools: [functionTool],
+            toolChoice: nil,
+            modelId: GroqChatModelId(rawValue: "gemma2-9b-it")
+        )
+
+        #expect(prepared.tools != nil)
+        #expect(prepared.tools?.count == 1)
+        #expect(prepared.toolChoice == nil)
+        #expect(prepared.toolWarnings.isEmpty)
+
+        if let tools = prepared.tools,
+           let first = tools.first,
+           case let .object(toolObject) = first,
+           let functionValue = toolObject["function"],
+           case let .object(functionObject) = functionValue {
+            #expect(toolObject["type"] == JSONValue.string("function"))
+            #expect(functionObject["name"] == JSONValue.string("testFunction"))
+            #expect(functionObject["description"] == JSONValue.string("A test function"))
+        } else {
+            Issue.record("Expected function tool structure")
+        }
+    }
+
+    @Test("should add warnings for unsupported provider-defined tools")
+    func unsupportedProviderTools() {
+        let tool = LanguageModelV3Tool.providerDefined(LanguageModelV3ProviderDefinedTool(
+            id: "some.unsupported_tool",
+            name: "unsupported_tool",
+            args: [:]
+        ))
+
+        let prepared = prepareGroqTools(
+            tools: [tool],
+            toolChoice: nil,
+            modelId: GroqChatModelId(rawValue: "gemma2-9b-it")
+        )
+
+        #expect(prepared.tools?.isEmpty == true || prepared.tools == nil)
+        #expect(prepared.toolChoice == nil)
+        #expect(prepared.toolWarnings.count == 1)
+        if case .unsupportedTool(let unsupportedTool, _) = prepared.toolWarnings.first {
+            if case .providerDefined(let providerTool) = unsupportedTool {
+                #expect(providerTool.id == "some.unsupported_tool")
+            } else {
+                Issue.record("Expected provider-defined tool")
+            }
+        } else {
+            Issue.record("Expected unsupported-tool warning")
+        }
+    }
+
+    @Test("should handle tool choice \"auto\"")
+    func toolChoiceAuto() {
+        let functionTool = LanguageModelV3Tool.function(LanguageModelV3FunctionTool(
+            name: "testFunction",
+            inputSchema: .object([:]),
+            description: "Test"
+        ))
+
+        let prepared = prepareGroqTools(
+            tools: [functionTool],
+            toolChoice: .auto,
+            modelId: GroqChatModelId(rawValue: "gemma2-9b-it")
+        )
+
+        #expect(prepared.toolChoice == JSONValue.string("auto"))
+    }
+
+    @Test("should handle tool choice \"required\"")
+    func toolChoiceRequired() {
+        let functionTool = LanguageModelV3Tool.function(LanguageModelV3FunctionTool(
+            name: "testFunction",
+            inputSchema: .object([:]),
+            description: "Test"
+        ))
+
+        let prepared = prepareGroqTools(
+            tools: [functionTool],
+            toolChoice: .required,
+            modelId: GroqChatModelId(rawValue: "gemma2-9b-it")
+        )
+
+        #expect(prepared.toolChoice == JSONValue.string("required"))
+    }
+
+    @Test("should handle tool choice \"none\"")
+    func toolChoiceNone() {
+        let functionTool = LanguageModelV3Tool.function(LanguageModelV3FunctionTool(
+            name: "testFunction",
+            inputSchema: .object([:]),
+            description: "Test"
+        ))
+
+        let prepared = prepareGroqTools(
+            tools: [functionTool],
+            toolChoice: LanguageModelV3ToolChoice.none,
+            modelId: GroqChatModelId(rawValue: "gemma2-9b-it")
+        )
+
+        #expect(prepared.toolChoice == JSONValue.string("none"))
+    }
+
+    @Test("should handle tool choice \"tool\"")
+    func toolChoiceTool() {
+        let functionTool = LanguageModelV3Tool.function(LanguageModelV3FunctionTool(
+            name: "testFunction",
+            inputSchema: .object([:]),
+            description: "Test"
+        ))
+
+        let prepared = prepareGroqTools(
+            tools: [functionTool],
+            toolChoice: .tool(toolName: "testFunction"),
+            modelId: GroqChatModelId(rawValue: "gemma2-9b-it")
+        )
+
+        guard case let .object(choice)? = prepared.toolChoice,
+              let functionValue = choice["function"],
+              case let .object(functionObj) = functionValue else {
+            Issue.record("Expected tool choice object with function")
+            return
+        }
+
+        #expect(choice["type"] == .string("function"))
+        #expect(functionObj["name"] == .string("testFunction"))
+    }
+
     @Test("warns when mixing function and provider-defined tools")
     func mixedTools() {
         let functionTool = LanguageModelV3Tool.function(LanguageModelV3FunctionTool(
@@ -91,6 +235,102 @@ struct GroqPrepareToolsTests {
             #expect(choice["type"] == .string("function"))
         } else {
             Issue.record("Expected tool choice object")
+        }
+    }
+
+    @Test("should handle mixed tools with model validation")
+    func mixedToolsWithValidation() {
+        let functionTool = LanguageModelV3Tool.function(LanguageModelV3FunctionTool(
+            name: "test-tool",
+            inputSchema: .object(["type": .string("object"), "properties": .object([:])]),
+            description: "A test tool"
+        ))
+        let browserTool = LanguageModelV3Tool.providerDefined(LanguageModelV3ProviderDefinedTool(
+            id: "groq.browser_search",
+            name: "browser_search",
+            args: [:]
+        ))
+
+        let prepared = prepareGroqTools(
+            tools: [functionTool, browserTool],
+            toolChoice: nil,
+            modelId: GroqChatModelId(rawValue: "openai/gpt-oss-20b")
+        )
+
+        #expect(prepared.tools?.count == 2)
+        #expect(prepared.toolWarnings.isEmpty)
+
+        // Verify both tools are present
+        if let tools = prepared.tools {
+            let hasFunction = tools.contains { tool in
+                if case let .object(obj) = tool,
+                   obj["type"] == .string("function") {
+                    return true
+                }
+                return false
+            }
+            let hasBrowserSearch = tools.contains { tool in
+                if case let .object(obj) = tool,
+                   obj["type"] == .string("browser_search") {
+                    return true
+                }
+                return false
+            }
+            #expect(hasFunction)
+            #expect(hasBrowserSearch)
+        }
+    }
+
+    @Test("should validate all browser search supported models")
+    func validateAllSupportedModels() {
+        let supportedModels = ["openai/gpt-oss-20b", "openai/gpt-oss-120b"]
+
+        for modelId in supportedModels {
+            let tool = LanguageModelV3Tool.providerDefined(LanguageModelV3ProviderDefinedTool(
+                id: "groq.browser_search",
+                name: "browser_search",
+                args: [:]
+            ))
+
+            let prepared = prepareGroqTools(
+                tools: [tool],
+                toolChoice: nil,
+                modelId: GroqChatModelId(rawValue: modelId)
+            )
+
+            #expect(prepared.tools?.count == 1, "Model \(modelId) should support browser search")
+            #expect(prepared.toolWarnings.isEmpty, "Model \(modelId) should not have warnings")
+
+            if let tools = prepared.tools,
+               let first = tools.first,
+               case let .object(obj) = first {
+                #expect(obj["type"] == .string("browser_search"), "Model \(modelId) should have browser_search type")
+            }
+        }
+    }
+
+    @Test("should handle browser search with tool choice")
+    func browserSearchWithToolChoice() {
+        let tool = LanguageModelV3Tool.providerDefined(LanguageModelV3ProviderDefinedTool(
+            id: "groq.browser_search",
+            name: "browser_search",
+            args: [:]
+        ))
+
+        let prepared = prepareGroqTools(
+            tools: [tool],
+            toolChoice: .required,
+            modelId: GroqChatModelId(rawValue: "openai/gpt-oss-120b")
+        )
+
+        #expect(prepared.tools?.count == 1)
+        #expect(prepared.toolChoice == JSONValue.string("required"))
+        #expect(prepared.toolWarnings.isEmpty)
+
+        if let tools = prepared.tools,
+           let first = tools.first,
+           case let .object(obj) = first {
+            #expect(obj["type"] == .string("browser_search"))
         }
     }
 }

@@ -161,4 +161,22 @@ struct GroqTranscriptionModelTests {
             Issue.record("Missing response headers")
         }
     }
+
+    @Test("should use real date when no custom date provider is specified")
+    func responseUsesRealDate() async throws {
+        let (fetch, _) = makeResponse()
+        let before = Date()
+
+        let model = GroqTranscriptionModel(
+            modelId: GroqTranscriptionModelId(rawValue: "whisper-large-v3-turbo"),
+            config: makeConfig(fetch: fetch)  // No custom date provider
+        )
+
+        let result = try await model.doGenerate(options: .init(audio: .binary(Data()), mediaType: "audio/wav"))
+        let after = Date()
+
+        #expect(result.response.timestamp >= before)
+        #expect(result.response.timestamp <= after)
+        #expect(result.response.modelId == "whisper-large-v3-turbo")
+    }
 }
