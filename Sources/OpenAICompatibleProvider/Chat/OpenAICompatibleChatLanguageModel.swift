@@ -251,6 +251,20 @@ public final class OpenAICompatibleChatLanguageModel: LanguageModelV3 {
                         continuation.yield(.reasoningEnd(id: "reasoning-0", providerMetadata: nil))
                     }
 
+                    // Finish any pending tool calls
+                    for (_, state) in toolCalls {
+                        if !state.hasFinished {
+                            continuation.yield(.toolInputEnd(id: state.toolCallId, providerMetadata: nil))
+                            continuation.yield(.toolCall(LanguageModelV3ToolCall(
+                                toolCallId: state.toolCallId,
+                                toolName: state.toolName,
+                                input: state.arguments,
+                                providerExecuted: nil,
+                                providerMetadata: nil
+                            )))
+                        }
+                    }
+
                     var providerMetadata = metadataExtractor?.buildMetadata() ?? [:]
                     if !providerValues.isEmpty {
                         var entry = providerMetadata[providerKey] ?? [:]
@@ -472,8 +486,9 @@ public final class OpenAICompatibleChatLanguageModel: LanguageModelV3 {
                 var state = ToolCallState(toolCallId: id, toolName: name, arguments: delta.function?.arguments ?? "", hasFinished: false)
                 continuation.yield(.toolInputStart(id: id, toolName: name, providerMetadata: nil, providerExecuted: nil))
 
-                if !state.arguments.isEmpty {
-                    continuation.yield(.toolInputDelta(id: id, delta: state.arguments, providerMetadata: nil))
+                if let args = delta.function?.arguments {
+                    continuation.yield(.toolInputDelta(id: id, delta: args, providerMetadata: nil))
+
                     if isParsableJson(state.arguments) {
                         continuation.yield(.toolInputEnd(id: id, providerMetadata: nil))
                         continuation.yield(.toolCall(LanguageModelV3ToolCall(
@@ -498,21 +513,21 @@ public final class OpenAICompatibleChatLanguageModel: LanguageModelV3 {
                 state.toolName = name
             }
 
-            if let argumentDelta = delta.function?.arguments, !argumentDelta.isEmpty {
+            if let argumentDelta = delta.function?.arguments {
                 state.arguments += argumentDelta
                 continuation.yield(.toolInputDelta(id: state.toolCallId, delta: argumentDelta, providerMetadata: nil))
-            }
 
-            if isParsableJson(state.arguments) {
-                continuation.yield(.toolInputEnd(id: state.toolCallId, providerMetadata: nil))
-                continuation.yield(.toolCall(LanguageModelV3ToolCall(
-                    toolCallId: state.toolCallId,
-                    toolName: state.toolName,
-                    input: state.arguments,
-                    providerExecuted: nil,
-                    providerMetadata: nil
-                )))
-                state.hasFinished = true
+                if isParsableJson(state.arguments) {
+                    continuation.yield(.toolInputEnd(id: state.toolCallId, providerMetadata: nil))
+                    continuation.yield(.toolCall(LanguageModelV3ToolCall(
+                        toolCallId: state.toolCallId,
+                        toolName: state.toolName,
+                        input: state.arguments,
+                        providerExecuted: nil,
+                        providerMetadata: nil
+                    )))
+                    state.hasFinished = true
+                }
             }
 
             toolCalls[index] = state
