@@ -174,7 +174,7 @@ Add the package to your `Package.swift`:
 ```swift
 // Package.swift
 dependencies: [
-  .package(url: "https://github.com/teunlao/swift-ai-sdk.git", from: "0.1.2")
+  .package(url: "https://github.com/teunlao/swift-ai-sdk.git", from: "0.1.4")
 ],
 targets: [
   .target(
