@@ -133,6 +133,59 @@ struct OpenAICompatibleChatLanguageModelTests {
         ]
     }
 
+    @Test("should pass user setting to requests")
+    func passUserSettingToRequests() async throws {
+        let responseJSON = makeChatResponse(content: "Hello, World!")
+        let data = try JSONSerialization.data(withJSONObject: responseJSON)
+        let targetURL = URL(string: "https://my.api.com/v1/chat/completions")!
+        let httpResponse = makeHTTPResponse(url: targetURL)
+        let capture = RequestCapture()
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(data), urlResponse: httpResponse)
+        }
+
+        // Provider name is "test-provider", but providerOptions uses "xai"
+        // So user setting should NOT be included in request (name mismatch)
+        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+            baseURL: "https://my.api.com/v1/",
+            name: "test-provider",
+            headers: ["Authorization": "Bearer test-api-key"],
+            fetch: fetch
+        ))
+
+        let model = provider.chatModel(modelId: "grok-beta")
+        _ = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: testPrompt,
+                providerOptions: [
+                    "xai": ["user": .string("test-user-id")]
+                ]
+            )
+        )
+
+        // Verify that user setting is NOT included in request body
+        // (provider name doesn't match, so xai options are ignored)
+        guard let request = await capture.current(),
+              let body = request.httpBody,
+              let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] else {
+            Issue.record("Missing captured request")
+            return
+        }
+
+        #expect(json["user"] == nil)
+        #expect(json["model"] as? String == "grok-beta")
+
+        if let messages = json["messages"] as? [[String: Any]] {
+            #expect(messages.count == 1)
+            #expect(messages[0]["role"] as? String == "user")
+            #expect(messages[0]["content"] as? String == "Hello")
+        } else {
+            Issue.record("Expected messages array")
+        }
+    }
+
     @Test("should extract text response")
     func extractTextResponse() async throws {
         let responseJSON = makeChatResponse(content: "Hello, World!")
@@ -2712,5 +2765,74 @@ struct OpenAICompatibleChatLanguageModelTests {
             return false
         }.count
         #expect(rawCount == 0, "Should not include raw chunks when includeRawChunks is not set")
+    }
+
+    @Test("should handle unparsable stream parts")
+    func handleUnparsableStreamParts() async throws {
+        // Send malformed JSON that cannot be parsed
+        let streamChunks = "data: {unparsable}\n\n" +
+            "data: [DONE]\n\n"
+        let data = Data(streamChunks.utf8)
+        let targetURL = URL(string: "https://my.api.com/v1/chat/completions")!
+        let httpResponse = makeHTTPResponse(url: targetURL)
+
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .data(data), urlResponse: httpResponse)
+        }
+
+        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+            baseURL: "https://my.api.com/v1/",
+            name: "test-provider",
+            headers: ["Authorization": "Bearer test-api-key"],
+            fetch: fetch
+        ))
+
+        let model = provider.chatModel(modelId: "grok-beta")
+        let result = try await model.doStream(
+            options: LanguageModelV3CallOptions(
+                prompt: testPrompt,
+                includeRawChunks: false
+            )
+        )
+
+        var parts: [LanguageModelV3StreamPart] = []
+        for try await part in result.stream {
+            parts.append(part)
+        }
+
+        // Verify we got the expected sequence
+        guard parts.count >= 3 else {
+            Issue.record("Expected at least 3 parts (stream-start, error, finish), got \(parts.count)")
+            return
+        }
+
+        // First part should be stream-start
+        guard case .streamStart(let warnings) = parts[0] else {
+            Issue.record("Expected stream-start, got \(parts[0])")
+            return
+        }
+        #expect(warnings.isEmpty)
+
+        // Second part should be error
+        guard case .error(let errorValue) = parts[1] else {
+            Issue.record("Expected error, got \(parts[1])")
+            return
+        }
+        // Error should contain JSON parse error message
+        let errorString = String(describing: errorValue)
+        #expect(errorString.contains("JSON") || errorString.contains("parse") || errorString.contains("Unexpected"))
+
+        // Last part should be finish with error reason
+        guard case .finish(let finishReason, let usage, let providerMetadata) = parts.last else {
+            Issue.record("Expected finish, got \(parts.last!)")
+            return
+        }
+        #expect(finishReason == .error)
+        #expect(usage.inputTokens == nil)
+        #expect(usage.outputTokens == nil)
+        // Provider metadata may be present with empty object or nil when error occurs
+        if let metadata = providerMetadata {
+            #expect(metadata["test-provider"] != nil)
+        }
     }
 }
