@@ -87,7 +87,9 @@ public final class OpenAICompatibleChatLanguageModel: LanguageModelV3 {
             content.append(.text(LanguageModelV3Text(text: text)))
         }
 
-        if let reasoning = choice.message.reasoningContent ?? choice.message.reasoning, !reasoning.isEmpty {
+        // Note: In doGenerate, only reasoning_content is used (not reasoning field)
+        // The reasoning field is only used in streaming
+        if let reasoning = choice.message.reasoningContent, !reasoning.isEmpty {
             content.append(.reasoning(LanguageModelV3Reasoning(text: reasoning)))
         }
 
@@ -249,6 +251,20 @@ public final class OpenAICompatibleChatLanguageModel: LanguageModelV3 {
                         continuation.yield(.reasoningEnd(id: "reasoning-0", providerMetadata: nil))
                     }
 
+                    // Finish any pending tool calls
+                    for (_, state) in toolCalls {
+                        if !state.hasFinished {
+                            continuation.yield(.toolInputEnd(id: state.toolCallId, providerMetadata: nil))
+                            continuation.yield(.toolCall(LanguageModelV3ToolCall(
+                                toolCallId: state.toolCallId,
+                                toolName: state.toolName,
+                                input: state.arguments,
+                                providerExecuted: nil,
+                                providerMetadata: nil
+                            )))
+                        }
+                    }
+
                     var providerMetadata = metadataExtractor?.buildMetadata() ?? [:]
                     if !providerValues.isEmpty {
                         var entry = providerMetadata[providerKey] ?? [:]
@@ -314,7 +330,10 @@ public final class OpenAICompatibleChatLanguageModel: LanguageModelV3 {
 
         let messages = try convertToOpenAICompatibleChatMessages(prompt: options.prompt)
 
-        if case .json(_, _, _) = options.responseFormat, !config.supportsStructuredOutputs {
+        // Warning only if schema is present but structuredOutputs not supported
+        if case let .json(schema, _, _) = options.responseFormat,
+           schema != nil,
+           !config.supportsStructuredOutputs {
             warnings.append(.unsupportedSetting(
                 setting: "responseFormat",
                 details: "JSON response format schema is only supported with structuredOutputs"
@@ -362,9 +381,10 @@ public final class OpenAICompatibleChatLanguageModel: LanguageModelV3 {
             case .text:
                 break
             case let .json(schema, name, description):
-                if config.supportsStructuredOutputs {
+                // Only use json_schema if BOTH supportsStructuredOutputs AND schema are present
+                if config.supportsStructuredOutputs, let schema {
                     var payload: [String: JSONValue] = [
-                        "schema": schema ?? .object([:]),
+                        "schema": schema,
                         "name": .string(name ?? "response")
                     ]
                     if let description {
@@ -375,6 +395,7 @@ public final class OpenAICompatibleChatLanguageModel: LanguageModelV3 {
                         "json_schema": .object(payload)
                     ])
                 } else {
+                    // Use json_object if either condition is false
                     body["response_format"] = .object(["type": .string("json_object")])
                 }
             }
@@ -427,11 +448,10 @@ public final class OpenAICompatibleChatLanguageModel: LanguageModelV3 {
             providerEntry["rejectedPredictionTokens"] = .number(Double(rejected))
         }
 
-        if !providerEntry.isEmpty {
-            metadata[providerOptionsName] = providerEntry
-        }
+        // Always set the provider entry, even if empty
+        metadata[providerOptionsName] = providerEntry
 
-        return metadata.isEmpty ? nil : metadata
+        return metadata
     }
 
     private func responseMetadata(id: String?, model: String?, created: Double?) -> (id: String?, modelId: String?, timestamp: Date?) {
@@ -466,8 +486,9 @@ public final class OpenAICompatibleChatLanguageModel: LanguageModelV3 {
                 var state = ToolCallState(toolCallId: id, toolName: name, arguments: delta.function?.arguments ?? "", hasFinished: false)
                 continuation.yield(.toolInputStart(id: id, toolName: name, providerMetadata: nil, providerExecuted: nil))
 
-                if !state.arguments.isEmpty {
-                    continuation.yield(.toolInputDelta(id: id, delta: state.arguments, providerMetadata: nil))
+                if let args = delta.function?.arguments {
+                    continuation.yield(.toolInputDelta(id: id, delta: args, providerMetadata: nil))
+
                     if isParsableJson(state.arguments) {
                         continuation.yield(.toolInputEnd(id: id, providerMetadata: nil))
                         continuation.yield(.toolCall(LanguageModelV3ToolCall(
@@ -492,21 +513,21 @@ public final class OpenAICompatibleChatLanguageModel: LanguageModelV3 {
                 state.toolName = name
             }
 
-            if let argumentDelta = delta.function?.arguments, !argumentDelta.isEmpty {
+            if let argumentDelta = delta.function?.arguments {
                 state.arguments += argumentDelta
                 continuation.yield(.toolInputDelta(id: state.toolCallId, delta: argumentDelta, providerMetadata: nil))
-            }
 
-            if isParsableJson(state.arguments) {
-                continuation.yield(.toolInputEnd(id: state.toolCallId, providerMetadata: nil))
-                continuation.yield(.toolCall(LanguageModelV3ToolCall(
-                    toolCallId: state.toolCallId,
-                    toolName: state.toolName,
-                    input: state.arguments,
-                    providerExecuted: nil,
-                    providerMetadata: nil
-                )))
-                state.hasFinished = true
+                if isParsableJson(state.arguments) {
+                    continuation.yield(.toolInputEnd(id: state.toolCallId, providerMetadata: nil))
+                    continuation.yield(.toolCall(LanguageModelV3ToolCall(
+                        toolCallId: state.toolCallId,
+                        toolName: state.toolName,
+                        input: state.arguments,
+                        providerExecuted: nil,
+                        providerMetadata: nil
+                    )))
+                    state.hasFinished = true
+                }
             }
 
             toolCalls[index] = state
