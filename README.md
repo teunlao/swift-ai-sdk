@@ -36,6 +36,7 @@ A unified AI SDK for Swift, bringing the power of [Vercel AI SDK](https://github
 - `AnthropicProvider` - Anthropic Claude
 - `GoogleProvider` - Google Gemini
 - `GroqProvider` - Groq
+- `XAIProvider` - xAI Grok (with reasoning & search)
 - `OpenAICompatibleProvider` - OpenAI-compatible APIs
 
 **Upstream:** Based on Vercel AI SDK 6.0.0-beta.42 (commit `77db222ee`)
@@ -44,14 +45,14 @@ A unified AI SDK for Swift, bringing the power of [Vercel AI SDK](https://github
 
 ## 📊 Implementation Status
 
-**Updated**: 2025-10-23
+**Updated**: 2025-10-24
 
 ### 🎯 Overall
 
 | Metric | Upstream | Swift | Coverage |
 |--------|----------|-------|----------|
-| **Packages** | 35* | 11 | 31.4% |
-| **Tests** | 2928** | 2297 | 78.4% |
+| **Packages** | 35* | 12 | 34.3% |
+| **Tests** | 2928** | 2347 | 80.2% |
 
 _* Excludes 7 frontend frameworks (React, Angular, etc.) and 4 infrastructure packages (codemod, rsc, etc.) not applicable to Swift_
 _** Core SDK (1519) + Providers (1409), excludes frameworks/infrastructure_
@@ -65,7 +66,7 @@ _** Core SDK (1519) + Providers (1409), excludes frameworks/infrastructure_
 | **ai** | 1199 | 1136 | 94.7% | ✅ |
 | **TOTAL** | **1519** | **1547** | **101.8%** | **✅** |
 
-### 🔌 Providers (5/32 ported)
+### 🔌 Providers (6/32 ported)
 
 <details>
 <summary>📋 Provider Test Coverage Details</summary>
@@ -78,10 +79,10 @@ _** Core SDK (1519) + Providers (1409), excludes frameworks/infrastructure_
 | **anthropic** | ✅ | ✅ | 114 | 115 | 100.9% |
 | **google** | ✅ | ✅ | 155 | 157 | 101.3% |
 | **groq** | ✅ | ✅ | 58 | 58 | 100% |
+| **xai** | ✅ | ✅ | 50 | 50 | 100% |
 | **openai-compatible** | ✅ | ✅ | 128 | 128 | 100% |
 | **amazon-bedrock** | ❌ | ❌ | 152 | 0 | 0% |
 | **google-vertex** | ❌ | ❌ | 78 | 0 | 0% |
-| **xai** | ❌ | ❌ | 50 | 0 | 0% |
 | **cohere** | ❌ | ❌ | 48 | 0 | 0% |
 | **mistral** | ❌ | ❌ | 44 | 0 | 0% |
 | **huggingface** | ❌ | ❌ | 32 | 0 | 0% |
@@ -104,7 +105,7 @@ _** Core SDK (1519) + Providers (1409), excludes frameworks/infrastructure_
 | **gladia** | ❌ | ❌ | 6 | 0 | 0% |
 | **revai** | ❌ | ❌ | 6 | 0 | 0% |
 | **vercel** | ❌ | ❌ | 4 | 0 | 0% |
-| **TOTAL** | **5/32** | **5/32** | **1409** | **750** | **53.2%** |
+| **TOTAL** | **6/32** | **6/32** | **1409** | **800** | **56.8%** |
 
 </details>
 
@@ -116,12 +117,12 @@ _** Core SDK (1519) + Providers (1409), excludes frameworks/infrastructure_
 | Category | Packages | Upstream | Swift | Coverage | Status |
 |----------|:--------:|----------|-------|----------|:------:|
 | **Core SDK** | 3/3 | 1519 | 1547 | 101.8% | ✅ |
-| **Providers** | 5/32 | 1409 | 750 | 53.2% | ⚠️ |
+| **Providers** | 6/32 | 1409 | 800 | 56.8% | ⚠️ |
 | **Swift-specific** | 4 | - | 37 | - | 🎯 |
 | **Frameworks** | 0/7 | 93 | 0 | N/A | ⏳ |
 | **Infrastructure** | 0/4 | 300 | 0 | N/A | ⏳ |
-| **TOTAL (all)** | **12/46** | **3323** | **2334** | **70.2%** | **⚠️** |
-| **TOTAL (relevant)** | **11/35** | **2928** | **2297** | **78.4%** | **⚠️** |
+| **TOTAL (all)** | **13/46** | **3323** | **2384** | **71.8%** | **⚠️** |
+| **TOTAL (relevant)** | **12/35** | **2928** | **2347** | **80.2%** | **⚠️** |
 
 ### Progress Bars
 
@@ -140,19 +141,20 @@ openai:              ███████████████████�
 anthropic:           ████████████████████████████████  100.9% (115/114)
 google:              ████████████████████████████████  101.3% (157/155)
 groq:                ████████████████████████████████  100%   (58/58)
+xai:                 ████████████████████████████████  100%   (50/50)
 openai-compatible:   ████████████████████████████████  100%   (128/128)
 ────────────────────────────────────────────────────────
-TOTAL:               █████████████████░░░░░░░░░░░░░░░  53.2%  (750/1409)
+TOTAL:               ██████████████████░░░░░░░░░░░░░░  56.8%  (800/1409)
 ```
 
 **Overall**:
 ```
 Core SDK:         ██████████████████████████████░░  101.8% (1547/1519)
-Providers:        █████████████████░░░░░░░░░░░░░░░  53.2%  (750/1409)
+Providers:        ██████████████████░░░░░░░░░░░░░░  56.8%  (800/1409)
 Frameworks:       ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  0%     (0/93)
 Infrastructure:   ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  0%     (0/300)
 ───────────────────────────────────────────────────────────
-TOTAL:            ██████████████████████░░░░░░░░░░  70.2%  (2334/3323)
+TOTAL:            ██████████████████████░░░░░░░░░░  71.8%  (2384/3323)
 ```
 
 </details>
@@ -174,7 +176,7 @@ Add the package to your `Package.swift`:
 ```swift
 // Package.swift
 dependencies: [
-  .package(url: "https://github.com/teunlao/swift-ai-sdk.git", from: "0.1.4")
+  .package(url: "https://github.com/teunlao/swift-ai-sdk.git", from: "0.1.5")
 ],
 targets: [
   .target(
@@ -218,8 +220,8 @@ More examples (tools, structured output, telemetry, middleware) are available in
 
 Write once, swap providers without changing your app logic — same idea as the upstream AI SDK.
 
-- Add only the provider modules you need via SwiftPM products (`OpenAIProvider`, `AnthropicProvider`, `GoogleProvider`, `GroqProvider`, `OpenAICompatibleProvider`).
-- Use the convenience facade `openai("model-id")` or build a provider with settings via `createOpenAIProvider(settings:)`.
+- Add only the provider modules you need via SwiftPM products (`OpenAIProvider`, `AnthropicProvider`, `GoogleProvider`, `GroqProvider`, `XAIProvider`, `OpenAICompatibleProvider`).
+- Use the convenience facade `openai("model-id")`, `xai("grok-beta")` or build a provider with settings via `createOpenAIProvider(settings:)` / `createXai(settings:)`.
 
 Minimal provider setup and call:
 
