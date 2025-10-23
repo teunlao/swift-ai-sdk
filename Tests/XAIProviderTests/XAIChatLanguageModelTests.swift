@@ -1586,5 +1586,581 @@ struct XAIChatLanguageModelTests {
         #expect(json["model"] as? String == "grok-beta")
         #expect(json["stream"] as? Bool == true)
     }
+
+    // MARK: - Remaining doGenerate tests
+
+    @Test("should pass search parameters with sources array")
+    func passSearchParametersWithSourcesArray() async throws {
+        actor RequestCapture {
+            var request: URLRequest?
+            func store(_ request: URLRequest) { self.request = request }
+            func value() -> URLRequest? { request }
+        }
+
+        let capture = RequestCapture()
+
+        let responseJSON: [String: Any] = [
+            "id": "test-id",
+            "choices": [["index": 0, "message": ["role": "assistant", "content": "Test"], "finish_reason": "stop"]],
+            "usage": ["prompt_tokens": 10, "total_tokens": 20, "completion_tokens": 10]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let response = HTTPURLResponse(url: URL(string: "https://api.x.ai/v1/chat/completions")!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"])!
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: response)
+        }
+
+        let model = XAIChatLanguageModel(
+            modelId: XAIChatModelId(rawValue: "grok-beta"),
+            config: Self.makeConfig(fetch: fetch)
+        )
+
+        let prompt: LanguageModelV3Prompt = [
+            .user(content: [.text(.init(text: "Hello"))], providerOptions: ["xai": ["searchParameters": .object(["sources": .array([.string("twitter"), .string("news")])])]])
+        ]
+
+        _ = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: prompt))
+
+        guard let request = await capture.value() else {
+            Issue.record("Missing request")
+            return
+        }
+
+        let json = try Self.decodeRequestBody(request)
+        if let searchParams = json["search_parameters"] as? [String: Any],
+           let sources = searchParams["sources"] as? [String] {
+            #expect(sources.contains("twitter"))
+            #expect(sources.contains("news"))
+        }
+    }
+
+    @Test("should handle complex search parameter combinations")
+    func handleComplexSearchParameterCombinations() async throws {
+        actor RequestCapture {
+            var request: URLRequest?
+            func store(_ request: URLRequest) { self.request = request }
+            func value() -> URLRequest? { request }
+        }
+
+        let capture = RequestCapture()
+
+        let responseJSON: [String: Any] = [
+            "id": "test-id",
+            "choices": [["index": 0, "message": ["role": "assistant", "content": "Test"], "finish_reason": "stop"]],
+            "usage": ["prompt_tokens": 10, "total_tokens": 20, "completion_tokens": 10]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let response = HTTPURLResponse(url: URL(string: "https://api.x.ai/v1/chat/completions")!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"])!
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: response)
+        }
+
+        let model = XAIChatLanguageModel(
+            modelId: XAIChatModelId(rawValue: "grok-beta"),
+            config: Self.makeConfig(fetch: fetch)
+        )
+
+        let prompt: LanguageModelV3Prompt = [
+            .user(content: [.text(.init(text: "Hello"))], providerOptions: ["xai": ["searchParameters": .object([
+                "mode": .string("auto"),
+                "maxResults": .number(10),
+                "sources": .array([.string("twitter")])
+            ])]])
+        ]
+
+        _ = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: prompt))
+
+        guard let request = await capture.value() else {
+            Issue.record("Missing request")
+            return
+        }
+
+        let json = try Self.decodeRequestBody(request)
+        if let searchParams = json["search_parameters"] as? [String: Any] {
+            #expect(searchParams["mode"] as? String == "auto")
+            #expect(searchParams["max_results"] as? Int == 10)
+        }
+    }
+
+    // MARK: - Remaining doStream tests
+
+    @Test("should stream citations as sources")
+    func streamCitationsAsSources() async throws {
+        let payloads = [
+            Self.encodeJSON([
+                "id": "test",
+                "object": "chat.completion.chunk",
+                "created": 1750537778,
+                "model": "grok-beta",
+                "choices": [[
+                    "index": 0,
+                    "delta": ["role": "assistant", "content": ""],
+                    "finish_reason": NSNull()
+                ]]
+            ]),
+            Self.encodeJSON([
+                "id": "test",
+                "object": "chat.completion.chunk",
+                "created": 1750537778,
+                "model": "grok-beta",
+                "choices": [[
+                    "index": 0,
+                    "delta": ["content": "Latest AI news"],
+                    "finish_reason": NSNull()
+                ]]
+            ]),
+            Self.encodeJSON([
+                "id": "test",
+                "object": "chat.completion.chunk",
+                "created": 1750537778,
+                "model": "grok-beta",
+                "choices": [[
+                    "index": 0,
+                    "delta": [:],
+                    "finish_reason": "stop"
+                ]],
+                "usage": ["prompt_tokens": 4, "total_tokens": 34, "completion_tokens": 30],
+                "citations": ["https://example.com/source1", "https://example.com/source2"]
+            ])
+        ]
+
+        let events = Self.sseEvents(payloads)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.x.ai/v1/chat/completions")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "text/event-stream"]
+        )!
+
+        @Sendable func buildStream() -> AsyncThrowingStream<Data, Error> {
+            AsyncThrowingStream { continuation in
+                for event in events {
+                    continuation.yield(Data(event.utf8))
+                }
+                continuation.finish()
+            }
+        }
+
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .stream(buildStream()), urlResponse: httpResponse)
+        }
+
+        let model = XAIChatLanguageModel(
+            modelId: XAIChatModelId(rawValue: "grok-beta"),
+            config: Self.makeConfig(fetch: fetch)
+        )
+
+        let prompt: LanguageModelV3Prompt = [
+            .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
+        ]
+
+        let result = try await model.doStream(options: LanguageModelV3CallOptions(prompt: prompt))
+        let parts = try await Self.collect(result.stream)
+
+        // Verify sources
+        let sources = parts.compactMap { part -> LanguageModelV3Source? in
+            if case .source(let source) = part {
+                return source
+            }
+            return nil
+        }
+
+        #expect(sources.count == 2)
+        if case .url(_, let url, _, _) = sources[0] {
+            #expect(url == "https://example.com/source1")
+        }
+        if case .url(_, let url, _, _) = sources[1] {
+            #expect(url == "https://example.com/source2")
+        }
+    }
+
+    // MARK: - Reasoning tests
+
+    @Test("should pass reasoning_effort parameter")
+    func passReasoningEffort() async throws {
+        actor RequestCapture {
+            var request: URLRequest?
+            func store(_ request: URLRequest) { self.request = request }
+            func value() -> URLRequest? { request }
+        }
+
+        let capture = RequestCapture()
+
+        let responseJSON: [String: Any] = [
+            "id": "test-id",
+            "choices": [["index": 0, "message": ["role": "assistant", "content": "Test"], "finish_reason": "stop"]],
+            "usage": ["prompt_tokens": 10, "total_tokens": 20, "completion_tokens": 10]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let response = HTTPURLResponse(url: URL(string: "https://api.x.ai/v1/chat/completions")!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"])!
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: response)
+        }
+
+        let model = XAIChatLanguageModel(
+            modelId: XAIChatModelId(rawValue: "grok-beta"),
+            config: Self.makeConfig(fetch: fetch)
+        )
+
+        let prompt: LanguageModelV3Prompt = [
+            .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
+        ]
+
+        _ = try await model.doGenerate(options: LanguageModelV3CallOptions(
+            prompt: prompt,
+            providerOptions: ["xai": ["reasoningEffort": .string("high")]]
+        ))
+
+        guard let request = await capture.value() else {
+            Issue.record("Missing request")
+            return
+        }
+
+        let json = try Self.decodeRequestBody(request)
+        #expect(json["reasoning_effort"] as? String == "high")
+    }
+
+    @Test("should extract reasoning content")
+    func extractReasoningContent() async throws {
+        let responseJSON: [String: Any] = [
+            "id": "test-id",
+            "choices": [[
+                "index": 0,
+                "message": [
+                    "role": "assistant",
+                    "content": "This is answer",
+                    "reasoning_content": "This is reasoning"
+                ],
+                "finish_reason": "stop"
+            ]],
+            "usage": ["prompt_tokens": 10, "total_tokens": 20, "completion_tokens": 10]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let response = HTTPURLResponse(url: URL(string: "https://api.x.ai/v1/chat/completions")!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"])!
+
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .data(responseData), urlResponse: response)
+        }
+
+        let model = XAIChatLanguageModel(
+            modelId: XAIChatModelId(rawValue: "grok-beta"),
+            config: Self.makeConfig(fetch: fetch)
+        )
+
+        let prompt: LanguageModelV3Prompt = [
+            .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
+        ]
+
+        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: prompt))
+
+        #expect(result.content.count == 2)
+
+        if case .text(let text) = result.content[0] {
+            #expect(text.text == "This is answer")
+        } else {
+            Issue.record("Expected text content")
+        }
+
+        if case .reasoning(let reasoning) = result.content[1] {
+            #expect(reasoning.text == "This is reasoning")
+        } else {
+            Issue.record("Expected reasoning content")
+        }
+    }
+
+    @Test("should extract reasoning tokens from usage")
+    func extractReasoningTokensFromUsage() async throws {
+        let responseJSON: [String: Any] = [
+            "id": "test-id",
+            "choices": [["index": 0, "message": ["role": "assistant", "content": "Test"], "finish_reason": "stop"]],
+            "usage": [
+                "prompt_tokens": 10,
+                "total_tokens": 50,
+                "completion_tokens": 20,
+                "completion_tokens_details": ["reasoning_tokens": 15]
+            ]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let response = HTTPURLResponse(url: URL(string: "https://api.x.ai/v1/chat/completions")!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"])!
+
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .data(responseData), urlResponse: response)
+        }
+
+        let model = XAIChatLanguageModel(
+            modelId: XAIChatModelId(rawValue: "grok-beta"),
+            config: Self.makeConfig(fetch: fetch)
+        )
+
+        let prompt: LanguageModelV3Prompt = [
+            .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
+        ]
+
+        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: prompt))
+
+        #expect(result.usage.inputTokens == 10)
+        #expect(result.usage.outputTokens == 20)
+        #expect(result.usage.reasoningTokens == 15)
+        #expect(result.usage.totalTokens == 50)
+    }
+
+    @Test("should handle reasoning streaming")
+    func handleReasoningStreaming() async throws {
+        let payloads = [
+            Self.encodeJSON([
+                "id": "test",
+                "object": "chat.completion.chunk",
+                "created": 1750537778,
+                "model": "grok-beta",
+                "choices": [[
+                    "index": 0,
+                    "delta": ["role": "assistant", "content": ""],
+                    "finish_reason": NSNull()
+                ]]
+            ]),
+            Self.encodeJSON([
+                "id": "test",
+                "object": "chat.completion.chunk",
+                "created": 1750537778,
+                "model": "grok-beta",
+                "choices": [[
+                    "index": 0,
+                    "delta": ["reasoning_content": "Let me calculate: "],
+                    "finish_reason": NSNull()
+                ]]
+            ]),
+            Self.encodeJSON([
+                "id": "test",
+                "object": "chat.completion.chunk",
+                "created": 1750537778,
+                "model": "grok-beta",
+                "choices": [[
+                    "index": 0,
+                    "delta": ["reasoning_content": "101 * 3 = 303"],
+                    "finish_reason": NSNull()
+                ]]
+            ]),
+            Self.encodeJSON([
+                "id": "test",
+                "object": "chat.completion.chunk",
+                "created": 1750537778,
+                "model": "grok-beta",
+                "choices": [[
+                    "index": 0,
+                    "delta": ["content": "Answer"],
+                    "finish_reason": "stop"
+                ]],
+                "usage": ["prompt_tokens": 4, "total_tokens": 10, "completion_tokens": 6]
+            ])
+        ]
+
+        let events = Self.sseEvents(payloads)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.x.ai/v1/chat/completions")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "text/event-stream"]
+        )!
+
+        @Sendable func buildStream() -> AsyncThrowingStream<Data, Error> {
+            AsyncThrowingStream { continuation in
+                for event in events {
+                    continuation.yield(Data(event.utf8))
+                }
+                continuation.finish()
+            }
+        }
+
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .stream(buildStream()), urlResponse: httpResponse)
+        }
+
+        let model = XAIChatLanguageModel(
+            modelId: XAIChatModelId(rawValue: "grok-beta"),
+            config: Self.makeConfig(fetch: fetch)
+        )
+
+        let prompt: LanguageModelV3Prompt = [
+            .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
+        ]
+
+        let result = try await model.doStream(options: LanguageModelV3CallOptions(prompt: prompt))
+        let parts = try await Self.collect(result.stream)
+
+        // Verify reasoning deltas
+        let reasoningDeltas = parts.compactMap { part -> String? in
+            if case .reasoningDelta(_, let delta, _) = part {
+                return delta
+            }
+            return nil
+        }
+
+        #expect(reasoningDeltas.count == 2)
+        #expect(reasoningDeltas[0] == "Let me calculate: ")
+        #expect(reasoningDeltas[1] == "101 * 3 = 303")
+
+        // Verify text delta
+        let textDeltas = parts.compactMap { part -> String? in
+            if case .textDelta(_, let delta, _) = part {
+                return delta
+            }
+            return nil
+        }
+
+        #expect(textDeltas.contains("Answer"))
+    }
+
+    @Test("should deduplicate repetitive reasoning deltas")
+    func deduplicateRepetitiveReasoningDeltas() async throws {
+        let payloads = [
+            Self.encodeJSON([
+                "id": "grok-4-test",
+                "object": "chat.completion.chunk",
+                "created": 1750537778,
+                "model": "grok-4-0709",
+                "choices": [[
+                    "index": 0,
+                    "delta": ["role": "assistant", "content": ""],
+                    "finish_reason": NSNull()
+                ]]
+            ]),
+            // Multiple identical "Thinking... " deltas (simulating Grok 4 issue)
+            Self.encodeJSON([
+                "id": "grok-4-test",
+                "object": "chat.completion.chunk",
+                "created": 1750537778,
+                "model": "grok-4-0709",
+                "choices": [[
+                    "index": 0,
+                    "delta": ["reasoning_content": "Thinking... "],
+                    "finish_reason": NSNull()
+                ]]
+            ]),
+            Self.encodeJSON([
+                "id": "grok-4-test",
+                "object": "chat.completion.chunk",
+                "created": 1750537778,
+                "model": "grok-4-0709",
+                "choices": [[
+                    "index": 0,
+                    "delta": ["reasoning_content": "Thinking... "],
+                    "finish_reason": NSNull()
+                ]]
+            ]),
+            Self.encodeJSON([
+                "id": "grok-4-test",
+                "object": "chat.completion.chunk",
+                "created": 1750537778,
+                "model": "grok-4-0709",
+                "choices": [[
+                    "index": 0,
+                    "delta": ["reasoning_content": "Thinking... "],
+                    "finish_reason": NSNull()
+                ]]
+            ]),
+            // Different reasoning content should still come through
+            Self.encodeJSON([
+                "id": "grok-4-test",
+                "object": "chat.completion.chunk",
+                "created": 1750537778,
+                "model": "grok-4-0709",
+                "choices": [[
+                    "index": 0,
+                    "delta": ["reasoning_content": "Actually calculating now..."],
+                    "finish_reason": NSNull()
+                ]]
+            ]),
+            Self.encodeJSON([
+                "id": "grok-4-test",
+                "object": "chat.completion.chunk",
+                "created": 1750537778,
+                "model": "grok-4-0709",
+                "choices": [[
+                    "index": 0,
+                    "delta": ["content": "The answer is 42."],
+                    "finish_reason": NSNull()
+                ]]
+            ]),
+            Self.encodeJSON([
+                "id": "grok-4-test",
+                "object": "chat.completion.chunk",
+                "created": 1750537778,
+                "model": "grok-4-0709",
+                "choices": [[
+                    "index": 0,
+                    "delta": [:],
+                    "finish_reason": "stop"
+                ]],
+                "usage": ["prompt_tokens": 15, "total_tokens": 35, "completion_tokens": 20, "completion_tokens_details": ["reasoning_tokens": 10]]
+            ])
+        ]
+
+        let events = Self.sseEvents(payloads)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.x.ai/v1/chat/completions")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "text/event-stream"]
+        )!
+
+        @Sendable func buildStream() -> AsyncThrowingStream<Data, Error> {
+            AsyncThrowingStream { continuation in
+                for event in events {
+                    continuation.yield(Data(event.utf8))
+                }
+                continuation.finish()
+            }
+        }
+
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .stream(buildStream()), urlResponse: httpResponse)
+        }
+
+        let model = XAIChatLanguageModel(
+            modelId: XAIChatModelId(rawValue: "grok-beta"),
+            config: Self.makeConfig(fetch: fetch)
+        )
+
+        let prompt: LanguageModelV3Prompt = [
+            .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
+        ]
+
+        let result = try await model.doStream(options: LanguageModelV3CallOptions(prompt: prompt))
+        let parts = try await Self.collect(result.stream)
+
+        // Verify reasoning deltas are deduplicated
+        let reasoningDeltas = parts.compactMap { part -> String? in
+            if case .reasoningDelta(_, let delta, _) = part {
+                return delta
+            }
+            return nil
+        }
+
+        // Should only have "Thinking... " once (not 3 times), and "Actually calculating now..." once
+        #expect(reasoningDeltas.count == 2)
+        #expect(reasoningDeltas[0] == "Thinking... ")
+        #expect(reasoningDeltas[1] == "Actually calculating now...")
+
+        // Verify text delta
+        let textDeltas = parts.compactMap { part -> String? in
+            if case .textDelta(_, let delta, _) = part {
+                return delta
+            }
+            return nil
+        }
+
+        #expect(textDeltas.contains("The answer is 42."))
+    }
 }
 
