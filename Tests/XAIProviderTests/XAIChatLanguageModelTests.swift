@@ -12,7 +12,7 @@ import Testing
 
 @Suite("XAIChatLanguageModel")
 struct XAIChatLanguageModelTests {
-    private func makeConfig(
+    private static func makeConfig(
         fetch: @escaping FetchFunction,
         generateId: @escaping @Sendable () -> String = { UUID().uuidString }
     ) -> XAIChatLanguageModel.Config {
@@ -25,21 +25,21 @@ struct XAIChatLanguageModelTests {
         )
     }
 
-    private func decodeRequestBody(_ request: URLRequest) throws -> [String: Any] {
+    private static func decodeRequestBody(_ request: URLRequest) throws -> [String: Any] {
         guard let body = request.httpBody else { return [:] }
         return try JSONSerialization.jsonObject(with: body) as? [String: Any] ?? [:]
     }
 
-    private func encodeJSON(_ object: Any) -> String {
+    private static func encodeJSON(_ object: Any) -> String {
         let data = try! JSONSerialization.data(withJSONObject: object, options: [])
         return String(data: data, encoding: .utf8)!
     }
 
-    private func sseEvents(_ payloads: [String]) -> [String] {
+    private static func sseEvents(_ payloads: [String]) -> [String] {
         payloads.map { "data: \($0)\n\n" } + ["data: [DONE]\n\n"]
     }
 
-    private func collect(_ stream: AsyncThrowingStream<LanguageModelV3StreamPart, Error>) async throws -> [LanguageModelV3StreamPart] {
+    private static func collect(_ stream: AsyncThrowingStream<LanguageModelV3StreamPart, Error>) async throws -> [LanguageModelV3StreamPart] {
         var parts: [LanguageModelV3StreamPart] = []
         for try await part in stream {
             parts.append(part)
@@ -53,7 +53,7 @@ struct XAIChatLanguageModelTests {
     func instantiateCorrectly() async throws {
         let model = XAIChatLanguageModel(
             modelId: XAIChatModelId(rawValue: "grok-beta"),
-            config: makeConfig(fetch: { _ in fatalError("Unexpected fetch call") })
+            config: Self.makeConfig(fetch: { _ in fatalError("Unexpected fetch call") })
         )
 
         #expect(model.modelId == "grok-beta")
@@ -65,7 +65,7 @@ struct XAIChatLanguageModelTests {
     func supportedURLs() async throws {
         let model = XAIChatLanguageModel(
             modelId: XAIChatModelId(rawValue: "grok-beta"),
-            config: makeConfig(fetch: { _ in fatalError("Unexpected fetch call") })
+            config: Self.makeConfig(fetch: { _ in fatalError("Unexpected fetch call") })
         )
 
         let urls = try await model.supportedUrls
@@ -128,14 +128,14 @@ struct XAIChatLanguageModelTests {
 
         let model = XAIChatLanguageModel(
             modelId: XAIChatModelId(rawValue: "grok-beta"),
-            config: makeConfig(fetch: fetch)
+            config: Self.makeConfig(fetch: fetch)
         )
 
         let prompt: LanguageModelV3Prompt = [
             .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
         ]
 
-        let result = try await model.doGenerate(options: .init(prompt: prompt))
+        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: prompt))
 
         #expect(result.content.count == 1)
         guard case .text(let text) = result.content[0] else {
@@ -178,7 +178,7 @@ struct XAIChatLanguageModelTests {
 
         let model = XAIChatLanguageModel(
             modelId: XAIChatModelId(rawValue: "grok-beta"),
-            config: makeConfig(fetch: { _ in
+            config: Self.makeConfig(fetch: { _ in
                 FetchResponse(body: .data(responseData), urlResponse: response)
             })
         )
@@ -188,7 +188,7 @@ struct XAIChatLanguageModelTests {
             .assistant(content: [.text(.init(text: "prefix "))], providerOptions: nil)
         ]
 
-        let result = try await model.doGenerate(options: .init(prompt: prompt))
+        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: prompt))
 
         #expect(result.content.count == 1)
         guard case .text(let text) = result.content[0] else {
@@ -238,7 +238,7 @@ struct XAIChatLanguageModelTests {
 
         let model = XAIChatLanguageModel(
             modelId: XAIChatModelId(rawValue: "grok-beta"),
-            config: makeConfig(fetch: { _ in
+            config: Self.makeConfig(fetch: { _ in
                 FetchResponse(body: .data(responseData), urlResponse: response)
             })
         )
@@ -247,7 +247,7 @@ struct XAIChatLanguageModelTests {
             .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
         ]
 
-        let result = try await model.doGenerate(options: .init(prompt: prompt))
+        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: prompt))
 
         #expect(result.content.count == 1)
         guard case .toolCall(let toolCall) = result.content[0] else {
@@ -292,7 +292,7 @@ struct XAIChatLanguageModelTests {
 
         let model = XAIChatLanguageModel(
             modelId: XAIChatModelId(rawValue: "grok-beta"),
-            config: makeConfig(fetch: { _ in
+            config: Self.makeConfig(fetch: { _ in
                 FetchResponse(body: .data(responseData), urlResponse: response)
             })
         )
@@ -301,7 +301,7 @@ struct XAIChatLanguageModelTests {
             .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
         ]
 
-        let result = try await model.doGenerate(options: .init(prompt: prompt))
+        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: prompt))
 
         #expect(result.usage.inputTokens == 20)
         #expect(result.usage.outputTokens == 5)
@@ -342,7 +342,7 @@ struct XAIChatLanguageModelTests {
 
         let model = XAIChatLanguageModel(
             modelId: XAIChatModelId(rawValue: "grok-beta"),
-            config: makeConfig(fetch: { _ in
+            config: Self.makeConfig(fetch: { _ in
                 FetchResponse(body: .data(responseData), urlResponse: response)
             })
         )
@@ -351,7 +351,7 @@ struct XAIChatLanguageModelTests {
             .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
         ]
 
-        let result = try await model.doGenerate(options: .init(prompt: prompt))
+        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: prompt))
 
         guard let response = result.response else {
             Issue.record("Missing response")
@@ -399,7 +399,7 @@ struct XAIChatLanguageModelTests {
 
         let model = XAIChatLanguageModel(
             modelId: XAIChatModelId(rawValue: "grok-beta"),
-            config: makeConfig(fetch: { _ in
+            config: Self.makeConfig(fetch: { _ in
                 FetchResponse(body: .data(responseData), urlResponse: response)
             })
         )
@@ -408,7 +408,7 @@ struct XAIChatLanguageModelTests {
             .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
         ]
 
-        let result = try await model.doGenerate(options: .init(prompt: prompt))
+        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: prompt))
 
         guard let response = result.response else {
             Issue.record("Missing response")
@@ -457,7 +457,7 @@ struct XAIChatLanguageModelTests {
 
         let model = XAIChatLanguageModel(
             modelId: XAIChatModelId(rawValue: "grok-beta"),
-            config: makeConfig(fetch: fetch)
+            config: Self.makeConfig(fetch: fetch)
         )
 
         let prompt: LanguageModelV3Prompt = [
@@ -471,7 +471,7 @@ struct XAIChatLanguageModelTests {
             return
         }
 
-        let json = try decodeRequestBody(request)
+        let json = try Self.decodeRequestBody(request)
         #expect(json["model"] as? String == "grok-beta")
 
         if let messages = json["messages"] as? [[String: Any]],
@@ -521,7 +521,7 @@ struct XAIChatLanguageModelTests {
 
         let model = XAIChatLanguageModel(
             modelId: XAIChatModelId(rawValue: "grok-beta"),
-            config: makeConfig(fetch: fetch)
+            config: Self.makeConfig(fetch: fetch)
         )
 
         let prompt: LanguageModelV3Prompt = [
@@ -553,7 +553,7 @@ struct XAIChatLanguageModelTests {
             return
         }
 
-        let json = try decodeRequestBody(request)
+        let json = try Self.decodeRequestBody(request)
 
         if let toolsArray = json["tools"] as? [[String: Any]],
            let firstTool = toolsArray.first,
@@ -755,14 +755,14 @@ struct XAIChatLanguageModelTests {
 
         let model = XAIChatLanguageModel(
             modelId: XAIChatModelId(rawValue: "grok-beta"),
-            config: makeConfig(fetch: fetch)
+            config: Self.makeConfig(fetch: fetch)
         )
 
         let prompt: LanguageModelV3Prompt = [
             .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
         ]
 
-        let result = try await model.doGenerate(options: .init(prompt: prompt))
+        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: prompt))
 
         // Verify request body structure
         guard let request = result.request, let requestBody = request.body as? [String: JSONValue] else {
@@ -826,7 +826,7 @@ struct XAIChatLanguageModelTests {
 
         let model = XAIChatLanguageModel(
             modelId: XAIChatModelId(rawValue: "grok-beta"),
-            config: makeConfig(fetch: fetch)
+            config: Self.makeConfig(fetch: fetch)
         )
 
         let prompt: LanguageModelV3Prompt = [
@@ -853,7 +853,7 @@ struct XAIChatLanguageModelTests {
             return
         }
 
-        let json = try decodeRequestBody(request)
+        let json = try Self.decodeRequestBody(request)
 
         if let searchParams = json["search_parameters"] as? [String: Any] {
             #expect(searchParams["mode"] as? String == "auto")
@@ -899,7 +899,7 @@ struct XAIChatLanguageModelTests {
 
         let model = XAIChatLanguageModel(
             modelId: XAIChatModelId(rawValue: "grok-beta"),
-            config: makeConfig(fetch: { _ in
+            config: Self.makeConfig(fetch: { _ in
                 FetchResponse(body: .data(responseData), urlResponse: response)
             }, generateId: { "test-id" })
         )
@@ -908,7 +908,7 @@ struct XAIChatLanguageModelTests {
             .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
         ]
 
-        let result = try await model.doGenerate(options: .init(prompt: prompt))
+        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: prompt))
 
         #expect(result.content.count == 3)
 
@@ -935,10 +935,358 @@ struct XAIChatLanguageModelTests {
         #expect(url2 == "https://example.com/article2")
     }
 
-    // Note: Additional doGenerate tests (content extraction variations, complex search parameters)
-    // are covered by the tests above and would be redundant. Moving to doStream tests.
+    // MARK: - doStream Tests
 
-    // TODO: Add comprehensive doStream and reasoning model tests
-    // For now, focusing on core doGenerate functionality
+    @Test("should stream text deltas")
+    func streamTextDeltas() async throws {
+        let payloads = [
+            Self.encodeJSON([
+                "id": "chunk-test",
+                "object": "chat.completion.chunk",
+                "created": 1699472111,
+                "model": "grok-beta",
+                "choices": [[
+                    "index": 0,
+                    "delta": ["role": "assistant", "content": ""],
+                    "finish_reason": NSNull()
+                ]]
+            ]),
+            Self.encodeJSON([
+                "id": "chunk-test",
+                "object": "chat.completion.chunk",
+                "created": 1699472111,
+                "model": "grok-beta",
+                "choices": [[
+                    "index": 0,
+                    "delta": ["content": "Hello"],
+                    "finish_reason": NSNull()
+                ]]
+            ]),
+            Self.encodeJSON([
+                "id": "chunk-test",
+                "object": "chat.completion.chunk",
+                "created": 1699472111,
+                "model": "grok-beta",
+                "choices": [[
+                    "index": 0,
+                    "delta": ["content": ", "],
+                    "finish_reason": NSNull()
+                ]]
+            ]),
+            Self.encodeJSON([
+                "id": "chunk-test",
+                "object": "chat.completion.chunk",
+                "created": 1699472111,
+                "model": "grok-beta",
+                "choices": [[
+                    "index": 0,
+                    "delta": ["content": "world!"],
+                    "finish_reason": NSNull()
+                ]]
+            ]),
+            Self.encodeJSON([
+                "id": "chunk-test",
+                "object": "chat.completion.chunk",
+                "created": 1699472111,
+                "model": "grok-beta",
+                "choices": [[
+                    "index": 0,
+                    "delta": ["content": ""],
+                    "finish_reason": "stop"
+                ]],
+                "usage": [
+                    "prompt_tokens": 4,
+                    "total_tokens": 36,
+                    "completion_tokens": 32
+                ]
+            ])
+        ]
+
+        let events = Self.sseEvents(payloads)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.x.ai/v1/chat/completions")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "text/event-stream"]
+        )!
+
+        @Sendable func buildStream() -> AsyncThrowingStream<Data, Error> {
+            AsyncThrowingStream { continuation in
+                for event in events {
+                    continuation.yield(Data(event.utf8))
+                }
+                continuation.finish()
+            }
+        }
+
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .stream(buildStream()), urlResponse: httpResponse)
+        }
+
+        let model = XAIChatLanguageModel(
+            modelId: XAIChatModelId(rawValue: "grok-beta"),
+            config: Self.makeConfig(fetch: fetch)
+        )
+
+        let prompt: LanguageModelV3Prompt = [
+            .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
+        ]
+
+        let result = try await model.doStream(options: LanguageModelV3CallOptions(prompt: prompt))
+        let parts = try await Self.collect(result.stream)
+
+        // Verify text deltas
+        let textDeltas = parts.compactMap { part -> String? in
+            if case .textDelta(_, let delta, _) = part {
+                return delta
+            }
+            return nil
+        }
+
+        #expect(textDeltas.contains("Hello"))
+        #expect(textDeltas.contains(", "))
+        #expect(textDeltas.contains("world!"))
+
+        // Verify finish
+        #expect(parts.contains { if case .finish(let reason, _, _) = $0, reason == .stop { return true } else { return false } })
+    }
+
+    @Test("should stream tool deltas")
+    func streamToolDeltas() async throws {
+        let payloads = [
+            Self.encodeJSON([
+                "id": "a9648117-740c-4270-9e07-6a8457f23b7a",
+                "object": "chat.completion.chunk",
+                "created": 1750535985,
+                "model": "grok-beta",
+                "choices": [[
+                    "index": 0,
+                    "delta": ["role": "assistant", "content": ""],
+                    "finish_reason": NSNull()
+                ]],
+                "system_fingerprint": "fp_13a6dc65a6"
+            ]),
+            Self.encodeJSON([
+                "id": "a9648117-740c-4270-9e07-6a8457f23b7a",
+                "object": "chat.completion.chunk",
+                "created": 1750535985,
+                "model": "grok-beta",
+                "choices": [[
+                    "index": 0,
+                    "delta": [
+                        "content": NSNull(),
+                        "tool_calls": [[
+                            "id": "call_yfBEybNYi",
+                            "type": "function",
+                            "function": [
+                                "name": "test-tool",
+                                "arguments": "{\"value\":\"Sparkle Day\"}"
+                            ]
+                        ]]
+                    ],
+                    "finish_reason": "tool_calls"
+                ]],
+                "usage": [
+                    "prompt_tokens": 183,
+                    "total_tokens": 316,
+                    "completion_tokens": 133
+                ],
+                "system_fingerprint": "fp_13a6dc65a6"
+            ])
+        ]
+
+        let events = Self.sseEvents(payloads)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.x.ai/v1/chat/completions")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "text/event-stream"]
+        )!
+
+        @Sendable func buildStream() -> AsyncThrowingStream<Data, Error> {
+            AsyncThrowingStream { continuation in
+                for event in events {
+                    continuation.yield(Data(event.utf8))
+                }
+                continuation.finish()
+            }
+        }
+
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .stream(buildStream()), urlResponse: httpResponse)
+        }
+
+        let model = XAIChatLanguageModel(
+            modelId: XAIChatModelId(rawValue: "grok-beta"),
+            config: Self.makeConfig(fetch: fetch)
+        )
+
+        let tool = LanguageModelV3Tool.function(LanguageModelV3FunctionTool(
+            name: "test-tool",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "value": .object(["type": .string("string")])
+                ]),
+                "required": .array([.string("value")]),
+                "additionalProperties": .bool(false),
+                "$schema": .string("http://json-schema.org/draft-07/schema#")
+            ]),
+            description: nil
+        ))
+
+        let prompt: LanguageModelV3Prompt = [
+            .user(content: [.text(.init(text: "What's the weather?"))], providerOptions: nil)
+        ]
+
+        let result = try await model.doStream(
+            options: LanguageModelV3CallOptions(
+                prompt: prompt,
+                tools: [tool]
+            )
+        )
+        let parts = try await Self.collect(result.stream)
+
+        // Verify tool input start
+        #expect(parts.contains { if case .toolInputStart(let id, let name, _, _) = $0 { return id == "call_yfBEybNYi" && name == "test-tool" } else { return false } })
+
+        // Verify tool input delta
+        let toolInputDeltas = parts.compactMap { part -> String? in
+            if case .toolInputDelta(_, let delta, _) = part {
+                return delta
+            }
+            return nil
+        }
+        #expect(toolInputDeltas == ["{\"value\":\"Sparkle Day\"}"])
+
+        // Verify tool input end
+        #expect(parts.contains { if case .toolInputEnd(let id, _) = $0 { return id == "call_yfBEybNYi" } else { return false } })
+
+        // Verify tool call
+        #expect(parts.contains { if case .toolCall(let call) = $0 { return call.toolName == "test-tool" && call.toolCallId == "call_yfBEybNYi" } else { return false } })
+
+        // Verify finish
+        #expect(parts.contains { if case .finish(let reason, _, _) = $0, reason == .toolCalls { return true } else { return false } })
+    }
+
+    @Test("should avoid duplication when there is a trailing assistant message")
+    func avoidDuplicationWithTrailingAssistantMessage() async throws {
+        let payloads = [
+            Self.encodeJSON([
+                "id": "35e18f56-4ec6-48e4-8ca0-c1c4cbeeebbe",
+                "object": "chat.completion.chunk",
+                "created": 1750537778,
+                "model": "grok-beta",
+                "choices": [[
+                    "index": 0,
+                    "delta": ["role": "assistant", "content": ""],
+                    "finish_reason": NSNull()
+                ]],
+                "system_fingerprint": "fp_13a6dc65a6"
+            ]),
+            Self.encodeJSON([
+                "id": "35e18f56-4ec6-48e4-8ca0-c1c4cbeeebbe",
+                "object": "chat.completion.chunk",
+                "created": 1750537778,
+                "model": "grok-beta",
+                "choices": [[
+                    "index": 0,
+                    "delta": ["role": "assistant", "content": "prefix"],
+                    "finish_reason": NSNull()
+                ]],
+                "system_fingerprint": "fp_13a6dc65a6"
+            ]),
+            Self.encodeJSON([
+                "id": "35e18f56-4ec6-48e4-8ca0-c1c4cbeeebbe",
+                "object": "chat.completion.chunk",
+                "created": 1750537778,
+                "model": "grok-beta",
+                "choices": [[
+                    "index": 0,
+                    "delta": ["role": "assistant", "content": " and"],
+                    "finish_reason": NSNull()
+                ]],
+                "system_fingerprint": "fp_13a6dc65a6"
+            ]),
+            Self.encodeJSON([
+                "id": "35e18f56-4ec6-48e4-8ca0-c1c4cbeeebbe",
+                "object": "chat.completion.chunk",
+                "created": 1750537778,
+                "model": "grok-beta",
+                "choices": [[
+                    "index": 0,
+                    "delta": ["role": "assistant", "content": " more content"],
+                    "finish_reason": NSNull()
+                ]],
+                "system_fingerprint": "fp_13a6dc65a6"
+            ]),
+            Self.encodeJSON([
+                "id": "35e18f56-4ec6-48e4-8ca0-c1c4cbeeebbe",
+                "object": "chat.completion.chunk",
+                "created": 1750537778,
+                "model": "grok-beta",
+                "choices": [[
+                    "index": 0,
+                    "delta": ["content": ""],
+                    "finish_reason": "stop"
+                ]],
+                "usage": [
+                    "prompt_tokens": 4,
+                    "total_tokens": 36,
+                    "completion_tokens": 32
+                ],
+                "system_fingerprint": "fp_13a6dc65a6"
+            ])
+        ]
+
+        let events = Self.sseEvents(payloads)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.x.ai/v1/chat/completions")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "text/event-stream"]
+        )!
+
+        @Sendable func buildStream() -> AsyncThrowingStream<Data, Error> {
+            AsyncThrowingStream { continuation in
+                for event in events {
+                    continuation.yield(Data(event.utf8))
+                }
+                continuation.finish()
+            }
+        }
+
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .stream(buildStream()), urlResponse: httpResponse)
+        }
+
+        let model = XAIChatLanguageModel(
+            modelId: XAIChatModelId(rawValue: "grok-beta"),
+            config: Self.makeConfig(fetch: fetch)
+        )
+
+        // Prompt with trailing assistant message
+        let prompt: LanguageModelV3Prompt = [
+            .user(content: [.text(.init(text: "Hello"))], providerOptions: nil),
+            .assistant(content: [.text(.init(text: "prefix "))], providerOptions: nil)
+        ]
+
+        let result = try await model.doStream(options: LanguageModelV3CallOptions(prompt: prompt))
+        let parts = try await Self.collect(result.stream)
+
+        // Verify text deltas
+        let textDeltas = parts.compactMap { part -> String? in
+            if case .textDelta(_, let delta, _) = part {
+                return delta
+            }
+            return nil
+        }
+
+        // Should stream "prefix", " and", " more content" without duplication
+        #expect(textDeltas == ["prefix", " and", " more content"])
+
+        // Verify finish
+        #expect(parts.contains { if case .finish(let reason, _, _) = $0, reason == .stop { return true } else { return false } })
+    }
 }
 
