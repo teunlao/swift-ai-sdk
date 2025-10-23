@@ -935,6 +935,103 @@ struct XAIChatLanguageModelTests {
         #expect(url2 == "https://example.com/article2")
     }
 
+    @Test("should extract content when message content is a content object")
+    func extractContentWhenMessageContentIsContentObject() async throws {
+        let responseJSON: [String: Any] = [
+            "id": "object-id",
+            "object": "chat.completion",
+            "created": 1699472111,
+            "model": "grok-beta",
+            "choices": [[
+                "index": 0,
+                "message": [
+                    "role": "assistant",
+                    "content": "Hello from object",
+                    "tool_calls": NSNull()
+                ],
+                "finish_reason": "stop"
+            ]],
+            "usage": ["prompt_tokens": 4, "total_tokens": 34, "completion_tokens": 30]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let response = HTTPURLResponse(
+            url: URL(string: "https://api.x.ai/v1/chat/completions")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let model = XAIChatLanguageModel(
+            modelId: XAIChatModelId(rawValue: "grok-beta"),
+            config: Self.makeConfig(fetch: { _ in
+                FetchResponse(body: .data(responseData), urlResponse: response)
+            })
+        )
+
+        let prompt: LanguageModelV3Prompt = [
+            .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
+        ]
+
+        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: prompt))
+
+        #expect(result.content.count == 1)
+        guard case .text(let text) = result.content[0] else {
+            Issue.record("Expected text content")
+            return
+        }
+        #expect(text.text == "Hello from object")
+    }
+
+    @Test("should handle empty citations array")
+    func handleEmptyCitationsArray() async throws {
+        let responseJSON: [String: Any] = [
+            "id": "no-citations-test",
+            "object": "chat.completion",
+            "created": 1699472111,
+            "model": "grok-beta",
+            "choices": [[
+                "index": 0,
+                "message": [
+                    "role": "assistant",
+                    "content": "Response without citations.",
+                    "tool_calls": NSNull()
+                ],
+                "finish_reason": "stop"
+            ]],
+            "usage": ["prompt_tokens": 4, "total_tokens": 34, "completion_tokens": 30],
+            "citations": []
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let response = HTTPURLResponse(
+            url: URL(string: "https://api.x.ai/v1/chat/completions")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let model = XAIChatLanguageModel(
+            modelId: XAIChatModelId(rawValue: "grok-beta"),
+            config: Self.makeConfig(fetch: { _ in
+                FetchResponse(body: .data(responseData), urlResponse: response)
+            })
+        )
+
+        let prompt: LanguageModelV3Prompt = [
+            .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
+        ]
+
+        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: prompt))
+
+        #expect(result.content.count == 1)
+        guard case .text(let text) = result.content[0] else {
+            Issue.record("Expected text content")
+            return
+        }
+        #expect(text.text == "Response without citations.")
+    }
+
     // MARK: - doStream Tests
 
     @Test("should stream text deltas")
@@ -2161,6 +2258,127 @@ struct XAIChatLanguageModelTests {
         }
 
         #expect(textDeltas.contains("The answer is 42."))
+    }
+
+    @Test("should stream raw chunks when includeRawChunks is true")
+    func streamRawChunksWhenIncludeRawChunksTrue() async throws {
+        let payloads = [
+            Self.encodeJSON([
+                "id": "d9f56e23-8b4c-4e7a-9d2f-6c8a9b5e3f7d",
+                "object": "chat.completion.chunk",
+                "created": 1750538300,
+                "model": "grok-beta",
+                "choices": [[
+                    "index": 0,
+                    "delta": ["role": "assistant", "content": "Hello"],
+                    "finish_reason": NSNull()
+                ]],
+                "system_fingerprint": "fp_13a6dc65a6"
+            ]),
+            Self.encodeJSON([
+                "id": "e2a47b89-3f6d-4c8e-9a1b-7d5f8c9e2a4b",
+                "object": "chat.completion.chunk",
+                "created": 1750538301,
+                "model": "grok-beta",
+                "choices": [[
+                    "index": 0,
+                    "delta": ["content": " world"],
+                    "finish_reason": NSNull()
+                ]],
+                "system_fingerprint": "fp_13a6dc65a6"
+            ]),
+            Self.encodeJSON([
+                "id": "f3b58c9a-4e7f-5d9e-ab2c-8e6f9d0e3b5c",
+                "object": "chat.completion.chunk",
+                "created": 1750538302,
+                "model": "grok-beta",
+                "choices": [[
+                    "index": 0,
+                    "delta": [:],
+                    "finish_reason": "stop"
+                ]],
+                "usage": ["prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15],
+                "citations": ["https://example.com"],
+                "system_fingerprint": "fp_13a6dc65a6"
+            ])
+        ]
+
+        let events = Self.sseEvents(payloads)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.x.ai/v1/chat/completions")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "text/event-stream"]
+        )!
+
+        @Sendable func buildStream() -> AsyncThrowingStream<Data, Error> {
+            AsyncThrowingStream { continuation in
+                for event in events {
+                    continuation.yield(Data(event.utf8))
+                }
+                continuation.finish()
+            }
+        }
+
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .stream(buildStream()), urlResponse: httpResponse)
+        }
+
+        let model = XAIChatLanguageModel(
+            modelId: XAIChatModelId(rawValue: "grok-beta"),
+            config: Self.makeConfig(fetch: fetch)
+        )
+
+        let prompt: LanguageModelV3Prompt = [
+            .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
+        ]
+
+        let result = try await model.doStream(options: LanguageModelV3CallOptions(
+            prompt: prompt,
+            includeRawChunks: true
+        ))
+        let parts = try await Self.collect(result.stream)
+
+        // Verify raw chunks are present
+        let rawChunks = parts.compactMap { part -> JSONValue? in
+            if case .raw(let raw) = part {
+                return raw
+            }
+            return nil
+        }
+
+        #expect(rawChunks.count == 3)
+
+        // Verify first raw chunk has the expected structure
+        guard case .object(let firstChunk) = rawChunks[0] else {
+            Issue.record("Expected first raw chunk to be an object")
+            return
+        }
+
+        guard case .string(let id) = firstChunk["id"] else {
+            Issue.record("Expected id to be a string")
+            return
+        }
+
+        guard case .array(let choices) = firstChunk["choices"] else {
+            Issue.record("Expected choices to be an array")
+            return
+        }
+
+        #expect(id == "d9f56e23-8b4c-4e7a-9d2f-6c8a9b5e3f7d")
+        #expect(choices.count == 1)
+
+        // Verify text deltas are also present
+        let textDeltas = parts.compactMap { part -> String? in
+            if case .textDelta(_, let delta, _) = part {
+                return delta
+            }
+            return nil
+        }
+
+        #expect(textDeltas.count == 2)
+        #expect(textDeltas[0] == "Hello")
+        #expect(textDeltas[1] == " world")
     }
 }
 
