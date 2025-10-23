@@ -21,6 +21,7 @@ let package = Package(
         .library(name: "AnthropicProvider", targets: ["AnthropicProvider"]),
         .library(name: "GoogleProvider", targets: ["GoogleProvider"]),
         .library(name: "GroqProvider", targets: ["GroqProvider"]),
+        .library(name: "XAIProvider", targets: ["XAIProvider"]),
         .library(name: "EventSourceParser", targets: ["EventSourceParser"]), // internal lib for SSE
         .library(name: "AISDKZodAdapter", targets: ["AISDKZodAdapter"]),
         .executable(name: "playground", targets: ["SwiftAISDKPlayground"])
@@ -62,6 +63,7 @@ let package = Package(
         .target(name: "AnthropicProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "EventSourceParser"]),
         .target(name: "GoogleProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "EventSourceParser"]),
         .target(name: "GroqProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "EventSourceParser"]),
+        .target(name: "XAIProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "OpenAICompatibleProvider"]),
 
         // SwiftAISDK - Main AI SDK (matches @ai-sdk/ai)
         // GenerateText, Registry, Middleware, Prompts, Tools, Telemetry
@@ -71,6 +73,7 @@ let package = Package(
         .testTarget(name: "AnthropicProviderTests", dependencies: ["AnthropicProvider", "AISDKProvider", "AISDKProviderUtils"], resources: [.copy("Fixtures")]),
         .testTarget(name: "GoogleProviderTests", dependencies: ["GoogleProvider", "AISDKProvider", "AISDKProviderUtils"]),
         .testTarget(name: "GroqProviderTests", dependencies: ["GroqProvider", "AISDKProvider", "AISDKProviderUtils"]),
+        .testTarget(name: "XAIProviderTests", dependencies: ["XAIProvider", "AISDKProvider", "AISDKProviderUtils"]),
 
         // SwiftAISDKPlayground - CLI executable for manual testing (Playground)
         .executableTarget(
@@ -82,6 +85,7 @@ let package = Package(
                 "OpenAIProvider",
                 "GoogleProvider",
                 "GroqProvider",
+                "XAIProvider",
                 .product(name: "ArgumentParser", package: "swift-argument-parser")
             ],
             exclude: ["README.md"]
