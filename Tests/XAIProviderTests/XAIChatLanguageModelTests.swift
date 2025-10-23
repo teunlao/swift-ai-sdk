@@ -1288,5 +1288,303 @@ struct XAIChatLanguageModelTests {
         // Verify finish
         #expect(parts.contains { if case .finish(let reason, _, _) = $0, reason == .stop { return true } else { return false } })
     }
+
+    @Test("should expose the raw response headers")
+    func exposeRawResponseHeadersStream() async throws {
+        let payloads = [
+            Self.encodeJSON([
+                "id": "35e18f56-4ec6-48e4-8ca0-c1c4cbeeebbe",
+                "object": "chat.completion.chunk",
+                "created": 1750537778,
+                "model": "grok-beta",
+                "choices": [[
+                    "index": 0,
+                    "delta": ["role": "assistant", "content": ""],
+                    "finish_reason": NSNull()
+                ]],
+                "system_fingerprint": "fp_13a6dc65a6"
+            ]),
+            Self.encodeJSON([
+                "id": "35e18f56-4ec6-48e4-8ca0-c1c4cbeeebbe",
+                "object": "chat.completion.chunk",
+                "created": 1750537778,
+                "model": "grok-beta",
+                "choices": [[
+                    "index": 0,
+                    "delta": ["content": ""],
+                    "finish_reason": "stop"
+                ]],
+                "usage": [
+                    "prompt_tokens": 4,
+                    "total_tokens": 36,
+                    "completion_tokens": 32
+                ],
+                "system_fingerprint": "fp_13a6dc65a6"
+            ])
+        ]
+
+        let events = Self.sseEvents(payloads)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.x.ai/v1/chat/completions")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: [
+                "Content-Type": "text/event-stream",
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "test-header": "test-value"
+            ]
+        )!
+
+        @Sendable func buildStream() -> AsyncThrowingStream<Data, Error> {
+            AsyncThrowingStream { continuation in
+                for event in events {
+                    continuation.yield(Data(event.utf8))
+                }
+                continuation.finish()
+            }
+        }
+
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .stream(buildStream()), urlResponse: httpResponse)
+        }
+
+        let model = XAIChatLanguageModel(
+            modelId: XAIChatModelId(rawValue: "grok-beta"),
+            config: Self.makeConfig(fetch: fetch)
+        )
+
+        let prompt: LanguageModelV3Prompt = [
+            .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
+        ]
+
+        let result = try await model.doStream(options: LanguageModelV3CallOptions(prompt: prompt))
+
+        guard let response = result.response else {
+            Issue.record("Missing response")
+            return
+        }
+
+        // Verify headers are exposed
+        #expect(response.headers?["test-header"] == "test-value")
+        #expect(response.headers?["content-type"] == "text/event-stream")
+    }
+
+    @Test("should pass the messages")
+    func passMessagesStream() async throws {
+        actor RequestCapture {
+            var request: URLRequest?
+            func store(_ request: URLRequest) { self.request = request }
+            func value() -> URLRequest? { request }
+        }
+
+        let capture = RequestCapture()
+
+        let payloads = [
+            Self.encodeJSON([
+                "id": "test",
+                "object": "chat.completion.chunk",
+                "created": 1750537778,
+                "model": "grok-beta",
+                "choices": [[
+                    "index": 0,
+                    "delta": ["role": "assistant", "content": "Hi"],
+                    "finish_reason": "stop"
+                ]],
+                "usage": ["prompt_tokens": 4, "total_tokens": 10, "completion_tokens": 6]
+            ])
+        ]
+
+        let events = Self.sseEvents(payloads)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.x.ai/v1/chat/completions")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "text/event-stream"]
+        )!
+
+        @Sendable func buildStream() -> AsyncThrowingStream<Data, Error> {
+            AsyncThrowingStream { continuation in
+                for event in events {
+                    continuation.yield(Data(event.utf8))
+                }
+                continuation.finish()
+            }
+        }
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .stream(buildStream()), urlResponse: httpResponse)
+        }
+
+        let model = XAIChatLanguageModel(
+            modelId: XAIChatModelId(rawValue: "grok-beta"),
+            config: Self.makeConfig(fetch: fetch)
+        )
+
+        let prompt: LanguageModelV3Prompt = [
+            .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
+        ]
+
+        _ = try await model.doStream(options: LanguageModelV3CallOptions(prompt: prompt))
+
+        guard let request = await capture.value() else {
+            Issue.record("Missing captured request")
+            return
+        }
+
+        let json = try Self.decodeRequestBody(request)
+
+        if let messages = json["messages"] as? [[String: Any]],
+           let firstMessage = messages.first {
+            #expect(firstMessage["role"] as? String == "user")
+            if let content = firstMessage["content"] as? String {
+                #expect(content == "Hello")
+            }
+        } else {
+            Issue.record("Expected messages array in request")
+        }
+    }
+
+    @Test("should pass headers")
+    func passHeadersStream() async throws {
+        actor RequestCapture {
+            var request: URLRequest?
+            func store(_ request: URLRequest) { self.request = request }
+            func value() -> URLRequest? { request }
+        }
+
+        let capture = RequestCapture()
+
+        let payloads = [
+            Self.encodeJSON([
+                "id": "test",
+                "object": "chat.completion.chunk",
+                "created": 1750537778,
+                "model": "grok-beta",
+                "choices": [[
+                    "index": 0,
+                    "delta": ["role": "assistant", "content": "Hi"],
+                    "finish_reason": "stop"
+                ]],
+                "usage": ["prompt_tokens": 4, "total_tokens": 10, "completion_tokens": 6]
+            ])
+        ]
+
+        let events = Self.sseEvents(payloads)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.x.ai/v1/chat/completions")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "text/event-stream"]
+        )!
+
+        @Sendable func buildStream() -> AsyncThrowingStream<Data, Error> {
+            AsyncThrowingStream { continuation in
+                for event in events {
+                    continuation.yield(Data(event.utf8))
+                }
+                continuation.finish()
+            }
+        }
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .stream(buildStream()), urlResponse: httpResponse)
+        }
+
+        let model = XAIChatLanguageModel(
+            modelId: XAIChatModelId(rawValue: "grok-beta"),
+            config: Self.makeConfig(fetch: fetch)
+        )
+
+        let prompt: LanguageModelV3Prompt = [
+            .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
+        ]
+
+        _ = try await model.doStream(
+            options: LanguageModelV3CallOptions(
+                prompt: prompt,
+                headers: ["Custom-Request-Header": "request-header-value"]
+            )
+        )
+
+        guard let request = await capture.value() else {
+            Issue.record("Missing captured request")
+            return
+        }
+
+        let normalizedHeaders: [String: String] = Dictionary(uniqueKeysWithValues: request.allHTTPHeaderFields?.map { ($0.key.lowercased(), $0.value) } ?? [])
+        #expect(normalizedHeaders["custom-request-header"] == "request-header-value")
+    }
+
+    @Test("should send request body")
+    func sendRequestBodyStream() async throws {
+        actor RequestCapture {
+            var request: URLRequest?
+            func store(_ request: URLRequest) { self.request = request }
+            func value() -> URLRequest? { request }
+        }
+
+        let capture = RequestCapture()
+
+        let payloads = [
+            Self.encodeJSON([
+                "id": "test",
+                "object": "chat.completion.chunk",
+                "created": 1750537778,
+                "model": "grok-beta",
+                "choices": [[
+                    "index": 0,
+                    "delta": ["role": "assistant", "content": "Hi"],
+                    "finish_reason": "stop"
+                ]],
+                "usage": ["prompt_tokens": 4, "total_tokens": 10, "completion_tokens": 6]
+            ])
+        ]
+
+        let events = Self.sseEvents(payloads)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.x.ai/v1/chat/completions")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "text/event-stream"]
+        )!
+
+        @Sendable func buildStream() -> AsyncThrowingStream<Data, Error> {
+            AsyncThrowingStream { continuation in
+                for event in events {
+                    continuation.yield(Data(event.utf8))
+                }
+                continuation.finish()
+            }
+        }
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .stream(buildStream()), urlResponse: httpResponse)
+        }
+
+        let model = XAIChatLanguageModel(
+            modelId: XAIChatModelId(rawValue: "grok-beta"),
+            config: Self.makeConfig(fetch: fetch)
+        )
+
+        let prompt: LanguageModelV3Prompt = [
+            .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
+        ]
+
+        _ = try await model.doStream(options: LanguageModelV3CallOptions(prompt: prompt))
+
+        guard let request = await capture.value() else {
+            Issue.record("Missing captured request")
+            return
+        }
+
+        let json = try Self.decodeRequestBody(request)
+
+        #expect(json["model"] as? String == "grok-beta")
+        #expect(json["stream"] as? Bool == true)
+    }
 }
 
