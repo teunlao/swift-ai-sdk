@@ -22,6 +22,8 @@ let package = Package(
         .library(name: "GoogleProvider", targets: ["GoogleProvider"]),
         .library(name: "AzureProvider", targets: ["AzureProvider"]),
         .library(name: "GroqProvider", targets: ["GroqProvider"]),
+        .library(name: "CerebrasProvider", targets: ["CerebrasProvider"]),
+        .library(name: "DeepSeekProvider", targets: ["DeepSeekProvider"]),
         .library(name: "XAIProvider", targets: ["XAIProvider"]),
         .library(name: "EventSourceParser", targets: ["EventSourceParser"]), // internal lib for SSE
         .library(name: "AISDKZodAdapter", targets: ["AISDKZodAdapter"]),
@@ -65,6 +67,8 @@ let package = Package(
         .target(name: "GoogleProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "EventSourceParser"]),
         .target(name: "AzureProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "OpenAIProvider"]),
         .target(name: "GroqProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "EventSourceParser"]),
+        .target(name: "CerebrasProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "OpenAICompatibleProvider"]),
+        .target(name: "DeepSeekProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "OpenAICompatibleProvider"]),
         .target(name: "XAIProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "OpenAICompatibleProvider"]),
 
         // SwiftAISDK - Main AI SDK (matches @ai-sdk/ai)
@@ -76,6 +80,7 @@ let package = Package(
         .testTarget(name: "GoogleProviderTests", dependencies: ["GoogleProvider", "AISDKProvider", "AISDKProviderUtils"]),
         .testTarget(name: "GroqProviderTests", dependencies: ["GroqProvider", "AISDKProvider", "AISDKProviderUtils"]),
         .testTarget(name: "XAIProviderTests", dependencies: ["XAIProvider", "AISDKProvider", "AISDKProviderUtils"]),
+        .testTarget(name: "AzureProviderTests", dependencies: ["AzureProvider", "AISDKProvider", "AISDKProviderUtils", "OpenAIProvider"]),
 
         // SwiftAISDKPlayground - CLI executable for manual testing (Playground)
         .executableTarget(
@@ -88,6 +93,8 @@ let package = Package(
                 "GoogleProvider",
                 "AzureProvider",
                 "GroqProvider",
+                "CerebrasProvider",
+                "DeepSeekProvider",
                 "XAIProvider",
                 .product(name: "ArgumentParser", package: "swift-argument-parser")
             ],
