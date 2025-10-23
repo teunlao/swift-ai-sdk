@@ -20,6 +20,7 @@ let package = Package(
         .library(name: "OpenAICompatibleProvider", targets: ["OpenAICompatibleProvider"]),
         .library(name: "AnthropicProvider", targets: ["AnthropicProvider"]),
         .library(name: "GoogleProvider", targets: ["GoogleProvider"]),
+        .library(name: "AzureProvider", targets: ["AzureProvider"]),
         .library(name: "GroqProvider", targets: ["GroqProvider"]),
         .library(name: "XAIProvider", targets: ["XAIProvider"]),
         .library(name: "EventSourceParser", targets: ["EventSourceParser"]), // internal lib for SSE
@@ -62,6 +63,7 @@ let package = Package(
         .target(name: "OpenAICompatibleProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils"]),
         .target(name: "AnthropicProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "EventSourceParser"]),
         .target(name: "GoogleProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "EventSourceParser"]),
+        .target(name: "AzureProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "OpenAIProvider"]),
         .target(name: "GroqProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "EventSourceParser"]),
         .target(name: "XAIProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "OpenAICompatibleProvider"]),
 
@@ -84,6 +86,7 @@ let package = Package(
                 "AISDKProviderUtils",
                 "OpenAIProvider",
                 "GoogleProvider",
+                "AzureProvider",
                 "GroqProvider",
                 "XAIProvider",
                 .product(name: "ArgumentParser", package: "swift-argument-parser")
