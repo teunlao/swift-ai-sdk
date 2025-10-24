@@ -6,7 +6,7 @@ import AISDKProviderUtils
 @Suite("injectJSONInstruction")
 struct InjectJSONInstructionTests {
     @Test("includes prompt schema and suffix")
-    func includesPromptSchemaAndSuffix() {
+    func includesPromptSchemaAndSuffix() throws {
         let schema: JSONValue = .object([
             "type": .string("object"),
             "properties": .object([
@@ -25,7 +25,7 @@ struct InjectJSONInstructionTests {
     }
 
     @Test("respects custom prefix and suffix")
-    func respectsCustomPrefixAndSuffix() {
+    func respectsCustomPrefixAndSuffix() throws {
         let schema: JSONValue = .object(["type": .string("string")])
         let result = injectJSONInstruction(
             prompt: nil,
@@ -39,7 +39,7 @@ struct InjectJSONInstructionTests {
     }
 
     @Test("falls back to json suffix without schema")
-    func fallsBackWithoutSchema() {
+    func fallsBackWithoutSchema() throws {
         let result = injectJSONInstruction(
             prompt: "Hello",
             schema: nil

@@ -4,7 +4,7 @@ import Testing
 @Suite("Array Parser")
 struct ArrayParserTests {
     @Test("simple array")
-    func simpleArray() {
+    func simpleArray() throws {
         let schema = parseArrayDef(
             TestZod.array(of: TestZod.string())._def as! ZodArrayDef,
             SchemaTestHelpers.refs()
@@ -17,7 +17,7 @@ struct ArrayParserTests {
     }
 
     @Test("array with any items")
-    func arrayAnyItems() {
+    func arrayAnyItems() throws {
         let schema = parseArrayDef(
             TestZod.array(of: TestZod.any())._def as! ZodArrayDef,
             SchemaTestHelpers.refs()
@@ -29,7 +29,7 @@ struct ArrayParserTests {
     }
 
     @Test("array min and max")
-    func arrayMinMax() {
+    func arrayMinMax() throws {
         let schema = parseArrayDef(
             TestZod.array(of: TestZod.string(), min: 2, max: 4)._def as! ZodArrayDef,
             SchemaTestHelpers.refs()
@@ -44,7 +44,7 @@ struct ArrayParserTests {
     }
 
     @Test("array exact length")
-    func arrayExactLength() {
+    func arrayExactLength() throws {
         let schema = parseArrayDef(
             TestZod.array(of: TestZod.string(), exact: 5)._def as! ZodArrayDef,
             SchemaTestHelpers.refs()
@@ -59,7 +59,7 @@ struct ArrayParserTests {
     }
 
     @Test("array nonempty")
-    func arrayNonEmpty() {
+    func arrayNonEmpty() throws {
         let schema = parseArrayDef(
             TestZod.array(of: TestZod.any(), min: 1)._def as! ZodArrayDef,
             SchemaTestHelpers.refs()
@@ -72,7 +72,7 @@ struct ArrayParserTests {
     }
 
     @Test("array references items")
-    func arrayReferencesItems() {
+    func arrayReferencesItems() throws {
         let objectSchema = TestZod.object([
             "hello": TestZod.string()
         ], unknownKeys: .strict)

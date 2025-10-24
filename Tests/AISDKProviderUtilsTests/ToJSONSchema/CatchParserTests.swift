@@ -4,7 +4,7 @@ import Testing
 @Suite("Catch Parser")
 struct CatchParserTests {
     @Test("catch pass-through")
-    func catchValue() {
+    func catchValue() throws {
         let schema = parseCatchDef(
             TestZod.catching(TestZod.number())._def as! ZodCatchDef,
             SchemaTestHelpers.refs()

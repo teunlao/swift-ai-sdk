@@ -12,7 +12,7 @@ import AISDKProviderUtils
 @Suite("To Response Messages")
 struct ToResponseMessagesTests {
     @Test("assistant message with text when no tool calls")
-    func assistantMessageTextOnly() {
+    func assistantMessageTextOnly() throws {
         let content: [ContentPart] = [
             .text(text: "Hello, world!", providerMetadata: nil)
         ]
@@ -32,7 +32,7 @@ struct ToResponseMessagesTests {
     }
 
     @Test("include tool calls in assistant message")
-    func assistantMessageIncludesToolCall() {
+    func assistantMessageIncludesToolCall() throws {
         let toolCall = makeToolCall(
             id: "123",
             name: "testTool"
@@ -69,7 +69,7 @@ struct ToResponseMessagesTests {
     }
 
     @Test("include tool call metadata in assistant message")
-    func assistantMessageIncludesToolCallMetadata() {
+    func assistantMessageIncludesToolCallMetadata() throws {
         let metadata: ProviderMetadata = [
             "testProvider": ["signature": .string("sig")]
         ]
@@ -111,7 +111,7 @@ struct ToResponseMessagesTests {
     }
 
     @Test("include tool results as separate message")
-    func toolResultsAsSeparateMessage() {
+    func toolResultsAsSeparateMessage() throws {
         let toolCall = makeToolCall(id: "123", name: "testTool")
         let toolResult = makeToolResult(
             id: "123",
@@ -160,7 +160,7 @@ struct ToResponseMessagesTests {
     }
 
     @Test("include tool errors as separate message")
-    func toolErrorsAsSeparateMessage() {
+    func toolErrorsAsSeparateMessage() throws {
         let toolCall = makeToolCall(id: "123", name: "testTool")
         let toolError = makeToolError(
             id: "123",
@@ -209,7 +209,7 @@ struct ToResponseMessagesTests {
     }
 
     @Test("handle reasoning content")
-    func handleReasoningContent() {
+    func handleReasoningContent() throws {
         let metadata: ProviderMetadata = [
             "testProvider": ["signature": .string("sig")]
         ]
@@ -236,7 +236,7 @@ struct ToResponseMessagesTests {
     }
 
     @Test("handle reasoning array with redacted reasoning")
-    func handleRedactedReasoning() {
+    func handleRedactedReasoning() throws {
         let redacted: ProviderMetadata = ["testProvider": ["isRedacted": .bool(true)]]
         let metadata: ProviderMetadata = ["testProvider": ["signature": .string("sig")]]
 
@@ -264,7 +264,7 @@ struct ToResponseMessagesTests {
     }
 
     @Test("handle tool toModelOutput override")
-    func toolToModelOutputOverride() {
+    func toolToModelOutputOverride() throws {
         let toolCall = makeToolCall(id: "123", name: "testTool")
         let toolResult = makeToolResult(
             id: "123",
@@ -317,7 +317,7 @@ struct ToResponseMessagesTests {
     }
 
     @Test("include images in assistant message")
-    func includeImagesInAssistantMessage() {
+    func includeImagesInAssistantMessage() throws {
         let pngData = Data([137, 80, 78, 71, 13, 10, 26, 10])
         let pngFile = DefaultGeneratedFileWithType(data: pngData, mediaType: "image/png")
 
@@ -349,7 +349,7 @@ struct ToResponseMessagesTests {
     }
 
     @Test("handle multiple images")
-    func handleMultipleImages() {
+    func handleMultipleImages() throws {
         let pngFile = DefaultGeneratedFileWithType(data: Data([137, 80, 78, 71, 13, 10, 26, 10]), mediaType: "image/png")
         let jpegFile = DefaultGeneratedFileWithType(data: Data([255, 216, 255]), mediaType: "image/jpeg")
 
@@ -377,7 +377,7 @@ struct ToResponseMessagesTests {
     }
 
     @Test("include images reasoning and tool calls in order")
-    func includeImagesReasoningAndToolCalls() {
+    func includeImagesReasoningAndToolCalls() throws {
         let pngFile = DefaultGeneratedFileWithType(data: Data([137, 80, 78, 71, 13, 10, 26, 10]), mediaType: "image/png")
         let toolCall = makeToolCall(id: "123", name: "testTool")
         let reasoningMetadata: ProviderMetadata = ["testProvider": ["signature": .string("sig")]]
@@ -413,7 +413,7 @@ struct ToResponseMessagesTests {
     }
 
     @Test("skip empty text parts")
-    func skipEmptyTextParts() {
+    func skipEmptyTextParts() throws {
         let toolCall = makeToolCall(id: "123", name: "testTool")
         let content: [ContentPart] = [
             .text(text: "", providerMetadata: nil),
@@ -441,13 +441,13 @@ struct ToResponseMessagesTests {
     }
 
     @Test("return empty array without content")
-    func emptyContentReturnsEmptyArray() {
+    func emptyContentReturnsEmptyArray() throws {
         let result = toResponseMessages(content: [], tools: [:])
         #expect(result.isEmpty)
     }
 
     @Test("include provider-executed tool calls and results")
-    func providerExecutedToolCalls() {
+    func providerExecutedToolCalls() throws {
         let queryValue = JSONValue.string("San Francisco major news events June 22 2025")
         let toolCall = makeToolCall(
             id: "srvtoolu_011cNtbtzFARKPcAcp7w4nh9",
@@ -530,7 +530,7 @@ struct ToResponseMessagesTests {
     }
 
     @Test("include provider metadata in text parts")
-    func includeProviderMetadataInText() {
+    func includeProviderMetadataInText() throws {
         let metadata: ProviderMetadata = ["testProvider": ["signature": .string("sig")]]
         let content: [ContentPart] = [
             .text(text: "Here is a text", providerMetadata: metadata)

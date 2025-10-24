@@ -17,51 +17,51 @@ import Testing
 @Suite("fixJson")
 struct FixJsonTests {
     @Test("should handle empty input")
-    func testEmptyInput() {
+    func testEmptyInput() throws {
         #expect(fixJson("") == "")
     }
 
     // MARK: - Literals
 
     @Test("should handle incomplete null")
-    func testIncompleteNull() {
+    func testIncompleteNull() throws {
         #expect(fixJson("nul") == "null")
     }
 
     @Test("should handle incomplete true")
-    func testIncompleteTrue() {
+    func testIncompleteTrue() throws {
         #expect(fixJson("t") == "true")
     }
 
     @Test("should handle incomplete false")
-    func testIncompleteFalse() {
+    func testIncompleteFalse() throws {
         #expect(fixJson("fals") == "false")
     }
 
     // MARK: - Numbers
 
     @Test("should handle incomplete numbers")
-    func testIncompleteNumbers() {
+    func testIncompleteNumbers() throws {
         #expect(fixJson("12.") == "12")
     }
 
     @Test("should handle numbers with dot")
-    func testNumbersWithDot() {
+    func testNumbersWithDot() throws {
         #expect(fixJson("12.2") == "12.2")
     }
 
     @Test("should handle negative numbers")
-    func testNegativeNumbers() {
+    func testNegativeNumbers() throws {
         #expect(fixJson("-12") == "-12")
     }
 
     @Test("should handle incomplete negative numbers")
-    func testIncompleteNegativeNumbers() {
+    func testIncompleteNegativeNumbers() throws {
         #expect(fixJson("-") == "")
     }
 
     @Test("should handle e-notation numbers")
-    func testENotationNumbers() {
+    func testENotationNumbers() throws {
         #expect(fixJson("2.5e") == "2.5")
         #expect(fixJson("2.5e-") == "2.5")
         #expect(fixJson("2.5e3") == "2.5e3")
@@ -69,7 +69,7 @@ struct FixJsonTests {
     }
 
     @Test("should handle uppercase e-notation numbers")
-    func testUppercaseENotationNumbers() {
+    func testUppercaseENotationNumbers() throws {
         #expect(fixJson("2.5E") == "2.5")
         #expect(fixJson("2.5E-") == "2.5")
         #expect(fixJson("2.5E3") == "2.5E3")
@@ -77,7 +77,7 @@ struct FixJsonTests {
     }
 
     @Test("should handle incomplete numbers with e notation")
-    func testIncompleteNumbersWithENotation() {
+    func testIncompleteNumbersWithENotation() throws {
         #expect(fixJson("12.e") == "12")
         #expect(fixJson("12.34e") == "12.34")
         #expect(fixJson("5e") == "5")
@@ -86,12 +86,12 @@ struct FixJsonTests {
     // MARK: - Strings
 
     @Test("should handle incomplete strings")
-    func testIncompleteStrings() {
+    func testIncompleteStrings() throws {
         #expect(fixJson("\"abc") == "\"abc\"")
     }
 
     @Test("should handle escape sequences")
-    func testEscapeSequences() {
+    func testEscapeSequences() throws {
         #expect(
             fixJson("\"value with \\\"quoted\\\" text and \\\\ escape")
                 == "\"value with \\\"quoted\\\" text and \\\\ escape\""
@@ -99,163 +99,163 @@ struct FixJsonTests {
     }
 
     @Test("should handle incomplete escape sequences")
-    func testIncompleteEscapeSequences() {
+    func testIncompleteEscapeSequences() throws {
         #expect(fixJson("\"value with \\") == "\"value with \"")
     }
 
     @Test("should handle unicode characters")
-    func testUnicodeCharacters() {
+    func testUnicodeCharacters() throws {
         #expect(fixJson("\"value with unicode <\"") == "\"value with unicode <\"")
     }
 
     // MARK: - Arrays
 
     @Test("should handle incomplete array")
-    func testIncompleteArray() {
+    func testIncompleteArray() throws {
         #expect(fixJson("[") == "[]")
     }
 
     @Test("should handle closing bracket after number in array")
-    func testClosingBracketAfterNumberInArray() {
+    func testClosingBracketAfterNumberInArray() throws {
         #expect(fixJson("[[1], [2") == "[[1], [2]]")
     }
 
     @Test("should handle closing bracket after string in array")
-    func testClosingBracketAfterStringInArray() {
+    func testClosingBracketAfterStringInArray() throws {
         #expect(fixJson("[[\"1\"], [\"2") == "[[\"1\"], [\"2\"]]")
     }
 
     @Test("should handle closing bracket after literal in array")
-    func testClosingBracketAfterLiteralInArray() {
+    func testClosingBracketAfterLiteralInArray() throws {
         #expect(fixJson("[[false], [nu") == "[[false], [null]]")
     }
 
     @Test("should handle closing bracket after array in array")
-    func testClosingBracketAfterArrayInArray() {
+    func testClosingBracketAfterArrayInArray() throws {
         #expect(fixJson("[[[]], [[]") == "[[[]], [[]]]")
     }
 
     @Test("should handle closing bracket after object in array")
-    func testClosingBracketAfterObjectInArray() {
+    func testClosingBracketAfterObjectInArray() throws {
         #expect(fixJson("[[{}], [{") == "[[{}], [{}]]")
     }
 
     @Test("should handle trailing comma in array")
-    func testTrailingCommaInArray() {
+    func testTrailingCommaInArray() throws {
         #expect(fixJson("[1, ") == "[1]")
     }
 
     @Test("should handle closing array")
-    func testClosingArray() {
+    func testClosingArray() throws {
         #expect(fixJson("[[], 123") == "[[], 123]")
     }
 
     // MARK: - Objects
 
     @Test("should handle keys without values")
-    func testKeysWithoutValues() {
+    func testKeysWithoutValues() throws {
         #expect(fixJson("{\"key\":") == "{}")
     }
 
     @Test("should handle closing brace after number in object")
-    func testClosingBraceAfterNumberInObject() {
+    func testClosingBraceAfterNumberInObject() throws {
         #expect(fixJson("{\"a\": {\"b\": 1}, \"c\": {\"d\": 2") == "{\"a\": {\"b\": 1}, \"c\": {\"d\": 2}}")
     }
 
     @Test("should handle closing brace after string in object")
-    func testClosingBraceAfterStringInObject() {
+    func testClosingBraceAfterStringInObject() throws {
         #expect(fixJson("{\"a\": {\"b\": \"1\"}, \"c\": {\"d\": 2") == "{\"a\": {\"b\": \"1\"}, \"c\": {\"d\": 2}}")
     }
 
     @Test("should handle closing brace after literal in object")
-    func testClosingBraceAfterLiteralInObject() {
+    func testClosingBraceAfterLiteralInObject() throws {
         #expect(fixJson("{\"a\": {\"b\": false}, \"c\": {\"d\": 2") == "{\"a\": {\"b\": false}, \"c\": {\"d\": 2}}")
     }
 
     @Test("should handle closing brace after array in object")
-    func testClosingBraceAfterArrayInObject() {
+    func testClosingBraceAfterArrayInObject() throws {
         #expect(fixJson("{\"a\": {\"b\": []}, \"c\": {\"d\": 2") == "{\"a\": {\"b\": []}, \"c\": {\"d\": 2}}")
     }
 
     @Test("should handle closing brace after object in object")
-    func testClosingBraceAfterObjectInObject() {
+    func testClosingBraceAfterObjectInObject() throws {
         #expect(fixJson("{\"a\": {\"b\": {}}, \"c\": {\"d\": 2") == "{\"a\": {\"b\": {}}, \"c\": {\"d\": 2}}")
     }
 
     @Test("should handle partial keys (first key)")
-    func testPartialKeysFirstKey() {
+    func testPartialKeysFirstKey() throws {
         #expect(fixJson("{\"ke") == "{}")
     }
 
     @Test("should handle partial keys (second key)")
-    func testPartialKeysSecondKey() {
+    func testPartialKeysSecondKey() throws {
         #expect(fixJson("{\"k1\": 1, \"k2") == "{\"k1\": 1}")
     }
 
     @Test("should handle partial keys with colon (second key)")
-    func testPartialKeysWithColonSecondKey() {
+    func testPartialKeysWithColonSecondKey() throws {
         #expect(fixJson("{\"k1\": 1, \"k2\":") == "{\"k1\": 1}")
     }
 
     @Test("should handle trailing whitespace")
-    func testTrailingWhitespace() {
+    func testTrailingWhitespace() throws {
         #expect(fixJson("{\"key\": \"value\"  ") == "{\"key\": \"value\"}")
     }
 
     @Test("should handle closing after empty object")
-    func testClosingAfterEmptyObject() {
+    func testClosingAfterEmptyObject() throws {
         #expect(fixJson("{\"a\": {\"b\": {}") == "{\"a\": {\"b\": {}}}")
     }
 
     // MARK: - Nesting
 
     @Test("should handle nested arrays with numbers")
-    func testNestedArraysWithNumbers() {
+    func testNestedArraysWithNumbers() throws {
         #expect(fixJson("[1, [2, 3, [") == "[1, [2, 3, []]]")
     }
 
     @Test("should handle nested arrays with literals")
-    func testNestedArraysWithLiterals() {
+    func testNestedArraysWithLiterals() throws {
         #expect(fixJson("[false, [true, [") == "[false, [true, []]]")
     }
 
     @Test("should handle nested objects")
-    func testNestedObjects() {
+    func testNestedObjects() throws {
         #expect(fixJson("{\"key\": {\"subKey\":") == "{\"key\": {}}")
     }
 
     @Test("should handle nested objects with numbers")
-    func testNestedObjectsWithNumbers() {
+    func testNestedObjectsWithNumbers() throws {
         #expect(fixJson("{\"key\": 123, \"key2\": {\"subKey\":") == "{\"key\": 123, \"key2\": {}}")
     }
 
     @Test("should handle nested objects with literals")
-    func testNestedObjectsWithLiterals() {
+    func testNestedObjectsWithLiterals() throws {
         #expect(fixJson("{\"key\": null, \"key2\": {\"subKey\":") == "{\"key\": null, \"key2\": {}}")
     }
 
     @Test("should handle arrays within objects")
-    func testArraysWithinObjects() {
+    func testArraysWithinObjects() throws {
         #expect(fixJson("{\"key\": [1, 2, {") == "{\"key\": [1, 2, {}]}")
     }
 
     @Test("should handle objects within arrays")
-    func testObjectsWithinArrays() {
+    func testObjectsWithinArrays() throws {
         #expect(fixJson("[1, 2, {\"key\": \"value\",") == "[1, 2, {\"key\": \"value\"}]")
     }
 
     @Test("should handle nested arrays and objects")
-    func testNestedArraysAndObjects() {
+    func testNestedArraysAndObjects() throws {
         #expect(fixJson("{\"a\": {\"b\": [\"c\", {\"d\": \"e\",") == "{\"a\": {\"b\": [\"c\", {\"d\": \"e\"}]}}")
     }
 
     @Test("should handle deeply nested objects")
-    func testDeeplyNestedObjects() {
+    func testDeeplyNestedObjects() throws {
         #expect(fixJson("{\"a\": {\"b\": {\"c\": {\"d\":") == "{\"a\": {\"b\": {\"c\": {}}}}")
     }
 
     @Test("should handle potential nested arrays or objects")
-    func testPotentialNestedArraysOrObjects() {
+    func testPotentialNestedArraysOrObjects() throws {
         #expect(fixJson("{\"a\": 1, \"b\": [") == "{\"a\": 1, \"b\": []}")
         #expect(fixJson("{\"a\": 1, \"b\": {") == "{\"a\": 1, \"b\": {}}")
         #expect(fixJson("{\"a\": 1, \"b\": \"") == "{\"a\": 1, \"b\": \"\"}")
@@ -264,7 +264,7 @@ struct FixJsonTests {
     // MARK: - Regression
 
     @Test("should handle complex nesting 1")
-    func testComplexNesting1() {
+    func testComplexNesting1() throws {
         let input = """
             {
               "a": [
@@ -297,7 +297,7 @@ struct FixJsonTests {
     }
 
     @Test("should handle empty objects inside nested objects and arrays")
-    func testEmptyObjectsInsideNestedObjectsAndArrays() {
+    func testEmptyObjectsInsideNestedObjectsAndArrays() throws {
         #expect(
             fixJson("{\"type\":\"div\",\"children\":[{\"type\":\"Card\",\"props\":{}") == "{\"type\":\"div\",\"children\":[{\"type\":\"Card\",\"props\":{}}]}"
         )

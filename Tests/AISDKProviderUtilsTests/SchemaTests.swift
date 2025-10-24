@@ -40,7 +40,7 @@ struct SchemaTests {
     }
 
     @Test("jsonSchema validates required properties")
-    func jsonSchemaValidatesRequiredProperties() async {
+    func jsonSchemaValidatesRequiredProperties() async throws {
         let schemaDefinition: JSONValue = .object([
             "type": .string("object"),
             "properties": .object([
@@ -73,7 +73,7 @@ struct SchemaTests {
     }
 
     @Test("safeParseJSON fails when required missing")
-    func safeParseJSONFailsWhenRequiredMissing() async {
+    func safeParseJSONFailsWhenRequiredMissing() async throws {
         let schema = FlexibleSchema(jsonSchema(
             .object([
                 "type": .string("object"),

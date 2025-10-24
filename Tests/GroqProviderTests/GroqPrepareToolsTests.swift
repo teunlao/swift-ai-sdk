@@ -6,7 +6,7 @@ import Testing
 @Suite("prepareGroqTools")
 struct GroqPrepareToolsTests {
     @Test("returns nil when tools absent")
-    func noTools() {
+    func noTools() throws {
         let prepared = prepareGroqTools(tools: nil, toolChoice: nil, modelId: GroqChatModelId(rawValue: "gemini-2"))
         #expect(prepared.tools == nil)
         #expect(prepared.toolChoice == nil)
@@ -14,7 +14,7 @@ struct GroqPrepareToolsTests {
     }
 
     @Test("should return undefined tools and toolChoice when tools are empty")
-    func emptyTools() {
+    func emptyTools() throws {
         let prepared = prepareGroqTools(tools: [], toolChoice: nil, modelId: GroqChatModelId(rawValue: "gemma2-9b-it"))
         #expect(prepared.tools == nil)
         #expect(prepared.toolChoice == nil)
@@ -22,7 +22,7 @@ struct GroqPrepareToolsTests {
     }
 
     @Test("should correctly prepare function tools")
-    func prepareFunctionTools() {
+    func prepareFunctionTools() throws {
         let functionTool = LanguageModelV3Tool.function(LanguageModelV3FunctionTool(
             name: "testFunction",
             inputSchema: .object(["type": .string("object"), "properties": .object([:])] ),
@@ -54,7 +54,7 @@ struct GroqPrepareToolsTests {
     }
 
     @Test("should add warnings for unsupported provider-defined tools")
-    func unsupportedProviderTools() {
+    func unsupportedProviderTools() throws {
         let tool = LanguageModelV3Tool.providerDefined(LanguageModelV3ProviderDefinedTool(
             id: "some.unsupported_tool",
             name: "unsupported_tool",
@@ -82,7 +82,7 @@ struct GroqPrepareToolsTests {
     }
 
     @Test("should handle tool choice \"auto\"")
-    func toolChoiceAuto() {
+    func toolChoiceAuto() throws {
         let functionTool = LanguageModelV3Tool.function(LanguageModelV3FunctionTool(
             name: "testFunction",
             inputSchema: .object([:]),
@@ -99,7 +99,7 @@ struct GroqPrepareToolsTests {
     }
 
     @Test("should handle tool choice \"required\"")
-    func toolChoiceRequired() {
+    func toolChoiceRequired() throws {
         let functionTool = LanguageModelV3Tool.function(LanguageModelV3FunctionTool(
             name: "testFunction",
             inputSchema: .object([:]),
@@ -116,7 +116,7 @@ struct GroqPrepareToolsTests {
     }
 
     @Test("should handle tool choice \"none\"")
-    func toolChoiceNone() {
+    func toolChoiceNone() throws {
         let functionTool = LanguageModelV3Tool.function(LanguageModelV3FunctionTool(
             name: "testFunction",
             inputSchema: .object([:]),
@@ -133,7 +133,7 @@ struct GroqPrepareToolsTests {
     }
 
     @Test("should handle tool choice \"tool\"")
-    func toolChoiceTool() {
+    func toolChoiceTool() throws {
         let functionTool = LanguageModelV3Tool.function(LanguageModelV3FunctionTool(
             name: "testFunction",
             inputSchema: .object([:]),
@@ -158,7 +158,7 @@ struct GroqPrepareToolsTests {
     }
 
     @Test("warns when mixing function and provider-defined tools")
-    func mixedTools() {
+    func mixedTools() throws {
         let functionTool = LanguageModelV3Tool.function(LanguageModelV3FunctionTool(
             name: "weather",
             inputSchema: .object(["type": .string("object")]),
@@ -183,7 +183,7 @@ struct GroqPrepareToolsTests {
     }
 
     @Test("browser search supported models map to provider tool")
-    func browserSearchSupported() {
+    func browserSearchSupported() throws {
         let tool = LanguageModelV3Tool.providerDefined(LanguageModelV3ProviderDefinedTool(
             id: "groq.browser_search",
             name: "browser_search",
@@ -208,7 +208,7 @@ struct GroqPrepareToolsTests {
     }
 
     @Test("function tools convert to groq payload and tool choice")
-    func functionTools() {
+    func functionTools() throws {
         let functionTool = LanguageModelV3Tool.function(LanguageModelV3FunctionTool(
             name: "lookup",
             inputSchema: .object(["type": .string("object")]),
@@ -239,7 +239,7 @@ struct GroqPrepareToolsTests {
     }
 
     @Test("should handle mixed tools with model validation")
-    func mixedToolsWithValidation() {
+    func mixedToolsWithValidation() throws {
         let functionTool = LanguageModelV3Tool.function(LanguageModelV3FunctionTool(
             name: "test-tool",
             inputSchema: .object(["type": .string("object"), "properties": .object([:])]),
@@ -282,7 +282,7 @@ struct GroqPrepareToolsTests {
     }
 
     @Test("should validate all browser search supported models")
-    func validateAllSupportedModels() {
+    func validateAllSupportedModels() throws {
         let supportedModels = ["openai/gpt-oss-20b", "openai/gpt-oss-120b"]
 
         for modelId in supportedModels {
@@ -310,7 +310,7 @@ struct GroqPrepareToolsTests {
     }
 
     @Test("should handle browser search with tool choice")
-    func browserSearchWithToolChoice() {
+    func browserSearchWithToolChoice() throws {
         let tool = LanguageModelV3Tool.providerDefined(LanguageModelV3ProviderDefinedTool(
             id: "groq.browser_search",
             name: "browser_search",

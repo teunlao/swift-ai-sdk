@@ -62,7 +62,7 @@ struct PrepareCallSettingsTests {
     // MARK: - Invalid Inputs
 
     @Test("should throw InvalidArgumentError if maxOutputTokens is less than 1")
-    func maxOutputTokensTooSmall() {
+    func maxOutputTokensTooSmall() throws {
         #expect(throws: SwiftAISDK.InvalidArgumentError.self) {
             try prepareCallSettings(maxOutputTokens: 0)
         }
@@ -80,7 +80,7 @@ struct PrepareCallSettingsTests {
     }
 
     @Test("should throw InvalidArgumentError if maxOutputTokens is negative")
-    func maxOutputTokensNegative() {
+    func maxOutputTokensNegative() throws {
         #expect(throws: SwiftAISDK.InvalidArgumentError.self) {
             try prepareCallSettings(maxOutputTokens: -5)
         }

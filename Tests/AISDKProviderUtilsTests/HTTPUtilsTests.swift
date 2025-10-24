@@ -11,25 +11,25 @@ struct HTTPUtilsTests {
     // MARK: - IsAbortError
 
     @Test("isAbortError detects CancellationError")
-    func testCancellationError() {
+    func testCancellationError() throws {
         let error = CancellationError()
         #expect(isAbortError(error))
     }
 
     @Test("isAbortError detects URLError.cancelled")
-    func testURLErrorCancelled() {
+    func testURLErrorCancelled() throws {
         let error = URLError(.cancelled)
         #expect(isAbortError(error))
     }
 
     @Test("isAbortError detects URLError.timedOut")
-    func testURLErrorTimedOut() {
+    func testURLErrorTimedOut() throws {
         let error = URLError(.timedOut)
         #expect(isAbortError(error))
     }
 
     @Test("isAbortError returns false for other errors")
-    func testNonAbortError() {
+    func testNonAbortError() throws {
         let error = URLError(.badURL)
         #expect(!isAbortError(error))
     }
@@ -37,19 +37,19 @@ struct HTTPUtilsTests {
     // MARK: - Resolve
 
     @Test("resolve handles raw value")
-    func testResolveRawValue() async {
+    func testResolveRawValue() async throws {
         let result = await resolve("test-value")
         #expect(result == "test-value")
     }
 
     @Test("resolve handles sync closure")
-    func testResolveSyncClosure() async {
+    func testResolveSyncClosure() async throws {
         let result = await resolve { "sync-value" }
         #expect(result == "sync-value")
     }
 
     @Test("resolve handles sync throwing closure")
-    func testResolveSyncThrowingClosure() async {
+    func testResolveSyncThrowingClosure() async throws {
         do {
             _ = try await resolve {
                 throw URLError(.badURL)
@@ -70,7 +70,7 @@ struct HTTPUtilsTests {
     }
 
     @Test("resolve handles async throwing closure")
-    func testResolveAsyncThrowingClosure() async {
+    func testResolveAsyncThrowingClosure() async throws {
         do {
             _ = try await resolve {
                 try await Task.sleep(nanoseconds: 1_000_000)
@@ -83,7 +83,7 @@ struct HTTPUtilsTests {
     }
 
     @Test("resolve handles nested objects")
-    func testResolveNestedObjects() async {
+    func testResolveNestedObjects() async throws {
         struct Nested: Equatable {
             let nested: Inner
             struct Inner: Equatable {
@@ -96,21 +96,21 @@ struct HTTPUtilsTests {
     }
 
     @Test("resolve handles optional nil")
-    func testResolveOptionalNil() async {
+    func testResolveOptionalNil() async throws {
         let value: String? = nil
         let result = await resolve(value)
         #expect(result == nil)
     }
 
     @Test("resolve handles dictionary (headers use-case)")
-    func testResolveHeadersDictionary() async {
+    func testResolveHeadersDictionary() async throws {
         let headers = ["Content-Type": "application/json"]
         let result = await resolve(headers)
         #expect(result == headers)
     }
 
     @Test("resolve handles function returning dictionary")
-    func testResolveHeadersFunction() async {
+    func testResolveHeadersFunction() async throws {
         let headers: @Sendable () -> [String: String] = { ["Authorization": "Bearer token"] }
         let result: [String: String] = await resolve(headers)
         #expect(result == ["Authorization": "Bearer token"])
@@ -127,7 +127,7 @@ struct HTTPUtilsTests {
     }
 
     @Test("resolve calls closure each time (stateful)")
-    func testResolveStatefulClosure() async {
+    func testResolveStatefulClosure() async throws {
         final class Counter: @unchecked Sendable {
             var value = 0
         }
@@ -151,7 +151,7 @@ struct HTTPUtilsTests {
     // MARK: - HandleFetchError
 
     @Test("handleFetchError preserves abort errors")
-    func testHandleFetchAbortError() {
+    func testHandleFetchAbortError() throws {
         let error = CancellationError()
         let result = handleFetchError(
             error: error,
@@ -162,7 +162,7 @@ struct HTTPUtilsTests {
     }
 
     @Test("handleFetchError converts network errors to APICallError")
-    func testHandleFetchNetworkError() {
+    func testHandleFetchNetworkError() throws {
         let error = URLError(.cannotConnectToHost)
         let result = handleFetchError(
             error: error,
@@ -178,7 +178,7 @@ struct HTTPUtilsTests {
     }
 
     @Test("handleFetchError preserves other errors")
-    func testHandleFetchOtherError() {
+    func testHandleFetchOtherError() throws {
         let error = URLError(.badURL)
         let result = handleFetchError(
             error: error,

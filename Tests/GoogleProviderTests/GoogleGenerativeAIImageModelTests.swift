@@ -77,7 +77,7 @@ struct GoogleGenerativeAIImageModelTests {
     }
 
     @Test("should respect maxImagesPerCall setting")
-    func respectMaxImagesPerCallSetting() {
+    func respectMaxImagesPerCallSetting() throws {
         let customModel = GoogleGenerativeAIImageModel(
             modelId: GoogleGenerativeAIImageModelId(rawValue: "imagen-3.0-generate-002"),
             settings: GoogleGenerativeAIImageSettings(maxImagesPerCall: 2),
@@ -97,7 +97,7 @@ struct GoogleGenerativeAIImageModelTests {
     }
 
     @Test("should use default maxImagesPerCall when not specified")
-    func useDefaultMaxImagesPerCall() {
+    func useDefaultMaxImagesPerCall() throws {
         let defaultModel = GoogleGenerativeAIImageModel(
             modelId: GoogleGenerativeAIImageModelId(rawValue: "imagen-3.0-generate-002"),
             settings: GoogleGenerativeAIImageSettings(),

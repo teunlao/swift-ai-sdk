@@ -58,7 +58,7 @@ struct SplitArrayTests {
     }
 
     @Test("error message is correct")
-    func errorMessageIsCorrect() {
+    func errorMessageIsCorrect() throws {
         let error = SplitArrayError.invalidChunkSize(0)
         #expect(error.localizedDescription == "chunkSize must be greater than 0")
     }

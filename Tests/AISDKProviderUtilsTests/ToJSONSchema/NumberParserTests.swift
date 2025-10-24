@@ -4,7 +4,7 @@ import Testing
 @Suite("Number Parser")
 struct NumberParserTests {
     @Test("minimum number")
-    func minimumNumber() {
+    func minimumNumber() throws {
         let schema = parseNumberDef(
             TestZod.number([
                 .min(ZodNumericBound(value: 5, inclusive: true))
@@ -18,7 +18,7 @@ struct NumberParserTests {
     }
 
     @Test("maximum number")
-    func maximumNumber() {
+    func maximumNumber() throws {
         let schema = parseNumberDef(
             TestZod.number([
                 .max(ZodNumericBound(value: 5, inclusive: true))
@@ -32,7 +32,7 @@ struct NumberParserTests {
     }
 
     @Test("min and max")
-    func minAndMax() {
+    func minAndMax() throws {
         let schema = parseNumberDef(
             TestZod.number([
                 .min(ZodNumericBound(value: 5, inclusive: true)),
@@ -48,7 +48,7 @@ struct NumberParserTests {
     }
 
     @Test("integer")
-    func integer() {
+    func integer() throws {
         let schema = parseNumberDef(
             TestZod.number([.int])._def as! ZodNumberDef
         )
@@ -59,7 +59,7 @@ struct NumberParserTests {
     }
 
     @Test("multipleOf")
-    func multipleOf() {
+    func multipleOf() throws {
         let schema = parseNumberDef(
             TestZod.number([
                 .multipleOf(2)
@@ -73,7 +73,7 @@ struct NumberParserTests {
     }
 
     @Test("positive negative nonpositive nonnegative")
-    func signChecks() {
+    func signChecks() throws {
         let schema = parseNumberDef(
             TestZod.number([
                 .min(ZodNumericBound(value: 0, inclusive: false)),

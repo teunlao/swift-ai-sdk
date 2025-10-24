@@ -17,7 +17,7 @@ struct JSONRPCMessageTests {
     // MARK: - Constants Tests
 
     @Test("JSON-RPC version constant")
-    func testJsonrpcVersion() {
+    func testJsonrpcVersion() throws {
         #expect(jsonrpcVersion == "2.0")
     }
 

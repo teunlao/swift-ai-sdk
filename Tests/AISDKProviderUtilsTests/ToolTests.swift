@@ -249,14 +249,14 @@ struct ToolTests {
     // MARK: - Tool type verification
 
     @Test("Tool type enum values match upstream")
-    func toolTypeValues() {
+    func toolTypeValues() throws {
         #expect(ToolType.function.rawValue == "function")
         #expect(ToolType.dynamic.rawValue == "dynamic")
         #expect(ToolType.providerDefined.rawValue == "provider-defined")
     }
 
     @Test("NeedsApproval enum cases")
-    func needsApprovalCases() {
+    func needsApprovalCases() throws {
         let always = NeedsApproval.always
         let never = NeedsApproval.never
 

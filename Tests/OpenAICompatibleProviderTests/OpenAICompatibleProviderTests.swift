@@ -90,7 +90,7 @@ struct OpenAICompatibleProviderTests {
             supportsStructuredOutputs: true
         ))
 
-        let model = provider.languageModel(modelId: "gpt-oss")
+        let model = try provider.languageModel(modelId: "gpt-oss")
         let options = LanguageModelV3CallOptions(
             prompt: chatPrompt,
             temperature: 0.2,
@@ -174,7 +174,7 @@ struct OpenAICompatibleProviderTests {
             includeUsage: true
         ))
 
-        let model = provider.languageModel(modelId: "gpt-oss")
+        let model = try provider.languageModel(modelId: "gpt-oss")
         let streamResult = try await model.doStream(options: LanguageModelV3CallOptions(prompt: chatPrompt))
 
         var parts: [LanguageModelV3StreamPart] = []
@@ -241,7 +241,7 @@ struct OpenAICompatibleProviderTests {
             fetch: fetch
         ))
 
-        let model = provider.completionModel(modelId: "gpt-3.5-instruct")
+        let model = try provider.completionModel(modelId: "gpt-3.5-instruct")
         let options = LanguageModelV3CallOptions(
             prompt: completionPrompt,
             maxOutputTokens: 20,
@@ -299,7 +299,7 @@ struct OpenAICompatibleProviderTests {
             fetch: fetch
         ))
 
-        let model = provider.textEmbeddingModel(modelId: "text-embedding-3-small")
+        let model = try provider.textEmbeddingModel(modelId: "text-embedding-3-small")
         let options = EmbeddingModelV3DoEmbedOptions(
             values: ["hello"],
             providerOptions: [
@@ -348,7 +348,7 @@ struct OpenAICompatibleProviderTests {
             fetch: fetch
         ))
 
-        let model = provider.imageModel(modelId: "gpt-image")
+        let model = try provider.imageModel(modelId: "gpt-image")
         let result = try await model.doGenerate(
             options: ImageModelV3CallOptions(
                 prompt: "Draw",
@@ -389,7 +389,7 @@ struct OpenAICompatibleProviderTests {
             fetch: fetch
         ))
 
-        let model = provider.textEmbeddingModel(modelId: "test")
+        let model = try provider.textEmbeddingModel(modelId: "test")
         _ = try await model.doEmbed(options: EmbeddingModelV3DoEmbedOptions(values: ["test"]))
 
         guard let request = await capture.current() else {
@@ -429,7 +429,7 @@ struct OpenAICompatibleProviderTests {
             // No queryParams
         ))
 
-        let model = provider.textEmbeddingModel(modelId: "test")
+        let model = try provider.textEmbeddingModel(modelId: "test")
         _ = try await model.doEmbed(options: EmbeddingModelV3DoEmbedOptions(values: ["test"]))
 
         guard let request = await capture.current() else {
@@ -470,7 +470,7 @@ struct OpenAICompatibleProviderTests {
         ))
 
         // Default languageModel should create chat model
-        let model = provider.languageModel(modelId: "model-id")
+        let model = try provider.languageModel(modelId: "model-id")
         _ = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: chatPrompt))
 
         guard let request = await capture.current() else {
@@ -484,7 +484,7 @@ struct OpenAICompatibleProviderTests {
     }
 
     @Test("passes includeUsage true to all model types")
-    func passesIncludeUsageTrue() {
+    func passesIncludeUsageTrue() throws {
         let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://api.example.com/v1",
             name: "example",
@@ -493,31 +493,31 @@ struct OpenAICompatibleProviderTests {
 
         // Create all model types - they should all have includeUsage=true
         // We can't directly inspect internal config, but we verified this works in integration tests
-        _ = provider.chatModel(modelId: "chat")
-        _ = provider.completionModel(modelId: "completion")
-        _ = provider.languageModel(modelId: "default")
+        _ = try provider.chatModel(modelId: "chat")
+        _ = try provider.completionModel(modelId: "completion")
+        _ = try provider.languageModel(modelId: "default")
 
         // This test verifies the setting is accepted without errors
         // Actual behavior is tested in integration tests above
     }
 
     @Test("passes includeUsage false to all model types")
-    func passesIncludeUsageFalse() {
+    func passesIncludeUsageFalse() throws {
         let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://api.example.com/v1",
             name: "example",
             includeUsage: false
         ))
 
-        _ = provider.chatModel(modelId: "chat")
-        _ = provider.completionModel(modelId: "completion")
-        _ = provider.languageModel(modelId: "default")
+        _ = try provider.chatModel(modelId: "chat")
+        _ = try provider.completionModel(modelId: "completion")
+        _ = try provider.languageModel(modelId: "default")
 
         // Verifies settings accepted without errors
     }
 
     @Test("passes supportsStructuredOutputs to chat and language models only")
-    func passesStructuredOutputsToCorrectModels() {
+    func passesStructuredOutputsToCorrectModels() throws {
         let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://api.example.com/v1",
             name: "example",
@@ -525,14 +525,14 @@ struct OpenAICompatibleProviderTests {
         ))
 
         // These should accept supportsStructuredOutputs
-        _ = provider.languageModel(modelId: "model-id")
-        _ = provider.chatModel(modelId: "chat")
-        _ = provider.languageModel(modelId: "lang")
+        _ = try provider.languageModel(modelId: "model-id")
+        _ = try provider.chatModel(modelId: "chat")
+        _ = try provider.languageModel(modelId: "lang")
 
         // These models don't use supportsStructuredOutputs
-        _ = provider.completionModel(modelId: "completion")
-        _ = provider.textEmbeddingModel(modelId: "embedding")
-        _ = provider.imageModel(modelId: "image")
+        _ = try provider.completionModel(modelId: "completion")
+        _ = try provider.textEmbeddingModel(modelId: "embedding")
+        _ = try provider.imageModel(modelId: "image")
 
         // Setting is accepted without errors
     }

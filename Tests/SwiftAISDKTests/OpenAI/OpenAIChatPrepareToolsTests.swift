@@ -26,7 +26,7 @@ struct OpenAIChatPrepareToolsTests {
     }
 
     @Test("no tools yields nil values")
-    func noToolsYieldsNil() {
+    func noToolsYieldsNil() throws {
         let result = OpenAIChatToolPreparer.prepare(
             tools: [],
             toolChoice: nil,
@@ -40,7 +40,7 @@ struct OpenAIChatPrepareToolsTests {
     }
 
     @Test("function tool maps to OpenAI function without strict")
-    func functionToolWithoutStructuredOutputs() {
+    func functionToolWithoutStructuredOutputs() throws {
         let result = OpenAIChatToolPreparer.prepare(
             tools: [makeFunctionTool(description: "A test function")],
             toolChoice: nil,
@@ -64,7 +64,7 @@ struct OpenAIChatPrepareToolsTests {
     }
 
     @Test("function tool adds strict when structured outputs enabled")
-    func functionToolWithStructuredOutputs() {
+    func functionToolWithStructuredOutputs() throws {
         let result = OpenAIChatToolPreparer.prepare(
             tools: [makeFunctionTool()],
             toolChoice: nil,
@@ -85,7 +85,7 @@ struct OpenAIChatPrepareToolsTests {
     }
 
     @Test("unsupported provider tool produces warning")
-    func unsupportedProviderToolProducesWarning() {
+    func unsupportedProviderToolProducesWarning() throws {
         let tool = makeProviderTool(id: "openai.unsupported_tool", name: "unsupported")
         let result = OpenAIChatToolPreparer.prepare(
             tools: [tool],
@@ -106,7 +106,7 @@ struct OpenAIChatPrepareToolsTests {
     }
 
     @Test("tool choice auto maps to string")
-    func toolChoiceAuto() {
+    func toolChoiceAuto() throws {
         let result = OpenAIChatToolPreparer.prepare(
             tools: [makeFunctionTool()],
             toolChoice: .auto,
@@ -118,7 +118,7 @@ struct OpenAIChatPrepareToolsTests {
     }
 
     @Test("tool choice required maps to string")
-    func toolChoiceRequired() {
+    func toolChoiceRequired() throws {
         let result = OpenAIChatToolPreparer.prepare(
             tools: [makeFunctionTool()],
             toolChoice: .required,
@@ -131,7 +131,7 @@ struct OpenAIChatPrepareToolsTests {
 
     // Port of openai-chat-prepare-tools.test.ts: "should handle tool choice 'none'"
     @Test("tool choice none maps to string")
-    func toolChoiceNone() {
+    func toolChoiceNone() throws {
         let tool = LanguageModelV3Tool.function(
             LanguageModelV3FunctionTool(
                 name: "testFunction",
@@ -151,7 +151,7 @@ struct OpenAIChatPrepareToolsTests {
     }
 
     @Test("tool choice for specific function maps to function entry")
-    func toolChoiceForFunction() {
+    func toolChoiceForFunction() throws {
         let result = OpenAIChatToolPreparer.prepare(
             tools: [makeFunctionTool(name: "lookup")],
             toolChoice: .tool(toolName: "lookup"),

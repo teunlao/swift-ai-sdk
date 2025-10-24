@@ -25,7 +25,7 @@ struct GenerateIDTests {
     }
 
     @Test("createIDGenerator throws error if separator is part of alphabet")
-    func testSeparatorInAlphabet() {
+    func testSeparatorInAlphabet() throws {
         #expect(throws: InvalidArgumentError.self) {
             _ = try createIDGenerator(prefix: "b", separator: "a")
         }
@@ -42,7 +42,7 @@ struct GenerateIDTests {
     }
 
     @Test("generateID generates unique IDs")
-    func testUniqueIDs() {
+    func testUniqueIDs() throws {
         let id1 = generateID()
         let id2 = generateID()
 
@@ -50,7 +50,7 @@ struct GenerateIDTests {
     }
 
     @Test("generateID has correct default length")
-    func testGenerateIDDefaultLength() {
+    func testGenerateIDDefaultLength() throws {
         let id = generateID()
         #expect(id.count == 16)
     }

@@ -7,19 +7,19 @@ import Testing
 @Suite("ProviderRegistry")
 struct ProviderRegistryTests {
     @Test("returns base model when no middleware is configured")
-    func returnsBaseModel() {
+    func returnsBaseModel() throws {
         let baseModel = TestLanguageModel(provider: "base", modelId: "model")
         let provider = customProvider(languageModels: ["model": baseModel])
 
         let registry = createProviderRegistry(providers: ["p": provider])
-        let resolved = registry.languageModel(id: "p:model")
+        let resolved = try registry.languageModel(id: "p:model")
 
         #expect(resolved.provider == "base")
         #expect(resolved.modelId == "model")
     }
 
     @Test("applies single middleware to language model")
-    func appliesSingleMiddleware() {
+    func appliesSingleMiddleware() throws {
         let baseModel = TestLanguageModel(provider: "base", modelId: "model")
         let middleware = LanguageModelV3Middleware(
             overrideProvider: { model in "\(model.provider)-wrapped" },
@@ -32,14 +32,14 @@ struct ProviderRegistryTests {
             options: ProviderRegistryOptions(languageModelMiddleware: middleware)
         )
 
-        let resolved = registry.languageModel(id: "p:model")
+        let resolved = try registry.languageModel(id: "p:model")
 
         #expect(resolved.provider == "base-wrapped")
         #expect(resolved.modelId == "model-wrapped")
     }
 
     @Test("applies multiple middleware entries in declaration order")
-    func appliesMultipleMiddleware() {
+    func appliesMultipleMiddleware() throws {
         let baseModel = TestLanguageModel(provider: "base", modelId: "model")
         let middlewareChain = [
             LanguageModelV3Middleware(
@@ -58,14 +58,14 @@ struct ProviderRegistryTests {
             options: ProviderRegistryOptions(languageModelMiddleware: middlewareChain)
         )
 
-        let resolved = registry.languageModel(id: "p:model")
+        let resolved = try registry.languageModel(id: "p:model")
 
         #expect(resolved.provider == "base-inner-outer")
         #expect(resolved.modelId == "model-inner-outer")
     }
 
     @Test("supports custom separators when resolving models")
-    func supportsCustomSeparators() {
+    func supportsCustomSeparators() throws {
         let baseModel = TestLanguageModel(provider: "base", modelId: "model")
         let provider = customProvider(languageModels: ["model": baseModel])
 
@@ -74,7 +74,7 @@ struct ProviderRegistryTests {
             options: ProviderRegistryOptions(separator: " > ")
         )
 
-        let resolved = registry.languageModel(id: "p > model")
+        let resolved = try registry.languageModel(id: "p > model")
 
         #expect(resolved.provider == "base")
         #expect(resolved.modelId == "model")

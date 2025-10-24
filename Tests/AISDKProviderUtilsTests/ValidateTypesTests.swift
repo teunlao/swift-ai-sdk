@@ -50,7 +50,7 @@ struct ValidateTypesTests {
     }
 
     @Test("validateTypes throws TypeValidationError for invalid input")
-    func validateTypesThrows() async {
+    func validateTypesThrows() async throws {
         let schema = Self.personSchema()
         let input: [String: Any] = ["name": "John", "age": "30"]
 
@@ -62,7 +62,7 @@ struct ValidateTypesTests {
     }
 
     @Test("safeValidateTypes returns success for valid input")
-    func safeValidateTypesSuccess() async {
+    func safeValidateTypesSuccess() async throws {
         let schema = Self.personSchema()
         let input: [String: Any] = ["name": "Alice", "age": 25]
 
@@ -82,7 +82,7 @@ struct ValidateTypesTests {
     }
 
     @Test("safeValidateTypes returns error for invalid input")
-    func safeValidateTypesFailure() async {
+    func safeValidateTypesFailure() async throws {
         let schema = Self.personSchema()
         let input: [String: Any] = ["name": "Alice", "age": "twenty"]
 

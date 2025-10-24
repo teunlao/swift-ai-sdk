@@ -161,7 +161,7 @@ struct OpenAIChatMessagesConverterTests {
 
     // Port of convert-to-openai-chat-messages.test.ts: "should throw for unsupported mime types" (nested in file parts)
     @Test("unsupported mime type throws")
-    func unsupportedMimeTypeThrows() {
+    func unsupportedMimeTypeThrows() throws {
         let filePart = LanguageModelV3FilePart(
             data: .base64("AAECAw=="),
             mediaType: "application/something"
@@ -182,7 +182,7 @@ struct OpenAIChatMessagesConverterTests {
 
     // Port of convert-to-openai-chat-messages.test.ts: "should throw error for unsupported file types" (top level)
     @Test("unsupported file type text/plain throws")
-    func unsupportedFileTypeTextPlainThrows() {
+    func unsupportedFileTypeTextPlainThrows() throws {
         let filePart = LanguageModelV3FilePart(
             data: .base64("AQIDBAU="),
             mediaType: "text/plain"
@@ -202,7 +202,7 @@ struct OpenAIChatMessagesConverterTests {
     }
 
     @Test("audio file part with URL throws")
-    func audioFilePartWithURLThrows() {
+    func audioFilePartWithURLThrows() throws {
         let filePart = LanguageModelV3FilePart(
             data: .url(URL(string: "https://example.com/foo.wav")!),
             mediaType: "audio/wav"
@@ -409,7 +409,7 @@ struct OpenAIChatMessagesConverterTests {
     }
 
     @Test("pdf file part with URL throws")
-    func pdfFilePartWithURLThrows() {
+    func pdfFilePartWithURLThrows() throws {
         let filePart = LanguageModelV3FilePart(
             data: .url(URL(string: "https://example.com/document.pdf")!),
             mediaType: "application/pdf"

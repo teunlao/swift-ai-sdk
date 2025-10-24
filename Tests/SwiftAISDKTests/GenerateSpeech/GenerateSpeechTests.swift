@@ -163,7 +163,7 @@ struct GenerateSpeechTests {
         )
 
         #expect(recordedWarnings.value.count == 1)
-        let expectedLogged = expectedWarnings.map { Warning.speechModel($0) }
+        let expectedLogged = try expectedWarnings.map { Warning.speechModel($0) }
         #expect(recordedWarnings.value.first == expectedLogged)
     }
 
@@ -208,7 +208,7 @@ struct GenerateSpeechTests {
     }
 
     @Test("should throw NoSpeechGeneratedError when no audio is returned")
-    func shouldThrowWhenNoAudio() async {
+    func shouldThrowWhenNoAudio() async throws {
         let emptyFile = DefaultGeneratedAudioFile(
             data: Data(),
             mediaType: "audio/mp3"
@@ -240,7 +240,7 @@ struct GenerateSpeechTests {
     }
 
     @Test("should include response headers in error when no audio generated")
-    func shouldIncludeHeadersInError() async {
+    func shouldIncludeHeadersInError() async throws {
         let emptyFile = DefaultGeneratedAudioFile(
             data: Data(),
             mediaType: "audio/mp3"

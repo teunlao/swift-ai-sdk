@@ -113,14 +113,14 @@ struct ParseJSONTests {
     }
 
     @Test("parseJSON throws JSONParseError on invalid JSON")
-    func parseJSONThrowsOnInvalid() async {
+    func parseJSONThrowsOnInvalid() async throws {
         await #expect(throws: JSONParseError.self) {
             _ = try await parseJSON(ParseJSONOptions(text: "invalid"))
         }
     }
 
     @Test("parseJSON throws TypeValidationError when schema validation fails")
-    func parseJSONThrowsOnSchemaFailure() async {
+    func parseJSONThrowsOnSchemaFailure() async throws {
         let schema = userSchema()
 
         await #expect(throws: TypeValidationError.self) {
@@ -134,7 +134,7 @@ struct ParseJSONTests {
     }
 
     @Test("safeParseJSON returns success for valid JSON without schema")
-    func safeParseJSONWithoutSchema() async {
+    func safeParseJSONWithoutSchema() async throws {
         let result = await safeParseJSON(
             ParseJSONOptions(text: #"{"foo": "bar"}"#)
         )
@@ -151,7 +151,7 @@ struct ParseJSONTests {
     }
 
     @Test("safeParseJSON preserves rawValue after schema transformation")
-    func safeParseJSONWithSchema() async {
+    func safeParseJSONWithSchema() async throws {
         let schema = userSchema()
 
         let result = await safeParseJSON(
@@ -173,7 +173,7 @@ struct ParseJSONTests {
     }
 
     @Test("safeParseJSON returns failure for invalid JSON")
-    func safeParseJSONInvalid() async {
+    func safeParseJSONInvalid() async throws {
         let result = await safeParseJSON(ParseJSONOptions(text: "invalid"))
 
         guard case .failure(let error, let raw) = result else {
@@ -186,7 +186,7 @@ struct ParseJSONTests {
     }
 
     @Test("safeParseJSON returns failure when schema validation fails")
-    func safeParseJSONSchemaFailure() async {
+    func safeParseJSONSchemaFailure() async throws {
         let schema = userSchema()
         let result = await safeParseJSON(
             ParseJSONWithSchemaOptions(
@@ -206,7 +206,7 @@ struct ParseJSONTests {
     }
 
     @Test("safeParseJSON handles arrays with schema transformations")
-    func safeParseJSONArrayTransform() async {
+    func safeParseJSONArrayTransform() async throws {
         let schema = uppercaseArraySchema()
         let result = await safeParseJSON(
             ParseJSONWithSchemaOptions(
@@ -226,7 +226,7 @@ struct ParseJSONTests {
     }
 
     @Test("isParsableJson returns true for valid JSON and false otherwise")
-    func isParsableJsonChecks() {
+    func isParsableJsonChecks() throws {
         #expect(isParsableJson(#"{"foo": "bar"}"#) == true)
         #expect(isParsableJson("[1, 2, 3]") == true)
         #expect(isParsableJson("invalid") == false)
@@ -279,7 +279,7 @@ struct ParseJSONTests {
     }
 
     @Test("safeParseJSON correctly distinguishes numbers from booleans")
-    func safeParseJSONNumberBooleanDistinction() async {
+    func safeParseJSONNumberBooleanDistinction() async throws {
         let json = "[0, 1, true, false]"
         let result = await safeParseJSON(ParseJSONOptions(text: json))
 

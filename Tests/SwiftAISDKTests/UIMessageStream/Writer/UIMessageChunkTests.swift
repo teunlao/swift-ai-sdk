@@ -12,7 +12,7 @@ import Testing
 struct UIMessageChunkTests {
 
     @Test("detects data-* chunks")
-    func detectsDataChunks() {
+    func detectsDataChunks() throws {
         let dataChunk = AnyUIMessageChunk.data(
             DataUIMessageChunk(name: "custom", id: "chunk-1", data: ["value": 42], transient: true)
         )
@@ -23,7 +23,7 @@ struct UIMessageChunkTests {
     }
 
     @Test("computes type identifiers")
-    func computesTypeIdentifiers() {
+    func computesTypeIdentifiers() throws {
         let errorChunk = UIMessageChunk<JSONValue>.toolOutputError(
             toolCallId: "tool-1",
             errorText: "boom",
@@ -39,7 +39,7 @@ struct UIMessageChunkTests {
     }
 
     @Test("matches default stream headers")
-    func matchesDefaultHeaders() {
+    func matchesDefaultHeaders() throws {
         let expected: [String: String] = [
             "content-type": "text/event-stream",
             "cache-control": "no-cache",

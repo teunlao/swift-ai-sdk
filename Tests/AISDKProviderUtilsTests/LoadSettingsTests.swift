@@ -22,7 +22,7 @@ struct LoadSettingsTests {
     }
 
     @Test("loadSetting throws when value missing")
-    func testLoadSettingMissing() {
+    func testLoadSettingMissing() throws {
         #expect(throws: LoadSettingError.self) {
             _ = try loadSetting(
                 settingValue: nil,
@@ -36,7 +36,7 @@ struct LoadSettingsTests {
     // MARK: - LoadOptionalSetting
 
     @Test("loadOptionalSetting returns provided value")
-    func testLoadOptionalSettingWithValue() {
+    func testLoadOptionalSettingWithValue() throws {
         let result = loadOptionalSetting(
             settingValue: "test-value",
             environmentVariableName: "TEST_VAR"
@@ -45,7 +45,7 @@ struct LoadSettingsTests {
     }
 
     @Test("loadOptionalSetting returns nil when missing")
-    func testLoadOptionalSettingMissing() {
+    func testLoadOptionalSettingMissing() throws {
         let result = loadOptionalSetting(
             settingValue: nil,
             environmentVariableName: "NONEXISTENT_VAR_12345"
@@ -66,7 +66,7 @@ struct LoadSettingsTests {
     }
 
     @Test("loadAPIKey throws when missing")
-    func testLoadAPIKeyMissing() {
+    func testLoadAPIKeyMissing() throws {
         #expect(throws: LoadAPIKeyError.self) {
             _ = try loadAPIKey(
                 apiKey: nil,

@@ -15,7 +15,7 @@ import Foundation
 struct WrapGatewayErrorTests {
 
     @Test("should wrap GatewayAuthenticationError in AISDKError")
-    func wrapsGatewayAuthenticationError() {
+    func wrapsGatewayAuthenticationError() throws {
         let gatewayError = GatewayAuthenticationError(
             message: "Invalid API key",
             statusCode: 401
@@ -35,7 +35,7 @@ struct WrapGatewayErrorTests {
     }
 
     @Test("should wrap GatewayModelNotFoundError in AISDKError")
-    func wrapsGatewayModelNotFoundError() {
+    func wrapsGatewayModelNotFoundError() throws {
         let gatewayError = GatewayModelNotFoundError(
             message: "Model xyz not found",
             modelId: "xyz"
@@ -54,7 +54,7 @@ struct WrapGatewayErrorTests {
     }
 
     @Test("should not wrap non-Gateway errors")
-    func doesNotWrapNonGatewayErrors() {
+    func doesNotWrapNonGatewayErrors() throws {
         struct SomeOtherError: Error {}
         let otherError = SomeOtherError()
 
@@ -65,13 +65,13 @@ struct WrapGatewayErrorTests {
     }
 
     @Test("should not wrap nil")
-    func doesNotWrapNil() {
+    func doesNotWrapNil() throws {
         let result = wrapGatewayError(nil)
         #expect(result == nil)
     }
 
     @Test("should not wrap AISDKError")
-    func doesNotWrapAISDKError() {
+    func doesNotWrapAISDKError() throws {
         struct CustomAISDKError: AISDKError {
             static let errorDomain = "test.error"
             let name = "TestError"
@@ -87,7 +87,7 @@ struct WrapGatewayErrorTests {
     }
 
     @Test("wrapped error should conform to AISDKError protocol")
-    func wrappedErrorConformsToAISDKError() {
+    func wrappedErrorConformsToAISDKError() throws {
         let gatewayError = GatewayAuthenticationError()
         let result = wrapGatewayError(gatewayError)
 

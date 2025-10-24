@@ -176,7 +176,7 @@ struct ResponseHandlerTests {
     }
 
     @Test("createBinaryResponseHandler throws when body missing")
-    func binaryResponseHandlerThrowsOnMissingBody() async {
+    func binaryResponseHandlerThrowsOnMissingBody() async throws {
         let handler = createBinaryResponseHandler()
         let response = makeResponse(body: .none)
 
@@ -258,7 +258,7 @@ struct ResponseHandlerTests {
     }
 
     @Test("createEventSourceResponseHandler throws on empty body")
-    func eventSourceHandlerThrowsOnEmptyBody() async {
+    func eventSourceHandlerThrowsOnEmptyBody() async throws {
         let handler = createEventSourceResponseHandler(
             chunkSchema: jsonSchemaForSimplePayload()
         )

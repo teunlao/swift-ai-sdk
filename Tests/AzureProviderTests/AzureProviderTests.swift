@@ -1066,13 +1066,13 @@ struct AzureProviderTests {
     }
 
     @Test("imageModel method should create the same model as image method")
-    func imageModelMethodShouldCreateSameModelAsImageMethod() {
+    func imageModelMethodShouldCreateSameModelAsImageMethod() throws {
         let provider = createAzure(settings: AzureProviderSettings(
             resourceName: "test-resource",
             apiKey: "test-api-key"
         ))
 
-        let imageModel = provider.imageModel(.init(rawValue: "dalle-deployment"))
+        let imageModel = try provider.imageModel(.init(rawValue: "dalle-deployment"))
         let imageModelAlias = provider.image(.init(rawValue: "dalle-deployment"))
 
         #expect(imageModel.provider == imageModelAlias.provider)

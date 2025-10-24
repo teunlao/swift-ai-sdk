@@ -14,7 +14,7 @@ struct ProviderErrorsTests {
     // MARK: - AISDKError Protocol
 
     @Test("AISDKError isAISDKError works")
-    func testIsAISDKError() {
+    func testIsAISDKError() throws {
         let error = LoadAPIKeyError(message: "test")
         #expect(isAISDKError(error))
 
@@ -23,7 +23,7 @@ struct ProviderErrorsTests {
     }
 
     @Test("AISDKError hasMarker works")
-    func testHasMarker() {
+    func testHasMarker() throws {
         let error = LoadAPIKeyError(message: "test")
         #expect(hasMarker(error, marker: LoadAPIKeyError.errorDomain))
         #expect(!hasMarker(error, marker: "wrong.marker"))
@@ -32,19 +32,19 @@ struct ProviderErrorsTests {
     // MARK: - getErrorMessage
 
     @Test("getErrorMessage with nil")
-    func testGetErrorMessageNil() {
+    func testGetErrorMessageNil() throws {
         let msg = getErrorMessage(nil as Error?)
         #expect(msg == "unknown error")
     }
 
     @Test("getErrorMessage with String")
-    func testGetErrorMessageString() {
+    func testGetErrorMessageString() throws {
         let msg = getErrorMessage("custom error" as Any)
         #expect(msg == "custom error")
     }
 
     @Test("getErrorMessage with Error")
-    func testGetErrorMessageError() {
+    func testGetErrorMessageError() throws {
         let error = LoadAPIKeyError(message: "API key missing")
         let msg = getErrorMessage(error as Error)
         #expect(msg == "API key missing")
@@ -53,7 +53,7 @@ struct ProviderErrorsTests {
     // MARK: - APICallError
 
     @Test("APICallError creation with defaults")
-    func testAPICallErrorDefaults() {
+    func testAPICallErrorDefaults() throws {
         let error = APICallError(
             message: "Request failed",
             url: "https://api.example.com",
@@ -68,7 +68,7 @@ struct ProviderErrorsTests {
     }
 
     @Test("APICallError isRetryable for 408")
-    func testAPICallErrorRetryable408() {
+    func testAPICallErrorRetryable408() throws {
         let error = APICallError(
             message: "Timeout",
             url: "https://api.example.com",
@@ -79,7 +79,7 @@ struct ProviderErrorsTests {
     }
 
     @Test("APICallError isRetryable for 429")
-    func testAPICallErrorRetryable429() {
+    func testAPICallErrorRetryable429() throws {
         let error = APICallError(
             message: "Rate limited",
             url: "https://api.example.com",
@@ -90,7 +90,7 @@ struct ProviderErrorsTests {
     }
 
     @Test("APICallError not retryable for 400")
-    func testAPICallErrorNotRetryable400() {
+    func testAPICallErrorNotRetryable400() throws {
         let error = APICallError(
             message: "Bad request",
             url: "https://api.example.com",
@@ -101,7 +101,7 @@ struct ProviderErrorsTests {
     }
 
     @Test("APICallError isInstance works")
-    func testAPICallErrorIsInstance() {
+    func testAPICallErrorIsInstance() throws {
         let error = APICallError(
             message: "Test",
             url: "https://api.example.com",
@@ -114,13 +114,13 @@ struct ProviderErrorsTests {
     // MARK: - EmptyResponseBodyError
 
     @Test("EmptyResponseBodyError default message")
-    func testEmptyResponseBodyErrorDefault() {
+    func testEmptyResponseBodyErrorDefault() throws {
         let error = EmptyResponseBodyError()
         #expect(error.message == "Empty response body")
     }
 
     @Test("EmptyResponseBodyError custom message")
-    func testEmptyResponseBodyErrorCustom() {
+    func testEmptyResponseBodyErrorCustom() throws {
         let error = EmptyResponseBodyError(message: "Custom empty message")
         #expect(error.message == "Custom empty message")
     }
@@ -128,7 +128,7 @@ struct ProviderErrorsTests {
     // MARK: - InvalidArgumentError
 
     @Test("InvalidArgumentError creation")
-    func testInvalidArgumentError() {
+    func testInvalidArgumentError() throws {
         let error = InvalidArgumentError(
             argument: "temperature",
             message: "Temperature must be between 0 and 1"
@@ -140,7 +140,7 @@ struct ProviderErrorsTests {
     // MARK: - InvalidPromptError
 
     @Test("InvalidPromptError prepends 'Invalid prompt:'")
-    func testInvalidPromptError() {
+    func testInvalidPromptError() throws {
         let error = InvalidPromptError(
             prompt: "Prompt(system: nil, prompt: nil, messages: nil)",
             message: "Missing required fields"
@@ -151,7 +151,7 @@ struct ProviderErrorsTests {
     // MARK: - InvalidResponseDataError
 
     @Test("InvalidResponseDataError with custom message")
-    func testInvalidResponseDataErrorCustomMessage() {
+    func testInvalidResponseDataErrorCustomMessage() throws {
         let error = InvalidResponseDataError(
             data: ["bad": "data"],
             message: "Custom invalid data message"
@@ -162,7 +162,7 @@ struct ProviderErrorsTests {
     // MARK: - JSONParseError
 
     @Test("JSONParseError includes text and cause")
-    func testJSONParseError() {
+    func testJSONParseError() throws {
         struct DummyError: Error, LocalizedError {
             var errorDescription: String? { "Unexpected token" }
         }
@@ -181,7 +181,7 @@ struct ProviderErrorsTests {
     // MARK: - LoadAPIKeyError
 
     @Test("LoadAPIKeyError message")
-    func testLoadAPIKeyError() {
+    func testLoadAPIKeyError() throws {
         let error = LoadAPIKeyError(message: "OPENAI_API_KEY not found")
         #expect(error.message == "OPENAI_API_KEY not found")
     }
@@ -189,7 +189,7 @@ struct ProviderErrorsTests {
     // MARK: - LoadSettingError
 
     @Test("LoadSettingError message")
-    func testLoadSettingError() {
+    func testLoadSettingError() throws {
         let error = LoadSettingError(message: "Invalid setting value")
         #expect(error.message == "Invalid setting value")
     }
@@ -197,7 +197,7 @@ struct ProviderErrorsTests {
     // MARK: - NoContentGeneratedError
 
     @Test("NoContentGeneratedError default message")
-    func testNoContentGeneratedErrorDefault() {
+    func testNoContentGeneratedErrorDefault() throws {
         let error = NoContentGeneratedError()
         #expect(error.message == "No content generated.")
     }
@@ -205,7 +205,7 @@ struct ProviderErrorsTests {
     // MARK: - NoSuchModelError
 
     @Test("NoSuchModelError default message")
-    func testNoSuchModelErrorDefault() {
+    func testNoSuchModelErrorDefault() throws {
         let error = NoSuchModelError(
             modelId: "gpt-4",
             modelType: .languageModel
@@ -216,7 +216,7 @@ struct ProviderErrorsTests {
     }
 
     @Test("NoSuchModelError custom message")
-    func testNoSuchModelErrorCustom() {
+    func testNoSuchModelErrorCustom() throws {
         let error = NoSuchModelError(
             modelId: "whisper-1",
             modelType: .transcriptionModel,
@@ -228,7 +228,7 @@ struct ProviderErrorsTests {
     // MARK: - TooManyEmbeddingValuesForCallError
 
     @Test("TooManyEmbeddingValuesForCallError message")
-    func testTooManyEmbeddingValuesForCallError() {
+    func testTooManyEmbeddingValuesForCallError() throws {
         let error = TooManyEmbeddingValuesForCallError(
             provider: "OpenAI",
             modelId: "text-embedding-ada-002",
@@ -246,7 +246,7 @@ struct ProviderErrorsTests {
     // MARK: - TypeValidationError
 
     @Test("TypeValidationError message includes value")
-    func testTypeValidationError() {
+    func testTypeValidationError() throws {
         struct DummyError: Error, LocalizedError {
             var errorDescription: String? { "Type mismatch" }
         }
@@ -261,7 +261,7 @@ struct ProviderErrorsTests {
     }
 
     @Test("TypeValidationError wrap returns same error if matching")
-    func testTypeValidationErrorWrap() {
+    func testTypeValidationErrorWrap() throws {
         struct DummyError: Error {}
 
         let original = TypeValidationError(value: 42, cause: DummyError())
@@ -274,14 +274,14 @@ struct ProviderErrorsTests {
     // MARK: - UnsupportedFunctionalityError
 
     @Test("UnsupportedFunctionalityError default message")
-    func testUnsupportedFunctionalityErrorDefault() {
+    func testUnsupportedFunctionalityErrorDefault() throws {
         let error = UnsupportedFunctionalityError(functionality: "streaming")
         #expect(error.functionality == "streaming")
         #expect(error.message == "'streaming' functionality not supported.")
     }
 
     @Test("UnsupportedFunctionalityError custom message")
-    func testUnsupportedFunctionalityErrorCustom() {
+    func testUnsupportedFunctionalityErrorCustom() throws {
         let error = UnsupportedFunctionalityError(
             functionality: "tools",
             message: "Tool calling requires GPT-4"

@@ -14,7 +14,7 @@ import Testing
 struct XAIProviderTests {
 
     @Test("creates a language model with default settings")
-    func createLanguageModelWithDefaults() {
+    func createLanguageModelWithDefaults() throws {
         let provider = createXai(settings: XAIProviderSettings(apiKey: "test-api-key"))
         let model = provider.chat(modelId: "grok-beta")
 
@@ -23,34 +23,34 @@ struct XAIProviderTests {
     }
 
     @Test("creates language model via call operator")
-    func createLanguageModelViaCallOperator() {
+    func createLanguageModelViaCallOperator() throws {
         let provider = createXai(settings: XAIProviderSettings(apiKey: "test-api-key"))
-        let model = provider("grok-beta")
+        let model = try provider("grok-beta")
 
         #expect(model.provider == "xai.chat")
         #expect(model.modelId == "grok-beta")
     }
 
     @Test("creates language model via languageModel method")
-    func createLanguageModelViaLanguageModelMethod() {
+    func createLanguageModelViaLanguageModelMethod() throws {
         let provider = createXai(settings: XAIProviderSettings(apiKey: "test-api-key"))
-        let model = provider.languageModel(modelId: "grok-3")
+        let model = try provider.languageModel(modelId: "grok-3")
 
         #expect(model.provider == "xai.chat")
         #expect(model.modelId == "grok-3")
     }
 
     @Test("creates an image model with correct settings")
-    func createImageModel() {
+    func createImageModel() throws {
         let provider = createXai(settings: XAIProviderSettings(apiKey: "test-api-key"))
-        let model = provider.imageModel(modelId: "grok-2-image")
+        let model = try provider.imageModel(modelId: "grok-2-image")
 
         #expect(model.provider == "xai.image")
         #expect(model.modelId == "grok-2-image")
     }
 
     @Test("creates image model via image method")
-    func createImageModelViaImageMethod() {
+    func createImageModelViaImageMethod() throws {
         let provider = createXai(settings: XAIProviderSettings(apiKey: "test-api-key"))
         let model = provider.image(modelId: "grok-2-image")
 
@@ -59,7 +59,7 @@ struct XAIProviderTests {
     }
 
     @Test("uses custom baseURL when provided")
-    func usesCustomBaseURL() {
+    func usesCustomBaseURL() throws {
         let provider = createXai(settings: XAIProviderSettings(
             baseURL: "https://custom.xai.api",
             apiKey: "test-api-key"
@@ -72,7 +72,7 @@ struct XAIProviderTests {
     }
 
     @Test("uses default baseURL when not provided")
-    func usesDefaultBaseURL() {
+    func usesDefaultBaseURL() throws {
         let provider = createXai(settings: XAIProviderSettings(apiKey: "test-api-key"))
         let model = provider.chat(modelId: "grok-beta")
 

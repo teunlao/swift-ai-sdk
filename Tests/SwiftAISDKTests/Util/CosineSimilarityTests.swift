@@ -32,7 +32,7 @@ struct CosineSimilarityTests {
     }
 
     @Test("should throw an error when vectors have different lengths")
-    func testDifferentLengthsThrowsError() {
+    func testDifferentLengthsThrowsError() throws {
         let vector1 = [1.0, 2.0, 3.0]
         let vector2 = [4.0, 5.0]
 

@@ -1418,7 +1418,7 @@ struct ValidateUIMessagesTests {
 @Suite("safeValidateUIMessages")
 struct SafeValidateUIMessagesTests {
     @Test("returns success for valid messages")
-    func returnsSuccess() async {
+    func returnsSuccess() async throws {
         let result: SafeValidateUIMessagesResult<UIMessage> = await safeValidateUIMessages(
             messages: [
                 [
@@ -1443,7 +1443,7 @@ struct SafeValidateUIMessagesTests {
     }
 
     @Test("returns failure when metadata validation fails")
-    func returnsFailureForMetadata() async {
+    func returnsFailureForMetadata() async throws {
         let result: SafeValidateUIMessagesResult<UIMessage> = await safeValidateUIMessages(
             messages: [
                 [
@@ -1472,7 +1472,7 @@ struct SafeValidateUIMessagesTests {
     }
 
     @Test("returns failure when tool input invalid")
-    func returnsFailureForToolInput() async {
+    func returnsFailureForToolInput() async throws {
         let tool = Tool(
             inputSchema: stringFooSchema(),
             outputSchema: nil
@@ -1501,7 +1501,7 @@ struct SafeValidateUIMessagesTests {
     }
 
     @Test("returns failure when data schema missing")
-    func returnsFailureForMissingDataSchema() async {
+    func returnsFailureForMissingDataSchema() async throws {
         let result: SafeValidateUIMessagesResult<UIMessage> = await safeValidateUIMessages(
             messages: [
                 [
@@ -1522,7 +1522,7 @@ struct SafeValidateUIMessagesTests {
     }
 
     @Test("returns failure for invalid message structure")
-    func returnsFailureForInvalidStructure() async {
+    func returnsFailureForInvalidStructure() async throws {
         let result: SafeValidateUIMessagesResult<UIMessage> = await safeValidateUIMessages(
             messages: [
             ["role": "user"] as [String: Any]

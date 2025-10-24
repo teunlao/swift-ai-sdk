@@ -13,13 +13,13 @@ import Testing
  */
 struct CombineHeadersTests {
     @Test("combineHeaders: empty input returns empty dictionary")
-    func testEmptyInput() {
+    func testEmptyInput() throws {
         let result = combineHeaders()
         #expect(result.isEmpty)
     }
 
     @Test("combineHeaders: single dictionary returns same dictionary")
-    func testSingleDictionary() {
+    func testSingleDictionary() throws {
         let headers = ["Content-Type": "application/json"]
         let result = combineHeaders(headers)
 
@@ -28,7 +28,7 @@ struct CombineHeadersTests {
     }
 
     @Test("combineHeaders: combines multiple dictionaries")
-    func testMultipleDictionaries() {
+    func testMultipleDictionaries() throws {
         let headers1 = ["Content-Type": "application/json"]
         let headers2 = ["Authorization": "Bearer token"]
         let headers3 = ["User-Agent": "SwiftAISDK"]
@@ -42,7 +42,7 @@ struct CombineHeadersTests {
     }
 
     @Test("combineHeaders: later values override earlier ones")
-    func testOverrideValues() {
+    func testOverrideValues() throws {
         let headers1 = ["Content-Type": "text/plain", "X-Custom": "value1"]
         let headers2 = ["Content-Type": "application/json"]
 
@@ -54,7 +54,7 @@ struct CombineHeadersTests {
     }
 
     @Test("combineHeaders: handles nil dictionaries")
-    func testNilDictionaries() {
+    func testNilDictionaries() throws {
         let headers1: [String: String?]? = ["Content-Type": "application/json"]
         let headers2: [String: String?]? = nil
         let headers3: [String: String?]? = ["Authorization": "Bearer token"]
@@ -67,7 +67,7 @@ struct CombineHeadersTests {
     }
 
     @Test("combineHeaders: handles nil values in dictionaries")
-    func testNilValues() {
+    func testNilValues() throws {
         let headers1: [String: String?] = ["Content-Type": "application/json"]
         let headers2: [String: String?] = ["Authorization": nil]
 
@@ -81,7 +81,7 @@ struct CombineHeadersTests {
     }
 
     @Test("combineHeaders: nil value can override non-nil value")
-    func testNilOverridesValue() {
+    func testNilOverridesValue() throws {
         let headers1: [String: String?] = ["Content-Type": "application/json"]
         let headers2: [String: String?] = ["Content-Type": nil]
 
@@ -94,7 +94,7 @@ struct CombineHeadersTests {
     }
 
     @Test("combineHeaders: all nil dictionaries returns empty")
-    func testAllNilDictionaries() {
+    func testAllNilDictionaries() throws {
         let headers1: [String: String?]? = nil
         let headers2: [String: String?]? = nil
         let headers3: [String: String?]? = nil
@@ -105,7 +105,7 @@ struct CombineHeadersTests {
     }
 
     @Test("combineHeaders: empty dictionaries returns empty")
-    func testEmptyDictionaries() {
+    func testEmptyDictionaries() throws {
         let headers1: [String: String?] = [:]
         let headers2: [String: String?] = [:]
 
@@ -115,7 +115,7 @@ struct CombineHeadersTests {
     }
 
     @Test("combineHeaders: complex merge scenario")
-    func testComplexMerge() {
+    func testComplexMerge() throws {
         let baseHeaders: [String: String?] = [
             "Content-Type": "application/json",
             "Accept": "application/json"

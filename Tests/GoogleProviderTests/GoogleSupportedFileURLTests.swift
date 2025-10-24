@@ -11,7 +11,7 @@ import Testing
 @Suite("GoogleSupportedFileURL")
 struct GoogleSupportedFileURLTests {
     @Test("should return true for valid Google generative language file URLs")
-    func validGoogleFileURLs() {
+    func validGoogleFileURLs() throws {
         let validUrl = URL(string: "https://generativelanguage.googleapis.com/v1beta/files/00000000-00000000-00000000-00000000")!
         #expect(isGoogleSupportedFileURL(validUrl) == true)
 
@@ -20,7 +20,7 @@ struct GoogleSupportedFileURLTests {
     }
 
     @Test("should return true for valid YouTube URLs")
-    func validYouTubeURLs() {
+    func validYouTubeURLs() throws {
         let validYouTubeUrls = [
             URL(string: "https://www.youtube.com/watch?v=dQw4w9WgXcQ")!,
             URL(string: "https://youtube.com/watch?v=dQw4w9WgXcQ")!,
@@ -35,7 +35,7 @@ struct GoogleSupportedFileURLTests {
     }
 
     @Test("should return false for invalid YouTube URLs")
-    func invalidYouTubeURLs() {
+    func invalidYouTubeURLs() throws {
         let invalidYouTubeUrls = [
             URL(string: "https://youtube.com/channel/UCdQw4w9WgXcQ")!,
             URL(string: "https://youtube.com/playlist?list=PLdQw4w9WgXcQ")!,
@@ -50,7 +50,7 @@ struct GoogleSupportedFileURLTests {
     }
 
     @Test("should return false for non-Google generative language file URLs")
-    func nonGoogleFileURLs() {
+    func nonGoogleFileURLs() throws {
         let testCases = [
             URL(string: "https://example.com")!,
             URL(string: "https://example.com/foo/bar")!,

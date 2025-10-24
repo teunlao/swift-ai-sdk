@@ -7,7 +7,7 @@ struct GetResponseUIMessageIDTests {
     private let generator: IDGenerator = { "new-id" }
 
     @Test("should return nil when originalMessages is nil")
-    func returnsNilWhenOriginalMessagesNil() {
+    func returnsNilWhenOriginalMessagesNil() throws {
         let result = getResponseUIMessageId(
             originalMessages: (nil as [UIMessage]?),
             responseMessageId: generator
@@ -16,7 +16,7 @@ struct GetResponseUIMessageIDTests {
     }
 
     @Test("should return last assistant message id when present")
-    func returnsLastAssistantMessageId() {
+    func returnsLastAssistantMessageId() throws {
         let messages = [
             UIMessage(id: "msg-1", role: .user, parts: []),
             UIMessage(id: "msg-2", role: .assistant, parts: [])
@@ -31,7 +31,7 @@ struct GetResponseUIMessageIDTests {
     }
 
     @Test("should generate new id when last message is not assistant")
-    func generatesNewIdWhenLastMessageNotAssistant() {
+    func generatesNewIdWhenLastMessageNotAssistant() throws {
         let messages = [
             UIMessage(id: "msg-1", role: .assistant, parts: []),
             UIMessage(id: "msg-2", role: .user, parts: [])
@@ -46,7 +46,7 @@ struct GetResponseUIMessageIDTests {
     }
 
     @Test("should generate new id when messages array is empty")
-    func generatesNewIdWhenMessagesEmpty() {
+    func generatesNewIdWhenMessagesEmpty() throws {
         let result = getResponseUIMessageId(
             originalMessages: [UIMessage](),
             responseMessageId: generator
@@ -56,7 +56,7 @@ struct GetResponseUIMessageIDTests {
     }
 
     @Test("should use the responseMessageId when it is a string")
-    func usesLiteralResponseMessageId() {
+    func usesLiteralResponseMessageId() throws {
         let result = getResponseUIMessageId(
             originalMessages: [UIMessage](),
             responseMessageId: "response-id"

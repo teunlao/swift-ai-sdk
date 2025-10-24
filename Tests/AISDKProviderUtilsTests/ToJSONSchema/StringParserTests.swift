@@ -5,7 +5,7 @@ import Testing
 @Suite("String Parser")
 struct StringParserTests {
     @Test("minimum length")
-    func minimumLength() {
+    func minimumLength() throws {
         let schema = parseStringDef(
             TestZod.string([.min(value: 5, message: nil)])._def as! ZodStringDef,
             SchemaTestHelpers.refs()
@@ -20,7 +20,7 @@ struct StringParserTests {
     }
 
     @Test("maximum length")
-    func maximumLength() {
+    func maximumLength() throws {
         let schema = parseStringDef(
             TestZod.string([.max(value: 5, message: nil)])._def as! ZodStringDef,
             SchemaTestHelpers.refs()
@@ -35,7 +35,7 @@ struct StringParserTests {
     }
 
     @Test("length range")
-    func lengthRange() {
+    func lengthRange() throws {
         let def = TestZod.string([
             .min(value: 5, message: nil),
             .max(value: 5, message: nil),
@@ -52,7 +52,7 @@ struct StringParserTests {
     }
 
     @Test("email format")
-    func email() {
+    func email() throws {
         let schema = parseStringDef(
             TestZod.string([.email(message: nil)])._def as! ZodStringDef,
             SchemaTestHelpers.refs()
@@ -67,7 +67,7 @@ struct StringParserTests {
     }
 
     @Test("uuid format")
-    func uuid() {
+    func uuid() throws {
         let schema = parseStringDef(
             TestZod.string([.uuid(message: nil)])._def as! ZodStringDef,
             SchemaTestHelpers.refs()
@@ -82,7 +82,7 @@ struct StringParserTests {
     }
 
     @Test("url format")
-    func url() {
+    func url() throws {
         let schema = parseStringDef(
             TestZod.string([.url(message: nil)])._def as! ZodStringDef,
             SchemaTestHelpers.refs()
@@ -97,7 +97,7 @@ struct StringParserTests {
     }
 
     @Test("regex constraint")
-    func regex() {
+    func regex() throws {
         let schema = parseStringDef(
             TestZod.string([
                 .regex(pattern: ZodRegexPattern(pattern: "[A-C]"), message: nil)
@@ -114,7 +114,7 @@ struct StringParserTests {
     }
 
     @Test("cuid constraint")
-    func cuid() {
+    func cuid() throws {
         let schema = parseStringDef(
             TestZod.string([.cuid(message: nil)])._def as! ZodStringDef,
             SchemaTestHelpers.refs()
@@ -129,7 +129,7 @@ struct StringParserTests {
     }
 
     @Test("cuid2 constraint")
-    func cuid2() {
+    func cuid2() throws {
         let schema = parseStringDef(
             TestZod.string([.cuid2(message: nil)])._def as! ZodStringDef,
             SchemaTestHelpers.refs()
@@ -144,7 +144,7 @@ struct StringParserTests {
     }
 
     @Test("datetime constraint")
-    func datetime() {
+    func datetime() throws {
         let schema = parseStringDef(
             TestZod.string([.datetime(message: nil)])._def as! ZodStringDef,
             SchemaTestHelpers.refs()
@@ -159,7 +159,7 @@ struct StringParserTests {
     }
 
     @Test("date constraint")
-    func date() {
+    func date() throws {
         let schema = parseStringDef(
             TestZod.string([.date(message: nil)])._def as! ZodStringDef,
             SchemaTestHelpers.refs()
@@ -174,7 +174,7 @@ struct StringParserTests {
     }
 
     @Test("time constraint")
-    func time() {
+    func time() throws {
         let schema = parseStringDef(
             TestZod.string([.time(message: nil)])._def as! ZodStringDef,
             SchemaTestHelpers.refs()
@@ -189,7 +189,7 @@ struct StringParserTests {
     }
 
     @Test("duration constraint")
-    func duration() {
+    func duration() throws {
         let schema = parseStringDef(
             TestZod.string([.duration(message: nil)])._def as! ZodStringDef,
             SchemaTestHelpers.refs()
@@ -204,7 +204,7 @@ struct StringParserTests {
     }
 
     @Test("length constraint")
-    func length() {
+    func length() throws {
         let schema = parseStringDef(
             TestZod.string([.length(value: 15, message: nil)])._def as! ZodStringDef,
             SchemaTestHelpers.refs()
@@ -220,7 +220,7 @@ struct StringParserTests {
     }
 
     @Test("startsWith check")
-    func startsWith() {
+    func startsWith() throws {
         let schema = parseStringDef(
             TestZod.string([
                 .startsWith(value: "aBcD123{}[]", message: nil)
@@ -237,7 +237,7 @@ struct StringParserTests {
     }
 
     @Test("endsWith check")
-    func endsWith() {
+    func endsWith() throws {
         let schema = parseStringDef(
             TestZod.string([
                 .endsWith(value: "aBcD123{}[]", message: nil)
@@ -254,7 +254,7 @@ struct StringParserTests {
     }
 
     @Test("includes check")
-    func includes() {
+    func includes() throws {
         let schema = parseStringDef(
             TestZod.string([
                 .includes(value: "aBcD123{}[]", message: nil)
@@ -271,7 +271,7 @@ struct StringParserTests {
     }
 
     @Test("pattern strategy preserve")
-    func patternStrategyPreserve() {
+    func patternStrategyPreserve() throws {
         let schema = parseStringDef(
             TestZod.string([
                 .includes(value: "aBcD123{}[]", message: nil)
@@ -288,7 +288,7 @@ struct StringParserTests {
     }
 
     @Test("multiple pattern checks use allOf")
-    func multiplePatternChecks() {
+    func multiplePatternChecks() throws {
         let schema = parseStringDef(
             TestZod.string([
                 .startsWith(value: "alpha", message: nil),
@@ -309,7 +309,7 @@ struct StringParserTests {
     }
 
     @Test("multiple min/max picks extreme values")
-    func multipleMinMax() {
+    func multipleMinMax() throws {
         let schema = parseStringDef(
             TestZod.string([
                 .min(value: 1, message: nil),
@@ -330,7 +330,7 @@ struct StringParserTests {
     }
 
     @Test("multiple formats result in anyOf")
-    func multipleFormats() {
+    func multipleFormats() throws {
         let schema = parseStringDef(
             TestZod.string([
                 .ip(version: .v4AndV6, message: nil),
@@ -352,7 +352,7 @@ struct StringParserTests {
     }
 
     @Test("base64 strategies")
-    func base64Strategies() {
+    func base64Strategies() throws {
         let def = TestZod.string([.base64(message: nil)])._def as! ZodStringDef
 
         let defaultSchema = parseStringDef(def, SchemaTestHelpers.refs())
@@ -398,7 +398,7 @@ struct StringParserTests {
     }
 
     @Test("nanoid pattern")
-    func nanoid() {
+    func nanoid() throws {
         let schema = parseStringDef(
             TestZod.string([.nanoid(message: nil)])._def as! ZodStringDef,
             SchemaTestHelpers.refs()
@@ -413,7 +413,7 @@ struct StringParserTests {
     }
 
     @Test("ulid pattern")
-    func ulid() {
+    func ulid() throws {
         let schema = parseStringDef(
             TestZod.string([.ulid(message: nil)])._def as! ZodStringDef,
             SchemaTestHelpers.refs()
@@ -428,7 +428,7 @@ struct StringParserTests {
     }
 
     @Test("email strategies")
-    func emailStrategies() {
+    func emailStrategies() throws {
         let def = TestZod.string([.email(message: nil)])._def as! ZodStringDef
 
         let defaultSchema = parseStringDef(def, SchemaTestHelpers.refs())
@@ -459,7 +459,7 @@ struct StringParserTests {
     }
 
     @Test("regex flag conversion")
-    func regexFlagConversion() {
+    func regexFlagConversion() throws {
         let base = TestZod.string([
             .regex(pattern: ZodRegexPattern(pattern: "(^|\\^foo)Ba[r-z]+."), message: nil)
         ])

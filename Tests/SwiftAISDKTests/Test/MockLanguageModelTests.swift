@@ -214,7 +214,7 @@ struct MockLanguageModelTests {
     // MARK: - MockValues Tests
 
     @Test("mockValues returns values sequentially")
-    func testMockValuesSequential() {
+    func testMockValuesSequential() throws {
         let values = mockValues(1, 2, 3)
 
         #expect(values() == 1)
@@ -223,7 +223,7 @@ struct MockLanguageModelTests {
     }
 
     @Test("mockValues repeats last value when exhausted")
-    func testMockValuesRepeatsLast() {
+    func testMockValuesRepeatsLast() throws {
         let values = mockValues("a", "b")
 
         #expect(values() == "a")
@@ -233,7 +233,7 @@ struct MockLanguageModelTests {
     }
 
     @Test("mockValues works with single value")
-    func testMockValuesSingle() {
+    func testMockValuesSingle() throws {
         let values = mockValues(42)
 
         #expect(values() == 42)

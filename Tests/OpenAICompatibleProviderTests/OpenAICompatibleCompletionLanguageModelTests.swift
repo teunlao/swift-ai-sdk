@@ -19,7 +19,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
     // MARK: - Config Tests
 
     @Test("should extract base name from provider string")
-    func extractBaseNameFromProviderString() {
+    func extractBaseNameFromProviderString() throws {
         let model = OpenAICompatibleCompletionLanguageModel(
             modelId: OpenAICompatibleCompletionModelId(rawValue: "gpt-4"),
             config: OpenAICompatibleCompletionConfig(
@@ -39,7 +39,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
     }
 
     @Test("should handle provider without dot notation")
-    func handleProviderWithoutDotNotation() {
+    func handleProviderWithoutDotNotation() throws {
         let model = OpenAICompatibleCompletionLanguageModel(
             modelId: OpenAICompatibleCompletionModelId(rawValue: "gpt-4"),
             config: OpenAICompatibleCompletionConfig(
@@ -58,7 +58,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
     }
 
     @Test("should return empty for empty provider")
-    func returnEmptyForEmptyProvider() {
+    func returnEmptyForEmptyProvider() throws {
         let model = OpenAICompatibleCompletionLanguageModel(
             modelId: OpenAICompatibleCompletionModelId(rawValue: "gpt-4"),
             config: OpenAICompatibleCompletionConfig(
@@ -130,7 +130,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
             fetch: fetch
         ))
 
-        let model = provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
+        let model = try provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
         let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: testPrompt))
 
         #expect(result.content.count == 1)
@@ -161,7 +161,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
             fetch: fetch
         ))
 
-        let model = provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
+        let model = try provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
         let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: testPrompt))
 
         #expect(result.usage.inputTokens == 20)
@@ -189,7 +189,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
             fetch: fetch
         ))
 
-        let model = provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
+        let model = try provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
         let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: testPrompt))
 
         #expect(result.request != nil)
@@ -228,7 +228,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
             fetch: fetch
         ))
 
-        let model = provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
+        let model = try provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
         let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: testPrompt))
 
         #expect(result.response?.id == "test-id")
@@ -254,7 +254,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
             fetch: fetch
         ))
 
-        let model = provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
+        let model = try provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
         let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: testPrompt))
 
         #expect(result.finishReason == .stop)
@@ -278,7 +278,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
             fetch: fetch
         ))
 
-        let model = provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
+        let model = try provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
         let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: testPrompt))
 
         #expect(result.finishReason == .unknown)
@@ -302,7 +302,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
             fetch: fetch
         ))
 
-        let model = provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
+        let model = try provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
         let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: testPrompt))
 
         #expect(result.response?.headers?["test-header"] == "test-value")
@@ -328,7 +328,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
             fetch: fetch
         ))
 
-        let model = provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
+        let model = try provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
         _ = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: testPrompt))
 
         guard let request = await capture.current(),
@@ -369,7 +369,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
             fetch: fetch
         ))
 
-        let model = provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
+        let model = try provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
         _ = try await model.doGenerate(
             options: LanguageModelV3CallOptions(
                 prompt: testPrompt,
@@ -412,7 +412,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
             fetch: fetch
         ))
 
-        let model = provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
+        let model = try provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
         _ = try await model.doGenerate(
             options: LanguageModelV3CallOptions(
                 prompt: testPrompt,
@@ -452,7 +452,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
             fetch: fetch
         ))
 
-        let model = provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
+        let model = try provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
         _ = try await model.doGenerate(
             options: LanguageModelV3CallOptions(
                 prompt: testPrompt,
@@ -509,7 +509,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
             fetch: fetch
         ))
 
-        let model = provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
+        let model = try provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
         let streamResult = try await model.doStream(options: LanguageModelV3CallOptions(prompt: testPrompt))
 
         var parts: [LanguageModelV3StreamPart] = []
@@ -554,7 +554,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
             fetch: fetch
         ))
 
-        let model = provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
+        let model = try provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
         let streamResult = try await model.doStream(options: LanguageModelV3CallOptions(prompt: testPrompt))
 
         var parts: [LanguageModelV3StreamPart] = []
@@ -590,7 +590,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
             fetch: fetch
         ))
 
-        let model = provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
+        let model = try provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
         let streamResult = try await model.doStream(options: LanguageModelV3CallOptions(prompt: testPrompt))
 
         #expect(streamResult.request != nil)
@@ -632,7 +632,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
             fetch: fetch
         ))
 
-        let model = provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
+        let model = try provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
         let streamResult = try await model.doStream(options: LanguageModelV3CallOptions(prompt: testPrompt))
 
         #expect(streamResult.response?.headers?["test-header"] == "test-value")
@@ -662,7 +662,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
             fetch: fetch
         ))
 
-        let model = provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
+        let model = try provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
         _ = try await model.doStream(options: LanguageModelV3CallOptions(prompt: testPrompt))
 
         guard let request = await capture.current(),
@@ -703,7 +703,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
             fetch: fetch
         ))
 
-        let model = provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
+        let model = try provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
         _ = try await model.doStream(
             options: LanguageModelV3CallOptions(
                 prompt: testPrompt,
@@ -744,7 +744,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
             fetch: fetch
         ))
 
-        let model = provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
+        let model = try provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
         _ = try await model.doStream(
             options: LanguageModelV3CallOptions(
                 prompt: testPrompt,
@@ -787,7 +787,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
             fetch: fetch
         ))
 
-        let model = provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
+        let model = try provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
         _ = try await model.doStream(
             options: LanguageModelV3CallOptions(
                 prompt: testPrompt,

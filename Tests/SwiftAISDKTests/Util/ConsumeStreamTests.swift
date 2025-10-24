@@ -14,7 +14,7 @@ import Foundation
 @Suite("ConsumeStream Tests")
 struct ConsumeStreamTests {
     @Test("consumes stream successfully")
-    func consumesStreamSuccessfully() async {
+    func consumesStreamSuccessfully() async throws {
         // Create a simple async stream
         let stream = AsyncStream<Int> { continuation in
             for i in 1...5 {
@@ -30,7 +30,7 @@ struct ConsumeStreamTests {
     }
 
     @Test("calls onError when stream throws")
-    func callsOnErrorWhenStreamThrows() async {
+    func callsOnErrorWhenStreamThrows() async throws {
         // Use actor to safely capture error in concurrent context
         actor ErrorCapture {
             var error: Error?
@@ -62,7 +62,7 @@ struct ConsumeStreamTests {
     }
 
     @Test("consumes empty stream")
-    func consumesEmptyStream() async {
+    func consumesEmptyStream() async throws {
         // Create an empty stream
         let stream = AsyncStream<Int> { continuation in
             continuation.finish()
@@ -75,7 +75,7 @@ struct ConsumeStreamTests {
     }
 
     @Test("consumes stream with large number of elements")
-    func consumesStreamWithLargeNumberOfElements() async {
+    func consumesStreamWithLargeNumberOfElements() async throws {
         let elementCount = 1000
         var yieldedCount = 0
 

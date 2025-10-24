@@ -67,7 +67,7 @@ struct OpenAICompatibleEmbeddingModelTests {
             fetch: fetch
         ))
 
-        let model = provider.textEmbeddingModel(modelId: "text-embedding-3-large")
+        let model = try provider.textEmbeddingModel(modelId: "text-embedding-3-large")
         let result = try await model.doEmbed(options: EmbeddingModelV3DoEmbedOptions(values: testValues))
 
         #expect(result.embeddings == dummyEmbeddings)
@@ -111,7 +111,7 @@ struct OpenAICompatibleEmbeddingModelTests {
             fetch: fetch
         ))
 
-        let model = provider.textEmbeddingModel(modelId: "text-embedding-3-large")
+        let model = try provider.textEmbeddingModel(modelId: "text-embedding-3-large")
         let result = try await model.doEmbed(options: EmbeddingModelV3DoEmbedOptions(values: testValues))
 
         #expect(result.response?.headers?["test-header"] == "test-value")
@@ -155,7 +155,7 @@ struct OpenAICompatibleEmbeddingModelTests {
             fetch: fetch
         ))
 
-        let model = provider.textEmbeddingModel(modelId: "text-embedding-3-large")
+        let model = try provider.textEmbeddingModel(modelId: "text-embedding-3-large")
         let result = try await model.doEmbed(options: EmbeddingModelV3DoEmbedOptions(values: testValues))
 
         #expect(result.usage?.tokens == 20)
@@ -201,7 +201,7 @@ struct OpenAICompatibleEmbeddingModelTests {
             fetch: fetch
         ))
 
-        let model = provider.textEmbeddingModel(modelId: "text-embedding-3-large")
+        let model = try provider.textEmbeddingModel(modelId: "text-embedding-3-large")
         _ = try await model.doEmbed(options: EmbeddingModelV3DoEmbedOptions(values: testValues))
 
         guard let request = await capture.current(),
@@ -260,7 +260,7 @@ struct OpenAICompatibleEmbeddingModelTests {
             fetch: fetch
         ))
 
-        let model = provider.textEmbeddingModel(modelId: "text-embedding-3-large")
+        let model = try provider.textEmbeddingModel(modelId: "text-embedding-3-large")
         _ = try await model.doEmbed(
             options: EmbeddingModelV3DoEmbedOptions(
                 values: testValues,
@@ -330,7 +330,7 @@ struct OpenAICompatibleEmbeddingModelTests {
             fetch: fetch
         ))
 
-        let model = provider.textEmbeddingModel(modelId: "text-embedding-3-large")
+        let model = try provider.textEmbeddingModel(modelId: "text-embedding-3-large")
         _ = try await model.doEmbed(
             options: EmbeddingModelV3DoEmbedOptions(
                 values: testValues,

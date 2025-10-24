@@ -136,7 +136,7 @@ struct StreamObjectTests {
     }
 
     @Test("onError is invoked for parse errors")
-    func onErrorTriggered() async {
+    func onErrorTriggered() async throws {
         let errorModel = MockStreamLanguageModel(parts: [
             .streamStart(warnings: []),
             .responseMetadata(id: "id-1", modelId: "mock", timestamp: Date(timeIntervalSince1970: 0)),

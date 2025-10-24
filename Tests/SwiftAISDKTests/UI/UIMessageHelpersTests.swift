@@ -4,7 +4,7 @@ import Testing
 @Suite("UIMessage helpers")
 struct UIMessageHelpersTests {
     @Test("returns tool name without prefix")
-    func returnsToolName() {
+    func returnsToolName() throws {
         let part = UIToolUIPart(
             toolName: "getLocation",
             toolCallId: "tool1",
@@ -17,7 +17,7 @@ struct UIMessageHelpersTests {
     }
 
     @Test("returns tool name with dash preserved")
-    func returnsToolNameWithDash() {
+    func returnsToolNameWithDash() throws {
         let part = UIToolUIPart(
             toolName: "get-location",
             toolCallId: "tool1",

@@ -28,7 +28,7 @@ struct ExtractResponseHeadersTests {
     }
 
     @Test("extractResponseHeaders: extracts headers from response")
-    func testBasicExtraction() {
+    func testBasicExtraction() throws {
         let headers = [
             "Content-Type": "application/json",
             "Content-Length": "1234"
@@ -44,7 +44,7 @@ struct ExtractResponseHeadersTests {
     }
 
     @Test("extractResponseHeaders: handles empty headers")
-    func testEmptyHeaders() {
+    func testEmptyHeaders() throws {
         let response = createResponse(headers: [:])
 
         let result = extractResponseHeaders(from: response)
@@ -53,7 +53,7 @@ struct ExtractResponseHeadersTests {
     }
 
     @Test("extractResponseHeaders: extracts multiple headers")
-    func testMultipleHeaders() {
+    func testMultipleHeaders() throws {
         let headers = [
             "Content-Type": "application/json",
             "Authorization": "Bearer token",
@@ -73,7 +73,7 @@ struct ExtractResponseHeadersTests {
     }
 
     @Test("extractResponseHeaders: preserves header case")
-    func testHeaderCase() {
+    func testHeaderCase() throws {
         let headers = [
             "Content-Type": "application/json",
             "content-length": "1234",
@@ -92,7 +92,7 @@ struct ExtractResponseHeadersTests {
     }
 
     @Test("extractResponseHeaders: handles common HTTP headers")
-    func testCommonHTTPHeaders() {
+    func testCommonHTTPHeaders() throws {
         let headers = [
             "Content-Type": "application/json; charset=utf-8",
             "Cache-Control": "no-cache",
@@ -116,7 +116,7 @@ struct ExtractResponseHeadersTests {
     }
 
     @Test("extractResponseHeaders: handles different status codes")
-    func testDifferentStatusCodes() {
+    func testDifferentStatusCodes() throws {
         let headers = ["Content-Type": "application/json"]
 
         // Test 200 OK
@@ -136,7 +136,7 @@ struct ExtractResponseHeadersTests {
     }
 
     @Test("extractResponseHeaders: handles special characters in values")
-    func testSpecialCharactersInValues() {
+    func testSpecialCharactersInValues() throws {
         let headers = [
             "X-Custom": "value with spaces",
             "X-Quotes": "\"quoted value\"",

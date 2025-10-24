@@ -25,7 +25,7 @@ struct OpenAICompatibleImageModelTests {
     private let prompt = "A photorealistic astronaut riding a horse"
 
     @Test("should expose correct provider and model information")
-    func modelInformation() {
+    func modelInformation() throws {
         let model = OpenAICompatibleImageModel(
             modelId: OpenAICompatibleImageModelId(rawValue: "dall-e-3"),
             config: OpenAICompatibleImageModelConfig(

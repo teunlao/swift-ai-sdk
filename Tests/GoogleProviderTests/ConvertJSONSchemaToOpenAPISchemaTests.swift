@@ -6,7 +6,7 @@ import Testing
 @Suite("convertJSONSchemaToOpenAPISchema")
 struct ConvertJSONSchemaToOpenAPISchemaTests {
     @Test("returns nil for empty object schema")
-    func emptyObjectSchema() {
+    func emptyObjectSchema() throws {
         let schema: JSONValue = .object([
             "type": .string("object"),
             "properties": .object([:])
@@ -17,7 +17,7 @@ struct ConvertJSONSchemaToOpenAPISchemaTests {
     }
 
     @Test("copies description and type values")
-    func preservesDescriptionAndType() {
+    func preservesDescriptionAndType() throws {
         let schema: JSONValue = .object([
             "type": .string("string"),
             "description": .string("An identifier")
@@ -29,7 +29,7 @@ struct ConvertJSONSchemaToOpenAPISchemaTests {
     }
 
     @Test("marks nullable enums that include null")
-    func nullableEnum() {
+    func nullableEnum() throws {
         let schema: JSONValue = .object([
             "type": .array([
                 .string("string"),
@@ -52,7 +52,7 @@ struct ConvertJSONSchemaToOpenAPISchemaTests {
     }
 
     @Test("handles array item schemas")
-    func arrayItems() {
+    func arrayItems() throws {
         let schema: JSONValue = .object([
             "type": .string("array"),
             "items": .object([
@@ -69,7 +69,7 @@ struct ConvertJSONSchemaToOpenAPISchemaTests {
     }
 
     @Test("should remove additionalProperties and $schema")
-    func removeAdditionalPropertiesAndSchema() {
+    func removeAdditionalPropertiesAndSchema() throws {
         let schema: JSONValue = .object([
             "$schema": .string("http://json-schema.org/draft-07/schema#"),
             "type": .string("object"),
@@ -88,7 +88,7 @@ struct ConvertJSONSchemaToOpenAPISchemaTests {
     }
 
     @Test("should remove additionalProperties object from nested object schemas")
-    func removeAdditionalPropertiesFromNested() {
+    func removeAdditionalPropertiesFromNested() throws {
         let schema: JSONValue = .object([
             "type": .string("object"),
             "properties": .object([
@@ -109,7 +109,7 @@ struct ConvertJSONSchemaToOpenAPISchemaTests {
     }
 
     @Test("should handle nested objects and arrays")
-    func handleNestedObjectsAndArrays() {
+    func handleNestedObjectsAndArrays() throws {
         let schema: JSONValue = .object([
             "type": .string("object"),
             "properties": .object([
@@ -137,7 +137,7 @@ struct ConvertJSONSchemaToOpenAPISchemaTests {
     }
 
     @Test("should convert const to enum with a single value")
-    func convertConstToEnum() {
+    func convertConstToEnum() throws {
         let schema: JSONValue = .object([
             "type": .string("object"),
             "properties": .object([
@@ -153,7 +153,7 @@ struct ConvertJSONSchemaToOpenAPISchemaTests {
     }
 
     @Test("should handle allOf, anyOf, and oneOf")
-    func handleCombinators() {
+    func handleCombinators() throws {
         let schema: JSONValue = .object([
             "type": .string("object"),
             "properties": .object([
@@ -175,7 +175,7 @@ struct ConvertJSONSchemaToOpenAPISchemaTests {
     }
 
     @Test("should convert format: date-time correctly")
-    func convertDateTimeFormat() {
+    func convertDateTimeFormat() throws {
         let schema: JSONValue = .object([
             "type": .string("object"),
             "properties": .object([
@@ -193,7 +193,7 @@ struct ConvertJSONSchemaToOpenAPISchemaTests {
     }
 
     @Test("should handle required properties")
-    func handleRequiredProperties() {
+    func handleRequiredProperties() throws {
         let schema: JSONValue = .object([
             "type": .string("object"),
             "properties": .object([
@@ -209,7 +209,7 @@ struct ConvertJSONSchemaToOpenAPISchemaTests {
     }
 
     @Test("should convert deeply nested const to enum")
-    func deeplyNestedConst() {
+    func deeplyNestedConst() throws {
         let schema: JSONValue = .object([
             "type": .string("object"),
             "properties": .object([
@@ -232,7 +232,7 @@ struct ConvertJSONSchemaToOpenAPISchemaTests {
     }
 
     @Test("should handle null type correctly")
-    func handleNullType() {
+    func handleNullType() throws {
         let schema: JSONValue = .object([
             "type": .string("object"),
             "properties": .object([
@@ -248,7 +248,7 @@ struct ConvertJSONSchemaToOpenAPISchemaTests {
     }
 
     @Test("should convert string enum properties")
-    func convertStringEnum() {
+    func convertStringEnum() throws {
         let schema: JSONValue = .object([
             "type": .string("object"),
             "properties": .object([
@@ -270,7 +270,7 @@ struct ConvertJSONSchemaToOpenAPISchemaTests {
     }
 
     @Test("should convert nullable string enum")
-    func convertNullableStringEnum() {
+    func convertNullableStringEnum() throws {
         let schema: JSONValue = .object([
             "type": .string("object"),
             "properties": .object([

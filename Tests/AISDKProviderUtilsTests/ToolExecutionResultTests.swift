@@ -29,7 +29,7 @@ struct ToolExecutionResultTests {
     }
 
     @Test("value case isStreaming is false")
-    func valueIsNotStreaming() {
+    func valueIsNotStreaming() throws {
         let result = ToolExecutionResult.value(42)
         #expect(result.isStreaming == false)
     }
@@ -92,7 +92,7 @@ struct ToolExecutionResultTests {
     }
 
     @Test("future case isStreaming is false")
-    func futureIsNotStreaming() {
+    func futureIsNotStreaming() throws {
         let result = ToolExecutionResult<Int>.future { 42 }
         #expect(result.isStreaming == false)
     }
@@ -198,7 +198,7 @@ struct ToolExecutionResultTests {
     // MARK: - .stream Case Tests
 
     @Test("stream case isStreaming is true")
-    func streamIsStreaming() {
+    func streamIsStreaming() throws {
         let stream = AsyncThrowingStream<Int, Error> { continuation in
             continuation.yield(1)
             continuation.finish()
@@ -310,7 +310,7 @@ struct ToolExecutionResultTests {
     // MARK: - Error Type Tests
 
     @Test("ToolExecutionResultError has correct description")
-    func errorHasCorrectDescription() {
+    func errorHasCorrectDescription() throws {
         let error = ToolExecutionResultError.streamingResultRequiresStreamConsumption
         let description = error.errorDescription
 

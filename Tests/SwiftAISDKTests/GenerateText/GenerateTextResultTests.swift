@@ -105,7 +105,7 @@ struct GenerateTextResultTests {
     }
 
     @Test("throws when experimental output missing")
-    func experimentalOutputMissing() {
+    func experimentalOutputMissing() throws {
         let steps: [StepResult] = [makeStep(identifier: "solo")]
 
         let result = DefaultGenerateTextResult<String>(

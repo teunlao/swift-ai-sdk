@@ -324,10 +324,10 @@ struct OpenAIImageModelTests {
 
     // Port of should respect maxImagesPerCall setting
     @Test("maxImagesPerCall returns correct values for different models")
-    func testMaxImagesPerCall() {
+    func testMaxImagesPerCall() throws {
         let provider = createOpenAIProvider(settings: OpenAIProviderSettings(apiKey: "test-api-key"))
 
-        let dalleE2Model = provider.imageModel(modelId: "dall-e-2")
+        let dalleE2Model = try provider.imageModel(modelId: "dall-e-2")
         // Swift adaptation: enum case instead of direct number
         if case .value(let count) = dalleE2Model.maxImagesPerCall {
             #expect(count == 10)
@@ -335,7 +335,7 @@ struct OpenAIImageModelTests {
             Issue.record("Expected .value(10) for dall-e-2 maxImagesPerCall")
         }
 
-        let unknownModel = provider.imageModel(modelId: "unknown-model")
+        let unknownModel = try provider.imageModel(modelId: "unknown-model")
         // Swift adaptation: enum case instead of direct number
         if case .value(let count) = unknownModel.maxImagesPerCall {
             #expect(count == 1)

@@ -158,7 +158,7 @@ struct ProviderDefinedToolFactoryTests {
     }
 
     @Test("factory defaults omit optional components")
-    func factoryDefaults() {
+    func factoryDefaults() throws {
         let inputSchema = FlexibleSchema(jsonSchema(JSONValue.object(["type": .string("string")])))
 
         let factory = createProviderDefinedToolFactory(

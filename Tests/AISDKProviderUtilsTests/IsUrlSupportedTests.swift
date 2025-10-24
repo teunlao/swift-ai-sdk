@@ -18,7 +18,7 @@ struct IsUrlSupportedTests {
     @Suite("No URLs supported")
     struct NoUrlsSupported {
         @Test("returns false when model does not support any URLs")
-        func returnsFalse() {
+        func returnsFalse() throws {
             let result = isUrlSupported(
                 mediaType: "text/plain",
                 url: "https://example.com",
@@ -31,7 +31,7 @@ struct IsUrlSupportedTests {
     @Suite("Specific media types and URLs")
     struct SpecificMediaTypes {
         @Test("returns true for exact media type and exact URL match")
-        func exactMediaTypeAndUrl() {
+        func exactMediaTypeAndUrl() throws {
             let result = isUrlSupported(
                 mediaType: "text/plain",
                 url: "https://example.com",
@@ -43,7 +43,7 @@ struct IsUrlSupportedTests {
         }
 
         @Test("returns true for exact media type and regex URL match")
-        func exactMediaTypeAndRegexUrl() {
+        func exactMediaTypeAndRegexUrl() throws {
             let result = isUrlSupported(
                 mediaType: "image/png",
                 url: "https://images.example.com/cat.png",
@@ -55,7 +55,7 @@ struct IsUrlSupportedTests {
         }
 
         @Test("returns true for exact media type and one of multiple regex URLs match")
-        func exactMediaTypeAndMultipleUrls() {
+        func exactMediaTypeAndMultipleUrls() throws {
             let result = isUrlSupported(
                 mediaType: "image/png",
                 url: "https://another.com/img.png",
@@ -70,7 +70,7 @@ struct IsUrlSupportedTests {
         }
 
         @Test("returns false for exact media type but URL mismatch")
-        func exactMediaTypeButUrlMismatch() {
+        func exactMediaTypeButUrlMismatch() throws {
             let result = isUrlSupported(
                 mediaType: "text/plain",
                 url: "https://another.com",
@@ -82,7 +82,7 @@ struct IsUrlSupportedTests {
         }
 
         @Test("returns false for URL match but media type mismatch")
-        func urlMatchButMediaTypeMismatch() {
+        func urlMatchButMediaTypeMismatch() throws {
             let result = isUrlSupported(
                 mediaType: "image/png", // Different media type
                 url: "https://example.com",
@@ -97,7 +97,7 @@ struct IsUrlSupportedTests {
     @Suite("Wildcard media type (*)")
     struct WildcardMediaType {
         @Test("returns true for wildcard media type and exact URL match")
-        func wildcardMediaTypeAndExactUrl() {
+        func wildcardMediaTypeAndExactUrl() throws {
             let result = isUrlSupported(
                 mediaType: "text/plain",
                 url: "https://example.com",
@@ -109,7 +109,7 @@ struct IsUrlSupportedTests {
         }
 
         @Test("returns true for wildcard media type and regex URL match")
-        func wildcardMediaTypeAndRegexUrl() {
+        func wildcardMediaTypeAndRegexUrl() throws {
             let result = isUrlSupported(
                 mediaType: "image/jpeg",
                 url: "https://images.example.com/dog.jpg",
@@ -121,7 +121,7 @@ struct IsUrlSupportedTests {
         }
 
         @Test("returns false for wildcard media type but URL mismatch")
-        func wildcardMediaTypeButUrlMismatch() {
+        func wildcardMediaTypeButUrlMismatch() throws {
             let result = isUrlSupported(
                 mediaType: "video/mp4",
                 url: "https://another.com",
@@ -141,7 +141,7 @@ struct IsUrlSupportedTests {
         ]
 
         @Test("returns true if URL matches under specific media type")
-        func urlMatchesSpecificMediaType() {
+        func urlMatchesSpecificMediaType() throws {
             let result = isUrlSupported(
                 mediaType: "text/plain",
                 url: "https://text.com",
@@ -151,7 +151,7 @@ struct IsUrlSupportedTests {
         }
 
         @Test("returns true if URL matches under wildcard media type even if specific exists")
-        func urlMatchesWildcardEvenIfSpecificExists() {
+        func urlMatchesWildcardEvenIfSpecificExists() throws {
             let result = isUrlSupported(
                 mediaType: "text/plain", // Specific type exists
                 url: "https://any.com", // Matches wildcard
@@ -161,7 +161,7 @@ struct IsUrlSupportedTests {
         }
 
         @Test("returns true if URL matches under wildcard for a non-specified media type")
-        func urlMatchesWildcardForNonSpecifiedMediaType() {
+        func urlMatchesWildcardForNonSpecifiedMediaType() throws {
             let result = isUrlSupported(
                 mediaType: "image/png", // No specific entry for this type
                 url: "https://any.com", // Matches wildcard
@@ -171,7 +171,7 @@ struct IsUrlSupportedTests {
         }
 
         @Test("returns false if URL matches neither specific nor wildcard")
-        func urlMatchesNeitherSpecificNorWildcard() {
+        func urlMatchesNeitherSpecificNorWildcard() throws {
             let result = isUrlSupported(
                 mediaType: "text/plain",
                 url: "https://other.com",
@@ -181,7 +181,7 @@ struct IsUrlSupportedTests {
         }
 
         @Test("returns false if URL does not match wildcard for a non-specified media type")
-        func urlDoesNotMatchWildcardForNonSpecifiedMediaType() {
+        func urlDoesNotMatchWildcardForNonSpecifiedMediaType() throws {
             let result = isUrlSupported(
                 mediaType: "image/png",
                 url: "https://other.com",
@@ -194,7 +194,7 @@ struct IsUrlSupportedTests {
     @Suite("Edge cases")
     struct EdgeCases {
         @Test("returns true if an empty URL matches a pattern")
-        func emptyUrlMatchesPattern() {
+        func emptyUrlMatchesPattern() throws {
             let result = isUrlSupported(
                 mediaType: "text/plain",
                 url: "",
@@ -206,7 +206,7 @@ struct IsUrlSupportedTests {
         }
 
         @Test("returns false if an empty URL does not match a pattern")
-        func emptyUrlDoesNotMatchPattern() {
+        func emptyUrlDoesNotMatchPattern() throws {
             let result = isUrlSupported(
                 mediaType: "text/plain",
                 url: "",
@@ -221,7 +221,7 @@ struct IsUrlSupportedTests {
     @Suite("Case sensitivity")
     struct CaseSensitivity {
         @Test("is case-insensitive for media types")
-        func caseInsensitiveForMediaTypes() {
+        func caseInsensitiveForMediaTypes() throws {
             let result = isUrlSupported(
                 mediaType: "TEXT/PLAIN", // Uppercase
                 url: "https://example.com",
@@ -233,7 +233,7 @@ struct IsUrlSupportedTests {
         }
 
         @Test("handles case-insensitive regex for URLs if specified")
-        func caseInsensitiveForUrls() {
+        func caseInsensitiveForUrls() throws {
             let result = isUrlSupported(
                 mediaType: "text/plain",
                 url: "https://EXAMPLE.com/path", // Uppercase domain
@@ -245,7 +245,7 @@ struct IsUrlSupportedTests {
         }
 
         @Test("is case-insensitive for URL paths by default regex")
-        func caseInsensitiveForUrlPaths() {
+        func caseInsensitiveForUrlPaths() throws {
             let result = isUrlSupported(
                 mediaType: "text/plain",
                 url: "https://example.com/PATH", // Uppercase path
@@ -260,7 +260,7 @@ struct IsUrlSupportedTests {
     @Suite("Wildcard subtypes in media types")
     struct WildcardSubtypes {
         @Test("returns true for wildcard subtype match")
-        func wildcardSubtypeMatch() {
+        func wildcardSubtypeMatch() throws {
             let result = isUrlSupported(
                 mediaType: "image/png",
                 url: "https://example.com",
@@ -272,7 +272,7 @@ struct IsUrlSupportedTests {
         }
 
         @Test("uses full wildcard if subtype wildcard is not matched or supported")
-        func usesFullWildcardIfSubtypeNotMatched() {
+        func usesFullWildcardIfSubtypeNotMatched() throws {
             let result = isUrlSupported(
                 mediaType: "image/png",
                 url: "https://any.com",
@@ -288,7 +288,7 @@ struct IsUrlSupportedTests {
     @Suite("Empty URL arrays for a media type")
     struct EmptyUrlArrays {
         @Test("returns false if the specific media type has an empty URL array")
-        func specificMediaTypeHasEmptyArray() {
+        func specificMediaTypeHasEmptyArray() throws {
             let result = isUrlSupported(
                 mediaType: "text/plain",
                 url: "https://example.com",
@@ -300,7 +300,7 @@ struct IsUrlSupportedTests {
         }
 
         @Test("falls back to wildcard if specific media type has empty array but wildcard matches")
-        func fallsBackToWildcardIfSpecificHasEmptyArray() {
+        func fallsBackToWildcardIfSpecificHasEmptyArray() throws {
             let result = isUrlSupported(
                 mediaType: "text/plain",
                 url: "https://any.com",
@@ -313,7 +313,7 @@ struct IsUrlSupportedTests {
         }
 
         @Test("returns false if specific media type has empty array and wildcard does not match")
-        func specificHasEmptyArrayAndWildcardDoesNotMatch() {
+        func specificHasEmptyArrayAndWildcardDoesNotMatch() throws {
             let result = isUrlSupported(
                 mediaType: "text/plain",
                 url: "https://another.com",

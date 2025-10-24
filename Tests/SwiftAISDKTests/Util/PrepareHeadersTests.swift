@@ -16,7 +16,7 @@ import Testing
 struct PrepareHeadersTests {
 
     @Test("should set Content-Type header if not present")
-    func testSetHeaderIfNotPresent() {
+    func testSetHeaderIfNotPresent() throws {
         let headers = prepareHeaders(
             [:],
             defaultHeaders: ["content-type": "application/json"]
@@ -27,7 +27,7 @@ struct PrepareHeadersTests {
     }
 
     @Test("should not overwrite existing Content-Type header")
-    func testDoNotOverwriteExisting() {
+    func testDoNotOverwriteExisting() throws {
         let headers = prepareHeaders(
             ["Content-Type": "text/html"],
             defaultHeaders: ["content-type": "application/json"]
@@ -40,7 +40,7 @@ struct PrepareHeadersTests {
     }
 
     @Test("should handle nil headers init")
-    func testHandleNilInit() {
+    func testHandleNilInit() throws {
         let headers = prepareHeaders(
             nil,
             defaultHeaders: ["content-type": "application/json"]
@@ -50,7 +50,7 @@ struct PrepareHeadersTests {
     }
 
     @Test("should preserve existing headers and add defaults")
-    func testPreserveExistingAndAddDefaults() {
+    func testPreserveExistingAndAddDefaults() throws {
         let headers = prepareHeaders(
             ["init": "foo"],
             defaultHeaders: ["content-type": "application/json"]
@@ -61,7 +61,7 @@ struct PrepareHeadersTests {
     }
 
     @Test("should handle multiple existing and default headers")
-    func testMultipleHeaders() {
+    func testMultipleHeaders() throws {
         let headers = prepareHeaders(
             ["init": "foo", "extra": "bar"],
             defaultHeaders: ["content-type": "application/json", "user-agent": "SDK/1.0"]
@@ -74,7 +74,7 @@ struct PrepareHeadersTests {
     }
 
     @Test("should handle case-insensitive header matching")
-    func testCaseInsensitiveMatching() {
+    func testCaseInsensitiveMatching() throws {
         // Existing header with different casing should prevent default from being added
         let headers = prepareHeaders(
             ["Content-Type": "text/html"],

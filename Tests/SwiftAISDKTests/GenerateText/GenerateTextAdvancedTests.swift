@@ -1098,7 +1098,7 @@ struct GenerateTextAdvancedTests {
             let entries = collector.entries()
             #expect(entries.count == 1)
             if let first = entries.first {
-                let expected = expectedWarnings.map { Warning.languageModel($0) }
+                let expected = try expectedWarnings.map { Warning.languageModel($0) }
                 #expect(first == expected)
             }
         }

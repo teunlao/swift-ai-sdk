@@ -5,7 +5,7 @@ import Testing
 @Suite("Async Stream Bridge Utilities")
 struct AsyncStreamBridgeTests {
     @Test("convertArrayToAsyncIterable yields array in order")
-    func arrayToAsyncIterableYieldsValues() async {
+    func arrayToAsyncIterableYieldsValues() async throws {
         let values = [1, 2, 3, 4]
         let stream = convertArrayToAsyncIterable(values)
 
@@ -39,7 +39,7 @@ struct AsyncStreamBridgeTests {
     }
 
     @Test("convertAsyncIterableToArray collects async sequence")
-    func asyncIterableToArrayCollectsSequence() async {
+    func asyncIterableToArrayCollectsSequence() async throws {
         let values = [42, 43, 44]
         let stream = convertArrayToAsyncIterable(values)
         let collected = await convertAsyncIterableToArray(stream)
@@ -90,7 +90,7 @@ struct AsyncStreamBridgeTests {
     }
 
     @Test("convertResponseStreamToArray returns empty array for missing body")
-    func responseStreamToArrayHandlesEmptyBody() async {
+    func responseStreamToArrayHandlesEmptyBody() async throws {
         let response = makeResponse(body: .none)
         await #expect(throws: ResponseStreamConversionError.missingBody) {
             _ = try await convertResponseStreamToArray(response)

@@ -50,7 +50,7 @@ struct MCPTransportTests {
     }
 
     @Test("isCustomMcpTransport identifies transport instances")
-    func testIsCustomMcpTransport() {
+    func testIsCustomMcpTransport() throws {
         let transport = MockMCPTransport()
         #expect(isCustomMcpTransport(transport))
 
@@ -140,7 +140,7 @@ struct MCPTransportTests {
     }
 
     @Test("deserializeMessage throws on invalid JSON")
-    func testDeserializeInvalidJSON() {
+    func testDeserializeInvalidJSON() throws {
         let invalidJson = "not a json"
 
         #expect(throws: Error.self) {

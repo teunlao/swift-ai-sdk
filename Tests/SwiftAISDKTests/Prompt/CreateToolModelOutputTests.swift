@@ -26,7 +26,7 @@ struct CreateToolModelOutputTests {
     struct ErrorCasesTests {
 
         @Test("should return error type with string value when errorMode is text and output is string")
-        func errorTextWithString() {
+        func errorTextWithString() throws {
             let result = createToolModelOutput(
                 output: "Error message",
                 tool: nil,
@@ -37,7 +37,7 @@ struct CreateToolModelOutputTests {
         }
 
         @Test("should return error type with JSON stringified value when errorMode is text and output is not string")
-        func errorTextWithObject() {
+        func errorTextWithObject() throws {
             let errorOutput: [String: Any] = ["error": "Something went wrong", "code": 500]
             let result = createToolModelOutput(
                 output: errorOutput,
@@ -55,7 +55,7 @@ struct CreateToolModelOutputTests {
         }
 
         @Test("should return error type with JSON stringified value for complex objects")
-        func errorTextWithComplexObject() {
+        func errorTextWithComplexObject() throws {
             let complexError: [String: Any] = [
                 "message": "Complex error",
                 "details": [
@@ -86,7 +86,7 @@ struct CreateToolModelOutputTests {
     struct ToolWithToModelOutputTests {
 
         @Test("should use tool.toModelOutput when available")
-        func usesToModelOutput() {
+        func usesToModelOutput() throws {
             let mockTool = Tool(
                 description: "Mock tool",
                 inputSchema: FlexibleSchema(jsonSchema(.object([
@@ -116,7 +116,7 @@ struct CreateToolModelOutputTests {
         }
 
         @Test("should use tool.toModelOutput with complex output")
-        func usesToModelOutputWithComplexData() {
+        func usesToModelOutputWithComplexData() throws {
             let mockTool = Tool(
                 description: "Mock tool",
                 inputSchema: FlexibleSchema(jsonSchema(.object([
@@ -148,7 +148,7 @@ struct CreateToolModelOutputTests {
         }
 
         @Test("should use tool.toModelOutput returning content type")
-        func usesToModelOutputReturningContent() {
+        func usesToModelOutputReturningContent() throws {
             let mockTool = Tool(
                 description: "Mock tool",
                 inputSchema: FlexibleSchema(jsonSchema(.object([
@@ -185,7 +185,7 @@ struct CreateToolModelOutputTests {
     struct StringOutputTests {
 
         @Test("should return text type for string output")
-        func textTypeForString() {
+        func textTypeForString() throws {
             let result = createToolModelOutput(
                 output: "Simple string output",
                 tool: nil,
@@ -196,7 +196,7 @@ struct CreateToolModelOutputTests {
         }
 
         @Test("should return text type for string output even with tool that has no toModelOutput")
-        func textTypeForStringWithToolWithoutToModelOutput() {
+        func textTypeForStringWithToolWithoutToModelOutput() throws {
             let toolWithoutToModelOutput = Tool(
                 description: "A tool without toModelOutput",
                 inputSchema: FlexibleSchema(jsonSchema(.object([
@@ -214,7 +214,7 @@ struct CreateToolModelOutputTests {
         }
 
         @Test("should return text type for empty string")
-        func textTypeForEmptyString() {
+        func textTypeForEmptyString() throws {
             let result = createToolModelOutput(
                 output: "",
                 tool: nil,
@@ -231,7 +231,7 @@ struct CreateToolModelOutputTests {
     struct NonStringOutputTests {
 
         @Test("should return json type for object output")
-        func jsonTypeForObject() {
+        func jsonTypeForObject() throws {
             let objectOutput: [String: Any] = ["result": "success", "data": [1, 2, 3]]
             let result = createToolModelOutput(
                 output: objectOutput,
@@ -254,7 +254,7 @@ struct CreateToolModelOutputTests {
         }
 
         @Test("should return json type for array output")
-        func jsonTypeForArray() {
+        func jsonTypeForArray() throws {
             let arrayOutput: [Any] = [1, 2, 3, "test"]
             let result = createToolModelOutput(
                 output: arrayOutput,
@@ -267,7 +267,7 @@ struct CreateToolModelOutputTests {
         }
 
         @Test("should return json type for number output")
-        func jsonTypeForNumber() {
+        func jsonTypeForNumber() throws {
             let result = createToolModelOutput(
                 output: 42,
                 tool: nil,
@@ -278,7 +278,7 @@ struct CreateToolModelOutputTests {
         }
 
         @Test("should return json type for boolean output")
-        func jsonTypeForBoolean() {
+        func jsonTypeForBoolean() throws {
             let result = createToolModelOutput(
                 output: true,
                 tool: nil,
@@ -289,7 +289,7 @@ struct CreateToolModelOutputTests {
         }
 
         @Test("should return json type for null output")
-        func jsonTypeForNull() {
+        func jsonTypeForNull() throws {
             let result = createToolModelOutput(
                 output: nil,
                 tool: nil,
@@ -300,7 +300,7 @@ struct CreateToolModelOutputTests {
         }
 
         @Test("should return json type for complex nested object")
-        func jsonTypeForComplexNestedObject() {
+        func jsonTypeForComplexNestedObject() throws {
             let complexOutput: [String: Any] = [
                 "user": [
                     "id": 123,
@@ -344,7 +344,7 @@ struct CreateToolModelOutputTests {
     struct EdgeCasesTests {
 
         @Test("should prioritize errorMode over tool.toModelOutput")
-        func prioritizesErrorMode() {
+        func prioritizesErrorMode() throws {
             let mockTool = Tool(
                 description: "Mock tool",
                 inputSchema: FlexibleSchema(jsonSchema(.object([
@@ -365,7 +365,7 @@ struct CreateToolModelOutputTests {
         }
 
         @Test("should handle undefined output in error text case")
-        func handlesUndefinedInErrorText() {
+        func handlesUndefinedInErrorText() throws {
             let result = createToolModelOutput(
                 output: nil,
                 tool: nil,
@@ -376,7 +376,7 @@ struct CreateToolModelOutputTests {
         }
 
         @Test("should use null for undefined output in error json case")
-        func usesNullForUndefinedInErrorJson() {
+        func usesNullForUndefinedInErrorJson() throws {
             let result = createToolModelOutput(
                 output: nil,
                 tool: nil,
@@ -387,7 +387,7 @@ struct CreateToolModelOutputTests {
         }
 
         @Test("should use null for undefined output in non-error case")
-        func usesNullForUndefinedInNonError() {
+        func usesNullForUndefinedInNonError() throws {
             let result = createToolModelOutput(
                 output: nil,
                 tool: nil,

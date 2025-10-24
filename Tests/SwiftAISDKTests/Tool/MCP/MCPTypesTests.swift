@@ -17,7 +17,7 @@ struct MCPTypesTests {
     // MARK: - Protocol Versioning Tests
 
     @Test("Protocol version constants match upstream")
-    func testProtocolVersions() {
+    func testProtocolVersions() throws {
         #expect(latestProtocolVersion == "2025-06-18")
         #expect(supportedProtocolVersions == ["2025-06-18", "2025-03-26", "2024-11-05"])
     }

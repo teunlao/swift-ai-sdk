@@ -11,19 +11,19 @@ import Testing
 @Suite("GetModelPath")
 struct GetModelPathTests {
     @Test("should pass through model path for models/*")
-    func passThroughModelsPath() {
+    func passThroughModelsPath() throws {
         let result = getGoogleModelPath("models/some-model")
         #expect(result == "models/some-model")
     }
 
     @Test("should pass through model path for tunedModels/*")
-    func passThroughTunedModelsPath() {
+    func passThroughTunedModelsPath() throws {
         let result = getGoogleModelPath("tunedModels/some-model")
         #expect(result == "tunedModels/some-model")
     }
 
     @Test("should add model path prefix to models without slash")
-    func addModelPathPrefix() {
+    func addModelPathPrefix() throws {
         let result = getGoogleModelPath("some-model")
         #expect(result == "models/some-model")
     }

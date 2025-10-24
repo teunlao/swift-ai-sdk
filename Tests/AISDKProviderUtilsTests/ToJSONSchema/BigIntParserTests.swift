@@ -4,7 +4,7 @@ import Testing
 @Suite("BigInt Parser")
 struct BigIntParserTests {
     @Test("basic bigint")
-    func basicBigInt() {
+    func basicBigInt() throws {
         let schema = parseBigintDef(TestZod.bigint()._def as! ZodBigIntDef)
         SchemaTestHelpers.expect(schema, equals: [
             "type": .string("integer"),
@@ -13,7 +13,7 @@ struct BigIntParserTests {
     }
 
     @Test("gte and lte")
-    func gteLte() {
+    func gteLte() throws {
         let schema = parseBigintDef(
             TestZod.bigint([
                 .min(ZodNumericBound(value: 10, inclusive: true)),
@@ -30,7 +30,7 @@ struct BigIntParserTests {
     }
 
     @Test("gt and lt")
-    func gtLt() {
+    func gtLt() throws {
         let schema = parseBigintDef(
             TestZod.bigint([
                 .min(ZodNumericBound(value: 10, inclusive: false)),
@@ -47,7 +47,7 @@ struct BigIntParserTests {
     }
 
     @Test("multipleOf")
-    func multipleOf() {
+    func multipleOf() throws {
         let schema = parseBigintDef(
             TestZod.bigint([
                 .multipleOf(5)

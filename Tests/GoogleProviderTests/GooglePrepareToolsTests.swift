@@ -6,7 +6,7 @@ import Testing
 @Suite("prepareGoogleTools")
 struct GooglePrepareToolsTests {
     @Test("should return undefined tools and tool_choice when tools are empty")
-    func emptyTools() {
+    func emptyTools() throws {
         let prepared = prepareGoogleTools(
             tools: [],
             toolChoice: nil,
@@ -18,7 +18,7 @@ struct GooglePrepareToolsTests {
     }
 
     @Test("should correctly prepare function tools")
-    func prepareFunctionTools() {
+    func prepareFunctionTools() throws {
         let functionTool = LanguageModelV3Tool.function(LanguageModelV3FunctionTool(
             name: "testFunction",
             inputSchema: .object(["type": .string("object"), "properties": .object([:])]),
@@ -55,7 +55,7 @@ struct GooglePrepareToolsTests {
     }
 
     @Test("should correctly prepare provider-defined tools as array")
-    func prepareProviderDefinedToolsAsArray() {
+    func prepareProviderDefinedToolsAsArray() throws {
         let tool1 = LanguageModelV3Tool.providerDefined(LanguageModelV3ProviderDefinedTool(
             id: "google.google_search",
             name: "google_search",
@@ -97,7 +97,7 @@ struct GooglePrepareToolsTests {
     }
 
     @Test("should correctly prepare single provider-defined tool")
-    func prepareSingleProviderDefinedTool() {
+    func prepareSingleProviderDefinedTool() throws {
         let tool = LanguageModelV3Tool.providerDefined(LanguageModelV3ProviderDefinedTool(
             id: "google.google_search",
             name: "google_search",
@@ -128,7 +128,7 @@ struct GooglePrepareToolsTests {
     }
 
     @Test("should add warnings for unsupported tools")
-    func addWarningsForUnsupportedTools() {
+    func addWarningsForUnsupportedTools() throws {
         let tool = LanguageModelV3Tool.providerDefined(LanguageModelV3ProviderDefinedTool(
             id: "unsupported.tool",
             name: "unsupported_tool",
@@ -156,7 +156,7 @@ struct GooglePrepareToolsTests {
     }
 
     @Test("should handle tool choice \"auto\"")
-    func handleToolChoiceAuto() {
+    func handleToolChoiceAuto() throws {
         let functionTool = LanguageModelV3Tool.function(LanguageModelV3FunctionTool(
             name: "testFunction",
             inputSchema: .object([:]),
@@ -179,7 +179,7 @@ struct GooglePrepareToolsTests {
     }
 
     @Test("should handle tool choice \"required\"")
-    func handleToolChoiceRequired() {
+    func handleToolChoiceRequired() throws {
         let functionTool = LanguageModelV3Tool.function(LanguageModelV3FunctionTool(
             name: "testFunction",
             inputSchema: .object([:]),
@@ -202,7 +202,7 @@ struct GooglePrepareToolsTests {
     }
 
     @Test("should handle tool choice \"none\"")
-    func handleToolChoiceNone() {
+    func handleToolChoiceNone() throws {
         let functionTool = LanguageModelV3Tool.function(LanguageModelV3FunctionTool(
             name: "testFunction",
             inputSchema: .object([:]),
@@ -245,7 +245,7 @@ struct GooglePrepareToolsTests {
     }
 
     @Test("should handle tool choice \"tool\"")
-    func handleToolChoiceTool() {
+    func handleToolChoiceTool() throws {
         let functionTool = LanguageModelV3Tool.function(LanguageModelV3FunctionTool(
             name: "testFunction",
             inputSchema: .object([:]),
@@ -275,7 +275,7 @@ struct GooglePrepareToolsTests {
     }
 
     @Test("should handle tool choice with mixed tools (provider-defined tools only)")
-    func handleToolChoiceWithMixedTools() {
+    func handleToolChoiceWithMixedTools() throws {
         let functionTool = LanguageModelV3Tool.function(LanguageModelV3FunctionTool(
             name: "testFunction",
             inputSchema: .object(["type": .string("object"), "properties": .object([:])]),
@@ -320,7 +320,7 @@ struct GooglePrepareToolsTests {
     }
 
     @Test("should handle latest modelId for provider-defined tools correctly")
-    func handleLatestModelIdForProviderDefinedTools() {
+    func handleLatestModelIdForProviderDefinedTools() throws {
         let tool = LanguageModelV3Tool.providerDefined(LanguageModelV3ProviderDefinedTool(
             id: "google.google_search",
             name: "google_search",
@@ -350,7 +350,7 @@ struct GooglePrepareToolsTests {
     }
 
     @Test("returns empty payload when tools absent")
-    func noTools() {
+    func noTools() throws {
         let prepared = prepareGoogleTools(
             tools: nil,
             toolChoice: nil,
@@ -362,7 +362,7 @@ struct GooglePrepareToolsTests {
     }
 
     @Test("warns when mixing function and provider-defined tools")
-    func mixedTools() {
+    func mixedTools() throws {
         let functionTool = LanguageModelV3Tool.function(LanguageModelV3FunctionTool(
             name: "weather",
             inputSchema: .object(["type": .string("object")]),
@@ -387,7 +387,7 @@ struct GooglePrepareToolsTests {
     }
 
     @Test("maps provider-defined google search with dynamic retrieval")
-    func providerDefinedGoogleSearch() {
+    func providerDefinedGoogleSearch() throws {
         let tool = LanguageModelV3Tool.providerDefined(LanguageModelV3ProviderDefinedTool(
             id: "google.google_search",
             name: "google_search",
@@ -427,7 +427,7 @@ struct GooglePrepareToolsTests {
     }
 
     @Test("maps function tools and tool choice")
-    func functionTools() {
+    func functionTools() throws {
         let functionTool = LanguageModelV3Tool.function(LanguageModelV3FunctionTool(
             name: "lookup",
             inputSchema: .object(["type": .string("object")]),

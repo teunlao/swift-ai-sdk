@@ -13,25 +13,25 @@ struct UserAgentTests {
     // MARK: - GetRuntimeEnvironmentUserAgent
 
     @Test("getRuntimeEnvironmentUserAgent defaults to unknown runtime")
-    func testRuntimeEnvironmentUnknown() {
+    func testRuntimeEnvironmentUnknown() throws {
         let userAgent = getRuntimeEnvironmentUserAgent()
         #expect(userAgent == "runtime/unknown")
     }
 
     @Test("getRuntimeEnvironmentUserAgent detects browser")
-    func testRuntimeEnvironmentBrowser() {
+    func testRuntimeEnvironmentBrowser() throws {
         let snapshot = RuntimeEnvironmentSnapshot(hasWindow: true)
         #expect(getRuntimeEnvironmentUserAgent(snapshot) == "runtime/browser")
     }
 
     @Test("getRuntimeEnvironmentUserAgent uses navigator user agent")
-    func testRuntimeEnvironmentNavigator() {
+    func testRuntimeEnvironmentNavigator() throws {
         let snapshot = RuntimeEnvironmentSnapshot(navigatorUserAgent: "Test-UA")
         #expect(getRuntimeEnvironmentUserAgent(snapshot) == "runtime/test-ua")
     }
 
     @Test("getRuntimeEnvironmentUserAgent detects Node.js")
-    func testRuntimeEnvironmentNode() {
+    func testRuntimeEnvironmentNode() throws {
         let snapshot = RuntimeEnvironmentSnapshot(
             processVersionsNode: "v20.0.0",
             processVersion: "v20.0.0"
@@ -40,7 +40,7 @@ struct UserAgentTests {
     }
 
     @Test("getRuntimeEnvironmentUserAgent detects Edge runtime")
-    func testRuntimeEnvironmentEdgeRuntime() {
+    func testRuntimeEnvironmentEdgeRuntime() throws {
         let snapshot = RuntimeEnvironmentSnapshot(edgeRuntime: true)
         #expect(getRuntimeEnvironmentUserAgent(snapshot) == "runtime/vercel-edge")
     }
@@ -48,7 +48,7 @@ struct UserAgentTests {
     // MARK: - WithUserAgentSuffix
 
     @Test("withUserAgentSuffix creates new user-agent when none exists")
-    func testCreateUserAgent() {
+    func testCreateUserAgent() throws {
         let headers = [
             "content-type": "application/json",
             "authorization": "Bearer token123"
@@ -62,7 +62,7 @@ struct UserAgentTests {
     }
 
     @Test("withUserAgentSuffix appends to existing user-agent")
-    func testAppendUserAgent() {
+    func testAppendUserAgent() throws {
         let headers = [
             "user-agent": "TestApp/1.0",
             "accept": "application/json"
@@ -75,7 +75,7 @@ struct UserAgentTests {
     }
 
     @Test("withUserAgentSuffix removes undefined entries")
-    func testRemoveUndefinedEntries() {
+    func testRemoveUndefinedEntries() throws {
         let headers: [String: String?] = [
             "content-type": "application/json",
             "authorization": nil,
@@ -92,7 +92,7 @@ struct UserAgentTests {
     }
 
     @Test("withUserAgentSuffix handles nil headers")
-    func testNilHeaders() {
+    func testNilHeaders() throws {
         let result = withUserAgentSuffix(nil, "ai-sdk/0.0.0", "provider/test")
 
         #expect(result["user-agent"] == "ai-sdk/0.0.0 provider/test")
@@ -100,7 +100,7 @@ struct UserAgentTests {
     }
 
     @Test("withUserAgentSuffix handles empty suffix parts")
-    func testEmptySuffixParts() {
+    func testEmptySuffixParts() throws {
         let headers = ["user-agent": "TestApp/1.0"]
 
         let result = withUserAgentSuffix(headers, "", "ai-sdk/0.0.0", "")
@@ -111,7 +111,7 @@ struct UserAgentTests {
     // MARK: - RemoveUndefinedEntries
 
     @Test("removeUndefinedEntries filters nil values")
-    func testRemoveUndefined() {
+    func testRemoveUndefined() throws {
         let input: [String: String?] = [
             "a": "value1",
             "b": nil,
@@ -129,14 +129,14 @@ struct UserAgentTests {
     }
 
     @Test("removeUndefinedEntries handles empty dict")
-    func testRemoveUndefinedEmpty() {
+    func testRemoveUndefinedEmpty() throws {
         let input: [String: String?] = [:]
         let result = removeUndefinedEntries(input)
         #expect(result.isEmpty)
     }
 
     @Test("removeUndefinedEntries handles all nil values")
-    func testRemoveUndefinedAllNil() {
+    func testRemoveUndefinedAllNil() throws {
         let input: [String: String?] = [
             "a": nil,
             "b": nil
@@ -146,7 +146,7 @@ struct UserAgentTests {
     }
 
     @Test("removeUndefinedEntries preserves falsy string values (empty string)")
-    func testPreserveFalsyValues() {
+    func testPreserveFalsyValues() throws {
         // In TypeScript, "", 0, false are falsy but should be preserved.
         // In Swift, we test that empty string (falsy in JS) is preserved.
         let input: [String: String?] = [
@@ -166,7 +166,7 @@ struct UserAgentTests {
     // MARK: - WithUserAgentSuffix - Case Sensitivity
 
     @Test("withUserAgentSuffix handles case-sensitive header keys")
-    func testCaseSensitiveHeaders() {
+    func testCaseSensitiveHeaders() throws {
         // Note: HTTP headers are case-insensitive per RFC 2616, but Swift Dictionary is case-sensitive.
         // This test documents the behavior: we use lowercase "user-agent" convention.
 

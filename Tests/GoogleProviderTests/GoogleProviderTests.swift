@@ -13,7 +13,7 @@ import Testing
 struct GoogleProviderTests {
 
     @Test("creates a language model with default settings")
-    func createLanguageModelWithDefaults() {
+    func createLanguageModelWithDefaults() throws {
         let provider = createGoogleGenerativeAI(settings: GoogleProviderSettings(apiKey: "test-api-key"))
         let model = provider.chat(modelId: .gemini15Flash)
 
@@ -22,16 +22,16 @@ struct GoogleProviderTests {
     }
 
     @Test("creates language model via call operator")
-    func createLanguageModelViaCallOperator() {
+    func createLanguageModelViaCallOperator() throws {
         let provider = createGoogleGenerativeAI(settings: GoogleProviderSettings(apiKey: "test-api-key"))
-        let model = provider.languageModel(modelId: "gemini-pro")
+        let model = try provider.languageModel(modelId: "gemini-pro")
 
         #expect(model.provider == "google.generative-ai")
         #expect(model.modelId == "gemini-pro")
     }
 
     @Test("creates an embedding model with correct settings")
-    func createEmbeddingModel() {
+    func createEmbeddingModel() throws {
         let provider = createGoogleGenerativeAI(settings: GoogleProviderSettings(apiKey: "test-api-key"))
         let model = provider.textEmbedding(modelId: .geminiEmbedding001) as! GoogleGenerativeAIEmbeddingModel
 
@@ -40,16 +40,16 @@ struct GoogleProviderTests {
     }
 
     @Test("creates embedding model via textEmbeddingModel")
-    func createEmbeddingModelViaTextEmbeddingModel() {
+    func createEmbeddingModelViaTextEmbeddingModel() throws {
         let provider = createGoogleGenerativeAI(settings: GoogleProviderSettings(apiKey: "test-api-key"))
-        let model = provider.textEmbeddingModel(modelId: "text-embedding-004")
+        let model = try provider.textEmbeddingModel(modelId: "text-embedding-004")
 
         #expect(model.provider == "google.generative-ai")
         #expect(model.modelId == "text-embedding-004")
     }
 
     @Test("uses chat method to create a model")
-    func createModelViaChatMethod() {
+    func createModelViaChatMethod() throws {
         let provider = createGoogleGenerativeAI(settings: GoogleProviderSettings(apiKey: "test-api-key"))
         let model = provider.chat(modelId: .gemini20Flash)
 
@@ -58,7 +58,7 @@ struct GoogleProviderTests {
     }
 
     @Test("uses custom baseURL when provided")
-    func customBaseURL() {
+    func customBaseURL() throws {
         let customBaseURL = "https://custom-endpoint.example.com"
         let provider = createGoogleGenerativeAI(settings: GoogleProviderSettings(
             baseURL: customBaseURL,
@@ -73,7 +73,7 @@ struct GoogleProviderTests {
     }
 
     @Test("creates an image model with default settings")
-    func createImageModelWithDefaults() {
+    func createImageModelWithDefaults() throws {
         let provider = createGoogleGenerativeAI(settings: GoogleProviderSettings(apiKey: "test-api-key"))
         let model = provider.image(modelId: .imagen30Generate002)
 
@@ -82,7 +82,7 @@ struct GoogleProviderTests {
     }
 
     @Test("creates an image model with custom maxImagesPerCall")
-    func createImageModelWithCustomMaxImages() {
+    func createImageModelWithCustomMaxImages() throws {
         let provider = createGoogleGenerativeAI(settings: GoogleProviderSettings(apiKey: "test-api-key"))
         let imageSettings = GoogleGenerativeAIImageSettings(maxImagesPerCall: 3)
         let model = provider.image(modelId: .imagen30Generate002, settings: imageSettings) as! GoogleGenerativeAIImageModel
@@ -98,16 +98,16 @@ struct GoogleProviderTests {
     }
 
     @Test("creates image model via imageModel method")
-    func createImageModelViaImageModelMethod() {
+    func createImageModelViaImageModelMethod() throws {
         let provider = createGoogleGenerativeAI(settings: GoogleProviderSettings(apiKey: "test-api-key"))
-        let model = provider.imageModel(modelId: "imagen-3.0-generate-002")
+        let model = try provider.imageModel(modelId: "imagen-3.0-generate-002")
 
         #expect(model.provider == "google.generative-ai")
         #expect(model.modelId == "imagen-3.0-generate-002")
     }
 
     @Test("supports deprecated methods")
-    func deprecatedMethods() {
+    func deprecatedMethods() throws {
         let provider = createGoogleGenerativeAI(settings: GoogleProviderSettings(apiKey: "test-api-key"))
 
         // generativeAI() is deprecated alias for languageModel

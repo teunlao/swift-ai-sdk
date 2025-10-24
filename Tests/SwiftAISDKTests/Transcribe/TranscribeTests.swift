@@ -177,7 +177,7 @@ struct TranscribeTests {
                 audio: .data(audioData)
             )
 
-            let expectedLogged = expectedWarnings.map { Warning.transcriptionModel($0) }
+            let expectedLogged = try expectedWarnings.map { Warning.transcriptionModel($0) }
             #expect(recordedWarnings.value.count == 1)
             #expect(recordedWarnings.value.first == expectedLogged)
         }
@@ -236,7 +236,7 @@ struct TranscribeTests {
     }
 
     @Test("should throw NoTranscriptGeneratedError when no transcript is returned")
-    func shouldThrowWhenNoTranscriptReturned() async {
+    func shouldThrowWhenNoTranscriptReturned() async throws {
         let model = MockTranscriptionModelV3 { _ in
             makeMockResponse(
                 text: "",
@@ -266,7 +266,7 @@ struct TranscribeTests {
     }
 
     @Test("should include response headers in error when no transcript generated")
-    func shouldIncludeHeadersInError() async {
+    func shouldIncludeHeadersInError() async throws {
         let expectedUserAgent = "ai/\(SwiftAISDK.VERSION)"
         let responseHeaders: [String: String] = [
             "custom-response-header": "response-header-value",
