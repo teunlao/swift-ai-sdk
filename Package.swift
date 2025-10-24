@@ -27,6 +27,7 @@ let package = Package(
         .library(name: "BasetenProvider", targets: ["BasetenProvider"]),
         .library(name: "ReplicateProvider", targets: ["ReplicateProvider"]),
         .library(name: "XAIProvider", targets: ["XAIProvider"]),
+        .library(name: "LMNTProvider", targets: ["LMNTProvider"]),
         .library(name: "EventSourceParser", targets: ["EventSourceParser"]), // internal lib for SSE
         .library(name: "AISDKZodAdapter", targets: ["AISDKZodAdapter"]),
         .executable(name: "playground", targets: ["SwiftAISDKPlayground"]) 
@@ -74,6 +75,7 @@ let package = Package(
         .target(name: "BasetenProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "OpenAICompatibleProvider"]),
         .target(name: "ReplicateProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils"]),
         .target(name: "XAIProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "OpenAICompatibleProvider"]),
+        .target(name: "LMNTProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils"]),
 
         // SwiftAISDK - Main AI SDK (matches @ai-sdk/ai)
         // GenerateText, Registry, Middleware, Prompts, Tools, Telemetry
@@ -88,6 +90,7 @@ let package = Package(
         .testTarget(name: "CerebrasProviderTests", dependencies: ["CerebrasProvider", "AISDKProvider", "AISDKProviderUtils", "OpenAICompatibleProvider"]),
         .testTarget(name: "DeepSeekProviderTests", dependencies: ["DeepSeekProvider", "AISDKProvider", "AISDKProviderUtils", "OpenAICompatibleProvider"]),
         .testTarget(name: "BasetenProviderTests", dependencies: ["BasetenProvider", "AISDKProvider", "AISDKProviderUtils", "OpenAICompatibleProvider"]),
+        .testTarget(name: "LMNTProviderTests", dependencies: ["LMNTProvider", "AISDKProvider", "AISDKProviderUtils"]),
         .testTarget(name: "ReplicateProviderTests", dependencies: ["ReplicateProvider", "AISDKProvider", "AISDKProviderUtils"]),
 
         // SwiftAISDKPlayground - CLI executable for manual testing (Playground)
@@ -104,6 +107,7 @@ let package = Package(
                 "CerebrasProvider",
                 "DeepSeekProvider",
                 "ReplicateProvider",
+                "LMNTProvider",
                 "XAIProvider",
                 .product(name: "ArgumentParser", package: "swift-argument-parser")
             ],

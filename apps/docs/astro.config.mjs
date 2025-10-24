@@ -71,7 +71,9 @@ export default defineConfig({
           items: [
             { label: "OpenAI", link: "/providers/openai" },
             { label: "Anthropic", link: "/providers/anthropic" },
-            { label: "Google Generative AI", link: "/providers/google-generative-ai" }
+            { label: "Google Generative AI", link: "/providers/google-generative-ai" },
+            { label: "Replicate", link: "/providers/replicate" },
+            { label: "LMNT", link: "/providers/lmnt" }
           ]
         }
 			],

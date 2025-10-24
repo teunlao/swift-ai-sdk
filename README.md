@@ -43,6 +43,7 @@ A unified AI SDK for Swift, bringing the power of [Vercel AI SDK](https://github
 - `DeepSeekProvider` - DeepSeek
 - `BasetenProvider` - Baseten
 - `ReplicateProvider` - Replicate
+- `LMNTProvider` - LMNT
 
 **Upstream:** Based on Vercel AI SDK 6.0.0-beta.42 (commit `77db222ee`)
 
@@ -56,8 +57,8 @@ A unified AI SDK for Swift, bringing the power of [Vercel AI SDK](https://github
 
 | Metric | Upstream | Swift | Coverage |
 |--------|----------|-------|----------|
-| **Packages** | 35* | 17 | 48.6% |
-| **Tests** | 2928** | 2421 | 82.7% |
+| **Packages** | 35* | 18 | 51.4% |
+| **Tests** | 2928** | 2430 | 83.0% |
 
 _* Excludes 7 frontend frameworks (React, Angular, etc.) and 4 infrastructure packages (codemod, rsc, etc.) not applicable to Swift_
 _** Core SDK (1519) + Providers (1409), excludes frameworks/infrastructure_
@@ -71,7 +72,7 @@ _** Core SDK (1519) + Providers (1409), excludes frameworks/infrastructure_
 | **ai** | 1199 | 1136 | 94.7% | ✅ |
 | **TOTAL** | **1519** | **1547** | **101.8%** | **✅** |
 
-### 🔌 Providers (11/32 ported)
+### 🔌 Providers (12/32 ported)
 
 <details>
 <summary>📋 Provider Test Coverage Details</summary>
@@ -91,6 +92,7 @@ _** Core SDK (1519) + Providers (1409), excludes frameworks/infrastructure_
 | **deepseek** | ✅ | ✅ | 13 | 13 | 100% |
 | **baseten** | ✅ | ✅ | 25 | 25 | 100% |
 | **replicate** | ✅ | ✅ | 11 | 11 | 100% |
+| **lmnt** | ✅ | ✅ | 9 | 9 | 100% |
 | **amazon-bedrock** | ❌ | ❌ | 152 | 0 | 0% |
 | **google-vertex** | ❌ | ❌ | 78 | 0 | 0% |
 | **cohere** | ❌ | ❌ | 48 | 0 | 0% |
@@ -103,14 +105,13 @@ _** Core SDK (1519) + Providers (1409), excludes frameworks/infrastructure_
 | **togetherai** | ❌ | ❌ | 17 | 0 | 0% |
 | **luma** | ❌ | ❌ | 16 | 0 | 0% |
 | **elevenlabs** | ❌ | ❌ | 15 | 0 | 0% |
-| **lmnt** | ❌ | ❌ | 9 | 0 | 0% |
 | **hume** | ❌ | ❌ | 9 | 0 | 0% |
 | **assemblyai** | ❌ | ❌ | 6 | 0 | 0% |
 | **deepgram** | ❌ | ❌ | 6 | 0 | 0% |
 | **gladia** | ❌ | ❌ | 6 | 0 | 0% |
 | **revai** | ❌ | ❌ | 6 | 0 | 0% |
 | **vercel** | ❌ | ❌ | 4 | 0 | 0% |
-| **TOTAL** | **11/32** | **11/32** | **1409** | **874** | **62.0%** |
+| **TOTAL** | **12/32** | **12/32** | **1409** | **883** | **62.7%** |
 
 </details>
 
@@ -122,12 +123,12 @@ _** Core SDK (1519) + Providers (1409), excludes frameworks/infrastructure_
 | Category | Packages | Upstream | Swift | Coverage | Status |
 |----------|:--------:|----------|-------|----------|:------:|
 | **Core SDK** | 3/3 | 1519 | 1547 | 101.8% | ✅ |
-| **Providers** | 11/32 | 1409 | 874 | 62.0% | ⚠️ |
+| **Providers** | 12/32 | 1409 | 883 | 62.7% | ⚠️ |
 | **Swift-specific** | 4 | - | 37 | - | 🎯 |
 | **Frameworks** | 0/7 | 93 | 0 | N/A | ⏳ |
 | **Infrastructure** | 0/4 | 300 | 0 | N/A | ⏳ |
-| **TOTAL (all)** | **18/46** | **3323** | **2458** | **74.0%** | **⚠️** |
-| **TOTAL (relevant)** | **17/35** | **2928** | **2421** | **82.7%** | **⚠️** |
+| **TOTAL (all)** | **19/46** | **3323** | **2467** | **74.2%** | **⚠️** |
+| **TOTAL (relevant)** | **18/35** | **2928** | **2430** | **83.0%** | **⚠️** |
 
 ### Progress Bars
 
@@ -153,18 +154,19 @@ cerebras:            ███████████████████�
 deepseek:            ████████████████████████████████  100%   (13/13)
 baseten:             ████████████████████████████████  100%   (25/25)
 replicate:           ████████████████████████████████  100%   (11/11)
+lmnt:                ████████████████████████████████  100%   (9/9)
 ────────────────────────────────────────────────────────
-TOTAL:               ███████████████████░░░░░░░░░░░░░  62.0%  (874/1409)
+TOTAL:               ███████████████████░░░░░░░░░░░░░  62.7%  (883/1409)
 ```
 
 **Overall**:
 ```
 Core SDK:         ██████████████████████████████░░  101.8% (1547/1519)
-Providers:        ███████████████████░░░░░░░░░░░░░  62.0%  (874/1409)
+Providers:        ████████████████████░░░░░░░░░░░░  62.7%  (883/1409)
 Frameworks:       ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  0%     (0/93)
 Infrastructure:   ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  0%     (0/300)
 ───────────────────────────────────────────────────────────
-TOTAL:            ███████████████████████░░░░░░░░░  74.0%  (2458/3323)
+TOTAL:            ███████████████████████░░░░░░░░░  74.2%  (2467/3323)
 ```
 
 </details>
@@ -230,7 +232,7 @@ More examples (tools, structured output, telemetry, middleware) are available in
 
 Write once, swap providers without changing your app logic — same idea as the upstream AI SDK.
 
-- Add only the provider modules you need via SwiftPM products (`OpenAIProvider`, `AnthropicProvider`, `GoogleProvider`, `GroqProvider`, `XAIProvider`, `AzureProvider`, `OpenAICompatibleProvider`, `CerebrasProvider`, `DeepSeekProvider`, `BasetenProvider`, `ReplicateProvider`).
+- Add only the provider modules you need via SwiftPM products (`OpenAIProvider`, `AnthropicProvider`, `GoogleProvider`, `GroqProvider`, `XAIProvider`, `AzureProvider`, `OpenAICompatibleProvider`, `CerebrasProvider`, `DeepSeekProvider`, `BasetenProvider`, `ReplicateProvider`, `LMNTProvider`).
 - Use the convenience facade `openai("model-id")`, `xai("grok-beta")`, `cerebras("model-id")`, `deepseek("model-id")`, or `baseten(modelId: "model-id")` or build a provider with settings via `createOpenAIProvider(settings:)` / `createXai(settings:)` / `createCerebras(settings:)` / `createDeepSeek(settings:)` / `createBaseten(settings:)`.
 
 Minimal provider setup and call:
