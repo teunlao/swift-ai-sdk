@@ -40,11 +40,11 @@ A unified AI SDK for Swift, bringing the power of [Vercel AI SDK](https://github
 **Updated**: 2025-10-24
 **Upstream:** Based on Vercel AI SDK 6.0.0-beta.42
 
-| Category | Coverage |
-|----------|----------|
-| **Core SDK** | 101.8% (1547/1519 tests) |
-| **Providers** | 12/32 ported, 62.7% test coverage |
-| **Overall** | 83.0% (2430/2928 tests) |
+| Category | Tests | Coverage |
+|----------|-------|----------|
+| **Core SDK** | 1547 | 100% |
+| **Providers** | 883 | 62.7% |
+| **Overall** | 2430 | 83% |
 
 <details>
 <summary>Provider Details</summary>
