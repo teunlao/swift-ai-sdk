@@ -216,7 +216,7 @@ public func resolveLanguageModel(_ model: LanguageModel) throws -> any LanguageM
                 message: "No global default provider set. Set `globalDefaultProvider` before resolving string model IDs."
             )
         }
-        return provider.languageModel(modelId: id)
+        return try provider.languageModel(modelId: id)
 
     case .v3(let model):
         // Already V3, return as-is
@@ -266,7 +266,7 @@ public func resolveEmbeddingModel<VALUE: Sendable>(_ model: EmbeddingModel<VALUE
         // Swift adaptation: Provider returns EmbeddingModelV3<String>, but we need EmbeddingModelV3<VALUE>.
         // We use force cast (as!) which will fail at runtime if types don't match.
         // This matches the TypeScript behavior where type mismatches are caught at runtime.
-        return provider.textEmbeddingModel(modelId: id) as! any EmbeddingModelV3<VALUE>
+        return try provider.textEmbeddingModel(modelId: id) as! any EmbeddingModelV3<VALUE>
 
     case .v3(let model):
         // Already V3, return as-is

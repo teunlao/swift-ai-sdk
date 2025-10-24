@@ -34,7 +34,7 @@ enum OpenAIPlaygroundFactory {
                 await logger.verbose("✅ Using global openai.languageModel(\"\(modelId)\")")
             }
             // NEW: Using global `openai` constant (parity with TypeScript)
-            return openai.languageModel(modelId: modelId)
+            return try openai.languageModel(modelId: modelId)
 
             // Alternative syntaxes (all equivalent):
             // return openai(modelId)  // callAsFunction syntax
@@ -67,6 +67,6 @@ enum OpenAIPlaygroundFactory {
             await logger.verbose("   - provider.speech(.tts1)")
         }
 
-        return provider.languageModel(modelId: modelId)
+        return try provider.languageModel(modelId: modelId)
     }
 }

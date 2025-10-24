@@ -60,31 +60,31 @@ public final class OpenAIProvider: ProviderV3 {
         self.tools = tools
     }
 
-    public func languageModel(modelId: String) -> any LanguageModelV3 {
+    public func languageModel(modelId: String) throws -> any LanguageModelV3 {
         responsesFactory(OpenAIResponsesModelId(rawValue: modelId))
     }
 
-    public func chatModel(modelId: String) -> any LanguageModelV3 {
+    public func chatModel(modelId: String) throws -> any LanguageModelV3 {
         chatFactory(OpenAIChatModelId(rawValue: modelId))
     }
 
-    public func completionModel(modelId: String) -> any LanguageModelV3 {
+    public func completionModel(modelId: String) throws -> any LanguageModelV3 {
         completionFactory(OpenAICompletionModelId(rawValue: modelId))
     }
 
-    public func textEmbeddingModel(modelId: String) -> any EmbeddingModelV3<String> {
+    public func textEmbeddingModel(modelId: String) throws -> any EmbeddingModelV3<String> {
         embeddingFactory(OpenAIEmbeddingModelId(rawValue: modelId))
     }
 
-    public func imageModel(modelId: String) -> any ImageModelV3 {
+    public func imageModel(modelId: String) throws -> any ImageModelV3 {
         imageFactory(OpenAIImageModelId(rawValue: modelId))
     }
 
-    public func transcriptionModel(modelId: String) -> any TranscriptionModelV3 {
+    public func transcriptionModel(modelId: String) throws -> any TranscriptionModelV3 {
         transcriptionFactory(OpenAITranscriptionModelId(rawValue: modelId))
     }
 
-    public func speechModel(modelId: String) -> any SpeechModelV3 {
+    public func speechModel(modelId: String) throws -> any SpeechModelV3 {
         speechFactory(OpenAISpeechModelId(rawValue: modelId))
     }
 
@@ -223,8 +223,8 @@ public func createOpenAIProvider(settings: OpenAIProviderSettings = .init()) -> 
 
 public extension OpenAIProvider {
     /// Allow calling the provider instance like a function: `openai("gpt-5")`.
-    func callAsFunction(_ modelId: String) -> any LanguageModelV3 {
-        languageModel(modelId: modelId)
+    func callAsFunction(_ modelId: String) throws -> any LanguageModelV3 {
+        try languageModel(modelId: modelId)
     }
 
     /// Typed alias for embeddings to mirror TS facade naming.

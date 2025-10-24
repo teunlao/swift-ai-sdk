@@ -36,11 +36,11 @@ public final class GroqProvider: ProviderV3 {
         self.tools = tools
     }
 
-    public func languageModel(modelId: String) -> any LanguageModelV3 {
+    public func languageModel(modelId: String) throws -> any LanguageModelV3 {
         languageModelFactory(GroqChatModelId(rawValue: modelId))
     }
 
-    public func chatModel(modelId: String) -> any LanguageModelV3 {
+    public func chatModel(modelId: String) throws -> any LanguageModelV3 {
         languageModelFactory(GroqChatModelId(rawValue: modelId))
     }
 
@@ -48,19 +48,19 @@ public final class GroqProvider: ProviderV3 {
         languageModelFactory(modelId)
     }
 
-    public func textEmbeddingModel(modelId: String) -> any EmbeddingModelV3<String> {
-        fatalError(NoSuchModelError(modelId: modelId, modelType: .textEmbeddingModel).localizedDescription)
+    public func textEmbeddingModel(modelId: String) throws -> any EmbeddingModelV3<String> {
+        throw NoSuchModelError(modelId: modelId, modelType: .textEmbeddingModel)
     }
 
-    public func imageModel(modelId: String) -> any ImageModelV3 {
-        fatalError(NoSuchModelError(modelId: modelId, modelType: .imageModel).localizedDescription)
+    public func imageModel(modelId: String) throws -> any ImageModelV3 {
+        throw NoSuchModelError(modelId: modelId, modelType: .imageModel)
     }
 
     public func transcription(modelId: GroqTranscriptionModelId) -> GroqTranscriptionModel {
         transcriptionModelFactory(modelId)
     }
 
-    public func transcriptionModel(modelId: String) -> any TranscriptionModelV3 {
+    public func transcriptionModel(modelId: String) throws -> any TranscriptionModelV3 {
         transcription(modelId: GroqTranscriptionModelId(rawValue: modelId))
     }
 }

@@ -73,65 +73,65 @@ private final class CustomProviderImpl: ProviderV3 {
         self.fallbackProvider = fallbackProvider
     }
 
-    public func languageModel(modelId: String) -> any LanguageModelV3 {
+    public func languageModel(modelId: String) throws -> any LanguageModelV3 {
         if let models = languageModels, let model = models[modelId] {
             return model
         }
 
         if let fallback = fallbackProvider {
-            return fallback.languageModel(modelId: modelId)
+            return try fallback.languageModel(modelId: modelId)
         }
 
-        fatalError(NoSuchModelError(modelId: modelId, modelType: .languageModel).localizedDescription)
+        throw NoSuchModelError(modelId: modelId, modelType: .languageModel)
     }
 
-    public func textEmbeddingModel(modelId: String) -> any EmbeddingModelV3<String> {
+    public func textEmbeddingModel(modelId: String) throws -> any EmbeddingModelV3<String> {
         if let models = textEmbeddingModels, let model = models[modelId] {
             return model
         }
 
         if let fallback = fallbackProvider {
-            return fallback.textEmbeddingModel(modelId: modelId)
+            return try fallback.textEmbeddingModel(modelId: modelId)
         }
 
-        fatalError(NoSuchModelError(modelId: modelId, modelType: .textEmbeddingModel).localizedDescription)
+        throw NoSuchModelError(modelId: modelId, modelType: .textEmbeddingModel)
     }
 
-    public func imageModel(modelId: String) -> any ImageModelV3 {
+    public func imageModel(modelId: String) throws -> any ImageModelV3 {
         if let models = imageModels, let model = models[modelId] {
             return model
         }
 
         if let fallback = fallbackProvider {
-            return fallback.imageModel(modelId: modelId)
+            return try fallback.imageModel(modelId: modelId)
         }
 
-        fatalError(NoSuchModelError(modelId: modelId, modelType: .imageModel).localizedDescription)
+        throw NoSuchModelError(modelId: modelId, modelType: .imageModel)
     }
 
-    public func transcriptionModel(modelId: String) -> (any TranscriptionModelV3)? {
+    public func transcriptionModel(modelId: String) throws -> (any TranscriptionModelV3)? {
         if let models = transcriptionModels, let model = models[modelId] {
             return model
         }
 
         if let fallback = fallbackProvider {
-            return fallback.transcriptionModel(modelId: modelId)
+            return try fallback.transcriptionModel(modelId: modelId)
         }
 
         // Throw error when model not found and no fallback (matches upstream behavior)
-        fatalError(NoSuchModelError(modelId: modelId, modelType: .transcriptionModel).localizedDescription)
+        throw NoSuchModelError(modelId: modelId, modelType: .transcriptionModel)
     }
 
-    public func speechModel(modelId: String) -> (any SpeechModelV3)? {
+    public func speechModel(modelId: String) throws -> (any SpeechModelV3)? {
         if let models = speechModels, let model = models[modelId] {
             return model
         }
 
         if let fallback = fallbackProvider {
-            return fallback.speechModel(modelId: modelId)
+            return try fallback.speechModel(modelId: modelId)
         }
 
         // Throw error when model not found and no fallback (matches upstream behavior)
-        fatalError(NoSuchModelError(modelId: modelId, modelType: .speechModel).localizedDescription)
+        throw NoSuchModelError(modelId: modelId, modelType: .speechModel)
     }
 }

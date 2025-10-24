@@ -54,23 +54,23 @@ public final class OpenAICompatibleProvider: ProviderV3 {
         self.imageFactory = imageFactory
     }
 
-    public func languageModel(modelId: String) -> any LanguageModelV3 {
+    public func languageModel(modelId: String) throws -> any LanguageModelV3 {
         languageFactory(OpenAICompatibleChatModelId(rawValue: modelId))
     }
 
-    public func chatModel(modelId: String) -> any LanguageModelV3 {
+    public func chatModel(modelId: String) throws -> any LanguageModelV3 {
         chatFactory(OpenAICompatibleChatModelId(rawValue: modelId))
     }
 
-    public func completionModel(modelId: String) -> any LanguageModelV3 {
+    public func completionModel(modelId: String) throws -> any LanguageModelV3 {
         completionFactory(OpenAICompatibleCompletionModelId(rawValue: modelId))
     }
 
-    public func textEmbeddingModel(modelId: String) -> any EmbeddingModelV3<String> {
+    public func textEmbeddingModel(modelId: String) throws -> any EmbeddingModelV3<String> {
         embeddingFactory(OpenAICompatibleEmbeddingModelId(rawValue: modelId))
     }
 
-    public func imageModel(modelId: String) -> any ImageModelV3 {
+    public func imageModel(modelId: String) throws -> any ImageModelV3 {
         imageFactory(OpenAICompatibleImageModelId(rawValue: modelId))
     }
 }

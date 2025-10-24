@@ -160,7 +160,7 @@ final class DefaultProviderRegistry: ProviderRegistryProvider {
             let (providerId, modelId) = try splitId(id: id, modelType: .languageModel)
             let provider = try getProvider(id: providerId, modelType: .languageModel)
 
-            var model = provider.languageModel(modelId: modelId)
+            var model = try provider.languageModel(modelId: modelId)
 
             if let middleware = languageModelMiddleware {
                 model = wrapLanguageModel(
@@ -183,7 +183,7 @@ final class DefaultProviderRegistry: ProviderRegistryProvider {
             let (providerId, modelId) = try splitId(id: id, modelType: .textEmbeddingModel)
             let provider = try getProvider(id: providerId, modelType: .textEmbeddingModel)
 
-            let model = provider.textEmbeddingModel(modelId: modelId)
+            let model = try provider.textEmbeddingModel(modelId: modelId)
             return model
         } catch {
             fatalError("Error accessing text embedding model: \(error)")
@@ -195,7 +195,7 @@ final class DefaultProviderRegistry: ProviderRegistryProvider {
             let (providerId, modelId) = try splitId(id: id, modelType: .imageModel)
             let provider = try getProvider(id: providerId, modelType: .imageModel)
 
-            let model = provider.imageModel(modelId: modelId)
+            let model = try provider.imageModel(modelId: modelId)
             return model
         } catch {
             fatalError("Error accessing image model: \(error)")
@@ -207,7 +207,8 @@ final class DefaultProviderRegistry: ProviderRegistryProvider {
             let (providerId, modelId) = try splitId(id: id, modelType: .transcriptionModel)
             let provider = try getProvider(id: providerId, modelType: .transcriptionModel)
 
-            guard let model = provider.transcriptionModel(modelId: modelId) else {
+            let maybeModel = try provider.transcriptionModel(modelId: modelId)
+            guard let model = maybeModel else {
                 throw NoSuchModelError(modelId: id, modelType: .transcriptionModel)
             }
 
@@ -222,7 +223,8 @@ final class DefaultProviderRegistry: ProviderRegistryProvider {
             let (providerId, modelId) = try splitId(id: id, modelType: .speechModel)
             let provider = try getProvider(id: providerId, modelType: .speechModel)
 
-            guard let model = provider.speechModel(modelId: modelId) else {
+            let maybeModel = try provider.speechModel(modelId: modelId)
+            guard let model = maybeModel else {
                 throw NoSuchModelError(modelId: id, modelType: .speechModel)
             }
 

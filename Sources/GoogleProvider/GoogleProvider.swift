@@ -63,15 +63,15 @@ public final class GoogleProvider: ProviderV3 {
         self.tools = tools
     }
 
-    public func languageModel(modelId: String) -> any LanguageModelV3 {
+    public func languageModel(modelId: String) throws -> any LanguageModelV3 {
         languageFactory(GoogleGenerativeAIModelId(rawValue: modelId))
     }
 
-    public func textEmbeddingModel(modelId: String) -> any EmbeddingModelV3<String> {
+    public func textEmbeddingModel(modelId: String) throws -> any EmbeddingModelV3<String> {
         embeddingFactory(GoogleGenerativeAIEmbeddingModelId(rawValue: modelId))
     }
 
-    public func imageModel(modelId: String) -> any ImageModelV3 {
+    public func imageModel(modelId: String) throws -> any ImageModelV3 {
         imageFactory(GoogleGenerativeAIImageModelId(rawValue: modelId), .init())
     }
 
@@ -186,8 +186,8 @@ public func createGoogleGenerativeAI(
 }
 
 public extension GoogleProvider {
-    func callAsFunction(_ modelId: String) -> any LanguageModelV3 {
-        languageModel(modelId: modelId)
+    func callAsFunction(_ modelId: String) throws -> any LanguageModelV3 {
+        try languageModel(modelId: modelId)
     }
 }
 

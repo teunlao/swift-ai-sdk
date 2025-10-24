@@ -38,11 +38,11 @@ public final class XAIProvider: ProviderV3 {
         self.imageModelFactory = imageModelFactory
     }
 
-    public func languageModel(modelId: String) -> any LanguageModelV3 {
+    public func languageModel(modelId: String) throws -> any LanguageModelV3 {
         languageModelFactory(XAIChatModelId(rawValue: modelId))
     }
 
-    public func chatModel(modelId: String) -> any LanguageModelV3 {
+    public func chatModel(modelId: String) throws -> any LanguageModelV3 {
         languageModelFactory(XAIChatModelId(rawValue: modelId))
     }
 
@@ -50,11 +50,11 @@ public final class XAIProvider: ProviderV3 {
         languageModelFactory(modelId)
     }
 
-    public func textEmbeddingModel(modelId: String) -> any EmbeddingModelV3<String> {
-        fatalError(NoSuchModelError(modelId: modelId, modelType: .textEmbeddingModel).localizedDescription)
+    public func textEmbeddingModel(modelId: String) throws -> any EmbeddingModelV3<String> {
+        throw NoSuchModelError(modelId: modelId, modelType: .textEmbeddingModel)
     }
 
-    public func imageModel(modelId: String) -> any ImageModelV3 {
+    public func imageModel(modelId: String) throws -> any ImageModelV3 {
         imageModelFactory(XAIImageModelId(rawValue: modelId))
     }
 
@@ -62,8 +62,8 @@ public final class XAIProvider: ProviderV3 {
         imageModelFactory(modelId)
     }
 
-    public func callAsFunction(_ modelId: String) -> any LanguageModelV3 {
-        languageModel(modelId: modelId)
+    public func callAsFunction(_ modelId: String) throws -> any LanguageModelV3 {
+        try languageModel(modelId: modelId)
     }
 }
 

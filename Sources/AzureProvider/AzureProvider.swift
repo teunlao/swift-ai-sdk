@@ -65,11 +65,11 @@ public final class AzureProvider: ProviderV3 {
         self.tools = tools
     }
 
-    public func languageModel(modelId: String) -> any LanguageModelV3 {
+    public func languageModel(modelId: String) throws -> any LanguageModelV3 {
         chatFactory(OpenAIChatModelId(rawValue: modelId))
     }
 
-    public func chatModel(modelId: String) -> any LanguageModelV3 {
+    public func chatModel(modelId: String) throws -> any LanguageModelV3 {
         chatFactory(OpenAIChatModelId(rawValue: modelId))
     }
 
@@ -77,11 +77,11 @@ public final class AzureProvider: ProviderV3 {
         completionFactory(OpenAICompletionModelId(rawValue: modelId))
     }
 
-    public func textEmbeddingModel(modelId: String) -> any EmbeddingModelV3<String> {
+    public func textEmbeddingModel(modelId: String) throws -> any EmbeddingModelV3<String> {
         embeddingFactory(OpenAIEmbeddingModelId(rawValue: modelId))
     }
 
-    public func imageModel(modelId: String) -> any ImageModelV3 {
+    public func imageModel(modelId: String) throws -> any ImageModelV3 {
         imageFactory(OpenAIImageModelId(rawValue: modelId))
     }
 
@@ -93,8 +93,8 @@ public final class AzureProvider: ProviderV3 {
         speechFactory(OpenAISpeechModelId(rawValue: modelId))
     }
 
-    public func callAsFunction(_ modelId: String) -> any LanguageModelV3 {
-        languageModel(modelId: modelId)
+    public func callAsFunction(_ modelId: String) throws -> any LanguageModelV3 {
+        try languageModel(modelId: modelId)
     }
 
     public func chat(_ modelId: OpenAIChatModelId) -> OpenAIChatLanguageModel {
