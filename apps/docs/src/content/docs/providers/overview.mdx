@@ -1,108 +1,28 @@
 ---
-title: Providers
-description: Available AI providers in Swift AI SDK
+title: AI SDK Providers
+description: Learn how to use AI SDK providers.
 ---
 
-import { Aside } from '@astrojs/starlight/components';
+import Check from '../../../components/Check.astro';
+import Cross from '../../../components/Cross.astro';
 
-The AI SDK comes with multiple providers that you can use to interact with different language models, image generation models, and speech synthesis services.
+The AI SDK comes with several providers that you can use to interact with different language models.
 
-## Available Providers
+## Provider support
 
-### Language Models
+Not all providers support all AI SDK features. Here's a quick comparison of the capabilities:
 
-| Provider | Status | Chat | Streaming | Tools | Object Generation |
-|----------|--------|------|-----------|-------|-------------------|
-| [OpenAI](/providers/openai) | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [Anthropic](/providers/anthropic) | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [Google Generative AI](/providers/google-generative-ai) | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Groq | ✅ | ✅ | ✅ | ✅ | ✅ |
-| xAI | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Azure OpenAI | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Cerebras | ✅ | ✅ | ✅ | ❌ | ❌ |
-| DeepSeek | ✅ | ✅ | ✅ | ✅ | ✅ |
-| OpenAI Compatible | ✅ | ✅ | ✅ | ✅ | ✅ |
-
-### Image Generation
-
-| Provider | Status | Models |
-|----------|--------|--------|
-| [Replicate](/providers/replicate) | ✅ | Flux, Stable Diffusion, and more |
-| Baseten | ✅ | Custom models |
-
-### Speech & Audio
-
-| Provider | Status | Features |
-|----------|--------|----------|
-| [LMNT](/providers/lmnt) | ✅ | High-quality text-to-speech |
-
-## Coming Soon
-
-The following providers will be added:
-
-- Amazon Bedrock
-- Google Vertex AI
-- Cohere
-- Mistral
-- Hugging Face
-- Fireworks
-- Perplexity
-- Together AI
-- ElevenLabs
-- Fal
-- Luma
-
-## Usage Pattern
-
-All providers follow a unified API pattern. You can switch providers by changing the import statement and factory function - your application code remains the same:
-
-```swift
-import SwiftAISDK
-import OpenAIProvider
-
-// Default instance (uses environment variable)
-let model = openai("gpt-4")
-
-// Custom configuration
-let provider = createOpenAIProvider(
-    settings: OpenAIProviderSettings(
-        apiKey: "your-api-key",
-        organization: "your-org"
-    )
-)
-let model = provider("gpt-4")
-
-// Use with generateText
-let result = try await generateText(
-    model: model,
-    prompt: "Hello, world!"
-)
-```
-
-Switch to a different provider:
-
-```swift
-import SwiftAISDK
-import AnthropicProvider
-
-let model = anthropic("claude-3-5-sonnet-20241022")
-let result = try await generateText(
-    model: model,
-    prompt: "Hello, world!"
-)
-```
-
-<Aside type="tip">
-All providers implement the same `LanguageModelV3` protocol, ensuring consistent behavior across different AI services.
-</Aside>
-
-## Provider-Specific Features
-
-While the API is unified, some providers offer unique capabilities:
-
-- **xAI Grok** - Reasoning tokens and web search results
-- **OpenAI** - Streaming with function calling, audio transcription
-- **Anthropic Claude** - Extended context windows, prompt caching
-- **Google Gemini** - Multimodal inputs (text, images, video)
-
-See individual provider documentation for specific features and model IDs.
+| Provider | Image Input | Object Generation | Tool Usage | Tool Streaming |
+| ------------------------------------------------------------------------ | ------------------- | ------------------- | ------------------- | ------------------- |
+| [OpenAI](/providers/openai) | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| [Anthropic](/providers/anthropic) | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| [Google Generative AI](/providers/google-generative-ai) | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| Groq | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| xAI | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| Azure | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| Cerebras | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| DeepSeek | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| OpenAI Compatible | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| [Replicate](/providers/replicate) | <Check size={18} /> | <Cross size={18} /> | <Cross size={18} /> | <Cross size={18} /> |
+| Baseten | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| [LMNT](/providers/lmnt) | <Cross size={18} /> | <Cross size={18} /> | <Cross size={18} /> | <Cross size={18} /> |

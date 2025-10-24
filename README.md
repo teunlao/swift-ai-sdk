@@ -19,7 +19,7 @@ A unified AI SDK for Swift, bringing the power of [Vercel AI SDK](https://github
 - **Text Generation** - Streaming and non-streaming
 - **Structured Outputs** - Type-safe object generation with schemas
 - **Tool Calling** - Function calling and MCP tools
-- **Multi-Provider** - OpenAI, Anthropic, Google, Groq, xAI, and [12 more](https://swift-ai-sdk-docs.vercel.app/providers/overview)
+- **Multi-Provider** - OpenAI, Anthropic, Google, Groq, xAI, and [more](https://swift-ai-sdk-docs.vercel.app/providers/overview)
 - **Middleware System** - Extensible request/response processing
 - **Telemetry** - Built-in observability
 

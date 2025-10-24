@@ -21,15 +21,6 @@ export default defineConfig({
           ]
         },
         {
-          label: "Agents",
-          items: [
-            { label: "Overview", link: "/agents/overview" },
-            { label: "Building Agents", link: "/agents/building-agents" },
-            { label: "Workflow Patterns", link: "/agents/workflows" },
-            { label: "Loop Control", link: "/agents/loop-control" }
-          ]
-        },
-        {
           label: "AI SDK Core",
           items: [
             { label: "Overview", link: "/ai-sdk-core/overview" },
@@ -64,6 +55,15 @@ export default defineConfig({
             { label: "Prompts", link: "/foundations/prompts" },
             { label: "Tools", link: "/foundations/tools" },
             { label: "Streaming", link: "/foundations/streaming" }
+          ]
+        },
+        {
+          label: "Agents",
+          items: [
+            { label: "Overview", link: "/agents/overview" },
+            { label: "Building Agents", link: "/agents/building-agents" },
+            { label: "Workflow Patterns", link: "/agents/workflows" },
+            { label: "Loop Control", link: "/agents/loop-control" }
           ]
         },
         {
