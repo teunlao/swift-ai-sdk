@@ -85,6 +85,7 @@ let package = Package(
         .testTarget(name: "AzureProviderTests", dependencies: ["AzureProvider", "AISDKProvider", "AISDKProviderUtils", "OpenAIProvider"]),
         .testTarget(name: "CerebrasProviderTests", dependencies: ["CerebrasProvider", "AISDKProvider", "AISDKProviderUtils", "OpenAICompatibleProvider"]),
         .testTarget(name: "DeepSeekProviderTests", dependencies: ["DeepSeekProvider", "AISDKProvider", "AISDKProviderUtils", "OpenAICompatibleProvider"]),
+        .testTarget(name: "BasetenProviderTests", dependencies: ["BasetenProvider", "AISDKProvider", "AISDKProviderUtils", "OpenAICompatibleProvider"]),
 
         // SwiftAISDKPlayground - CLI executable for manual testing (Playground)
         .executableTarget(
