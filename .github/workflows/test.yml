@@ -36,7 +36,7 @@ jobs:
       run: swift build -v
 
     - name: Run tests with coverage
-      run: swift test -v --enable-code-coverage
+      run: swift test -v --enable-code-coverage --parallel
 
     - name: Generate coverage report
       run: |
