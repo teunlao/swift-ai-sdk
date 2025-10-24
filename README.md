@@ -12,72 +12,44 @@
 
 A unified AI SDK for Swift, bringing the power of [Vercel AI SDK](https://github.com/vercel/ai) to Apple platforms with 100% API parity.
 
-📖 **[Documentation](https://swift-ai-sdk-docs.vercel.app)** | 🚀 **[Getting Started](https://swift-ai-sdk-docs.vercel.app/getting-started/ios-macos-quickstart)** | 💡 **[Examples](examples/)** | 💬 **[Discussions](https://github.com/teunlao/swift-ai-sdk/discussions)**
+**[Documentation](https://swift-ai-sdk-docs.vercel.app)** | **[Getting Started](https://swift-ai-sdk-docs.vercel.app/getting-started/ios-macos-quickstart)** | **[Examples](examples/)** | **[Discussions](https://github.com/teunlao/swift-ai-sdk/discussions)**
 
-## ✨ Features
+## Features
 
-- **Text Generation** - Streaming and non-streaming text generation
+- **Text Generation** - Streaming and non-streaming
 - **Structured Outputs** - Type-safe object generation with schemas
-- **Tool Calling** - Function calling and MCP tools support
-- **Multi-Provider** - OpenAI, Anthropic, Google, Groq, and more
+- **Tool Calling** - Function calling and MCP tools
+- **Multi-Provider** - OpenAI, Anthropic, Google, Groq, xAI, and [12 more](https://swift-ai-sdk-docs.vercel.app/providers/overview)
 - **Middleware System** - Extensible request/response processing
-- **Telemetry** - Built-in observability and monitoring
+- **Telemetry** - Built-in observability
 - **Cross-Platform** - iOS 16+, macOS 13+, tvOS 16+, watchOS 9+
 
-## 📦 Packages
+## Packages
 
 **Core SDK:**
-- `SwiftAISDK` - Main AI SDK with text generation, streaming, tools
+- `SwiftAISDK` - Main SDK with text generation, streaming, tools
 - `AISDKProvider` - Foundation types and interfaces
-- `AISDKProviderUtils` - Provider utilities and helpers
+- `AISDKProviderUtils` - Provider utilities
 
 **Providers:**
-- `OpenAIProvider` - OpenAI (GPT-4, GPT-3.5, etc.)
-- `AnthropicProvider` - Anthropic Claude
-- `GoogleProvider` - Google Gemini
-- `GroqProvider` - Groq
-- `XAIProvider` - xAI Grok (with reasoning & search)
-- `AzureProvider` - Azure OpenAI
-- `OpenAICompatibleProvider` - OpenAI-compatible APIs
-- `CerebrasProvider` - Cerebras
-- `DeepSeekProvider` - DeepSeek
-- `BasetenProvider` - Baseten
-- `ReplicateProvider` - Replicate
-- `LMNTProvider` - LMNT
+- OpenAI, Anthropic, Google, Groq, xAI, Azure, and [more](https://swift-ai-sdk-docs.vercel.app/providers/overview)
 
-**Upstream:** Based on Vercel AI SDK 6.0.0-beta.42 (commit `77db222ee`)
+**Upstream:** Based on Vercel AI SDK 6.0.0-beta.42
 
 ---
 
-## 📊 Implementation Status
+## Implementation Status
 
 **Updated**: 2025-10-24
 
-### 🎯 Overall
-
-| Metric | Upstream | Swift | Coverage |
-|--------|----------|-------|----------|
-| **Packages** | 35* | 18 | 51.4% |
-| **Tests** | 2928** | 2430 | 83.0% |
-
-_* Excludes 7 frontend frameworks (React, Angular, etc.) and 4 infrastructure packages (codemod, rsc, etc.) not applicable to Swift_
-_** Core SDK (1519) + Providers (1409), excludes frameworks/infrastructure_
-
-### 📦 Core SDK (3/3 packages)
-
-| Package | Upstream | Swift | Coverage | Status |
-|---------|----------|-------|----------|:------:|
-| **provider** | 0 | 139 | ∞% | ✅ |
-| **provider-utils** | 320 | 272 | 85.0% | ⚠️ |
-| **ai** | 1199 | 1136 | 94.7% | ✅ |
-| **TOTAL** | **1519** | **1547** | **101.8%** | **✅** |
-
-### 🔌 Providers (12/32 ported)
+| Category | Coverage |
+|----------|----------|
+| **Core SDK** | 101.8% (1547/1519 tests) |
+| **Providers** | 12/32 ported, 62.7% test coverage |
+| **Overall** | 83.0% (2430/2928 tests) |
 
 <details>
-<summary>📋 Provider Test Coverage Details</summary>
-
-**Test counts** (Upstream = TypeScript tests | Swift = Swift tests ported)
+<summary>Provider Details</summary>
 
 | Provider | Impl | Tests | Upstream | Swift | Coverage |
 |----------|:----:|:-----:|----------|-------|----------|
@@ -114,68 +86,6 @@ _** Core SDK (1519) + Providers (1409), excludes frameworks/infrastructure_
 | **TOTAL** | **12/32** | **12/32** | **1409** | **883** | **62.7%** |
 
 </details>
-
-<details>
-<summary>📊 Complete Summary & Progress Bars</summary>
-
-### Summary
-
-| Category | Packages | Upstream | Swift | Coverage | Status |
-|----------|:--------:|----------|-------|----------|:------:|
-| **Core SDK** | 3/3 | 1519 | 1547 | 101.8% | ✅ |
-| **Providers** | 12/32 | 1409 | 883 | 62.7% | ⚠️ |
-| **Swift-specific** | 4 | - | 37 | - | 🎯 |
-| **Frameworks** | 0/7 | 93 | 0 | N/A | ⏳ |
-| **Infrastructure** | 0/4 | 300 | 0 | N/A | ⏳ |
-| **TOTAL (all)** | **19/46** | **3323** | **2467** | **74.2%** | **⚠️** |
-| **TOTAL (relevant)** | **18/35** | **2928** | **2430** | **83.0%** | **⚠️** |
-
-### Progress Bars
-
-**Core SDK**:
-```
-provider:       ████████████████████████████████  ∞%     (139/0)
-provider-utils: ███████████████████████████░░░░░  85.0%  (272/320)
-ai:             ██████████████████████████████░░  94.7%  (1136/1199)
-────────────────────────────────────────────────────────
-TOTAL:          ██████████████████████████████░░  101.8% (1547/1519)
-```
-
-**Providers (Ported)**:
-```
-openai:              ████████████████████████████████  100%   (290/290)
-anthropic:           ████████████████████████████████  100%   (114/114)
-google:              ████████████████████████████████  100%   (155/155)
-groq:                ████████████████████████████████  100%   (58/58)
-xai:                 ████████████████████████████████  100%   (50/50)
-azure:               ████████████████████████████████  100%   (26/26)
-openai-compatible:   ████████████████████████████████  100%   (128/128)
-cerebras:            ████████████████████████████████  100%   (7/7)
-deepseek:            ████████████████████████████████  100%   (13/13)
-baseten:             ████████████████████████████████  100%   (25/25)
-replicate:           ████████████████████████████████  100%   (11/11)
-lmnt:                ████████████████████████████████  100%   (9/9)
-────────────────────────────────────────────────────────
-TOTAL:               ███████████████████░░░░░░░░░░░░░  62.7%  (883/1409)
-```
-
-**Overall**:
-```
-Core SDK:         ██████████████████████████████░░  101.8% (1547/1519)
-Providers:        ████████████████████░░░░░░░░░░░░  62.7%  (883/1409)
-Frameworks:       ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  0%     (0/93)
-Infrastructure:   ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  0%     (0/300)
-───────────────────────────────────────────────────────────
-TOTAL:            ███████████████████████░░░░░░░░░  74.2%  (2467/3323)
-```
-
-</details>
-
-**Legend**:
-- **Impl**: ✅ Implementation exists | ❌ Not implemented
-- **Tests**: ✅ Complete (≥95%) | ⚠️ Partial (7-94%) | 🔴 Incomplete (<7%) | ❌ Not ported
-
-**Note**: Test coverage indicates functional completeness vs upstream TypeScript implementation (Vercel AI SDK v6.0.0-beta.42).
 
 ---
 
@@ -230,34 +140,22 @@ More examples (tools, structured output, telemetry, middleware) are available in
 
 ## Unified Provider Architecture
 
-Write once, swap providers without changing your app logic — same idea as the upstream AI SDK.
-
-- Add only the provider modules you need via SwiftPM products (`OpenAIProvider`, `AnthropicProvider`, `GoogleProvider`, `GroqProvider`, `XAIProvider`, `AzureProvider`, `OpenAICompatibleProvider`, `CerebrasProvider`, `DeepSeekProvider`, `BasetenProvider`, `ReplicateProvider`, `LMNTProvider`).
-- Use the convenience facade `openai("model-id")`, `xai("grok-beta")`, `cerebras("model-id")`, `deepseek("model-id")`, or `baseten(modelId: "model-id")` or build a provider with settings via `createOpenAIProvider(settings:)` / `createXai(settings:)` / `createCerebras(settings:)` / `createDeepSeek(settings:)` / `createBaseten(settings:)`.
-
-Minimal provider setup and call:
+Switch providers without changing code.
 
 ```swift
 import SwiftAISDK
 import OpenAIProvider
 
+// Use convenience function
+let model = openai("gpt-5")
+
+// Or configure explicitly
 let provider = createOpenAIProvider(settings: .init(
   baseURL: ProcessInfo.processInfo.environment["OPENAI_BASE_URL"],
   apiKey: ProcessInfo.processInfo.environment["OPENAI_API_KEY"]
 ))
-
-let model = provider("gpt-5") // alias of languageModel(modelId:)
-let result = try await generateText(model: .v3(model), prompt: "Ping")
-print(result.text)
+let model = provider("gpt-5")
 ```
-
-## Features
-
-- Unified provider architecture with consistent APIs across vendors.
-- Text generation (`generateText`) and streaming (`streamText`) with SSE.
-- Tool calls (static and dynamic), retries, stop conditions, usage accounting.
-- Structured output with schemas, JSON mode, and partial output streams.
-- Middleware and telemetry hooks mirroring upstream behavior.
 
 ## Platforms & Requirements
 
@@ -351,31 +249,16 @@ Use GitHub Issues for bugs/ideas
 
 ## Upstream & Parity
 
-- Source of truth: Vercel AI SDK 6.0.0-beta.42 (commit `77db222ee`).
-- Goal: identical public API, behaviors, and error messages; any intentional deviations are documented in `plan/design-decisions.md`.
+Based on Vercel AI SDK 6.0.0-beta.42 (commit `77db222ee`).
 
-### Compatibility Notes
-- Swift 6.1, iOS 16+/macOS 13+; see `Package.swift` for authoritative constraints.
-- Error messages mirror upstream text where applicable.
-- HTTP `statusText` may differ due to Foundation APIs; see docs.
-- JS‑only schema vendors (zod/arktype/effect/valibot) are not bundled; use `Schema.codable` or JSON Schema.
-- Streaming uses URLSession + SSE; cancellation propagates via `AbortSignal` equivalent.
-- Telemetry spans mirror upstream operation names (e.g., `ai.generateText`).
-- Gateway usage is supported by pointing `baseURL` to your proxy.
-
-## Security & Responsible Use
-
-- Keep provider API keys in environment/Keychain; avoid logging secrets.
-- Follow each provider's Terms and data-handling policies.
+### Compatibility
+- Swift 6.1, iOS 16+, macOS 13+, tvOS 16+, watchOS 9+
+- JS schema vendors (zod/arktype/valibot) not supported; use `Schema.codable` or JSON Schema
 
 ## Contributing
 
-Contributions are welcome. See CONTRIBUTING.md for guidelines (issues, PR workflow, code style, tests). Do not edit `external/` — it mirrors upstream and is read‑only.
+Contributions welcome. See CONTRIBUTING.md for guidelines.
 
-## License & Trademarks
+## License
 
-Licensed under Apache 2.0 (see `LICENSE`). This project is independent and not affiliated with Vercel or any model provider. "Vercel", "OpenAI", and other names are trademarks of their respective owners. Portions of the code are adapted from the Vercel AI SDK under Apache 2.0.
-
-## Authors / About
-
-Inspired by the Vercel AI SDK. This independent port brings a unified, strongly‑typed AI SDK to the Swift ecosystem while preserving upstream behavior.
+Apache 2.0. Portions adapted from the Vercel AI SDK under Apache 2.0.
