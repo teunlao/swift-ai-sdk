@@ -25,10 +25,11 @@ let package = Package(
         .library(name: "CerebrasProvider", targets: ["CerebrasProvider"]),
         .library(name: "DeepSeekProvider", targets: ["DeepSeekProvider"]),
         .library(name: "BasetenProvider", targets: ["BasetenProvider"]),
+        .library(name: "ReplicateProvider", targets: ["ReplicateProvider"]),
         .library(name: "XAIProvider", targets: ["XAIProvider"]),
         .library(name: "EventSourceParser", targets: ["EventSourceParser"]), // internal lib for SSE
         .library(name: "AISDKZodAdapter", targets: ["AISDKZodAdapter"]),
-        .executable(name: "playground", targets: ["SwiftAISDKPlayground"])
+        .executable(name: "playground", targets: ["SwiftAISDKPlayground"]) 
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-argument-parser", from: "1.3.0")
@@ -71,6 +72,7 @@ let package = Package(
         .target(name: "CerebrasProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "OpenAICompatibleProvider"]),
         .target(name: "DeepSeekProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "OpenAICompatibleProvider"]),
         .target(name: "BasetenProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "OpenAICompatibleProvider"]),
+        .target(name: "ReplicateProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils"]),
         .target(name: "XAIProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "OpenAICompatibleProvider"]),
 
         // SwiftAISDK - Main AI SDK (matches @ai-sdk/ai)
@@ -86,6 +88,7 @@ let package = Package(
         .testTarget(name: "CerebrasProviderTests", dependencies: ["CerebrasProvider", "AISDKProvider", "AISDKProviderUtils", "OpenAICompatibleProvider"]),
         .testTarget(name: "DeepSeekProviderTests", dependencies: ["DeepSeekProvider", "AISDKProvider", "AISDKProviderUtils", "OpenAICompatibleProvider"]),
         .testTarget(name: "BasetenProviderTests", dependencies: ["BasetenProvider", "AISDKProvider", "AISDKProviderUtils", "OpenAICompatibleProvider"]),
+        .testTarget(name: "ReplicateProviderTests", dependencies: ["ReplicateProvider", "AISDKProvider", "AISDKProviderUtils"]),
 
         // SwiftAISDKPlayground - CLI executable for manual testing (Playground)
         .executableTarget(
@@ -100,6 +103,7 @@ let package = Package(
                 "GroqProvider",
                 "CerebrasProvider",
                 "DeepSeekProvider",
+                "ReplicateProvider",
                 "XAIProvider",
                 .product(name: "ArgumentParser", package: "swift-argument-parser")
             ],
