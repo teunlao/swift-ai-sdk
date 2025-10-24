@@ -3,7 +3,7 @@ import AISDKProvider
 import AISDKProviderUtils
 import AISDKZodAdapter
 
-public extension FlexibleSchema where Output: Decodable & Sendable {
+public extension FlexibleSchema where Output: Codable & Sendable {
     static func auto(_ type: Output.Type) -> FlexibleSchema<Output> {
         let jsonSchema = JSONSchemaGenerator.generate(for: type)
         return FlexibleSchema(Schema.codable(type, jsonSchema: jsonSchema))

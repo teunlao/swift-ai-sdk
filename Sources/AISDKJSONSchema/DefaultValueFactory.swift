@@ -1,5 +1,41 @@
 import Foundation
 
+enum SchemaCapturePresence {
+    case required
+    case optional
+}
+
+struct SchemaCaptureRecord {
+    let codingPath: [String]
+    let requestedType: Any.Type
+    let value: Any?
+    let presence: SchemaCapturePresence
+}
+
+final class SchemaCaptureStorage {
+    var records: [SchemaCaptureRecord] = []
+}
+
+enum SchemaCaptureContext {
+    private static let key = "ai.sdk.jsonschema.capture"
+
+    static func push() {
+        Thread.current.threadDictionary[key] = SchemaCaptureStorage()
+    }
+
+    static func pop() -> SchemaCaptureStorage? {
+        let storage = Thread.current.threadDictionary[key] as? SchemaCaptureStorage
+        Thread.current.threadDictionary[key] = nil
+        return storage
+    }
+
+    static func record(path: [CodingKey], requestedType: Any.Type, value: Any?, presence: SchemaCapturePresence) {
+        guard let storage = Thread.current.threadDictionary[key] as? SchemaCaptureStorage else { return }
+        let labels = path.map { $0.stringValue }
+        storage.records.append(SchemaCaptureRecord(codingPath: labels, requestedType: requestedType, value: value, presence: presence))
+    }
+}
+
 enum DefaultValueFactory {
     private static let stackKey = "ai.sdk.jsonschema.default-value-stack"
 
@@ -21,6 +57,13 @@ enum DefaultValueFactory {
         return try withRecursionGuard(type) {
             try type.init(from: PlaceholderDecoder())
         }
+    }
+
+    static func makeWithCapture<T: Decodable>(_ type: T.Type) throws -> (T, [SchemaCaptureRecord]) {
+        SchemaCaptureContext.push()
+        let value = try make(type)
+        let storage = SchemaCaptureContext.pop()
+        return (value, storage?.records ?? [])
     }
 }
 
@@ -161,27 +204,100 @@ private struct PlaceholderKeyedContainer<Key: CodingKey>: KeyedDecodingContainer
     let codingPath: [CodingKey]
     var allKeys: [Key] { [] }
 
+    private func record<T>(_ type: T.Type, key: Key, value: Any?, presence: SchemaCapturePresence) {
+        SchemaCaptureContext.record(path: codingPath + [key], requestedType: type, value: value, presence: presence)
+    }
+
     func contains(_ key: Key) -> Bool { true }
 
     func decodeNil(forKey key: Key) throws -> Bool { true }
 
-    func decode(_ type: Bool.Type, forKey key: Key) throws -> Bool { false }
-    func decode(_ type: String.Type, forKey key: Key) throws -> String { "" }
-    func decode(_ type: Double.Type, forKey key: Key) throws -> Double { 0 }
-    func decode(_ type: Float.Type, forKey key: Key) throws -> Float { 0 }
-    func decode(_ type: Int.Type, forKey key: Key) throws -> Int { 0 }
-    func decode(_ type: Int8.Type, forKey key: Key) throws -> Int8 { 0 }
-    func decode(_ type: Int16.Type, forKey key: Key) throws -> Int16 { 0 }
-    func decode(_ type: Int32.Type, forKey key: Key) throws -> Int32 { 0 }
-    func decode(_ type: Int64.Type, forKey key: Key) throws -> Int64 { 0 }
-    func decode(_ type: UInt.Type, forKey key: Key) throws -> UInt { 0 }
-    func decode(_ type: UInt8.Type, forKey key: Key) throws -> UInt8 { 0 }
-    func decode(_ type: UInt16.Type, forKey key: Key) throws -> UInt16 { 0 }
-    func decode(_ type: UInt32.Type, forKey key: Key) throws -> UInt32 { 0 }
-    func decode(_ type: UInt64.Type, forKey key: Key) throws -> UInt64 { 0 }
+    func decode(_ type: Bool.Type, forKey key: Key) throws -> Bool {
+        let value = false
+        record(type, key: key, value: value, presence: .required)
+        return value
+    }
+
+    func decode(_ type: String.Type, forKey key: Key) throws -> String {
+        let value = ""
+        record(type, key: key, value: value, presence: .required)
+        return value
+    }
+
+    func decode(_ type: Double.Type, forKey key: Key) throws -> Double {
+        let value = 0.0
+        record(type, key: key, value: value, presence: .required)
+        return value
+    }
+
+    func decode(_ type: Float.Type, forKey key: Key) throws -> Float {
+        let value: Float = 0
+        record(type, key: key, value: value, presence: .required)
+        return value
+    }
+
+    func decode(_ type: Int.Type, forKey key: Key) throws -> Int {
+        let value = 0
+        record(type, key: key, value: value, presence: .required)
+        return value
+    }
+
+    func decode(_ type: Int8.Type, forKey key: Key) throws -> Int8 {
+        let value: Int8 = 0
+        record(type, key: key, value: value, presence: .required)
+        return value
+    }
+
+    func decode(_ type: Int16.Type, forKey key: Key) throws -> Int16 {
+        let value: Int16 = 0
+        record(type, key: key, value: value, presence: .required)
+        return value
+    }
+
+    func decode(_ type: Int32.Type, forKey key: Key) throws -> Int32 {
+        let value: Int32 = 0
+        record(type, key: key, value: value, presence: .required)
+        return value
+    }
+
+    func decode(_ type: Int64.Type, forKey key: Key) throws -> Int64 {
+        let value: Int64 = 0
+        record(type, key: key, value: value, presence: .required)
+        return value
+    }
+
+    func decode(_ type: UInt.Type, forKey key: Key) throws -> UInt {
+        let value: UInt = 0
+        record(type, key: key, value: value, presence: .required)
+        return value
+    }
+
+    func decode(_ type: UInt8.Type, forKey key: Key) throws -> UInt8 {
+        let value: UInt8 = 0
+        record(type, key: key, value: value, presence: .required)
+        return value
+    }
+
+    func decode(_ type: UInt16.Type, forKey key: Key) throws -> UInt16 {
+        let value: UInt16 = 0
+        record(type, key: key, value: value, presence: .required)
+        return value
+    }
+
+    func decode(_ type: UInt32.Type, forKey key: Key) throws -> UInt32 {
+        let value: UInt32 = 0
+        record(type, key: key, value: value, presence: .required)
+        return value
+    }
+
+    func decode(_ type: UInt64.Type, forKey key: Key) throws -> UInt64 {
+        let value: UInt64 = 0
+        record(type, key: key, value: value, presence: .required)
+        return value
+    }
 
     func decode<T>(_ type: T.Type, forKey key: Key) throws -> T where T: Decodable {
-        try DefaultValueFactory.withRecursionGuard(type) {
+        let value: T = try DefaultValueFactory.withRecursionGuard(type) {
             if let known: T = try DefaultValueFactory.makeKnown(type) {
                 return known
             }
@@ -189,25 +305,83 @@ private struct PlaceholderKeyedContainer<Key: CodingKey>: KeyedDecodingContainer
             let decoder = PlaceholderDecoder(codingPath: codingPath + [key])
             return try T(from: decoder)
         }
+        record(T.self, key: key, value: value, presence: .required)
+        return value
     }
 
-    func decodeIfPresent(_ type: Bool.Type, forKey key: Key) throws -> Bool? { nil }
-    func decodeIfPresent(_ type: String.Type, forKey key: Key) throws -> String? { nil }
-    func decodeIfPresent(_ type: Double.Type, forKey key: Key) throws -> Double? { nil }
-    func decodeIfPresent(_ type: Float.Type, forKey key: Key) throws -> Float? { nil }
-    func decodeIfPresent(_ type: Int.Type, forKey key: Key) throws -> Int? { nil }
-    func decodeIfPresent(_ type: Int8.Type, forKey key: Key) throws -> Int8? { nil }
-    func decodeIfPresent(_ type: Int16.Type, forKey key: Key) throws -> Int16? { nil }
-    func decodeIfPresent(_ type: Int32.Type, forKey key: Key) throws -> Int32? { nil }
-    func decodeIfPresent(_ type: Int64.Type, forKey key: Key) throws -> Int64? { nil }
-    func decodeIfPresent(_ type: UInt.Type, forKey key: Key) throws -> UInt? { nil }
-    func decodeIfPresent(_ type: UInt8.Type, forKey key: Key) throws -> UInt8? { nil }
-    func decodeIfPresent(_ type: UInt16.Type, forKey key: Key) throws -> UInt16? { nil }
-    func decodeIfPresent(_ type: UInt32.Type, forKey key: Key) throws -> UInt32? { nil }
-    func decodeIfPresent(_ type: UInt64.Type, forKey key: Key) throws -> UInt64? { nil }
+    func decodeIfPresent(_ type: Bool.Type, forKey key: Key) throws -> Bool? {
+        record(type, key: key, value: nil, presence: .optional)
+        return nil
+    }
+
+    func decodeIfPresent(_ type: String.Type, forKey key: Key) throws -> String? {
+        record(type, key: key, value: nil, presence: .optional)
+        return nil
+    }
+
+    func decodeIfPresent(_ type: Double.Type, forKey key: Key) throws -> Double? {
+        record(type, key: key, value: nil, presence: .optional)
+        return nil
+    }
+
+    func decodeIfPresent(_ type: Float.Type, forKey key: Key) throws -> Float? {
+        record(type, key: key, value: nil, presence: .optional)
+        return nil
+    }
+
+    func decodeIfPresent(_ type: Int.Type, forKey key: Key) throws -> Int? {
+        record(type, key: key, value: nil, presence: .optional)
+        return nil
+    }
+
+    func decodeIfPresent(_ type: Int8.Type, forKey key: Key) throws -> Int8? {
+        record(type, key: key, value: nil, presence: .optional)
+        return nil
+    }
+
+    func decodeIfPresent(_ type: Int16.Type, forKey key: Key) throws -> Int16? {
+        record(type, key: key, value: nil, presence: .optional)
+        return nil
+    }
+
+    func decodeIfPresent(_ type: Int32.Type, forKey key: Key) throws -> Int32? {
+        record(type, key: key, value: nil, presence: .optional)
+        return nil
+    }
+
+    func decodeIfPresent(_ type: Int64.Type, forKey key: Key) throws -> Int64? {
+        record(type, key: key, value: nil, presence: .optional)
+        return nil
+    }
+
+    func decodeIfPresent(_ type: UInt.Type, forKey key: Key) throws -> UInt? {
+        record(type, key: key, value: nil, presence: .optional)
+        return nil
+    }
+
+    func decodeIfPresent(_ type: UInt8.Type, forKey key: Key) throws -> UInt8? {
+        record(type, key: key, value: nil, presence: .optional)
+        return nil
+    }
+
+    func decodeIfPresent(_ type: UInt16.Type, forKey key: Key) throws -> UInt16? {
+        record(type, key: key, value: nil, presence: .optional)
+        return nil
+    }
+
+    func decodeIfPresent(_ type: UInt32.Type, forKey key: Key) throws -> UInt32? {
+        record(type, key: key, value: nil, presence: .optional)
+        return nil
+    }
+
+    func decodeIfPresent(_ type: UInt64.Type, forKey key: Key) throws -> UInt64? {
+        record(type, key: key, value: nil, presence: .optional)
+        return nil
+    }
 
     func decodeIfPresent<T>(_ type: T.Type, forKey key: Key) throws -> T? where T: Decodable {
-        nil
+        record(T.self, key: key, value: nil, presence: .optional)
+        return nil
     }
 
     func nestedContainer<NestedKey>(keyedBy type: NestedKey.Type, forKey key: Key) throws -> KeyedDecodingContainer<NestedKey> {
