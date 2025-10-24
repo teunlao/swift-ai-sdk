@@ -172,6 +172,31 @@ let package = Package(
       ]
     ),
 
+    // MARK: - JSON Schema Examples
+
+    .executableTarget(
+      name: "JSONSchemaAutoExample",
+      dependencies: [
+        "ExamplesCore",
+        .product(name: "SwiftAISDK", package: "swift-ai-sdk"),
+        .product(name: "OpenAIProvider", package: "swift-ai-sdk"),
+        .product(name: "AISDKProviderUtils", package: "swift-ai-sdk"),
+        .product(name: "AISDKJSONSchema", package: "swift-ai-sdk"),
+      ]
+    ),
+
+    .executableTarget(
+      name: "ZodConstraintsTest",
+      dependencies: [
+        "ExamplesCore",
+        .product(name: "SwiftAISDK", package: "swift-ai-sdk"),
+        .product(name: "OpenAIProvider", package: "swift-ai-sdk"),
+        .product(name: "AISDKProviderUtils", package: "swift-ai-sdk"),
+        .product(name: "AISDKJSONSchema", package: "swift-ai-sdk"),
+        .product(name: "AISDKZodAdapter", package: "swift-ai-sdk"),
+      ]
+    ),
+
     // MARK: - Zod Adapter Examples
 
     .executableTarget(

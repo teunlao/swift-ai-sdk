@@ -69,12 +69,44 @@ private extension JSONSchemaGenerator {
     }
 
     static func inferJSONSchemaType(from value: Any) throws -> JSONValue {
+        let valueType = Swift.type(of: value)
+
         // Handle optionals by unwrapping
         if let optional = value as? any OptionalProtocol {
             if let wrapped = optional.wrappedValue {
                 return try inferJSONSchemaType(from: wrapped)
             } else {
-                // nil optional - infer from type
+                // nil optional - try to infer from Optional<T> type
+                // Extract wrapped type from Optional using Mirror
+                let typeName = String(describing: valueType)
+
+                // Try to create default value for common types
+                if typeName.contains("Optional<Date>") {
+                    return .object([
+                        "type": .string("string"),
+                        "format": .string("date-time")
+                    ])
+                } else if typeName.contains("Optional<URL>") {
+                    return .object([
+                        "type": .string("string"),
+                        "format": .string("uri")
+                    ])
+                } else if typeName.contains("Optional<Data>") {
+                    return .object([
+                        "type": .string("string"),
+                        "format": .string("binary")
+                    ])
+                } else if typeName.contains("Optional<String>") {
+                    return .object(["type": .string("string")])
+                } else if typeName.contains("Optional<Int") || typeName.contains("Optional<UInt") {
+                    return .object(["type": .string("integer")])
+                } else if typeName.contains("Optional<Double>") || typeName.contains("Optional<Float>") || typeName.contains("Optional<Decimal>") {
+                    return .object(["type": .string("number")])
+                } else if typeName.contains("Optional<Bool>") {
+                    return .object(["type": .string("boolean")])
+                }
+
+                // Fallback for unknown optional types
                 return .object(["type": .string("object"), "additionalProperties": .bool(true)])
             }
         }

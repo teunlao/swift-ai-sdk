@@ -104,6 +104,9 @@ swift test
   - `StreamObject.swift` - Streaming structured data
   - `OutputStrategies.swift` - array, enum, no-schema
 
+- **JSONSchema/**
+  - `JSONSchemaAutoExample.swift` - Automatic schema generation with .auto() for generateObject, streamObject, and tools
+
 - **Tools/**
   - `BasicTools.swift` - Defining and using tools
   - `MultiStep.swift` - Multi-step tool execution
