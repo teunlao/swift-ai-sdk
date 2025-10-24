@@ -22,7 +22,6 @@ A unified AI SDK for Swift, bringing the power of [Vercel AI SDK](https://github
 - **Multi-Provider** - OpenAI, Anthropic, Google, Groq, xAI, and [12 more](https://swift-ai-sdk-docs.vercel.app/providers/overview)
 - **Middleware System** - Extensible request/response processing
 - **Telemetry** - Built-in observability
-- **Cross-Platform** - iOS 16+, macOS 13+, tvOS 16+, watchOS 9+
 
 ## Packages
 
@@ -34,13 +33,12 @@ A unified AI SDK for Swift, bringing the power of [Vercel AI SDK](https://github
 **Providers:**
 - OpenAI, Anthropic, Google, Groq, xAI, Azure, and [more](https://swift-ai-sdk-docs.vercel.app/providers/overview)
 
-**Upstream:** Based on Vercel AI SDK 6.0.0-beta.42
-
 ---
 
 ## Implementation Status
 
 **Updated**: 2025-10-24
+**Upstream:** Based on Vercel AI SDK 6.0.0-beta.42
 
 | Category | Coverage |
 |----------|----------|
@@ -240,12 +238,6 @@ Notes: supports static and dynamic tool calls; for streaming with tools, use `st
 ## Templates & Examples
 
 See `examples/` in this repo and the docs site under `apps/docs`.
-
-## Community & Support
-
-Use GitHub Issues for bugs/ideas
-
----
 
 ## Upstream & Parity
 
