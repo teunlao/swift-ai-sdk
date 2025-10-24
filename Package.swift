@@ -28,12 +28,15 @@ let package = Package(
         .library(name: "ReplicateProvider", targets: ["ReplicateProvider"]),
         .library(name: "XAIProvider", targets: ["XAIProvider"]),
         .library(name: "LMNTProvider", targets: ["LMNTProvider"]),
+        .library(name: "AISDKJSONSchema", targets: ["AISDKJSONSchema"]),
         .library(name: "EventSourceParser", targets: ["EventSourceParser"]), // internal lib for SSE
         .library(name: "AISDKZodAdapter", targets: ["AISDKZodAdapter"]),
         .executable(name: "playground", targets: ["SwiftAISDKPlayground"]) 
     ],
     dependencies: [
-        .package(url: "https://github.com/apple/swift-argument-parser", from: "1.3.0")
+        .package(url: "https://github.com/apple/swift-argument-parser", from: "1.3.0"),
+        .package(url: "https://github.com/mattpolzin/OpenAPIKit", from: "3.0.0"),
+        .package(url: "https://github.com/mattpolzin/OpenAPIReflection", from: "2.0.0")
     ],
     targets: [
         .plugin(
@@ -76,6 +79,17 @@ let package = Package(
         .target(name: "ReplicateProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils"]),
         .target(name: "XAIProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "OpenAICompatibleProvider"]),
         .target(name: "LMNTProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils"]),
+        // JSON Schema generator (optional product)
+        .target(
+            name: "AISDKJSONSchema",
+            dependencies: [
+                "AISDKProviderUtils",
+                "AISDKZodAdapter",
+                .product(name: "OpenAPIKit", package: "OpenAPIKit"),
+                .product(name: "OpenAPIReflection", package: "OpenAPIReflection")
+            ]
+        ),
+        .testTarget(name: "AISDKJSONSchemaTests", dependencies: ["AISDKJSONSchema", "AISDKProviderUtils"]),
 
         // SwiftAISDK - Main AI SDK (matches @ai-sdk/ai)
         // GenerateText, Registry, Middleware, Prompts, Tools, Telemetry
