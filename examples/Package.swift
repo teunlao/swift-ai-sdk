@@ -204,7 +204,6 @@ let package = Package(
         .product(name: "OpenAIProvider", package: "swift-ai-sdk"),
         .product(name: "AISDKProviderUtils", package: "swift-ai-sdk"),
         .product(name: "AISDKJSONSchema", package: "swift-ai-sdk"),
-        .product(name: "OpenAIProvider", package: "swift-ai-sdk"),
       ]
     ),
 
@@ -218,7 +217,6 @@ let package = Package(
         .product(name: "OpenAIProvider", package: "swift-ai-sdk"),
         .product(name: "AISDKProviderUtils", package: "swift-ai-sdk"),
         .product(name: "AISDKJSONSchema", package: "swift-ai-sdk"),
-        .product(name: "OpenAIProvider", package: "swift-ai-sdk"),
       ]
     ),
 
@@ -230,7 +228,6 @@ let package = Package(
         .product(name: "OpenAIProvider", package: "swift-ai-sdk"),
         .product(name: "AISDKProviderUtils", package: "swift-ai-sdk"),
         .product(name: "AISDKJSONSchema", package: "swift-ai-sdk"),
-        .product(name: "OpenAIProvider", package: "swift-ai-sdk"),
         .product(name: "AISDKZodAdapter", package: "swift-ai-sdk"),
       ]
     ),
