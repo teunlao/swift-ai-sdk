@@ -8,8 +8,18 @@
 import Foundation
 import SwiftAISDK
 import OpenAIProvider
-import AISDKProviderUtils
 import ExamplesCore
+
+struct Ingredient: Codable, Sendable {
+  let name: String
+  let amount: String
+}
+
+struct Recipe: Codable, Sendable {
+  let name: String
+  let ingredients: [Ingredient]
+  let steps: [String]
+}
 
 @main
 struct GenerateObjectExample: CLIExample {
@@ -17,51 +27,27 @@ struct GenerateObjectExample: CLIExample {
   static let description = "Generate typed, validated JSON objects"
 
   static func run() async throws {
-    Logger.info("Defining recipe schema...")
+    try EnvLoader.load()
 
-    // Define a schema for a recipe
-    let recipeSchema = FlexibleSchema(jsonSchema(
-      .object([
-        "type": .string("object"),
-        "properties": .object([
-          "name": .object(["type": .string("string")]),
-          "ingredients": .object([
-            "type": .string("array"),
-            "items": .object([
-              "type": .string("object"),
-              "properties": .object([
-                "name": .object(["type": .string("string")]),
-                "amount": .object(["type": .string("string")])
-              ]),
-              "required": .array([.string("name"), .string("amount")])
-            ])
-          ]),
-          "steps": .object([
-            "type": .string("array"),
-            "items": .object(["type": .string("string")])
-          ])
-        ]),
-        "required": .array([.string("name"), .string("ingredients"), .string("steps")])
-      ])
-    ))
+    Logger.section("Generating structured recipe")
 
-    Logger.info("Generating structured recipe...")
-
-    // Generate object
     let result = try await generateObject(
       model: openai("gpt-4o"),
-      schema: recipeSchema,
+      schema: Recipe.self,
       prompt: "Generate a lasagna recipe.",
       schemaName: "recipe",
       schemaDescription: "A recipe for lasagna."
-    )
+    ).object
 
-    // Display result
-    Logger.section("Generated Recipe")
-    Helpers.printJSON(result.object)
+    Logger.info("Recipe: \(result.name)")
+    Logger.info("Ingredients:")
+    for ingredient in result.ingredients {
+      Logger.info("- \(ingredient.amount) \(ingredient.name)")
+    }
 
-    Logger.separator()
-    Logger.info("Tokens used: \(result.usage.totalTokens ?? 0)")
-    Logger.info("Finish reason: \(result.finishReason)")
+    Logger.info("Steps:")
+    for (index, step) in result.steps.enumerated() {
+      Logger.info("\(index + 1). \(step)")
+    }
   }
 }

@@ -8,8 +8,11 @@
 import Foundation
 import SwiftAISDK
 import OpenAIProvider
-import AISDKProviderUtils
 import ExamplesCore
+
+struct EchoPayload: Codable, Sendable {
+  let message: String
+}
 
 @main
 struct ToolsExample: CLIExample {
@@ -17,52 +20,36 @@ struct ToolsExample: CLIExample {
   static let description = "Use tools to extend model capabilities"
 
   static func run() async throws {
-    Logger.info("Defining a simple echo tool...")
+    try EnvLoader.load()
 
-    // Define a tool that echoes back its input
+    Logger.section("Defining echo tool")
+
     let echo = tool(
       description: "Echo back the input data",
-      inputSchema: FlexibleSchema(jsonSchema(
-        .object([
-          "type": .string("object"),
-          "additionalProperties": .bool(true)
-        ])
-      )),
-      execute: { input, _ in
-        Logger.info("Tool called with input: \(input)")
-        return .value(input)
-      }
-    )
+      inputSchema: EchoPayload.self
+    ) { payload, _ in
+      Logger.info("Tool called with message: \(payload.message)")
+      return EchoPayload(message: payload.message.uppercased())
+    }
 
-    Logger.info("Calling model with tool available...")
+    Logger.section("Calling model with tool")
 
-    // Call model with tool
     let result = try await generateText(
       model: openai("gpt-4o"),
-      tools: ["echo": echo],
+      tools: ["echo": echo.eraseToTool()],
       prompt: "Call the echo tool with {\"message\": \"Hello from Swift AI SDK!\"}"
     )
 
-    // Display result
-    Logger.section("Result")
-    print(result.text)
+    Logger.info("Text: \(result.text)")
 
-    // Show tool calls
-    if !result.toolCalls.isEmpty {
-      Logger.separator()
-      Logger.info("Tool calls made: \(result.toolCalls.count)")
-      for toolCall in result.toolCalls {
-        Logger.info("  - \(toolCall.toolName): \(toolCall.input)")
-      }
+    for call in result.toolCalls where !call.isDynamic {
+      let input = try await echo.decodeInput(from: call)
+      Logger.info("Tool call: \(call.toolName) message=\(input.message)")
     }
 
-    // Show tool results
-    if !result.toolResults.isEmpty {
-      Logger.separator()
-      Logger.info("Tool results: \(result.toolResults.count)")
-      for toolResult in result.toolResults {
-        Logger.info("  - \(toolResult.toolName): \(toolResult.output)")
-      }
+    for toolResult in result.toolResults where !toolResult.isDynamic {
+      let output: EchoPayload = try echo.decodeOutput(from: toolResult)
+      Logger.info("Tool result: \(toolResult.toolName) message=\(output.message)")
     }
   }
 }

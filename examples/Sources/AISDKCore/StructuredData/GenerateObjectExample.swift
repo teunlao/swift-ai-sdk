@@ -8,8 +8,22 @@
 import Foundation
 import SwiftAISDK
 import OpenAIProvider
-import AISDKProviderUtils
 import ExamplesCore
+
+struct Ingredient: Codable, Sendable {
+  let name: String
+  let amount: String
+}
+
+struct Recipe: Codable, Sendable {
+  let name: String
+  let ingredients: [Ingredient]
+  let steps: [String]
+}
+
+struct RecipeResponse: Codable, Sendable {
+  let recipe: Recipe
+}
 
 @main
 struct GenerateObjectExample: CLIExample {
@@ -17,55 +31,29 @@ struct GenerateObjectExample: CLIExample {
   static let description = "Generate typed, validated JSON objects"
 
   static func run() async throws {
-    Logger.info("Defining recipe schema...")
+    try EnvLoader.load()
 
-    // Define a schema for a recipe
-    let recipeSchema = FlexibleSchema(jsonSchema(
-      .object([
-        "type": .string("object"),
-        "properties": .object([
-          "recipe": .object([
-            "type": .string("object"),
-            "properties": .object([
-              "name": .object(["type": .string("string")]),
-              "ingredients": .object([
-                "type": .string("array"),
-                "items": .object([
-                  "type": .string("object"),
-                  "properties": .object([
-                    "name": .object(["type": .string("string")]),
-                    "amount": .object(["type": .string("string")])
-                  ]),
-                  "required": .array([.string("name"), .string("amount")])
-                ])
-              ]),
-              "steps": .object([
-                "type": .string("array"),
-                "items": .object(["type": .string("string")])
-              ])
-            ]),
-            "required": .array([.string("name"), .string("ingredients"), .string("steps")])
-          ])
-        ]),
-        "required": .array([.string("recipe")])
-      ])
-    ))
+    Logger.section("Generating structured recipe")
 
-    Logger.info("Generating structured recipe...")
-
-    // Generate object
-    let result = try await generateObject(
+    let response = try await generateObject(
       model: openai("gpt-4o"),
-      schema: recipeSchema,
-      prompt: "Generate a lasagna recipe."
-    )
+      schema: RecipeResponse.self,
+      prompt: "Generate a lasagna recipe.",
+      schemaName: "recipe_response",
+      schemaDescription: "Structured lasagna recipe response."
+    ).object
 
-    // Display result
-    Logger.section("Generated Recipe")
-    Helpers.printJSON(result.object)
+    let recipe = response.recipe
+    Logger.info("Recipe: \(recipe.name)")
 
-    Logger.separator()
-    Logger.info("Tokens used: \(result.usage.totalTokens)")
-    Logger.info("Finish reason: \(result.finishReason)")
+    Logger.info("Ingredients:")
+    for ingredient in recipe.ingredients {
+      Logger.info("- \(ingredient.amount) \(ingredient.name)")
+    }
+
+    Logger.info("Steps:")
+    for (index, step) in recipe.steps.enumerated() {
+      Logger.info("\(index + 1). \(step)")
+    }
   }
 }
