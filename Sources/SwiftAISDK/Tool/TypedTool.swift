@@ -1,0 +1,231 @@
+import Foundation
+import AISDKProvider
+import AISDKProviderUtils
+import AISDKJSONSchema
+
+/// Generic wrapper around the erased `Tool` type.
+/// Mirrors the TypeScript `Tool<Input, Output>` generics so call sites get
+/// strong typing while we keep compatibility with the existing runtime APIs.
+public struct TypedTool<Input: Codable & Sendable, Output: Codable & Sendable>: Sendable {
+    /// Underlying erased tool that flows through the rest of the SDK.
+    public let tool: Tool
+
+    /// Strongly-typed execute closure (if provided).
+    public let execute: (@Sendable (Input, ToolCallOptions) async throws -> ToolExecutionResult<Output>)?
+
+    /// Strongly-typed input schema (defaults to `.auto(Input.self)`).
+    public let inputSchema: FlexibleSchema<Input>
+
+    /// Optional strongly-typed output schema for validation.
+    public let outputSchema: FlexibleSchema<Output>?
+
+    /// Convenience accessor for the erased execute closure.
+    public var erasedExecute: (@Sendable (JSONValue, ToolCallOptions) async throws -> ToolExecutionResult<JSONValue>)? {
+        tool.execute
+    }
+
+    /// Allow pass-through to APIs that expect `[Tool]`.
+    public func eraseToTool() -> Tool { tool }
+}
+
+/// High-level helper that mirrors the ergonomics of the TypeScript `tool()` factory.
+///
+/// Callers work with strongly typed `Codable` values. The helper automatically:
+/// - builds a JSON schema from the `Input` type (or uses the provided schema),
+/// - validates/decodes incoming `JSONValue` into `Input`,
+/// - encodes the result `Output` back into `JSONValue`, preserving streaming behavior.
+public func tool<Input: Codable & Sendable, Output: Codable & Sendable>(
+    description: String? = nil,
+    providerOptions: [String: JSONValue]? = nil,
+    inputSchema: FlexibleSchema<Input> = FlexibleSchema.auto(Input.self),
+    outputSchema: FlexibleSchema<Output>? = nil,
+    needsApproval: NeedsApproval? = nil,
+    onInputStart: (@Sendable (ToolCallOptions) async throws -> Void)? = nil,
+    onInputDelta: (@Sendable (ToolCallDeltaOptions) async throws -> Void)? = nil,
+    onInputAvailable: (@Sendable (ToolCallInputOptions) async throws -> Void)? = nil,
+    execute: (@Sendable (Input, ToolCallOptions) async throws -> ToolExecutionResult<Output>)? = nil,
+    toModelOutput: (@Sendable (Output) -> LanguageModelV3ToolResultOutput)? = nil
+) -> TypedTool<Input, Output> {
+    let resolvedInputSchema = inputSchema.resolve()
+    let jsonInputSchema = FlexibleSchema<JSONValue>(
+        jsonSchema { try await resolvedInputSchema.jsonSchema() }
+    )
+
+    let resolvedOutputSchema = outputSchema?.resolve()
+    let jsonOutputSchema = resolvedOutputSchema.map { schema in
+        FlexibleSchema<JSONValue>(jsonSchema { try await schema.jsonSchema() })
+    }
+
+    let wrappedExecute: (@Sendable (JSONValue, ToolCallOptions) async throws -> ToolExecutionResult<JSONValue>)?
+    if let execute = execute {
+        wrappedExecute = { rawInput, options in
+            let typedInput = try await decodeTypedInput(rawInput, schema: resolvedInputSchema)
+            let typedResult = try await execute(typedInput, options)
+
+            return try mapToolExecutionResult(typedResult) { output in
+                if Output.self == JSONValue.self, let json = output as? JSONValue {
+                    return json
+                }
+
+                return try encodeOutput(output)
+            }
+        }
+    } else {
+        wrappedExecute = nil
+    }
+
+    let wrappedToModelOutput: (@Sendable (JSONValue) -> LanguageModelV3ToolResultOutput)?
+    if let toModelOutput {
+        wrappedToModelOutput = { json in
+            do {
+                let output = try decodeTypedOutput(json, schema: resolvedOutputSchema)
+                return toModelOutput(output)
+            } catch {
+                // Preserve previous behavior: surface decoding issue as fatal error so bugs surface early.
+                fatalError("Failed to decode tool output to typed value: \(error)")
+            }
+        }
+    } else {
+        wrappedToModelOutput = nil
+    }
+
+    let erased = AISDKProviderUtils.tool(
+        description: description,
+        providerOptions: providerOptions,
+        inputSchema: jsonInputSchema,
+        needsApproval: needsApproval,
+        onInputStart: onInputStart,
+        onInputDelta: onInputDelta,
+        onInputAvailable: onInputAvailable,
+        execute: wrappedExecute,
+        outputSchema: jsonOutputSchema,
+        toModelOutput: wrappedToModelOutput
+    )
+
+    return TypedTool(
+        tool: erased,
+        execute: execute,
+        inputSchema: inputSchema,
+        outputSchema: outputSchema
+    )
+}
+
+/// Convenience overload for simple (non-streaming) execute functions.
+public func tool<Input: Codable & Sendable, Output: Codable & Sendable>(
+    description: String? = nil,
+    providerOptions: [String: JSONValue]? = nil,
+    inputSchema: FlexibleSchema<Input> = FlexibleSchema.auto(Input.self),
+    outputSchema: FlexibleSchema<Output>? = nil,
+    needsApproval: NeedsApproval? = nil,
+    onInputStart: (@Sendable (ToolCallOptions) async throws -> Void)? = nil,
+    onInputDelta: (@Sendable (ToolCallDeltaOptions) async throws -> Void)? = nil,
+    onInputAvailable: (@Sendable (ToolCallInputOptions) async throws -> Void)? = nil,
+    execute: @escaping @Sendable (Input, ToolCallOptions) async throws -> Output,
+    toModelOutput: (@Sendable (Output) -> LanguageModelV3ToolResultOutput)? = nil
+) -> TypedTool<Input, Output> {
+    tool(
+        description: description,
+        providerOptions: providerOptions,
+        inputSchema: inputSchema,
+        outputSchema: outputSchema,
+        needsApproval: needsApproval,
+        onInputStart: onInputStart,
+        onInputDelta: onInputDelta,
+        onInputAvailable: onInputAvailable,
+        execute: { input, options in
+            let value = try await execute(input, options)
+            return .value(value)
+        },
+        toModelOutput: toModelOutput
+    )
+}
+
+// MARK: - Bridging Helpers
+
+private func decodeTypedInput<Input: Codable & Sendable>(
+    _ input: JSONValue,
+    schema: Schema<Input>
+) async throws -> Input {
+    if Input.self == JSONValue.self, let casted = input as? Input {
+        return casted
+    }
+
+    let foundation = try foundationObject(from: input)
+    let validation = await schema.validate(foundation)
+
+    switch validation {
+    case .success(let value):
+        return value
+    case .failure(let error):
+        throw error
+    }
+}
+
+private func decodeTypedOutput<Output: Decodable & Sendable>(
+    _ value: JSONValue,
+    schema _: Schema<Output>?
+) throws -> Output {
+    if Output.self == JSONValue.self, let casted = value as? Output {
+        return casted
+    }
+
+    let data = try JSONEncoder().encode(value)
+    return try JSONDecoder().decode(Output.self, from: data)
+}
+
+private func mapToolExecutionResult<Output>(
+    _ result: ToolExecutionResult<Output>,
+    transform: @escaping @Sendable (Output) throws -> JSONValue
+) throws -> ToolExecutionResult<JSONValue> {
+    switch result {
+    case .value(let output):
+        return .value(try transform(output))
+
+    case .future(let operation):
+        return .future {
+            let output = try await operation()
+            return try transform(output)
+        }
+
+    case .stream(let stream):
+        return .stream(AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    for try await output in stream {
+                        do {
+                            let converted = try transform(output)
+                            continuation.yield(converted)
+                        } catch {
+                            continuation.finish(throwing: error)
+                            return
+                        }
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+
+            continuation.onTermination = { _ in
+                task.cancel()
+            }
+        })
+    }
+}
+
+private func encodeOutput<Output: Encodable>(_ value: Output) throws -> JSONValue {
+    if let json = value as? JSONValue {
+        return json
+    }
+
+    let encoder = JSONEncoder()
+    let data = try encoder.encode(value)
+    let object = try JSONSerialization.jsonObject(with: data)
+    return try jsonValue(from: object)
+}
+
+private func foundationObject(from value: JSONValue) throws -> Any {
+    let encoder = JSONEncoder()
+    let data = try encoder.encode(value)
+    return try JSONSerialization.jsonObject(with: data)
+}
