@@ -110,6 +110,33 @@ public func tool<Input: Codable & Sendable, Output: Codable & Sendable>(
     )
 }
 
+
+public func tool<Input: Codable & Sendable, Output: Codable & Sendable>(
+    description: String? = nil,
+    providerOptions: [String: JSONValue]? = nil,
+    inputSchema inputType: Input.Type,
+    outputSchema: FlexibleSchema<Output>? = nil,
+    needsApproval: NeedsApproval? = nil,
+    onInputStart: (@Sendable (ToolCallOptions) async throws -> Void)? = nil,
+    onInputDelta: (@Sendable (ToolCallDeltaOptions) async throws -> Void)? = nil,
+    onInputAvailable: (@Sendable (ToolCallInputOptions) async throws -> Void)? = nil,
+    execute: (@Sendable (Input, ToolCallOptions) async throws -> ToolExecutionResult<Output>)? = nil,
+    toModelOutput: (@Sendable (Output) -> LanguageModelV3ToolResultOutput)? = nil
+) -> TypedTool<Input, Output> {
+    tool(
+        description: description,
+        providerOptions: providerOptions,
+        inputSchema: FlexibleSchema.auto(inputType),
+        outputSchema: outputSchema,
+        needsApproval: needsApproval,
+        onInputStart: onInputStart,
+        onInputDelta: onInputDelta,
+        onInputAvailable: onInputAvailable,
+        execute: execute,
+        toModelOutput: toModelOutput
+    )
+}
+
 /// Convenience overload for simple (non-streaming) execute functions.
 public func tool<Input: Codable & Sendable, Output: Codable & Sendable>(
     description: String? = nil,
@@ -136,6 +163,32 @@ public func tool<Input: Codable & Sendable, Output: Codable & Sendable>(
             let value = try await execute(input, options)
             return .value(value)
         },
+        toModelOutput: toModelOutput
+    )
+}
+
+public func tool<Input: Codable & Sendable, Output: Codable & Sendable>(
+    description: String? = nil,
+    providerOptions: [String: JSONValue]? = nil,
+    inputSchema inputType: Input.Type,
+    outputSchema: FlexibleSchema<Output>? = nil,
+    needsApproval: NeedsApproval? = nil,
+    onInputStart: (@Sendable (ToolCallOptions) async throws -> Void)? = nil,
+    onInputDelta: (@Sendable (ToolCallDeltaOptions) async throws -> Void)? = nil,
+    onInputAvailable: (@Sendable (ToolCallInputOptions) async throws -> Void)? = nil,
+    execute: @escaping @Sendable (Input, ToolCallOptions) async throws -> Output,
+    toModelOutput: (@Sendable (Output) -> LanguageModelV3ToolResultOutput)? = nil
+) -> TypedTool<Input, Output> {
+    tool(
+        description: description,
+        providerOptions: providerOptions,
+        inputSchema: FlexibleSchema.auto(inputType),
+        outputSchema: outputSchema,
+        needsApproval: needsApproval,
+        onInputStart: onInputStart,
+        onInputDelta: onInputDelta,
+        onInputAvailable: onInputAvailable,
+        execute: execute,
         toModelOutput: toModelOutput
     )
 }

@@ -16,7 +16,7 @@ struct WeatherToolExample: CLIExample {
     static func run() async throws {
         let weatherTool = tool(
             description: "Get the weather in a location",
-            inputSchema: .auto(WeatherQuery.self),
+            inputSchema: WeatherQuery.self,
             execute: { (query, _) in
                 WeatherReport(
                     location: query.location,
@@ -25,16 +25,18 @@ struct WeatherToolExample: CLIExample {
             }
         )
 
+        let result = try await weatherTool.execute?(
+            WeatherQuery(location: "San Francisco"),
+            ToolCallOptions(toolCallId: "weather-call", messages: [])
+        )
 
-        guard let execute = weatherTool.execute else {
-            fatalError("tool missing execute closure")
+        Logger.section("Weather tool output")
+        if let report = try await result?.resolve() {
+            Helpers.printJSON(report)
+        } else {
+            Logger.info("No result produced by tool")
         }
 
-        let options = ToolCallOptions(toolCallId: "weather-call", messages: [])
-        let report = try await execute(WeatherQuery(location: "San Francisco"), options).resolve()
-
-        // Logger.section("Weather tool output")
-        // Helpers.printJSON(report)
-        // Logger.success("Weather tool example completed")
+        Logger.success("Weather tool example completed")
     }
 }

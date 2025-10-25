@@ -15,7 +15,7 @@ struct TypedToolTests {
 
     @Test("executes tool with Codable input/output")
     func executesWithCodableValues() async throws {
-        let weatherTool = tool(description: "Weather", execute: { (query: WeatherQuery, _) in
+        let weatherTool = tool(description: "Weather", inputSchema: WeatherQuery.self, execute: { (query, _) in
             WeatherReport(location: query.location, condition: "Sunny")
         })
 
@@ -43,7 +43,7 @@ struct TypedToolTests {
 
     @Test("preserves streaming outputs")
     func mapsStreamingOutputs() async throws {
-        let tool = tool(description: "Stream", execute: { (_: WeatherQuery, _) in
+        let tool = tool(description: "Stream", inputSchema: WeatherQuery.self, execute: { (_: WeatherQuery, _) in
             ToolExecutionResult.stream(AsyncThrowingStream { continuation in
                 let reports = [
                     WeatherReport(location: "Paris", condition: "Sunny"),
