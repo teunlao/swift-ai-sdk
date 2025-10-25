@@ -320,6 +320,52 @@ public struct ToolCallOptions: Sendable {
     }
 }
 
+// MARK: - Experimental Context Decoding
+
+private enum ExperimentalContextDecodingError: LocalizedError {
+    case missing
+    case invalid
+
+    var errorDescription: String? {
+        switch self {
+        case .missing:
+            return "experimentalContext was not provided."
+        case .invalid:
+            return "experimentalContext could not be decoded to the requested type."
+        }
+    }
+}
+
+private func decodeExperimentalContextValue<T: Decodable>(_ value: JSONValue?) throws -> T {
+    guard let value else { throw ExperimentalContextDecodingError.missing }
+
+    do {
+        let foundation = jsonValueToFoundation(value)
+        let data = try JSONSerialization.data(withJSONObject: foundation)
+        return try JSONDecoder().decode(T.self, from: data)
+    } catch {
+        throw ExperimentalContextDecodingError.invalid
+    }
+}
+
+public extension ToolCallOptions {
+    func decodeExperimentalContext<T: Decodable>(_ type: T.Type) throws -> T {
+        try decodeExperimentalContextValue(experimentalContext)
+    }
+}
+
+public extension ToolCallDeltaOptions {
+    func decodeExperimentalContext<T: Decodable>(_ type: T.Type) throws -> T {
+        try decodeExperimentalContextValue(experimentalContext)
+    }
+}
+
+public extension ToolCallInputOptions {
+    func decodeExperimentalContext<T: Decodable>(_ type: T.Type) throws -> T {
+        try decodeExperimentalContextValue(experimentalContext)
+    }
+}
+
 /// Options for tool call delta (streaming).
 public struct ToolCallDeltaOptions: Sendable {
     /// The input text delta.
