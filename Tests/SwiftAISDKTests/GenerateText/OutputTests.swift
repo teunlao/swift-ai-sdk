@@ -129,4 +129,19 @@ struct OutputTests {
             )
         }
     }
+
+    @Test("convenience overload infers schema from Codable type")
+    func convenienceOverloadInfersSchema() async throws {
+        let spec = Output.object(TestOutput.self, name: "codable_output")
+        let format = try await spec.responseFormat()
+
+        guard case let .json(schema?, name?, description) = format else {
+            Issue.record("Expected json response format")
+            return
+        }
+
+        #expect(name == "codable_output")
+        #expect(description == nil)
+        #expect(schema != nil)
+    }
 }

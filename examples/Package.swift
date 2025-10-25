@@ -70,6 +70,15 @@ let package = Package(
     ),
 
     .executableTarget(
+      name: "StructuredOutputExample",
+      dependencies: [
+        "ExamplesCore",
+        .product(name: "SwiftAISDK", package: "swift-ai-sdk"),
+        .product(name: "OpenAIProvider", package: "swift-ai-sdk"),
+      ]
+    ),
+
+    .executableTarget(
       name: "BasicCLI",
       dependencies: [
         "ExamplesCore",

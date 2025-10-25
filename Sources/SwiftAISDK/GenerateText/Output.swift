@@ -117,7 +117,9 @@ public enum Output {
     ///
     /// - Parameter schema: Schema describing the expected output structure.
     public static func object<OutputValue: Sendable>(
-        schema inputSchema: FlexibleSchema<OutputValue>
+        schema inputSchema: FlexibleSchema<OutputValue>,
+        name: String? = nil,
+        description: String? = nil
     ) -> Specification<OutputValue, JSONValue> {
         let resolvedSchema = inputSchema.resolve()
 
@@ -125,7 +127,7 @@ public enum Output {
             type: .object,
             responseFormat: {
                 let jsonSchema = try await resolvedSchema.jsonSchema()
-                return .json(schema: jsonSchema, name: nil, description: nil)
+                return .json(schema: jsonSchema, name: name, description: description)
             },
             parsePartial: { text in
                 let result = await parsePartialJson(text)
@@ -182,8 +184,19 @@ public enum Output {
 
     /// Convenience overload that accepts a plain `Schema` instead of a `FlexibleSchema`.
     public static func object<OutputValue: Sendable>(
-        schema inputSchema: Schema<OutputValue>
+        schema inputSchema: Schema<OutputValue>,
+        name: String? = nil,
+        description: String? = nil
     ) -> Specification<OutputValue, JSONValue> {
-        object(schema: FlexibleSchema(inputSchema))
+        object(schema: FlexibleSchema(inputSchema), name: name, description: description)
+    }
+
+    /// Convenience overload that automatically derives the schema from a Codable type.
+    public static func object<OutputValue: Codable & Sendable>(
+        _ type: OutputValue.Type,
+        name: String? = nil,
+        description: String? = nil
+    ) -> Specification<OutputValue, JSONValue> {
+        object(schema: FlexibleSchema.auto(type), name: name, description: description)
     }
 }
