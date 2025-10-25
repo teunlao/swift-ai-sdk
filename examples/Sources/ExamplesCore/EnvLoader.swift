@@ -45,7 +45,10 @@ public struct EnvLoader {
       }
 
       let key = String(parts[0]).trimmingCharacters(in: .whitespaces)
-      let value = String(parts[1]).trimmingCharacters(in: .whitespaces)
+      var value = String(parts[1]).trimmingCharacters(in: .whitespaces)
+      if (value.hasPrefix("\"") && value.hasSuffix("\"")) || (value.hasPrefix("\'") && value.hasSuffix("\'")) {
+        value = String(value.dropFirst().dropLast())
+      }
 
       // Set environment variable
       setenv(key, value, 1)

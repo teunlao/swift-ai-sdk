@@ -173,7 +173,7 @@ func testBasicProviderInstance() async throws {
     // From docs: import SwiftAISDK, import OpenAIProvider
     // let model = openai("gpt-4o")
 
-    let model = openai("gpt-4o")
+    let model = try openai("gpt-4o")
     let modelType = String(describing: type(of: model))
     print("   Created model: \(modelType)")
 
@@ -194,7 +194,7 @@ func testCustomProviderSettings() async throws {
         )
     )
 
-    let model = provider.languageModel(modelId: "gpt-4o")
+    let model = try provider.languageModel(modelId: "gpt-4o")
     let modelType = String(describing: type(of: model))
     print("   Created custom provider and model: \(modelType)")
 
@@ -207,7 +207,7 @@ func testCustomProviderSettings() async throws {
 func testLanguageModelCreation() async throws {
     // From docs: let model = openai("gpt-5")
 
-    let model = openai("gpt-5")
+    let model = try openai("gpt-5")
     print("   Created model with ID: gpt-5")
 
     // Model is guaranteed to be LanguageModelV3

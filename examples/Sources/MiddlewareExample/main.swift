@@ -22,7 +22,7 @@ struct MiddlewareExample: CLIExample {
 
     // Wrap model with extractReasoningMiddleware
     let reasoningModel = wrapLanguageModel(
-      model: openai("gpt-4o"),
+      model: try openai("gpt-4o"),
       middleware: .single(extractReasoningMiddleware(
         options: ExtractReasoningOptions(tagName: "think")
       ))
@@ -52,7 +52,7 @@ struct MiddlewareExample: CLIExample {
     Logger.info("Converting non-streaming responses to streams...")
 
     let streamingModel = wrapLanguageModel(
-      model: openai("gpt-4o"),
+      model: try openai("gpt-4o"),
       middleware: .single(simulateStreamingMiddleware())
     )
 
@@ -73,7 +73,7 @@ struct MiddlewareExample: CLIExample {
     Logger.info("Applying default temperature and max tokens...")
 
     let defaultsModel = wrapLanguageModel(
-      model: openai("gpt-4o"),
+      model: try openai("gpt-4o"),
       middleware: .single(defaultSettingsMiddleware(
         settings: DefaultSettings(
           maxOutputTokens: 50,
@@ -95,7 +95,7 @@ struct MiddlewareExample: CLIExample {
     Logger.info("Combining default settings + simulated streaming...")
 
     let combinedModel = wrapLanguageModel(
-      model: openai("gpt-4o"),
+      model: try openai("gpt-4o"),
       middleware: .multiple([
         defaultSettingsMiddleware(
           settings: DefaultSettings(
@@ -144,7 +144,7 @@ struct MiddlewareExample: CLIExample {
     )
 
     let loggedModel = wrapLanguageModel(
-      model: openai("gpt-4o"),
+      model: try openai("gpt-4o"),
       middleware: .single(loggingMiddleware)
     )
 
