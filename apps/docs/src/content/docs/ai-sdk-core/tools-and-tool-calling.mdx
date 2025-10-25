@@ -77,26 +77,24 @@ In the following example, there are two steps:
 ```swift
 import SwiftAISDK
 import OpenAIProvider
-import AISDKProviderUtils
 
-let weather = dynamicTool(
+struct WeatherQuery: Codable, Sendable { let location: String }
+struct WeatherReport: Codable, Sendable {
+  let location: String
+  let temperature: Int
+}
+
+let weatherTool = tool(
   description: "Get the weather in a location",
-  inputSchema: FlexibleSchema(jsonSchema(.object([
-    "type": .string("object"),
-    "properties": .object([
-      "location": .object(["type": .string("string"), "description": .string("The location to get the weather for")])
-    ])
-  ]))),
-  execute: { input, _ in
-    let location = input["location"]?.stringValue ?? "unknown"
-    let temperature = 72 + Int.random(in: -10...10)
-    return .object(["location": .string(location), "temperature": .number(Double(temperature))])
-  }
-)
+  inputSchema: WeatherQuery.self
+) { query, _ in
+  let temperature = 72 + Int.random(in: -10...10)
+  return WeatherReport(location: query.location, temperature: temperature)
+}
 
 let out = try await generateText(
   model: openai("gpt-4o"),
-  tools: ["weather": weather],
+  tools: ["weather": weatherTool.eraseToTool()],
   stopWhen: [stepCountIs(5)], // stop after max 5 steps if tools were called
   prompt: "What is the weather in San Francisco?"
 )
@@ -206,7 +204,6 @@ The `response.messages` property contains an array of `ModelMessage` objects tha
 ```swift
 import SwiftAISDK
 import OpenAIProvider
-import AISDKProviderUtils
 
 var messages: [ModelMessage] = [
   .user(UserModelMessage(content: .text("..."), providerOptions: nil))
@@ -235,7 +232,6 @@ The `dynamicTool` helper creates tools with unknown input/output types:
 
 ```swift
 import SwiftAISDK
-import AISDKProviderUtils
 
 let customTool = dynamicTool(
   description: "Execute a custom function",
@@ -292,38 +288,42 @@ This can be used in combination with generator functions to e.g. stream status i
 during the tool execution:
 
 ```swift
-import AISDKProviderUtils
+import SwiftAISDK
 
-let weatherStreaming = dynamicTool(
+struct WeatherQuery: Codable, Sendable { let location: String }
+struct WeatherStatusUpdate: Codable, Sendable {
+  let status: String
+  let message: String
+  let temperature: Int?
+}
+
+let weatherStreaming = tool(
   description: "Get the current weather.",
-  inputSchema: FlexibleSchema(jsonSchema(.object([
-    "type": .string("object"),
-    "properties": .object(["location": .object(["type": .string("string")])])
-  ]))),
-  execute: { input, _ in
-    let location = input["location"]?.stringValue ?? "unknown"
-    let stream = AsyncThrowingStream<JSONValue, Error> { continuation in
-      // preliminary
-      continuation.yield(.object([
-        "status": .string("loading"),
-        "text": .string("Getting weather for \(location)"),
-        "weather": .null
-      ]))
-      // simulate async work
-      Task {
-        try? await Task.sleep(nanoseconds: 3_000_000_000)
+  inputSchema: WeatherQuery.self
+) { query, _ in
+  .stream(AsyncThrowingStream<WeatherStatusUpdate, Error> { continuation in
+    continuation.yield(
+      WeatherStatusUpdate(status: "loading", message: "Getting weather for \(query.location)...", temperature: nil)
+    )
+
+    Task {
+      do {
+        try await Task.sleep(nanoseconds: 3_000_000_000)
         let temperature = 72 + Int.random(in: -10...10)
-        continuation.yield(.object([
-          "status": .string("success"),
-          "text": .string("The weather in \(location) is \(temperature)°F"),
-          "temperature": .number(Double(temperature))
-        ]))
+        continuation.yield(
+          WeatherStatusUpdate(
+            status: "success",
+            message: "The weather in \(query.location) is \(temperature)°F",
+            temperature: temperature
+          )
+        )
         continuation.finish()
+      } catch {
+        continuation.finish(throwing: error)
       }
     }
-    return .stream(stream)
-  }
-)
+  })
+}
 ```
 
 ## Tool Choice
@@ -337,22 +337,22 @@ It supports the following settings:
 - `{ type: 'tool', toolName: string (typed) }`: the model must call the specified tool
 
 ```swift
-let weather = dynamicTool(
+struct WeatherQuery: Codable, Sendable { let location: String }
+struct WeatherReport: Codable, Sendable {
+  let location: String
+  let temperature: Int
+}
+
+let weatherTool = tool(
   description: "Get the weather in a location",
-  inputSchema: FlexibleSchema(jsonSchema(.object([
-    "type": .string("object"),
-    "properties": .object([
-      "location": .object(["type": .string("string"), "description": .string("The location to get the weather for")])
-    ])
-  ]))),
-  execute: { input, _ in
-    .object(["location": input["location"] ?? .string("unknown"), "temperature": .number(72)])
-  }
-)
+  inputSchema: WeatherQuery.self
+) { query, _ in
+  WeatherReport(location: query.location, temperature: 72)
+}
 
 let forced = try await generateText(
   model: openai("gpt-4o"),
-  tools: ["weather": weather],
+  tools: ["weather": weatherTool.eraseToTool()],
   toolChoice: .required,
   prompt: "What is the weather in San Francisco?"
 )
@@ -368,21 +368,25 @@ The ID of the tool call is forwarded to the tool execution.
 You can use it e.g. when sending tool-call related information with stream data.
 
 ```swift
+struct ProgressInput: Codable, Sendable { let task: String }
+struct ProgressResult: Codable, Sendable { let status: String }
+
+let progressTool = tool(
+  description: "Report tool status",
+  inputSchema: ProgressInput.self
+) { input, ctx in
+  if let callId = ctx.toolCallId {
+    print("Tool call id:", callId, "status for", input.task)
+  }
+  return ProgressResult(status: "in-progress")
+}
+
 // Pseudocode for forwarding toolCallId in a Swift server
 let stream = createUIMessageStream { writer in
   let result = try streamText(
     model: openai("gpt-4o"),
     messages: messages,
-    tools: [
-      "myTool": dynamicTool(
-        description: "...",
-        inputSchema: FlexibleSchema(jsonSchema(.object(["type": .string("object")]))),
-        execute: { args, ctx in
-          writer.write(["type": .string("data-tool-status"), "id": .string(ctx.toolCallId ?? ""), "data": .object(["name": .string("myTool"), "status": .string("in-progress")])])
-          return .object(["ok": .bool(true)])
-        }
-      )
-    ]
+    tools: ["progress": progressTool.eraseToTool()]
   )
   writer.merge(result.toUIMessageStream())
 }
@@ -396,16 +400,26 @@ You can access them in the second parameter of the `execute` function.
 In multi-step calls, the messages contain the text, tool calls, and tool results from all previous steps.
 
 ```swift
-let myTool = dynamicTool(
-  description: "...",
-  inputSchema: FlexibleSchema(jsonSchema(.object(["type": .string("object")]))),
-  execute: { args, ctx in
-    let history = ctx.messages
-    // use message history in calls to other models/services
-    return .object(["ok": .bool(true)])
-  }
+struct AuditRequest: Codable, Sendable { let topic: String }
+struct AuditResult: Codable, Sendable { let summary: String }
+
+let auditTool = tool(
+  description: "Summarize the conversation so far",
+  inputSchema: AuditRequest.self
+) { request, ctx in
+  let transcript = ctx.messages
+    .map { message in "\(message.role.rawValue): \(message.content.debugDescription)" }
+    .joined(separator: "
+")
+  return AuditResult(summary: "Transcript for \(request.topic):
+" + transcript)
+}
+
+let _ = try await generateText(
+  model: openai("gpt-4o"),
+  tools: ["audit": auditTool.eraseToTool()],
+  prompt: "..."
 )
-let _ = try await generateText(model: openai("gpt-4o"), tools: ["myTool": myTool], prompt: "...")
 ```
 
 ### Abort Signals
@@ -414,18 +428,27 @@ The abort signals from `generateText` and `streamText` are forwarded to the tool
 You can access them in the second parameter of the `execute` function and e.g. abort long-running computations or forward them to fetch calls inside tools.
 
 ```swift
-let weather = dynamicTool(
+struct WeatherQuery: Codable, Sendable { let location: String }
+struct WeatherReport: Codable, Sendable {
+  let location: String
+  let temperature: Int
+}
+
+let cancellableWeather = tool(
   description: "Get the weather in a location",
-  inputSchema: FlexibleSchema(jsonSchema(.object(["type": .string("object"), "properties": .object(["location": .object(["type": .string("string")])])]))),
-  execute: { args, ctx in
-    let location = args["location"]?.stringValue ?? "SF"
-    // Forward abort via ctx.abortSignal() if your code supports it
-    return .object(["location": .string(location), "temperature": .number(72)])
+  inputSchema: WeatherQuery.self
+) { query, ctx in
+  if let abort = ctx.abortSignal, abort() {
+    throw CancellationError()
   }
-)
+
+  let temperature = 72 + Int.random(in: -10...10)
+  return WeatherReport(location: query.location, temperature: temperature)
+}
+
 let _ = try await generateText(
   model: openai("gpt-4.1"),
-  tools: ["weather": weather],
+  tools: ["weather": cancellableWeather.eraseToTool()],
   prompt: "What is the weather in San Francisco?",
   settings: CallSettings(abortSignal: myAbortSignal)
 )
@@ -437,21 +460,32 @@ You can pass in arbitrary context from `generateText` or `streamText` via the `e
 This context is available in the `experimental_context` tool execution option.
 
 ```swift
-let someTool = dynamicTool(
-  description: "...",
-  inputSchema: FlexibleSchema(jsonSchema(.object(["type": .string("object")]))),
-  execute: { input, options in
-    let context = options.experimentalContext // JSONValue?
-    // validate/cast context if needed
-    _ = context
-    return .object(["ok": .bool(true)])
+import SwiftAISDK
+
+struct ContextAwareInput: Codable, Sendable {}
+struct ContextAwareResult: Codable, Sendable { let status: String }
+struct RequestContext: Codable, Sendable { let example: String }
+
+let someTool = tool(
+  description: "Read context provided by generateText",
+  inputSchema: ContextAwareInput.self
+) { _, options in
+  guard let context = options.experimentalContext else {
+    return ContextAwareResult(status: "no context")
   }
-)
+
+  let foundation = jsonValueToFoundation(context)
+  let data = try JSONSerialization.data(withJSONObject: foundation)
+  let decoded = try JSONDecoder().decode(RequestContext.self, from: data)
+  return ContextAwareResult(status: "context: \(decoded.example)")
+}
+
+let experimentalContext: JSONValue = .object(["example": .string("123")])
 
 let result = try await generateText(
   model: openai("gpt-4o"),
-  tools: ["someTool": someTool],
-  experimentalContext: .object(["example": .string("123")])
+  tools: ["someTool": someTool.eraseToTool()],
+  experimentalContext: experimentalContext
 )
 ```
 
@@ -463,41 +497,55 @@ To enable this, the AI SDK provides several helper types for tools, tool calls, 
 You can use them to strongly type your variables, function parameters, and return types
 in parts of the code that are not directly related to `streamText` or `generateText`.
 
-Each tool call is typed with `ToolCall<NAME extends string, ARGS>`, depending
-on the tool that has been invoked.
-Similarly, the tool results are typed with `ToolResult<NAME extends string, ARGS, RESULT>`.
+Each tool call is surfaced as the enum `TypedToolCall` (either `.static` or `.dynamic`),
+which carries the decoded payload for the tool that was invoked.
+Similarly, tool results use the enum `TypedToolResult`.
 
-The tools in `streamText` and `generateText` are defined as a `ToolSet`.
-The type inference helpers `TypedToolCall<TOOLS extends ToolSet>`
-and `TypedToolResult<TOOLS extends ToolSet>` can be used to
-extract the tool call and tool result types from the tools.
+Both `generateText` and `streamText` accept tools as a `ToolSet` (`[String: Tool]`).
+You can keep a strongly typed handle to each tool via `TypedTool` and still erase it when
+passing the collection to the model.
 
 ```swift
 import SwiftAISDK
 import OpenAIProvider
-import AISDKProviderUtils
+
+struct GreetingInput: Codable, Sendable { let name: String }
+struct GreetingOutput: Codable, Sendable { let greeting: String }
+struct AgeInput: Codable, Sendable { let age: Int }
+struct AgeOutput: Codable, Sendable { let message: String }
+
+let greetTool = tool(
+  description: "Greets the user",
+  inputSchema: GreetingInput.self
+) { input, _ in
+  GreetingOutput(greeting: "Hello, \(input.name)!")
+}
+
+let ageTool = tool(
+  description: "Tells the user their age",
+  inputSchema: AgeInput.self
+) { input, _ in
+  AgeOutput(message: "You are \(input.age) years old!")
+}
 
 let myToolSet: ToolSet = [
-  "firstTool": dynamicTool(
-    description: "Greets the user",
-    inputSchema: FlexibleSchema(jsonSchema(.object(["type": .string("object"), "properties": .object(["name": .object(["type": .string("string")])])]))),
-    execute: { args, _ in .object(["greeting": .string("Hello, \(args["name"]?.stringValue ?? "there")!")]) }
-  ),
-  "secondTool": dynamicTool(
-    description: "Tells the user their age",
-    inputSchema: FlexibleSchema(jsonSchema(.object(["type": .string("object"), "properties": .object(["age": .object(["type": .string("number")])])]))),
-    execute: { args, _ in .object(["message": .string("You are \(Int(args["age"]?.numberValue ?? 0)) years old!")]) }
-  )
+  "greet": greetTool.eraseToTool(),
+  "age": ageTool.eraseToTool()
 ]
 
-struct GeneratedData { let text: String; let toolCalls: [TypedToolCall]; let toolResults: [TypedToolResult] }
+struct GeneratedData {
+  let text: String
+  let toolCalls: [TypedToolCall]
+  let toolResults: [TypedToolResult]
+}
 
 func generateSomething(prompt: String) async throws -> GeneratedData {
   let out = try await generateText(
     model: openai("gpt-4.1"),
     tools: myToolSet,
-    prompt,
-  });
+    prompt: prompt
+  )
+  return GeneratedData(text: out.text, toolCalls: out.steps.flatMap { $0.toolCalls }, toolResults: out.steps.flatMap { $0.toolResults })
 }
 ```
 
@@ -683,26 +731,40 @@ that converts the tool result into a content part.
 Here is an example for converting a screenshot into a content part:
 
 ```swift
-let computer = dynamicTool(
+import SwiftAISDK
+import OpenAIProvider
+
+struct ComputerInput: Codable, Sendable { let action: String }
+struct ComputerResult: Codable, Sendable {
+  enum Kind: String, Codable, Sendable { case text, screenshot }
+  let kind: Kind
+  let payload: String
+}
+
+let computer = tool(
   description: "Computer tool",
-  inputSchema: FlexibleSchema(jsonSchema(.object(["type": .string("object")]))),
-  execute: { args, _ in
-    // Return a PNG screenshot encoded as base64
-    let pngBase64 = "..."
-    return .image(.init(data: pngBase64))
-  },
-  toModelOutput: { result in
-    switch result {
-    case .string(let text):
-      return .content([.text(.init(text: text))])
-    case .image(let img):
-      return .content([.image(data: img.data, mediaType: "image/png")])
-    default:
-      return .content([.text(.init(text: String(describing: result)))])
+  inputSchema: ComputerInput.self,
+  toModelOutput: { (result: ComputerResult) in
+    switch result.kind {
+    case .text:
+      return .content([.text(.init(text: result.payload))])
+    case .screenshot:
+      return .content([.image(data: result.payload, mediaType: "image/png")])
     }
   }
+) { input, _ in
+  if input.action == "screenshot" {
+    let pngBase64 = "..." // capture a screenshot
+    return ComputerResult(kind: .screenshot, payload: pngBase64)
+  }
+  return ComputerResult(kind: .text, payload: "Performed action: \(input.action)")
+}
+
+let result = try await generateText(
+  model: openai("gpt-4o"),
+  tools: ["computer": computer.eraseToTool()],
+  prompt: "..."
 )
-let result = try await generateText(model: openai("gpt-4o"), tools: ["computer": computer], prompt: "...")
 ```
 
 ## Extracting Tools
@@ -713,23 +775,33 @@ The `tool` helper function is crucial for this, because it ensures correct type 
 Here is an example of an extracted tool:
 
 ```swift filename="Tools/WeatherTool.swift"
-import AISDKProviderUtils
+import SwiftAISDK
 
-public let weatherTool: Tool = dynamicTool(
-  description: "Get the weather in a location",
-  inputSchema: FlexibleSchema(jsonSchema(.object([
-    "type": .string("object"),
-    "properties": .object([
-      "location": .object(["type": .string("string"), "description": .string("The location to get the weather for")])
-    ])
-  ]))),
-  execute: { input, _ in
-    let location = input["location"]?.stringValue ?? "unknown"
-    let temp = 72 + Int.random(in: -10...10)
-    return .object(["location": .string(location), "temperature": .number(Double(temp))])
+public struct WeatherQuery: Codable, Sendable {
+  public let location: String
+
+  public init(location: String) { self.location = location }
+}
+
+public struct WeatherReport: Codable, Sendable {
+  public let location: String
+  public let temperature: Int
+
+  public init(location: String, temperature: Int) {
+    self.location = location
+    self.temperature = temperature
   }
-)
+}
+
+public let weatherTool = tool(
+  description: "Get the weather in a location",
+  inputSchema: WeatherQuery.self
+) { query, _ in
+  let temp = 72 + Int.random(in: -10...10)
+  return WeatherReport(location: query.location, temperature: temp)
+}
 ```
+
 
 ## MCP Tools
 
