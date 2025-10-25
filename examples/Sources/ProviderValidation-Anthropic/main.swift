@@ -14,6 +14,10 @@ import AISDKProvider
 import AISDKProviderUtils
 import ExamplesCore
 
+struct WeatherQuery: Codable, Sendable { let location: String }
+struct WeatherReport: Codable, Sendable { let location: String; let forecast: String }
+struct ReleaseSummary: Codable, Sendable { let summary: String }
+
 // MARK: - Main Test Runner
 
 @main
@@ -45,20 +49,22 @@ struct ProviderValidationAnthropic {
             ("5. Stream Text Basic", testStreamTextBasic),
 
             // Advanced Features
-            ("6. Reasoning Syntax", testReasoningSyntax),
-            ("7. Cache Control Syntax", testCacheControlSyntax),
-            ("8. Cache Control System Messages", testCacheControlSystemMessages),
+            ("6. Tool Call with Typed Schema", testToolCallWithTypedSchema),
+            ("7. Generate Object with Typed Schema", testGenerateObjectTyped),
+            ("8. Reasoning Syntax", testReasoningSyntax),
+            ("9. Cache Control Syntax", testCacheControlSyntax),
+            ("10. Cache Control System Messages", testCacheControlSystemMessages),
 
             // Tools
-            ("9. Bash Tool Syntax", testBashToolSyntax),
-            ("10. Text Editor Tool Syntax", testTextEditorToolSyntax),
-            ("11. Computer Tool Syntax", testComputerToolSyntax),
-            ("12. Web Search Tool Syntax", testWebSearchToolSyntax),
-            ("13. Web Fetch Tool Syntax", testWebFetchToolSyntax),
-            ("14. Code Execution Tool Syntax", testCodeExecutionToolSyntax),
+            ("11. Bash Tool Syntax", testBashToolSyntax),
+            ("12. Text Editor Tool Syntax", testTextEditorToolSyntax),
+            ("13. Computer Tool Syntax", testComputerToolSyntax),
+            ("14. Web Search Tool Syntax", testWebSearchToolSyntax),
+            ("15. Web Fetch Tool Syntax", testWebFetchToolSyntax),
+            ("16. Code Execution Tool Syntax", testCodeExecutionToolSyntax),
 
             // Multi-modal
-            ("15. PDF Support Syntax", testPdfSupportSyntax),
+            ("17. PDF Support Syntax", testPdfSupportSyntax),
         ]
 
         for (name, test) in tests {
@@ -127,7 +133,7 @@ func testLanguageModelCreation() async throws {
     // From docs: anthropic("model-id")
     print("   Testing language model creation")
 
-    let model = anthropic("claude-3-haiku-20240307")
+    let model = try anthropic("claude-3-haiku-20240307")
     let modelType = String(describing: type(of: model))
     print("   Created model: \(modelType)")
 
@@ -141,7 +147,7 @@ func testGenerateTextBasic() async throws {
     print("   Testing generate text with Claude API...")
 
     let result = try await generateText(
-        model: anthropic("claude-3-haiku-20240307"),
+        model: try anthropic("claude-3-haiku-20240307"),
         prompt: "Write a vegetarian lasagna recipe for 4 people."
     )
 
@@ -155,7 +161,7 @@ func testStreamTextBasic() async throws {
     print("   Testing stream text with Claude API...")
 
     let stream = try streamText(
-        model: anthropic("claude-3-haiku-20240307"),
+        model: try anthropic("claude-3-haiku-20240307"),
         prompt: "Write a 2-sentence description of Swift programming language."
     )
 
@@ -168,6 +174,57 @@ func testStreamTextBasic() async throws {
     }
 
     print("   ✓ Received \(chunkCount) text chunks")
+}
+
+// MARK: - Typed Tool & Structured Output
+
+func testToolCallWithTypedSchema() async throws {
+    print("   Testing tool call with typed schema")
+
+    let weatherTool = tool(
+        description: "Return a canned forecast",
+        inputSchema: WeatherQuery.self
+    ) { query, _ in
+        WeatherReport(location: query.location, forecast: "72°F and sunny")
+    }
+
+    let result = try await generateText(
+        model: try anthropic("claude-3-5-sonnet-20241022"),
+        tools: ["weather": weatherTool.eraseToTool()],
+        toolChoice: .tool(toolName: "weather"),
+        prompt: "Call the weather tool for San Francisco and summarize the response."
+    )
+
+    guard let toolCall = result.toolCalls.first(where: { !$0.isDynamic }) else {
+        print("   ⚠️ Model did not invoke the tool; skipping")
+        throw SkippedTest()
+    }
+
+    let decodedCall = try await weatherTool.decodeInput(from: toolCall)
+    print("   Tool call args: location=\(decodedCall.location)")
+
+    guard let toolResult = result.toolResults.first(where: { !$0.isDynamic }) else {
+        print("   ⚠️ Model produced no tool result; skipping")
+        throw SkippedTest()
+    }
+
+    let decodedResult = try weatherTool.decodeOutput(from: toolResult)
+    print("   Tool result: \(decodedResult.forecast)")
+    print("   ✓ Tool execution pipeline completed")
+}
+
+func testGenerateObjectTyped() async throws {
+    print("   Testing generateObject with typed schema")
+
+    let summary = try await generateObject(
+        model: try anthropic("claude-3-5-sonnet-20241022"),
+        schema: ReleaseSummary.self,
+        prompt: "Summarize the Swift AI SDK key features in one sentence.",
+        schemaName: "release_summary"
+    ).object
+
+    print("   Summary: \(summary.summary)")
+    print("   ✓ generateObject returned typed value")
 }
 
 // MARK: - Advanced Features Tests
