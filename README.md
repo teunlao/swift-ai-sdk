@@ -214,13 +214,14 @@ struct WeatherReport: Codable, Sendable {
 
 let weatherTool = tool(
   description: "Get the weather in a location",
-  inputSchema: WeatherQuery.self
-) { (query: WeatherQuery, _) in
-  WeatherReport(
-    location: query.location,
-    temperatureFahrenheit: Int.random(in: 62...82)
-  )
-}
+  inputSchema: WeatherQuery.self,
+  execute: { (query, _) in
+    WeatherReport(
+      location: query.location,
+      temperatureFahrenheit: Int.random(in: 62...82)
+    )
+  }
+)
 
 let result = try await generateText(
   model: openai("gpt-4.1"),
