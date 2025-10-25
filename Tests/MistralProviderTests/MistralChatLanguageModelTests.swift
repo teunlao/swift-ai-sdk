@@ -578,6 +578,38 @@ struct MistralChatLanguageModelGenerateTests {
         #expect(headers["custom-request-header"] == "request-header-value")
         #expect(headers["user-agent"]?.contains("ai-sdk/mistral") == true)
     }
+
+    @Test("sends request body")
+    func sendsRequestBody() async throws {
+        let (model, _, responseBox) = makeChatModel()
+        await responseBox.setJSON(
+            url: HTTPTestHelpers.chatURL,
+            body: [
+                "choices": [[
+                    "index": 0,
+                    "message": ["role": "assistant", "content": ""],
+                    "finish_reason": "stop"
+                ]]
+            ]
+        )
+
+        let result = try await model.doGenerate(options: .init(prompt: defaultPrompt()))
+        guard let body = result.request?.body as? [String: JSONValue],
+              case .string(let modelId) = body["model"],
+              case .array(let messages) = body["messages"],
+              case .object(let userMessage) = messages.first,
+              case .array(let contentArray) = userMessage["content"],
+              case .object(let textEntry) = contentArray.first else {
+            Issue.record("Invalid request body structure")
+            return
+        }
+
+        // Verify core required fields
+        #expect(modelId == "mistral-small-latest")
+        #expect(userMessage["role"] == .string("user"))
+        #expect(textEntry["type"] == .string("text"))
+        #expect(textEntry["text"] == .string("Hello"))
+    }
 }
 
 @Suite("MistralChatLanguageModel doStream")
@@ -969,5 +1001,64 @@ struct MistralChatLanguageModelStreamTests {
 
         let parts = try await collectParts(model.doStream(options: .init(prompt: defaultPrompt(), includeRawChunks: true)).stream)
         #expect(parts.contains { if case .raw = $0 { return true } else { return false } })
+    }
+}
+
+@Suite("Tool result format support")
+struct MistralToolResultFormatTests {
+    @Test("handles new LanguageModelV3ToolResultOutput format")
+    func handlesNewToolResultOutputFormat() async throws {
+        let (model, _, responseBox) = makeChatModel()
+        await responseBox.setJSON(
+            url: HTTPTestHelpers.chatURL,
+            body: [
+                "id": "test-id",
+                "object": "chat.completion",
+                "created": 1234567890,
+                "model": "mistral-small",
+                "choices": [[
+                    "index": 0,
+                    "message": [
+                        "role": "assistant",
+                        "content": "Here is the result",
+                        "tool_calls": nil
+                    ],
+                    "finish_reason": "stop"
+                ]],
+                "usage": [
+                    "prompt_tokens": 10,
+                    "completion_tokens": 5,
+                    "total_tokens": 15
+                ]
+            ]
+        )
+
+        let prompt: LanguageModelV3Prompt = [
+            .user(content: [.text(.init(text: "Hello"))], providerOptions: nil),
+            .assistant(
+                content: [
+                    .toolCall(.init(
+                        toolCallId: "call-1",
+                        toolName: "test-tool",
+                        input: .object(["query": .string("test")])
+                    ))
+                ],
+                providerOptions: nil
+            ),
+            .tool(
+                content: [
+                    .init(
+                        toolCallId: "call-1",
+                        toolName: "test-tool",
+                        output: .json(value: .object(["result": .string("success")]))
+                    )
+                ],
+                providerOptions: nil
+            )
+        ]
+
+        let result = try await model.doGenerate(options: .init(prompt: prompt))
+        #expect(result.content == [.text(.init(text: "Here is the result"))])
+        #expect(result.finishReason == .stop)
     }
 }

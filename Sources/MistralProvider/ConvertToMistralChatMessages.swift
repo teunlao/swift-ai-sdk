@@ -141,10 +141,44 @@ private func stringifyToolOutput(_ output: LanguageModelV3ToolResultOutput) thro
     case .executionDenied(let reason):
         return reason ?? "Tool execution denied."
     case .json(let value), .errorJson(let value):
-        let data = try JSONEncoder().encode(value)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .withoutEscapingSlashes
+        let data = try encoder.encode(value)
         return String(data: data, encoding: .utf8) ?? "{}"
     case .content(let parts):
-        let data = try JSONEncoder().encode(parts)
-        return String(data: data, encoding: .utf8) ?? "[]"
+        return try stringifyToolContentParts(parts)
     }
+}
+
+private func stringifyToolContentParts(_ parts: [LanguageModelV3ToolResultContentPart]) throws -> String {
+    if parts.isEmpty {
+        return "[]"
+    }
+
+    var encoded: [String] = []
+    encoded.reserveCapacity(parts.count)
+
+    for part in parts {
+        switch part {
+        case .text(let text):
+            encoded.append("{\"type\":\"text\",\"text\":\(try encodeJSONString(text))}")
+        case .media(let data, let mediaType):
+            encoded.append("{\"type\":\"image-data\",\"data\":\(try encodeJSONString(data)),\"mediaType\":\(try encodeJSONString(mediaType))}")
+        }
+    }
+
+    return "[\(encoded.joined(separator: ","))]"
+}
+
+private func encodeJSONString(_ value: String) throws -> String {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = .withoutEscapingSlashes
+    let data = try encoder.encode(value)
+    guard let string = String(data: data, encoding: .utf8) else {
+        throw EncodingError.invalidValue(
+            value,
+            EncodingError.Context(codingPath: [], debugDescription: "Failed to encode string as UTF-8 JSON")
+        )
+    }
+    return string
 }

@@ -456,9 +456,9 @@ public enum LanguageModelV3ToolResultContentPart: Sendable, Equatable, Codable {
 
     private enum CodingKeys: String, CodingKey {
         case type
-        case text
         case data
         case mediaType
+        case text
     }
 
     public init(from decoder: Decoder) throws {
@@ -469,7 +469,7 @@ public enum LanguageModelV3ToolResultContentPart: Sendable, Equatable, Codable {
         case "text":
             let text = try container.decode(String.self, forKey: .text)
             self = .text(text: text)
-        case "media":
+        case "image-data":
             let data = try container.decode(String.self, forKey: .data)
             let mediaType = try container.decode(String.self, forKey: .mediaType)
             self = .media(data: data, mediaType: mediaType)
@@ -490,7 +490,8 @@ public enum LanguageModelV3ToolResultContentPart: Sendable, Equatable, Codable {
             try container.encode("text", forKey: .type)
             try container.encode(text, forKey: .text)
         case .media(let data, let mediaType):
-            try container.encode("media", forKey: .type)
+            // Encode in specific order to match upstream JSON.stringify output
+            try container.encode("image-data", forKey: .type)
             try container.encode(data, forKey: .data)
             try container.encode(mediaType, forKey: .mediaType)
         }

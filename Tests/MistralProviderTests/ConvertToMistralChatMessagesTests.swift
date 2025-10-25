@@ -211,7 +211,7 @@ struct ConvertToMistralChatMessagesTests {
                 "role": .string("tool"),
                 "tool_call_id": .string("tool-call-id-3"),
                 "name": .string("image-tool"),
-                "content": .string("[{\"type\":\"text\",\"text\":\"Here is the result:\"},{\"type\":\"media\",\"data\":\"base64data\",\"mediaType\":\"image/png\"}]")
+                "content": .string("[{\"type\":\"text\",\"text\":\"Here is the result:\"},{\"type\":\"image-data\",\"data\":\"base64data\",\"mediaType\":\"image/png\"}]")
             ])
         ])
     }
@@ -285,6 +285,52 @@ struct ConvertToMistralChatMessagesTests {
                 "role": .string("assistant"),
                 "content": .string("Hello!"),
                 "prefix": .bool(true)
+            ])
+        ])
+    }
+
+    @Test("text output format")
+    func textOutputFormat() throws {
+        let prompt: LanguageModelV3Prompt = [
+            .assistant(
+                content: [
+                    .toolCall(.init(toolCallId: "tool-call-id-2", toolName: "text-tool", input: .object(["query": .string("test")])))
+                ],
+                providerOptions: nil
+            ),
+            .tool(
+                content: [
+                    .init(
+                        toolCallId: "tool-call-id-2",
+                        toolName: "text-tool",
+                        output: .text(value: "This is a text response")
+                    )
+                ],
+                providerOptions: nil
+            )
+        ]
+
+        let result = try convertToMistralChatMessages(prompt: prompt)
+        #expect(result == [
+            .object([
+                "role": .string("assistant"),
+                "content": .string(""),
+                "tool_calls": .array([
+                    .object([
+                        "id": .string("tool-call-id-2"),
+                        "type": .string("function"),
+                        "function": .object([
+                            "name": .string("text-tool"),
+                            "arguments": .string("{\"query\":\"test\"}")
+                        ])
+                    ])
+                ])
+            ]),
+            .object([
+                "role": .string("tool"),
+                "tool_call_id": .string("tool-call-id-2"),
+                "name": .string("text-tool"),
+                "content": .string("This is a text response")
             ])
         ])
     }
