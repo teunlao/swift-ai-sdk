@@ -29,6 +29,9 @@ struct TypedToolTests {
 
         #expect(report == WeatherReport(location: "Paris", condition: "Sunny"))
 
+        let helperDecoded = try weatherTool.decodeOutput(from: ["location": .string("Paris"), "condition": .string("Sunny")])
+        #expect(helperDecoded == WeatherReport(location: "Paris", condition: "Sunny"))
+
         let schemaJSON = try await weatherTool.tool.inputSchema.resolve().jsonSchema()
         guard case .object(let schemaRoot) = schemaJSON,
               case .object(let properties) = schemaRoot["properties"],
@@ -69,6 +72,9 @@ struct TypedToolTests {
 
         for try await value in result.asAsyncStream() {
             decodedReports.append(value)
+            let json: JSONValue = ["location": .string(value.location), "condition": .string(value.condition)]
+            let decoded = try tool.decodeOutput(from: json)
+            #expect(decoded == value)
         }
 
         #expect(decodedReports.count == 3)

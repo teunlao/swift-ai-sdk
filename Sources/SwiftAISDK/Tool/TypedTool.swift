@@ -111,6 +111,20 @@ public func tool<Input: Codable & Sendable, Output: Codable & Sendable>(
 }
 
 
+public extension TypedTool {
+    /// Decode a tool result payload produced by the language model back into the strongly typed Output.
+    /// Matches TypeScript `tool().execute` helper ergonomics where the output is already typed.
+    func decodeOutput(from json: JSONValue) throws -> Output {
+        try decodeTypedOutput(json, schema: outputSchema?.resolve())
+    }
+
+    /// Convenience overload that accepts a `TypedToolResult`.
+    func decodeOutput(from result: TypedToolResult) throws -> Output {
+        try decodeOutput(from: result.output)
+    }
+}
+
+
 public func tool<Input: Codable & Sendable, Output: Codable & Sendable>(
     description: String? = nil,
     providerOptions: [String: JSONValue]? = nil,

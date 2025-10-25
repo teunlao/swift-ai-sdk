@@ -196,63 +196,45 @@ Notes: use `generateObjectNoSchema(...)` for raw `JSONValue`; arrays/enums via `
 
 ## Usage: Agents & Tools
 
-Models can call tools. Minimal calculator example:
+Models can call tools. Typed weather example:
 
 ```swift
 import SwiftAISDK
 import OpenAIProvider
 import Foundation
 
-struct CalculatorInput: Codable, Sendable {
-  enum Operation: String, Codable, Sendable, CaseIterable { case add, mul }
-  let op: Operation
-  let a: Double
-  let b: Double
+struct WeatherQuery: Codable, Sendable {
+  let location: String
 }
 
-private func decodeJSONValue<T: Decodable>(_ type: T.Type, from value: JSONValue) throws -> T {
-  let data = try JSONSerialization.data(withJSONObject: value.toFoundationObject())
-  return try JSONDecoder().decode(T.self, from: data)
+struct WeatherReport: Codable, Sendable {
+  let location: String
+  let temperatureFahrenheit: Int
 }
 
-private extension JSONValue {
-  func toFoundationObject() throws -> Any {
-    switch self {
-    case .null: return NSNull()
-    case .bool(let value): return value
-    case .number(let value): return value
-    case .string(let value): return value
-    case .array(let values): return try values.map { try $0.toFoundationObject() }
-    case .object(let dictionary):
-      var result: [String: Any] = [:]
-      result.reserveCapacity(dictionary.count)
-      for (key, value) in dictionary {
-        result[key] = try value.toFoundationObject()
-      }
-      return result
-    }
-  }
+let weatherTool = tool(
+  description: "Get the weather in a location",
+  inputSchema: WeatherQuery.self
+) { (query: WeatherQuery, _) in
+  WeatherReport(
+    location: query.location,
+    temperatureFahrenheit: Int.random(in: 62...82)
+  )
 }
 
-let codableSchema = FlexibleSchema.auto(CalculatorInput.self)
-let calculate = tool(
-  description: "Basic math",
-  inputSchema: FlexibleSchema(jsonSchema(try await codableSchema.resolve().jsonSchema()))
-) { input, _ in
-  let payload = try decodeJSONValue(CalculatorInput.self, from: input)
-  let result = payload.op == .add ? (payload.a + payload.b) : (payload.a * payload.b)
-  return .value(["result": .number(result)])
-}
-
-let output = try await generateText(
-  model: openai("gpt-5"),
-  tools: ["calculate": calculate],
-  prompt: "Use tools to compute 25*4."
+let result = try await generateText(
+  model: openai("gpt-4.1"),
+  tools: ["weather": weatherTool.tool],
+  prompt: "Use the weather tool to fetch the weather for San Francisco."
 )
-print(output.text)
+
+if let toolResult = result.toolResults.first {
+  let report = try weatherTool.decodeOutput(from: toolResult)
+  print(report)
+}
 ```
 
-Notes: supports static and dynamic tool calls; for streaming with tools, use `streamText(..., tools: ...)` and consume `fullStream`.
+Notes: `tool(...)` auto-generates schemas from `Codable` types. For streaming, use `streamText(..., tools: ...)` and consume `textStream`/`toolResults`.
 
 ## Templates & Examples
 
