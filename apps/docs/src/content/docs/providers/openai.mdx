@@ -616,40 +616,20 @@ The OpenAI Responses API supports structured outputs. You can enforce structured
 // Using generateObject
 import SwiftAISDK
 import OpenAIProvider
-import AISDKProviderUtils
-
-let recipeSchema = FlexibleSchema(jsonSchema(
-  .object([
-    "type": .string("object"),
-    "properties": .object([
-      "name": .object(["type": .string("string")]),
-      "ingredients": .object([
-        "type": .string("array"),
-        "items": .object([
-          "type": .string("object"),
-          "properties": .object([
-            "name": .object(["type": .string("string")]),
-            "amount": .object(["type": .string("string")])
-          ]),
-          "required": .array([.string("name"), .string("amount")])
-        ])
-      ]),
-      "steps": .object([
-        "type": .string("array"),
-        "items": .object(["type": .string("string")])
-      ])
-    ]),
-    "required": .array([.string("name"), .string("ingredients"), .string("steps")])
-  ])
-))
+struct Ingredient: Codable, Sendable { let name: String; let amount: String }
+struct Recipe: Codable, Sendable {
+  let name: String
+  let ingredients: [Ingredient]
+  let steps: [String]
+}
 
 let result = try await generateObject(
   model: openai("gpt-4.1"),
-  schema: recipeSchema,
+  schema: Recipe.self,
   prompt: "Generate a lasagna recipe.",
   schemaName: "recipe",
   schemaDescription: "A recipe for lasagna."
-)
+).object
 ```
 
 ### Chat Models
@@ -837,34 +817,9 @@ import SwiftAISDK
 import OpenAIProvider
 import AISDKProviderUtils
 
-let recipeSchema = FlexibleSchema(jsonSchema(
-  .object([
-    "type": .string("object"),
-    "properties": .object([
-      "name": .object(["type": .string("string")]),
-      "ingredients": .object([
-        "type": .string("array"),
-        "items": .object([
-          "type": .string("object"),
-          "properties": .object([
-            "name": .object(["type": .string("string")]),
-            "amount": .object(["type": .string("string")])
-          ]),
-          "required": .array([.string("name"), .string("amount")])
-        ])
-      ]),
-      "steps": .object([
-        "type": .string("array"),
-        "items": .object(["type": .string("string")])
-      ])
-    ]),
-    "required": .array([.string("name"), .string("ingredients"), .string("steps")])
-  ])
-))
-
 let result = try await generateObject(
   model: openai.chat(modelId: "gpt-4o-2024-08-06"),
-  schema: recipeSchema,
+  schema: Recipe.self, // reuse struct Recipe from snippet above
   prompt: "Generate a lasagna recipe.",
   schemaName: "recipe",
   schemaDescription: "A recipe for lasagna.",

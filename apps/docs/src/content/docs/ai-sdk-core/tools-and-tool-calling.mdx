@@ -27,7 +27,7 @@ struct WeatherReport: Codable, Sendable {
   let temperature: Int
 }
 
-let weather = tool(
+let weatherTool = tool(
   description: "Get the weather in a location",
   inputSchema: WeatherQuery.self
 ) { query, _ in
@@ -37,7 +37,7 @@ let weather = tool(
 
 let result = try await generateText(
   model: openai("gpt-4o"),
-  tools: ["weather": weather.eraseToTool()],
+  tools: ["weather": weatherTool.eraseToTool()],
   prompt: "What is the weather in San Francisco?"
 )
 print(result.text)
@@ -255,12 +255,11 @@ When combining static and dynamic tools, use the `dynamic` flag for narrowing an
 ```swift
 import SwiftAISDK
 import OpenAIProvider
-import AISDKProviderUtils
 
 let result = try await generateText(
   model: openai("gpt-4o"),
   tools: [
-    "weather": weatherTool,                 // static tool (known schema/types)
+    "weather": weatherTool.eraseToTool(),   // static tool (known schema/types)
     "custom": customTool                    // dynamic tool (runtime‑validated)
   ],
   onStepFinish: { step in
@@ -274,8 +273,8 @@ let result = try await generateText(
       // Static tool: you can safely access expected fields
       switch call.toolName {
       case "weather":
-        let location = call.input["location"]?.stringValue ?? "(unknown)"
-        print("Weather input location:", location)
+        let payload = try await weatherTool.decodeInput(from: call)
+        print("Weather input location:", payload.location)
       default:
         break
       }
