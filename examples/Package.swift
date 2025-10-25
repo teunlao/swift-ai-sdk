@@ -26,6 +26,19 @@ let package = Package(
       dependencies: []
     ),
 
+    .executableTarget(
+      name: "AICoreExamples",
+      dependencies: [
+        "ExamplesCore",
+        .product(name: "SwiftAISDK", package: "swift-ai-sdk"),
+        .product(name: "OpenAIProvider", package: "swift-ai-sdk"),
+        .product(name: "AISDKProviderUtils", package: "swift-ai-sdk"),
+        .product(name: "AISDKJSONSchema", package: "swift-ai-sdk"),
+        .product(name: "AISDKZodAdapter", package: "swift-ai-sdk"),
+        .product(name: "AnthropicProvider", package: "swift-ai-sdk"),
+      ]
+    ),
+
     // MARK: - Getting Started Examples
 
     .executableTarget(
@@ -55,17 +68,6 @@ let package = Package(
         .product(name: "OpenAIProvider", package: "swift-ai-sdk"),
         .product(name: "AISDKProviderUtils", package: "swift-ai-sdk"),
         .product(name: "AISDKZodAdapter", package: "swift-ai-sdk"),
-      ]
-    ),
-
-    .executableTarget(
-      name: "WeatherToolExample",
-      dependencies: [
-        "ExamplesCore",
-        .product(name: "SwiftAISDK", package: "swift-ai-sdk"),
-        .product(name: "AISDKProviderUtils", package: "swift-ai-sdk"),
-        .product(name: "AISDKJSONSchema", package: "swift-ai-sdk"),
-        .product(name: "OpenAIProvider", package: "swift-ai-sdk"),
       ]
     ),
 
