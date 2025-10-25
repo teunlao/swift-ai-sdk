@@ -223,22 +223,24 @@ Here is an example of how to use the `fullStream` property:
 ```swift
 import SwiftAISDK
 import OpenAIProvider
-import AISDKProviderUtils
 
-let cityAttractions = dynamicTool(
+struct CityQuery: Codable, Sendable { let city: String }
+struct Attractions: Codable, Sendable { let attractions: [String] }
+
+let cityAttractions = tool(
   description: "List attractions for a city",
-  inputSchema: FlexibleSchema(jsonSchema(.object([
-    "type": .string("object"),
-    "properties": .object(["city": .object(["type": .string("string")])])
-  ]))),
-  execute: { input, _ in
-    .object(["attractions": .array([.string("attraction1"), .string("attraction2"), .string("attraction3")])])
-  }
-)
+  inputSchema: CityQuery.self
+) { query, _ in
+  Attractions(attractions: [
+    "Golden Gate Bridge",
+    "Ferry Building",
+    "Golden Gate Park"
+  ])
+}
 
 let result = try streamText(
   model: openai("gpt-4.1"),
-  tools: ["cityAttractions": cityAttractions],
+  tools: ["cityAttractions": cityAttractions.eraseToTool()],
   prompt: "What are some San Francisco tourist attractions?"
 )
 

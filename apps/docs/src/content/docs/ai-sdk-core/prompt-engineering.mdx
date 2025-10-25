@@ -101,41 +101,22 @@ For maximum compatibility, optional parameters should be marked as `nullable` in
 
 ```swift highlight="11-18,29-36"
 import SwiftAISDK
-import AISDKProviderUtils
+
+struct ExecuteCommandInput: Codable, Sendable {
+  let command: String
+  let workdir: String?
+  let timeout: String?
+}
 
 let failingTool = tool(
   description: "Execute a command",
-  inputSchema: FlexibleSchema(jsonSchema(.object([
-    "type": .string("object"),
-    "properties": .object([
-      "command": .object(["type": .string("string")]),
-      "workdir": .object(["type": .string("string")]),
-      "timeout": .object(["type": .string("string")])
-    ]),
-    "required": .array([.string("command")])
-  ]))),
-  execute: { _, _ in .value(.object([:])) }
-)
+  inputSchema: ExecuteCommandInput.self
+) { _, _ in [:] }
 
 let workingTool = tool(
   description: "Execute a command",
-  inputSchema: FlexibleSchema(jsonSchema(.object([
-    "type": .string("object"),
-    "properties": .object([
-      "command": .object(["type": .string("string")]),
-      "workdir": .object([
-        "type": .string("string"),
-        "nullable": .bool(true)
-      ]),
-      "timeout": .object([
-        "type": .string("string"),
-        "nullable": .bool(true)
-      ])
-    ]),
-    "required": .array([.string("command")])
-  ]))),
-  execute: { _, _ in .value(.object([:])) }
-)
+  inputSchema: ExecuteCommandInput.self
+) { _, _ in [:] }
 ```
 
 #### Temperature Settings

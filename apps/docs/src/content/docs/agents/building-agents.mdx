@@ -53,27 +53,20 @@ let agent = Agent<Never, Never>(settings: .init(
 Provide tools that the agent can use to accomplish tasks:
 
 ```swift
-import AISDKProviderUtils
+struct CodeInput: Codable, Sendable { let code: String }
+struct CodeResult: Codable, Sendable { let output: String }
 
 let runCode = tool(
   description: "Execute Python code",
-  inputSchema: FlexibleSchema(jsonSchema(
-    .object([
-      "type": .string("object"),
-      "properties": .object(["code": .object(["type": .string("string")])]),
-      "required": .array([.string("code")]),
-      "additionalProperties": .bool(false)
-    ])
-  )),
-  execute: { input, _ in
-    // Execute code (omitted) and return result
-    return .value(.object(["output": .string("Code executed successfully")]))
-  }
-)
+  inputSchema: CodeInput.self
+) { payload, _ in
+  // Execute code (omitted) and return result
+  CodeResult(output: "Code executed successfully")
+}
 
 let codeAgent = Agent<Never, Never>(settings: .init(
   model: .v3(openai("gpt-4o")),
-  tools: ["runCode": runCode]
+  tools: ["runCode": runCode.eraseToTool()]
 ))
 ```
 

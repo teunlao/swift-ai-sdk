@@ -40,17 +40,18 @@ struct ToolsExample: CLIExample {
 
         let cityAttractionsTool = tool(
             description: "Suggest attractions in a city",
-            inputSchema: CityAttractionsQuery.self
-        ) { query, _ in
-            CityAttractionsResult(
-                city: query.city,
-                attractions: [
-                    "Visit the Golden Gate Bridge",
-                    "Walk through Golden Gate Park",
-                    "Explore the Ferry Building"
-                ]
-            )
-        }
+            inputSchema: CityAttractionsQuery.self,
+            execute: { query, _ in
+                CityAttractionsResult(
+                    city: query.city,
+                    attractions: [
+                        "Visit the Golden Gate Bridge",
+                        "Walk through Golden Gate Park",
+                        "Explore the Ferry Building"
+                    ]
+                )
+            }
+        )
 
         let tools: ToolSet = [
             "weather": weatherTool.eraseToTool(),

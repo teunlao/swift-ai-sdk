@@ -23,66 +23,39 @@ The Agent class handles these three components. Here's an agent that uses multip
 
 ```swift
 import SwiftAISDK
-import AISDKProviderUtils
 import OpenAIProvider
+
+struct WeatherQuery: Codable, Sendable { let location: String }
+struct FahrenheitWeather: Codable, Sendable {
+  let location: String
+  let temperature: Double
+}
+
+struct TemperatureFahrenheit: Codable, Sendable { let temperature: Double }
+struct TemperatureCelsius: Codable, Sendable { let celsius: Double }
 
 // Tool: get weather (Fahrenheit)
 let weather = tool(
   description: "Get the weather in a location (in Fahrenheit)",
-  inputSchema: FlexibleSchema(jsonSchema(
-    .object([
-      "type": .string("object"),
-      "properties": .object([
-        "location": .object(["type": .string("string")])
-      ]),
-      "required": .array([.string("location")]),
-      "additionalProperties": .bool(false)
-    ])
-  )),
-  execute: { input, _ in
-    guard case .object(let obj) = input,
-          case .string(let location)? = obj["location"] else {
-      struct ValidationError: Error {}
-      throw ValidationError()
-    }
-    // mock temperature in F
-    let temp = 72 + Int.random(in: -10...10)
-    return .value(.object([
-      "location": .string(location),
-      "temperature": .number(Double(temp))
-    ]))
-  }
-)
+  inputSchema: WeatherQuery.self
+) { query, _ in
+  let temp = Double(72 + Int.random(in: -10...10))
+  FahrenheitWeather(location: query.location, temperature: temp)
+}
 
 // Tool: F → C
 let toCelsius = tool(
   description: "Convert temperature from Fahrenheit to Celsius",
-  inputSchema: FlexibleSchema(jsonSchema(
-    .object([
-      "type": .string("object"),
-      "properties": .object([
-        "temperature": .object(["type": .string("number")])
-      ]),
-      "required": .array([.string("temperature")]),
-      "additionalProperties": .bool(false)
-    ])
-  )),
-  execute: { input, _ in
-    guard case .object(let obj) = input,
-          case .number(let f)? = obj["temperature"] else {
-      struct ValidationError: Error {}
-      throw ValidationError()
-    }
-    let c = round((f - 32) * (5.0 / 9.0))
-    return .value(.object(["celsius": .number(c)]))
-  }
-)
+  inputSchema: TemperatureFahrenheit.self
+) { reading, _ in
+  TemperatureCelsius(celsius: (reading.temperature - 32) * (5.0 / 9.0))
+}
 
 let agent = Agent<Never, Never>(settings: .init(
   model: .v3(openai("gpt-4o")),
   tools: [
-    "weather": weather,
-    "convertFahrenheitToCelsius": toCelsius
+    "weather": weather.eraseToTool(),
+    "convertFahrenheitToCelsius": toCelsius.eraseToTool()
   ]
   // Default stopWhen is stepCountIs(20)
 ))
