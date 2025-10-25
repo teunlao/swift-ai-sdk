@@ -160,7 +160,7 @@ public enum Output {
 
                 let validationResult = await safeValidateTypes(
                     ValidateTypesOptions(
-                        value: parsedValue,
+                        value: jsonValueToFoundation(parsedValue),
                         schema: FlexibleSchema(resolvedSchema)
                     )
                 )

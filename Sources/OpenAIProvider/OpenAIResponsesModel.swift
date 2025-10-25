@@ -489,9 +489,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 ]
                 if let schema {
                     formatPayload["strict"] = .bool(strictJsonSchema)
-                    if let name {
-                        formatPayload["name"] = .string(name)
-                    }
+                    formatPayload["name"] = .string(name ?? "response")
                     if let description {
                         formatPayload["description"] = .string(description)
                     }
