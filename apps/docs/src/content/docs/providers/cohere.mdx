@@ -1,0 +1,213 @@
+---
+title: Cohere
+description: Learn how to use the Cohere provider for Swift AI SDK.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+import Check from '../../../components/Check.astro';
+import Cross from '../../../components/Cross.astro';
+
+The [Cohere](https://cohere.com/) provider contains language and embedding model support for the Cohere chat API.
+
+## Setup
+
+The Cohere provider is available in the `CohereProvider` module. Add it to your Swift package:
+
+```swift
+// Package.swift
+dependencies: [
+    .package(url: "https://github.com/teunlao/swift-ai-sdk", from: "0.2.1")
+],
+targets: [
+    .target(
+        name: "YourTarget",
+        dependencies: [
+            .product(name: "SwiftAISDK", package: "swift-ai-sdk"),
+            .product(name: "CohereProvider", package: "swift-ai-sdk")
+        ]
+    )
+]
+```
+
+## Provider Instance
+
+You can import the default provider instance `cohere` from `CohereProvider`:
+
+```swift
+import CohereProvider
+
+// Use the global cohere instance
+let model = cohere("command-r-plus")
+```
+
+If you need a customized setup, you can use `createCohereProvider` to create a provider instance with your settings:
+
+```swift
+import CohereProvider
+
+let customCohere = createCohereProvider(
+  settings: CohereProviderSettings(
+    baseURL: "https://custom.api.com/v2",
+    apiKey: "your-api-key"
+  )
+)
+```
+
+You can use the following optional settings to customize the Cohere provider instance:
+
+- **baseURL** _String_
+
+  Use a different URL prefix for API calls, e.g. to use proxy servers.
+  The default prefix is `https://api.cohere.com/v2`.
+
+- **apiKey** _String_
+
+  API key that is being sent using the `Authorization` header.
+  It defaults to the `COHERE_API_KEY` environment variable.
+
+- **headers** _[String: String]_
+
+  Custom headers to include in the requests.
+
+## Language Models
+
+You can create models that call the [Cohere chat API](https://docs.cohere.com/v2/docs/chat-api) using a provider instance.
+The first argument is the model id, e.g. `command-r-plus`.
+Some Cohere chat models support tool calls.
+
+```swift
+let model = cohere("command-r-plus")
+```
+
+### Example
+
+You can use Cohere language models to generate text with the `generateText` function:
+
+```swift
+import SwiftAISDK
+import CohereProvider
+
+let result = try await generateText(
+  model: cohere("command-r-plus"),
+  prompt: "Write a vegetarian lasagna recipe for 4 people."
+)
+let text = result.text
+```
+
+Cohere language models can also be used in the `streamText` and `generateObject` functions.
+
+### Model Capabilities
+
+| Model                         | Image Input         | Object Generation   | Tool Usage          | Tool Streaming      |
+| ----------------------------- | ------------------- | ------------------- | ------------------- | ------------------- |
+| `command-a-03-2025`           | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| `command-a-reasoning-08-2025` | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| `command-r7b-12-2024`         | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| `command-r-plus-04-2024`      | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| `command-r-plus`              | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| `command-r-08-2024`           | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| `command-r-03-2024`           | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| `command-r`                   | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| `command`                     | <Cross size={18} /> | <Cross size={18} /> | <Cross size={18} /> | <Cross size={18} /> |
+| `command-nightly`             | <Cross size={18} /> | <Cross size={18} /> | <Cross size={18} /> | <Cross size={18} /> |
+| `command-light`               | <Cross size={18} /> | <Cross size={18} /> | <Cross size={18} /> | <Cross size={18} /> |
+| `command-light-nightly`       | <Cross size={18} /> | <Cross size={18} /> | <Cross size={18} /> | <Cross size={18} /> |
+
+<Aside type="note">
+  The table above lists popular models. Please see the [Cohere docs](https://docs.cohere.com/v2/docs/models#command) for a full list of available models. You can also pass any available provider model ID as a string if needed.
+</Aside>
+
+### Reasoning
+
+Cohere has introduced reasoning with the `command-a-reasoning-08-2025` model. You can learn more at https://docs.cohere.com/docs/reasoning.
+
+```swift
+import SwiftAISDK
+import CohereProvider
+
+let result = try await generateText(
+  model: cohere("command-a-reasoning-08-2025"),
+  prompt: "Alice has 3 brothers and she also has 2 sisters. How many sisters does Alice's brother have?",
+  // optional: reasoning options
+  providerOptions: CohereChatOptions(
+    thinking: .enabled(tokenBudget: 100)
+  )
+)
+
+print(result.reasoning ?? "")
+print(result.text)
+```
+
+## Embedding Models
+
+You can create models that call the [Cohere embed API](https://docs.cohere.com/v2/reference/embed)
+using the `.textEmbedding()` factory method.
+
+```swift
+let model = cohere.textEmbedding("embed-english-v3.0")
+```
+
+You can use Cohere embedding models to generate embeddings with the `embed` function:
+
+```swift
+import SwiftAISDK
+import CohereProvider
+
+let result = try await embed(
+  model: cohere.textEmbedding("embed-english-v3.0"),
+  value: "sunny day at the beach",
+  providerOptions: CohereEmbeddingOptions(
+    inputType: .searchDocument
+  )
+)
+let embedding = result.embedding
+```
+
+Cohere embedding models support additional provider options:
+
+```swift
+import SwiftAISDK
+import CohereProvider
+
+let result = try await embed(
+  model: cohere.textEmbedding("embed-english-v3.0"),
+  value: "sunny day at the beach",
+  providerOptions: CohereEmbeddingOptions(
+    inputType: .searchDocument,
+    truncate: .end
+  )
+)
+let embedding = result.embedding
+```
+
+The following provider options are available:
+
+- **inputType** _CohereInputType_
+
+  Specifies the type of input passed to the model. Default is `.searchQuery`.
+
+  - `.searchDocument`: Used for embeddings stored in a vector database for search use-cases.
+  - `.searchQuery`: Used for embeddings of search queries run against a vector DB to find relevant documents.
+  - `.classification`: Used for embeddings passed through a text classifier.
+  - `.clustering`: Used for embeddings run through a clustering algorithm.
+
+- **truncate** _CohereTruncateType_
+
+  Specifies how the API will handle inputs longer than the maximum token length.
+  Default is `.end`.
+
+  - `.none`: If selected, when the input exceeds the maximum input token length will return an error.
+  - `.start`: Will discard the start of the input until the remaining input is exactly the maximum input token length for the model.
+  - `.end`: Will discard the end of the input until the remaining input is exactly the maximum input token length for the model.
+
+### Model Capabilities
+
+| Model                           | Embedding Dimensions |
+| ------------------------------- | -------------------- |
+| `embed-english-v3.0`            | 1024                 |
+| `embed-multilingual-v3.0`       | 1024                 |
+| `embed-english-light-v3.0`      | 384                  |
+| `embed-multilingual-light-v3.0` | 384                  |
+| `embed-english-v2.0`            | 4096                 |
+| `embed-english-light-v2.0`      | 1024                 |
+| `embed-multilingual-v2.0`       | 768                  |

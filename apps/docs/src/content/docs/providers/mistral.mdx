@@ -1,0 +1,314 @@
+---
+title: Mistral AI
+description: Learn how to use the Mistral AI provider for Swift AI SDK.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+import Check from '../../../components/Check.astro';
+import Cross from '../../../components/Cross.astro';
+
+The [Mistral AI](https://mistral.ai/) provider contains language model support for the Mistral chat API.
+
+## Setup
+
+The Mistral provider is available in the `MistralProvider` module. Add it to your Swift package:
+
+```swift
+// Package.swift
+dependencies: [
+    .package(url: "https://github.com/teunlao/swift-ai-sdk", from: "0.2.1")
+],
+targets: [
+    .target(
+        name: "YourTarget",
+        dependencies: [
+            .product(name: "SwiftAISDK", package: "swift-ai-sdk"),
+            .product(name: "MistralProvider", package: "swift-ai-sdk")
+        ]
+    )
+]
+```
+
+## Provider Instance
+
+You can import the default provider instance `mistral` from `MistralProvider`:
+
+```swift
+import MistralProvider
+
+// Use the global mistral instance
+let model = mistral("mistral-large-latest")
+```
+
+If you need a customized setup, you can use `createMistralProvider` to create a provider instance with your settings:
+
+```swift
+import MistralProvider
+
+let customMistral = createMistralProvider(
+  settings: MistralProviderSettings(
+    baseURL: "https://custom.api.com/v1",
+    apiKey: "your-api-key"
+  )
+)
+```
+
+You can use the following optional settings to customize the Mistral provider instance:
+
+- **baseURL** _String_
+
+  Use a different URL prefix for API calls, e.g. to use proxy servers.
+  The default prefix is `https://api.mistral.ai/v1`.
+
+- **apiKey** _String_
+
+  API key that is being sent using the `Authorization` header.
+  It defaults to the `MISTRAL_API_KEY` environment variable.
+
+- **headers** _[String: String]_
+
+  Custom headers to include in the requests.
+
+## Language Models
+
+You can create models that call the [Mistral chat API](https://docs.mistral.ai/api/#operation/createChatCompletion) using a provider instance.
+The first argument is the model id, e.g. `mistral-large-latest`.
+Some Mistral chat models support tool calls.
+
+```swift
+let model = mistral("mistral-large-latest")
+```
+
+Mistral chat models also support additional model settings that are not part of the standard call settings.
+You can pass them as provider options:
+
+```swift
+import SwiftAISDK
+import MistralProvider
+
+let result = try await generateText(
+  model: mistral("mistral-large-latest"),
+  prompt: "Write a vegetarian lasagna recipe for 4 people.",
+  providerOptions: MistralChatOptions(
+    safePrompt: true,              // optional safety prompt injection
+    parallelToolCalls: false        // disable parallel tool calls
+  )
+)
+```
+
+The following optional provider options are available for Mistral models:
+
+- **safePrompt** _Bool_
+
+  Whether to inject a safety prompt before all conversations.
+
+  Defaults to `false`.
+
+- **documentImageLimit** _Int_
+
+  Maximum number of images to process in a document.
+
+- **documentPageLimit** _Int_
+
+  Maximum number of pages to process in a document.
+
+- **strictJsonSchema** _Bool_
+
+  Whether to use strict JSON schema validation for structured outputs. Only applies when a schema is provided.
+
+  Defaults to `false`.
+
+- **structuredOutputs** _Bool_
+
+  Whether to use structured outputs. When enabled, tool calls and object generation will be strict and follow the provided schema.
+
+  Defaults to `true`.
+
+- **parallelToolCalls** _Bool_
+
+  Whether to enable parallel function calling during tool use. When set to false, the model will use at most one tool per response.
+
+  Defaults to `true`.
+
+### Document OCR
+
+Mistral chat models support document OCR for PDF files.
+You can optionally set image and page limits using the provider options.
+
+```swift
+import SwiftAISDK
+import MistralProvider
+import Foundation
+
+let result = try await generateText(
+  model: mistral("mistral-small-latest"),
+  messages: [
+    .user(
+      content: [
+        .text(.init(text: "What is an embedding model according to this document?")),
+        .file(.init(
+          data: .url(URL(string: "https://github.com/vercel/ai/blob/main/examples/ai-core/data/ai.pdf?raw=true")!),
+          mediaType: "application/pdf"
+        ))
+      ],
+      providerOptions: nil
+    )
+  ],
+  providerOptions: MistralChatOptions(
+    documentImageLimit: 8,
+    documentPageLimit: 64
+  )
+)
+```
+
+### Reasoning Models
+
+Mistral offers reasoning models that provide step-by-step thinking capabilities:
+
+- **magistral-small-2506**: Smaller reasoning model for efficient step-by-step thinking
+- **magistral-medium-2506**: More powerful reasoning model balancing performance and cost
+
+These models return content that includes `<think>...</think>` tags containing the reasoning process. To properly extract and separate the reasoning from the final answer, use the extract reasoning middleware:
+
+```swift
+import SwiftAISDK
+import MistralProvider
+
+let result = try await generateText(
+  model: wrapLanguageModel(
+    model: mistral("magistral-small-2506"),
+    middleware: extractReasoningMiddleware(tagName: "think")
+  ),
+  prompt: "What is 15 * 24?"
+)
+
+print("REASONING:", result.reasoningText ?? "")
+// Output: "Let me calculate this step by step..."
+
+print("ANSWER:", result.text)
+// Output: "360"
+```
+
+The middleware automatically parses the `<think>` tags and provides separate `reasoningText` and `text` properties in the result.
+
+### Example
+
+You can use Mistral language models to generate text with the `generateText` function:
+
+```swift
+import SwiftAISDK
+import MistralProvider
+
+let result = try await generateText(
+  model: mistral("mistral-large-latest"),
+  prompt: "Write a vegetarian lasagna recipe for 4 people."
+)
+let text = result.text
+```
+
+Mistral language models can also be used in the `streamText` and `generateObject` functions.
+
+#### Structured Outputs
+
+Mistral chat models support structured outputs using JSON Schema. You can use `generateObject` with Codable types. The SDK sends your schema via Mistral's `response_format: { type: 'json_schema' }`.
+
+```swift
+import SwiftAISDK
+import MistralProvider
+
+struct Recipe: Codable {
+  let name: String
+  let ingredients: [String]
+  let instructions: [String]
+}
+
+let result = try await generateObject(
+  model: mistral("mistral-large-latest"),
+  schema: Recipe.self,
+  schemaName: "recipe",
+  prompt: "Generate a simple pasta recipe."
+)
+
+print(result.object)
+```
+
+You can enable strict JSON Schema validation using a provider option:
+
+```swift
+import SwiftAISDK
+import MistralProvider
+
+struct ShoppingList: Codable {
+  let title: String
+  let items: [Item]
+
+  struct Item: Codable {
+    let id: String
+    let qty: Int
+  }
+}
+
+let result = try await generateObject(
+  model: mistral("mistral-large-latest"),
+  schema: ShoppingList.self,
+  schemaName: "shopping_list",
+  prompt: "Generate a small shopping list.",
+  providerOptions: MistralChatOptions(
+    strictJsonSchema: true  // reject outputs that don't strictly match the schema
+  )
+)
+```
+
+<Aside type="note">
+  When using structured outputs, the SDK no longer injects an extra "answer with JSON" instruction. It relies on Mistral's native `json_schema`/`json_object` response formats instead. You can customize the schema name/description via the standard structured-output APIs.
+</Aside>
+
+### Model Capabilities
+
+| Model                   | Image Input         | Object Generation   | Tool Usage          | Tool Streaming      |
+| ----------------------- | ------------------- | ------------------- | ------------------- | ------------------- |
+| `pixtral-large-latest`  | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| `mistral-large-latest`  | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| `mistral-medium-latest` | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| `mistral-medium-2505`   | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| `mistral-small-latest`  | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| `magistral-small-2506`  | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| `magistral-medium-2506` | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| `ministral-3b-latest`   | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| `ministral-8b-latest`   | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| `pixtral-12b-2409`      | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| `open-mistral-7b`       | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| `open-mixtral-8x7b`     | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| `open-mixtral-8x22b`    | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> |
+
+<Aside type="note">
+  The table above lists popular models. Please see the [Mistral docs](https://docs.mistral.ai/getting-started/models/models_overview/) for a full list of available models. You can also pass any available provider model ID as a string if needed.
+</Aside>
+
+## Embedding Models
+
+You can create models that call the [Mistral embeddings API](https://docs.mistral.ai/api/#operation/createEmbedding)
+using the `.textEmbedding()` factory method.
+
+```swift
+let model = mistral.textEmbedding("mistral-embed")
+```
+
+You can use Mistral embedding models to generate embeddings with the `embed` function:
+
+```swift
+import SwiftAISDK
+import MistralProvider
+
+let result = try await embed(
+  model: mistral.textEmbedding("mistral-embed"),
+  value: "sunny day at the beach"
+)
+let embedding = result.embedding
+```
+
+### Model Capabilities
+
+| Model           | Default Dimensions |
+| --------------- | ------------------ |
+| `mistral-embed` | 1024               |

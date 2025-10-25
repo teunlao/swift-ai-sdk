@@ -1,0 +1,158 @@
+---
+title: Perplexity
+description: Learn how to use Perplexity's Sonar API with Swift AI SDK.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+import Check from '../../../components/Check.astro';
+import Cross from '../../../components/Cross.astro';
+
+The [Perplexity](https://sonar.perplexity.ai) provider offers access to Sonar API - a language model that uniquely combines real-time web search with natural language processing. Each response is grounded in current web data and includes detailed citations, making it ideal for research, fact-checking, and obtaining up-to-date information.
+
+API keys can be obtained from the [Perplexity Platform](https://docs.perplexity.ai).
+
+## Setup
+
+The Perplexity provider is available in the `PerplexityProvider` module. Add it to your Swift package:
+
+```swift
+// Package.swift
+dependencies: [
+    .package(url: "https://github.com/teunlao/swift-ai-sdk", from: "0.2.1")
+],
+targets: [
+    .target(
+        name: "YourTarget",
+        dependencies: [
+            .product(name: "SwiftAISDK", package: "swift-ai-sdk"),
+            .product(name: "PerplexityProvider", package: "swift-ai-sdk")
+        ]
+    )
+]
+```
+
+## Provider Instance
+
+You can import the default provider instance `perplexity` from `PerplexityProvider`:
+
+```swift
+import PerplexityProvider
+
+// Use the global perplexity instance
+let model = perplexity("sonar-pro")
+```
+
+For custom configuration, you can use `createPerplexityProvider` to create a provider instance with your settings:
+
+```swift
+import PerplexityProvider
+
+let customPerplexity = createPerplexityProvider(
+  settings: PerplexityProviderSettings(
+    apiKey: ProcessInfo.processInfo.environment["PERPLEXITY_API_KEY"] ?? ""
+  )
+)
+```
+
+You can use the following optional settings to customize the Perplexity provider instance:
+
+- **baseURL** _String_
+
+  Use a different URL prefix for API calls.
+  The default prefix is `https://api.perplexity.ai`.
+
+- **apiKey** _String_
+
+  API key that is being sent using the `Authorization` header. It defaults to the `PERPLEXITY_API_KEY` environment variable.
+
+- **headers** _[String: String]_
+
+  Custom headers to include in the requests.
+
+## Language Models
+
+You can create Perplexity models using a provider instance:
+
+```swift
+import SwiftAISDK
+import PerplexityProvider
+
+let result = try await generateText(
+  model: perplexity("sonar-pro"),
+  prompt: "What are the latest developments in quantum computing?"
+)
+let text = result.text
+```
+
+### Sources
+
+Websites that have been used to generate the response are included in the `sources` property of the result:
+
+```swift
+import SwiftAISDK
+import PerplexityProvider
+
+let result = try await generateText(
+  model: perplexity("sonar-pro"),
+  prompt: "What are the latest developments in quantum computing?"
+)
+
+print(result.sources)
+```
+
+### Provider Options & Metadata
+
+The Perplexity provider includes additional metadata in the response through `providerMetadata`.
+Additional configuration options are available through `providerOptions`.
+
+```swift
+import SwiftAISDK
+import PerplexityProvider
+
+let result = try await generateText(
+  model: perplexity("sonar-pro"),
+  prompt: "What are the latest developments in quantum computing?",
+  providerOptions: PerplexityLanguageModelOptions(
+    returnImages: true  // Enable image responses (Tier-2 Perplexity users only)
+  )
+)
+
+print(result.providerMetadata)
+// Example output:
+// PerplexityProviderMetadata(
+//   usage: PerplexityUsage(citationTokens: 5286, numSearchQueries: 1),
+//   images: [
+//     PerplexityImage(
+//       imageUrl: "https://example.com/image1.jpg",
+//       originUrl: "https://elsewhere.com/page1",
+//       height: 1280,
+//       width: 720
+//     )
+//   ]
+// )
+```
+
+The metadata includes:
+
+- `usage`: Object containing `citationTokens` and `numSearchQueries` metrics
+- `images`: Array of image URLs when `returnImages` is enabled (Tier-2 users only)
+
+You can enable image responses by setting `returnImages: true` in the provider options. This feature is only available to Perplexity Tier-2 users and above.
+
+<Aside type="note">
+  For more details about Perplexity's capabilities, see the [Perplexity chat completion docs](https://docs.perplexity.ai/api-reference/chat-completions).
+</Aside>
+
+## Model Capabilities
+
+| Model                 | Image Input         | Object Generation   | Tool Usage          | Tool Streaming      |
+| --------------------- | ------------------- | ------------------- | ------------------- | ------------------- |
+| `sonar-deep-research` | <Cross size={18} /> | <Check size={18} /> | <Cross size={18} /> | <Cross size={18} /> |
+| `sonar-reasoning-pro` | <Check size={18} /> | <Check size={18} /> | <Cross size={18} /> | <Cross size={18} /> |
+| `sonar-reasoning`     | <Check size={18} /> | <Check size={18} /> | <Cross size={18} /> | <Cross size={18} /> |
+| `sonar-pro`           | <Check size={18} /> | <Check size={18} /> | <Cross size={18} /> | <Cross size={18} /> |
+| `sonar`               | <Check size={18} /> | <Check size={18} /> | <Cross size={18} /> | <Cross size={18} /> |
+
+<Aside type="note">
+  Please see the [Perplexity docs](https://docs.perplexity.ai) for detailed API documentation and the latest updates.
+</Aside>
