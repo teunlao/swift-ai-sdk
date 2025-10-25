@@ -1,6 +1,7 @@
 import Foundation
 import AISDKProvider
 import AISDKProviderUtils
+import AISDKJSONSchema
 
 /**
  Convenience overloads for LanguageModel to match TypeScript API.
@@ -493,6 +494,41 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
  Convenience overload that wraps the model in `LanguageModel.v3()`.
  */
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+public func generateObject<ObjectResult: Codable & Sendable>(
+    model: any LanguageModelV3,
+    schema type: ObjectResult.Type,
+    system: String? = nil,
+    prompt: String? = nil,
+    messages: [ModelMessage]? = nil,
+    schemaName: String? = nil,
+    schemaDescription: String? = nil,
+    mode: GenerateObjectJSONMode = .auto,
+    experimentalRepairText repairText: RepairTextFunction? = nil,
+    experimentalTelemetry telemetry: TelemetrySettings? = nil,
+    experimentalDownload download: DownloadFunction? = nil,
+    providerOptions: ProviderOptions? = nil,
+    internalOptions: GenerateObjectInternalOptions = GenerateObjectInternalOptions(),
+    settings: CallSettings = CallSettings()
+) async throws -> GenerateObjectResult<ObjectResult> {
+    try await generateObject(
+        model: .v3(model),
+        schema: type,
+        system: system,
+        prompt: prompt,
+        messages: messages,
+        schemaName: schemaName,
+        schemaDescription: schemaDescription,
+        mode: mode,
+        experimentalRepairText: repairText,
+        experimentalTelemetry: telemetry,
+        experimentalDownload: download,
+        providerOptions: providerOptions,
+        internalOptions: internalOptions,
+        settings: settings
+    )
+}
+
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 public func generateObject<ObjectResult>(
     model: any LanguageModelV3,
     schema: FlexibleSchema<ObjectResult>,
@@ -532,6 +568,41 @@ public func generateObject<ObjectResult>(
 
  Convenience overload that wraps the model in `LanguageModel.v2()`.
  */
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+public func generateObject<ObjectResult: Codable & Sendable>(
+    model: any LanguageModelV2,
+    schema type: ObjectResult.Type,
+    system: String? = nil,
+    prompt: String? = nil,
+    messages: [ModelMessage]? = nil,
+    schemaName: String? = nil,
+    schemaDescription: String? = nil,
+    mode: GenerateObjectJSONMode = .auto,
+    experimentalRepairText repairText: RepairTextFunction? = nil,
+    experimentalTelemetry telemetry: TelemetrySettings? = nil,
+    experimentalDownload download: DownloadFunction? = nil,
+    providerOptions: ProviderOptions? = nil,
+    internalOptions: GenerateObjectInternalOptions = GenerateObjectInternalOptions(),
+    settings: CallSettings = CallSettings()
+) async throws -> GenerateObjectResult<ObjectResult> {
+    try await generateObject(
+        model: .v2(model),
+        schema: type,
+        system: system,
+        prompt: prompt,
+        messages: messages,
+        schemaName: schemaName,
+        schemaDescription: schemaDescription,
+        mode: mode,
+        experimentalRepairText: repairText,
+        experimentalTelemetry: telemetry,
+        experimentalDownload: download,
+        providerOptions: providerOptions,
+        internalOptions: internalOptions,
+        settings: settings
+    )
+}
+
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 public func generateObject<ObjectResult>(
     model: any LanguageModelV2,

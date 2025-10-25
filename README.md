@@ -167,29 +167,24 @@ Generate structured data validated by JSON Schema or `Codable`.
 Example: extract a release summary into a `Release` type using `Schema.codable`.
 
 ```swift
-import SwiftAISDK, OpenAIProvider, AISDKProviderUtils
+import SwiftAISDK
+import OpenAIProvider
 
-struct Release: Codable, Sendable { let name, version: String; let changes: [String] }
+struct Release: Codable, Sendable {
+  let name: String
+  let version: String
+  let changes: [String]
+}
 
-let schema: Schema<Release> = .codable(
-  Release.self,
-  jsonSchema: .object([
-    "type": .string("object"),
-    "properties": .object([
-      "name": .object(["type": .string("string")]),
-      "version": .object(["type": .string("string")]),
-      "changes": .object(["type": .string("array"), "items": .object(["type": .string("string")])])
-    ]),
-    "required": .array([.string("name"), .string("version"), .string("changes")])
-  ])
-)
-
-let result = try await generateObject(
+let summary = try await generateObject(
   model: openai("gpt-5"),
-  schema: .init(schema),
+  schema: Release.self,
+  schemaName: "release_summary",
   prompt: "Summarize Swift AI SDK 0.1.0: streaming + tools."
-)
-print(result.object)
+).object
+
+print("Release: \\(summary.name) (\\(summary.version))")
+summary.changes.forEach { print("- \($0)") }
 ```
 
 Notes: use `generateObjectNoSchema(...)` for raw `JSONValue`; arrays/enums via `generateObjectArray` / `generateObjectEnum`.

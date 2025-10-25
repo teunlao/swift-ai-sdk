@@ -1,117 +1,104 @@
-/**
- Tools Example
-
- Demonstrates using tools (function calling) with generateText.
- Corresponds to: apps/docs/src/content/docs/getting-started/ios-macos-quickstart.mdx
- */
-
-import Foundation
-import SwiftAISDK
-import OpenAIProvider
-import AISDKProviderUtils
-import AISDKZodAdapter
 import ExamplesCore
+import OpenAIProvider
+import SwiftAISDK
+
+struct WeatherQuery: Codable, Sendable {
+    let location: String
+}
+
+struct WeatherReport: Codable, Sendable {
+    let location: String
+    let temperatureFahrenheit: Int
+}
+
+struct CityAttractionsQuery: Codable, Sendable {
+    let city: String
+}
+
+struct CityAttractionsResult: Codable, Sendable {
+    let city: String
+    let attractions: [String]
+}
 
 @main
 struct ToolsExample: CLIExample {
-  static let name = "Tools / Function Calling"
-  static let description = "Use tools to extend model capabilities"
+    static let name = "Tools / Function Calling"
+    static let description = "Use tools to extend model capabilities"
 
-  static func run() async throws {
-    // Example 1: Tool with manual JSON schema
-    Logger.section("Example 1: Tool with Manual JSON Schema")
-    Logger.info("Defining echo tool with jsonSchema()...")
+    static func run() async throws {
+        try EnvLoader.load()
 
-    let echo = tool(
-      description: "Echo back the input data",
-      inputSchema: FlexibleSchema(jsonSchema(
-        .object([
-          "type": .string("object"),
-          "properties": .object([
-            "message": .object([
-              "type": .string("string"),
-              "description": .string("The message to echo back")
-            ])
-          ]),
-          "required": .array([.string("message")]),
-          "additionalProperties": .bool(false)
-        ])
-      )),
-      execute: { input, _ in
-        Logger.info("Echo tool called with: \(input)")
-        return .value(input)
-      }
-    )
-
-    let result1 = try await generateText(
-      model: openai("gpt-4o"),
-      tools: ["echo": echo],
-      prompt: "Call the echo tool with {\"message\": \"Hello from Swift AI SDK!\"}"
-    )
-
-    Logger.info("Result: \(result1.text)")
-    if !result1.toolCalls.isEmpty {
-      Logger.info("Tool calls: \(result1.toolCalls.count)")
-    }
-
-    // Example 2: Tool with Zod-like schema (cleaner!)
-    Logger.section("Example 2: Tool with Zod-like Schema")
-    Logger.info("Defining calculator tool with z.object()...")
-
-    let calculator = tool(
-      description: "Perform basic arithmetic operations",
-      inputSchema: flexibleSchemaFromZod3(z.object([
-        "operation": z.string(),
-        "a": z.number(),
-        "b": z.number()
-      ])),
-      execute: { input, _ in
-        Logger.info("Calculator tool called with: \(input)")
-
-        guard case .object(let obj) = input,
-              case .string(let op) = obj["operation"] ?? .null,
-              case .number(let a) = obj["a"] ?? .null,
-              case .number(let b) = obj["b"] ?? .null else {
-          return .value(.string("Invalid input"))
+        let weatherTool = tool(
+            description: "Get the weather in a location",
+            inputSchema: WeatherQuery.self
+        ) { query, _ in
+            WeatherReport(
+                location: query.location,
+                temperatureFahrenheit: Int.random(in: 62...82)
+            )
         }
 
-        let result: Double
-        switch op {
-        case "add": result = a + b
-        case "subtract": result = a - b
-        case "multiply": result = a * b
-        case "divide": result = b != 0 ? a / b : 0
-        default: result = 0
+        let cityAttractionsTool = tool(
+            description: "Suggest attractions in a city",
+            inputSchema: CityAttractionsQuery.self
+        ) { query, _ in
+            CityAttractionsResult(
+                city: query.city,
+                attractions: [
+                    "Visit the Golden Gate Bridge",
+                    "Walk through Golden Gate Park",
+                    "Explore the Ferry Building"
+                ]
+            )
         }
 
-        return .value(.number(result))
-      }
-    )
+        let tools: ToolSet = [
+            "weather": weatherTool.eraseToTool(),
+            "cityAttractions": cityAttractionsTool.eraseToTool()
+        ]
 
-    let result2 = try await generateText(
-      model: openai("gpt-4o"),
-      tools: ["calculator": calculator],
-      prompt: "What is 234 multiplied by 89? Use the calculator tool."
-    )
+        Logger.section("Calling tools with generateText")
 
-    Logger.info("Result: \(result2.text)")
+        let result = try await generateText(
+            model: openai("gpt-4o-mini"),
+            tools: tools,
+            prompt: "What is the weather in San Francisco and which attractions should I visit?"
+        )
 
-    // Show tool calls for calculator
-    if !result2.toolCalls.isEmpty {
-      Logger.separator()
-      Logger.info("Tool calls made: \(result2.toolCalls.count)")
-      for toolCall in result2.toolCalls {
-        Logger.info("  - \(toolCall.toolName): \(toolCall.input)")
-      }
+        Logger.info("Text: \(result.text)")
+
+        if !result.toolCalls.isEmpty {
+            Logger.separator()
+            Logger.info("Tool calls:")
+            for call in result.toolCalls where !call.isDynamic {
+                switch call.toolName {
+                case "weather":
+                    let input = try await weatherTool.decodeInput(from: call)
+                    Logger.info("  weather(location: \(input.location))")
+                case "cityAttractions":
+                    let input = try await cityAttractionsTool.decodeInput(from: call)
+                    Logger.info("  cityAttractions(city: \(input.city))")
+                default:
+                    Logger.info("  \(call.toolName)")
+                }
+            }
+        }
+
+        if !result.toolResults.isEmpty {
+            Logger.separator()
+            Logger.info("Tool results:")
+            for toolResult in result.toolResults where !toolResult.isDynamic {
+                switch toolResult.toolName {
+                case "weather":
+                    let report = try weatherTool.decodeOutput(from: toolResult)
+                    Logger.info("  Weather: \(report.temperatureFahrenheit)°F in \(report.location)")
+                case "cityAttractions":
+                    let attractions = try cityAttractionsTool.decodeOutput(from: toolResult)
+                    Logger.info("  Attractions in \(attractions.city): \(attractions.attractions.joined(separator: ", "))")
+                default:
+                    Logger.info("  \(toolResult.toolName)")
+                }
+            }
+        }
     }
-
-    // Show tool results for calculator
-    if !result2.toolResults.isEmpty {
-      Logger.separator()
-      Logger.info("Tool results: \(result2.toolResults.count)")
-      for toolResult in result2.toolResults {
-        Logger.info("  - \(toolResult.toolName): \(toolResult.output)")
-      }
-    }
-  }
 }

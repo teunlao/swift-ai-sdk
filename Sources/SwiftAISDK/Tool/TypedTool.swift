@@ -112,6 +112,16 @@ public func tool<Input: Codable & Sendable, Output: Codable & Sendable>(
 
 
 public extension TypedTool {
+    /// Decode a tool call payload into the strongly typed input.
+    func decodeInput(from json: JSONValue) async throws -> Input {
+        try await decodeTypedInput(json, schema: inputSchema.resolve())
+    }
+
+    /// Convenience overload that decodes the input from a typed tool call.
+    func decodeInput(from call: TypedToolCall) async throws -> Input {
+        try await decodeInput(from: call.input)
+    }
+
     /// Decode a tool result payload produced by the language model back into the strongly typed Output.
     /// Matches TypeScript `tool().execute` helper ergonomics where the output is already typed.
     func decodeOutput(from json: JSONValue) throws -> Output {

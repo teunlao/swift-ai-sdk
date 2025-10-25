@@ -1,6 +1,7 @@
 import Foundation
 import AISDKProvider
 import AISDKProviderUtils
+import AISDKJSONSchema
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 public func generateObject<ResultValue, PartialValue, ElementStream>(
@@ -270,6 +271,41 @@ private struct GenerateObjectIntermediateResult: Sendable {
 
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+public func generateObject<ObjectResult: Codable & Sendable>(
+    model: LanguageModel,
+    schema type: ObjectResult.Type,
+    system: String? = nil,
+    prompt: String? = nil,
+    messages: [ModelMessage]? = nil,
+    schemaName: String? = nil,
+    schemaDescription: String? = nil,
+    mode: GenerateObjectJSONMode = .auto,
+    experimentalRepairText repairText: RepairTextFunction? = nil,
+    experimentalTelemetry telemetry: TelemetrySettings? = nil,
+    experimentalDownload download: DownloadFunction? = nil,
+    providerOptions: ProviderOptions? = nil,
+    internalOptions: GenerateObjectInternalOptions = GenerateObjectInternalOptions(),
+    settings: CallSettings = CallSettings()
+) async throws -> GenerateObjectResult<ObjectResult> {
+    try await generateObject(
+        model: model,
+        schema: FlexibleSchema.auto(type),
+        system: system,
+        prompt: prompt,
+        messages: messages,
+        schemaName: schemaName,
+        schemaDescription: schemaDescription,
+        mode: mode,
+        experimentalRepairText: repairText,
+        experimentalTelemetry: telemetry,
+        experimentalDownload: download,
+        providerOptions: providerOptions,
+        internalOptions: internalOptions,
+        settings: settings
+    )
+}
+
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 public func generateObject<ObjectResult>(
     model: LanguageModel,
     schema: FlexibleSchema<ObjectResult>,
@@ -334,6 +370,41 @@ public func generateObjectNoSchema(
     )
 }
 
+
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+public func generateObjectArray<ElementResult: Codable & Sendable>(
+    model: LanguageModel,
+    schema elementType: ElementResult.Type,
+    system: String? = nil,
+    prompt: String? = nil,
+    messages: [ModelMessage]? = nil,
+    schemaName: String? = nil,
+    schemaDescription: String? = nil,
+    mode: GenerateObjectJSONMode = .auto,
+    experimentalRepairText repairText: RepairTextFunction? = nil,
+    experimentalTelemetry telemetry: TelemetrySettings? = nil,
+    experimentalDownload download: DownloadFunction? = nil,
+    providerOptions: ProviderOptions? = nil,
+    internalOptions: GenerateObjectInternalOptions = GenerateObjectInternalOptions(),
+    settings: CallSettings = CallSettings()
+) async throws -> GenerateObjectResult<[ElementResult]> {
+    try await generateObjectArray(
+        model: model,
+        schema: FlexibleSchema.auto(elementType),
+        system: system,
+        prompt: prompt,
+        messages: messages,
+        schemaName: schemaName,
+        schemaDescription: schemaDescription,
+        mode: mode,
+        experimentalRepairText: repairText,
+        experimentalTelemetry: telemetry,
+        experimentalDownload: download,
+        providerOptions: providerOptions,
+        internalOptions: internalOptions,
+        settings: settings
+    )
+}
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 public func generateObjectArray<ElementResult>(
