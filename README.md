@@ -96,7 +96,7 @@ Add the package to your `Package.swift`:
 ```swift
 // Package.swift
 dependencies: [
-  .package(url: "https://github.com/teunlao/swift-ai-sdk.git", from: "0.1.6")
+  .package(url: "https://github.com/teunlao/swift-ai-sdk.git", from: "0.2.0")
 ],
 targets: [
   .target(
