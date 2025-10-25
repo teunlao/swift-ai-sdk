@@ -37,14 +37,14 @@ A unified AI SDK for Swift, bringing the power of [Vercel AI SDK](https://github
 
 ## Implementation Status
 
-**Updated**: 2025-10-24
+**Updated**: 2025-10-25
 **Upstream:** Based on Vercel AI SDK 6.0.0-beta.42
 
 | Category | Tests | Coverage |
 |----------|-------|----------|
-| **Core SDK** | 1547 | 100% |
-| **Providers** | 883 | 62.7% |
-| **Overall** | 2430 | 83% |
+| **Core SDK** | 1598 | 100% |
+| **Providers** | 644 | 69.2% |
+| **Overall** | 2242 | 79.5% |
 
 <details>
 <summary>Provider Details</summary>
@@ -56,21 +56,21 @@ A unified AI SDK for Swift, bringing the power of [Vercel AI SDK](https://github
 | **google** | ✅ | ✅ | 155 | 155 | 100% |
 | **groq** | ✅ | ✅ | 58 | 58 | 100% |
 | **xai** | ✅ | ✅ | 50 | 50 | 100% |
+| **mistral** | ✅ | ✅ | 44 | 44 | 100% |
 | **azure** | ✅ | ✅ | 26 | 26 | 100% |
-| **openai-compatible** | ✅ | ✅ | 128 | 128 | 100% |
-| **cerebras** | ✅ | ✅ | 7 | 7 | 100% |
-| **deepseek** | ✅ | ✅ | 13 | 13 | 100% |
 | **baseten** | ✅ | ✅ | 25 | 25 | 100% |
+| **openai-compatible** | ✅ | ✅ | 128 | 128 | 100% |
+| **deepseek** | ✅ | ✅ | 13 | 13 | 100% |
 | **replicate** | ✅ | ✅ | 11 | 11 | 100% |
 | **lmnt** | ✅ | ✅ | 9 | 9 | 100% |
+| **cerebras** | ✅ | ✅ | 7 | 7 | 100% |
+| **perplexity** | ✅ | ❌ | 19 | 0 | 0% |
+| **cohere** | ✅ | ❌ | 48 | 0 | 0% |
 | **amazon-bedrock** | ❌ | ❌ | 152 | 0 | 0% |
 | **google-vertex** | ❌ | ❌ | 78 | 0 | 0% |
-| **cohere** | ❌ | ❌ | 48 | 0 | 0% |
-| **mistral** | ❌ | ❌ | 44 | 0 | 0% |
 | **huggingface** | ❌ | ❌ | 32 | 0 | 0% |
 | **fal** | ❌ | ❌ | 26 | 0 | 0% |
 | **fireworks** | ❌ | ❌ | 23 | 0 | 0% |
-| **perplexity** | ❌ | ❌ | 19 | 0 | 0% |
 | **deepinfra** | ❌ | ❌ | 18 | 0 | 0% |
 | **togetherai** | ❌ | ❌ | 17 | 0 | 0% |
 | **luma** | ❌ | ❌ | 16 | 0 | 0% |
@@ -81,7 +81,7 @@ A unified AI SDK for Swift, bringing the power of [Vercel AI SDK](https://github
 | **gladia** | ❌ | ❌ | 6 | 0 | 0% |
 | **revai** | ❌ | ❌ | 6 | 0 | 0% |
 | **vercel** | ❌ | ❌ | 4 | 0 | 0% |
-| **TOTAL** | **12/32** | **12/32** | **1409** | **883** | **62.7%** |
+| **TOTAL** | **15/32** | **13/32** | **1520** | **930** | **61.2%** |
 
 </details>
 
@@ -96,7 +96,7 @@ Add the package to your `Package.swift`:
 ```swift
 // Package.swift
 dependencies: [
-  .package(url: "https://github.com/teunlao/swift-ai-sdk.git", from: "0.2.0")
+  .package(url: "https://github.com/teunlao/swift-ai-sdk.git", from: "0.2.1")
 ],
 targets: [
   .target(
