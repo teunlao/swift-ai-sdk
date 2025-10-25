@@ -29,7 +29,7 @@ They use a standardized approach to [prompts](/foundations/prompts) and [setting
 
 - `generateText` — non‑streamed text generation and [tool calling](./tools-and-tool-calling). Great for automation (draft emails, summarization) and agent workflows.
 - `streamText` — streamed text and tool calls. Ideal for interactive UIs (chat, progressive responses). See also [Streaming](/foundations/streaming).
-- `generateObject` — generate a typed object matching a schema. In the Swift port, prefer `FlexibleSchema`/`jsonSchema` or `Schema.codable(...)` for your `Decodable` types.
+- `generateObject` — generate a typed object matching a schema. In Swift you usually pass `schema: MyCodableType.self`; fall back to `FlexibleSchema(jsonSchema(...))` only for edge cases.
 - `streamObject` — stream a structured object that matches a schema (useful for incremental UI rendering on your side).
 
 ## API Reference

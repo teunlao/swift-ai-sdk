@@ -143,41 +143,33 @@ For better type safety and control, you can define the tools and their input sch
 
 ```swift
 import SwiftAISDK
-import AISDKProviderUtils
 
-let getDataSchema = FlexibleSchema(
-  jsonSchema(
-    .object([
-      "type": .string("object"),
-      "properties": .object([
-        "query": .object([
-          "type": .string("string"),
-          "description": .string("The data query")
-        ]),
-        "format": .object([
-          "type": .string("string"),
-          "enum": .array([.string("json"), .string("text")])
-        ])
-      ]),
-      "required": .array([.string("query")])
-    ])
-  )
-)
+struct GetDataInput: Codable, Sendable {
+  let query: String
+  let format: Format
 
-let emptyArgsSchema = FlexibleSchema(
-  jsonSchema(.object([
-    "type": .string("object"),
-    "properties": .object([:])
-  ]))
-)
+  enum Format: String, Codable, Sendable {
+    case json
+    case text
+  }
+}
+
+struct EmptyArgs: Codable, Sendable {}
+
+func jsonObjectSchema<T: Codable & Sendable>(_ type: T.Type) -> FlexibleSchema<[String: JSONValue]> {
+  let typedSchema = FlexibleSchema.auto(type).resolve()
+  return FlexibleSchema(jsonSchema { try await typedSchema.jsonSchema() })
+}
 
 let tools = try await client.tools(options: MCPToolsOptions(
   schemas: .schemas([
-    "get-data": ToolSchemaDefinition(inputSchema: getDataSchema),
-    "tool-with-no-args": ToolSchemaDefinition(inputSchema: emptyArgsSchema)
+    "get-data": ToolSchemaDefinition(inputSchema: jsonObjectSchema(GetDataInput.self)),
+    "tool-with-no-args": ToolSchemaDefinition(inputSchema: jsonObjectSchema(EmptyArgs.self))
   ])
 ))
 ```
+
+This helper derives the provider-facing JSON Schema from your Codable types, keeping the Swift client in sync with MCP tool definitions.
 
 This approach gives you explicit control over tool interfaces and enables stronger validation: the schemas you provide are enforced at runtime, and only the tools you enumerate are retrieved from the server.
 

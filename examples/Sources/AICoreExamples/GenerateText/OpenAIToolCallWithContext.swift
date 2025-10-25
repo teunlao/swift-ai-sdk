@@ -1,5 +1,5 @@
-import Foundation
 import ExamplesCore
+import Foundation
 import OpenAIProvider
 import SwiftAISDK
 
@@ -39,7 +39,7 @@ struct GenerateTextOpenAIToolCallWithContextExample: Example {
         model: openai("gpt-4o-mini"),
         tools: ["weather": weatherTool.tool],
         prompt: "What is the weather in San Francisco?",
-        experimentalContext: .object(["weatherApiKey": .string("123")])
+        experimentalContext: ["weatherApiKey": "123"]
       )
 
       Logger.section("Tool Calls")

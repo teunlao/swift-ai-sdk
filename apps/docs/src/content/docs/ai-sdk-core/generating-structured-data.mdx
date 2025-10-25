@@ -66,7 +66,7 @@ You can access the raw response headers and body using the `response` property:
 ```swift
 let result = try await generateObject(
   model: openai("gpt-4o"),
-  schema: recipeSchema,
+  schema: Recipe.self,
   prompt: "Generate a lasagna recipe.",
   schemaName: "recipe",
   schemaDescription: "A recipe for lasagna."
@@ -83,11 +83,10 @@ With the [`streamObject`](/docs/reference/ai-sdk-core/stream-object) function, y
 ```swift
 import SwiftAISDK
 import OpenAIProvider
-import AISDKProviderUtils
 
 let stream = try streamObject(
   model: openai("gpt-4o"),
-  schema: recipeSchema,
+  schema: Recipe.self,
   prompt: "Generate a lasagna recipe.",
   schemaName: "recipe",
   schemaDescription: "A recipe for lasagna."
@@ -113,7 +112,7 @@ To log errors, you can provide an `onError` callback that is triggered when an e
 ```swift
 let _ = try streamObject(
   model: openai("gpt-4o"),
-  schema: recipeSchema,
+  schema: Recipe.self,
   prompt: "Generate a lasagna recipe.",
   schemaName: "recipe",
   schemaDescription: "A recipe for lasagna.",
@@ -139,22 +138,15 @@ When you use the `array` output strategy, the schema specifies the shape of an a
 With `streamObject`, you can also stream the generated array elements using `elementStream`.
 
 ```swift
-let heroSchema = FlexibleSchema(jsonSchema(
-  .object([
-    "type": .string("object"),
-    "properties": .object([
-      "name": .object(["type": .string("string")]),
-      "class": .object(["type": .string("string"), "description": .string("Character class, e.g. warrior, mage, or thief.")]),
-      "description": .object(["type": .string("string")])
-    ]),
-    "required": .array([.string("name"), .string("class"), .string("description")])
-  ])
-))
+struct Hero: Codable, Sendable {
+  let name: String
+  let `class`: String
+  let description: String
+}
 
 let arrayStream = try streamObject(
   model: openai("gpt-4o"),
-  output: .array,
-  schema: heroSchema,
+  output: .array(schema: FlexibleSchema.auto(Hero.self)),
   prompt: "Generate 3 hero descriptions for a fantasy role playing game.",
   schemaName: "hero",
   schemaDescription: "A hero character for a fantasy RPG."
@@ -207,7 +199,7 @@ You can optionally specify a name and description for the schema. These are used
 ```swift
 let named = try await generateObject(
   model: openai("gpt-4o"),
-  schema: recipeSchema,
+  schema: Recipe.self,
   prompt: "Generate a lasagna recipe.",
   schemaName: "recipe",
   schemaDescription: "A recipe for a dish."
@@ -222,7 +214,7 @@ You can access the reasoning used by the language model to generate the object v
 ```swift
 let reasoning = try await generateObject(
   model: openai("gpt-4o"),
-  schema: recipeSchema,
+  schema: Recipe.self,
   prompt: "Generate a lasagna recipe.",
   schemaName: "recipe",
   schemaDescription: "A recipe for lasagna.",
@@ -260,7 +252,7 @@ import SwiftAISDK
 do {
   _ = try await generateObject(
     model: openai("gpt-4o"),
-    schema: recipeSchema,
+    schema: Recipe.self,
     prompt: "...",
     schemaName: "recipe"
   )
@@ -288,7 +280,7 @@ You can then attempt to repair the text and return the repaired text.
 ```swift
 let repaired = try await generateObject(
   model: openai("gpt-4o"),
-  schema: recipeSchema,
+  schema: Recipe.self,
   prompt: "...",
   schemaName: "recipe",
   experimentalRepairText: { text, error in
@@ -310,28 +302,27 @@ You can generate structured data with `generateText` and `streamText` by using t
 ### `generateText`
 
 ```swift
-let personSchema = FlexibleSchema(jsonSchema(
-  .object([
-    "type": .string("object"),
-    "properties": .object([
-      "name": .object(["type": .string("string")]),
-      "age": .object(["type": .string("number"), "nullable": .bool(true), "description": .string("Age of the person.")]),
-      "contact": .object(["type": .string("object"), "properties": .object([
-        "type": .object(["type": .string("string")]),
-        "value": .object(["type": .string("string")])
-      ])]),
-      "occupation": .object(["type": .string("object"), "properties": .object([
-        "type": .object(["type": .string("string")]),
-        "company": .object(["type": .string("string")]),
-        "position": .object(["type": .string("string")])
-      ])])
-    ])
-  ])
-))
+struct Person: Codable, Sendable {
+  struct Contact: Codable, Sendable {
+    let type: String
+    let value: String
+  }
+
+  struct Occupation: Codable, Sendable {
+    let type: String
+    let company: String
+    let position: String
+  }
+
+  let name: String
+  let age: Double?
+  let contact: Contact
+  let occupation: Occupation
+}
 
 let gt = try await generateText(
   model: openai("gpt-4o"),
-  experimentalOutput: Output.object(schema: personSchema),
+  experimentalOutput: Output.object(Person.self),
   prompt: "Generate an example person for testing."
 )
 let person = try gt.experimentalOutput
@@ -342,7 +333,7 @@ let person = try gt.experimentalOutput
 ```swift
 let st = try streamText(
   model: openai("gpt-4o"),
-  experimentalOutput: Output.object(schema: personSchema),
+  experimentalOutput: Output.object(Person.self),
   prompt: "Generate an example person for testing."
 )
 for try await partial in st.experimentalPartialOutputStream {

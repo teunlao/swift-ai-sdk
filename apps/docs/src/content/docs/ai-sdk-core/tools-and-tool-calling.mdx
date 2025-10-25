@@ -9,7 +9,7 @@ As covered under Foundations, [tools](/docs/foundations/tools) are objects that 
 AI SDK Core tools contain three elements:
 
 - **`description`**: An optional description of the tool that can influence when the tool is picked.
-- **`inputSchema`**: A [Zod schema](/docs/foundations/tools#schemas) or a [JSON schema](/docs/reference/ai-sdk-core/json-schema) that defines the input parameters. The schema is consumed by the LLM, and also used to validate the LLM tool calls.
+- **`inputSchema`**: Usually a `Codable` type. The SDK derives the JSON Schema automatically and validates tool calls. You can still pass a manual schema via `FlexibleSchema(jsonSchema(...))` when needed.
 - **`execute`**: An optional async function that is called with the inputs from the tool call. It produces a value of type `RESULT` (generic type). It is optional because you might want to forward tool calls to the client or to a queue instead of executing them in the same process.
 
 > Note
@@ -37,7 +37,7 @@ let weatherTool = tool(
 
 let result = try await generateText(
   model: openai("gpt-4o"),
-  tools: ["weather": weatherTool.eraseToTool()],
+  tools: ["weather": weatherTool.tool],
   prompt: "What is the weather in San Francisco?"
 )
 print(result.text)
@@ -94,7 +94,7 @@ let weatherTool = tool(
 
 let out = try await generateText(
   model: openai("gpt-4o"),
-  tools: ["weather": weatherTool.eraseToTool()],
+  tools: ["weather": weatherTool.tool],
   stopWhen: [stepCountIs(5)], // stop after max 5 steps if tools were called
   prompt: "What is the weather in San Francisco?"
 )
@@ -255,7 +255,7 @@ import OpenAIProvider
 let result = try await generateText(
   model: openai("gpt-4o"),
   tools: [
-    "weather": weatherTool.eraseToTool(),   // static tool (known schema/types)
+    "weather": weatherTool.tool,   // static tool (known schema/types)
     "custom": customTool                    // dynamic tool (runtime‑validated)
   ],
   onStepFinish: { step in
@@ -352,7 +352,7 @@ let weatherTool = tool(
 
 let forced = try await generateText(
   model: openai("gpt-4o"),
-  tools: ["weather": weatherTool.eraseToTool()],
+  tools: ["weather": weatherTool.tool],
   toolChoice: .required,
   prompt: "What is the weather in San Francisco?"
 )
@@ -386,7 +386,7 @@ let stream = createUIMessageStream { writer in
   let result = try streamText(
     model: openai("gpt-4o"),
     messages: messages,
-    tools: ["progress": progressTool.eraseToTool()]
+    tools: ["progress": progressTool.tool]
   )
   writer.merge(result.toUIMessageStream())
 }
@@ -417,7 +417,7 @@ let auditTool = tool(
 
 let _ = try await generateText(
   model: openai("gpt-4o"),
-  tools: ["audit": auditTool.eraseToTool()],
+  tools: ["audit": auditTool.tool],
   prompt: "..."
 )
 ```
@@ -448,7 +448,7 @@ let cancellableWeather = tool(
 
 let _ = try await generateText(
   model: openai("gpt-4.1"),
-  tools: ["weather": cancellableWeather.eraseToTool()],
+  tools: ["weather": cancellableWeather.tool],
   prompt: "What is the weather in San Francisco?",
   settings: CallSettings(abortSignal: myAbortSignal)
 )
@@ -484,7 +484,7 @@ let experimentalContext: JSONValue = .object(["example": .string("123")])
 
 let result = try await generateText(
   model: openai("gpt-4o"),
-  tools: ["someTool": someTool.eraseToTool()],
+  tools: ["someTool": someTool.tool],
   experimentalContext: experimentalContext
 )
 ```
@@ -529,8 +529,8 @@ let ageTool = tool(
 }
 
 let myToolSet: ToolSet = [
-  "greet": greetTool.eraseToTool(),
-  "age": ageTool.eraseToTool()
+  "greet": greetTool.tool,
+  "age": ageTool.tool
 ]
 
 struct GeneratedData {
@@ -762,7 +762,7 @@ let computer = tool(
 
 let result = try await generateText(
   model: openai("gpt-4o"),
-  tools: ["computer": computer.eraseToTool()],
+  tools: ["computer": computer.tool],
   prompt: "..."
 )
 ```

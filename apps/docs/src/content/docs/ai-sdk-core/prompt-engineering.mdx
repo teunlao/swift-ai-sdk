@@ -27,16 +27,15 @@ In general, the goal should be to give the model all information it needs in a c
 
 ### Tool & Structured Data Schemas
 
-The mapping from Swift schemas (for example `FlexibleSchema(jsonSchema(...))` or `Schema.codable(...)`) to the JSON that an LLM consumes is not always straightforward, since the mapping is not one-to-one.
+The mapping from Swift schemas (for example using `schema: MyCodableType.self` or falling back to `FlexibleSchema(jsonSchema(...))`) to the JSON that an LLM consumes is not always straightforward, since the mapping is not one-to-one.
 
 #### Date Handling
 
 Models return dates as strings. Specify the format in the schema and convert the string to a `Date` after generation (or configure a decoder when using `Schema.codable`).
 
-```swift highlight="8-18,26"
+```swift
 import SwiftAISDK
 import OpenAIProvider
-import AISDKProviderUtils
 
 struct Event: Decodable {
   let event: String
@@ -47,43 +46,10 @@ struct EventsResponse: Decodable {
   let events: [Event]
 }
 
-let eventsSchema = FlexibleSchema(
-  Schema.codable(
-    EventsResponse.self,
-    jsonSchema: .object([
-      "type": .string("object"),
-      "properties": .object([
-        "events": .object([
-          "type": .string("array"),
-          "items": .object([
-            "type": .string("object"),
-            "properties": .object([
-              "event": .object([
-                "type": .string("string")
-              ]),
-              "date": .object([
-                "type": .string("string"),
-                "format": .string("date-time"),
-                "description": .string("ISO 8601 date string")
-              ])
-            ]),
-            "required": .array([.string("event"), .string("date")])
-          ])
-        ])
-      ]),
-      "required": .array([.string("events")]),
-      "additionalProperties": .bool(false)
-    ]),
-    configureDecoder: { decoder in
-      decoder.dateDecodingStrategy = .iso8601
-      return decoder
-    }
-  )
-)
-
 let result = try await generateObject(
   model: openai("gpt-4.1"),
-  output: .object(schema: eventsSchema, schemaName: "Events"),
+  schema: EventsResponse.self,
+  schemaName: "events",
   prompt: "List 5 important events from the year 2000."
 )
 
@@ -97,9 +63,9 @@ When working with tools that have optional parameters, you may encounter compati
 > Note
 > This is particularly relevant for OpenAI models with structured outputs (strict mode).
 
-For maximum compatibility, optional parameters should be marked as `nullable` instead of omitting them entirely. The schema should list the required fields explicitly and allow nullable values for optional ones:
+For maximum compatibility, optional parameters should be marked as `nullable` instead of omitting them entirely. When you rely on typed tools the Swift port marks `String?` or `Int?` properties as nullable in the generated schema, so providers like OpenAI accept them:
 
-```swift highlight="11-18,29-36"
+```swift
 import SwiftAISDK
 
 struct ExecuteCommandInput: Codable, Sendable {
@@ -108,45 +74,36 @@ struct ExecuteCommandInput: Codable, Sendable {
   let timeout: String?
 }
 
-let failingTool = tool(
-  description: "Execute a command",
-  inputSchema: ExecuteCommandInput.self
-) { _, _ in [:] }
+struct CommandResult: Codable, Sendable {
+  let status: String
+}
 
-let workingTool = tool(
+let executeCommand = tool(
   description: "Execute a command",
   inputSchema: ExecuteCommandInput.self
-) { _, _ in [:] }
+) { input, _ in
+  CommandResult(status: "Scheduled: \(input.command)")
+}
 ```
+
 
 #### Temperature Settings
 
 For tool calls and object generation, it's recommended to use `temperature: 0` to ensure deterministic and consistent results:
 
-```swift highlight="3"
+```swift
 import SwiftAISDK
 import OpenAIProvider
-import AISDKProviderUtils
 
 let result = try await generateText(
   model: openai("gpt-4o"),
   temperature: 0, // Recommended for tool calls
-  tools: [
-    "myTool": tool(
-      description: "Execute a command",
-      inputSchema: FlexibleSchema(jsonSchema(.object([
-        "type": .string("object"),
-        "properties": .object([
-          "command": .object(["type": .string("string")])
-        ]),
-        "required": .array([.string("command")])
-      ]))),
-      execute: { _, _ in .value(.object([:])) }
-    )
-  ],
+  tools: ["myTool": executeCommand.tool],
   prompt: "Execute the ls command"
 )
 ```
+
+Using the `executeCommand` tool from above keeps the call deterministic while preserving the strongly typed schema.
 
 Lower temperature values reduce randomness in model outputs, which is particularly important when the model needs to:
 
@@ -178,7 +135,7 @@ You can inspect the raw HTTP request bodies for models that expose them, e.g. [O
 
 Request bodies are available via the `request.body` property of the response:
 
-```swift highlight="6"
+```swift
 import SwiftAISDK
 import OpenAIProvider
 
