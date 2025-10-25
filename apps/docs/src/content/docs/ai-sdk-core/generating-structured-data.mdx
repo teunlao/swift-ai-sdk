@@ -19,7 +19,7 @@ You can describe the shape using [JSON Schema](/docs/reference/ai-sdk-core/json-
 and the AI model will generate data that conforms to that structure.
 
 > Note
-> In the Swift port, prefer `FlexibleSchema(jsonSchema(...))` or `Schema.codable(...)` for Decodable types.
+> In the Swift port, the most ergonomic option is `generateObject(schema: MyCodableType.self)`. For advanced scenarios you can still fall back to `FlexibleSchema(jsonSchema(...))` or `Schema.codable(...)`.
 
 ## Generate Object
 
@@ -29,41 +29,28 @@ The schema is also used to validate the generated data, ensuring type safety and
 ```swift
 import SwiftAISDK
 import OpenAIProvider
-import AISDKProviderUtils
 
-let recipeSchema = FlexibleSchema(jsonSchema(
-  .object([
-    "type": .string("object"),
-    "properties": .object([
-      "name": .object(["type": .string("string")]),
-      "ingredients": .object([
-        "type": .string("array"),
-        "items": .object([
-          "type": .string("object"),
-          "properties": .object([
-            "name": .object(["type": .string("string")]),
-            "amount": .object(["type": .string("string")])
-          ]),
-          "required": .array([.string("name"), .string("amount")])
-        ])
-      ]),
-      "steps": .object([
-        "type": .string("array"),
-        "items": .object(["type": .string("string")])
-      ])
-    ]),
-    "required": .array([.string("name"), .string("ingredients"), .string("steps")])
-  ])
-))
+struct Ingredient: Codable, Sendable {
+  let name: String
+  let amount: String
+}
+
+struct Recipe: Codable, Sendable {
+  let name: String
+  let ingredients: [Ingredient]
+  let steps: [String]
+}
 
 let result = try await generateObject(
   model: openai("gpt-4o"),
-  schema: recipeSchema,
+  schema: Recipe.self,
   prompt: "Generate a lasagna recipe.",
   schemaName: "recipe",
   schemaDescription: "A recipe for lasagna."
-)
-print(result.object)
+).object
+
+print(result.name)
+print(result.ingredients)
 ```
 
 > Note

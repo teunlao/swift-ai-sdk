@@ -21,38 +21,13 @@ A tool consists of three main properties:
 - `inputSchema`: JSON Schema (via `jsonSchema(...)`) describing the input parameters. Used by the model and to validate tool calls.
 - `execute`: Optional async function that receives the arguments and returns a result.
 
-> Note: Swift has no Zod. Use JSON Schema builders from `AISDKProviderUtils` (`jsonSchema`, `FlexibleSchema`) or `Schema.codable` for `Decodable` types.
+> Note: Swift has no Zod. Most of the time you can lean on `tool(inputSchema: YourCodable.self)`; when you need custom validators, fall back to `AISDKProviderUtils` helpers such as `jsonSchema`/`FlexibleSchema` or `Schema.codable`.
 
 If the LLM decides to use a tool, it emits a tool call. Tools with `execute` run automatically; results come back as tool‑result parts and can be fed into the next step (multi‑step calls).
 
 ## Schemas
 
-Schemas define tool parameters and validate tool calls. In Swift, use `jsonSchema(JSONValue)` and `FlexibleSchema`.
-
-Example schema for a weather tool:
-
-```swift
-import AISDKProviderUtils
-
-let weatherInputSchema = FlexibleSchema(
-  jsonSchema(
-    .object([
-      "type": .string("object"),
-      "properties": .object([
-        "city": .object(["type": .string("string")]),
-        "unit": .object([
-          "type": .string("string"),
-          "enum": .array([.string("c"), .string("f")])
-        ])
-      ]),
-      "required": .array([.string("city")]),
-      "additionalProperties": .bool(false)
-    ])
-  )
-)
-```
-
-> Note: You can also define schemas with `Schema.codable(...)` for your own `Decodable` types.
+Schemas define tool parameters and validate tool calls. In Swift you usually just pass a `Codable` type to `tool(inputSchema: ...)`, and the SDK derives the JSON Schema automatically. If you need custom validation you can still build one manually with `FlexibleSchema(jsonSchema(...))` or `Schema.codable(...)`.
 
 ## Creating a tool
 
@@ -60,28 +35,29 @@ Basic tool returning an immediate (`.value`) result:
 
 ```swift
 import SwiftAISDK
-import AISDKProviderUtils
+import OpenAIProvider
+
+struct WeatherQuery: Codable, Sendable {
+  let city: String
+  let unit: String
+}
+
+struct WeatherReport: Codable, Sendable {
+  let city: String
+  let temperature: Double
+  let unit: String
+}
 
 let getWeather = tool(
   description: "Fetch current weather by city",
-  inputSchema: weatherInputSchema,
-  execute: { input, options in
-    guard case .object(let obj) = input,
-          case .string(let city)? = obj["city"] else {
-      struct ValidationError: Error {}
-      throw ValidationError()
-    }
-
-    // ... fetch weather for `city` (omitted)
-    let output: JSONValue = .object([
-      "city": .string(city),
-      "temperature": .number(21),
-      "unit": .string("c")
-    ])
-    return .value(output)
-  }
-)
+  inputSchema: WeatherQuery.self
+) { query, _ in
+  // ... fetch weather for `query.city` (omitted)
+  WeatherReport(city: query.city, temperature: 21, unit: query.unit)
+}
 ```
+
+Call `.eraseToTool()` when you want to place the typed tool into a `[String: Tool]` dictionary for `generateText`/`streamText`.
 
 ### Dynamic tool
 
@@ -100,21 +76,23 @@ let echo = dynamicTool(
 A tool can stream results via `ToolExecutionResult.stream`:
 
 ```swift
+struct EmptyInput: Codable, Sendable {}
+struct CounterStep: Codable, Sendable { let value: Int }
+
 let countToThree = tool(
   description: "Stream numbers 1..3",
-  inputSchema: FlexibleSchema(jsonSchema(.object(["additionalProperties": .bool(false)]))),
-  execute: { _, _ in
-    .stream(AsyncThrowingStream<JSONValue, Error> { continuation in
-      Task {
-        for i in 1...3 {
-          continuation.yield(.number(Double(i)))
-          try? await Task.sleep(nanoseconds: 200_000_000)
-        }
-        continuation.finish()
+  inputSchema: EmptyInput.self
+) { _, _ in
+  .stream(AsyncThrowingStream<CounterStep, Error> { continuation in
+    Task {
+      for i in 1...3 {
+        continuation.yield(CounterStep(value: i))
+        try? await Task.sleep(nanoseconds: 200_000_000)
       }
-    })
-  }
-)
+      continuation.finish()
+    }
+  })
+}
 ```
 
 > Note: To normalize streaming outputs, use `executeTool(...)` which yields `.preliminary` for each element and one `.final`.
@@ -124,15 +102,18 @@ let countToThree = tool(
 Built‑in approval support:
 
 ```swift
+struct SensitivePayload: Codable, Sendable {
+  let sensitive: Bool
+  let message: String
+}
+
 let sensitiveTool = tool(
   description: "Access sensitive resource",
-  inputSchema: FlexibleSchema(jsonSchema(.object(["additionalProperties": .bool(true)]))),
-  needsApproval: .conditional { input, _ in
-    if case .object(let obj) = input, case .bool(let isSensitive)? = obj["sensitive"] { return isSensitive }
-    return true
-  },
-  execute: { input, _ in .value(input) }
-)
+  inputSchema: SensitivePayload.self,
+  needsApproval: .conditional { payload, _ in payload.sensitive }
+) { payload, _ in
+  payload
+}
 ```
 
 ## Using tools with generateText/streamText
@@ -145,7 +126,7 @@ import OpenAIProvider
 
 let result = try await generateText(
   model: openai("gpt-4o"),
-  tools: ["getWeather": getWeather],
+  tools: ["getWeather": getWeather.eraseToTool()],
   prompt: "What's the weather in London?"
 )
 print(result.text)
@@ -157,8 +138,8 @@ Or with streaming:
 let stream = try streamText(
   model: openai("gpt-4o"),
   tools: [
-    "getWeather": getWeather,
-    "countToThree": countToThree
+    "getWeather": getWeather.eraseToTool(),
+    "countToThree": countToThree.eraseToTool()
   ],
   messages: [.user(UserModelMessage(content: .text("Count and tell weather")))]
 )

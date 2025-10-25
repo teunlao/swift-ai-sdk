@@ -20,26 +20,24 @@ The `tools` parameter of `generateText` and `streamText` is an object that has t
 ```swift
 import SwiftAISDK
 import OpenAIProvider
-import AISDKProviderUtils
 
-let weather = dynamicTool(
+struct WeatherQuery: Codable, Sendable { let location: String }
+struct WeatherReport: Codable, Sendable {
+  let location: String
+  let temperature: Int
+}
+
+let weather = tool(
   description: "Get the weather in a location",
-  inputSchema: FlexibleSchema(jsonSchema(.object([
-    "type": .string("object"),
-    "properties": .object([
-      "location": .object(["type": .string("string"), "description": .string("The location to get the weather for")])
-    ])
-  ]))),
-  execute: { input, _ in
-    let location = input["location"]?.stringValue ?? "unknown"
-    let temp = 72 + Int.random(in: -10...10)
-    return .object(["location": .string(location), "temperature": .number(Double(temp))])
-  }
-)
+  inputSchema: WeatherQuery.self
+) { query, _ in
+  let temp = 72 + Int.random(in: -10...10)
+  WeatherReport(location: query.location, temperature: temp)
+}
 
 let result = try await generateText(
   model: openai("gpt-4o"),
-  tools: ["weather": weather],
+  tools: ["weather": weather.eraseToTool()],
   prompt: "What is the weather in San Francisco?"
 )
 print(result.text)

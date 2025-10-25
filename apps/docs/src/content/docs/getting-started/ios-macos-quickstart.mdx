@@ -87,29 +87,20 @@ struct ChatView: View {
 ### Manual JSON Schema
 
 ```swift
-import AISDKProviderUtils
+struct EchoPayload: Codable, Sendable {
+  let message: String
+}
 
 let echo = tool(
   description: "Echo back the input data",
-  inputSchema: FlexibleSchema(jsonSchema(
-    .object([
-      "type": .string("object"),
-      "properties": .object([
-        "message": .object([
-          "type": .string("string"),
-          "description": .string("The message to echo")
-        ])
-      ]),
-      "required": .array([.string("message")]),
-      "additionalProperties": .bool(false)
-    ])
-  )),
-  execute: { input, _ in .value(input) }
-)
+  inputSchema: EchoPayload.self
+) { payload, _ in
+  EchoPayload(message: payload.message.uppercased())
+}
 
 let result = try await generateText(
   model: openai("gpt-4o"),
-  tools: ["echo": echo],
+  tools: ["echo": echo.eraseToTool()],
   prompt: "Call echo with {\"message\":\"Hello!\"}"
 )
 ```
@@ -156,4 +147,3 @@ let result = try await generateText(
 > **Note:** The Zod-like DSL (`z.object()`, `z.string()`, etc.) provides a cleaner way to define schemas. Use `flexibleSchemaFromZod3()` to convert ZodSchema to FlexibleSchema.
 
 > Keep long‑running work off the main actor; UI updates should be marshalled on the main thread.
-

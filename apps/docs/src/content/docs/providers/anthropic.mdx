@@ -220,17 +220,13 @@ let result = try await generateText(
 Cache control for tools:
 
 ```swift
+struct CityQuery: Codable, Sendable { let city: String }
+
 let result = try await generateText(
-  model: anthropic("claude-3-5-haiku-latest"),
+  model: try anthropic("claude-3-5-haiku-latest"),
   tools: [
     "cityAttractions": tool(
-      inputSchema: FlexibleSchema(jsonSchema(
-        .object([
-          "type": .string("object"),
-          "properties": .object(["city": .object(["type": .string("string")])]),
-          "required": .array([.string("city")])
-        ])
-      )),
+      inputSchema: CityQuery.self,
       providerOptions: [
         "anthropic": [
           "cacheControl": ["type": "ephemeral"]
