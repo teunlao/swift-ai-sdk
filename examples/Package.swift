@@ -59,6 +59,16 @@ let package = Package(
     ),
 
     .executableTarget(
+      name: "WeatherToolExample",
+      dependencies: [
+        "ExamplesCore",
+        .product(name: "SwiftAISDK", package: "swift-ai-sdk"),
+        .product(name: "AISDKProviderUtils", package: "swift-ai-sdk"),
+        .product(name: "AISDKJSONSchema", package: "swift-ai-sdk"),
+      ]
+    ),
+
+    .executableTarget(
       name: "BasicCLI",
       dependencies: [
         "ExamplesCore",
@@ -169,6 +179,19 @@ let package = Package(
         "ExamplesCore",
         .product(name: "SwiftAISDK", package: "swift-ai-sdk"),
         .product(name: "OpenAIProvider", package: "swift-ai-sdk"),
+      ]
+    ),
+
+    // MARK: - README Examples
+
+    .executableTarget(
+      name: "READMEExamples",
+      dependencies: [
+        "ExamplesCore",
+        .product(name: "SwiftAISDK", package: "swift-ai-sdk"),
+        .product(name: "OpenAIProvider", package: "swift-ai-sdk"),
+        .product(name: "AISDKProviderUtils", package: "swift-ai-sdk"),
+        .product(name: "AISDKJSONSchema", package: "swift-ai-sdk"),
       ]
     ),
 

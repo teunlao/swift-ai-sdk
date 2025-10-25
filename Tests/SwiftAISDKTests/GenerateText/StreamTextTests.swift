@@ -1443,7 +1443,7 @@ struct StreamTextBasicTests {
 
         let startCalls = LockedValue(initial: 0)
         let deltaCalls = LockedValue(initial: [String]())
-        let availableInputs = LockedValue(initial: [JSONValue]())
+        let availableInputs = LockedValue(initial: [] as [JSONValue])
         let executeCalls = LockedValue(initial: 0)
 
         let tool = Tool(
@@ -1476,7 +1476,7 @@ struct StreamTextBasicTests {
         let full = try await result.collectFullStream()
         #expect(startCalls.withValue { $0 } == 1)
         #expect(deltaCalls.withValue { $0 } == ["{\"", "\"value\":1}"])
-        #expect(availableInputs.withValue { $0 } == [.object(["value": .number(1)])])
+        #expect(availableInputs.withValue { $0 } == [AISDKProvider.JSONValue.object(["value": .number(1)])])
         #expect(executeCalls.withValue { $0 } == 1)
 
         let hasToolResult = full.contains { part in

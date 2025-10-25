@@ -199,38 +199,57 @@ Notes: use `generateObjectNoSchema(...)` for raw `JSONValue`; arrays/enums via `
 Models can call tools. Minimal calculator example:
 
 ```swift
-import SwiftAISDK, OpenAIProvider, AISDKProviderUtils
+import SwiftAISDK
+import OpenAIProvider
+import Foundation
 
-let calculate = tool(
-  description: "Basic math",
-  inputSchema: .jsonSchema(
-    .object([
-      "type": .string("object"),
-      "properties": .object([
-        "op": .object(["type": .string("string"), "enum": .array([.string("add"), .string("mul")])]),
-        "a": .object(["type": .string("number")]),
-        "b": .object(["type": .string("number")])
-      ]),
-      "required": .array([.string("op"), .string("a"), .string("b")])
-    ])
-  )
-) { input, _ in
-  guard case .object(let o) = input,
-        case .string(let op) = o["op"],
-        case .number(let a) = o["a"],
-        case .number(let b) = o["b"] else {
-    return .value(["error": .string("invalid input")])
-  }
-  let res = (op == "add") ? (a + b) : (a * b)
-  return .value(["result": .number(res)])
+struct CalculatorInput: Codable, Sendable {
+  enum Operation: String, Codable, Sendable, CaseIterable { case add, mul }
+  let op: Operation
+  let a: Double
+  let b: Double
 }
 
-let result = try await generateText(
+private func decodeJSONValue<T: Decodable>(_ type: T.Type, from value: JSONValue) throws -> T {
+  let data = try JSONSerialization.data(withJSONObject: value.toFoundationObject())
+  return try JSONDecoder().decode(T.self, from: data)
+}
+
+private extension JSONValue {
+  func toFoundationObject() throws -> Any {
+    switch self {
+    case .null: return NSNull()
+    case .bool(let value): return value
+    case .number(let value): return value
+    case .string(let value): return value
+    case .array(let values): return try values.map { try $0.toFoundationObject() }
+    case .object(let dictionary):
+      var result: [String: Any] = [:]
+      result.reserveCapacity(dictionary.count)
+      for (key, value) in dictionary {
+        result[key] = try value.toFoundationObject()
+      }
+      return result
+    }
+  }
+}
+
+let codableSchema = FlexibleSchema.auto(CalculatorInput.self)
+let calculate = tool(
+  description: "Basic math",
+  inputSchema: FlexibleSchema(jsonSchema(try await codableSchema.resolve().jsonSchema()))
+) { input, _ in
+  let payload = try decodeJSONValue(CalculatorInput.self, from: input)
+  let result = payload.op == .add ? (payload.a + payload.b) : (payload.a * payload.b)
+  return .value(["result": .number(result)])
+}
+
+let output = try await generateText(
   model: openai("gpt-5"),
   tools: ["calculate": calculate],
   prompt: "Use tools to compute 25*4."
 )
-print(result.text)
+print(output.text)
 ```
 
 Notes: supports static and dynamic tool calls; for streaming with tools, use `streamText(..., tools: ...)` and consume `fullStream`.
