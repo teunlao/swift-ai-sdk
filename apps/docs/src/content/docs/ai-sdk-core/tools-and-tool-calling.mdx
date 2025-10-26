@@ -228,20 +228,20 @@ AI SDK Core supports dynamic tools for scenarios where tool schemas are not know
 
 ### Using dynamicTool
 
-The `dynamicTool` helper creates tools with unknown input/output types:
+The `dynamicTool` helper creates tools whose shape is known at runtime. Pass a `Codable` input and the SDK still produces a `.dynamic` tool (so providers treat it as dynamic), while your Swift code gets strong typing:
 
 ```swift
 import SwiftAISDK
 
+struct CommandInput: Codable, Sendable { let action: String }
+struct CommandResult: Codable, Sendable { let status: String }
+
 let customTool = dynamicTool(
   description: "Execute a custom function",
-  inputSchema: FlexibleSchema(jsonSchema(.object(["type": .string("object"), "properties": .object([:])]))),
-  execute: { input, _ in
-    // input is JSONValue; validate/cast at runtime
-    let action = input["action"]?.stringValue ?? "unknown"
-    return .object(["result": .string("Executed \(action)")])
-  }
-)
+  inputSchema: CommandInput.self
+) { input, _ in
+  CommandResult(status: "Executed \(input.action)")
+}
 ```
 
 ### Type-Safe Handling

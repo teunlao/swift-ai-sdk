@@ -64,11 +64,14 @@ Use `.tool` when you need the erased representation for `[String: Tool]` diction
 Dynamic tool (type `.dynamic`) via `dynamicTool(...)`:
 
 ```swift
+struct EchoPayload: Codable, Sendable { let message: String }
+
 let echo = dynamicTool(
   description: "Echo input back",
-  inputSchema: FlexibleSchema(jsonSchema(.object(["additionalProperties": .bool(true)]))),
-  execute: { input, _ in .value(input) }
-)
+  inputSchema: EchoPayload.self
+) { payload, _ in
+  payload
+}
 ```
 
 ### Streaming tool output
