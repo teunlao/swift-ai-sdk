@@ -3,6 +3,7 @@ import ExamplesCore
 func registerAllExamples() {
   ExampleCatalog.register(WeatherToolExample.self, path: WeatherToolExample.name)
   ExampleCatalog.register(GenerateTextOpenAIExample.self, path: GenerateTextOpenAIExample.name)
+  ExampleCatalog.register(GenerateTextOpenAIFullResultExample.self, path: GenerateTextOpenAIFullResultExample.name)
   ExampleCatalog.register(GenerateTextOpenAIAudioExample.self, path: GenerateTextOpenAIAudioExample.name)
   ExampleCatalog.register(GenerateTextOpenAICachedPromptTokensExample.self, path: GenerateTextOpenAICachedPromptTokensExample.name)
   ExampleCatalog.register(GenerateTextOpenAICustomFetchExample.self, path: GenerateTextOpenAICustomFetchExample.name)
