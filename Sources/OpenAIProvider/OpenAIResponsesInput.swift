@@ -318,6 +318,48 @@ struct OpenAIResponsesInputBuilder {
             }
         }
 
+        if part.mediaType.hasPrefix("audio/") {
+            let format: String
+            switch part.mediaType {
+            case "audio/wav":
+                format = "wav"
+            case "audio/mp3", "audio/mpeg":
+                format = "mp3"
+            default:
+                throw UnsupportedFunctionalityError(functionality: "audio content parts with media type \(part.mediaType)")
+            }
+
+            switch part.data {
+            case .url:
+                throw UnsupportedFunctionalityError(functionality: "audio file parts with URLs")
+            case .data(let data):
+                let base64 = convertDataToBase64(data)
+                return .object([
+                    "type": .string("input_audio"),
+                    "input_audio": .object([
+                        "data": .string(base64),
+                        "format": .string(format)
+                    ])
+                ])
+            case .base64(let value):
+                if isFileId(value, prefixes: prefixes) {
+                    return .object([
+                        "type": .string("input_audio"),
+                        "file_id": .string(value)
+                    ])
+                }
+                return .object([
+                    "type": .string("input_audio"),
+                    "input_audio": .object([
+                        "data": .string(value),
+                        "format": .string(format)
+                    ])
+                ])
+            }
+        }
+
+
+
         if part.mediaType == "application/pdf" {
             switch part.data {
             case .url(let url):
