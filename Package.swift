@@ -19,6 +19,7 @@ let package = Package(
         .library(name: "OpenAIProvider", targets: ["OpenAIProvider"]),
         .library(name: "OpenAICompatibleProvider", targets: ["OpenAICompatibleProvider"]),
         .library(name: "AnthropicProvider", targets: ["AnthropicProvider"]),
+        .library(name: "AmazonBedrockProvider", targets: ["AmazonBedrockProvider"]),
         .library(name: "GoogleProvider", targets: ["GoogleProvider"]),
         .library(name: "GoogleVertexProvider", targets: ["GoogleVertexProvider"]),
         .library(name: "AzureProvider", targets: ["AzureProvider"]),
@@ -80,6 +81,7 @@ let package = Package(
         // OpenAI-compatible provider package
         .target(name: "OpenAICompatibleProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils"]),
         .target(name: "AnthropicProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "EventSourceParser"]),
+        .target(name: "AmazonBedrockProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "AnthropicProvider"]),
         .target(name: "GoogleProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "EventSourceParser"]),
         .target(name: "GoogleVertexProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "GoogleProvider"]),
         .target(name: "AzureProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "OpenAIProvider"]),

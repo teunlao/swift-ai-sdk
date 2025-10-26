@@ -19,19 +19,16 @@ A unified AI SDK for Swift, bringing the power of [Vercel AI SDK](https://github
 - **Text Generation** - Streaming and non-streaming
 - **Structured Outputs** - Type-safe object generation with schemas
 - **Tool Calling** - Function calling and MCP tools
-- **Multi-Provider** - OpenAI, Anthropic, Google, Groq, xAI, and [more](https://swift-ai-sdk-docs.vercel.app/providers/overview)
+- **Multi-Provider** - OpenAI, Anthropic, Google, Groq, xAI, and [20 more](https://swift-ai-sdk-docs.vercel.app/providers/overview)
 - **Middleware System** - Extensible request/response processing
 - **Telemetry** - Built-in observability
 
 ## Packages
 
-**Core SDK:**
 - `SwiftAISDK` - Main SDK with text generation, streaming, tools
 - `AISDKProvider` - Foundation types and interfaces
 - `AISDKProviderUtils` - Provider utilities
-
-**Providers:**
-- OpenAI, Anthropic, Google, Groq, xAI, Azure, and [more](https://swift-ai-sdk-docs.vercel.app/providers/overview)
+- `*Provider` - 25+ provider packages ([see full list](https://swift-ai-sdk-docs.vercel.app/providers/overview))
 
 ---
 
@@ -43,8 +40,8 @@ A unified AI SDK for Swift, bringing the power of [Vercel AI SDK](https://github
 | Category | Tests | Coverage |
 |----------|-------|----------|
 | **Core SDK** | 1598 | 100% |
-| **Providers** | 644 | 69.2% |
-| **Overall** | 2242 | 79.5% |
+| **Providers** | 645 | 69.2% |
+| **Overall** | 2243 | 79.5% |
 
 <details>
 <summary>Provider Details</summary>
@@ -75,13 +72,13 @@ A unified AI SDK for Swift, bringing the power of [Vercel AI SDK](https://github
 | **gladia** | ✅ | ❌ | 6 | 0 | 0% |
 | **huggingface** | ✅ | ❌ | 32 | 0 | 0% |
 | **google-vertex** | ✅ | ❌ | 78 | 0 | 0% |
-| **amazon-bedrock** | ❌ | ❌ | 152 | 0 | 0% |
+| **amazon-bedrock** | ✅ | ❌ | 152 | 0 | 0% |
 | **togetherai** | ❌ | ❌ | 17 | 0 | 0% |
 | **luma** | ❌ | ❌ | 16 | 0 | 0% |
 | **hume** | ❌ | ❌ | 9 | 0 | 0% |
 | **revai** | ❌ | ❌ | 6 | 0 | 0% |
 | **vercel** | ❌ | ❌ | 4 | 0 | 0% |
-| **TOTAL** | **24/32** | **13/32** | **1520** | **930** | **61.2%** |
+| **TOTAL** | **25/32** | **13/32** | **1520** | **930** | **61.2%** |
 
 </details>
 

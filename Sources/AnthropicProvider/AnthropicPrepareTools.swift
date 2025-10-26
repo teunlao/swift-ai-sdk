@@ -2,11 +2,11 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-struct AnthropicPreparedTools: Sendable {
-    let tools: [JSONValue]?
-    let toolChoice: JSONValue?
-    let warnings: [LanguageModelV3CallWarning]
-    let betas: Set<String>
+public struct AnthropicPreparedTools: Sendable {
+    public let tools: [JSONValue]?
+    public let toolChoice: JSONValue?
+    public let warnings: [LanguageModelV3CallWarning]
+    public let betas: Set<String>
 }
 
 private func foundationArgs(_ args: [String: JSONValue]) -> [String: Any] {
@@ -51,7 +51,7 @@ private func boolValue(_ value: JSONValue?) -> Bool? {
     return nil
 }
 
-func prepareAnthropicTools(
+public func prepareAnthropicTools(
     tools: [LanguageModelV3Tool]?,
     toolChoice: LanguageModelV3ToolChoice?,
     disableParallelToolUse: Bool?
