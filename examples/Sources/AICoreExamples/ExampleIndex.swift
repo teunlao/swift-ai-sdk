@@ -5,6 +5,8 @@ func registerAllExamples() {
   ExampleCatalog.register(GenerateTextOpenAIExample.self, path: GenerateTextOpenAIExample.name)
   ExampleCatalog.register(GenerateTextOpenAIToolChoiceExample.self, path: GenerateTextOpenAIToolChoiceExample.name)
   ExampleCatalog.register(GenerateTextOpenAIToolCallExample.self, path: GenerateTextOpenAIToolCallExample.name)
+  ExampleCatalog.register(GenerateTextOpenAIActiveToolsExample.self, path: GenerateTextOpenAIActiveToolsExample.name)
+  ExampleCatalog.register(GenerateTextOpenAINullableToolExample.self, path: GenerateTextOpenAINullableToolExample.name)
   ExampleCatalog.register(GenerateTextOpenAIToolApprovalExample.self, path: GenerateTextOpenAIToolApprovalExample.name)
   ExampleCatalog.register(GenerateTextOpenAIToolApprovalDynamicExample.self, path: GenerateTextOpenAIToolApprovalDynamicExample.name)
   ExampleCatalog.register(GenerateTextOpenAIToolCallRawJSONSchemaExample.self, path: GenerateTextOpenAIToolCallRawJSONSchemaExample.name)
