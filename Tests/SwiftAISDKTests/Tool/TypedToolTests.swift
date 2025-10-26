@@ -81,4 +81,50 @@ struct TypedToolTests {
         #expect(decodedReports.first?.condition == "Sunny")
         #expect(decodedReports.last?.location == "Tokyo")
     }
+
+    @Test("dynamicTool bridges Codable input/output while remaining dynamic")
+    func dynamicToolWithCodableValues() async throws {
+        struct Command: Codable, Equatable, Sendable { let action: String }
+        struct CommandResult: Codable, Equatable, Sendable { let status: String }
+
+        let tool = dynamicTool(
+            description: "Command",
+            inputSchema: Command.self,
+            needsApproval: .always
+        ) { command, _ in
+            CommandResult(status: "executed \(command.action)")
+        }
+
+        #expect(tool.type == .dynamic)
+        switch tool.needsApproval {
+        case .always?: break
+        default: Issue.record("Expected .always needsApproval")
+        }
+
+        guard let execute = tool.execute else {
+            Issue.record("Dynamic tool is missing execute closure")
+            return
+        }
+
+        let options = ToolCallOptions(toolCallId: "cmd", messages: [])
+        let result = try await execute(["action": .string("jump")], options).resolve()
+
+        guard case let .object(payload) = result,
+              let status = payload["status"],
+              status == .string("executed jump") else {
+            Issue.record("Unexpected dynamic tool output: \(result)")
+            return
+        }
+
+        let schemaJSON = try await tool.inputSchema.resolve().jsonSchema()
+        guard case let .object(root) = schemaJSON,
+              case let .object(properties) = root["properties"],
+              case let .object(actionSchema) = properties["action"],
+              case let .string(type) = actionSchema["type"] else {
+            Issue.record("Unexpected schema: \(schemaJSON)")
+            return
+        }
+
+        #expect(type == "string")
+    }
 }

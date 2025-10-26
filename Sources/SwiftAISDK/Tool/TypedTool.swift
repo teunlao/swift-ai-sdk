@@ -217,6 +217,124 @@ public func tool<Input: Codable & Sendable, Output: Codable & Sendable>(
     )
 }
 
+// MARK: - Dynamic Tool Helpers
+
+public func dynamicTool<Input: Codable & Sendable, Output: Codable & Sendable>(
+    description: String? = nil,
+    providerOptions: [String: JSONValue]? = nil,
+    inputSchema: FlexibleSchema<Input> = FlexibleSchema.auto(Input.self),
+    outputSchema: FlexibleSchema<Output>? = nil,
+    needsApproval: NeedsApproval? = nil,
+    execute: @escaping @Sendable (Input, ToolCallOptions) async throws -> ToolExecutionResult<Output>,
+    toModelOutput: (@Sendable (Output) -> LanguageModelV3ToolResultOutput)? = nil
+) -> Tool {
+    let resolvedInputSchema = inputSchema.resolve()
+    let jsonInputSchema = FlexibleSchema<JSONValue>(
+        jsonSchema { try await resolvedInputSchema.jsonSchema() }
+    )
+
+    let resolvedOutputSchema = outputSchema?.resolve()
+    let jsonOutputSchema = resolvedOutputSchema.map { schema in
+        FlexibleSchema<JSONValue>(jsonSchema { try await schema.jsonSchema() })
+    }
+
+    let wrappedExecute: @Sendable (JSONValue, ToolCallOptions) async throws -> ToolExecutionResult<JSONValue> = { rawInput, options in
+        let typedInput = try await decodeTypedInput(rawInput, schema: resolvedInputSchema)
+        let typedResult = try await execute(typedInput, options)
+        return try mapToolExecutionResult(typedResult) { output in
+            try encodeOutput(output)
+        }
+    }
+
+    let wrappedToModelOutput: (@Sendable (JSONValue) -> LanguageModelV3ToolResultOutput)?
+    if let toModelOutput {
+        wrappedToModelOutput = { json in
+            do {
+                let output = try decodeTypedOutput(json, schema: resolvedOutputSchema)
+                return toModelOutput(output)
+            } catch {
+                fatalError("Failed to decode dynamic tool output to typed value: \(error)")
+            }
+        }
+    } else {
+        wrappedToModelOutput = nil
+    }
+
+    return Tool(
+        description: description,
+        providerOptions: providerOptions,
+        inputSchema: jsonInputSchema,
+        needsApproval: needsApproval,
+        execute: wrappedExecute,
+        outputSchema: jsonOutputSchema,
+        toModelOutput: wrappedToModelOutput,
+        type: .dynamic
+    )
+}
+
+public func dynamicTool<Input: Codable & Sendable, Output: Codable & Sendable>(
+    description: String? = nil,
+    providerOptions: [String: JSONValue]? = nil,
+    inputSchema inputType: Input.Type,
+    outputSchema: FlexibleSchema<Output>? = nil,
+    needsApproval: NeedsApproval? = nil,
+    execute: @escaping @Sendable (Input, ToolCallOptions) async throws -> ToolExecutionResult<Output>,
+    toModelOutput: (@Sendable (Output) -> LanguageModelV3ToolResultOutput)? = nil
+) -> Tool {
+    dynamicTool(
+        description: description,
+        providerOptions: providerOptions,
+        inputSchema: FlexibleSchema.auto(inputType),
+        outputSchema: outputSchema,
+        needsApproval: needsApproval,
+        execute: execute,
+        toModelOutput: toModelOutput
+    )
+}
+
+public func dynamicTool<Input: Codable & Sendable, Output: Codable & Sendable>(
+    description: String? = nil,
+    providerOptions: [String: JSONValue]? = nil,
+    inputSchema: FlexibleSchema<Input> = FlexibleSchema.auto(Input.self),
+    outputSchema: FlexibleSchema<Output>? = nil,
+    needsApproval: NeedsApproval? = nil,
+    execute: @escaping @Sendable (Input, ToolCallOptions) async throws -> Output,
+    toModelOutput: (@Sendable (Output) -> LanguageModelV3ToolResultOutput)? = nil
+) -> Tool {
+    dynamicTool(
+        description: description,
+        providerOptions: providerOptions,
+        inputSchema: inputSchema,
+        outputSchema: outputSchema,
+        needsApproval: needsApproval,
+        execute: { input, options in
+            let output = try await execute(input, options)
+            return .value(output)
+        },
+        toModelOutput: toModelOutput
+    )
+}
+
+public func dynamicTool<Input: Codable & Sendable, Output: Codable & Sendable>(
+    description: String? = nil,
+    providerOptions: [String: JSONValue]? = nil,
+    inputSchema inputType: Input.Type,
+    outputSchema: FlexibleSchema<Output>? = nil,
+    needsApproval: NeedsApproval? = nil,
+    execute: @escaping @Sendable (Input, ToolCallOptions) async throws -> Output,
+    toModelOutput: (@Sendable (Output) -> LanguageModelV3ToolResultOutput)? = nil
+) -> Tool {
+    dynamicTool(
+        description: description,
+        providerOptions: providerOptions,
+        inputSchema: FlexibleSchema.auto(inputType),
+        outputSchema: outputSchema,
+        needsApproval: needsApproval,
+        execute: execute,
+        toModelOutput: toModelOutput
+    )
+}
+
 // MARK: - Bridging Helpers
 
 private func decodeTypedInput<Input: Codable & Sendable>(
