@@ -43,6 +43,7 @@ let package = Package(
         .library(name: "ReplicateProvider", targets: ["ReplicateProvider"]),
         .library(name: "XAIProvider", targets: ["XAIProvider"]),
         .library(name: "LMNTProvider", targets: ["LMNTProvider"]),
+        .library(name: "LumaProvider", targets: ["LumaProvider"]),
         .library(name: "AISDKJSONSchema", targets: ["AISDKJSONSchema"]),
         .library(name: "EventSourceParser", targets: ["EventSourceParser"]), // internal lib for SSE
         .library(name: "AISDKZodAdapter", targets: ["AISDKZodAdapter"]),
@@ -107,6 +108,7 @@ let package = Package(
         .target(name: "ReplicateProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils"]),
         .target(name: "XAIProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "OpenAICompatibleProvider"]),
         .target(name: "LMNTProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils"]),
+        .target(name: "LumaProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils"]),
         // JSON Schema generator (optional product)
         .target(
             name: "AISDKJSONSchema",
@@ -162,6 +164,7 @@ let package = Package(
                 "DeepSeekProvider",
                 "ReplicateProvider",
                 "LMNTProvider",
+                "LumaProvider",
                 "XAIProvider",
                 .product(name: "ArgumentParser", package: "swift-argument-parser")
             ],

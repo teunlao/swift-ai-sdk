@@ -28,7 +28,7 @@ A unified AI SDK for Swift, bringing the power of [Vercel AI SDK](https://github
 - `SwiftAISDK` - Main SDK with text generation, streaming, tools
 - `AISDKProvider` - Foundation types and interfaces
 - `AISDKProviderUtils` - Provider utilities
-- `*Provider` - 27+ provider packages ([see full list](https://swift-ai-sdk-docs.vercel.app/providers/overview))
+- `*Provider` - 28+ provider packages ([see full list](https://swift-ai-sdk-docs.vercel.app/providers/overview))
 
 ---
 
@@ -75,11 +75,11 @@ A unified AI SDK for Swift, bringing the power of [Vercel AI SDK](https://github
 | **amazon-bedrock** | ✅ | ❌ | 152 | 0 | 0% |
 | **gateway** | ✅ | ❌ | 9 | 0 | 0% |
 | **togetherai** | ❌ | ❌ | 17 | 0 | 0% |
-| **luma** | ❌ | ❌ | 16 | 0 | 0% |
+| **luma** | ✅ | ❌ | 16 | 0 | 0% |
 | **hume** | ✅ | ❌ | 9 | 0 | 0% |
 | **revai** | ❌ | ❌ | 6 | 0 | 0% |
 | **vercel** | ❌ | ❌ | 4 | 0 | 0% |
-| **TOTAL** | **27/32** | **13/32** | **1520** | **930** | **61.2%** |
+| **TOTAL** | **28/32** | **13/32** | **1520** | **930** | **61.2%** |
 
 </details>
 
