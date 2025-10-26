@@ -1,6 +1,7 @@
 import Foundation
 import AISDKProvider
 import AISDKProviderUtils
+import GatewayProvider
 
 /**
  Wraps Gateway errors in AISDKError for better error messaging.

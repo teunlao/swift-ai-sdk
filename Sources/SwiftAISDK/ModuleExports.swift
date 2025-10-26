@@ -5,3 +5,4 @@ import Foundation
 @_exported import AISDKProvider
 @_exported import AISDKProviderUtils
 @_exported import AISDKJSONSchema
+@_exported import GatewayProvider

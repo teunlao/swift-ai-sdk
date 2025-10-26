@@ -20,6 +20,7 @@ let package = Package(
         .library(name: "OpenAICompatibleProvider", targets: ["OpenAICompatibleProvider"]),
         .library(name: "AnthropicProvider", targets: ["AnthropicProvider"]),
         .library(name: "AmazonBedrockProvider", targets: ["AmazonBedrockProvider"]),
+        .library(name: "GatewayProvider", targets: ["GatewayProvider"]),
         .library(name: "GoogleProvider", targets: ["GoogleProvider"]),
         .library(name: "GoogleVertexProvider", targets: ["GoogleVertexProvider"]),
         .library(name: "AzureProvider", targets: ["AzureProvider"]),
@@ -82,6 +83,7 @@ let package = Package(
         .target(name: "OpenAICompatibleProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils"]),
         .target(name: "AnthropicProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "EventSourceParser"]),
         .target(name: "AmazonBedrockProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "AnthropicProvider"]),
+        .target(name: "GatewayProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils"]),
         .target(name: "GoogleProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "EventSourceParser"]),
         .target(name: "GoogleVertexProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "GoogleProvider"]),
         .target(name: "AzureProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "OpenAIProvider"]),
@@ -115,7 +117,7 @@ let package = Package(
 
         // SwiftAISDK - Main AI SDK (matches @ai-sdk/ai)
         // GenerateText, Registry, Middleware, Prompts, Tools, Telemetry
-        .target(name: "SwiftAISDK", dependencies: ["AISDKProvider", "AISDKProviderUtils", "AISDKJSONSchema", "EventSourceParser"]),
+        .target(name: "SwiftAISDK", dependencies: ["AISDKProvider", "AISDKProviderUtils", "AISDKJSONSchema", "EventSourceParser", "GatewayProvider"]),
         .testTarget(name: "SwiftAISDKTests", dependencies: ["SwiftAISDK", "OpenAIProvider", "OpenAICompatibleProvider"]),
         .testTarget(name: "OpenAICompatibleProviderTests", dependencies: ["OpenAICompatibleProvider", "AISDKProvider", "AISDKProviderUtils"]),
         .testTarget(name: "AnthropicProviderTests", dependencies: ["AnthropicProvider", "AISDKProvider", "AISDKProviderUtils"], resources: [.copy("Fixtures")]),
