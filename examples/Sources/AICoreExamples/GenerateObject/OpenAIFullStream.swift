@@ -26,7 +26,7 @@ struct GenerateObjectOpenAIFullStreamExample: Example {
         ),
         prompt: "Generate 3 character descriptions for a fantasy role playing game.",
         providerOptions: [
-          "openai": ["logprobs": .number(2)]
+          "openai": ["logprobs": 2]
         ],
         settings: CallSettings(maxOutputTokens: 2_000)
       )

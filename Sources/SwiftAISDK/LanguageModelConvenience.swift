@@ -637,3 +637,227 @@ public func generateObject<ObjectResult>(
         settings: settings
     )
 }
+
+
+// MARK: - generateObjectArray overloads
+
+/**
+ Generate object arrays with a LanguageModelV3 directly.
+
+ Convenience overload that wraps the model in `LanguageModel.v3()`.
+ */
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+public func generateObjectArray<ElementResult: Codable & Sendable>(
+    model: any LanguageModelV3,
+    schema elementType: ElementResult.Type,
+    system: String? = nil,
+    prompt: String? = nil,
+    messages: [ModelMessage]? = nil,
+    schemaName: String? = nil,
+    schemaDescription: String? = nil,
+    mode: GenerateObjectJSONMode = .auto,
+    experimentalRepairText repairText: RepairTextFunction? = nil,
+    experimentalTelemetry telemetry: TelemetrySettings? = nil,
+    experimentalDownload download: DownloadFunction? = nil,
+    providerOptions: ProviderOptions? = nil,
+    internalOptions: GenerateObjectInternalOptions = GenerateObjectInternalOptions(),
+    settings: CallSettings = CallSettings()
+) async throws -> GenerateObjectResult<[ElementResult]> {
+    try await generateObjectArray(
+        model: .v3(model),
+        schema: elementType,
+        system: system,
+        prompt: prompt,
+        messages: messages,
+        schemaName: schemaName,
+        schemaDescription: schemaDescription,
+        mode: mode,
+        experimentalRepairText: repairText,
+        experimentalTelemetry: telemetry,
+        experimentalDownload: download,
+        providerOptions: providerOptions,
+        internalOptions: internalOptions,
+        settings: settings
+    )
+}
+
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+public func generateObjectArray<ElementResult>(
+    model: any LanguageModelV3,
+    schema: FlexibleSchema<ElementResult>,
+    system: String? = nil,
+    prompt: String? = nil,
+    messages: [ModelMessage]? = nil,
+    schemaName: String? = nil,
+    schemaDescription: String? = nil,
+    mode: GenerateObjectJSONMode = .auto,
+    experimentalRepairText repairText: RepairTextFunction? = nil,
+    experimentalTelemetry telemetry: TelemetrySettings? = nil,
+    experimentalDownload download: DownloadFunction? = nil,
+    providerOptions: ProviderOptions? = nil,
+    internalOptions: GenerateObjectInternalOptions = GenerateObjectInternalOptions(),
+    settings: CallSettings = CallSettings()
+) async throws -> GenerateObjectResult<[ElementResult]> {
+    try await generateObjectArray(
+        model: .v3(model),
+        schema: schema,
+        system: system,
+        prompt: prompt,
+        messages: messages,
+        schemaName: schemaName,
+        schemaDescription: schemaDescription,
+        mode: mode,
+        experimentalRepairText: repairText,
+        experimentalTelemetry: telemetry,
+        experimentalDownload: download,
+        providerOptions: providerOptions,
+        internalOptions: internalOptions,
+        settings: settings
+    )
+}
+
+/**
+ Generate object arrays with a LanguageModelV2 directly.
+
+ Convenience overload that wraps the model in `LanguageModel.v2()`.
+ */
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+public func generateObjectArray<ElementResult: Codable & Sendable>(
+    model: any LanguageModelV2,
+    schema elementType: ElementResult.Type,
+    system: String? = nil,
+    prompt: String? = nil,
+    messages: [ModelMessage]? = nil,
+    schemaName: String? = nil,
+    schemaDescription: String? = nil,
+    mode: GenerateObjectJSONMode = .auto,
+    experimentalRepairText repairText: RepairTextFunction? = nil,
+    experimentalTelemetry telemetry: TelemetrySettings? = nil,
+    experimentalDownload download: DownloadFunction? = nil,
+    providerOptions: ProviderOptions? = nil,
+    internalOptions: GenerateObjectInternalOptions = GenerateObjectInternalOptions(),
+    settings: CallSettings = CallSettings()
+) async throws -> GenerateObjectResult<[ElementResult]> {
+    try await generateObjectArray(
+        model: .v2(model),
+        schema: elementType,
+        system: system,
+        prompt: prompt,
+        messages: messages,
+        schemaName: schemaName,
+        schemaDescription: schemaDescription,
+        mode: mode,
+        experimentalRepairText: repairText,
+        experimentalTelemetry: telemetry,
+        experimentalDownload: download,
+        providerOptions: providerOptions,
+        internalOptions: internalOptions,
+        settings: settings
+    )
+}
+
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+public func generateObjectArray<ElementResult>(
+    model: any LanguageModelV2,
+    schema: FlexibleSchema<ElementResult>,
+    system: String? = nil,
+    prompt: String? = nil,
+    messages: [ModelMessage]? = nil,
+    schemaName: String? = nil,
+    schemaDescription: String? = nil,
+    mode: GenerateObjectJSONMode = .auto,
+    experimentalRepairText repairText: RepairTextFunction? = nil,
+    experimentalTelemetry telemetry: TelemetrySettings? = nil,
+    experimentalDownload download: DownloadFunction? = nil,
+    providerOptions: ProviderOptions? = nil,
+    internalOptions: GenerateObjectInternalOptions = GenerateObjectInternalOptions(),
+    settings: CallSettings = CallSettings()
+) async throws -> GenerateObjectResult<[ElementResult]> {
+    try await generateObjectArray(
+        model: .v2(model),
+        schema: schema,
+        system: system,
+        prompt: prompt,
+        messages: messages,
+        schemaName: schemaName,
+        schemaDescription: schemaDescription,
+        mode: mode,
+        experimentalRepairText: repairText,
+        experimentalTelemetry: telemetry,
+        experimentalDownload: download,
+        providerOptions: providerOptions,
+        internalOptions: internalOptions,
+        settings: settings
+    )
+}
+
+
+// MARK: - generateObjectEnum overloads
+
+/**
+ Generate object enums with a LanguageModelV3 directly.
+
+ Convenience overload that wraps the model in `LanguageModel.v3()`.
+ */
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+public func generateObjectEnum(
+    model: any LanguageModelV3,
+    values: [String],
+    system: String? = nil,
+    prompt: String? = nil,
+    messages: [ModelMessage]? = nil,
+    experimentalRepairText repairText: RepairTextFunction? = nil,
+    experimentalTelemetry telemetry: TelemetrySettings? = nil,
+    experimentalDownload download: DownloadFunction? = nil,
+    providerOptions: ProviderOptions? = nil,
+    internalOptions: GenerateObjectInternalOptions = GenerateObjectInternalOptions(),
+    settings: CallSettings = CallSettings()
+) async throws -> GenerateObjectResult<String> {
+    try await generateObjectEnum(
+        model: .v3(model),
+        values: values,
+        system: system,
+        prompt: prompt,
+        messages: messages,
+        experimentalRepairText: repairText,
+        experimentalTelemetry: telemetry,
+        experimentalDownload: download,
+        providerOptions: providerOptions,
+        internalOptions: internalOptions,
+        settings: settings
+    )
+}
+
+/**
+ Generate object enums with a LanguageModelV2 directly.
+
+ Convenience overload that wraps the model in `LanguageModel.v2()`.
+ */
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+public func generateObjectEnum(
+    model: any LanguageModelV2,
+    values: [String],
+    system: String? = nil,
+    prompt: String? = nil,
+    messages: [ModelMessage]? = nil,
+    experimentalRepairText repairText: RepairTextFunction? = nil,
+    experimentalTelemetry telemetry: TelemetrySettings? = nil,
+    experimentalDownload download: DownloadFunction? = nil,
+    providerOptions: ProviderOptions? = nil,
+    internalOptions: GenerateObjectInternalOptions = GenerateObjectInternalOptions(),
+    settings: CallSettings = CallSettings()
+) async throws -> GenerateObjectResult<String> {
+    try await generateObjectEnum(
+        model: .v2(model),
+        values: values,
+        system: system,
+        prompt: prompt,
+        messages: messages,
+        experimentalRepairText: repairText,
+        experimentalTelemetry: telemetry,
+        experimentalDownload: download,
+        providerOptions: providerOptions,
+        internalOptions: internalOptions,
+        settings: settings
+    )
+}
