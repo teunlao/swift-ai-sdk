@@ -8,7 +8,7 @@ _This page adapts the original AI SDK documentation: [Image Generation](https://
 > Warning
 > Image generation is an experimental feature.
 
-The AI SDK provides the [`generateImage`](/docs/reference/ai-sdk-core/generate-image)
+The AI SDK provides the `generateImage`
 function to generate images based on a given prompt using an image model.
 
 ```swift
@@ -189,7 +189,7 @@ The outer key of the returned `providerMetadata` is the provider name. The inner
 
 ### Error Handling
 
-When `generateImage` cannot generate a valid image, it throws a [`AI_NoImageGeneratedError`](/docs/reference/ai-sdk-errors/ai-no-image-generated-error).
+When `generateImage` cannot generate a valid image, it throws a [`NoImageGeneratedError`](/ai-sdk-core/error-handling).
 
 This error occurs when the AI provider fails to generate an image. It can arise due to the following reasons:
 

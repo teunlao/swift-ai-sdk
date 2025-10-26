@@ -8,7 +8,7 @@ _This page adapts the original AI SDK documentation: [Speech](https://ai-sdk.dev
 > Warning
 > Speech is an experimental feature.
 
-The AI SDK provides the [`generateSpeech`](/docs/reference/ai-sdk-core/generate-speech)
+The AI SDK provides the `generateSpeech`
 function to generate speech from text using a speech model.
 
 ```swift
@@ -104,7 +104,7 @@ print(speech.warnings)
 
 ### Error Handling
 
-When `generateSpeech` cannot generate valid audio, it throws a [`AI_NoSpeechGeneratedError`](/docs/reference/ai-sdk-errors/ai-no-speech-generated-error).
+When `generateSpeech` cannot generate valid audio, it throws a [`NoSpeechGeneratedError`](/ai-sdk-core/error-handling).
 
 This error can arise for any of the following reasons:
 

@@ -8,7 +8,7 @@ _This page adapts the original AI SDK documentation: [Transcription](https://ai-
 > Warning
 > Transcription is an experimental feature.
 
-The AI SDK provides the [`transcribe`](/docs/reference/ai-sdk-core/transcribe)
+The AI SDK provides the `transcribe`
 function to transcribe audio using a transcription model.
 
 ```swift
@@ -91,7 +91,7 @@ print(result.warnings)
 
 ### Error Handling
 
-When `transcribe` cannot generate a valid transcript, it throws a [`AI_NoTranscriptGeneratedError`](/docs/reference/ai-sdk-errors/ai-no-transcript-generated-error).
+When `transcribe` cannot generate a valid transcript, it throws a [`NoTranscriptGeneratedError`](/ai-sdk-core/error-handling).
 
 This error can arise for any of the following reasons:
 

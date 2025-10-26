@@ -10,7 +10,7 @@ In this space, similar words are close to each other, and the distance between w
 
 ## Embedding a Single Value
 
-The AI SDK provides the [`embed`](/docs/reference/ai-sdk-core/embed) function to embed single values, which is useful for tasks such as finding similar words
+The AI SDK provides the `embed` function to embed single values, which is useful for tasks such as finding similar words
 or phrases or clustering text.
 You can use it with embeddings models, e.g. `openai.textEmbeddingModel('text-embedding-3-large')` or `mistral.textEmbeddingModel('mistral-embed')`.
 
@@ -31,7 +31,7 @@ let embedding = result.embedding // [Double]
 When loading data, e.g. when preparing a data store for retrieval-augmented generation (RAG),
 it is often useful to embed many values at once (batch embedding).
 
-The AI SDK provides the [`embedMany`](/docs/reference/ai-sdk-core/embed-many) function for this purpose.
+The AI SDK provides the `embedMany` function for this purpose.
 Similar to `embed`, you can use it with embeddings models,
 e.g. `openai.textEmbeddingModel('text-embedding-3-large')` or `mistral.textEmbeddingModel('mistral-embed')`.
 
@@ -54,7 +54,7 @@ let embeddings = result.embeddings
 
 ## Embedding Similarity
 
-After embedding values, you can calculate the similarity between them using the [`cosineSimilarity`](/docs/reference/ai-sdk-core/cosine-similarity) function.
+After embedding values, you can calculate the similarity between them using the `cosineSimilarity` function.
 This is useful to e.g. find similar words or phrases in a dataset.
 You can also rank and filter related items based on their similarity.
 

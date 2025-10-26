@@ -553,9 +553,9 @@ func generateSomething(prompt: String) async throws -> GeneratedData {
 
 The AI SDK has three tool-call related errors:
 
-- [`NoSuchToolError`](/docs/reference/ai-sdk-errors/ai-no-such-tool-error): the model tries to call a tool that is not defined in the tools object
-- [`InvalidToolInputError`](/docs/reference/ai-sdk-errors/ai-invalid-tool-input-error): the model calls a tool with inputs that do not match the tool's input schema
-- [`ToolCallRepairError`](/docs/reference/ai-sdk-errors/ai-tool-call-repair-error): an error that occurred during tool call repair
+- [`NoSuchToolError`](/ai-sdk-core/error-handling): the model tries to call a tool that is not defined in the tools object
+- [`InvalidToolInputError`](/ai-sdk-core/error-handling): the model calls a tool with inputs that do not match the tool's input schema
+- [`ToolCallRepairError`](/ai-sdk-core/error-handling): an error that occurred during tool call repair
 
 When tool execution fails (errors thrown by your tool's `execute` function), the AI SDK adds them as `tool-error` content parts to enable automated LLM roundtrips in multi-step scenarios.
 

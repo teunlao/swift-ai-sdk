@@ -17,7 +17,7 @@ Advanced LLM features such as [tool calling](./tools-and-tool-calling) and [stru
 
 ## `generateText`
 
-You can generate text using the [`generateText`](/docs/reference/ai-sdk-core/generate-text) function. This function is ideal for non-interactive use cases where you need to write text (e.g. drafting email or summarizing web pages) and for agents that use tools.
+You can generate text using the `generateText` function. This function is ideal for non-interactive use cases where you need to write text (e.g. drafting email or summarizing web pages) and for agents that use tools.
 
 ```swift
 import SwiftAISDK
@@ -83,7 +83,7 @@ print(String(describing: result.response.body))
 ### `onFinish` callback
 
 When using `generateText`, you can provide an `onFinish` callback that is triggered after the last step is finished (
-[API Reference](/docs/reference/ai-sdk-core/generate-text#on-finish)
+
 ).
 It contains the text, usage information, finish reason, messages, steps, total usage, and more:
 
@@ -102,7 +102,7 @@ let _ = try await generateText(
 
 Depending on your model and prompt, it can take a large language model (LLM) up to a minute to finish generating its response. This delay can be unacceptable for interactive use cases such as chatbots or real-time applications, where users expect immediate responses.
 
-AI SDK Core provides the [`streamText`](/docs/reference/ai-sdk-core/stream-text) function which simplifies streaming text from LLMs:
+AI SDK Core provides the `streamText` function which simplifies streaming text from LLMs:
 
 ```swift
 import SwiftAISDK
@@ -199,7 +199,7 @@ let _ = try streamText(
 ### `onFinish` callback
 
 When using `streamText`, you can provide an `onFinish` callback that is triggered when the stream is finished (
-[API Reference](/docs/reference/ai-sdk-core/stream-text#on-finish)
+
 ).
 It contains the text, usage information, finish reason, messages, steps, total usage, and more:
 
@@ -309,7 +309,7 @@ If you e.g. have a transformation that changes all text to uppercase, the `onFin
 
 #### Smoothing streams
 
-The AI SDK Core provides a [`smoothStream` function](/docs/reference/ai-sdk-core/smooth-stream) that
+The AI SDK Core provides a `smoothStream` function that
 can be used to smooth out text streaming.
 
 > Note

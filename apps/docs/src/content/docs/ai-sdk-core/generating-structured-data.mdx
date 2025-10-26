@@ -11,11 +11,11 @@ Many language models are capable of generating structured data, often defined as
 However, you need to manually provide schemas and then validate the generated data as LLMs can produce incorrect or incomplete structured data.
 
 The AI SDK standardises structured object generation across model providers
-with the [`generateObject`](/docs/reference/ai-sdk-core/generate-object)
-and [`streamObject`](/docs/reference/ai-sdk-core/stream-object) functions.
+with the `generateObject`
+and `streamObject` functions.
 You can use both functions with different output strategies, e.g. `array`, `object`, `enum`, or `no-schema`,
 and with different generation modes, e.g. `auto`, `tool`, or `json`.
-You can describe the shape using [JSON Schema](/docs/reference/ai-sdk-core/json-schema),
+You can describe the shape using JSON Schema,
 and the AI model will generate data that conforms to that structure.
 
 > Note
@@ -78,7 +78,7 @@ print(String(describing: result.response.body))
 ## Stream Object
 
 Given the added complexity of returning structured data, model response time can be unacceptable for your interactive use case.
-With the [`streamObject`](/docs/reference/ai-sdk-core/stream-object) function, you can stream the model's response as it is generated.
+With the `streamObject` function, you can stream the model's response as it is generated.
 
 ```swift
 import SwiftAISDK
@@ -97,7 +97,7 @@ for try await partial in stream.partialObjectStream {
 }
 ```
 
-You can use `streamObject` to stream generated UIs in combination with React Server Components (see [Generative UI](../ai-sdk-rsc))) or the [`useObject`](/docs/reference/ai-sdk-ui/use-object) hook.
+You can use `streamObject` to stream generated UIs in combination with React Server Components (see [Generative UI](../ai-sdk-rsc))) or the `useObject` hook.
 
 > Note
 > See `streamObject` usage in Swift examples below.
@@ -230,7 +230,7 @@ print(reasoning.reasoning)
 
 ## Error Handling
 
-When `generateObject` cannot generate a valid object, it throws a [`AI_NoObjectGeneratedError`](/docs/reference/ai-sdk-errors/ai-no-object-generated-error).
+When `generateObject` cannot generate a valid object, it throws a [`NoObjectGeneratedError`](/ai-sdk-core/error-handling).
 
 This error occurs when the AI provider fails to generate a parsable object that conforms to the schema.
 It can arise due to the following reasons:
