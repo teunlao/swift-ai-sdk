@@ -73,15 +73,15 @@ A unified AI SDK for Swift, bringing the power of [Vercel AI SDK](https://github
 | **fal** | ✅ | ❌ | 26 | 0 | 0% |
 | **fireworks** | ✅ | ❌ | 23 | 0 | 0% |
 | **gladia** | ✅ | ❌ | 6 | 0 | 0% |
+| **huggingface** | ✅ | ❌ | 32 | 0 | 0% |
 | **amazon-bedrock** | ❌ | ❌ | 152 | 0 | 0% |
 | **google-vertex** | ❌ | ❌ | 78 | 0 | 0% |
-| **huggingface** | ❌ | ❌ | 32 | 0 | 0% |
 | **togetherai** | ❌ | ❌ | 17 | 0 | 0% |
 | **luma** | ❌ | ❌ | 16 | 0 | 0% |
 | **hume** | ❌ | ❌ | 9 | 0 | 0% |
 | **revai** | ❌ | ❌ | 6 | 0 | 0% |
 | **vercel** | ❌ | ❌ | 4 | 0 | 0% |
-| **TOTAL** | **22/32** | **13/32** | **1520** | **930** | **61.2%** |
+| **TOTAL** | **23/32** | **13/32** | **1520** | **930** | **61.2%** |
 
 </details>
 
