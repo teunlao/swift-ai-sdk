@@ -55,7 +55,7 @@ private enum GenerateTextResultJSONEncoder {
         object["steps"] = .array(result.steps.enumerated().map { index, step in stepJSON(step, index: index + 1) })
 
         if let experimental = try? result.experimentalOutput,
-           let experimentalJSON = jsonValue(from: experimental) {
+           let experimentalJSON = JSONValueEncoding.jsonValue(from: experimental) {
             object["experimentalOutput"] = experimentalJSON
         } else {
             object["experimentalOutput"] = .null
@@ -289,7 +289,7 @@ private enum GenerateTextResultJSONEncoder {
     private static func response(_ response: StepResultResponse) -> JSONValue {
         var map: [String: JSONValue] = [
             "id": .string(response.id),
-            "timestamp": .string(isoString(from: response.timestamp)),
+            "timestamp": .string(JSONValueEncoding.isoString(from: response.timestamp)),
             "modelId": .string(response.modelId),
             "messages": .array(response.messages.map(responseMessage))
         ]
@@ -489,7 +489,7 @@ private enum GenerateTextResultJSONEncoder {
         case .unsupportedTool(let tool, let details):
             return object([
                 "type": .string("unsupported-tool"),
-                "tool": jsonValue(from: tool) ?? .null,
+                "tool": JSONValueEncoding.jsonValue(from: tool) ?? .null,
                 "details": optionalString(details)
             ])
         case .other(let message):
@@ -502,12 +502,12 @@ private enum GenerateTextResultJSONEncoder {
 
     private static func encodedProviderMetadata(_ metadata: ProviderMetadata?) -> JSONValue? {
         guard let metadata else { return nil }
-        return .object(metadata.mapValues(JSONValue.object))
+        return .object(metadata.mapValues { .object($0) })
     }
 
     private static func encodedProviderOptions(_ options: ProviderOptions?) -> JSONValue? {
         guard let options else { return nil }
-        return .object(options.mapValues(JSONValue.object))
+        return .object(options.mapValues { .object($0) })
     }
 
     private static func dataContent(_ content: DataContentOrURL) -> JSONValue {
@@ -572,74 +572,6 @@ private enum GenerateTextResultJSONEncoder {
             return nil
         }
         return jsonValue
-    }
-}
-
-// MARK: - JSONValue convenience initialiser
-
-private extension JSONValue {
-    init?(jsonObject any: Any) {
-        switch any {
-        case let dictionary as [String: Any]:
-            var map: [String: JSONValue] = [:]
-            for (key, value) in dictionary {
-                guard let jsonValue = JSONValue(jsonObject: value) else { return nil }
-                map[key] = jsonValue
-            }
-            self = .object(map)
-        case let array as [Any]:
-            var values: [JSONValue] = []
-            values.reserveCapacity(array.count)
-            for value in array {
-                guard let jsonValue = JSONValue(jsonObject: value) else { return nil }
-                values.append(jsonValue)
-            }
-            self = .array(values)
-        case let string as String:
-            self = .string(string)
-        case let number as NSNumber:
-            if CFGetTypeID(number) == CFBooleanGetTypeID() {
-                self = .bool(number.boolValue)
-            } else {
-                self = .number(number.doubleValue)
-            }
-        case _ as NSNull:
-            self = .null
-        default:
-            return nil
-        }
-    }
-}
-
-private func isoString(from date: Date) -> String {
-    let formatter = ISO8601DateFormatter()
-    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    return formatter.string(from: date)
-}
-
-private extension JSONValue {
-    func toJSONObject() -> Any {
-        switch self {
-        case .null: return NSNull()
-        case .bool(let value): return value
-        case .number(let value): return value
-        case .string(let value): return value
-        case .array(let values): return values.map { $0.toJSONObject() }
-        case .object(let map): return map.mapValues { $0.toJSONObject() }
-        }
-    }
-
-    func toJSONData(prettyPrinted: Bool, sortedKeys: Bool) throws -> Data {
-        var options: JSONSerialization.WritingOptions = []
-        if prettyPrinted { options.insert(.prettyPrinted) }
-        if sortedKeys { options.insert(.sortedKeys) }
-        let object = toJSONObject()
-        return try JSONSerialization.data(withJSONObject: object, options: options)
-    }
-
-    func toJSONString(prettyPrinted: Bool, sortedKeys: Bool) throws -> String {
-        let data = try toJSONData(prettyPrinted: prettyPrinted, sortedKeys: sortedKeys)
-        return String(decoding: data, as: UTF8.self)
     }
 }
 

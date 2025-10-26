@@ -75,6 +75,22 @@ print(String(describing: result.response.headers))
 print(String(describing: result.response.body))
 ```
 
+### Inspecting the full result
+
+When you need the full payload (same shape as `JSON.stringify` in TypeScript), call `jsonString()` or `jsonValue()` on the result.
+
+```swift
+let fullResult = try await generateObject(
+  model: openai("gpt-4o"),
+  schema: Recipe.self,
+  prompt: "Generate a lasagna recipe."
+)
+
+let json = try fullResult.jsonString()
+print(json)
+```
+
+
 ## Stream Object
 
 Given the added complexity of returning structured data, model response time can be unacceptable for your interactive use case.
