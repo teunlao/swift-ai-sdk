@@ -136,21 +136,27 @@ More examples (tools, structured output, telemetry, middleware) are available in
 
 ## Unified Provider Architecture
 
-Switch providers without changing code.
+Switch providers without changing code — the function signature stays the same regardless of provider.
 
 ```swift
 import SwiftAISDK
 import OpenAIProvider
+import AnthropicProvider
+import GoogleProvider
 
-// Use convenience function
-let model = openai("gpt-5")
+let models: [LanguageModel] = [
+  openai("gpt-5"),
+  anthropic("claude-4.5-sonnet"),
+  google("gemini-2.5-pro")
+]
 
-// Or configure explicitly
-let provider = createOpenAIProvider(settings: .init(
-  baseURL: ProcessInfo.processInfo.environment["OPENAI_BASE_URL"],
-  apiKey: ProcessInfo.processInfo.environment["OPENAI_API_KEY"]
-))
-let model = provider("gpt-5")
+for model in models {
+  let result = try await generateText(
+    model: model,
+    prompt: "Invent a new holiday and describe its traditions."
+  )
+  print(result.text)
+}
 ```
 
 ## Platforms & Requirements

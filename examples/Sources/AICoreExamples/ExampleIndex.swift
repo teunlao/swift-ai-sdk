@@ -26,5 +26,6 @@ func registerAllExamples() {
   ExampleCatalog.register(GenerateTextOpenAIToolExecutionErrorExample.self, path: GenerateTextOpenAIToolExecutionErrorExample.name)
   ExampleCatalog.register(GenerateTextOpenAIOutputObjectExample.self, path: GenerateTextOpenAIOutputObjectExample.name)
   ExampleCatalog.register(GenerateObjectOpenAIFullResultExample.self, path: GenerateObjectOpenAIFullResultExample.name)
+  ExampleCatalog.register(GenerateObjectOpenAIFullStreamExample.self, path: GenerateObjectOpenAIFullStreamExample.name)
   ExampleCatalog.register(GenerateObjectOpenAIExample.self, path: GenerateObjectOpenAIExample.name)
 }
