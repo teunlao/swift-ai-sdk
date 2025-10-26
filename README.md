@@ -66,22 +66,22 @@ A unified AI SDK for Swift, bringing the power of [Vercel AI SDK](https://github
 | **cerebras** | ✅ | ✅ | 7 | 7 | 100% |
 | **perplexity** | ✅ | ❌ | 19 | 0 | 0% |
 | **cohere** | ✅ | ❌ | 48 | 0 | 0% |
+| **deepinfra** | ✅ | ❌ | 18 | 0 | 0% |
+| **elevenlabs** | ✅ | ❌ | 15 | 0 | 0% |
+| **deepgram** | ✅ | ❌ | 6 | 0 | 0% |
+| **assemblyai** | ✅ | ❌ | 6 | 0 | 0% |
 | **amazon-bedrock** | ❌ | ❌ | 152 | 0 | 0% |
 | **google-vertex** | ❌ | ❌ | 78 | 0 | 0% |
 | **huggingface** | ❌ | ❌ | 32 | 0 | 0% |
 | **fal** | ❌ | ❌ | 26 | 0 | 0% |
 | **fireworks** | ❌ | ❌ | 23 | 0 | 0% |
-| **deepinfra** | ❌ | ❌ | 18 | 0 | 0% |
 | **togetherai** | ❌ | ❌ | 17 | 0 | 0% |
 | **luma** | ❌ | ❌ | 16 | 0 | 0% |
-| **elevenlabs** | ❌ | ❌ | 15 | 0 | 0% |
 | **hume** | ❌ | ❌ | 9 | 0 | 0% |
-| **assemblyai** | ❌ | ❌ | 6 | 0 | 0% |
-| **deepgram** | ❌ | ❌ | 6 | 0 | 0% |
 | **gladia** | ❌ | ❌ | 6 | 0 | 0% |
 | **revai** | ❌ | ❌ | 6 | 0 | 0% |
 | **vercel** | ❌ | ❌ | 4 | 0 | 0% |
-| **TOTAL** | **15/32** | **13/32** | **1520** | **930** | **61.2%** |
+| **TOTAL** | **19/32** | **13/32** | **1520** | **930** | **61.2%** |
 
 </details>
 
