@@ -44,7 +44,28 @@ func convertGenerateObjectRequestMetadata(
         return LanguageModelRequestMetadata(body: json)
     }
 
+    if let encodable = body as? Encodable {
+        let encoder = JSONEncoder()
+        if let data = try? encoder.encode(AnyEncodableBox(encodable)),
+           let object = try? JSONSerialization.jsonObject(with: data),
+           let json = JSONValue(jsonObject: object) {
+            return LanguageModelRequestMetadata(body: json)
+        }
+    }
+
     return LanguageModelRequestMetadata()
+}
+
+private struct AnyEncodableBox: Encodable {
+    private let value: Encodable
+
+    init(_ value: Encodable) {
+        self.value = value
+    }
+
+    func encode(to encoder: Encoder) throws {
+        try value.encode(to: encoder)
+    }
 }
 
 func convertGenerateObjectResponseBody(_ body: Any?) -> JSONValue? {
