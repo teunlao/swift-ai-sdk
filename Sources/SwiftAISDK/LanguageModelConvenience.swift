@@ -861,3 +861,60 @@ public func generateObjectEnum(
         settings: settings
     )
 }
+
+
+// MARK: - generateObjectNoSchema overloads
+
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+public func generateObjectNoSchema(
+    model: any LanguageModelV3,
+    system: String? = nil,
+    prompt: String? = nil,
+    messages: [ModelMessage]? = nil,
+    experimentalRepairText repairText: RepairTextFunction? = nil,
+    experimentalTelemetry telemetry: TelemetrySettings? = nil,
+    experimentalDownload download: DownloadFunction? = nil,
+    providerOptions: ProviderOptions? = nil,
+    internalOptions: GenerateObjectInternalOptions = GenerateObjectInternalOptions(),
+    settings: CallSettings = CallSettings()
+) async throws -> GenerateObjectResult<JSONValue> {
+    try await generateObjectNoSchema(
+        model: .v3(model),
+        system: system,
+        prompt: prompt,
+        messages: messages,
+        experimentalRepairText: repairText,
+        experimentalTelemetry: telemetry,
+        experimentalDownload: download,
+        providerOptions: providerOptions,
+        internalOptions: internalOptions,
+        settings: settings
+    )
+}
+
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+public func generateObjectNoSchema(
+    model: any LanguageModelV2,
+    system: String? = nil,
+    prompt: String? = nil,
+    messages: [ModelMessage]? = nil,
+    experimentalRepairText repairText: RepairTextFunction? = nil,
+    experimentalTelemetry telemetry: TelemetrySettings? = nil,
+    experimentalDownload download: DownloadFunction? = nil,
+    providerOptions: ProviderOptions? = nil,
+    internalOptions: GenerateObjectInternalOptions = GenerateObjectInternalOptions(),
+    settings: CallSettings = CallSettings()
+) async throws -> GenerateObjectResult<JSONValue> {
+    try await generateObjectNoSchema(
+        model: .v2(model),
+        system: system,
+        prompt: prompt,
+        messages: messages,
+        experimentalRepairText: repairText,
+        experimentalTelemetry: telemetry,
+        experimentalDownload: download,
+        providerOptions: providerOptions,
+        internalOptions: internalOptions,
+        settings: settings
+    )
+}

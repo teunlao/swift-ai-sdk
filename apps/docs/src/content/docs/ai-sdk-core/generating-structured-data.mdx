@@ -19,7 +19,7 @@ You can describe the shape using JSON Schema,
 and the AI model will generate data that conforms to that structure.
 
 > Note
-> In the Swift port, the most ergonomic option is `generateObject(schema: MyCodableType.self)`. For advanced scenarios you can still fall back to `FlexibleSchema(jsonSchema(...))` or `Schema.codable(...)`.
+> In the Swift port, the most ergonomic option is `generateObject(schema: MyCodableType.self)`. For advanced scenarios you can still fall back to `FlexibleSchema<MyType>.jsonSchema(...)` or `Schema.codable(...)`.
 
 ## Generate Object
 
@@ -90,8 +90,39 @@ let json = try fullResult.jsonString()
 print(json)
 ```
 
+### Using a manual JSON Schema
+
+Some projects maintain JSON Schema definitions separately (for example in TypeScript or via an OpenAPI registry). Swift exposes a helper that mirrors the TypeScript DX:
+
+```swift
+let recipeSchemaJSON: JSONValue = [
+  "type": "object",
+  "properties": [
+    "recipe": [
+      "type": "object",
+      "properties": [
+        "name": ["type": "string"],
+        "ingredients": [
+          "type": "array",
+          "items": ["type": "object"]
+        ]
+      ]
+    ]
+  ]
+]
+
+let result = try await generateObject(
+  model: openai("gpt-4o"),
+  schema: FlexibleSchema<Response>.jsonSchema(recipeSchemaJSON),
+  prompt: "Generate a lasagna recipe.",
+  mode: .json
+)
+```
+
+`FlexibleSchema<Response>.jsonSchema` wraps `Schema.codable` internally, so developers can copy the JSON Schema from the TypeScript docs and still receive a strongly typed `Response`.
 
 ## Stream Object
+
 
 Given the added complexity of returning structured data, model response time can be unacceptable for your interactive use case.
 With the `streamObject` function, you can stream the model's response as it is generated.

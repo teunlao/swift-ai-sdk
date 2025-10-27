@@ -18,16 +18,16 @@ A tool is an object that can be called by the model to perform a specific task. 
 A tool consists of three main properties:
 
 - `description`: Optional description influencing when the tool is chosen.
-- `inputSchema`: typically a `Codable` type (the SDK derives the JSON Schema automatically). Fall back to `FlexibleSchema(jsonSchema(...))` for custom validators or non-Codable shapes.
+- `inputSchema`: typically a `Codable` type (the SDK derives the JSON Schema automatically). Fall back to `FlexibleSchema<MyType>.jsonSchema(...)` for custom validators or non-Codable shapes.
 - `execute`: Optional async function that receives the arguments and returns a result.
 
-> Note: Swift has no Zod. Most of the time you can lean on `tool(inputSchema: YourCodable.self)`; when you need custom validators, fall back to helpers such as `jsonSchema`/`FlexibleSchema` or `Schema.codable` exposed via `SwiftAISDK`.
+> Note: Swift has no Zod. Most of the time you can lean on `tool(inputSchema: YourCodable.self)`; when you need custom validators, reach for `FlexibleSchema<YourType>.jsonSchema(...)` (which wraps `Schema.codable`) or other helpers exposed via `SwiftAISDK`.
 
 If the LLM decides to use a tool, it emits a tool call. Tools with `execute` run automatically; results come back as tool‑result parts and can be fed into the next step (multi‑step calls).
 
 ## Schemas
 
-Schemas define tool parameters and validate tool calls. In Swift you usually just pass a `Codable` type to `tool(inputSchema: ...)`, and the SDK derives the JSON Schema automatically. If you need custom validation you can still build one manually with `FlexibleSchema(jsonSchema(...))` or `Schema.codable(...)`.
+Schemas define tool parameters and validate tool calls. In Swift you usually just pass a `Codable` type to `tool(inputSchema: ...)`, and the SDK derives the JSON Schema automatically. If you need custom validation you can still build one manually with `FlexibleSchema<MyType>.jsonSchema(...)` or `Schema.codable(...)`.
 
 ## Creating a tool
 

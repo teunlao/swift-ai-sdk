@@ -27,7 +27,7 @@ In general, the goal should be to give the model all information it needs in a c
 
 ### Tool & Structured Data Schemas
 
-The mapping from Swift schemas (for example using `schema: MyCodableType.self` or falling back to `FlexibleSchema(jsonSchema(...))`) to the JSON that an LLM consumes is not always straightforward, since the mapping is not one-to-one.
+The mapping from Swift schemas (for example using `schema: MyCodableType.self` or falling back to `FlexibleSchema<MyType>.jsonSchema(...)`) to the JSON that an LLM consumes is not always straightforward, since the mapping is not one-to-one.
 
 #### Date Handling
 
