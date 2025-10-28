@@ -244,10 +244,6 @@ See `examples/` in this repo and the docs site under `apps/docs`.
 
 Based on Vercel AI SDK 6.0.0-beta.42 (commit `77db222ee`).
 
-### Compatibility
-- Swift 6.1, iOS 16+, macOS 13+, tvOS 16+, watchOS 9+
-- JS schema vendors (zod/arktype/valibot) not supported; use `Schema.codable` or JSON Schema
-
 ## Contributing
 
 Contributions welcome. See CONTRIBUTING.md for guidelines.
