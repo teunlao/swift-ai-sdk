@@ -89,7 +89,7 @@ public final class ReplicateImageModel: ImageModelV3 {
     }
 
     public func doGenerate(options: ImageModelV3CallOptions) async throws -> ImageModelV3GenerateResult {
-        var warnings: [ImageModelV3CallWarning] = []
+        let warnings: [ImageModelV3CallWarning] = []
 
         // Build headers: provider + request + prefer: wait
         var defaultHeaders = config.headers()

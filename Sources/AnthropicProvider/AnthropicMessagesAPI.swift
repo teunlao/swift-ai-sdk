@@ -573,21 +573,37 @@ public struct ContentBlockDelta: Codable, Sendable {
         private struct TextDelta: Codable, Sendable {
             let type = "text_delta"
             let text: String
+
+            enum CodingKeys: String, CodingKey {
+                case type, text
+            }
         }
 
         private struct ThinkingDelta: Codable, Sendable {
             let type = "thinking_delta"
             let thinking: String
+
+            enum CodingKeys: String, CodingKey {
+                case type, thinking
+            }
         }
 
         private struct SignatureDelta: Codable, Sendable {
             let type = "signature_delta"
             let signature: String
+
+            enum CodingKeys: String, CodingKey {
+                case type, signature
+            }
         }
 
         private struct CitationsDelta: Codable, Sendable {
             let type = "citations_delta"
             let citation: AnthropicCitation
+
+            enum CodingKeys: String, CodingKey {
+                case type, citation
+            }
         }
     }
 

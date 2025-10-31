@@ -80,7 +80,7 @@ public final class FalSpeechModel: SpeechModelV3 {
             body["speed"] = .number(speed)
         }
 
-        if let language = options.language {
+        if options.language != nil {
             warnings.append(.unsupportedSetting(setting: "language", details: "fal speech models do not support 'language'; use providerOptions.fal.language_boost instead."))
         }
 
@@ -159,7 +159,7 @@ private let falSpeechResponseSchema = FlexibleSchema(
 private func encodeJSONString(from dictionary: [String: JSONValue]) -> String? {
     var foundation: [String: Any] = [:]
     for (key, value) in dictionary {
-        foundation[key] = try? jsonValueToFoundation(value)
+        foundation[key] = jsonValueToFoundation(value)
     }
     guard JSONSerialization.isValidJSONObject(foundation) else {
         return nil

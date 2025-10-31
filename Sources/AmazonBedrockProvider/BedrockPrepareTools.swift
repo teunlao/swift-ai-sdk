@@ -117,16 +117,16 @@ func prepareBedrockTools(
     var toolChoiceJSON: JSONValue? = nil
     if !isAnthropicModel {
         switch toolChoice {
-        case .none:
+        case .some(.none):
             bedrockTools.removeAll()
             toolChoiceJSON = nil
-        case .auto, .none?:
+        case .some(.auto):
             toolChoiceJSON = nil
-        case .required?:
+        case .some(.required):
             toolChoiceJSON = .object(["any": .object([:])])
-        case .tool(let toolName)?:
+        case .some(.tool(let toolName)):
             toolChoiceJSON = .object(["tool": .object(["name": .string(toolName)])])
-        case nil:
+        case Optional<LanguageModelV3ToolChoice>.none:
             break
         }
     }
