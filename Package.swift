@@ -53,10 +53,6 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-argument-parser", from: "1.3.0")
     ],
     targets: [
-        .plugin(
-            name: "GenerateReleaseVersionPlugin",
-            capability: .buildTool()
-        ),
         // EventSourceParser - SSE parsing (internal utility)
         .target(name: "EventSourceParser"),
         .testTarget(name: "EventSourceParserTests", dependencies: ["EventSourceParser"]),
@@ -70,8 +66,7 @@ let package = Package(
         // HTTP, JSON, schema, validation, retry, headers, ID generation, tools
         .target(
             name: "AISDKProviderUtils",
-            dependencies: ["AISDKProvider", "AISDKZodAdapter"],
-            plugins: ["GenerateReleaseVersionPlugin"]
+            dependencies: ["AISDKProvider", "AISDKZodAdapter"]
         ),
         .testTarget(name: "AISDKProviderUtilsTests", dependencies: ["AISDKProviderUtils", "AISDKZodAdapter"]),
 
