@@ -33,6 +33,8 @@ func registerAllExamples() {
   ExampleCatalog.register(GenerateObjectOpenAIResponsesExample.self, path: GenerateObjectOpenAIResponsesExample.name)
   ExampleCatalog.register(GenerateObjectOpenAIStructuredOutputsNameDescriptionExample.self, path: GenerateObjectOpenAIStructuredOutputsNameDescriptionExample.name)
   ExampleCatalog.register(GenerateObjectOpenAIRequestBodyExample.self, path: GenerateObjectOpenAIRequestBodyExample.name)
+  ExampleCatalog.register(GenerateObjectOpenAIMultimodalExample.self, path: GenerateObjectOpenAIMultimodalExample.name)
+  ExampleCatalog.register(GenerateObjectOpenAIRequestHeadersExample.self, path: GenerateObjectOpenAIRequestHeadersExample.name)
   ExampleCatalog.register(GenerateObjectOpenAIStoreGenerationFinalExample.self, path: GenerateObjectOpenAIStoreGenerationFinalExample.name)
   ExampleCatalog.register(GenerateObjectOpenAINoSchemaExample.self, path: GenerateObjectOpenAINoSchemaExample.name)
   ExampleCatalog.register(GenerateObjectOpenAIDateParsingExample.self, path: GenerateObjectOpenAIDateParsingExample.name)
