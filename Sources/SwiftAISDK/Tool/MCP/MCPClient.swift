@@ -288,7 +288,7 @@ internal final class DefaultMCPClient: MCPClient, @unchecked Sendable {
         }
     }
 
-    private func request<T: Decodable>(
+    private func request<T: Decodable & Sendable>(
         method: String,
         params: JSONValue? = nil,
         additionalParams: [String: JSONValue] = [:],

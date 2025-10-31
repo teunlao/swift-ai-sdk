@@ -85,32 +85,41 @@ struct DelayTests {
 
     @Test("delay works with multiple concurrent delays")
     func testMultipleDelays() async throws {
-        var resolved1 = false
-        var resolved2 = false
-        var resolved3 = false
+        actor Flags {
+            private var values: [Bool] = [false, false, false]
+
+            func mark(_ index: Int) {
+                values[index] = true
+            }
+
+            func snapshot() -> [Bool] {
+                values
+            }
+        }
+
+        let flags = Flags()
 
         // Start three delays
         async let delay1: () = {
             try await delay(20)
-            resolved1 = true
+            await flags.mark(0)
         }()
 
         async let delay2: () = {
             try await delay(40)
-            resolved2 = true
+            await flags.mark(1)
         }()
 
         async let delay3: () = {
             try await delay(60)
-            resolved3 = true
+            await flags.mark(2)
         }()
 
         // Wait for all to complete
         _ = try await (delay1, delay2, delay3)
 
-        #expect(resolved1)
-        #expect(resolved2)
-        #expect(resolved3)
+        let snapshot = await flags.snapshot()
+        #expect(snapshot == [true, true, true])
     }
 
     @Test("delay handles very large delays (smoke test)")

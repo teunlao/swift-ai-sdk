@@ -1,6 +1,5 @@
 import Foundation
-import AISDKProvider
-import AISDKProviderUtils
+import _Concurrency
 
 /**
  Creates a task with externally accessible resolve and reject functions.
@@ -31,35 +30,92 @@ public final class ResolvablePromise<T: Sendable>: @unchecked Sendable {
     /// The task that will complete when resolve or reject is called.
     public let task: Task<T, Error>
 
-    private let _resolve: @Sendable (T) -> Void
-    private let _reject: ErrorHandler
+    private let storage = Storage()
 
     public init() {
-        var resolve: (@Sendable (T) -> Void)!
-        var reject: ErrorHandler!
-
+        let storage = self.storage
         self.task = Task {
-            try await withCheckedThrowingContinuation { continuation in
-                resolve = { value in
-                    continuation.resume(returning: value)
-                }
-                reject = { error in
-                    continuation.resume(throwing: error)
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<T, Error>) in
+                if let pending = storage.prepareContinuation(continuation) {
+                    storage.resumeContinuation(continuation, with: pending)
                 }
             }
         }
-
-        self._resolve = resolve
-        self._reject = reject
     }
 
     /// Resolves the promise with the given value.
     public func resolve(_ value: T) {
-        _resolve(value)
+        resume(.success(value))
     }
 
     /// Rejects the promise with the given error.
     public func reject(_ error: Error) {
-        _reject(error)
+        resume(.failure(error))
+    }
+
+    private func resume(_ result: Result<T, Error>) {
+        if let continuation = storage.takeContinuation() {
+            storage.resumeContinuation(continuation, with: result)
+        } else {
+            storage.storePendingResultIfNeeded(result)
+        }
+    }
+
+    private final class Storage: @unchecked Sendable {
+        private let lock = NSLock()
+        private var continuation: CheckedContinuation<T, Error>?
+        private var pendingResult: Result<T, Error>?
+        private var isCompleted = false
+
+        func prepareContinuation(_ continuation: CheckedContinuation<T, Error>) -> Result<T, Error>? {
+            lock.lock()
+            defer { lock.unlock() }
+
+            if let result = pendingResult {
+                pendingResult = nil
+                return result
+            }
+
+            guard !isCompleted else {
+                return nil
+            }
+
+            self.continuation = continuation
+            return nil
+        }
+
+        func takeContinuation() -> CheckedContinuation<T, Error>? {
+            lock.lock()
+            defer { lock.unlock() }
+
+            guard !isCompleted, let continuation else {
+                return nil
+            }
+
+            self.continuation = nil
+            isCompleted = true
+            return continuation
+        }
+
+        func storePendingResultIfNeeded(_ result: Result<T, Error>) {
+            lock.lock()
+            defer { lock.unlock() }
+
+            guard !isCompleted else {
+                return
+            }
+
+            pendingResult = result
+            isCompleted = true
+        }
+
+        func resumeContinuation(_ continuation: CheckedContinuation<T, Error>, with result: Result<T, Error>) {
+            switch result {
+            case .success(let value):
+                continuation.resume(returning: value)
+            case .failure(let error):
+                continuation.resume(throwing: error)
+            }
+        }
     }
 }

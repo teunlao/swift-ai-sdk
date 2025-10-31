@@ -15,6 +15,11 @@ struct StreamTextConcurrencyTests {
     )
 
     actor Flag { private var v = false; func set() { v = true }; func get() -> Bool { v } }
+    actor StringCollector {
+        private var values: [String] = []
+        func append(_ value: String) { values.append(value) }
+        func snapshot() -> [String] { values }
+    }
 
     private func waitUntil(_ deadline: TimeInterval = 1.0, _ predicate: @Sendable @escaping () async -> Bool) async -> Bool {
         let end = Date().addingTimeInterval(deadline)
@@ -43,18 +48,20 @@ struct StreamTextConcurrencyTests {
         let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
         let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(model: .v3(model), prompt: "hello")
 
-        var s1: [String] = []
-        var s2: [String] = []
+        let collector1 = StringCollector()
+        let collector2 = StringCollector()
         async let c1: Void = {
-            for try await d in result.textStream { s1.append(d) }
+            for try await d in result.textStream { await collector1.append(d) }
         }()
         async let c2: Void = {
-            for try await d in result.textStream { s2.append(d) }
+            for try await d in result.textStream { await collector2.append(d) }
         }()
         _ = try await result.content // wait for finish
         _ = try? await (c1, c2)
-        #expect(s1 == ["X","Y"]) 
-        #expect(s2 == ["X","Y"]) 
+        let snapshot1 = await collector1.snapshot()
+        let snapshot2 = await collector2.snapshot()
+        #expect(snapshot1 == ["X","Y"])
+        #expect(snapshot2 == ["X","Y"])
     }
 
     @Test("stop() emits abort before finish")
