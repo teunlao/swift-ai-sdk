@@ -41,4 +41,6 @@ func registerAllExamples() {
   ExampleCatalog.register(GenerateObjectOpenAIStoreGenerationExample.self, path: GenerateObjectOpenAIStoreGenerationExample.name)
   ExampleCatalog.register(GenerateObjectOpenAIArrayExample.self, path: GenerateObjectOpenAIArrayExample.name)
   ExampleCatalog.register(GenerateObjectOpenAIExample.self, path: GenerateObjectOpenAIExample.name)
+  ExampleCatalog.register(TranscribeOpenAIExample.self, path: TranscribeOpenAIExample.name)
+  ExampleCatalog.register(TranscribeOpenAIURLExample.self, path: TranscribeOpenAIURLExample.name)
 }
