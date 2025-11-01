@@ -36,6 +36,7 @@ let package = Package(
         .product(name: "AISDKJSONSchema", package: "swift-ai-sdk"),
         .product(name: "AISDKZodAdapter", package: "swift-ai-sdk"),
         .product(name: "AnthropicProvider", package: "swift-ai-sdk"),
+        .product(name: "DeepgramProvider", package: "swift-ai-sdk"),
       ]
     ),
 
