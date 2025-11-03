@@ -256,6 +256,11 @@ public extension OpenAIProvider {
     func speechModel(_ modelId: OpenAISpeechModelId) -> OpenAISpeechModel {
         speechFactory(modelId)
     }
+
+    /// Convenience alias to match facade style: `openai.speech("tts-1")`.
+    func speech(_ modelId: OpenAISpeechModelId) -> OpenAISpeechModel {
+        speechFactory(modelId)
+    }
 }
 
 // MARK: - Default provider instance (parity with TS `export const openai = createOpenAI()`)

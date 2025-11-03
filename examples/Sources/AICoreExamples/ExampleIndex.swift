@@ -106,7 +106,19 @@ func registerAllExamples() {
     TranscribeAssemblyAIURLExample.self, path: TranscribeAssemblyAIURLExample.name)
   ExampleCatalog.register(
     TranscribeAssemblyAIStringExample.self, path: TranscribeAssemblyAIStringExample.name)
+  // Embed
   ExampleCatalog.register(EmbedOpenAIExample.self, path: EmbedOpenAIExample.name)
+  ExampleCatalog.register(EmbedManyOpenAIExample.self, path: EmbedManyOpenAIExample.name)
+
+  // Generate Image
   ExampleCatalog.register(GenerateImageOpenAIExample.self, path: GenerateImageOpenAIExample.name)
+
+  // Generate Speech
+  ExampleCatalog.register(GenerateSpeechOpenAIExample.self, path: GenerateSpeechOpenAIExample.name)
+
+  // Stream Text
   ExampleCatalog.register(StreamTextOpenAIExample.self, path: StreamTextOpenAIExample.name)
+  ExampleCatalog.register(StreamTextOpenAIOnStepFinishExample.self, path: StreamTextOpenAIOnStepFinishExample.name)
+  ExampleCatalog.register(StreamTextOpenAIAbortExample.self, path: StreamTextOpenAIAbortExample.name)
+  ExampleCatalog.register(StreamTextOpenAIGlobalProviderExample.self, path: StreamTextOpenAIGlobalProviderExample.name)
 }
