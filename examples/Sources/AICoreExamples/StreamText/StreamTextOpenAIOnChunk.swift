@@ -16,7 +16,6 @@ struct StreamTextOpenAIOnChunkExample: Example {
         }
       )
 
-      // Drain stream to allow onChunk to fire
       for try await _ in result.textStream { }
     } catch {
       Logger.warning("Skipping network call: \(error.localizedDescription)")

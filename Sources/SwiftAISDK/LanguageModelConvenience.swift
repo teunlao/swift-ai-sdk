@@ -305,6 +305,128 @@ public func streamText(
 }
 
 /**
+ Stream text with a LanguageModelV3 directly using messages (no structured output).
+
+ Convenience overload mirroring the TypeScript API where `model` can be passed
+ directly without wrapping into `.v3()` and `messages` can be provided instead of `prompt`.
+ */
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+public func streamText(
+    model: any LanguageModelV3,
+    system: String? = nil,
+    messages: [ModelMessage],
+    tools: ToolSet? = nil,
+    toolChoice: ToolChoice? = nil,
+    providerOptions: ProviderOptions? = nil,
+    experimentalActiveTools: [String]? = nil,
+    activeTools: [String]? = nil,
+    experimentalTelemetry telemetry: TelemetrySettings? = nil,
+    experimentalApprove approve: (@Sendable (ToolApprovalRequestOutput) async -> ApprovalAction)? = nil,
+    experimentalTransform transforms: [StreamTextTransform] = [],
+    experimentalDownload download: DownloadFunction? = nil,
+    experimentalRepairToolCall repairToolCall: ToolCallRepairFunction? = nil,
+    prepareStep: PrepareStepFunction? = nil,
+    experimentalContext: JSONValue? = nil,
+    includeRawChunks: Bool = false,
+    stopWhen stopConditions: [StopCondition] = [stepCountIs(1)],
+    onChunk: StreamTextOnChunk? = nil,
+    onStepFinish: StreamTextOnStepFinish? = nil,
+    onFinish: StreamTextOnFinish? = nil,
+    onAbort: StreamTextOnAbort? = nil,
+    onError: StreamTextOnError? = nil,
+    internalOptions _internal: StreamTextInternalOptions = StreamTextInternalOptions(),
+    settings: CallSettings = CallSettings()
+) throws -> DefaultStreamTextResult<JSONValue, JSONValue> {
+    return try streamText(
+        model: .v3(model),
+        system: system,
+        messages: messages,
+        tools: tools,
+        toolChoice: toolChoice,
+        providerOptions: providerOptions,
+        experimentalActiveTools: experimentalActiveTools,
+        activeTools: activeTools,
+        experimentalOutput: nil as SwiftAISDK.Output.Specification<JSONValue, JSONValue>?,
+        experimentalTelemetry: telemetry,
+        experimentalApprove: approve,
+        experimentalTransform: transforms,
+        experimentalDownload: download,
+        experimentalRepairToolCall: repairToolCall,
+        prepareStep: prepareStep,
+        experimentalContext: experimentalContext,
+        includeRawChunks: includeRawChunks,
+        stopWhen: stopConditions,
+        onChunk: onChunk,
+        onStepFinish: onStepFinish,
+        onFinish: onFinish,
+        onAbort: onAbort,
+        onError: onError,
+        internalOptions: _internal,
+        settings: settings
+    )
+}
+
+/**
+ Stream text with a LanguageModelV3 directly using messages (with structured output).
+ */
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
+    model: any LanguageModelV3,
+    system: String? = nil,
+    messages: [ModelMessage],
+    tools: ToolSet? = nil,
+    toolChoice: ToolChoice? = nil,
+    providerOptions: ProviderOptions? = nil,
+    experimentalActiveTools: [String]? = nil,
+    activeTools: [String]? = nil,
+    experimentalOutput output: SwiftAISDK.Output.Specification<OutputValue, PartialOutputValue>? = nil,
+    experimentalTelemetry telemetry: TelemetrySettings? = nil,
+    experimentalApprove approve: (@Sendable (ToolApprovalRequestOutput) async -> ApprovalAction)? = nil,
+    experimentalTransform transforms: [StreamTextTransform] = [],
+    experimentalDownload download: DownloadFunction? = nil,
+    experimentalRepairToolCall repairToolCall: ToolCallRepairFunction? = nil,
+    prepareStep: PrepareStepFunction? = nil,
+    experimentalContext: JSONValue? = nil,
+    includeRawChunks: Bool = false,
+    stopWhen stopConditions: [StopCondition] = [stepCountIs(1)],
+    onChunk: StreamTextOnChunk? = nil,
+    onStepFinish: StreamTextOnStepFinish? = nil,
+    onFinish: StreamTextOnFinish? = nil,
+    onAbort: StreamTextOnAbort? = nil,
+    onError: StreamTextOnError? = nil,
+    internalOptions _internal: StreamTextInternalOptions = StreamTextInternalOptions(),
+    settings: CallSettings = CallSettings()
+) throws -> DefaultStreamTextResult<OutputValue, PartialOutputValue> {
+    return try streamText(
+        model: .v3(model),
+        system: system,
+        messages: messages,
+        tools: tools,
+        toolChoice: toolChoice,
+        providerOptions: providerOptions,
+        experimentalActiveTools: experimentalActiveTools,
+        activeTools: activeTools,
+        experimentalOutput: output,
+        experimentalTelemetry: telemetry,
+        experimentalApprove: approve,
+        experimentalTransform: transforms,
+        experimentalDownload: download,
+        experimentalRepairToolCall: repairToolCall,
+        prepareStep: prepareStep,
+        experimentalContext: experimentalContext,
+        includeRawChunks: includeRawChunks,
+        stopWhen: stopConditions,
+        onChunk: onChunk,
+        onStepFinish: onStepFinish,
+        onFinish: onFinish,
+        onAbort: onAbort,
+        onError: onError,
+        internalOptions: _internal,
+        settings: settings
+    )
+}
+
+/**
  Stream text with a LanguageModelV3 directly (with structured output).
 
  Convenience overload that wraps the model in `LanguageModel.v3()`.

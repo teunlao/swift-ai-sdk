@@ -125,4 +125,6 @@ func registerAllExamples() {
   ExampleCatalog.register(StreamTextOpenAIOnFinishExample.self, path: StreamTextOpenAIOnFinishExample.name)
   ExampleCatalog.register(StreamTextOpenAIOnFinishStepsExample.self, path: StreamTextOpenAIOnFinishStepsExample.name)
   ExampleCatalog.register(StreamTextOpenAIOnFinishResponseMessagesExample.self, path: StreamTextOpenAIOnFinishResponseMessagesExample.name)
+  ExampleCatalog.register(StreamTextOpenAIAudioExample.self, path: StreamTextOpenAIAudioExample.name)
+  ExampleCatalog.register(StreamTextOpenAICachedPromptTokensExample.self, path: StreamTextOpenAICachedPromptTokensExample.name)
 }
