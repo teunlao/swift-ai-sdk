@@ -274,6 +274,54 @@ public func embedMany<Value: Sendable>(
     }
 }
 
+// MARK: - Convenience overloads (DX parity with TS)
+
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+public func embedMany<Value: Sendable>(
+    model: any EmbeddingModelV3<Value>,
+    values: [Value],
+    maxParallelCalls: Int? = nil,
+    maxRetries: Int? = nil,
+    abortSignal: (@Sendable () -> Bool)? = nil,
+    headers: [String: String]? = nil,
+    providerOptions: ProviderOptions? = nil,
+    experimentalTelemetry telemetry: TelemetrySettings? = nil
+) async throws -> DefaultEmbedManyResult<Value> {
+    try await embedMany(
+        model: .v3(model),
+        values: values,
+        maxParallelCalls: maxParallelCalls,
+        maxRetries: maxRetries,
+        abortSignal: abortSignal,
+        headers: headers,
+        providerOptions: providerOptions,
+        experimentalTelemetry: telemetry
+    )
+}
+
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+public func embedMany<Value: Sendable>(
+    model: any EmbeddingModelV2<Value>,
+    values: [Value],
+    maxParallelCalls: Int? = nil,
+    maxRetries: Int? = nil,
+    abortSignal: (@Sendable () -> Bool)? = nil,
+    headers: [String: String]? = nil,
+    providerOptions: ProviderOptions? = nil,
+    experimentalTelemetry telemetry: TelemetrySettings? = nil
+) async throws -> DefaultEmbedManyResult<Value> {
+    try await embedMany(
+        model: .v2(model),
+        values: values,
+        maxParallelCalls: maxParallelCalls,
+        maxRetries: maxRetries,
+        abortSignal: abortSignal,
+        headers: headers,
+        providerOptions: providerOptions,
+        experimentalTelemetry: telemetry
+    )
+}
+
 // MARK: - Internal Types
 
 private struct SingleCallResult {

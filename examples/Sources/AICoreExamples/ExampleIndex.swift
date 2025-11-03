@@ -3,52 +3,110 @@ import ExamplesCore
 func registerAllExamples() {
   ExampleCatalog.register(WeatherToolExample.self, path: WeatherToolExample.name)
   ExampleCatalog.register(GenerateTextOpenAIExample.self, path: GenerateTextOpenAIExample.name)
-  ExampleCatalog.register(GenerateTextOpenAIFullResultExample.self, path: GenerateTextOpenAIFullResultExample.name)
-  ExampleCatalog.register(GenerateTextOpenAIAudioExample.self, path: GenerateTextOpenAIAudioExample.name)
-  ExampleCatalog.register(GenerateTextOpenAICachedPromptTokensExample.self, path: GenerateTextOpenAICachedPromptTokensExample.name)
-  ExampleCatalog.register(GenerateTextOpenAICustomFetchExample.self, path: GenerateTextOpenAICustomFetchExample.name)
-  ExampleCatalog.register(GenerateTextOpenAICustomHeadersExample.self, path: GenerateTextOpenAICustomHeadersExample.name)
-  ExampleCatalog.register(GenerateTextOpenAILogMetadataMiddlewareExample.self, path: GenerateTextOpenAILogMetadataMiddlewareExample.name)
-  ExampleCatalog.register(GenerateTextOpenAILogprobsExample.self, path: GenerateTextOpenAILogprobsExample.name)
-  ExampleCatalog.register(GenerateTextOpenAIMultiStepExample.self, path: GenerateTextOpenAIMultiStepExample.name)
-  ExampleCatalog.register(GenerateTextOpenAIOnFinishExample.self, path: GenerateTextOpenAIOnFinishExample.name)
-  ExampleCatalog.register(GenerateTextOpenAIProviderOptionsExample.self, path: GenerateTextOpenAIProviderOptionsExample.name)
-  ExampleCatalog.register(GenerateTextOpenAIToolChoiceExample.self, path: GenerateTextOpenAIToolChoiceExample.name)
-  ExampleCatalog.register(GenerateTextOpenAIToolCallExample.self, path: GenerateTextOpenAIToolCallExample.name)
-  ExampleCatalog.register(GenerateTextOpenAIActiveToolsExample.self, path: GenerateTextOpenAIActiveToolsExample.name)
-  ExampleCatalog.register(GenerateTextOpenAIWarningExample.self, path: GenerateTextOpenAIWarningExample.name)
-  ExampleCatalog.register(GenerateTextOpenAINullableToolExample.self, path: GenerateTextOpenAINullableToolExample.name)
-  ExampleCatalog.register(GenerateTextOpenAITimeoutExample.self, path: GenerateTextOpenAITimeoutExample.name)
-  ExampleCatalog.register(GenerateTextOpenAIToolApprovalExample.self, path: GenerateTextOpenAIToolApprovalExample.name)
-  ExampleCatalog.register(GenerateTextOpenAIToolApprovalDynamicExample.self, path: GenerateTextOpenAIToolApprovalDynamicExample.name)
-  ExampleCatalog.register(GenerateTextOpenAIToolCallRawJSONSchemaExample.self, path: GenerateTextOpenAIToolCallRawJSONSchemaExample.name)
-  ExampleCatalog.register(GenerateTextOpenAIToolCallWithContextExample.self, path: GenerateTextOpenAIToolCallWithContextExample.name)
-  ExampleCatalog.register(GenerateTextOpenAIToolExecutionErrorExample.self, path: GenerateTextOpenAIToolExecutionErrorExample.name)
-  ExampleCatalog.register(GenerateTextOpenAIOutputObjectExample.self, path: GenerateTextOpenAIOutputObjectExample.name)
-  ExampleCatalog.register(GenerateObjectOpenAIFullResultExample.self, path: GenerateObjectOpenAIFullResultExample.name)
-  ExampleCatalog.register(GenerateObjectOpenAIFullStreamExample.self, path: GenerateObjectOpenAIFullStreamExample.name)
-  ExampleCatalog.register(GenerateObjectOpenAIEnumExample.self, path: GenerateObjectOpenAIEnumExample.name)
-  ExampleCatalog.register(GenerateObjectOpenAIRawJSONSchemaExample.self, path: GenerateObjectOpenAIRawJSONSchemaExample.name)
-  ExampleCatalog.register(GenerateObjectOpenAIReasoningExample.self, path: GenerateObjectOpenAIReasoningExample.name)
-  ExampleCatalog.register(GenerateObjectOpenAIResponsesExample.self, path: GenerateObjectOpenAIResponsesExample.name)
-  ExampleCatalog.register(GenerateObjectOpenAIStructuredOutputsNameDescriptionExample.self, path: GenerateObjectOpenAIStructuredOutputsNameDescriptionExample.name)
-  ExampleCatalog.register(GenerateObjectOpenAIRequestBodyExample.self, path: GenerateObjectOpenAIRequestBodyExample.name)
-  ExampleCatalog.register(GenerateObjectOpenAIMultimodalExample.self, path: GenerateObjectOpenAIMultimodalExample.name)
-  ExampleCatalog.register(GenerateObjectOpenAIRequestHeadersExample.self, path: GenerateObjectOpenAIRequestHeadersExample.name)
-  ExampleCatalog.register(GenerateObjectOpenAIStoreGenerationFinalExample.self, path: GenerateObjectOpenAIStoreGenerationFinalExample.name)
-  ExampleCatalog.register(GenerateObjectOpenAINoSchemaExample.self, path: GenerateObjectOpenAINoSchemaExample.name)
-  ExampleCatalog.register(GenerateObjectOpenAIDateParsingExample.self, path: GenerateObjectOpenAIDateParsingExample.name)
-  ExampleCatalog.register(GenerateObjectOpenAIStoreGenerationExample.self, path: GenerateObjectOpenAIStoreGenerationExample.name)
-  ExampleCatalog.register(GenerateObjectOpenAIArrayExample.self, path: GenerateObjectOpenAIArrayExample.name)
+  ExampleCatalog.register(
+    GenerateTextOpenAIFullResultExample.self, path: GenerateTextOpenAIFullResultExample.name)
+  ExampleCatalog.register(
+    GenerateTextOpenAIAudioExample.self, path: GenerateTextOpenAIAudioExample.name)
+  ExampleCatalog.register(
+    GenerateTextOpenAICachedPromptTokensExample.self,
+    path: GenerateTextOpenAICachedPromptTokensExample.name)
+  ExampleCatalog.register(
+    GenerateTextOpenAICustomFetchExample.self, path: GenerateTextOpenAICustomFetchExample.name)
+  ExampleCatalog.register(
+    GenerateTextOpenAICustomHeadersExample.self, path: GenerateTextOpenAICustomHeadersExample.name)
+  ExampleCatalog.register(
+    GenerateTextOpenAILogMetadataMiddlewareExample.self,
+    path: GenerateTextOpenAILogMetadataMiddlewareExample.name)
+  ExampleCatalog.register(
+    GenerateTextOpenAILogprobsExample.self, path: GenerateTextOpenAILogprobsExample.name)
+  ExampleCatalog.register(
+    GenerateTextOpenAIMultiStepExample.self, path: GenerateTextOpenAIMultiStepExample.name)
+  ExampleCatalog.register(
+    GenerateTextOpenAIOnFinishExample.self, path: GenerateTextOpenAIOnFinishExample.name)
+  ExampleCatalog.register(
+    GenerateTextOpenAIProviderOptionsExample.self,
+    path: GenerateTextOpenAIProviderOptionsExample.name)
+  ExampleCatalog.register(
+    GenerateTextOpenAIToolChoiceExample.self, path: GenerateTextOpenAIToolChoiceExample.name)
+  ExampleCatalog.register(
+    GenerateTextOpenAIToolCallExample.self, path: GenerateTextOpenAIToolCallExample.name)
+  ExampleCatalog.register(
+    GenerateTextOpenAIActiveToolsExample.self, path: GenerateTextOpenAIActiveToolsExample.name)
+  ExampleCatalog.register(
+    GenerateTextOpenAIWarningExample.self, path: GenerateTextOpenAIWarningExample.name)
+  ExampleCatalog.register(
+    GenerateTextOpenAINullableToolExample.self, path: GenerateTextOpenAINullableToolExample.name)
+  ExampleCatalog.register(
+    GenerateTextOpenAITimeoutExample.self, path: GenerateTextOpenAITimeoutExample.name)
+  ExampleCatalog.register(
+    GenerateTextOpenAIToolApprovalExample.self, path: GenerateTextOpenAIToolApprovalExample.name)
+  ExampleCatalog.register(
+    GenerateTextOpenAIToolApprovalDynamicExample.self,
+    path: GenerateTextOpenAIToolApprovalDynamicExample.name)
+  ExampleCatalog.register(
+    GenerateTextOpenAIToolCallRawJSONSchemaExample.self,
+    path: GenerateTextOpenAIToolCallRawJSONSchemaExample.name)
+  ExampleCatalog.register(
+    GenerateTextOpenAIToolCallWithContextExample.self,
+    path: GenerateTextOpenAIToolCallWithContextExample.name)
+  ExampleCatalog.register(
+    GenerateTextOpenAIToolExecutionErrorExample.self,
+    path: GenerateTextOpenAIToolExecutionErrorExample.name)
+  ExampleCatalog.register(
+    GenerateTextOpenAIOutputObjectExample.self, path: GenerateTextOpenAIOutputObjectExample.name)
+  ExampleCatalog.register(
+    GenerateObjectOpenAIFullResultExample.self, path: GenerateObjectOpenAIFullResultExample.name)
+  ExampleCatalog.register(
+    GenerateObjectOpenAIFullStreamExample.self, path: GenerateObjectOpenAIFullStreamExample.name)
+  ExampleCatalog.register(
+    GenerateObjectOpenAIEnumExample.self, path: GenerateObjectOpenAIEnumExample.name)
+  ExampleCatalog.register(
+    GenerateObjectOpenAIRawJSONSchemaExample.self,
+    path: GenerateObjectOpenAIRawJSONSchemaExample.name)
+  ExampleCatalog.register(
+    GenerateObjectOpenAIReasoningExample.self, path: GenerateObjectOpenAIReasoningExample.name)
+  ExampleCatalog.register(
+    GenerateObjectOpenAIResponsesExample.self, path: GenerateObjectOpenAIResponsesExample.name)
+  ExampleCatalog.register(
+    GenerateObjectOpenAIStructuredOutputsNameDescriptionExample.self,
+    path: GenerateObjectOpenAIStructuredOutputsNameDescriptionExample.name)
+  ExampleCatalog.register(
+    GenerateObjectOpenAIRequestBodyExample.self, path: GenerateObjectOpenAIRequestBodyExample.name)
+  ExampleCatalog.register(
+    GenerateObjectOpenAIMultimodalExample.self, path: GenerateObjectOpenAIMultimodalExample.name)
+  ExampleCatalog.register(
+    GenerateObjectOpenAIRequestHeadersExample.self,
+    path: GenerateObjectOpenAIRequestHeadersExample.name)
+  ExampleCatalog.register(
+    GenerateObjectOpenAIStoreGenerationFinalExample.self,
+    path: GenerateObjectOpenAIStoreGenerationFinalExample.name)
+  ExampleCatalog.register(
+    GenerateObjectOpenAINoSchemaExample.self, path: GenerateObjectOpenAINoSchemaExample.name)
+  ExampleCatalog.register(
+    GenerateObjectOpenAIDateParsingExample.self, path: GenerateObjectOpenAIDateParsingExample.name)
+  ExampleCatalog.register(
+    GenerateObjectOpenAIStoreGenerationExample.self,
+    path: GenerateObjectOpenAIStoreGenerationExample.name)
+  ExampleCatalog.register(
+    GenerateObjectOpenAIArrayExample.self, path: GenerateObjectOpenAIArrayExample.name)
   ExampleCatalog.register(GenerateObjectOpenAIExample.self, path: GenerateObjectOpenAIExample.name)
   ExampleCatalog.register(TranscribeOpenAIExample.self, path: TranscribeOpenAIExample.name)
   ExampleCatalog.register(TranscribeOpenAIURLExample.self, path: TranscribeOpenAIURLExample.name)
-  ExampleCatalog.register(TranscribeOpenAIStringExample.self, path: TranscribeOpenAIStringExample.name)
-  ExampleCatalog.register(TranscribeOpenAIVerboseExample.self, path: TranscribeOpenAIVerboseExample.name)
+  ExampleCatalog.register(
+    TranscribeOpenAIStringExample.self, path: TranscribeOpenAIStringExample.name)
+  ExampleCatalog.register(
+    TranscribeOpenAIVerboseExample.self, path: TranscribeOpenAIVerboseExample.name)
   ExampleCatalog.register(TranscribeDeepgramExample.self, path: TranscribeDeepgramExample.name)
-  ExampleCatalog.register(TranscribeDeepgramURLExample.self, path: TranscribeDeepgramURLExample.name)
-  ExampleCatalog.register(TranscribeDeepgramStringExample.self, path: TranscribeDeepgramStringExample.name)
+  ExampleCatalog.register(
+    TranscribeDeepgramURLExample.self, path: TranscribeDeepgramURLExample.name)
+  ExampleCatalog.register(
+    TranscribeDeepgramStringExample.self, path: TranscribeDeepgramStringExample.name)
   ExampleCatalog.register(TranscribeAssemblyAIExample.self, path: TranscribeAssemblyAIExample.name)
-  ExampleCatalog.register(TranscribeAssemblyAIURLExample.self, path: TranscribeAssemblyAIURLExample.name)
-  ExampleCatalog.register(TranscribeAssemblyAIStringExample.self, path: TranscribeAssemblyAIStringExample.name)
+  ExampleCatalog.register(
+    TranscribeAssemblyAIURLExample.self, path: TranscribeAssemblyAIURLExample.name)
+  ExampleCatalog.register(
+    TranscribeAssemblyAIStringExample.self, path: TranscribeAssemblyAIStringExample.name)
+  ExampleCatalog.register(EmbedOpenAIExample.self, path: EmbedOpenAIExample.name)
+  ExampleCatalog.register(GenerateImageOpenAIExample.self, path: GenerateImageOpenAIExample.name)
+  ExampleCatalog.register(StreamTextOpenAIExample.self, path: StreamTextOpenAIExample.name)
 }

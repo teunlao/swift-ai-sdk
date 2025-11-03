@@ -139,3 +139,47 @@ public func embed<Value: Sendable>(
         )
     }
 }
+
+// MARK: - Convenience overloads (DX parity with TS)
+
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+public func embed<Value: Sendable>(
+    model: any EmbeddingModelV3<Value>,
+    value: Value,
+    providerOptions: ProviderOptions? = nil,
+    maxRetries: Int? = nil,
+    abortSignal: (@Sendable () -> Bool)? = nil,
+    headers: [String: String]? = nil,
+    experimentalTelemetry telemetry: TelemetrySettings? = nil
+) async throws -> DefaultEmbedResult<Value> {
+    try await embed(
+        model: .v3(model),
+        value: value,
+        providerOptions: providerOptions,
+        maxRetries: maxRetries,
+        abortSignal: abortSignal,
+        headers: headers,
+        experimentalTelemetry: telemetry
+    )
+}
+
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+public func embed<Value: Sendable>(
+    model: any EmbeddingModelV2<Value>,
+    value: Value,
+    providerOptions: ProviderOptions? = nil,
+    maxRetries: Int? = nil,
+    abortSignal: (@Sendable () -> Bool)? = nil,
+    headers: [String: String]? = nil,
+    experimentalTelemetry telemetry: TelemetrySettings? = nil
+) async throws -> DefaultEmbedResult<Value> {
+    try await embed(
+        model: .v2(model),
+        value: value,
+        providerOptions: providerOptions,
+        maxRetries: maxRetries,
+        abortSignal: abortSignal,
+        headers: headers,
+        experimentalTelemetry: telemetry
+    )
+}
