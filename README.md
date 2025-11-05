@@ -2,24 +2,37 @@
 
 [![Tests](https://github.com/teunlao/swift-ai-sdk/actions/workflows/test.yml/badge.svg)](https://github.com/teunlao/swift-ai-sdk/actions/workflows/test.yml)
 [![codecov](https://codecov.io/gh/teunlao/swift-ai-sdk/graph/badge.svg?token=381f5745-12c8-4720-93c7-9748cbb96359)](https://codecov.io/gh/teunlao/swift-ai-sdk)
-[![Swift Version](https://img.shields.io/badge/Swift-6.0-orange.svg)](https://swift.org)
-[![Platforms](https://img.shields.io/badge/Platforms-iOS%20|%20macOS%20|%20tvOS%20|%20watchOS-blue.svg)](https://swift.org)
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/teunlao/swift-ai-sdk)](https://github.com/teunlao/swift-ai-sdk/releases)
 [![Documentation](https://img.shields.io/badge/docs-swift--ai--sdk-blue)](https://swift-ai-sdk-docs.vercel.app)
 [![](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2Fteunlao%2Fswift-ai-sdk%2Fbadge%3Ftype%3Dswift-versions)](https://swiftpackageindex.com/teunlao/swift-ai-sdk)
 [![](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2Fteunlao%2Fswift-ai-sdk%2Fbadge%3Ftype%3Dplatforms)](https://swiftpackageindex.com/teunlao/swift-ai-sdk)
 
-A unified AI SDK for Swift, bringing the power of [Vercel AI SDK](https://github.com/vercel/ai) to Apple platforms with a focus on full API parity.
+A unified AI SDK for Swift: streaming chat/completions, structured outputs, tool/function/MCP calling, middleware, and telemetry — with 28+ providers via one API (OpenAI, Anthropic, Google, Groq, xAI). Based on the [Vercel AI SDK](https://github.com/vercel/ai) with a focus on full API parity.
 
 **[Documentation](https://swift-ai-sdk-docs.vercel.app)** | **[Getting Started](https://swift-ai-sdk-docs.vercel.app/getting-started/ios-macos-quickstart)** | **[Examples](examples/)** | **[Discussions](https://github.com/teunlao/swift-ai-sdk/discussions)**
+
+## Table of Contents
+
+- [Features](#features)
+- [Packages](#packages)
+- [Implementation Status](#implementation-status)
+- [Installation (SwiftPM)](#installation-swiftpm)
+- [Quickstart](#quickstart)
+- [Unified Provider Architecture](#unified-provider-architecture)
+- [Usage: Structured Data](#usage-structured-data-generateobject)
+- [Usage: Tools](#usage-agents--tools)
+- [Templates & Examples](#templates--examples)
+- [Upstream & Parity](#upstream--parity)
+- [Contributing](#contributing)
+- [License](#license)
 
 ## Features
 
 - **Text Generation** - Streaming and non-streaming
 - **Structured Outputs** - Type-safe object generation with schemas
 - **Tool Calling** - Function calling and MCP tools
-- **Multi-Provider** - OpenAI, Anthropic, Google, Groq, xAI, and [20 more](https://swift-ai-sdk-docs.vercel.app/providers/overview)
+- **Multi-Provider** - OpenAI, Anthropic, Google (Gemini), Groq, xAI, and [28+ providers](https://swift-ai-sdk-docs.vercel.app/providers/overview)
 - **Middleware System** - Extensible request/response processing
 - **Telemetry** - Built-in observability
 
@@ -158,11 +171,6 @@ for model in models {
   print(result.text)
 }
 ```
-
-## Platforms & Requirements
-
-- Swift 6.1 toolchain (see `swift-tools-version` in `Package.swift`).
-- iOS 16+, macOS 13+, tvOS 16+, watchOS 9+ (source of truth: `Package.swift`).
 
 ## Usage: Structured Data (generateObject)
 
