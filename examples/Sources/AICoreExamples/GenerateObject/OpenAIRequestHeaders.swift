@@ -5,7 +5,7 @@ import SwiftAISDK
 
 struct GenerateObjectOpenAIRequestHeadersExample: Example {
   static let name = "generate-object/openai-request-headers"
-  static let description = "Инспектирует HTTP-заголовки запроса к OpenAI."
+  static let description = "Inspect the HTTP headers sent to OpenAI."
 
   struct Ingredient: Codable, Sendable {
     let name: String
@@ -64,13 +64,13 @@ struct GenerateObjectOpenAIRequestHeadersExample: Example {
       if let headers = await store.value() {
         Helpers.printJSON(headers)
       } else {
-        Logger.info("<нет заголовков>")
+        Logger.info("<no headers>")
       }
 
       Logger.section("Recipe name")
       Logger.info(result.object.recipe.name)
     } catch {
-      Logger.warning("Пропускаем сетевой вызов: \(error.localizedDescription)")
+      Logger.warning("Skipping network call: \(error.localizedDescription)")
     }
   }
 

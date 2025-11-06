@@ -39,6 +39,7 @@ public final class OpenAIProvider: ProviderV3 {
     private let transcriptionFactory: @Sendable (OpenAITranscriptionModelId) -> OpenAITranscriptionModel
     private let speechFactory: @Sendable (OpenAISpeechModelId) -> OpenAISpeechModel
     public let tools: OpenAITools
+    public let options: OpenAIOptionsFacade
 
     init(
         responses: @escaping @Sendable (OpenAIResponsesModelId) -> OpenAIResponsesLanguageModel,
@@ -48,7 +49,8 @@ public final class OpenAIProvider: ProviderV3 {
         completions: @escaping @Sendable (OpenAICompletionModelId) -> OpenAICompletionLanguageModel,
         transcriptions: @escaping @Sendable (OpenAITranscriptionModelId) -> OpenAITranscriptionModel,
         speeches: @escaping @Sendable (OpenAISpeechModelId) -> OpenAISpeechModel,
-        tools: OpenAITools
+        tools: OpenAITools,
+        options: OpenAIOptionsFacade
     ) {
         self.responsesFactory = responses
         self.chatFactory = chat
@@ -58,6 +60,7 @@ public final class OpenAIProvider: ProviderV3 {
         self.transcriptionFactory = transcriptions
         self.speechFactory = speeches
         self.tools = tools
+        self.options = options
     }
 
     public func languageModel(modelId: String) throws -> any LanguageModelV3 {
@@ -215,7 +218,8 @@ public func createOpenAIProvider(settings: OpenAIProviderSettings = .init()) -> 
         completions: completionFactory,
         transcriptions: transcriptionFactory,
         speeches: speechFactory,
-        tools: openaiTools
+        tools: openaiTools,
+        options: OpenAIOptionsFacade()
     )
 }
 

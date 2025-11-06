@@ -5,7 +5,7 @@ import SwiftAISDK
 
 struct GenerateObjectOpenAIMultimodalExample: Example {
   static let name = "generate-object/openai-multimodal"
-  static let description = "Структурированный ответ по изображению с GPT-4o." 
+  static let description = "Structured image response using GPT-4o."
 
   struct Artwork: Codable, Sendable {
     let description: String
@@ -48,7 +48,7 @@ struct GenerateObjectOpenAIMultimodalExample: Example {
       Logger.section("Artwork metadata")
       Helpers.printJSON(result.object.artwork)
     } catch {
-      Logger.warning("Пропускаем сетевой вызов: \(error.localizedDescription)")
+      Logger.warning("Skipping network call: \(error.localizedDescription)")
     }
   }
 
@@ -71,7 +71,7 @@ struct GenerateObjectOpenAIMultimodalExample: Example {
       domain: "GenerateObjectOpenAIMultimodalExample",
       code: 1,
       userInfo: [
-        NSLocalizedDescriptionKey: "comic-cat.png не найден. Скопируйте его из external/vercel-ai-sdk/examples/ai-core/data в examples/Data."
+        NSLocalizedDescriptionKey: "comic-cat.png not found. Copy it from external/vercel-ai-sdk/examples/ai-core/data into examples/Data."
       ]
     )
   }

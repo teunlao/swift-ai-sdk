@@ -193,7 +193,12 @@ private let openAIResponsesProviderOptionsJSONSchema: JSONValue = .object([
     ])
 ])
 
-private let openAIResponsesProviderOptionIncludeValues: [OpenAIResponsesIncludeValue] = [.reasoningEncryptedContent, .fileSearchCallResults, .messageOutputTextLogprobs]
+private let openAIResponsesProviderOptionIncludeValues: [OpenAIResponsesIncludeValue] = [
+    .reasoningEncryptedContent,
+    .fileSearchCallResults,
+    .messageOutputTextLogprobs,
+    .codeInterpreterCallOutputs
+]
 
 public let openAIResponsesProviderOptionsSchema = FlexibleSchema<OpenAIResponsesProviderOptions>(
     jsonSchema(openAIResponsesProviderOptionsJSONSchema, validate: { value in

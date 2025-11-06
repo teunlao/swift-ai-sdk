@@ -17,7 +17,7 @@ struct GenerateImageOpenAIExample: Example {
         prompt: prompt
       )
 
-      // Извлечём revisedPrompt из providerMetadata (если есть)
+      // Extract revisedPrompt from providerMetadata if available.
       if let openAIMeta = result.providerMetadata["openai"],
          let first = openAIMeta.images.first,
          case let .object(obj) = first,
@@ -29,7 +29,7 @@ struct GenerateImageOpenAIExample: Example {
       Logger.section("Image Info")
       Logger.info("mediaType: \(result.image.mediaType)")
 
-      // Сохраним картинку во временный файл
+      // Save the image to a temporary file.
       let ext: String = {
         switch result.image.mediaType.lowercased() {
         case "image/png": return "png"

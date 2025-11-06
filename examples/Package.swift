@@ -23,7 +23,9 @@ let package = Package(
 
     .target(
       name: "ExamplesCore",
-      dependencies: []
+      dependencies: [
+        .product(name: "OpenAIProvider", package: "swift-ai-sdk")
+      ]
     ),
 
     .executableTarget(
