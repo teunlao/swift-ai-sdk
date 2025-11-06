@@ -141,4 +141,14 @@ func registerAllExamples() {
   ExampleCatalog.register(SemanticRouterExample.self, path: SemanticRouterExample.name)
   ExampleCatalog.register(MathAgentExample.self, path: MathAgentExample.name)
   ExampleCatalog.register(MathAgentRequiredToolChoiceExample.self, path: MathAgentRequiredToolChoiceExample.name)
+
+  // Agents
+  ExampleCatalog.register(AgentOpenAIGenerateExample.self, path: AgentOpenAIGenerateExample.name)
+  ExampleCatalog.register(AgentOpenAIStreamExample.self, path: AgentOpenAIStreamExample.name)
+  ExampleCatalog.register(AgentOpenAIStreamToolsExample.self, path: AgentOpenAIStreamToolsExample.name)
+  ExampleCatalog.register(AgentOpenAIGenerateJSONExample.self, path: AgentOpenAIGenerateJSONExample.name)
+  ExampleCatalog.register(AgentOpenAIStreamJSONExample.self, path: AgentOpenAIStreamJSONExample.name)
+  ExampleCatalog.register(AgentOpenAIGenerateOnFinishExample.self, path: AgentOpenAIGenerateOnFinishExample.name)
+  ExampleCatalog.register(AgentOpenAIGenerateCallOptionsExample.self, path: AgentOpenAIGenerateCallOptionsExample.name)
+  ExampleCatalog.register(AgentOpenAIStreamCallOptionsExample.self, path: AgentOpenAIStreamCallOptionsExample.name)
 }
