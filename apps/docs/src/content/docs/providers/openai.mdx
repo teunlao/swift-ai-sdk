@@ -748,6 +748,16 @@ The following optional provider options are available for OpenAI chat models:
 
   Controls the verbosity of the model's responses. Lower values will result in more concise responses, while higher values will result in more verbose responses.
 
+> Tip: Instead of manually building `providerOptions`, you can use the Swift helper `openai.options.responses(...)` to produce the same dictionary. For example:
+>
+> ```swift
+> let options = openai.options.responses(
+>   include: [.fileSearchCallResults],
+>   serviceTier: "auto",
+>   reasoningEffort: "high"
+> )
+> ```
+
 - **promptCacheKey** _string_
 
   A cache key for manual prompt caching control. Used by OpenAI to cache responses for similar requests to optimize your cache hit rates.

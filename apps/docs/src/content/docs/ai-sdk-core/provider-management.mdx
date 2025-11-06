@@ -37,9 +37,7 @@ let customOpenAI = customProvider(
       model: openai.languageModel(modelId: "gpt-4o"),
       middleware: .single(defaultSettingsMiddleware(
         settings: DefaultSettings(
-          providerOptions: ["openai": [
-            "reasoningEffort": "high"
-          ]]
+          providerOptions: openai.options.responses(reasoningEffort: "high")
         )
       ))
     ),
@@ -48,9 +46,7 @@ let customOpenAI = customProvider(
       model: openai.languageModel(modelId: "gpt-4o-mini"),
       middleware: .single(defaultSettingsMiddleware(
         settings: DefaultSettings(
-          providerOptions: ["openai": [
-            "reasoningEffort": "high"
-          ]]
+          providerOptions: openai.options.responses(reasoningEffort: "high")
         )
       ))
     )
@@ -95,9 +91,7 @@ let myProvider = customProvider(
       model: openai.languageModel(modelId: "gpt-4o"),
       middleware: .single(defaultSettingsMiddleware(
         settings: DefaultSettings(
-          providerOptions: ["openai": [
-            "reasoningEffort": "high"
-          ]]
+          providerOptions: openai.options.responses(reasoningEffort: "high")
         )
       ))
     ),
@@ -105,9 +99,7 @@ let myProvider = customProvider(
       model: openai.languageModel(modelId: "gpt-4o-mini"),
       middleware: .single(defaultSettingsMiddleware(
         settings: DefaultSettings(
-          providerOptions: ["openai": [
-            "reasoningEffort": "high"
-          ]]
+          providerOptions: openai.options.responses(reasoningEffort: "high")
         )
       ))
     )
