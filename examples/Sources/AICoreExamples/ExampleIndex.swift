@@ -127,6 +127,8 @@ func registerAllExamples() {
   ExampleCatalog.register(StreamTextOpenAIOnFinishResponseMessagesExample.self, path: StreamTextOpenAIOnFinishResponseMessagesExample.name)
   ExampleCatalog.register(StreamTextOpenAIAudioExample.self, path: StreamTextOpenAIAudioExample.name)
   ExampleCatalog.register(StreamTextOpenAICachedPromptTokensExample.self, path: StreamTextOpenAICachedPromptTokensExample.name)
+  ExampleCatalog.register(StreamTextOpenAIOnChunkToolCallStreamingExample.self, path: StreamTextOpenAIOnChunkToolCallStreamingExample.name)
+  ExampleCatalog.register(StreamTextOpenAIToolOutputStreamExample.self, path: StreamTextOpenAIToolOutputStreamExample.name)
 
   // Complex
   ExampleCatalog.register(SemanticRouterExample.self, path: SemanticRouterExample.name)
