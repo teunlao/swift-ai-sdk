@@ -139,6 +139,8 @@ func registerAllExamples() {
   ExampleCatalog.register(StreamTextOpenAIToolApprovalExample.self, path: StreamTextOpenAIToolApprovalExample.name)
   ExampleCatalog.register(StreamTextOpenAIToolApprovalDynamicExample.self, path: StreamTextOpenAIToolApprovalDynamicExample.name)
   ExampleCatalog.register(StreamTextOpenAIReadUIMessageStreamExample.self, path: StreamTextOpenAIReadUIMessageStreamExample.name)
+  ExampleCatalog.register(StreamTextOpenAIToolCallExample.self, path: StreamTextOpenAIToolCallExample.name)
+  ExampleCatalog.register(StreamTextOpenAIToolCallRawJSONSchemaExample.self, path: StreamTextOpenAIToolCallRawJSONSchemaExample.name)
 
   // Agents
   ExampleCatalog.register(AgentOpenAIStreamExample.self, path: AgentOpenAIStreamExample.name)
