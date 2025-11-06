@@ -151,4 +151,11 @@ func registerAllExamples() {
   ExampleCatalog.register(AgentOpenAIGenerateOnFinishExample.self, path: AgentOpenAIGenerateOnFinishExample.name)
   ExampleCatalog.register(AgentOpenAIGenerateCallOptionsExample.self, path: AgentOpenAIGenerateCallOptionsExample.name)
   ExampleCatalog.register(AgentOpenAIStreamCallOptionsExample.self, path: AgentOpenAIStreamCallOptionsExample.name)
+
+  // Registry
+  ExampleCatalog.register(RegistryStreamTextOpenAIExample.self, path: RegistryStreamTextOpenAIExample.name)
+  ExampleCatalog.register(RegistryEmbedOpenAIExample.self, path: RegistryEmbedOpenAIExample.name)
+  ExampleCatalog.register(RegistryGenerateImageOpenAIExample.self, path: RegistryGenerateImageOpenAIExample.name)
+  ExampleCatalog.register(RegistryGenerateSpeechOpenAIExample.self, path: RegistryGenerateSpeechOpenAIExample.name)
+  ExampleCatalog.register(RegistryTranscribeOpenAIExample.self, path: RegistryTranscribeOpenAIExample.name)
 }
