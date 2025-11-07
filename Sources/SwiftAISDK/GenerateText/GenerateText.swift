@@ -571,34 +571,6 @@ private func cloneResponseMessages(
     Array(messages)
 }
 
-private func convertResponseMessagesToModelMessages(
-    _ messages: [ResponseMessage]
-) -> [ModelMessage] {
-    messages.map { message in
-        switch message {
-        case .assistant(let assistant):
-            return .assistant(assistant)
-        case .tool(let tool):
-            return .tool(tool)
-        }
-    }
-}
-
-private func convertModelMessagesToResponseMessages(
-    _ messages: [ModelMessage]
-) -> [ResponseMessage] {
-    messages.compactMap { message in
-        switch message {
-        case .assistant(let assistant):
-            return .assistant(assistant)
-        case .tool(let tool):
-            return .tool(tool)
-        case .system, .user:
-            return nil
-        }
-    }
-}
-
 private extension Date {
     var iso8601String: String {
         ISO8601DateFormatter().string(from: self)

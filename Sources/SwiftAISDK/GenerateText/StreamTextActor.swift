@@ -1137,28 +1137,6 @@ case let .toolInputStart(id, toolName, providerMetadata, providerExecuted):
     func getRecordedSteps() -> [StepResult] { recordedSteps }
     func getLastStep() -> StepResult? { recordedSteps.last }
 
-    private func convertModelMessagesToResponseMessages(_ messages: [ModelMessage])
-        -> [ResponseMessage]
-    {
-        messages.compactMap { message in
-            switch message {
-            case .assistant(let a): return .assistant(a)
-            case .tool(let t): return .tool(t)
-            case .system, .user: return nil
-            }
-        }
-    }
-    private func convertResponseMessagesToModelMessages(_ messages: [ResponseMessage])
-        -> [ModelMessage]
-    {
-        messages.map { m in
-            switch m {
-            case .assistant(let a): return .assistant(a)
-            case .tool(let t): return .tool(t)
-            }
-        }
-    }
-
     private func makeCallOptions(
         prompt: LanguageModelV3Prompt,
         tools: [LanguageModelV3Tool]?,

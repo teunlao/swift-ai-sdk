@@ -126,19 +126,6 @@ private func makeStreamTextStepPreparation(
     )
 }
 
-private func convertResponseMessagesToModelMessages(
-    _ messages: [ResponseMessage]
-) -> [ModelMessage] {
-    messages.map { message in
-        switch message {
-        case .assistant(let assistant):
-            return .assistant(assistant)
-        case .tool(let tool):
-            return .tool(tool)
-        }
-    }
-}
-
 private func providerExecutedFlag(for call: TypedToolCall) -> Bool? {
     switch call {
     case .static(let value):
@@ -1309,19 +1296,6 @@ private func toGeneratedFile(_ file: LanguageModelV3File) -> GeneratedFile {
         return DefaultGeneratedFileWithType(base64: base64, mediaType: file.mediaType)
     case .binary(let data):
         return DefaultGeneratedFileWithType(data: data, mediaType: file.mediaType)
-    }
-}
-
-private func convertModelMessagesToResponseMessages(_ messages: [ModelMessage]) -> [ResponseMessage] {
-    messages.compactMap { message in
-        switch message {
-        case .assistant(let value):
-            return .assistant(value)
-        case .tool(let value):
-            return .tool(value)
-        case .system, .user:
-            return nil
-        }
     }
 }
 
