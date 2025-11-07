@@ -9,7 +9,7 @@ struct StreamTextOpenAIResponsesServiceTierExample: Example {
   static func run() async throws {
     do {
       let result = try streamText(
-        model: openai.responses(modelId: "gpt-4.1-mini"),
+        model: openai.responses("gpt-4.1-mini"),
         prompt: "Briefly describe what service tiers do.",
         providerOptions: openai.options.responses(serviceTier: "auto")
       )

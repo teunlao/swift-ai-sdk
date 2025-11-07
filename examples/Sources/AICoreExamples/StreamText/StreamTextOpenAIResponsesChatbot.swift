@@ -9,7 +9,7 @@ struct StreamTextOpenAIResponsesChatbotExample: Example {
   static func run() async throws {
     do {
       let result = try streamText(
-        model: openai.responses(modelId: "gpt-4o-mini"),
+        model: openai.responses("gpt-4o-mini"),
         system: "You are a concise assistant.",
         messages: [
           .user(UserModelMessage(content: .text("Give me 3 short productivity tips for Swift developers.")))

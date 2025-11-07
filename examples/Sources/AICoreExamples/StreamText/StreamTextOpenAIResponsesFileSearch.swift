@@ -28,7 +28,7 @@ struct StreamTextOpenAIResponsesFileSearchExample: Example {
       let providerOptions = openai.options.responses(include: [.fileSearchCallResults])
 
       let result = try streamText(
-        model: openai.responses(modelId: "gpt-4o-mini"),
+        model: openai.responses("gpt-4o-mini"),
         prompt: "Find facts about Swift Package Manager from the vector store and summarize in 2 bullets.",
         tools: [
           "file_search": fileSearch

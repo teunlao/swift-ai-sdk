@@ -9,7 +9,7 @@ struct StreamTextOpenAIResponsesRawChunksExample: Example {
   static func run() async throws {
     do {
       let result = try streamText(
-        model: openai.responses(modelId: "gpt-4o-mini"),
+        model: openai.responses("gpt-4o-mini"),
         prompt: "Name two features of this SDK in one sentence.",
         includeRawChunks: true
       )

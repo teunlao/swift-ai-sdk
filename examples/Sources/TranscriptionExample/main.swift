@@ -25,7 +25,7 @@ struct TranscriptionExample: CLIExample {
     Logger.info("Creating sample audio with TTS...")
 
     let sampleAudio = try await generateSpeech(
-      model: openai.speech(modelId: "tts-1"),
+      model: openai.speech("tts-1"),
       text: "The Swift AI SDK provides a unified interface for working with multiple language model providers.",
       voice: "alloy"
     )
@@ -37,7 +37,7 @@ struct TranscriptionExample: CLIExample {
     Logger.info("Transcribing audio with Whisper...")
 
     let transcript = try await transcribe(
-      model: openai.transcription(modelId: "whisper-1"),
+      model: openai.transcription("whisper-1"),
       audio: .data(sampleAudio.audio.data)
     )
 
@@ -48,7 +48,7 @@ struct TranscriptionExample: CLIExample {
     Logger.info("Transcribing with language hint (English)...")
 
     let withLang = try await transcribe(
-      model: openai.transcription(modelId: "whisper-1"),
+      model: openai.transcription("whisper-1"),
       audio: .data(sampleAudio.audio.data),
       providerOptions: ["openai": [
         "language": "en"
@@ -65,7 +65,7 @@ struct TranscriptionExample: CLIExample {
     Logger.info("Transcribing with word-level timestamps...")
 
     let withTimestamps = try await transcribe(
-      model: openai.transcription(modelId: "whisper-1"),
+      model: openai.transcription("whisper-1"),
       audio: .data(sampleAudio.audio.data),
       providerOptions: ["openai": [
         "timestampGranularities": ["word"]

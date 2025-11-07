@@ -19,7 +19,7 @@ struct EmbeddingsExample: CLIExample {
     // Example 1: Single embedding
     Logger.section("Example 1: Single Embedding")
     let single = try await embed(
-      model: .v3(openai.textEmbeddingModel(modelId: "text-embedding-3-small")),
+      model: .v3(openai.textEmbeddingModel("text-embedding-3-small")),
       value: "sunny day at the beach"
     )
 
@@ -30,7 +30,7 @@ struct EmbeddingsExample: CLIExample {
     // Example 2: Batch embeddings
     Logger.section("Example 2: Batch Embeddings")
     let batch = try await embedMany(
-      model: .v3(openai.textEmbeddingModel(modelId: "text-embedding-3-small")),
+      model: .v3(openai.textEmbeddingModel("text-embedding-3-small")),
       values: [
         "sunny day at the beach",
         "rainy afternoon in the city",
@@ -44,7 +44,7 @@ struct EmbeddingsExample: CLIExample {
     // Example 3: Cosine similarity
     Logger.section("Example 3: Cosine Similarity")
     let similarity = try await embedMany(
-      model: .v3(openai.textEmbeddingModel(modelId: "text-embedding-3-small")),
+      model: .v3(openai.textEmbeddingModel("text-embedding-3-small")),
       values: [
         "sunny day at the beach",
         "rainy afternoon in the city"
@@ -61,7 +61,7 @@ struct EmbeddingsExample: CLIExample {
     // Example 4: Compare related vs unrelated text
     Logger.section("Example 4: Comparing Related vs Unrelated Text")
     let comparison = try await embedMany(
-      model: .v3(openai.textEmbeddingModel(modelId: "text-embedding-3-small")),
+      model: .v3(openai.textEmbeddingModel("text-embedding-3-small")),
       values: [
         "The cat sat on the mat",
         "A feline rested on the rug",  // Similar meaning

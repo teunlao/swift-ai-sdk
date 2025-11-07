@@ -32,7 +32,7 @@ struct GenerateTextOpenAIAudioExample: Example {
       ]
 
       let result = try await generateText(
-        model: openai.chat(modelId: "gpt-4o-audio-preview"),
+        model: openai.chat("gpt-4o-audio-preview"),
         messages: messages
       )
 

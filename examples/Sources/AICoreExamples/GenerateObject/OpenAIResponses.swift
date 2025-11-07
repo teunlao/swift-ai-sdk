@@ -24,7 +24,7 @@ struct GenerateObjectOpenAIResponsesExample: Example {
   static func run() async throws {
     do {
       let result = try await generateObject(
-        model: openai.responses(modelId: "gpt-4o-mini"),
+        model: openai.responses("gpt-4o-mini"),
         schema: Response.self,
         prompt: "Generate a lasagna recipe.",
         schemaName: "recipe",

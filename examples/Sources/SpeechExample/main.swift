@@ -21,7 +21,7 @@ struct SpeechExample: CLIExample {
     Logger.info("Generating speech with 'alloy' voice...")
 
     let audio = try await generateSpeech(
-      model: openai.speech(modelId: "tts-1"),
+      model: openai.speech("tts-1"),
       text: "Hello from Swift AI SDK! This is a test of text-to-speech generation.",
       voice: "alloy"
     )
@@ -35,7 +35,7 @@ struct SpeechExample: CLIExample {
     Logger.info("Generating speech with 'nova' voice...")
 
     let nova = try await generateSpeech(
-      model: openai.speech(modelId: "tts-1"),
+      model: openai.speech("tts-1"),
       text: "The Swift AI SDK makes it easy to work with language models.",
       voice: "nova"
     )
@@ -48,7 +48,7 @@ struct SpeechExample: CLIExample {
     Logger.info("Generating HD quality speech...")
 
     let hd = try await generateSpeech(
-      model: openai.speech(modelId: "tts-1-hd"),
+      model: openai.speech("tts-1-hd"),
       text: "High definition audio provides better quality for professional use.",
       voice: "shimmer"
     )
@@ -61,7 +61,7 @@ struct SpeechExample: CLIExample {
     Logger.info("Generating speech at 1.25x speed...")
 
     let fast = try await generateSpeech(
-      model: openai.speech(modelId: "tts-1"),
+      model: openai.speech("tts-1"),
       text: "This audio is generated at a faster playback speed.",
       voice: "fable",
       providerOptions: ["openai": [

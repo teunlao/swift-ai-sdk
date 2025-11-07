@@ -67,44 +67,88 @@ public final class OpenAIProvider: ProviderV3 {
         responsesFactory(OpenAIResponsesModelId(rawValue: modelId))
     }
 
+    public func languageModel(_ modelId: String) throws -> any LanguageModelV3 {
+        try languageModel(modelId: modelId)
+    }
+
     public func chatModel(modelId: String) throws -> any LanguageModelV3 {
         chatFactory(OpenAIChatModelId(rawValue: modelId))
+    }
+
+    public func chatModel(_ modelId: String) throws -> any LanguageModelV3 {
+        try chatModel(modelId: modelId)
     }
 
     public func completionModel(modelId: String) throws -> any LanguageModelV3 {
         completionFactory(OpenAICompletionModelId(rawValue: modelId))
     }
 
+    public func completionModel(_ modelId: String) throws -> any LanguageModelV3 {
+        try completionModel(modelId: modelId)
+    }
+
     public func textEmbeddingModel(modelId: String) throws -> any EmbeddingModelV3<String> {
         embeddingFactory(OpenAIEmbeddingModelId(rawValue: modelId))
+    }
+
+    public func textEmbeddingModel(_ modelId: String) throws -> any EmbeddingModelV3<String> {
+        try textEmbeddingModel(modelId: modelId)
     }
 
     public func imageModel(modelId: String) throws -> any ImageModelV3 {
         imageFactory(OpenAIImageModelId(rawValue: modelId))
     }
 
+    public func imageModel(_ modelId: String) throws -> any ImageModelV3 {
+        try imageModel(modelId: modelId)
+    }
+
     public func transcriptionModel(modelId: String) throws -> any TranscriptionModelV3 {
         transcriptionFactory(OpenAITranscriptionModelId(rawValue: modelId))
+    }
+
+    public func transcriptionModel(_ modelId: String) throws -> any TranscriptionModelV3 {
+        try transcriptionModel(modelId: modelId)
     }
 
     public func speechModel(modelId: String) throws -> any SpeechModelV3 {
         speechFactory(OpenAISpeechModelId(rawValue: modelId))
     }
 
+    public func speechModel(_ modelId: String) throws -> any SpeechModelV3 {
+        try speechModel(modelId: modelId)
+    }
+
     public func responses(modelId: OpenAIResponsesModelId) -> OpenAIResponsesLanguageModel {
         responsesFactory(modelId)
+    }
+
+    public func responses(_ modelId: String) -> OpenAIResponsesLanguageModel {
+        responsesFactory(OpenAIResponsesModelId(rawValue: modelId))
     }
 
     public func chat(modelId: OpenAIChatModelId) -> OpenAIChatLanguageModel {
         chatFactory(modelId)
     }
 
+    public func chat(_ modelId: String) -> OpenAIChatLanguageModel {
+        chatFactory(OpenAIChatModelId(rawValue: modelId))
+    }
+
     public func transcription(modelId: OpenAITranscriptionModelId) -> OpenAITranscriptionModel {
         transcriptionFactory(modelId)
     }
 
+    public func transcription(_ modelId: String) -> OpenAITranscriptionModel {
+        transcriptionFactory(OpenAITranscriptionModelId(rawValue: modelId))
+    }
+
     public func speech(modelId: OpenAISpeechModelId) -> OpenAISpeechModel {
         speechFactory(modelId)
+    }
+
+    public func speech(_ modelId: String) -> OpenAISpeechModel {
+        speechFactory(OpenAISpeechModelId(rawValue: modelId))
     }
 }
 

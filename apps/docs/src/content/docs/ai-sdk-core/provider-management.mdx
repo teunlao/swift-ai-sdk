@@ -34,7 +34,7 @@ let customOpenAI = customProvider(
   languageModels: [
     // Replacement model with custom provider options:
     "gpt-4o": wrapLanguageModel(
-      model: openai.languageModel(modelId: "gpt-4o"),
+      model: openai.languageModel("gpt-4o"),
       middleware: .single(defaultSettingsMiddleware(
         settings: DefaultSettings(
           providerOptions: openai.options.responses(reasoningEffort: "high")
@@ -43,7 +43,7 @@ let customOpenAI = customProvider(
     ),
     // Alias model with custom provider options:
     "gpt-4o-mini-high-reasoning": wrapLanguageModel(
-      model: openai.languageModel(modelId: "gpt-4o-mini"),
+      model: openai.languageModel("gpt-4o-mini"),
       middleware: .single(defaultSettingsMiddleware(
         settings: DefaultSettings(
           providerOptions: openai.options.responses(reasoningEffort: "high")
@@ -86,9 +86,9 @@ import OpenAIProvider
 let myProvider = customProvider(
   languageModels: [
     "text-medium": anthropic.languageModel(modelId: "claude-3-5-sonnet-20240620"),
-    "text-small": openai.languageModel(modelId: "gpt-4o-mini"),
+    "text-small": openai.languageModel("gpt-4o-mini"),
     "reasoning-medium": wrapLanguageModel(
-      model: openai.languageModel(modelId: "gpt-4o"),
+      model: openai.languageModel("gpt-4o"),
       middleware: .single(defaultSettingsMiddleware(
         settings: DefaultSettings(
           providerOptions: openai.options.responses(reasoningEffort: "high")
@@ -96,7 +96,7 @@ let myProvider = customProvider(
       ))
     ),
     "reasoning-fast": wrapLanguageModel(
-      model: openai.languageModel(modelId: "gpt-4o-mini"),
+      model: openai.languageModel("gpt-4o-mini"),
       middleware: .single(defaultSettingsMiddleware(
         settings: DefaultSettings(
           providerOptions: openai.options.responses(reasoningEffort: "high")
@@ -105,7 +105,7 @@ let myProvider = customProvider(
     )
   ],
   textEmbeddingModels: [
-    "embedding": openai.textEmbeddingModel(modelId: "text-embedding-3-small")
+    "embedding": openai.textEmbeddingModel("text-embedding-3-small")
   ]
   // No fallback provider
 )

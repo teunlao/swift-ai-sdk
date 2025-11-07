@@ -217,9 +217,9 @@ func testLanguageModelCreation() async throws {
 // MARK: - Language Models - Responses API Tests
 
 func testResponsesAPIModelCreation() async throws {
-    // From docs: let model = openai.responses(modelId: "gpt-5")
+    // From docs: let model = openai.responses("gpt-5")
 
-    let model = openai.responses(modelId: "gpt-5")
+    let model = openai.responses("gpt-5")
     let modelType = String(describing: type(of: model))
     print("   Created responses model: \(modelType)")
 
@@ -598,10 +598,10 @@ func testStructuredOutputSyntax() async throws {
 // MARK: - Chat Models Tests
 
 func testChatModelCreation() async throws {
-    // From docs: openai.chat(modelId: "gpt-5")
+    // From docs: openai.chat("gpt-5")
     print("   Testing chat model creation")
 
-    let model = openai.chat(modelId: "gpt-5")
+    let model = openai.chat("gpt-5")
     let modelType = String(describing: type(of: model))
     print("   Created chat model: \(modelType)")
 
@@ -761,10 +761,10 @@ func testCompletionModelProviderOptions() async throws {
 // MARK: - Transcription Models Tests
 
 func testTranscriptionModelCreation() async throws {
-    // From docs: openai.transcription(modelId: "whisper-1")
+    // From docs: openai.transcription("whisper-1")
     print("   Testing transcription model creation")
 
-    let model = openai.transcription(modelId: "whisper-1")
+    let model = openai.transcription("whisper-1")
     let modelType = String(describing: type(of: model))
     print("   Created transcription model: \(modelType)")
 
@@ -791,10 +791,10 @@ func testTranscriptionModelProviderOptions() async throws {
 // MARK: - Speech Models Tests
 
 func testSpeechModelCreation() async throws {
-    // From docs: openai.speech(modelId: "tts-1")
+    // From docs: openai.speech("tts-1")
     print("   Testing speech model creation")
 
-    let model = openai.speech(modelId: "tts-1")
+    let model = openai.speech("tts-1")
     let modelType = String(describing: type(of: model))
     print("   Created speech model: \(modelType)")
 

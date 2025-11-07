@@ -30,7 +30,7 @@ struct GenerateTextOpenAIProviderOptionsExample: Example {
       ]
 
       let result = try await generateText(
-        model: openai.chat(modelId: "gpt-4o"),
+        model: openai.chat("gpt-4o"),
         prompt: "Invent a new holiday and describe its traditions.",
         providerOptions: providerOptions
       )

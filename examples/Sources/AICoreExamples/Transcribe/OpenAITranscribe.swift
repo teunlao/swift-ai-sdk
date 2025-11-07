@@ -11,7 +11,7 @@ struct TranscribeOpenAIExample: Example {
     let audioData = try loadAudio()
 
     let result = try await transcribe(
-      model: openai.transcription(modelId: "whisper-1"),
+      model: openai.transcription("whisper-1"),
       audio: .data(audioData)
     )
 

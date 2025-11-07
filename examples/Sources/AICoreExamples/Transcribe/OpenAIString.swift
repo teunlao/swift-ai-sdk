@@ -11,7 +11,7 @@ struct TranscribeOpenAIStringExample: Example {
     let base64Audio = try loadAudioBase64()
 
     let result = try await transcribe(
-      model: openai.transcription(modelId: "whisper-1"),
+      model: openai.transcription("whisper-1"),
       audio: .base64(base64Audio)
     )
 

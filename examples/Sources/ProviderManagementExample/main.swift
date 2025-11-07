@@ -23,10 +23,10 @@ struct ProviderManagementExample: CLIExample {
     let customOpenAI = customProvider(
       languageModels: [
         // Semantic aliases for easy version updates
-        "fast": try openai.languageModel(modelId: "gpt-4o-mini"),
-        "smart": try openai.languageModel(modelId: "gpt-4o"),
+        "fast": try openai.languageModel("gpt-4o-mini"),
+        "smart": try openai.languageModel("gpt-4o"),
         "reasoning": wrapLanguageModel(
-          model: try openai.languageModel(modelId: "gpt-4o"),
+          model: try openai.languageModel("gpt-4o"),
           middleware: .single(defaultSettingsMiddleware(
             settings: DefaultSettings(
               maxOutputTokens: 500,
@@ -137,8 +137,8 @@ struct ProviderManagementExample: CLIExample {
 
     let limitedProvider = customProvider(
       languageModels: [
-        "mini": try openai.languageModel(modelId: "gpt-4o-mini"),
-        "standard": try openai.languageModel(modelId: "gpt-4o")
+        "mini": try openai.languageModel("gpt-4o-mini"),
+        "standard": try openai.languageModel("gpt-4o")
       ]
       // No fallbackProvider = only 'mini' and 'standard' available
     )

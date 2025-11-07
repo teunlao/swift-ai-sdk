@@ -19,7 +19,7 @@ import SwiftAISDK
 import OpenAIProvider
 
 let result = try await embed(
-  model: .v3(openai.textEmbeddingModel(modelId: "text-embedding-3-small")),
+  model: .v3(openai.textEmbeddingModel("text-embedding-3-small")),
   value: "sunny day at the beach"
 )
 
@@ -40,7 +40,7 @@ import SwiftAISDK
 import OpenAIProvider
 
 let result = try await embedMany(
-  model: .v3(openai.textEmbeddingModel(modelId: "text-embedding-3-small")),
+  model: .v3(openai.textEmbeddingModel("text-embedding-3-small")),
   values: [
     "sunny day at the beach",
     "rainy afternoon in the city",
@@ -63,7 +63,7 @@ import SwiftAISDK
 import OpenAIProvider
 
 let result = try await embedMany(
-  model: .v3(openai.textEmbeddingModel(modelId: "text-embedding-3-small")),
+  model: .v3(openai.textEmbeddingModel("text-embedding-3-small")),
   values: ["sunny day at the beach", "rainy afternoon in the city"]
 )
 
@@ -84,7 +84,7 @@ import SwiftAISDK
 import OpenAIProvider
 
 let result = try await embed(
-  model: .v3(openai.textEmbeddingModel(modelId: "text-embedding-3-small")),
+  model: .v3(openai.textEmbeddingModel("text-embedding-3-small")),
   value: "sunny day at the beach"
 )
 
@@ -102,7 +102,7 @@ import SwiftAISDK
 import OpenAIProvider
 
 let result = try await embed(
-  model: .v3(openai.textEmbeddingModel(modelId: "text-embedding-3-small")),
+  model: .v3(openai.textEmbeddingModel("text-embedding-3-small")),
   value: "sunny day at the beach",
   providerOptions: ["openai": [
     "dimensions": 512
@@ -121,7 +121,7 @@ import SwiftAISDK
 import OpenAIProvider
 
 let parallelResult = try await embedMany(
-  model: .v3(openai.textEmbeddingModel(modelId: "text-embedding-3-small")),
+  model: .v3(openai.textEmbeddingModel("text-embedding-3-small")),
   values: [
     "sunny day at the beach",
     "rainy afternoon in the city",
@@ -144,7 +144,7 @@ import SwiftAISDK
 import OpenAIProvider
 
 let noRetry = try await embed(
-  model: .v3(openai.textEmbeddingModel(modelId: "text-embedding-3-small")),
+  model: .v3(openai.textEmbeddingModel("text-embedding-3-small")),
   value: "sunny day at the beach",
   maxRetries: 0
 )
@@ -162,7 +162,7 @@ import OpenAIProvider
 let timeout = Date().addingTimeInterval(1)
 
 let embedding = try await embed(
-  model: .v3(openai.textEmbeddingModel(modelId: "text-embedding-3-small")),
+  model: .v3(openai.textEmbeddingModel("text-embedding-3-small")),
   value: "sunny day at the beach",
   abortSignal: { Date() >= timeout }
 )
@@ -178,7 +178,7 @@ import SwiftAISDK
 import OpenAIProvider
 
 let customHeader = try await embed(
-  model: .v3(openai.textEmbeddingModel(modelId: "text-embedding-3-small")),
+  model: .v3(openai.textEmbeddingModel("text-embedding-3-small")),
   value: "sunny day at the beach",
   headers: ["X-Custom-Header": "custom-value"]
 )
@@ -193,7 +193,7 @@ import SwiftAISDK
 import OpenAIProvider
 
 let info = try await embed(
-  model: .v3(openai.textEmbeddingModel(modelId: "text-embedding-3-small")),
+  model: .v3(openai.textEmbeddingModel("text-embedding-3-small")),
   value: "sunny day at the beach"
 )
 
