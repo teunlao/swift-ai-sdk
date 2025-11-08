@@ -148,6 +148,7 @@ func registerAllExamples() {
   ExampleCatalog.register(StreamTextOpenAIResponsesReasoningToolCallExample.self, path: StreamTextOpenAIResponsesReasoningToolCallExample.name)
   ExampleCatalog.register(StreamTextOpenAIResponsesReasoningWebSearchExample.self, path: StreamTextOpenAIResponsesReasoningWebSearchExample.name)
   ExampleCatalog.register(StreamTextOpenAIResponsesReasoningZeroDataRetentionExample.self, path: StreamTextOpenAIResponsesReasoningZeroDataRetentionExample.name)
+  ExampleCatalog.register(StreamTextOpenAIResponsesToolCallExample.self, path: StreamTextOpenAIResponsesToolCallExample.name)
   ExampleCatalog.register(StreamTextOpenAIResponsesServiceTierExample.self, path: StreamTextOpenAIResponsesServiceTierExample.name)
   ExampleCatalog.register(StreamTextOpenAIResponsesChatbotExample.self, path: StreamTextOpenAIResponsesChatbotExample.name)
   ExampleCatalog.register(StreamTextOpenAIResponsesCodeInterpreterExample.self, path: StreamTextOpenAIResponsesCodeInterpreterExample.name)
