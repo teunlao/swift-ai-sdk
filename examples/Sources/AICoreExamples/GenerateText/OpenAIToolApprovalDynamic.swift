@@ -55,7 +55,7 @@ struct GenerateTextOpenAIToolApprovalDynamicExample: Example {
           Logger.info("Conversation ended.")
           break
         }
-        messages.append(.user(UserModelMessage(content: .text(userInput))))
+        messages.append(.user(userInput))
       } else {
         messages.append(.tool(ToolModelMessage(content: pendingApprovals)))
         pendingApprovals.removeAll()
@@ -88,7 +88,7 @@ struct GenerateTextOpenAIToolApprovalDynamicExample: Example {
         }
 
         Logger.separator()
-        messages.append(contentsOf: result.response.messages.map(Self.convertResponseMessage))
+        messages = messages + result.response.messages
       } catch {
         Logger.warning("Skipping network call due to error: \(error.localizedDescription)")
         break
@@ -139,15 +139,6 @@ struct GenerateTextOpenAIToolApprovalDynamicExample: Example {
       }
 
       Logger.info("Please answer with 'y' or 'n'.")
-    }
-  }
-
-  private static func convertResponseMessage(_ message: ResponseMessage) -> ModelMessage {
-    switch message {
-    case .assistant(let assistant):
-      return .assistant(assistant)
-    case .tool(let tool):
-      return .tool(tool)
     }
   }
 

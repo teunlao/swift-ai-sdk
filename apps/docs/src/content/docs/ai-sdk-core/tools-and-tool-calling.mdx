@@ -195,18 +195,16 @@ prepareStep: { options in
 Adding the generated assistant and tool messages to your conversation history is a common task,
 especially if you are using multi-step tool calls.
 
-Both `generateText` and `streamText` have a `response.messages` property that you can use to
-add the assistant and tool messages to your conversation history.
-It is also available in the `onFinish` callback of `streamText`.
+Both `generateText` and `streamText` expose `response.messages`, which you can add back into your conversation history (it is also available inside the `onFinish` callback of `streamText`).
 
-The `response.messages` property contains an array of `ModelMessage` objects that you can add to your conversation history:
+The property returns an array of `ResponseMessage` values. Use the `+` operator (`messages = messages + response.messages`) or call `response.messages.asModelMessages()` if you explicitly need `[ModelMessage]`:
 
 ```swift
 import SwiftAISDK
 import OpenAIProvider
 
 var messages: [ModelMessage] = [
-  .user(UserModelMessage(content: .text("..."), providerOptions: nil))
+  .user("...")
 ]
 
 let out = try await generateText(
@@ -215,8 +213,11 @@ let out = try await generateText(
 )
 
 // add the response messages to your conversation history:
-messages.append(contentsOf: out.response.messages)
+messages = messages + out.response.messages
 ```
+
+> Tip
+> Call `response.messages.asModelMessages()` if you prefer to work with `[ModelMessage]` directly.
 
 ## Dynamic Tools
 

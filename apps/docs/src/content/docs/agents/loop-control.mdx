@@ -271,7 +271,7 @@ import OpenAIProvider
 import AISDKProviderUtils
 
 var messages: [ModelMessage] = [
-  .user(UserModelMessage(content: .text("..."), providerOptions: nil))
+  .user("...")
 ]
 
 var step = 0
@@ -286,13 +286,7 @@ while step < maxSteps {
 
   // Append model responses (assistant/tool) back into the conversation
   let responseMessages = result.steps.last?.response.messages ?? []
-  let followUps: [ModelMessage] = responseMessages.map { msg in
-    switch msg {
-    case .assistant(let a): return .assistant(a)
-    case .tool(let t): return .tool(t)
-    }
-  }
-  messages.append(contentsOf: followUps)
+  messages = messages + responseMessages
 
   if !result.text.isEmpty {
     break // Stop when model generates final text
@@ -301,6 +295,10 @@ while step < maxSteps {
   step += 1
 }
 ```
+
+> Tip
+> `responseMessages.asModelMessages()` remains available if you need `[ModelMessage]` explicitly.
+
 
 This manual approach gives you complete control over:
 

@@ -107,11 +107,16 @@ let _ = try await generateText(
   model: openai("gpt-4o"),
   prompt: "Invent a new holiday and describe its traditions.",
   onFinish: { event in
-    let messages = event.response.messages
-    _ = messages
+    let followUp = try await generateText(
+      model: openai("gpt-4o"),
+      messages: event.response.messages + [.user("Summarize in 2 sentences.")]
+    )
+    Logger.info(followUp.text)
   }
 )
 ```
+> Tip
+> `response.messages` returns `[ResponseMessage]`. Combine it with existing history via `messages = messages + response.messages` or call `response.messages.asModelMessages()` to get `[ModelMessage]`.
 
 ## `streamText`
 
@@ -223,8 +228,11 @@ let _ = try streamText(
   model: openai("gpt-4o"),
   prompt: "Invent a new holiday and describe its traditions.",
   onFinish: { finalStep, steps, totalUsage, finishReason in
-    let messages = finalStep.response.messages
-    _ = messages
+    let followUp = try await generateText(
+      model: openai("gpt-4o"),
+      messages: finalStep.response.messages + [.user("Summarize the plan in 2 sentences.")]
+    )
+    Logger.info(followUp.text)
   }
 )
 ```

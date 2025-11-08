@@ -49,7 +49,7 @@ struct GenerateTextOpenAIToolApprovalExample: Example {
           Logger.info("Conversation ended.")
           break
         }
-        messages.append(.user(UserModelMessage(content: .text(userInput))))
+        messages.append(.user(userInput))
       } else {
         messages.append(.tool(ToolModelMessage(content: pendingToolResponses)))
         pendingToolResponses.removeAll()
@@ -94,14 +94,7 @@ struct GenerateTextOpenAIToolApprovalExample: Example {
         }
 
         Logger.separator()
-        messages.append(contentsOf: result.response.messages.map { message in
-          switch message {
-          case .assistant(let assistant):
-            return .assistant(assistant)
-          case .tool(let tool):
-            return .tool(tool)
-          }
-        })
+        messages = messages + result.response.messages
       } catch {
         Logger.warning("Skipping network call due to error: \(error.localizedDescription)")
         break
