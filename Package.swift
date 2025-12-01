@@ -66,7 +66,7 @@ let package = Package(
         // HTTP, JSON, schema, validation, retry, headers, ID generation, tools
         .target(
             name: "AISDKProviderUtils",
-            dependencies: ["AISDKProvider", "AISDKZodAdapter"]
+            dependencies: ["AISDKProvider", "AISDKZodAdapter", "EventSourceParser"]
         ),
         .testTarget(name: "AISDKProviderUtilsTests", dependencies: ["AISDKProviderUtils", "AISDKZodAdapter"]),
 
