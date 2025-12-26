@@ -27,6 +27,10 @@ let package = Package(
         .product(name: "OpenAIProvider", package: "swift-ai-sdk")
       ]
     ),
+    .testTarget(
+      name: "ExamplesCoreTests",
+      dependencies: ["ExamplesCore"]
+    ),
 
     .executableTarget(
       name: "AICoreExamples",

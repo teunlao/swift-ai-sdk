@@ -2,6 +2,15 @@ import ExamplesCore
 
 func registerAllExamples() {
   ExampleCatalog.register(WeatherToolExample.self, path: WeatherToolExample.name)
+
+  // Middleware
+  ExampleCatalog.register(MiddlewareSimulateStreamingExample.self, path: MiddlewareSimulateStreamingExample.name)
+  ExampleCatalog.register(MiddlewareDefaultSettingsExample.self, path: MiddlewareDefaultSettingsExample.name)
+  ExampleCatalog.register(MiddlewareGenerateTextLogMiddlewareExample.self, path: MiddlewareGenerateTextLogMiddlewareExample.name)
+  ExampleCatalog.register(MiddlewareStreamTextLogMiddlewareExample.self, path: MiddlewareStreamTextLogMiddlewareExample.name)
+  ExampleCatalog.register(MiddlewareGenerateTextCacheMiddlewareExample.self, path: MiddlewareGenerateTextCacheMiddlewareExample.name)
+  ExampleCatalog.register(MiddlewareStreamTextRAGMiddlewareExample.self, path: MiddlewareStreamTextRAGMiddlewareExample.name)
+
   ExampleCatalog.register(GenerateTextOpenAIExample.self, path: GenerateTextOpenAIExample.name)
   ExampleCatalog.register(
     GenerateTextOpenAIFullResultExample.self, path: GenerateTextOpenAIFullResultExample.name)
