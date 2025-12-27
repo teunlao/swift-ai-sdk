@@ -1409,6 +1409,39 @@ struct StreamTextBasicTests {
         }
     }
 
+    @Test("experimentalOutputIfSpecified returns nil when finish reason is tool-calls")
+    func experimentalOutputIfSpecifiedNilOnToolCalls() async throws {
+        let usage = LanguageModelV3Usage(inputTokens: 1, outputTokens: 1, totalTokens: 2, reasoningTokens: nil, cachedInputTokens: nil)
+        let parts: [LanguageModelV3StreamPart] = [
+            .streamStart(warnings: []),
+            .responseMetadata(id: "toolcalls-optional", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
+            .finish(
+                finishReason: .toolCalls,
+                usage: usage,
+                providerMetadata: nil
+            )
+        ]
+
+        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+            for part in parts { continuation.yield(part) }
+            continuation.finish()
+        }
+
+        let model = MockLanguageModelV3(
+            doStream: .singleValue(LanguageModelV3StreamResult(stream: stream))
+        )
+
+        let result: DefaultStreamTextResult<SummaryOutput, JSONValue> = try streamText(
+            model: .v3(model),
+            prompt: "hello",
+            experimentalOutput: Output.object(schema: summarySchema())
+        )
+
+        _ = try await result.collectFullStream()
+        let output = try await result.experimentalOutputIfSpecified
+        #expect(output == nil)
+    }
+
     @Test("tool input callbacks are invoked before execution")
     func toolInputCallbacksInvoked() async throws {
         let parts: [LanguageModelV3StreamPart] = [

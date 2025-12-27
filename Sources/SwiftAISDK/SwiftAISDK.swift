@@ -1,7 +1,7 @@
 import Foundation
 
-// Публичный неймспейс SDK
+// Public SDK namespace
 public enum AISDK {}
 
-// Короткий алиас, как договорились
+// Short alias, matching the upstream naming convention.
 public enum ai {}

@@ -3,7 +3,7 @@ import AISDKProvider
 import AISDKProviderUtils
 
 /**
- Shared helpers for `generateObject` и `streamObject`.
+ Shared helpers for `generateObject` and `streamObject`.
 
  Port of `@ai-sdk/ai/src/generate-object` shared utilities.
  */

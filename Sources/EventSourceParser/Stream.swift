@@ -19,7 +19,7 @@ public struct EventSourceParserStreamOptions {
 }
 
 public struct EventSourceParserStream {
-    /// Преобразует поток байтов (Data) в поток EventSourceMessage, используя EventSourceParser.
+    /// Transforms a stream of bytes (Data) into a stream of EventSourceMessage using EventSourceParser.
     public static func makeStream(
         from input: AsyncThrowingStream<Data, Error>,
         options: EventSourceParserStreamOptions = .init()

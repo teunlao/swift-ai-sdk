@@ -191,7 +191,7 @@ public final class GoogleGenerativeAILanguageModel: LanguageModelV3 {
 
                             }
 
-                            // Источники могут приходить даже когда parts отсутствуют — обрабатываем независимо
+                            // Sources can arrive even when parts are missing — handle independently.
                             if let sources = extractSources(
                                 groundingMetadata: candidate.groundingMetadata,
                                 generateId: config.generateId

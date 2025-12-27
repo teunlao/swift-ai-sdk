@@ -83,6 +83,24 @@ public protocol GenerateTextResult: Sendable {
     var experimentalOutput: Output { get throws }
 }
 
+public extension GenerateTextResult {
+    /**
+     Structured output generated via `experimental_output`, if specified.
+
+     - Returns: The parsed structured output when available; otherwise `nil`.
+     - Throws: Any error thrown by `experimentalOutput` other than `NoOutputSpecifiedError`.
+     */
+    var experimentalOutputIfSpecified: Output? {
+        get throws {
+            do {
+                return try experimentalOutput
+            } catch is NoOutputSpecifiedError {
+                return nil
+            }
+        }
+    }
+}
+
 /**
  Default implementation of `GenerateTextResult`.
 

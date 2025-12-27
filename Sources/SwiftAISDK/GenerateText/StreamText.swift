@@ -316,6 +316,7 @@ public func pipeStreamTextToResponse(
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputValue: Sendable>:
+    StreamTextResult,
     @unchecked Sendable
 {
     public typealias Output = OutputValue
@@ -1035,8 +1036,8 @@ private actor StreamTextPipelineAggregator {
         guard !finished else { return }
         finished = true
         if let _ = error {
-            // На ошибке провайдера для ожидателей финала возвращаем
-            // NoOutputGeneratedError (стрим уже завершён с ошибкой отдельно).
+            // On provider error, surface NoOutputGeneratedError to finish waiters
+            // (the stream itself is already terminated with an error separately).
             finishError = NoOutputGeneratedError()
         } else if finishReason == nil || totalUsage == nil || recordedSteps.isEmpty {
             finishError = NoOutputGeneratedError()
@@ -1109,14 +1110,14 @@ private actor StreamTextPipelineAggregator {
     }
 
     private func deliverError(_ error: Error) async {
-        // Сообщаем об ошибке, но не сохраняем её как финальную:
-        // waitForFinish должен бросать NoOutputGeneratedError.
+        // Report the error, but do not store it as the final error:
+        // waitForFinish should throw NoOutputGeneratedError.
         if let onError {
             await onError(error)
         }
     }
 
-    // Ошибка пришла как исключение из стрима (а не .error часть)
+    // Error arrived as a thrown stream error (rather than a `.error` part).
     func notifyThrownError(_ error: Error) async {
         await deliverError(error)
     }

@@ -3,8 +3,8 @@ import AISDKProvider
 import AISDKProviderUtils
 
 /**
- Result container, возвращаемый `streamObject`, предоставляющий доступ к частичным
- результатам, потокам текста и метаданным.
+ Result container returned by `streamObject`, providing access to partial results,
+ text streams, and metadata.
 
  Port of `@ai-sdk/ai/src/generate-object/stream-object-result.ts`.
  */

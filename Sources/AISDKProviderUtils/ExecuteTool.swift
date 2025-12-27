@@ -20,10 +20,10 @@ public enum ToolExecutionOutput<Output: Sendable>: Sendable {
     /// Intermediate streaming result (preliminary).
     case preliminary(Output)
 
-    /// Final результат (может отсутствовать для пустого стрима).
+    /// Final result (may be missing for an empty stream).
     case final(Output?)
 
-    /// Возвращает значение результата (для финального события может быть nil).
+    /// Returns the output value (for a final event it may be nil).
     public var output: Output? {
         switch self {
         case .preliminary(let output):

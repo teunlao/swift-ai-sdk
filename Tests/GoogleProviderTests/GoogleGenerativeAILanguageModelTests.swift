@@ -684,7 +684,7 @@ struct GoogleGenerativeAILanguageModelTests {
         #expect(parts.contains { if case .textDelta(let id, let delta, _) = $0, id == "0" && delta == "Hel" { return true } else { return false } })
         #expect(parts.contains { if case .textDelta(_, let delta, _) = $0, delta == "lo" { return true } else { return false } })
         #expect(parts.contains { if case .reasoningDelta(let id, let delta, let metadata) = $0, id == "1" && delta == " reason" && metadata?["google"]?["thoughtSignature"] == .string("sig") { return true } else { return false } })
-        // Tool-call / tool-result могут отсутствовать в некоторых потоках; проверяем основное содержимое
+        // Tool-call / tool-result may be missing in some streams; validate the core content.
         #expect(parts.contains { element in
             if case .source(let source) = element,
                case let .url(_, url, _, _) = source {

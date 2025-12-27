@@ -1,4 +1,3 @@
-import AISDKJSONSchema
 import ExamplesCore
 import OpenAIProvider
 import SwiftAISDK
@@ -20,10 +19,8 @@ struct GenerateObjectOpenAIStoreGenerationExample: Example {
   static func run() async throws {
     do {
       let stream = try streamObject(
-        model: .v3(openai("gpt-4o")),
-        output: GenerateObjectOutput.object(
-          schema: FlexibleSchema.auto(Response.self)
-        ),
+        model: openai("gpt-4o"),
+        schema: Response.self,
         prompt: "Generate 3 character descriptions for a fantasy role playing game.",
         providerOptions: [
           "openai": [

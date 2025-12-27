@@ -162,7 +162,7 @@ struct ExecuteToolTests {
             outputs.append(output)
         }
 
-        // Пустой стрим → финальное событие с отсутствующим значением (паритет с undefined)
+        // Empty stream → final event with missing value (parity with undefined).
         #expect(outputs.count == 1)
         #expect(outputs[0].isFinal)
         #expect(outputs[0].output == nil)

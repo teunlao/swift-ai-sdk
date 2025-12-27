@@ -3,7 +3,7 @@ import AISDKProvider
 import AISDKProviderUtils
 
 /**
- Streams объект (JSON/array/enum/no-schema) из языковой модели с частичными обновлениями и телеметрией.
+ Streams an object (JSON/array/enum/no-schema) from a language model with partial updates and telemetry.
 
  Port of `@ai-sdk/ai/src/generate-object/stream-object.ts`.
  */
@@ -70,6 +70,45 @@ public func streamObject<ResultValue, PartialValue, ElementStream>(
     }
 
     return result
+}
+
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+public func streamObject<ObjectResult: Codable & Sendable>(
+    model: LanguageModel,
+    schema type: ObjectResult.Type,
+    system: String? = nil,
+    prompt: String? = nil,
+    messages: [ModelMessage]? = nil,
+    schemaName: String? = nil,
+    schemaDescription: String? = nil,
+    mode: GenerateObjectJSONMode = .auto,
+    experimentalRepairText repairText: RepairTextFunction? = nil,
+    experimentalTelemetry telemetry: TelemetrySettings? = nil,
+    experimentalDownload download: DownloadFunction? = nil,
+    providerOptions: ProviderOptions? = nil,
+    onError: StreamObjectOnErrorCallback? = nil,
+    onFinish: StreamObjectOnFinishCallback<ObjectResult>? = nil,
+    internalOptions: GenerateObjectInternalOptions = GenerateObjectInternalOptions(),
+    settings: CallSettings = CallSettings()
+) throws -> StreamObjectResult<[String: JSONValue], ObjectResult, Never> {
+    try streamObject(
+        model: model,
+        schema: FlexibleSchema.auto(type),
+        system: system,
+        prompt: prompt,
+        messages: messages,
+        schemaName: schemaName,
+        schemaDescription: schemaDescription,
+        mode: mode,
+        experimentalRepairText: repairText,
+        experimentalTelemetry: telemetry,
+        experimentalDownload: download,
+        providerOptions: providerOptions,
+        onError: onError,
+        onFinish: onFinish,
+        internalOptions: internalOptions,
+        settings: settings
+    )
 }
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)

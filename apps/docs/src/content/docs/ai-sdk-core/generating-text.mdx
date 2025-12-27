@@ -62,7 +62,8 @@ The result object of `generateText` contains several promises that resolve when 
 - `result.response`: Additional response information, including response messages and body.
 - `result.providerMetadata`: Additional provider-specific metadata.
 - `result.steps`: Details for all steps, useful for getting information about intermediate steps.
-- `result.experimental_output`: The generated structured output using the `experimental_output` specification.
+- `result.experimentalOutput`: The generated structured output (configured via `experimentalOutput:`).
+- `result.experimentalOutputIfSpecified`: Convenience helper that returns `nil` when no output parser was configured (v0.5.4+).
 
 ### Inspecting the full result
 
@@ -97,9 +98,7 @@ print(String(describing: result.response.body))
 
 ### `onFinish` callback
 
-When using `generateText`, you can provide an `onFinish` callback that is triggered after the last step is finished (
-
-).
+When using `generateText`, you can provide an `onFinish` callback that is triggered after the last step is finished.
 It contains the text, usage information, finish reason, messages, steps, total usage, and more:
 
 ```swift

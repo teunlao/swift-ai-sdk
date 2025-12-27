@@ -152,6 +152,24 @@ public protocol StreamTextResult: Sendable {
     func toSSEStream(includeUsage: Bool) -> AsyncThrowingStream<String, Error>
 }
 
+public extension StreamTextResult {
+    /**
+     Parsed structured output when `experimentalOutput` is configured, if specified.
+
+     - Returns: The parsed structured output when available; otherwise `nil`.
+     - Throws: Any error thrown by `experimentalOutput` other than `NoOutputSpecifiedError`.
+     */
+    var experimentalOutputIfSpecified: Output? {
+        get async throws {
+            do {
+                return try await experimentalOutput
+            } catch is NoOutputSpecifiedError {
+                return nil
+            }
+        }
+    }
+}
+
 /**
 Options for consuming a stream result.
  */

@@ -166,13 +166,11 @@ struct JSONSchemaAutoExample: CLIExample {
         Logger.info("Streaming Recipe with nested Ingredient array...")
 
         let stream = try streamObject(
-            model: .v3(openai("gpt-4o")),
-            output: GenerateObjectOutput.object(
-                schema: .auto(Recipe.self),
-                schemaName: "recipe",
-                schemaDescription: "A detailed recipe with ingredients and steps"
-            ),
-            prompt: "Generate a recipe for chocolate chip cookies"
+            model: openai("gpt-4o"),
+            schema: Recipe.self,
+            prompt: "Generate a recipe for chocolate chip cookies",
+            schemaName: "recipe",
+            schemaDescription: "A detailed recipe with ingredients and steps"
         )
 
         var ingredientCount = 0

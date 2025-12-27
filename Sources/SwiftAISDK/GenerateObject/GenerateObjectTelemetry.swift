@@ -3,7 +3,7 @@ import AISDKProvider
 import AISDKProviderUtils
 
 /**
- Telemetry helpers for `generateObject` и `streamObject`.
+ Telemetry helpers for `generateObject` and `streamObject`.
 
  Port of `@ai-sdk/ai/src/generate-object` telemetry wiring.
  */

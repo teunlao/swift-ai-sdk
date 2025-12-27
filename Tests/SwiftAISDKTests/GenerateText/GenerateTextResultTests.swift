@@ -102,6 +102,7 @@ struct GenerateTextResultTests {
         #expect(result.response.messages.count == 1)
         #expect(result.request.body == .string("request-two"))
         #expect(try result.experimentalOutput == "structured-output")
+        #expect(try result.experimentalOutputIfSpecified == "structured-output")
     }
 
     @Test("throws when experimental output missing")
@@ -117,5 +118,7 @@ struct GenerateTextResultTests {
         #expect(throws: NoOutputSpecifiedError.self) {
             _ = try result.experimentalOutput
         }
+
+        #expect(try result.experimentalOutputIfSpecified == nil)
     }
 }

@@ -144,7 +144,25 @@ for try await partial in stream.partialObjectStream {
 }
 ```
 
-You can use `streamObject` to stream generated UIs in combination with React Server Components (see [Generative UI](../ai-sdk-rsc))) or the `useObject` hook.
+### Typed partial decoding (v0.5.3+)
+
+By default, `partialObjectStream` yields `[String: JSONValue]`. If you'd like a typed partial instead, use `decodedPartialObjectStream(as:)`:
+
+```swift
+struct RecipePartial: Codable, Sendable {
+  let name: String?
+  let ingredients: [Ingredient]?
+  let steps: [String]?
+}
+
+for try await partial in stream.decodedPartialObjectStream(as: RecipePartial.self) {
+  print(partial.name ?? "")
+}
+```
+
+This decoding is best-effort: snapshots that can't be decoded are skipped.
+
+You can use `streamObject` to update your UI incrementally as partial JSON arrives (e.g., show progress or render partial sections).
 
 > Note
 > See `streamObject` usage in Swift examples below.
@@ -191,9 +209,9 @@ struct Hero: Codable, Sendable {
   let description: String
 }
 
-let arrayStream = try streamObject(
+let arrayStream = try streamObjectArray(
   model: openai("gpt-4o"),
-  output: .array(schema: FlexibleSchema.auto(Hero.self)),
+  schema: Hero.self,
   prompt: "Generate 3 hero descriptions for a fantasy role playing game.",
   schemaName: "hero",
   schemaDescription: "A hero character for a fantasy RPG."
@@ -215,9 +233,9 @@ and provide a list of possible values in the `enum` parameter.
 
 ```swift
 let genres = ["action","comedy","drama","horror","sci-fi"]
-let enumResult = try await generateObject(
+let enumResult = try await generateObjectEnum(
   model: openai("gpt-4o"),
-  output: .enum(cases: genres),
+  values: genres,
   prompt: "Classify the genre of this movie plot: 'A group of astronauts travel through a wormhole in search of a new habitable planet for humanity.'"
 )
 print(enumResult.object)
@@ -231,9 +249,8 @@ You can use the `output` setting to set the output format to `no-schema` in thos
 and omit the schema parameter.
 
 ```swift
-let noSchema = try await generateObject(
+let noSchema = try await generateObjectNoSchema(
   model: openai("gpt-4o"),
-  output: .noSchema,
   prompt: "Generate a lasagna recipe."
 )
 print(noSchema.object)
@@ -338,7 +355,7 @@ let repaired = try await generateObject(
 
 ## Structured outputs with `generateText` and `streamText`
 
-You can generate structured data with `generateText` and `streamText` by using the `experimental_output` setting.
+You can generate structured data with `generateText` and `streamText` by using the `experimentalOutput` setting.
 
 > Note
 > Some models support structured outputs and tool calling simultaneously with `generateText`/`streamText`.
