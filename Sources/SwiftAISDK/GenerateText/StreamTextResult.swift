@@ -186,7 +186,7 @@ public struct UIMessageStreamOptions<Message: UIMessageConvertible>: Sendable {
         generateMessageId: (@Sendable () -> String)? = nil,
         onFinish: UIMessageStreamOnFinishCallback<Message>? = nil,
         messageMetadata: (@Sendable (TextStreamPart) -> JSONValue?)? = nil,
-        sendReasoning: Bool = false,
+        sendReasoning: Bool = true,
         sendSources: Bool = false,
         sendFinish: Bool = true,
         sendStart: Bool = true,
