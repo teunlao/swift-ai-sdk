@@ -69,7 +69,14 @@ struct BasicTextGeneration: CLIExample {
 
     // Show usage stats
     Logger.separator()
-    let totalTokens = (simple.usage.totalTokens ?? 0) + (withSystem.usage.totalTokens ?? 0) + (creative.usage.totalTokens ?? 0) + (a.usage.totalTokens ?? 0) + (b.usage.totalTokens ?? 0)
+    let tokenCounts = [
+      simple.usage.totalTokens ?? 0,
+      withSystem.usage.totalTokens ?? 0,
+      creative.usage.totalTokens ?? 0,
+      a.usage.totalTokens ?? 0,
+      b.usage.totalTokens ?? 0
+    ]
+    let totalTokens = tokenCounts.reduce(0, +)
     Logger.info("Total tokens used: \(totalTokens)")
   }
 }
