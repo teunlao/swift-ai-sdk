@@ -249,3 +249,50 @@ public final class StreamObjectResult<PartialValue: Sendable, ResultValue: Senda
         }
     }
 }
+
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+public extension StreamObjectResult where PartialValue == [String: JSONValue] {
+    /**
+     Best-effort decoding of `partialObjectStream` into a typed partial structure.
+
+     The underlying stream emits raw partial JSON objects. This helper converts each snapshot to JSON
+     data and attempts to decode it into `Partial`. If decoding fails, the snapshot is skipped and
+     a message is printed to stderr.
+     */
+    func decodedPartialObjectStream<Partial: Decodable & Sendable>(
+        as type: Partial.Type,
+        decoder: JSONDecoder = JSONDecoder()
+    ) -> AsyncIterableStream<Partial> {
+        let stream = partialObjectStream
+
+        return createAsyncIterableStream(
+            source: AsyncThrowingStream { continuation in
+                let worker = Task {
+                    do {
+                        var iterator = stream.makeAsyncIterator()
+                        while let chunk = try await iterator.next() {
+                            do {
+                                let data = try JSONValue.object(chunk).toJSONData(prettyPrinted: false, sortedKeys: false)
+                                let decoded = try decoder.decode(Partial.self, from: data)
+                                continuation.yield(decoded)
+                            } catch {
+                                fputs("streamObject partial decode error: \(error)\n", stderr)
+                                continue
+                            }
+                        }
+                        continuation.finish()
+                    } catch is CancellationError {
+                        continuation.finish()
+                    } catch {
+                        continuation.finish(throwing: error)
+                    }
+                }
+
+                continuation.onTermination = { _ in
+                    worker.cancel()
+                    Task { await stream.cancel() }
+                }
+            }
+        )
+    }
+}

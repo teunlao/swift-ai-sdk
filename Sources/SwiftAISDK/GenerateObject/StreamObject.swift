@@ -72,6 +72,192 @@ public func streamObject<ResultValue, PartialValue, ElementStream>(
     return result
 }
 
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+public func streamObject<ObjectResult>(
+    model: LanguageModel,
+    schema: FlexibleSchema<ObjectResult>,
+    system: String? = nil,
+    prompt: String? = nil,
+    messages: [ModelMessage]? = nil,
+    schemaName: String? = nil,
+    schemaDescription: String? = nil,
+    mode: GenerateObjectJSONMode = .auto,
+    experimentalRepairText repairText: RepairTextFunction? = nil,
+    experimentalTelemetry telemetry: TelemetrySettings? = nil,
+    experimentalDownload download: DownloadFunction? = nil,
+    providerOptions: ProviderOptions? = nil,
+    onError: StreamObjectOnErrorCallback? = nil,
+    onFinish: StreamObjectOnFinishCallback<ObjectResult>? = nil,
+    internalOptions: GenerateObjectInternalOptions = GenerateObjectInternalOptions(),
+    settings: CallSettings = CallSettings()
+) throws -> StreamObjectResult<[String: JSONValue], ObjectResult, Never> {
+    try streamObject(
+        model: model,
+        output: GenerateObjectOutput.object(
+            schema: schema,
+            schemaName: schemaName,
+            schemaDescription: schemaDescription,
+            mode: mode
+        ),
+        system: system,
+        prompt: prompt,
+        messages: messages,
+        experimentalRepairText: repairText,
+        experimentalTelemetry: telemetry,
+        experimentalDownload: download,
+        providerOptions: providerOptions,
+        onError: onError,
+        onFinish: onFinish,
+        internalOptions: internalOptions,
+        settings: settings
+    )
+}
+
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+public func streamObjectNoSchema(
+    model: LanguageModel,
+    system: String? = nil,
+    prompt: String? = nil,
+    messages: [ModelMessage]? = nil,
+    experimentalRepairText repairText: RepairTextFunction? = nil,
+    experimentalTelemetry telemetry: TelemetrySettings? = nil,
+    experimentalDownload download: DownloadFunction? = nil,
+    providerOptions: ProviderOptions? = nil,
+    onError: StreamObjectOnErrorCallback? = nil,
+    onFinish: StreamObjectOnFinishCallback<JSONValue>? = nil,
+    internalOptions: GenerateObjectInternalOptions = GenerateObjectInternalOptions(),
+    settings: CallSettings = CallSettings()
+) throws -> StreamObjectResult<JSONValue, JSONValue, Never> {
+    try streamObject(
+        model: model,
+        output: GenerateObjectOutput.noSchema(),
+        system: system,
+        prompt: prompt,
+        messages: messages,
+        experimentalRepairText: repairText,
+        experimentalTelemetry: telemetry,
+        experimentalDownload: download,
+        providerOptions: providerOptions,
+        onError: onError,
+        onFinish: onFinish,
+        internalOptions: internalOptions,
+        settings: settings
+    )
+}
+
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+public func streamObjectArray<ElementResult: Codable & Sendable>(
+    model: LanguageModel,
+    schema elementType: ElementResult.Type,
+    system: String? = nil,
+    prompt: String? = nil,
+    messages: [ModelMessage]? = nil,
+    schemaName: String? = nil,
+    schemaDescription: String? = nil,
+    mode: GenerateObjectJSONMode = .auto,
+    experimentalRepairText repairText: RepairTextFunction? = nil,
+    experimentalTelemetry telemetry: TelemetrySettings? = nil,
+    experimentalDownload download: DownloadFunction? = nil,
+    providerOptions: ProviderOptions? = nil,
+    onError: StreamObjectOnErrorCallback? = nil,
+    onFinish: StreamObjectOnFinishCallback<[ElementResult]>? = nil,
+    internalOptions: GenerateObjectInternalOptions = GenerateObjectInternalOptions(),
+    settings: CallSettings = CallSettings()
+) throws -> StreamObjectResult<[ElementResult], [ElementResult], AsyncIterableStream<ElementResult>> {
+    try streamObjectArray(
+        model: model,
+        schema: FlexibleSchema.auto(elementType),
+        system: system,
+        prompt: prompt,
+        messages: messages,
+        schemaName: schemaName,
+        schemaDescription: schemaDescription,
+        mode: mode,
+        experimentalRepairText: repairText,
+        experimentalTelemetry: telemetry,
+        experimentalDownload: download,
+        providerOptions: providerOptions,
+        onError: onError,
+        onFinish: onFinish,
+        internalOptions: internalOptions,
+        settings: settings
+    )
+}
+
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+public func streamObjectArray<ElementResult>(
+    model: LanguageModel,
+    schema: FlexibleSchema<ElementResult>,
+    system: String? = nil,
+    prompt: String? = nil,
+    messages: [ModelMessage]? = nil,
+    schemaName: String? = nil,
+    schemaDescription: String? = nil,
+    mode: GenerateObjectJSONMode = .auto,
+    experimentalRepairText repairText: RepairTextFunction? = nil,
+    experimentalTelemetry telemetry: TelemetrySettings? = nil,
+    experimentalDownload download: DownloadFunction? = nil,
+    providerOptions: ProviderOptions? = nil,
+    onError: StreamObjectOnErrorCallback? = nil,
+    onFinish: StreamObjectOnFinishCallback<[ElementResult]>? = nil,
+    internalOptions: GenerateObjectInternalOptions = GenerateObjectInternalOptions(),
+    settings: CallSettings = CallSettings()
+) throws -> StreamObjectResult<[ElementResult], [ElementResult], AsyncIterableStream<ElementResult>> {
+    try streamObject(
+        model: model,
+        output: GenerateObjectOutput.array(
+            schema: schema,
+            schemaName: schemaName,
+            schemaDescription: schemaDescription,
+            mode: mode
+        ),
+        system: system,
+        prompt: prompt,
+        messages: messages,
+        experimentalRepairText: repairText,
+        experimentalTelemetry: telemetry,
+        experimentalDownload: download,
+        providerOptions: providerOptions,
+        onError: onError,
+        onFinish: onFinish,
+        internalOptions: internalOptions,
+        settings: settings
+    )
+}
+
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+public func streamObjectEnum(
+    model: LanguageModel,
+    values: [String],
+    system: String? = nil,
+    prompt: String? = nil,
+    messages: [ModelMessage]? = nil,
+    experimentalRepairText repairText: RepairTextFunction? = nil,
+    experimentalTelemetry telemetry: TelemetrySettings? = nil,
+    experimentalDownload download: DownloadFunction? = nil,
+    providerOptions: ProviderOptions? = nil,
+    onError: StreamObjectOnErrorCallback? = nil,
+    onFinish: StreamObjectOnFinishCallback<String>? = nil,
+    internalOptions: GenerateObjectInternalOptions = GenerateObjectInternalOptions(),
+    settings: CallSettings = CallSettings()
+) throws -> StreamObjectResult<String, String, Never> {
+    try streamObject(
+        model: model,
+        output: GenerateObjectOutput.enumeration(values: values),
+        system: system,
+        prompt: prompt,
+        messages: messages,
+        experimentalRepairText: repairText,
+        experimentalTelemetry: telemetry,
+        experimentalDownload: download,
+        providerOptions: providerOptions,
+        onError: onError,
+        onFinish: onFinish,
+        internalOptions: internalOptions,
+        settings: settings
+    )
+}
+
 // MARK: - Internal implementation
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)

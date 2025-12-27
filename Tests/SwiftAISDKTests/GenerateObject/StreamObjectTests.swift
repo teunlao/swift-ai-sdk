@@ -6,6 +6,10 @@ import AISDKProvider
 
 @Suite("streamObject")
 struct StreamObjectTests {
+    private struct ContentPartial: Codable, Equatable, Sendable {
+        let content: String?
+    }
+
     private let defaultUsage = LanguageModelUsage(
         inputTokens: 3,
         outputTokens: 10,
@@ -76,6 +80,26 @@ struct StreamObjectTests {
         #expect(call.options.responseFormat == .json(schema: resolvedSchema, name: "test-name", description: "test description"))
     }
 
+    @Test("object output has schema convenience overload")
+    func objectOutputSchemaOverload() async throws {
+        let model = MockStreamLanguageModel(
+            parts: defaultParts()
+        )
+
+        let _ = try streamObject(
+            model: .v3(model),
+            schema: defaultObjectSchema(),
+            prompt: "prompt",
+            schemaName: "test-name",
+            schemaDescription: "test description"
+        )
+
+        let call = await model.waitForFirstCall()
+
+        let resolvedSchema = try await defaultObjectSchema().resolve().jsonSchema()
+        #expect(call.options.responseFormat == .json(schema: resolvedSchema, name: "test-name", description: "test description"))
+    }
+
     @Test("array output exposes element stream")
     func arrayOutputElementStream() async throws {
         let model = MockStreamLanguageModel(parts: arrayParts())
@@ -106,6 +130,43 @@ struct StreamObjectTests {
             model: .v3(model),
             output: GenerateObjectOutput.array(schema: elementSchema, schemaName: "array"),
             prompt: "prompt"
+        )
+
+        let elements = try await convertAsyncIterableToArray(result.elementStream)
+        #expect(elements == [1, 2, 3])
+    }
+
+    @Test("array output has schema convenience overload")
+    func arrayOutputSchemaOverload() async throws {
+        let model = MockStreamLanguageModel(parts: arrayParts())
+
+        let elementSchema: FlexibleSchema<Int> = FlexibleSchema(
+            jsonSchema(
+                .object([
+                    "type": .string("object"),
+                    "properties": .object([
+                        "value": .object(["type": .string("string")])
+                    ]),
+                    "required": .array([.string("value")]),
+                    "additionalProperties": .bool(false)
+                ])
+            ) { value in
+                guard let dictionary = value as? [String: Any],
+                      let stringValue = dictionary["value"] as? String,
+                      let intValue = Int(stringValue) else {
+                    let error = SchemaTypeMismatchError(expected: Int.self, actual: value)
+                    let wrapped = TypeValidationError.wrap(value: value, cause: error)
+                    return .failure(error: wrapped)
+                }
+                return .success(value: intValue)
+            }
+        )
+
+        let result = try streamObjectArray(
+            model: .v3(model),
+            schema: elementSchema,
+            prompt: "prompt",
+            schemaName: "array"
         )
 
         let elements = try await convertAsyncIterableToArray(result.elementStream)
@@ -171,6 +232,28 @@ struct StreamObjectTests {
 
         let text = try await convertAsyncIterableToArray(result.textStream)
         #expect(text == ["{ ", "\"content\": \"Hello, ", "world", "!\"", " }"])
+    }
+
+    @Test("partial object stream can be decoded into a typed partial")
+    func decodedPartialObjectStream() async throws {
+        let model = MockStreamLanguageModel(parts: defaultParts())
+
+        let result = try streamObject(
+            model: .v3(model),
+            schema: defaultObjectSchema(),
+            prompt: "prompt"
+        )
+
+        let decoded = try await convertAsyncIterableToArray(
+            result.decodedPartialObjectStream(as: ContentPartial.self)
+        )
+
+        #expect(decoded == [
+            ContentPartial(content: nil),
+            ContentPartial(content: "Hello, "),
+            ContentPartial(content: "Hello, world"),
+            ContentPartial(content: "Hello, world!")
+        ])
     }
 
     // MARK: - Helpers
