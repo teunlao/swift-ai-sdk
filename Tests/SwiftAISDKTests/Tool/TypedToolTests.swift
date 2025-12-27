@@ -127,4 +127,51 @@ struct TypedToolTests {
 
         #expect(type == "string")
     }
+
+    @Test("toModelOutput falls back to raw JSON when decoding fails")
+    func toModelOutputDecodingFailureFallsBack() async throws {
+        struct Output: Codable, Equatable, Sendable { let value: String }
+
+        let typedTool = tool(
+            description: "Fallback",
+            inputSchema: WeatherQuery.self,
+            outputSchema: FlexibleSchema.auto(Output.self),
+            execute: { (_: WeatherQuery, _) async throws -> Output in
+                Output(value: "ok")
+            },
+            toModelOutput: { output in
+                .text(value: output.value)
+            }
+        )
+
+        guard let toModelOutput = typedTool.tool.toModelOutput else {
+            Issue.record("Expected tool.toModelOutput to be set")
+            return
+        }
+
+        let raw: JSONValue = .string("not-an-object")
+        let converted = toModelOutput(raw)
+
+        #expect(converted == .json(value: raw))
+
+        let dynamic = dynamicTool(
+            description: "DynamicFallback",
+            inputSchema: WeatherQuery.self,
+            outputSchema: FlexibleSchema.auto(Output.self),
+            execute: { (_: WeatherQuery, _) async throws -> ToolExecutionResult<Output> in
+                .value(Output(value: "ok"))
+            },
+            toModelOutput: { output in
+                .text(value: output.value)
+            }
+        )
+
+        guard let dynamicToModelOutput = dynamic.toModelOutput else {
+            Issue.record("Expected dynamicTool.toModelOutput to be set")
+            return
+        }
+
+        let dynamicConverted = dynamicToModelOutput(raw)
+        #expect(dynamicConverted == .json(value: raw))
+    }
 }
