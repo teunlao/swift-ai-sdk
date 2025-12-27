@@ -46,9 +46,29 @@ struct BasicTextGeneration: CLIExample {
     )
     print(creative.text)
 
+
+    // Example 4: Request objects (base + override)
+    Logger.section("Example 4: Request Objects (Base + Override)")
+
+    let baseRequest = GenerateTextRequest(
+      model: openai("gpt-4o"),
+      providerOptions: ["openai": ["reasoningEffort": .string("low")]],
+      settings: CallSettings(maxRetries: 2)
+    )
+
+    var reqA = baseRequest
+    reqA.prompt = "Write a one-line tagline for the Swift AI SDK."
+    let a = try await generateText(reqA)
+    print(a.text)
+
+    var reqB = baseRequest
+    reqB.prompt = "Write a one-line tagline for the TypeScript AI SDK."
+    let b = try await generateText(reqB)
+    print(b.text)
+
     // Show usage stats
     Logger.separator()
-    let totalTokens = (simple.usage.totalTokens ?? 0) + (withSystem.usage.totalTokens ?? 0) + (creative.usage.totalTokens ?? 0)
+    let totalTokens = (simple.usage.totalTokens ?? 0) + (withSystem.usage.totalTokens ?? 0) + (creative.usage.totalTokens ?? 0) + (a.usage.totalTokens ?? 0) + (b.usage.totalTokens ?? 0)
     Logger.info("Total tokens used: \(totalTokens)")
   }
 }
