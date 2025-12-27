@@ -50,8 +50,9 @@ struct BasicTextGeneration: CLIExample {
     // Example 4: Request objects (base + override)
     Logger.section("Example 4: Request Objects (Base + Override)")
 
+    let requestModel = try openai("gpt-4o")
     let baseRequest = GenerateTextRequest(
-      model: openai("gpt-4o"),
+      model: requestModel,
       providerOptions: ["openai": ["reasoningEffort": .string("low")]],
       settings: CallSettings(maxRetries: 2)
     )

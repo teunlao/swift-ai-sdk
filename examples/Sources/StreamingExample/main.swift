@@ -23,7 +23,8 @@ struct StreamingExample: CLIExample {
     Logger.separator()
 
     // Stream text - request objects let you build a reusable base config.
-    var request = StreamTextRequest(model: openai("gpt-4o"))
+    let model = try openai("gpt-4o")
+    var request = StreamTextRequest(model: model)
     request.prompt = prompt
     request.onFinish = { finalStep, steps, totalUsage, finishReason in
       // Called when streaming completes

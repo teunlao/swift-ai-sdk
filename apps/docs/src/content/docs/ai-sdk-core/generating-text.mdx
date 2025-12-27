@@ -54,8 +54,10 @@ Swift requires passing function arguments in the declared order. When calls beco
 import SwiftAISDK
 import OpenAIProvider
 
+let model = try openai("gpt-5")
+
 let base = GenerateTextRequest(
-  model: openai("gpt-5"),
+  model: model,
   toolChoice: .auto,
   providerOptions: ["openai": ["reasoningEffort": .string("low")]],
   settings: CallSettings(maxRetries: 2)
@@ -176,8 +178,10 @@ for try await textPart in result.textStream {
 import SwiftAISDK
 import OpenAIProvider
 
+let model = try openai("gpt-5")
+
 let base = StreamTextRequest(
-  model: openai("gpt-5"),
+  model: model,
   providerOptions: ["openai": ["reasoningEffort": .string("low")]],
   settings: CallSettings(maxRetries: 2)
 )
