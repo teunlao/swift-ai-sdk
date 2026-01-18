@@ -444,14 +444,14 @@ private func appendAssistantMessageParts(
                     "type": .string("server_tool_use"),
                     "id": .string(toolCallPart.toolCallId),
                     "name": .string(toolCallPart.toolName),
-                    "input": .string(stringifyJSONValue(toolCallPart.input))
+                    "input": toolCallPart.input
                 ]
             } else {
                 payload = [
                     "type": .string("tool_use"),
                     "id": .string(toolCallPart.toolCallId),
                     "name": .string(toolCallPart.toolName),
-                    "input": .string(stringifyJSONValue(toolCallPart.input))
+                    "input": toolCallPart.input
                 ]
             }
             if let cacheControlJSON { payload["cache_control"] = cacheControlJSON }

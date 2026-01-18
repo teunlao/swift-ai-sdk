@@ -457,7 +457,39 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
                         "type": .string("server_tool_use"),
                         "id": .string("tool-1"),
                         "name": .string("code_execution"),
-                        "input": .string(jsonString(.object(["code": .string("print('hi')")])))
+                        "input": .object(["code": .string("print('hi')")])
+                    ])
+                ]
+            )
+        ])
+    }
+
+    @Test("assistant tool call mapped to tool use with object input")
+    func assistantToolCallUsesObjectInput() async throws {
+        let toolCall = LanguageModelV3MessagePart.toolCall(
+            .init(
+                toolCallId: "tool-1",
+                toolName: "read",
+                input: .object(["path": .string("hello.txt")]),
+                providerExecuted: false
+            )
+        )
+        let prompt: LanguageModelV3Prompt = [
+            .assistant(content: [toolCall], providerOptions: nil)
+        ]
+
+        let (result, warnings) = try await convert(prompt)
+
+        #expect(warnings.isEmpty)
+        #expect(result.prompt.messages == [
+            AnthropicMessage(
+                role: "assistant",
+                content: [
+                    .object([
+                        "type": .string("tool_use"),
+                        "id": .string("tool-1"),
+                        "name": .string("read"),
+                        "input": .object(["path": .string("hello.txt")])
                     ])
                 ]
             )

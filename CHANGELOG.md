@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.5.6] - 2026-01-18
+
+### Fixed
+- Anthropic: serialize tool call `input` as a JSON object (not a JSON string) to prevent 500 errors in multi-turn tool-use conversations.
+
 ## [0.1.1] - 2025-10-21
 
 ### Changed
