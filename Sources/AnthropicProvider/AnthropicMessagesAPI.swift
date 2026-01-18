@@ -105,6 +105,9 @@ public enum AnthropicMessageContent: Codable, Sendable {
     case redactedThinking(RedactedThinkingContent)
     case toolUse(ToolUseContent)
     case serverToolUse(ServerToolUseContent)
+    case mcpToolUse(McpToolUseContent)
+    case mcpToolResult(McpToolResultContent)
+    case toolSearchToolResult(ToolSearchToolResultContent)
     case webFetchResult(WebFetchToolResultContent)
     case webSearchResult(WebSearchToolResultContent)
     case codeExecutionResult(CodeExecutionToolResultContent)
@@ -119,6 +122,9 @@ public enum AnthropicMessageContent: Codable, Sendable {
         case redactedThinking = "redacted_thinking"
         case toolUse = "tool_use"
         case serverToolUse = "server_tool_use"
+        case mcpToolUse = "mcp_tool_use"
+        case mcpToolResult = "mcp_tool_result"
+        case toolSearchToolResult = "tool_search_tool_result"
         case webFetchToolResult = "web_fetch_tool_result"
         case webSearchToolResult = "web_search_tool_result"
         case codeExecutionToolResult = "code_execution_tool_result"
@@ -143,6 +149,12 @@ public enum AnthropicMessageContent: Codable, Sendable {
             self = .toolUse(try singleValue.decode(ToolUseContent.self))
         case .serverToolUse:
             self = .serverToolUse(try singleValue.decode(ServerToolUseContent.self))
+        case .mcpToolUse:
+            self = .mcpToolUse(try singleValue.decode(McpToolUseContent.self))
+        case .mcpToolResult:
+            self = .mcpToolResult(try singleValue.decode(McpToolResultContent.self))
+        case .toolSearchToolResult:
+            self = .toolSearchToolResult(try singleValue.decode(ToolSearchToolResultContent.self))
         case .webFetchToolResult:
             self = .webFetchResult(try singleValue.decode(WebFetchToolResultContent.self))
         case .webSearchToolResult:
@@ -163,6 +175,12 @@ public enum AnthropicMessageContent: Codable, Sendable {
         case .toolUse(let value):
             try value.encode(to: encoder)
         case .serverToolUse(let value):
+            try value.encode(to: encoder)
+        case .mcpToolUse(let value):
+            try value.encode(to: encoder)
+        case .mcpToolResult(let value):
+            try value.encode(to: encoder)
+        case .toolSearchToolResult(let value):
             try value.encode(to: encoder)
         case .webFetchResult(let value):
             try value.encode(to: encoder)
@@ -232,6 +250,57 @@ public struct ServerToolUseContent: Codable, Sendable {
         id = try container.decode(String.self, forKey: .id)
         name = try container.decode(String.self, forKey: .name)
         input = try? container.decode(JSONValue.self, forKey: .input)
+    }
+}
+
+public struct McpToolUseContent: Codable, Sendable {
+    public let type: String
+    public let id: String
+    public let name: String
+    public let serverName: String
+    public let input: JSONValue?
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case id
+        case name
+        case serverName = "server_name"
+        case input
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        type = try container.decode(String.self, forKey: .type)
+        id = try container.decode(String.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        serverName = try container.decode(String.self, forKey: .serverName)
+        input = try? container.decode(JSONValue.self, forKey: .input)
+    }
+}
+
+public struct McpToolResultContent: Codable, Sendable {
+    public let type: String
+    public let toolUseId: String
+    public let isError: Bool
+    public let content: JSONValue
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case toolUseId = "tool_use_id"
+        case isError = "is_error"
+        case content
+    }
+}
+
+public struct ToolSearchToolResultContent: Codable, Sendable {
+    public let type: String
+    public let toolUseId: String
+    public let content: JSONValue
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case toolUseId = "tool_use_id"
+        case content
     }
 }
 

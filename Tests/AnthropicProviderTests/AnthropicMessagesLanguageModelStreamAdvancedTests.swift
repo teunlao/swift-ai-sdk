@@ -256,6 +256,125 @@ struct AnthropicMessagesLanguageModelStreamAdvancedTests {
         }
     }
 
+    @Test("streams tool_search_tool_regex server tool use and tool_search_tool_result")
+    func streamToolSearchTool() async throws {
+        let payloads = [
+            #"{"type":"message_start","message":{"id":"msg_tool_search","type":"message","role":"assistant","model":"claude-sonnet-4-5-20250929","stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":1,"output_tokens":1},"content":[]}}"#,
+            #"{"type":"content_block_start","index":0,"content_block":{"type":"server_tool_use","id":"srvtoolu_01SACvPAnp6ucMJsstB5qb3f","name":"tool_search_tool_regex","input":{}}}"#,
+            #"{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"pattern\":\"weather|forecast\",\"limit\":10}"}}"#,
+            #"{"type":"content_block_stop","index":0}"#,
+            #"{"type":"content_block_start","index":1,"content_block":{"type":"tool_search_tool_result","tool_use_id":"srvtoolu_01SACvPAnp6ucMJsstB5qb3f","content":{"type":"tool_search_tool_search_result","tool_references":[{"type":"tool_reference","tool_name":"get_weather"}]}}}"#,
+            #"{"type":"content_block_stop","index":1}"#,
+            #"{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"input_tokens":1,"output_tokens":1}}"#,
+            #"{"type":"message_stop"}"#,
+        ]
+        let events = events(from: payloads)
+
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .stream(makeStream(from: events)), urlResponse: makeHTTPResponse())
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-sonnet-4-5-20250929"),
+            config: makeAdvancedConfig(fetch: fetch)
+        )
+
+        let result = try await model.doStream(options: .init(prompt: advancedTestPrompt))
+        let parts = try await collectParts(from: result.stream)
+
+        let toolCall = parts.first { part in
+            if case .toolCall(let call) = part {
+                return call.toolCallId == "srvtoolu_01SACvPAnp6ucMJsstB5qb3f"
+                    && call.toolName == "tool_search_tool_regex"
+                    && call.providerExecuted == true
+            }
+            return false
+        }
+        #expect(toolCall != nil)
+
+        let toolResult = parts.first { part in
+            if case .toolResult(let result) = part {
+                return result.toolCallId == "srvtoolu_01SACvPAnp6ucMJsstB5qb3f"
+                    && result.toolName == "tool_search_tool_regex"
+                    && result.providerExecuted == true
+                    && result.result == .array([
+                        .object([
+                            "type": .string("tool_reference"),
+                            "toolName": .string("get_weather"),
+                        ])
+                    ])
+            }
+            return false
+        }
+        #expect(toolResult != nil)
+    }
+
+    @Test("streams mcp_tool_use and mcp_tool_result blocks")
+    func streamMcpToolUse() async throws {
+        let payloads = [
+            #"{"type":"message_start","message":{"id":"msg_mcp","type":"message","role":"assistant","model":"claude-sonnet-4-5-20250929","stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":1,"output_tokens":1},"content":[]}}"#,
+            #"{"type":"content_block_start","index":0,"content_block":{"type":"mcp_tool_use","id":"mcptoolu_01HXPYHs79HH36fBbKHysCrp","name":"echo","server_name":"echo","input":{}}}"#,
+            #"{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{}"}}"#,
+            #"{"type":"content_block_stop","index":0}"#,
+            #"{"type":"content_block_start","index":1,"content_block":{"type":"mcp_tool_result","tool_use_id":"mcptoolu_01HXPYHs79HH36fBbKHysCrp","is_error":false,"content":[{"type":"text","text":"Tool echo: hello world"}]}}"#,
+            #"{"type":"content_block_stop","index":1}"#,
+            #"{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"input_tokens":1,"output_tokens":1}}"#,
+            #"{"type":"message_stop"}"#,
+        ]
+        let events = events(from: payloads)
+
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .stream(makeStream(from: events)), urlResponse: makeHTTPResponse())
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-sonnet-4-5-20250929"),
+            config: makeAdvancedConfig(fetch: fetch)
+        )
+
+        let result = try await model.doStream(options: .init(prompt: advancedTestPrompt))
+        let parts = try await collectParts(from: result.stream)
+
+        let toolCall = parts.first { part in
+            if case .toolCall(let call) = part {
+                return call.toolCallId == "mcptoolu_01HXPYHs79HH36fBbKHysCrp"
+                    && call.toolName == "echo"
+                    && call.providerExecuted == true
+                    && call.providerMetadata == [
+                        "anthropic": [
+                            "type": .string("mcp-tool-use"),
+                            "serverName": .string("echo"),
+                        ]
+                    ]
+            }
+            return false
+        }
+        #expect(toolCall != nil)
+
+        let toolResult = parts.first { part in
+            if case .toolResult(let result) = part {
+                return result.toolCallId == "mcptoolu_01HXPYHs79HH36fBbKHysCrp"
+                    && result.toolName == "echo"
+                    && result.providerExecuted == true
+                    && result.isError == false
+                    && result.providerMetadata == [
+                        "anthropic": [
+                            "type": .string("mcp-tool-use"),
+                            "serverName": .string("echo"),
+                        ]
+                    ]
+                    && result.result == .array([
+                        .object([
+                            "type": .string("text"),
+                            "text": .string("Tool echo: hello world"),
+                        ])
+                    ])
+            }
+            return false
+        }
+        #expect(toolResult != nil)
+    }
+
     @Test("streams reasoning blocks with signature metadata")
     func streamReasoningWithSignature() async throws {
         let payloads = [

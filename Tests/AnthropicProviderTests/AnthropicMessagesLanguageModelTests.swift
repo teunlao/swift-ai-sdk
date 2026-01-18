@@ -23,7 +23,7 @@ private func makeConfig(fetch: @escaping FetchFunction) -> AnthropicMessagesConf
 }
 
 @Suite("AnthropicMessagesLanguageModel doGenerate")
-struct AnthropicMessagesLanguageModelGenerateTests {
+    struct AnthropicMessagesLanguageModelGenerateTests {
     actor RequestCapture {
         var request: URLRequest?
         func store(_ request: URLRequest) { self.request = request }
@@ -101,6 +101,150 @@ struct AnthropicMessagesLanguageModelGenerateTests {
         } else {
             Issue.record("Missing captured request")
         }
+    }
+
+    @Test("maps tool_search and mcp tool blocks into tool-call and tool-result content")
+    func mapsToolSearchAndMcpBlocks() async throws {
+        let responseJSON: [String: Any] = [
+            "type": "message",
+            "id": "msg_tool_search_mcp",
+            "model": "claude-sonnet-4-5-20250929",
+            "content": [
+                [
+                    "type": "server_tool_use",
+                    "id": "srvtoolu_01SACvPAnp6ucMJsstB5qb3f",
+                    "name": "tool_search_tool_regex",
+                    "input": [
+                        "pattern": "weather|forecast",
+                        "limit": 10,
+                    ],
+                    "caller": ["type": "direct"],
+                ],
+                [
+                    "type": "tool_search_tool_result",
+                    "tool_use_id": "srvtoolu_01SACvPAnp6ucMJsstB5qb3f",
+                    "content": [
+                        "type": "tool_search_tool_search_result",
+                        "tool_references": [
+                            [
+                                "type": "tool_reference",
+                                "tool_name": "get_weather",
+                            ]
+                        ],
+                    ],
+                ],
+                [
+                    "type": "mcp_tool_use",
+                    "id": "mcptoolu_01HXPYHs79HH36fBbKHysCrp",
+                    "name": "echo",
+                    "server_name": "echo",
+                    "input": [:] as [String: Any],
+                ],
+                [
+                    "type": "mcp_tool_result",
+                    "tool_use_id": "mcptoolu_01HXPYHs79HH36fBbKHysCrp",
+                    "is_error": false,
+                    "content": [
+                        [
+                            "type": "text",
+                            "text": "Tool echo: hello world",
+                        ]
+                    ],
+                ],
+                [
+                    "type": "text",
+                    "text": "done",
+                ],
+            ],
+            "stop_reason": "end_turn",
+            "stop_sequence": NSNull(),
+            "usage": [
+                "input_tokens": 1,
+                "output_tokens": 1,
+            ],
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.anthropic.com/v1/messages")!,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: nil
+        )!
+
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-sonnet-4-5-20250929"),
+            config: makeConfig(fetch: fetch)
+        )
+
+        let result = try await model.doGenerate(options: .init(prompt: testPrompt))
+
+        func decodeJSONValue(_ string: String) -> JSONValue? {
+            guard let data = string.data(using: .utf8) else { return nil }
+            return try? JSONDecoder().decode(JSONValue.self, from: data)
+        }
+
+        let toolCalls = result.content.compactMap { item -> LanguageModelV3ToolCall? in
+            guard case .toolCall(let call) = item else { return nil }
+            return call
+        }
+        #expect(toolCalls.count == 2)
+
+        let toolSearchCall = toolCalls.first { $0.toolCallId == "srvtoolu_01SACvPAnp6ucMJsstB5qb3f" }
+        #expect(toolSearchCall?.toolName == "tool_search_tool_regex")
+        #expect(toolSearchCall?.providerExecuted == true)
+        #expect(decodeJSONValue(toolSearchCall?.input ?? "") == .object([
+            "pattern": .string("weather|forecast"),
+            "limit": .number(10),
+        ]))
+
+        let mcpCall = toolCalls.first { $0.toolCallId == "mcptoolu_01HXPYHs79HH36fBbKHysCrp" }
+        #expect(mcpCall?.toolName == "echo")
+        #expect(mcpCall?.providerExecuted == true)
+        #expect(decodeJSONValue(mcpCall?.input ?? "") == .object([:]))
+        #expect(mcpCall?.providerMetadata == [
+            "anthropic": [
+                "type": .string("mcp-tool-use"),
+                "serverName": .string("echo"),
+            ]
+        ])
+
+        let toolResults = result.content.compactMap { item -> LanguageModelV3ToolResult? in
+            guard case .toolResult(let result) = item else { return nil }
+            return result
+        }
+        #expect(toolResults.count == 2)
+
+        let toolSearchResult = toolResults.first { $0.toolCallId == "srvtoolu_01SACvPAnp6ucMJsstB5qb3f" }
+        #expect(toolSearchResult?.toolName == "tool_search_tool_regex")
+        #expect(toolSearchResult?.providerExecuted == true)
+        #expect(toolSearchResult?.result == .array([
+            .object([
+                "type": .string("tool_reference"),
+                "toolName": .string("get_weather"),
+            ])
+        ]))
+
+        let mcpResult = toolResults.first { $0.toolCallId == "mcptoolu_01HXPYHs79HH36fBbKHysCrp" }
+        #expect(mcpResult?.toolName == "echo")
+        #expect(mcpResult?.providerExecuted == true)
+        #expect(mcpResult?.isError == false)
+        #expect(mcpResult?.providerMetadata == [
+            "anthropic": [
+                "type": .string("mcp-tool-use"),
+                "serverName": .string("echo"),
+            ]
+        ])
+        #expect(mcpResult?.result == .array([
+            .object([
+                "type": .string("text"),
+                "text": .string("Tool echo: hello world"),
+            ])
+        ]))
     }
 
     @Test("thinking enabled adjusts request and warnings")

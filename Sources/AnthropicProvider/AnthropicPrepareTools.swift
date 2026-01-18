@@ -78,6 +78,24 @@ public func prepareAnthropicTools(
                let cacheJSON = cacheControlJSON(from: cacheControl) {
                 payload["cache_control"] = cacheJSON
             }
+            if let anthropicOptions = functionTool.providerOptions?["anthropic"] {
+                if let deferLoadingValue = anthropicOptions["deferLoading"],
+                   case .bool(let deferLoading) = deferLoadingValue {
+                    payload["defer_loading"] = .bool(deferLoading)
+                }
+
+                if let allowedCallersValue = anthropicOptions["allowedCallers"],
+                   case .array(let allowedCallersArray) = allowedCallersValue {
+                    let callers: [JSONValue] = allowedCallersArray.compactMap { value in
+                        guard case .string(let string) = value else { return nil }
+                        return .string(string)
+                    }
+                    if callers.count == allowedCallersArray.count {
+                        payload["allowed_callers"] = .array(callers)
+                        betas.insert("advanced-tool-use-2025-11-20")
+                    }
+                }
+            }
             anthropicTools.append(.object(payload))
 
         case .providerDefined(let providerTool):
@@ -232,6 +250,20 @@ public func prepareAnthropicTools(
                     }
                 }
                 anthropicTools.append(.object(payload))
+
+            case "anthropic.tool_search_regex_20251119":
+                betas.insert("advanced-tool-use-2025-11-20")
+                anthropicTools.append(.object([
+                    "type": .string("tool_search_tool_regex_20251119"),
+                    "name": .string("tool_search_tool_regex")
+                ]))
+
+            case "anthropic.tool_search_bm25_20251119":
+                betas.insert("advanced-tool-use-2025-11-20")
+                anthropicTools.append(.object([
+                    "type": .string("tool_search_tool_bm25_20251119"),
+                    "name": .string("tool_search_tool_bm25")
+                ]))
 
             default:
                 toolWarnings.append(.unsupportedTool(tool: .providerDefined(providerTool), details: nil))

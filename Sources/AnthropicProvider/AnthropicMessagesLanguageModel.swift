@@ -151,6 +151,8 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
             Task {
                 var contentBlocks: [Int: ContentBlockState] = [:]
                 var blockType: String?
+                var serverToolCalls: [String: String] = [:]
+                var mcpToolCalls: [String: (toolName: String, providerMetadata: SharedV3ProviderMetadata)] = [:]
                 var finishReason: LanguageModelV3FinishReason = .unknown
                 var usage = LanguageModelV3Usage()
                 var rawUsage: [String: JSONValue]? = nil
@@ -178,6 +180,8 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                                     usesJsonResponseTool: prepared.usesJsonResponseTool,
                                     citationDocuments: citationDocuments,
                                     contentBlocks: &contentBlocks,
+                                    serverToolCalls: &serverToolCalls,
+                                    mcpToolCalls: &mcpToolCalls,
                                     continuation: continuation
                                 )
 
@@ -478,6 +482,8 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
         usesJsonResponseTool: Bool
     ) throws -> (content: [LanguageModelV3Content], usage: LanguageModelV3Usage) {
         var content: [LanguageModelV3Content] = []
+        var serverToolCalls: [String: String] = [:]
+        var mcpToolCalls: [String: (toolName: String, providerMetadata: SharedV3ProviderMetadata)] = [:]
         let citationDocuments = extractCitationDocuments(from: prompt)
 
         for part in response.content {
@@ -533,7 +539,12 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                 guard
                     value.name == "web_search" || value.name == "code_execution"
                         || value.name == "web_fetch"
+                        || value.name == "tool_search_tool_regex"
+                        || value.name == "tool_search_tool_bm25"
                 else { continue }
+                if value.name == "tool_search_tool_regex" || value.name == "tool_search_tool_bm25" {
+                    serverToolCalls[value.id] = value.name
+                }
                 let toolCall = LanguageModelV3ToolCall(
                     toolCallId: value.id,
                     toolName: value.name,
@@ -541,6 +552,83 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                     providerExecuted: true
                 )
                 content.append(.toolCall(toolCall))
+
+            case .mcpToolUse(let value):
+                let providerMetadata: SharedV3ProviderMetadata = [
+                    "anthropic": [
+                        "type": .string("mcp-tool-use"),
+                        "serverName": .string(value.serverName),
+                    ]
+                ]
+                mcpToolCalls[value.id] = (toolName: value.name, providerMetadata: providerMetadata)
+                let toolCall = LanguageModelV3ToolCall(
+                    toolCallId: value.id,
+                    toolName: value.name,
+                    input: stringifyJSON(value.input),
+                    providerExecuted: true,
+                    providerMetadata: providerMetadata
+                )
+                content.append(.toolCall(toolCall))
+
+            case .mcpToolResult(let value):
+                guard let toolInfo = mcpToolCalls[value.toolUseId] else {
+                    continue
+                }
+                let toolResult = LanguageModelV3ToolResult(
+                    toolCallId: value.toolUseId,
+                    toolName: toolInfo.toolName,
+                    result: value.content,
+                    isError: value.isError,
+                    providerExecuted: true,
+                    providerMetadata: toolInfo.providerMetadata
+                )
+                content.append(.toolResult(toolResult))
+
+            case .toolSearchToolResult(let value):
+                let providerToolName = serverToolCalls[value.toolUseId] ?? "tool_search_tool_regex"
+                guard case .object(let payload) = value.content,
+                      let typeValue = payload["type"],
+                      case .string(let type) = typeValue
+                else { continue }
+
+                if type == "tool_search_tool_search_result" {
+                    guard let referencesValue = payload["tool_references"],
+                          case .array(let referencesArray) = referencesValue
+                    else { continue }
+
+                    let mapped: [JSONValue] = referencesArray.compactMap { reference in
+                        guard case .object(let object) = reference else { return nil }
+                        guard let referenceType = object["type"], case .string(let referenceTypeString) = referenceType
+                        else { return nil }
+                        guard let toolNameValue = object["tool_name"], case .string(let toolName) = toolNameValue
+                        else { return nil }
+                        return .object([
+                            "type": .string(referenceTypeString),
+                            "toolName": .string(toolName),
+                        ])
+                    }
+
+                    let toolResult = LanguageModelV3ToolResult(
+                        toolCallId: value.toolUseId,
+                        toolName: providerToolName,
+                        result: .array(mapped),
+                        providerExecuted: true
+                    )
+                    content.append(.toolResult(toolResult))
+                } else if type == "tool_search_tool_result_error" {
+                    let errorCode = payload["error_code"] ?? .null
+                    let toolResult = LanguageModelV3ToolResult(
+                        toolCallId: value.toolUseId,
+                        toolName: providerToolName,
+                        result: .object([
+                            "type": .string("tool_search_tool_result_error"),
+                            "errorCode": errorCode,
+                        ]),
+                        isError: true,
+                        providerExecuted: true
+                    )
+                    content.append(.toolResult(toolResult))
+                }
 
             case .webFetchResult(let value):
                 if case .object(let payload) = value.content,
@@ -750,6 +838,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
         var toolName: String
         var input: String
         var providerExecuted: Bool
+        var providerMetadata: SharedV3ProviderMetadata?
     }
 
     private enum ContentBlockState {
@@ -837,6 +926,9 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
         case .redactedThinking: return "redacted_thinking"
         case .toolUse: return "tool_use"
         case .serverToolUse: return "server_tool_use"
+        case .mcpToolUse: return "mcp_tool_use"
+        case .mcpToolResult: return "mcp_tool_result"
+        case .toolSearchToolResult: return "tool_search_tool_result"
         case .webFetchResult: return "web_fetch_tool_result"
         case .webSearchResult: return "web_search_tool_result"
         case .codeExecutionResult: return "code_execution_tool_result"
@@ -848,6 +940,8 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
         usesJsonResponseTool: Bool,
         citationDocuments: [CitationDocument],
         contentBlocks: inout [Int: ContentBlockState],
+        serverToolCalls: inout [String: String],
+        mcpToolCalls: inout [String: (toolName: String, providerMetadata: SharedV3ProviderMetadata)],
         continuation: AsyncThrowingStream<LanguageModelV3StreamPart, Error>.Continuation
     ) {
         switch value.contentBlock {
@@ -872,7 +966,12 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                 continuation.yield(.textStart(id: String(value.index), providerMetadata: nil))
             } else {
                 let state = ToolCallState(
-                    toolCallId: tool.id, toolName: tool.name, input: "", providerExecuted: false)
+                    toolCallId: tool.id,
+                    toolName: tool.name,
+                    input: "",
+                    providerExecuted: false,
+                    providerMetadata: nil
+                )
                 contentBlocks[value.index] = .toolCall(state)
                 continuation.yield(
                     .toolInputStart(
@@ -884,14 +983,67 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
             guard
                 tool.name == "web_fetch" || tool.name == "web_search"
                     || tool.name == "code_execution"
+                    || tool.name == "tool_search_tool_regex"
+                    || tool.name == "tool_search_tool_bm25"
             else { return }
+            if tool.name == "tool_search_tool_regex" || tool.name == "tool_search_tool_bm25" {
+                serverToolCalls[tool.id] = tool.name
+            }
             let state = ToolCallState(
-                toolCallId: tool.id, toolName: tool.name, input: "", providerExecuted: true)
+                toolCallId: tool.id,
+                toolName: tool.name,
+                input: "",
+                providerExecuted: true,
+                providerMetadata: nil
+            )
             contentBlocks[value.index] = .toolCall(state)
             continuation.yield(
                 .toolInputStart(
                     id: tool.id, toolName: tool.name, providerMetadata: nil, providerExecuted: true)
             )
+
+        case .mcpToolUse(let tool):
+            let providerMetadata: SharedV3ProviderMetadata = [
+                "anthropic": [
+                    "type": .string("mcp-tool-use"),
+                    "serverName": .string(tool.serverName),
+                ]
+            ]
+            mcpToolCalls[tool.id] = (toolName: tool.name, providerMetadata: providerMetadata)
+            let state = ToolCallState(
+                toolCallId: tool.id,
+                toolName: tool.name,
+                input: "",
+                providerExecuted: true,
+                providerMetadata: providerMetadata
+            )
+            contentBlocks[value.index] = .toolCall(state)
+            continuation.yield(
+                .toolInputStart(
+                    id: tool.id,
+                    toolName: tool.name,
+                    providerMetadata: providerMetadata,
+                    providerExecuted: true
+                )
+            )
+
+        case .mcpToolResult(let result):
+            guard let toolInfo = mcpToolCalls[result.toolUseId] else { return }
+            let toolResult = LanguageModelV3ToolResult(
+                toolCallId: result.toolUseId,
+                toolName: toolInfo.toolName,
+                result: result.content,
+                isError: result.isError,
+                providerExecuted: true,
+                providerMetadata: toolInfo.providerMetadata
+            )
+            continuation.yield(.toolResult(toolResult))
+
+        case .toolSearchToolResult(let result):
+            let toolName = serverToolCalls[result.toolUseId] ?? "tool_search_tool_regex"
+            if let toolResult = convertToolSearchToolResult(result, toolName: toolName) {
+                continuation.yield(.toolResult(toolResult))
+            }
 
         case .webFetchResult(let result):
             if let toolResult = convertWebFetchToolResult(result) {
@@ -948,7 +1100,10 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
             } else if case .toolCall(var toolState) = contentBlocks[value.index] {
                 continuation.yield(
                     .toolInputDelta(
-                        id: toolState.toolCallId, delta: partialJSON, providerMetadata: nil))
+                        id: toolState.toolCallId,
+                        delta: partialJSON,
+                        providerMetadata: toolState.providerMetadata
+                    ))
                 toolState.input += partialJSON
                 contentBlocks[value.index] = .toolCall(toolState)
             }
@@ -979,12 +1134,14 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
             if usesJsonResponseTool {
                 continuation.yield(.textEnd(id: String(index), providerMetadata: nil))
             } else {
-                continuation.yield(.toolInputEnd(id: toolState.toolCallId, providerMetadata: nil))
+                continuation.yield(
+                    .toolInputEnd(id: toolState.toolCallId, providerMetadata: toolState.providerMetadata))
                 let toolCall = LanguageModelV3ToolCall(
                     toolCallId: toolState.toolCallId,
                     toolName: toolState.toolName,
                     input: toolState.input,
-                    providerExecuted: toolState.providerExecuted
+                    providerExecuted: toolState.providerExecuted,
+                    providerMetadata: toolState.providerMetadata
                 )
                 continuation.yield(.toolCall(toolCall))
             }
@@ -1180,6 +1337,58 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
 
         return nil
     }
+
+    private func convertToolSearchToolResult(
+        _ content: ToolSearchToolResultContent,
+        toolName: String
+    ) -> LanguageModelV3ToolResult? {
+        guard case .object(let payload) = content.content,
+              let typeValue = payload["type"],
+              case .string(let type) = typeValue
+        else { return nil }
+
+        if type == "tool_search_tool_search_result" {
+            guard let referencesValue = payload["tool_references"],
+                  case .array(let referencesArray) = referencesValue
+            else { return nil }
+
+            let mapped: [JSONValue] = referencesArray.compactMap { reference in
+                guard case .object(let object) = reference else { return nil }
+                guard let referenceType = object["type"], case .string(let referenceTypeString) = referenceType
+                else { return nil }
+                guard let toolNameValue = object["tool_name"],
+                      case .string(let referencedToolName) = toolNameValue
+                else { return nil }
+                return .object([
+                    "type": .string(referenceTypeString),
+                    "toolName": .string(referencedToolName),
+                ])
+            }
+
+            return LanguageModelV3ToolResult(
+                toolCallId: content.toolUseId,
+                toolName: toolName,
+                result: .array(mapped),
+                providerExecuted: true
+            )
+        }
+
+        if type == "tool_search_tool_result_error" {
+            return LanguageModelV3ToolResult(
+                toolCallId: content.toolUseId,
+                toolName: toolName,
+                result: .object([
+                    "type": .string("tool_search_tool_result_error"),
+                    "errorCode": payload["error_code"] ?? .null,
+                ]),
+                isError: true,
+                providerExecuted: true
+            )
+        }
+
+        return nil
+    }
+
     private func stringifyJSON(_ value: JSONValue?) -> String {
         guard let value else { return "null" }
         if let data = try? JSONEncoder().encode(value),

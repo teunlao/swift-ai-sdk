@@ -515,6 +515,140 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
         #expect(warnings.contains(.other(message: "provider executed tool call for tool unsupported is not supported")))
     }
 
+    @Test("assistant provider executed tool_search_tool_regex tool call and result parts")
+    func assistantToolSearchToolRegexCallAndResult() async throws {
+        let toolCall = LanguageModelV3MessagePart.toolCall(
+            .init(
+                toolCallId: "srvtoolu_01SACvPAnp6ucMJsstB5qb3f",
+                toolName: "tool_search_tool_regex",
+                input: .object([
+                    "pattern": .string("weather|forecast"),
+                    "limit": .number(10),
+                ]),
+                providerExecuted: true
+            )
+        )
+        let toolResult = LanguageModelV3MessagePart.toolResult(
+            .init(
+                toolCallId: "srvtoolu_01SACvPAnp6ucMJsstB5qb3f",
+                toolName: "tool_search_tool_regex",
+                output: .json(value: .array([
+                    .object([
+                        "type": .string("tool_reference"),
+                        "toolName": .string("get_weather"),
+                    ])
+                ]))
+            )
+        )
+        let prompt: LanguageModelV3Prompt = [
+            .assistant(content: [toolCall, toolResult], providerOptions: nil)
+        ]
+
+        let (result, warnings) = try await convert(prompt)
+
+        #expect(warnings.isEmpty)
+        #expect(result.betas.isEmpty)
+        #expect(result.prompt.messages == [
+            AnthropicMessage(
+                role: "assistant",
+                content: [
+                    .object([
+                        "type": .string("server_tool_use"),
+                        "id": .string("srvtoolu_01SACvPAnp6ucMJsstB5qb3f"),
+                        "name": .string("tool_search_tool_regex"),
+                        "input": .object([
+                            "pattern": .string("weather|forecast"),
+                            "limit": .number(10),
+                        ]),
+                    ]),
+                    .object([
+                        "type": .string("tool_search_tool_result"),
+                        "tool_use_id": .string("srvtoolu_01SACvPAnp6ucMJsstB5qb3f"),
+                        "content": .object([
+                            "type": .string("tool_search_tool_search_result"),
+                            "tool_references": .array([
+                                .object([
+                                    "type": .string("tool_reference"),
+                                    "tool_name": .string("get_weather"),
+                                ])
+                            ]),
+                        ]),
+                    ]),
+                ]
+            )
+        ])
+    }
+
+    @Test("assistant mcp tool use call and result parts")
+    func assistantMcpToolUseCallAndResult() async throws {
+        let toolCall = LanguageModelV3MessagePart.toolCall(
+            .init(
+                toolCallId: "mcptoolu_01HXPYHs79HH36fBbKHysCrp",
+                toolName: "echo",
+                input: .object([:]),
+                providerExecuted: true,
+                providerOptions: anthropicOptions([
+                    "type": .string("mcp-tool-use"),
+                    "serverName": .string("echo"),
+                ])
+            )
+        )
+        let toolResult = LanguageModelV3MessagePart.toolResult(
+            .init(
+                toolCallId: "mcptoolu_01HXPYHs79HH36fBbKHysCrp",
+                toolName: "echo",
+                output: .json(value: .array([
+                    .object([
+                        "type": .string("text"),
+                        "text": .string("Tool echo: hello world"),
+                    ])
+                ]))
+            )
+        )
+        let text = LanguageModelV3MessagePart.text(
+            .init(text: "The echo tool responded back.")
+        )
+        let prompt: LanguageModelV3Prompt = [
+            .assistant(content: [toolCall, toolResult, text], providerOptions: nil)
+        ]
+
+        let (result, warnings) = try await convert(prompt)
+
+        #expect(result.betas.isEmpty)
+        #expect(result.prompt.messages == [
+            AnthropicMessage(
+                role: "assistant",
+                content: [
+                    .object([
+                        "type": .string("mcp_tool_use"),
+                        "id": .string("mcptoolu_01HXPYHs79HH36fBbKHysCrp"),
+                        "name": .string("echo"),
+                        "input": .object([:]),
+                        "server_name": .string("echo"),
+                    ]),
+                    .object([
+                        "type": .string("mcp_tool_result"),
+                        "tool_use_id": .string("mcptoolu_01HXPYHs79HH36fBbKHysCrp"),
+                        "is_error": .bool(false),
+                        "content": .array([
+                            .object([
+                                "type": .string("text"),
+                                "text": .string("Tool echo: hello world"),
+                            ])
+                        ]),
+                    ]),
+                    .object([
+                        "type": .string("text"),
+                        "text": .string("The echo tool responded back."),
+                    ]),
+                ]
+            )
+        ])
+        #expect(warnings == [
+            .other(message: "provider executed tool result for tool echo is not supported")
+        ])
+    }
+
     @Test("assistant server tool results mapped to provider metadata")
     func assistantServerToolResults() async throws {
         let codeCall = LanguageModelV3MessagePart.toolCall(

@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.5.7] - 2026-01-18
+
+### Added
+- Anthropic: support MCP tool blocks (`mcp_tool_use`, `mcp_tool_result`) and tool search server tools/results.
+
 ## [0.5.6] - 2026-01-18
 
 ### Fixed

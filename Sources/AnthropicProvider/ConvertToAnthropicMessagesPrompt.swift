@@ -17,6 +17,7 @@ func convertToAnthropicMessagesPrompt(
     var systemContent: [JSONValue]? = nil
     var messages: [AnthropicMessage] = []
     var betas = Set<String>()
+    var mcpToolUseIds = Set<String>()
 
     for (blockIndex, block) in blocks.enumerated() {
         let isLastBlock = blockIndex == blocks.count - 1
@@ -85,6 +86,7 @@ func convertToAnthropicMessagesPrompt(
                     isLastMessage: isLastMessage,
                     anthropicContent: &content,
                     betas: &betas,
+                    mcpToolUseIds: &mcpToolUseIds,
                     sendReasoning: sendReasoning,
                     warnings: &warnings
                 )
@@ -366,6 +368,7 @@ private func appendAssistantMessageParts(
     isLastMessage: Bool,
     anthropicContent: inout [JSONValue],
     betas: inout Set<String>,
+    mcpToolUseIds: inout Set<String>,
     sendReasoning: Bool,
     warnings: inout [LanguageModelV3CallWarning]
 ) async throws {
@@ -428,12 +431,40 @@ private func appendAssistantMessageParts(
 
             var payload: [String: JSONValue]
             if toolCallPart.providerExecuted == true {
+                if let anthropicProviderOptions = toolCallPart.providerOptions?["anthropic"],
+                   let type = anthropicProviderOptions["type"],
+                   type == .string("mcp-tool-use") {
+                    mcpToolUseIds.insert(toolCallPart.toolCallId)
+
+                    guard let serverNameValue = anthropicProviderOptions["serverName"],
+                          case .string(let serverName) = serverNameValue
+                    else {
+                        warnings.append(.other(message: "mcp tool use server name is required and must be a string"))
+                        continue
+                    }
+
+                    payload = [
+                        "type": .string("mcp_tool_use"),
+                        "id": .string(toolCallPart.toolCallId),
+                        "name": .string(toolCallPart.toolName),
+                        "input": toolCallPart.input,
+                        "server_name": .string(serverName)
+                    ]
+                    if let cacheControlJSON { payload["cache_control"] = cacheControlJSON }
+                    anthropicContent.append(.object(payload))
+                    continue
+                }
+
                 switch toolCallPart.toolName {
                 case "code_execution":
                     betas.insert("code-execution-2025-05-22")
                 case "web_fetch":
                     betas.insert("web-fetch-2025-09-10")
                 case "web_search":
+                    break
+                case "tool_search_tool_regex":
+                    break
+                case "tool_search_tool_bm25":
                     break
                 default:
                     warnings.append(.other(message: "provider executed tool call for tool \(toolCallPart.toolName) is not supported"))
@@ -465,6 +496,7 @@ private func appendAssistantMessageParts(
                 cacheControlJSON: cacheControlJSON,
                 anthropicContent: &anthropicContent,
                 betas: &betas,
+                mcpToolUseIds: mcpToolUseIds,
                 warnings: &warnings
             )
 
@@ -478,8 +510,36 @@ private func appendAssistantToolResult(
     cacheControlJSON: JSONValue?,
     anthropicContent: inout [JSONValue],
     betas: inout Set<String>,
+    mcpToolUseIds: Set<String>,
     warnings: inout [LanguageModelV3CallWarning]
 ) async throws {
+    if mcpToolUseIds.contains(part.toolCallId) {
+        var payload: [String: JSONValue] = [
+            "type": .string("mcp_tool_result"),
+            "tool_use_id": .string(part.toolCallId)
+        ]
+
+        switch part.output {
+        case .json(let value):
+            payload["is_error"] = .bool(false)
+            payload["content"] = value
+        case .errorJson(let value):
+            payload["is_error"] = .bool(true)
+            payload["content"] = value
+        default:
+            warnings.append(.other(message: "provider executed tool result output type for tool \(part.toolName) is not supported"))
+            return
+        }
+
+        if let cacheControlJSON { payload["cache_control"] = cacheControlJSON }
+        anthropicContent.append(.object(payload))
+
+        // Match upstream behavior: mcp tool results are still treated as unsupported
+        // provider-executed tool results for warnings purposes.
+        warnings.append(.other(message: "provider executed tool result for tool \(part.toolName) is not supported"))
+        return
+    }
+
     switch part.toolName {
     case "code_execution":
         guard case .json(let value) = part.output else {
@@ -564,6 +624,34 @@ private func appendAssistantToolResult(
             "type": .string("web_search_tool_result"),
             "tool_use_id": .string(part.toolCallId),
             "content": .array(mapped)
+        ]
+        if let cacheControlJSON { payload["cache_control"] = cacheControlJSON }
+        anthropicContent.append(.object(payload))
+
+    case "tool_search_tool_regex", "tool_search_tool_bm25":
+        guard case .json(let value) = part.output else {
+            warnings.append(.other(message: "provider executed tool result output type for tool \(part.toolName) is not supported"))
+            return
+        }
+
+        let toolReferences = try await validateTypes(
+            ValidateTypesOptions(value: jsonValueToFoundation(value), schema: anthropicToolSearchRegex20251119OutputSchema)
+        )
+
+        let mapped = toolReferences.map { reference in
+            JSONValue.object([
+                "type": .string("tool_reference"),
+                "tool_name": .string(reference.toolName)
+            ])
+        }
+
+        var payload: [String: JSONValue] = [
+            "type": .string("tool_search_tool_result"),
+            "tool_use_id": .string(part.toolCallId),
+            "content": .object([
+                "type": .string("tool_search_tool_search_result"),
+                "tool_references": .array(mapped)
+            ])
         ]
         if let cacheControlJSON { payload["cache_control"] = cacheControlJSON }
         anthropicContent.append(.object(payload))

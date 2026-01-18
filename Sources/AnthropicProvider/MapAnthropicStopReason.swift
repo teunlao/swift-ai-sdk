@@ -11,9 +11,9 @@ public func mapAnthropicStopReason(
         return .contentFilter
     case "tool_use":
         return isJsonResponseFromTool ? .stop : .toolCalls
-    case "max_tokens":
+    case "max_tokens", "model_context_window_exceeded":
         return .length
     default:
-        return .unknown
+        return .other
     }
 }

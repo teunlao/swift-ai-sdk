@@ -160,6 +160,38 @@ public struct AnthropicTools: Sendable {
     public func webSearch20250305(_ options: AnthropicWebSearchOptions = .init()) -> Tool {
         anthropicWebSearch20250305(options)
     }
+
+    /// Creates a tool search tool that uses regex patterns to find tools.
+    ///
+    /// The tool search tool enables Claude to work with hundreds or thousands of tools
+    /// by dynamically discovering and loading them on-demand. Instead of loading all
+    /// tool definitions into the context window upfront, Claude searches your tool
+    /// catalog and loads only the tools it needs.
+    ///
+    /// Use `providerOptions: ["anthropic": ["deferLoading": .bool(true)]]` on other tools
+    /// to mark them for deferred loading.
+    ///
+    /// Tool name must be `tool_search_tool_regex`.
+    @discardableResult
+    public func toolSearchRegex20251119() -> Tool {
+        anthropicToolSearchRegex20251119()
+    }
+
+    /// Creates a tool search tool that uses BM25 (natural language) to find tools.
+    ///
+    /// The tool search tool enables Claude to work with hundreds or thousands of tools
+    /// by dynamically discovering and loading them on-demand. Instead of loading all
+    /// tool definitions into the context window upfront, Claude searches your tool
+    /// catalog and loads only the tools it needs.
+    ///
+    /// Use `providerOptions: ["anthropic": ["deferLoading": .bool(true)]]` on other tools
+    /// to mark them for deferred loading.
+    ///
+    /// Tool name must be `tool_search_tool_bm25`.
+    @discardableResult
+    public func toolSearchBm2520251119() -> Tool {
+        anthropicToolSearchBm2520251119()
+    }
 }
 
 /// Default Anthropic tools instance.

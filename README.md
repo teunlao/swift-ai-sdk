@@ -107,7 +107,7 @@ Add the package to your `Package.swift`:
 ```swift
 // Package.swift
 dependencies: [
-  .package(url: "https://github.com/teunlao/swift-ai-sdk.git", from: "0.5.6")
+  .package(url: "https://github.com/teunlao/swift-ai-sdk.git", from: "0.5.7")
 ],
 targets: [
   .target(
@@ -250,7 +250,7 @@ See `examples/` in this repo and the docs site under `apps/docs`.
 
 ## Upstream & Parity
 
-Based on Vercel AI SDK 6.0.0-beta.42 (commit `77db222ee`).
+Based on Vercel AI SDK 6.0.39 (commit `c0fff03`).
 
 ## Contributing
 
