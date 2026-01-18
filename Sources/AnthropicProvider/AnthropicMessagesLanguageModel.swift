@@ -48,6 +48,7 @@ private struct AnthropicRequestArguments {
     let warnings: [LanguageModelV3CallWarning]
     let betas: Set<String>
     let usesJsonResponseTool: Bool
+    let toolNameMapping: AnthropicToolNameMapping
 }
 
 public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
@@ -98,7 +99,8 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
         let usageAndContent = try mapResponseContent(
             response: response.value,
             prompt: options.prompt,
-            usesJsonResponseTool: prepared.usesJsonResponseTool
+            usesJsonResponseTool: prepared.usesJsonResponseTool,
+            toolNameMapping: prepared.toolNameMapping
         )
 
         let providerMetadata = makeProviderMetadata(response: response.value)
@@ -356,10 +358,32 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
             schema: anthropicProviderOptionsSchema
         )
 
+        let toolNameMapping = AnthropicToolNameMapping.create(
+            tools: options.tools,
+            providerToolNames: [
+                "anthropic.code_execution_20250522": "code_execution",
+                "anthropic.code_execution_20250825": "code_execution",
+                "anthropic.computer_20241022": "computer",
+                "anthropic.computer_20250124": "computer",
+                "anthropic.text_editor_20241022": "str_replace_editor",
+                "anthropic.text_editor_20250124": "str_replace_editor",
+                "anthropic.text_editor_20250429": "str_replace_based_edit_tool",
+                "anthropic.text_editor_20250728": "str_replace_based_edit_tool",
+                "anthropic.bash_20241022": "bash",
+                "anthropic.bash_20250124": "bash",
+                "anthropic.memory_20250818": "memory",
+                "anthropic.web_search_20250305": "web_search",
+                "anthropic.web_fetch_20250910": "web_fetch",
+                "anthropic.tool_search_regex_20251119": "tool_search_tool_regex",
+                "anthropic.tool_search_bm25_20251119": "tool_search_tool_bm25",
+            ]
+        )
+
         var conversionWarnings = warnings
         let conversion = try await convertToAnthropicMessagesPrompt(
             prompt: options.prompt,
             sendReasoning: anthropicOptions?.sendReasoning ?? true,
+            toolNameMapping: toolNameMapping,
             warnings: &conversionWarnings
         )
         warnings = conversionWarnings
@@ -453,7 +477,8 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
             body: args,
             warnings: warnings,
             betas: betas,
-            usesJsonResponseTool: usesJsonResponseTool
+            usesJsonResponseTool: usesJsonResponseTool,
+            toolNameMapping: toolNameMapping
         )
     }
 
@@ -479,7 +504,8 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
     private func mapResponseContent(
         response: AnthropicMessagesResponse,
         prompt: LanguageModelV3Prompt,
-        usesJsonResponseTool: Bool
+        usesJsonResponseTool: Bool,
+        toolNameMapping: AnthropicToolNameMapping
     ) throws -> (content: [LanguageModelV3Content], usage: LanguageModelV3Usage) {
         var content: [LanguageModelV3Content] = []
         var serverToolCalls: [String: String] = [:]

@@ -448,7 +448,7 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
         let (result, warnings) = try await convert(prompt)
 
         #expect(warnings.isEmpty)
-        #expect(result.betas == Set(["code-execution-2025-05-22"]))
+        #expect(result.betas.isEmpty)
         #expect(result.prompt.messages == [
             AnthropicMessage(
                 role: "assistant",
@@ -706,7 +706,7 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
         let (result, warnings) = try await convert(prompt)
 
         #expect(warnings.isEmpty)
-        #expect(result.betas == Set(["code-execution-2025-05-22", "web-fetch-2025-09-10"]))
+        #expect(result.betas.isEmpty)
         guard let content = result.prompt.messages.first?.content else {
             Issue.record("Expected assistant content")
             return

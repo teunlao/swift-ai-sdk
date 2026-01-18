@@ -10,6 +10,7 @@ struct AnthropicPromptConversionResult: Sendable {
 func convertToAnthropicMessagesPrompt(
     prompt: LanguageModelV3Prompt,
     sendReasoning: Bool,
+    toolNameMapping: AnthropicToolNameMapping = .init(),
     warnings: inout [LanguageModelV3CallWarning]
 ) async throws -> AnthropicPromptConversionResult {
     let blocks = groupIntoAnthropicBlocks(prompt)
@@ -88,6 +89,7 @@ func convertToAnthropicMessagesPrompt(
                     betas: &betas,
                     mcpToolUseIds: &mcpToolUseIds,
                     sendReasoning: sendReasoning,
+                    toolNameMapping: toolNameMapping,
                     warnings: &warnings
                 )
             }
@@ -370,6 +372,7 @@ private func appendAssistantMessageParts(
     betas: inout Set<String>,
     mcpToolUseIds: inout Set<String>,
     sendReasoning: Bool,
+    toolNameMapping: AnthropicToolNameMapping,
     warnings: inout [LanguageModelV3CallWarning]
 ) async throws {
     for (index, part) in parts.enumerated() {
@@ -455,28 +458,49 @@ private func appendAssistantMessageParts(
                     continue
                 }
 
-                switch toolCallPart.toolName {
-                case "code_execution":
-                    betas.insert("code-execution-2025-05-22")
-                case "web_fetch":
-                    betas.insert("web-fetch-2025-09-10")
-                case "web_search":
-                    break
-                case "tool_search_tool_regex":
-                    break
-                case "tool_search_tool_bm25":
-                    break
-                default:
+                let providerToolName = toolNameMapping.toProviderToolName(toolCallPart.toolName)
+
+                if providerToolName == "code_execution",
+                   case .object(let inputObject) = toolCallPart.input,
+                   let typeValue = inputObject["type"],
+                   case .string(let subtoolName) = typeValue,
+                   subtoolName == "bash_code_execution" || subtoolName == "text_editor_code_execution" {
+                    // code execution 20250825: map back to subtool name
+                    payload = [
+                        "type": .string("server_tool_use"),
+                        "id": .string(toolCallPart.toolCallId),
+                        "name": .string(subtoolName),
+                        "input": toolCallPart.input
+                    ]
+                } else if providerToolName == "code_execution",
+                          case .object(let inputObject) = toolCallPart.input,
+                          let typeValue = inputObject["type"],
+                          typeValue == .string("programmatic-tool-call") {
+                    // code execution 20250825 programmatic tool calling:
+                    // Strip the fake 'programmatic-tool-call' type before sending to Anthropic
+                    var inputWithoutType = inputObject
+                    inputWithoutType.removeValue(forKey: "type")
+                    payload = [
+                        "type": .string("server_tool_use"),
+                        "id": .string(toolCallPart.toolCallId),
+                        "name": .string("code_execution"),
+                        "input": .object(inputWithoutType)
+                    ]
+                } else if providerToolName == "code_execution"
+                            || providerToolName == "web_fetch"
+                            || providerToolName == "web_search"
+                            || providerToolName == "tool_search_tool_regex"
+                            || providerToolName == "tool_search_tool_bm25" {
+                    payload = [
+                        "type": .string("server_tool_use"),
+                        "id": .string(toolCallPart.toolCallId),
+                        "name": .string(providerToolName),
+                        "input": toolCallPart.input
+                    ]
+                } else {
                     warnings.append(.other(message: "provider executed tool call for tool \(toolCallPart.toolName) is not supported"))
                     continue
                 }
-
-                payload = [
-                    "type": .string("server_tool_use"),
-                    "id": .string(toolCallPart.toolCallId),
-                    "name": .string(toolCallPart.toolName),
-                    "input": toolCallPart.input
-                ]
             } else {
                 payload = [
                     "type": .string("tool_use"),
@@ -484,6 +508,25 @@ private func appendAssistantMessageParts(
                     "name": .string(toolCallPart.toolName),
                     "input": toolCallPart.input
                 ]
+
+                if let anthropicOptions = toolCallPart.providerOptions?["anthropic"],
+                   let callerValue = anthropicOptions["caller"],
+                   case .object(let callerObject) = callerValue,
+                   let typeValue = callerObject["type"],
+                   case .string(let callerType) = typeValue {
+                    if callerType == "code_execution_20250825",
+                       let toolIdValue = callerObject["toolId"],
+                       case .string(let toolId) = toolIdValue {
+                        payload["caller"] = .object([
+                            "type": .string("code_execution_20250825"),
+                            "tool_id": .string(toolId),
+                        ])
+                    } else if callerType == "direct" {
+                        payload["caller"] = .object([
+                            "type": .string("direct")
+                        ])
+                    }
+                }
             }
             if let cacheControlJSON { payload["cache_control"] = cacheControlJSON }
             anthropicContent.append(.object(payload))
@@ -497,6 +540,7 @@ private func appendAssistantMessageParts(
                 anthropicContent: &anthropicContent,
                 betas: &betas,
                 mcpToolUseIds: mcpToolUseIds,
+                toolNameMapping: toolNameMapping,
                 warnings: &warnings
             )
 
@@ -511,6 +555,7 @@ private func appendAssistantToolResult(
     anthropicContent: inout [JSONValue],
     betas: inout Set<String>,
     mcpToolUseIds: Set<String>,
+    toolNameMapping: AnthropicToolNameMapping,
     warnings: inout [LanguageModelV3CallWarning]
 ) async throws {
     if mcpToolUseIds.contains(part.toolCallId) {

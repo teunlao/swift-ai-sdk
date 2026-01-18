@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.5.8] - 2026-01-18
+
+### Fixed
+- Anthropic: serialize tool call `input` as a JSON object (not a JSON string) for `tool_use` / `server_tool_use` history blocks.
+
 ## [0.5.7] - 2026-01-18
 
 ### Added
