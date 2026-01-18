@@ -8,8 +8,7 @@
 			"name": "Debug playground",
 			"preLaunchTask": "swift: Build Debug playground",
 			"target": "playground",
-			"configuration": "debug",
-			"program": "${workspaceFolder:swift-ai-sdk}/.build/debug/playground"
+			"configuration": "debug"
 		},
 		{
 			"type": "swift",
@@ -19,8 +18,7 @@
 			"name": "Release playground",
 			"preLaunchTask": "swift: Build Release playground",
 			"target": "playground",
-			"configuration": "release",
-			"program": "${workspaceFolder:swift-ai-sdk}/.build/release/playground"
+			"configuration": "release"
 		}
 	]
 }
