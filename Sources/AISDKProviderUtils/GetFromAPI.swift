@@ -52,6 +52,7 @@ public func getFromAPI<T>(
 
         var request = URLRequest(url: requestURL)
         request.httpMethod = "GET"
+        request.timeoutInterval = PROVIDER_UTILS_DEFAULT_REQUEST_TIMEOUT_INTERVAL
 
         // Add headers with User-Agent
         let headersWithUA = withUserAgentSuffix(
@@ -70,7 +71,11 @@ public func getFromAPI<T>(
         }
 
         // Execute request
-        let fetchResponse = try await fetchImpl(request)
+        let fetchResponse = try await fetchWithAbortCheck(
+            fetch: fetchImpl,
+            request: request,
+            isAborted: isAborted
+        )
 
         guard let httpResponse = fetchResponse.urlResponse as? HTTPURLResponse else {
             throw APICallError(
@@ -152,4 +157,3 @@ public func getFromAPI<T>(
         throw handleFetchError(error: error, url: url, requestBodyValues: nil)
     }
 }
-

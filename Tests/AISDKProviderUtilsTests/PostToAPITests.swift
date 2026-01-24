@@ -90,6 +90,7 @@ struct PostToAPITests {
         let capturedRequest = await capture.get()
         #expect(capturedRequest?.httpMethod == "POST")
         #expect(capturedRequest?.url?.absoluteString == "https://api.test.com/create")
+        #expect(capturedRequest?.timeoutInterval == PROVIDER_UTILS_DEFAULT_REQUEST_TIMEOUT_INTERVAL)
 
         // Verify headers
         let headers = capturedRequest?.allHTTPHeaderFields ?? [:]
@@ -179,6 +180,61 @@ struct PostToAPITests {
                 successfulResponseHandler: createJsonResponseHandler(responseSchema: mockResponseSchema()),
                 fetch: mockFetch
             )
+        }
+    }
+
+    @Test("should cancel in-flight request when abort signal becomes true")
+    func shouldCancelInFlightRequestWhenAbortSignalBecomesTrue() async throws {
+        final class AbortFlag: @unchecked Sendable {
+            private let lock = NSLock()
+            private var aborted: Bool = false
+
+            func abort() {
+                lock.lock()
+                aborted = true
+                lock.unlock()
+            }
+
+            func isAborted() -> Bool {
+                lock.lock()
+                let value = aborted
+                lock.unlock()
+                return value
+            }
+        }
+
+        let flag = AbortFlag()
+        let mockRequest = MockRequest(name: "test", value: 123)
+
+        let mockFetch: FetchFunction = { request in
+            try await Task.sleep(nanoseconds: 1_000_000_000)
+
+            let httpResponse = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: [:]
+            )!
+
+            return FetchResponse(body: .data(Data()), urlResponse: httpResponse)
+        }
+
+        let task = Task {
+            try await postJsonToAPI(
+                url: "https://api.test.com/create",
+                body: mockRequest,
+                failedResponseHandler: createStatusCodeErrorResponseHandler(),
+                successfulResponseHandler: createJsonResponseHandler(responseSchema: mockResponseSchema()),
+                isAborted: { flag.isAborted() },
+                fetch: mockFetch
+            )
+        }
+
+        try await Task.sleep(nanoseconds: 100_000_000)
+        flag.abort()
+
+        await #expect(throws: CancellationError.self) {
+            _ = try await task.value
         }
     }
 
