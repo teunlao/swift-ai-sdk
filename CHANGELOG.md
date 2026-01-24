@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.5.9] - 2026-01-24
+
+### Fixed
+- Provider utils: increase default `URLRequest.timeoutInterval` to 24h (avoids the 60s default timeout) and cancel in-flight requests when `abortSignal` triggers.
+
 ## [0.5.8] - 2026-01-18
 
 ### Fixed
