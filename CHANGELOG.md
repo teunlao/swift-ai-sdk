@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.5.10] - 2026-01-25
+
+### Fixed
+- OpenAI: Responses input uses item references for assistant text and tool calls when `store=true` and OpenAI `itemId` is available (fixes multi-turn reasoning/tool-call mismatch).
+
 ## [0.5.9] - 2026-01-24
 
 ### Fixed
