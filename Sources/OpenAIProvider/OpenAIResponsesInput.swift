@@ -42,6 +42,14 @@ struct OpenAIResponsesInputBuilder {
                 for part in parts {
                     switch part {
                     case .text(let textPart):
+                        if store, let itemId = extractOpenAIItemId(from: textPart.providerOptions) {
+                            items.append(.object([
+                                "type": .string("item_reference"),
+                                "id": .string(itemId)
+                            ]))
+                            continue
+                        }
+
                         var payload: [String: JSONValue] = [
                             "role": .string("assistant"),
                             "content": .array([
@@ -59,7 +67,23 @@ struct OpenAIResponsesInputBuilder {
                         items.append(.object(payload))
 
                     case .toolCall(let callPart):
+                        let itemId = extractOpenAIItemId(from: callPart.providerOptions)
+
                         if callPart.providerExecuted == true {
+                            if store, let itemId {
+                                items.append(.object([
+                                    "type": .string("item_reference"),
+                                    "id": .string(itemId)
+                                ]))
+                            }
+                            continue
+                        }
+
+                        if store, let itemId {
+                            items.append(.object([
+                                "type": .string("item_reference"),
+                                "id": .string(itemId)
+                            ]))
                             continue
                         }
 
@@ -91,7 +115,7 @@ struct OpenAIResponsesInputBuilder {
                                 "action": .object(action)
                             ]
 
-                            if let itemId = extractOpenAIItemId(from: callPart.providerOptions) {
+                            if let itemId {
                                 payload["id"] = .string(itemId)
                             }
 
@@ -106,7 +130,7 @@ struct OpenAIResponsesInputBuilder {
                             "name": .string(callPart.toolName),
                             "arguments": .string(arguments)
                         ]
-                        if let itemId = extractOpenAIItemId(from: callPart.providerOptions) {
+                        if let itemId {
                             payload["id"] = .string(itemId)
                         }
                         items.append(.object(payload))

@@ -878,21 +878,65 @@ struct OpenAIResponsesInputBuilderTests {
 
         let expected: OpenAIResponsesInput = [
             .object([
-                "role": .string("assistant"),
-                "content": .array([
-                    .object([
-                        "type": .string("output_text"),
-                        "text": .string("I will search for that information.")
-                    ])
-                ]),
+                "type": .string("item_reference"),
                 "id": .string("id_123")
             ]),
             .object([
-                "type": .string("function_call"),
-                "call_id": .string("call_123"),
-                "name": .string("search"),
-                "arguments": .string("{\"query\":\"weather in San Francisco\"}"),
+                "type": .string("item_reference"),
                 "id": .string("id_456")
+            ])
+        ]
+
+        #expect(result.input == expected)
+    }
+
+    @Test("should use item_reference for tool calls with itemId when store=true (pairs with reasoning)")
+    func toolCallWithReasoningIdsStoreTrue() async throws {
+        let reasoningPart = LanguageModelV3ReasoningPart(
+            text: "Thinking step by step",
+            providerOptions: [
+                "openai": [
+                    "itemId": .string("rs_123")
+                ]
+            ]
+        )
+
+        let toolCallPart = LanguageModelV3ToolCallPart(
+            toolCallId: "call_123",
+            toolName: "search",
+            input: .object(["query": .string("weather in San Francisco")]),
+            providerOptions: [
+                "openai": [
+                    "itemId": .string("fc_456")
+                ]
+            ]
+        )
+
+        let prompt: LanguageModelV3Prompt = [
+            .assistant(
+                content: [
+                    .reasoning(reasoningPart),
+                    .toolCall(toolCallPart)
+                ],
+                providerOptions: nil
+            )
+        ]
+
+        let result = try await OpenAIResponsesInputBuilder.makeInput(
+            prompt: prompt,
+            systemMessageMode: .system,
+            store: true,
+            hasLocalShellTool: false
+        )
+
+        let expected: OpenAIResponsesInput = [
+            .object([
+                "type": .string("item_reference"),
+                "id": .string("rs_123")
+            ]),
+            .object([
+                "type": .string("item_reference"),
+                "id": .string("fc_456")
             ])
         ]
 
