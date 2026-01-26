@@ -66,7 +66,14 @@ public func convertToLanguageModelPrompt(
         }
     }
 
-    return combinedMessages
+    // Filter out empty tool messages (e.g. if they only contained
+    // tool-approval-response parts that were removed).
+    return combinedMessages.filter { message in
+        if case .tool(let content, _) = message {
+            return !content.isEmpty
+        }
+        return true
+    }
 }
 
 /**
@@ -142,22 +149,25 @@ public func convertToLanguageModelMessage(
         return .assistant(content: content, providerOptions: assistantMessage.providerOptions)
 
     case .tool(let toolMessage):
-        let content: [LanguageModelV3ToolResultPart] = toolMessage.content
-            // Remove tool-approval-response (not supported in V3)
-            .compactMap { part -> ToolResultPart? in
-                if case .toolResult(let result) = part {
-                    return result
-                }
-                return nil
+        let content: [LanguageModelV3ToolMessagePart] = toolMessage.content.compactMap { part in
+            switch part {
+            case .toolResult(let result):
+                return .toolResult(LanguageModelV3ToolResultPart(
+                    toolCallId: result.toolCallId,
+                    toolName: result.toolName,
+                    output: result.output,
+                    providerOptions: result.providerOptions
+                ))
+            case .toolApprovalResponse(let approvalResponse):
+                guard approvalResponse.providerExecuted == true else { return nil }
+                return .toolApprovalResponse(LanguageModelV3ToolApprovalResponsePart(
+                    approvalId: approvalResponse.approvalId,
+                    approved: approvalResponse.approved,
+                    reason: approvalResponse.reason,
+                    providerOptions: nil
+                ))
             }
-            .map { part in
-                LanguageModelV3ToolResultPart(
-                    toolCallId: part.toolCallId,
-                    toolName: part.toolName,
-                    output: part.output,
-                    providerOptions: part.providerOptions
-                )
-            }
+        }
 
         return .tool(content: content, providerOptions: toolMessage.providerOptions)
     }

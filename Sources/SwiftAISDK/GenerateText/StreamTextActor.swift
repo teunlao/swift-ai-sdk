@@ -32,6 +32,7 @@ actor StreamTextActor {
     private var activeReasoningContent: [String: ActiveReasoningContent] = [:]
     private var recordedResponseMessages: [ResponseMessage] = []
     private var currentToolCalls: [TypedToolCall] = []
+    private var currentToolCallsById: [String: TypedToolCall] = [:]
     private var currentToolOutputs: [ToolOutput] = []
     private var recordedRequest: LanguageModelRequestMetadata = LanguageModelRequestMetadata()
     private var recordedSteps: [StepResult] = []
@@ -460,6 +461,7 @@ actor StreamTextActor {
         activeTextContent.removeAll()
         activeReasoningContent.removeAll()
         currentToolCalls.removeAll()
+        currentToolCallsById.removeAll()
         currentToolOutputs.removeAll()
         capturedWarnings = []
         openTextIds.removeAll()
@@ -720,7 +722,7 @@ actor StreamTextActor {
                     .reasoningEnd(id: id, providerMetadata: providerMetadata)
                 )
 
-case let .toolInputStart(id, toolName, providerMetadata, providerExecuted):
+case let .toolInputStart(id, toolName, providerMetadata, providerExecuted, dynamicFlag, _):
                 if !didEmitStartStep {
                     if !framingEmitted {
                         framingEmitted = true
@@ -754,7 +756,7 @@ case let .toolInputStart(id, toolName, providerMetadata, providerExecuted):
                         toolName: toolName,
                         providerMetadata: providerMetadata,
                         providerExecuted: providerExecuted,
-                        dynamic: tool?.type == .dynamic ? true : nil
+                        dynamic: dynamicFlag ?? (tool?.type == .dynamic ? true : nil)
                     )
                 )
             case let .toolInputDelta(id, delta, providerMetadata):
@@ -826,6 +828,7 @@ case let .toolInputStart(id, toolName, providerMetadata, providerExecuted):
 
                 recordedContent.append(.toolCall(typed, providerMetadata: typed.providerMetadata))
                 currentToolCalls.append(typed)
+                currentToolCallsById[typed.toolCallId] = typed
                 await fullBroadcaster.send(.toolCall(typed))
 
                 if typed.invalid == true {
@@ -881,6 +884,35 @@ case let .toolInputStart(id, toolName, providerMetadata, providerExecuted):
                     )
                     await executeToolAfterApproval(pending)
                 }
+
+            case .toolApprovalRequest(let request):
+                if !didEmitStartStep {
+                    if !framingEmitted {
+                        framingEmitted = true
+                        await fullBroadcaster.send(.start)
+                    }
+                    if shouldEmitStartStep {
+                        didEmitStartStep = true
+                        await fullBroadcaster.send(
+                            .startStep(
+                                request: recordedRequest,
+                                warnings: sawStreamStart ? capturedWarnings : []
+                            )
+                        )
+                    }
+                }
+
+                guard let toolCall = currentToolCallsById[request.toolCallId] else {
+                    await emitStreamError("tool call \(request.toolCallId) not found for approval \(request.approvalId)")
+                    continue
+                }
+
+                let approval = ToolApprovalRequestOutput(
+                    approvalId: request.approvalId,
+                    toolCall: toolCall
+                )
+                await fullBroadcaster.send(.toolApprovalRequest(approval))
+                recordedContent.append(.toolApprovalRequest(approval))
 
             case .toolResult(let result):
                 let input = activeToolInputs[result.toolCallId] ?? .null
@@ -967,6 +999,7 @@ case let .toolInputStart(id, toolName, providerMetadata, providerExecuted):
                 recordedResponseMessages.append(contentsOf: responseMessages)
                 accumulatedUsage = addLanguageModelUsage(accumulatedUsage, usage)
                 currentToolCalls.removeAll()
+                currentToolCallsById.removeAll()
                 currentToolOutputs.removeAll()
                 // Do not resolve `finishReasonPromise` here; session-level finish
                 // will resolve it with the last step's reason to mirror upstream.
@@ -1041,6 +1074,7 @@ case let .toolInputStart(id, toolName, providerMetadata, providerExecuted):
             recordedResponseMessages.append(contentsOf: responseMessages)
             accumulatedUsage = addLanguageModelUsage(accumulatedUsage, usage)
             currentToolCalls.removeAll()
+            currentToolCallsById.removeAll()
             currentToolOutputs.removeAll()
             recordedFinishReason = finishReason
         }

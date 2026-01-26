@@ -97,6 +97,11 @@ public func parseToolCall(
 ) async -> TypedToolCall {
     do {
         guard let tools = tools else {
+            // Provider-executed dynamic tools are not part of our list of tools:
+            if toolCall.providerExecuted == true, toolCall.dynamic == true {
+                return try await parseProviderExecutedDynamicToolCall(toolCall)
+            }
+
             throw NoSuchToolError(toolName: toolCall.toolName)
         }
 
@@ -184,6 +189,37 @@ public func parseToolCall(
     }
 }
 
+private func parseProviderExecutedDynamicToolCall(
+    _ toolCall: LanguageModelV3ToolCall
+) async throws -> TypedToolCall {
+    let trimmed = toolCall.input.trimmingCharacters(in: .whitespacesAndNewlines)
+
+    let input: JSONValue
+    if trimmed.isEmpty {
+        input = .object([:])
+    } else {
+        let parsed = await safeParseJSON(ParseJSONOptions(text: toolCall.input))
+        switch parsed {
+        case .success(let value, _):
+            input = value
+        case .failure(let error, _):
+            throw InvalidToolInputError(
+                toolName: toolCall.toolName,
+                toolInput: toolCall.input,
+                cause: error
+            )
+        }
+    }
+
+    return .dynamic(DynamicToolCall(
+        toolCallId: toolCall.toolCallId,
+        toolName: toolCall.toolName,
+        input: input,
+        providerExecuted: true,
+        providerMetadata: toolCall.providerMetadata
+    ))
+}
+
 /**
  Internal helper to parse a tool call without error handling.
 
@@ -204,6 +240,11 @@ private func doParseToolCall(
     let toolName = toolCall.toolName
 
     guard let tool = tools[toolName] else {
+        // Provider-executed dynamic tools are not part of our list of tools:
+        if toolCall.providerExecuted == true, toolCall.dynamic == true {
+            return try await parseProviderExecutedDynamicToolCall(toolCall)
+        }
+
         throw NoSuchToolError(
             toolName: toolCall.toolName,
             availableTools: Array(tools.keys)

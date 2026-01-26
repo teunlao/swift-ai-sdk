@@ -77,7 +77,7 @@ public func runToolsTransformation(
                     case .reasoningEnd(let id, let providerMetadata):
                         emit(.reasoningEnd(id: id, providerMetadata: providerMetadata))
 
-                    case .toolInputStart(let id, let toolName, let providerMetadata, let providerExecuted):
+                    case .toolInputStart(let id, let toolName, let providerMetadata, let providerExecuted, _, _):
                         emit(.toolInputStart(
                             id: id,
                             toolName: toolName,
@@ -131,6 +131,8 @@ public func runToolsTransformation(
                                 messages: messages
                             )
 
+                            toolInputs[typedToolCall.toolCallId] = typedToolCall.input
+                            toolCallsById[typedToolCall.toolCallId] = typedToolCall
                             emit(.toolCall(typedToolCall))
 
                             if typedToolCall.invalid == true {
@@ -167,9 +169,6 @@ public func runToolsTransformation(
                                 emit(.toolApprovalRequest(approval))
                                 continue
                             }
-
-                            toolInputs[typedToolCall.toolCallId] = typedToolCall.input
-                            toolCallsById[typedToolCall.toolCallId] = typedToolCall
 
                             guard tool.execute != nil, typedToolCall.providerExecuted != true else {
                                 continue
@@ -214,6 +213,20 @@ public func runToolsTransformation(
                         } catch {
                             emit(.error(error))
                         }
+
+                    case .toolApprovalRequest(let request):
+                        guard let toolCall = toolCallsById[request.toolCallId] else {
+                            emit(.error(ToolCallNotFoundForApprovalError(
+                                toolCallId: request.toolCallId,
+                                approvalId: request.approvalId
+                            )))
+                            continue
+                        }
+
+                        emit(.toolApprovalRequest(ToolApprovalRequestOutput(
+                            approvalId: request.approvalId,
+                            toolCall: toolCall
+                        )))
 
                     case .toolResult(let toolResultChunk):
                         let toolCallId = toolResultChunk.toolCallId
@@ -260,6 +273,15 @@ public func runToolsTransformation(
             state.cancelAllTasks()
             processingTask.cancel()
         }
+    }
+}
+
+private struct ToolCallNotFoundForApprovalError: LocalizedError, Sendable {
+    let toolCallId: String
+    let approvalId: String
+
+    var errorDescription: String? {
+        "Tool call not found for approval: toolCallId=\(toolCallId) approvalId=\(approvalId)"
     }
 }
 

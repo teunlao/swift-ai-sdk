@@ -591,6 +591,7 @@ private func consumeStream<ResultValue, PartialValue, ElementStream>(
              .toolInputStart,
              .toolInputDelta,
              .toolInputEnd,
+             .toolApprovalRequest,
              .toolCall,
              .toolResult,
              .file,

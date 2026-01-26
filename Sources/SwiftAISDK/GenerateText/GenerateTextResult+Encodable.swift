@@ -412,35 +412,41 @@ private enum GenerateTextResultJSONEncoder {
 
     private static func toolResultOutput(_ output: LanguageModelV3ToolResultOutput) -> JSONValue {
         switch output {
-        case .text(let value):
+        case .text(let value, let providerOptions):
             return object([
                 "type": .string("text"),
-                "value": .string(value)
+                "value": .string(value),
+                "providerOptions": encodedProviderOptions(providerOptions)
             ])
-        case .json(let value):
+        case .json(let value, let providerOptions):
             return object([
                 "type": .string("json"),
-                "value": value
+                "value": value,
+                "providerOptions": encodedProviderOptions(providerOptions)
             ])
-        case .executionDenied(let reason):
+        case .executionDenied(let reason, let providerOptions):
             return object([
                 "type": .string("execution-denied"),
-                "reason": optionalString(reason)
+                "reason": optionalString(reason),
+                "providerOptions": encodedProviderOptions(providerOptions)
             ])
-        case .errorText(let value):
+        case .errorText(let value, let providerOptions):
             return object([
                 "type": .string("error-text"),
-                "value": .string(value)
+                "value": .string(value),
+                "providerOptions": encodedProviderOptions(providerOptions)
             ])
-        case .errorJson(let value):
+        case .errorJson(let value, let providerOptions):
             return object([
                 "type": .string("error-json"),
-                "value": value
+                "value": value,
+                "providerOptions": encodedProviderOptions(providerOptions)
             ])
-        case .content(let parts):
+        case .content(let parts, let providerOptions):
             return object([
                 "type": .string("content"),
-                "value": .array(parts.map(toolResultContentPart))
+                "value": .array(parts.map(toolResultContentPart)),
+                "providerOptions": encodedProviderOptions(providerOptions)
             ])
         }
     }
@@ -574,4 +580,3 @@ private enum GenerateTextResultJSONEncoder {
         return jsonValue
     }
 }
-

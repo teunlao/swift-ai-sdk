@@ -466,6 +466,17 @@ private func asContent(
         case .source(let sourcePart):
             contentParts.append(.source(type: "source", source: sourcePart))
 
+        case .toolApprovalRequest(let approvalRequest):
+            guard let toolCall = toolCallsById[approvalRequest.toolCallId] else {
+                continue
+            }
+            contentParts.append(.toolApprovalRequest(
+                ToolApprovalRequestOutput(
+                    approvalId: approvalRequest.approvalId,
+                    toolCall: toolCall
+                )
+            ))
+
         case .toolCall(let toolCallPart):
             if let typedCall = toolCallsById[toolCallPart.toolCallId] {
                 contentParts.append(.toolCall(typedCall, providerMetadata: toolCallPart.providerMetadata))
@@ -747,8 +758,14 @@ public func generateText<OutputValue: Sendable>(
     // Execute approved tool approvals before entering the main loop.
     let approvals = collectToolApprovals(messages: initialMessages)
     if !approvals.approvedToolApprovals.isEmpty || !approvals.deniedToolApprovals.isEmpty {
+        let providerExecutedToolApprovals = (approvals.approvedToolApprovals + approvals.deniedToolApprovals)
+            .filter { $0.toolCall.providerExecuted == true }
+
+        let localApprovedToolApprovals = approvals.approvedToolApprovals
+            .filter { $0.toolCall.providerExecuted != true }
+
         let executedOutputs = try await executeTools(
-            toolCalls: approvals.approvedToolApprovals.map { $0.toolCall },
+            toolCalls: localApprovedToolApprovals.map { $0.toolCall },
             tools: tools,
             tracer: tracer,
             telemetry: telemetry,
@@ -762,10 +779,14 @@ public func generateText<OutputValue: Sendable>(
         }
 
         for denied in approvals.deniedToolApprovals {
+            let outputProviderOptions: ProviderOptions? = denied.toolCall.providerExecuted == true ? [
+                "openai": ["approvalId": .string(denied.approvalResponse.approvalId)]
+            ] : nil
+
             let deniedPart = ToolResultPart(
                 toolCallId: denied.toolCall.toolCallId,
                 toolName: denied.toolCall.toolName,
-                output: .executionDenied(reason: denied.approvalResponse.reason),
+                output: .executionDenied(reason: denied.approvalResponse.reason, providerOptions: outputProviderOptions),
                 providerOptions: nil
             )
             toolContent.append(.toolResult(deniedPart))
@@ -774,6 +795,21 @@ public func generateText<OutputValue: Sendable>(
         if !toolContent.isEmpty {
             await responseMessageStore.append(contentsOf: [
                 .tool(ToolModelMessage(content: toolContent))
+            ])
+        }
+
+        if !providerExecutedToolApprovals.isEmpty {
+            let approvalContent: [ToolContentPart] = providerExecutedToolApprovals.map { approval in
+                .toolApprovalResponse(ToolApprovalResponse(
+                    approvalId: approval.approvalResponse.approvalId,
+                    approved: approval.approvalResponse.approved,
+                    reason: approval.approvalResponse.reason,
+                    providerExecuted: true
+                ))
+            }
+
+            await responseMessageStore.append(contentsOf: [
+                .tool(ToolModelMessage(content: approvalContent))
             ])
         }
     }

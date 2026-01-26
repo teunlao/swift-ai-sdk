@@ -80,6 +80,9 @@ public func simulateStreamingMiddleware() -> LanguageModelV3Middleware {
                         // Pass through tool-results as-is
                         continuation.yield(.toolResult(toolResult))
 
+                    case .toolApprovalRequest(let request):
+                        continuation.yield(.toolApprovalRequest(request))
+
                     case .file(let file):
                         // Pass through files as-is
                         continuation.yield(.file(file))

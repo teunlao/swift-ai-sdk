@@ -1478,9 +1478,19 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
                 let tracer: any Tracer = actorConfig.tracer
 
                 if !approvals.deniedToolApprovals.isEmpty || !approvals.approvedToolApprovals.isEmpty {
-                    var toolContentParts: [ToolContentPart] = []
+                    let providerExecutedToolApprovals = (approvals.approvedToolApprovals + approvals.deniedToolApprovals)
+                        .filter { providerExecutedFlag(for: $0.toolCall) == true }
 
-                    for denied in approvals.deniedToolApprovals {
+                    let localApprovedToolApprovals = approvals.approvedToolApprovals
+                        .filter { providerExecutedFlag(for: $0.toolCall) != true }
+
+                    let localDeniedToolApprovals = approvals.deniedToolApprovals
+                        .filter { providerExecutedFlag(for: $0.toolCall) != true }
+
+                    let deniedProviderExecutedToolApprovals = approvals.deniedToolApprovals
+                        .filter { providerExecutedFlag(for: $0.toolCall) == true }
+
+                    for denied in localDeniedToolApprovals + deniedProviderExecutedToolApprovals {
                         let providerExecuted = providerExecutedFlag(for: denied.toolCall)
                         let deniedEvent = ToolOutputDenied(
                             toolCallId: denied.toolCall.toolCallId,
@@ -1488,17 +1498,11 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
                             providerExecuted: providerExecuted
                         )
                         await result._publishPreludeEvents([TextStreamPart.toolOutputDenied(deniedEvent)])
-
-                        let deniedPart = ToolResultPart(
-                            toolCallId: denied.toolCall.toolCallId,
-                            toolName: denied.toolCall.toolName,
-                            output: .executionDenied(reason: denied.approvalResponse.reason)
-                        )
-                        toolContentParts.append(.toolResult(deniedPart))
                     }
 
-                    if let tools, !approvals.approvedToolApprovals.isEmpty {
-                        for approval in approvals.approvedToolApprovals {
+                    var toolOutputs: [ToolOutput] = []
+                    if let tools, !localApprovedToolApprovals.isEmpty {
+                        for approval in localApprovedToolApprovals {
                             let output = await executeToolCall(
                                 toolCall: approval.toolCall,
                                 tools: tools,
@@ -1515,6 +1519,7 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
                             )
 
                             guard let output else { continue }
+                            toolOutputs.append(output)
 
                             switch output {
                             case .result(let typed):
@@ -1522,12 +1527,44 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
                             case .error(let error):
                                 await result._publishPreludeEvents([TextStreamPart.toolError(error)])
                             }
-
-                            toolContentParts.append(makeToolContentPart(output: output, tools: tools))
                         }
                     }
 
-                    if !toolContentParts.isEmpty {
+                    // Forward provider-executed approval responses to the provider (do not execute locally).
+                    if !providerExecutedToolApprovals.isEmpty {
+                        let approvalContent: [ToolContentPart] = providerExecutedToolApprovals.map { approval in
+                            .toolApprovalResponse(ToolApprovalResponse(
+                                approvalId: approval.approvalResponse.approvalId,
+                                approved: approval.approvalResponse.approved,
+                                reason: approval.approvalResponse.reason,
+                                providerExecuted: true
+                            ))
+                        }
+
+                        let toolMessage = ToolModelMessage(content: approvalContent)
+                        let responseMessage = ResponseMessage.tool(toolMessage)
+                        responseMessagesHistory.append(responseMessage)
+                        await result._appendInitialResponseMessages([responseMessage])
+                    }
+
+                    // Local tool results (approved + denied) are sent as tool results.
+                    if !toolOutputs.isEmpty || !localDeniedToolApprovals.isEmpty {
+                        var toolContentParts: [ToolContentPart] = []
+                        if let tools {
+                            toolContentParts.append(contentsOf: toolOutputs.map { output in
+                                makeToolContentPart(output: output, tools: tools)
+                            })
+                        }
+
+                        for denied in localDeniedToolApprovals {
+                            let deniedPart = ToolResultPart(
+                                toolCallId: denied.toolCall.toolCallId,
+                                toolName: denied.toolCall.toolName,
+                                output: .executionDenied(reason: denied.approvalResponse.reason)
+                            )
+                            toolContentParts.append(.toolResult(deniedPart))
+                        }
+
                         let toolMessage = ToolModelMessage(content: toolContentParts)
                         let responseMessage = ResponseMessage.tool(toolMessage)
                         responseMessagesHistory.append(responseMessage)
