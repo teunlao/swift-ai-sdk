@@ -11,10 +11,12 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
     public let specificationVersion: String = "v3"
     private let modelIdentifier: OpenAIResponsesModelId
     private let config: OpenAIConfig
+    private let providerOptionsName: String
 
     public init(modelId: OpenAIResponsesModelId, config: OpenAIConfig) {
         self.modelIdentifier = modelId
         self.config = config
+        self.providerOptionsName = config.provider.contains("azure") ? "azure" : "openai"
     }
 
     public var provider: String { config.provider }
@@ -336,11 +338,19 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
         if options.frequencyPenalty != nil { addUnsupportedSetting("frequencyPenalty") }
         if options.stopSequences != nil { addUnsupportedSetting("stopSequences") }
 
-        let openAIOptions = try await parseProviderOptions(
-            provider: "openai",
+        var openAIOptions = try await parseProviderOptions(
+            provider: providerOptionsName,
             providerOptions: options.providerOptions,
             schema: openAIResponsesProviderOptionsSchema
         )
+
+        if openAIOptions == nil, providerOptionsName != "openai" {
+            openAIOptions = try await parseProviderOptions(
+                provider: "openai",
+                providerOptions: options.providerOptions,
+                schema: openAIResponsesProviderOptionsSchema
+            )
+        }
 
         let storeOption = openAIOptions?.store
         let storeForInput = storeOption ?? true
@@ -358,6 +368,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
 
         let (input, inputWarnings) = try await OpenAIResponsesInputBuilder.makeInput(
             prompt: options.prompt,
+            providerOptionsName: providerOptionsName,
             systemMessageMode: systemMessageMode,
             fileIdPrefixes: config.fileIdPrefixes,
             store: storeForInput,
@@ -931,7 +942,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
         if let serviceTier {
             inner["serviceTier"] = .string(serviceTier)
         }
-        return inner.isEmpty ? nil : ["openai": inner]
+        return inner.isEmpty ? nil : [providerOptionsName: inner]
     }
 
     private func nextSourceId() -> String {
@@ -1004,7 +1015,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
         for (key, value) in items {
             filtered[key] = value
         }
-        return ["openai": filtered]
+        return [providerOptionsName: filtered]
     }
 
     private func handleOutputItemAdded(

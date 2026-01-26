@@ -1284,6 +1284,143 @@ struct AzureProviderTests {
         #expect(url.absoluteString == "https://test-resource.openai.azure.com/openai/v1/responses?api-version=v1")
     }
 
+    @Test("responses should read providerOptions from azure key")
+    func responsesShouldReadProviderOptionsFromAzureKey() async throws {
+        actor RequestCapture {
+            var request: URLRequest?
+            func store(_ request: URLRequest) { self.request = request }
+            func value() -> URLRequest? { request }
+        }
+
+        let capture = RequestCapture()
+
+        let responseJSON: [String: Any] = [
+            "id": "resp_67c97c0203188190a025beb4a75242bc",
+            "object": "response",
+            "created_at": 1741257730,
+            "status": "completed",
+            "model": "test-deployment",
+            "output": [[
+                "id": "msg_67c97c02656c81908e080dfdf4a03cd1",
+                "type": "message",
+                "status": "completed",
+                "role": "assistant",
+                "content": [[
+                    "type": "output_text",
+                    "text": "",
+                    "annotations": []
+                ]]
+            ]],
+            "usage": [
+                "input_tokens": 4,
+                "output_tokens": 30,
+                "total_tokens": 34
+            ],
+            "incomplete_details": NSNull()
+        ]
+
+        let responseData = Self.encodeJSON(responseJSON)
+        let response = HTTPURLResponse(
+            url: URL(string: "https://test-resource.openai.azure.com/openai/v1/responses?api-version=v1")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: response)
+        }
+
+        let provider = createAzure(settings: AzureProviderSettings(
+            resourceName: "test-resource",
+            apiKey: "test-api-key",
+            fetch: fetch
+        ))
+
+        let prompt: LanguageModelV3Prompt = [
+            .system(content: "You are a helpful assistant.", providerOptions: nil),
+            .user(content: [.text(.init(text: "Hello"))], providerOptions: nil),
+        ]
+
+        _ = try await provider.responses(.init(rawValue: "test-deployment")).doGenerate(options: LanguageModelV3CallOptions(
+            prompt: prompt,
+            providerOptions: ["azure": ["forceReasoning": true]]
+        ))
+
+        guard let request = await capture.value() else {
+            Issue.record("Expected to capture request")
+            return
+        }
+
+        let requestBody = try Self.decodeRequestBody(request)
+        guard let input = requestBody["input"] as? [[String: Any]],
+              let system = input.first else {
+            Issue.record("Expected input in request body")
+            return
+        }
+
+        #expect(system["role"] as? String == "developer")
+        #expect(system["content"] as? String == "You are a helpful assistant.")
+    }
+
+    @Test("responses should emit providerMetadata under azure key")
+    func responsesShouldEmitProviderMetadataUnderAzureKey() async throws {
+        let responseJSON: [String: Any] = [
+            "id": "resp_67c97c0203188190a025beb4a75242bc",
+            "object": "response",
+            "created_at": 1741257730,
+            "status": "completed",
+            "model": "test-deployment",
+            "output": [[
+                "id": "msg_67c97c02656c81908e080dfdf4a03cd1",
+                "type": "message",
+                "status": "completed",
+                "role": "assistant",
+                "content": [[
+                    "type": "output_text",
+                    "text": "Test",
+                    "annotations": []
+                ]]
+            ]],
+            "usage": [
+                "input_tokens": 4,
+                "output_tokens": 30,
+                "total_tokens": 34
+            ],
+            "incomplete_details": NSNull()
+        ]
+
+        let responseData = Self.encodeJSON(responseJSON)
+        let response = HTTPURLResponse(
+            url: URL(string: "https://test-resource.openai.azure.com/openai/v1/responses?api-version=v1")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { request in
+            FetchResponse(body: .data(responseData), urlResponse: response)
+        }
+
+        let provider = createAzure(settings: AzureProviderSettings(
+            resourceName: "test-resource",
+            apiKey: "test-api-key",
+            fetch: fetch
+        ))
+
+        let result = try await provider.responses(.init(rawValue: "test-deployment")).doGenerate(
+            options: LanguageModelV3CallOptions(prompt: TEST_PROMPT)
+        )
+
+        guard case .text(let part) = result.content.first else {
+            Issue.record("Expected first content part to be text")
+            return
+        }
+
+        #expect(part.providerMetadata?["azure"]?["itemId"] == .string("msg_67c97c02656c81908e080dfdf4a03cd1"))
+    }
+
     @Test("should handle Azure file IDs with assistant- prefix")
     func handleAzureFileIDsWithAssistantPrefix() async throws {
         actor RequestCapture {

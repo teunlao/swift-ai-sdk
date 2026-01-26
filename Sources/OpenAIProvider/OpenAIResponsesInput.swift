@@ -5,6 +5,7 @@ import AISDKProviderUtils
 struct OpenAIResponsesInputBuilder {
     static func makeInput(
         prompt: LanguageModelV3Prompt,
+        providerOptionsName: String = "openai",
         systemMessageMode: OpenAIResponsesSystemMessageMode = .system,
         fileIdPrefixes: [String]? = ["file-"],
         store: Bool = true,
@@ -31,7 +32,12 @@ struct OpenAIResponsesInputBuilder {
 
             case let .user(parts, _):
                 let content = try parts.enumerated().map { index, part in
-                    try convertUserPart(part, index: index, prefixes: fileIdPrefixes)
+                    try convertUserPart(
+                        part,
+                        index: index,
+                        prefixes: fileIdPrefixes,
+                        providerOptionsName: providerOptionsName
+                    )
                 }
 
                 items.append(.object([
@@ -45,7 +51,7 @@ struct OpenAIResponsesInputBuilder {
                 for part in parts {
                     switch part {
                     case .text(let textPart):
-                        let itemId = extractOpenAIItemId(from: textPart.providerOptions)
+                        let itemId = extractOpenAIItemId(from: textPart.providerOptions, providerOptionsName: providerOptionsName)
 
                         if hasConversation, itemId != nil {
                             continue
@@ -76,7 +82,7 @@ struct OpenAIResponsesInputBuilder {
                         items.append(.object(payload))
 
                     case .toolCall(let callPart):
-                        let itemId = extractOpenAIItemId(from: callPart.providerOptions)
+                        let itemId = extractOpenAIItemId(from: callPart.providerOptions, providerOptionsName: providerOptionsName)
 
                         if hasConversation, itemId != nil {
                             continue
@@ -234,7 +240,8 @@ struct OpenAIResponsesInputBuilder {
                         }
 
                         if store {
-                            let itemId = extractOpenAIItemId(from: resultPart.providerOptions) ?? resultPart.toolCallId
+                            let itemId = extractOpenAIItemId(from: resultPart.providerOptions, providerOptionsName: providerOptionsName)
+                                ?? resultPart.toolCallId
                             items.append(.object([
                                 "type": .string("item_reference"),
                                 "id": .string(itemId)
@@ -245,7 +252,7 @@ struct OpenAIResponsesInputBuilder {
 
                     case .reasoning(let reasoningPart):
                         let providerOptions = try await parseProviderOptions(
-                            provider: "openai",
+                            provider: providerOptionsName,
                             providerOptions: reasoningPart.providerOptions,
                             schema: openAIResponsesReasoningProviderOptionsSchema
                         )
@@ -438,7 +445,8 @@ struct OpenAIResponsesInputBuilder {
     private static func convertUserPart(
         _ part: LanguageModelV3UserMessagePart,
         index: Int,
-        prefixes: [String]?
+        prefixes: [String]?,
+        providerOptionsName: String
     ) throws -> JSONValue {
         switch part {
         case .text(let textPart):
@@ -447,18 +455,28 @@ struct OpenAIResponsesInputBuilder {
                 "text": .string(textPart.text)
             ])
         case .file(let filePart):
-            return try convertFilePart(part: filePart, index: index, prefixes: prefixes)
+            return try convertFilePart(
+                part: filePart,
+                index: index,
+                prefixes: prefixes,
+                providerOptionsName: providerOptionsName
+            )
         }
     }
 
     private static func convertFilePart(
         part: LanguageModelV3FilePart,
         index: Int,
-        prefixes: [String]?
+        prefixes: [String]?,
+        providerOptionsName: String
     ) throws -> JSONValue {
         if part.mediaType.hasPrefix("image/") {
             let mediaType = part.mediaType == "image/*" ? "image/jpeg" : part.mediaType
-            let detail = extractOpenAIStringOption(from: part.providerOptions, key: "imageDetail")
+            let detail = extractOpenAIStringOption(
+                from: part.providerOptions,
+                providerOptionsName: providerOptionsName,
+                key: "imageDetail"
+            )
             switch part.data {
             case .url(let url):
                 var payload: [String: JSONValue] = [
@@ -644,9 +662,13 @@ struct OpenAIResponsesInputBuilder {
 
 
 
-    private static func extractOpenAIStringOption(from options: ProviderOptions?, key: String) -> String? {
+    private static func extractOpenAIStringOption(
+        from options: ProviderOptions?,
+        providerOptionsName: String,
+        key: String
+    ) -> String? {
         guard let options,
-              let openaiOptions = options["openai"],
+              let openaiOptions = options[providerOptionsName],
               let value = openaiOptions[key],
               case .string(let stringValue) = value else {
             return nil
@@ -681,9 +703,9 @@ struct OpenAIResponsesInputBuilder {
         return "{\(segments.joined(separator: ","))}"
     }
 
-    private static func extractOpenAIItemId(from options: ProviderOptions?) -> String? {
+    private static func extractOpenAIItemId(from options: ProviderOptions?, providerOptionsName: String) -> String? {
         guard let options,
-              let openaiOptions = options["openai"],
+              let openaiOptions = options[providerOptionsName],
               case .string(let itemId) = openaiOptions["itemId"] else {
             return nil
         }
