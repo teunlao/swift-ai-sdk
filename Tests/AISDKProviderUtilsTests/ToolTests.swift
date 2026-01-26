@@ -212,7 +212,7 @@ struct ToolTests {
         #expect(createdTool.toModelOutput != nil)
 
         let output = createdTool.toModelOutput?(JSONValue.string("test"))
-        if case .text(let text) = output {
+        if case .text(value: let text, providerOptions: _) = output {
             #expect(text == "Formatted: string(\"test\")")
         } else {
             Issue.record("Expected text output")

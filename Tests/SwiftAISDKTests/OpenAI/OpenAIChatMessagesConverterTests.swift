@@ -443,7 +443,7 @@ struct OpenAIChatMessagesConverterTests {
 
         let prompt: LanguageModelV3Prompt = [
             .assistant(content: [.toolCall(toolCallPart)], providerOptions: nil),
-            .tool(content: [toolResultPart], providerOptions: nil)
+            .tool(content: [.toolResult(toolResultPart)], providerOptions: nil)
         ]
 
         let result = try OpenAIChatMessagesConverter.convert(prompt: prompt, systemMessageMode: .system)
@@ -487,7 +487,7 @@ struct OpenAIChatMessagesConverterTests {
         )
 
         let prompt: LanguageModelV3Prompt = [
-            .tool(content: [textResult, errorResult], providerOptions: nil)
+            .tool(content: [.toolResult(textResult), .toolResult(errorResult)], providerOptions: nil)
         ]
 
         let result = try OpenAIChatMessagesConverter.convert(prompt: prompt, systemMessageMode: .system)

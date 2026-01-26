@@ -1047,11 +1047,11 @@ struct MistralToolResultFormatTests {
             ),
             .tool(
                 content: [
-                    .init(
+                    .toolResult(.init(
                         toolCallId: "call-1",
                         toolName: "test-tool",
                         output: .json(value: .object(["result": .string("success")]))
-                    )
+                    ))
                 ],
                 providerOptions: nil
             )

@@ -1680,13 +1680,13 @@ struct OpenAIResponsesInputBuilderTests {
             ),
             .tool(
                 content: [
-                    LanguageModelV3ToolResultPart(
+                    .toolResult(LanguageModelV3ToolResultPart(
                         toolCallId: "call_001",
                         toolName: "search",
                         output: .json(value: .object([
                             "results": .array([.string("result1"), .string("result2")])
                         ]))
-                    )
+                    ))
                 ],
                 providerOptions: nil
             ),
@@ -1729,11 +1729,11 @@ struct OpenAIResponsesInputBuilderTests {
             ),
             .tool(
                 content: [
-                    LanguageModelV3ToolResultPart(
+                    .toolResult(LanguageModelV3ToolResultPart(
                         toolCallId: "call_002",
                         toolName: "calculator",
                         output: .json(value: .object(["result": .number(4)]))
-                    )
+                    ))
                 ],
                 providerOptions: nil
             ),
@@ -1827,14 +1827,14 @@ struct OpenAIResponsesInputBuilderTests {
         let prompt: LanguageModelV3Prompt = [
             .tool(
                 content: [
-                    LanguageModelV3ToolResultPart(
+                    .toolResult(LanguageModelV3ToolResultPart(
                         toolCallId: "call_123",
                         toolName: "search",
                         output: .json(value: .object([
                             "temperature": .string("72°F"),
                             "condition": .string("Sunny")
                         ]))
-                    )
+                    ))
                 ],
                 providerOptions: nil
             )
@@ -1866,11 +1866,11 @@ struct OpenAIResponsesInputBuilderTests {
         let prompt: LanguageModelV3Prompt = [
             .tool(
                 content: [
-                    LanguageModelV3ToolResultPart(
+                    .toolResult(LanguageModelV3ToolResultPart(
                         toolCallId: "call_123",
                         toolName: "search",
                         output: .text(value: "The weather in San Francisco is 72°F")
-                    )
+                    ))
                 ],
                 providerOptions: nil
             )
@@ -1899,13 +1899,13 @@ struct OpenAIResponsesInputBuilderTests {
         let prompt: LanguageModelV3Prompt = [
             .tool(
                 content: [
-                    LanguageModelV3ToolResultPart(
+                    .toolResult(LanguageModelV3ToolResultPart(
                         toolCallId: "call_123",
                         toolName: "search",
                         output: .content(value: [
                             .text(text: "The weather in San Francisco is 72°F")
                         ])
-                    )
+                    ))
                 ],
                 providerOptions: nil
             )
@@ -1939,13 +1939,13 @@ struct OpenAIResponsesInputBuilderTests {
         let prompt: LanguageModelV3Prompt = [
             .tool(
                 content: [
-                    LanguageModelV3ToolResultPart(
+                    .toolResult(LanguageModelV3ToolResultPart(
                         toolCallId: "call_123",
                         toolName: "search",
                         output: .content(value: [
                             .media(data: "base64_data", mediaType: "image/png")
                         ])
-                    )
+                    ))
                 ],
                 providerOptions: nil
             )
@@ -1979,13 +1979,13 @@ struct OpenAIResponsesInputBuilderTests {
         let prompt: LanguageModelV3Prompt = [
             .tool(
                 content: [
-                    LanguageModelV3ToolResultPart(
+                    .toolResult(LanguageModelV3ToolResultPart(
                         toolCallId: "call_123",
                         toolName: "search",
                         output: .content(value: [
                             .media(data: "AQIDBAU=", mediaType: "application/pdf")
                         ])
-                    )
+                    ))
                 ],
                 providerOptions: nil
             )
@@ -2020,7 +2020,7 @@ struct OpenAIResponsesInputBuilderTests {
         let prompt: LanguageModelV3Prompt = [
             .tool(
                 content: [
-                    LanguageModelV3ToolResultPart(
+                    .toolResult(LanguageModelV3ToolResultPart(
                         toolCallId: "call_123",
                         toolName: "search",
                         output: .content(value: [
@@ -2028,7 +2028,7 @@ struct OpenAIResponsesInputBuilderTests {
                             .media(data: "base64_data", mediaType: "image/png"),
                             .media(data: "AQIDBAU=", mediaType: "application/pdf")
                         ])
-                    )
+                    ))
                 ],
                 providerOptions: nil
             )
@@ -2071,19 +2071,19 @@ struct OpenAIResponsesInputBuilderTests {
         let prompt: LanguageModelV3Prompt = [
             .tool(
                 content: [
-                    LanguageModelV3ToolResultPart(
+                    .toolResult(LanguageModelV3ToolResultPart(
                         toolCallId: "call_123",
                         toolName: "search",
                         output: .json(value: .object([
                             "temperature": .string("72°F"),
                             "condition": .string("Sunny")
                         ]))
-                    ),
-                    LanguageModelV3ToolResultPart(
+                    )),
+                    .toolResult(LanguageModelV3ToolResultPart(
                         toolCallId: "call_456",
                         toolName: "calculator",
                         output: .json(value: .number(4))
-                    )
+                    ))
                 ],
                 providerOptions: nil
             )
@@ -2104,6 +2104,89 @@ struct OpenAIResponsesInputBuilderTests {
               case .string("function_call_output") = obj2["type"],
               case .string("call_456") = obj2["call_id"],
               case .string("4") = obj2["output"] else {
+            Issue.record("Unexpected output structure")
+            return
+        }
+    }
+
+    // MARK: - Tool Messages - Approvals
+
+    @Test("should convert tool approval response to mcp_approval_response when store is true")
+    func toolApprovalResponseToMcpApprovalResponse() async throws {
+        let prompt: LanguageModelV3Prompt = [
+            .tool(
+                content: [
+                    .toolApprovalResponse(LanguageModelV3ToolApprovalResponsePart(
+                        approvalId: "approval_123",
+                        approved: true,
+                        reason: nil,
+                        providerOptions: nil
+                    ))
+                ],
+                providerOptions: nil
+            )
+        ]
+
+        let result = try await OpenAIResponsesInputBuilder.makeInput(
+            prompt: prompt,
+            systemMessageMode: .system,
+            store: true,
+            hasLocalShellTool: false
+        )
+
+        let expected: OpenAIResponsesInput = [
+            .object([
+                "type": .string("item_reference"),
+                "id": .string("approval_123")
+            ]),
+            .object([
+                "type": .string("mcp_approval_response"),
+                "approval_request_id": .string("approval_123"),
+                "approve": .bool(true)
+            ])
+        ]
+
+        #expect(result.input == expected)
+        #expect(result.warnings.isEmpty)
+    }
+
+    @Test("should dedupe tool approval responses by approvalId")
+    func toolApprovalResponseDeduped() async throws {
+        let prompt: LanguageModelV3Prompt = [
+            .tool(
+                content: [
+                    .toolApprovalResponse(LanguageModelV3ToolApprovalResponsePart(
+                        approvalId: "approval_123",
+                        approved: true,
+                        reason: nil,
+                        providerOptions: nil
+                    )),
+                    .toolApprovalResponse(LanguageModelV3ToolApprovalResponsePart(
+                        approvalId: "approval_123",
+                        approved: true,
+                        reason: nil,
+                        providerOptions: nil
+                    ))
+                ],
+                providerOptions: nil
+            )
+        ]
+
+        let result = try await OpenAIResponsesInputBuilder.makeInput(
+            prompt: prompt,
+            systemMessageMode: .system,
+            store: true,
+            hasLocalShellTool: false
+        )
+
+        #expect(result.input.count == 2)
+        guard case .object(let ref) = result.input[0],
+              case .string("item_reference") = ref["type"],
+              case .string("approval_123") = ref["id"],
+              case .object(let approval) = result.input[1],
+              case .string("mcp_approval_response") = approval["type"],
+              case .string("approval_123") = approval["approval_request_id"],
+              case .bool(true) = approval["approve"] else {
             Issue.record("Unexpected output structure")
             return
         }

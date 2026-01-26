@@ -130,11 +130,11 @@ struct ConvertToMistralChatMessagesTests {
             ),
             .tool(
                 content: [
-                    .init(
+                    .toolResult(.init(
                         toolCallId: "tool-call-id-1",
                         toolName: "tool-1",
                         output: .json(value: .object(["key": .string("result-value")]))
-                    )
+                    ))
                 ],
                 providerOptions: nil
             )
@@ -176,7 +176,7 @@ struct ConvertToMistralChatMessagesTests {
             ),
             .tool(
                 content: [
-                    .init(
+                    .toolResult(.init(
                         toolCallId: "tool-call-id-3",
                         toolName: "image-tool",
                         output: .content(
@@ -185,7 +185,7 @@ struct ConvertToMistralChatMessagesTests {
                                 .media(data: "base64data", mediaType: "image/png")
                             ]
                         )
-                    )
+                    ))
                 ],
                 providerOptions: nil
             )
@@ -228,11 +228,11 @@ struct ConvertToMistralChatMessagesTests {
             ),
             .tool(
                 content: [
-                    .init(
+                    .toolResult(.init(
                         toolCallId: "tool-call-id-4",
                         toolName: "error-tool",
                         output: .errorText(value: "Invalid input provided")
-                    )
+                    ))
                 ],
                 providerOptions: nil
             )
@@ -300,11 +300,11 @@ struct ConvertToMistralChatMessagesTests {
             ),
             .tool(
                 content: [
-                    .init(
+                    .toolResult(.init(
                         toolCallId: "tool-call-id-2",
                         toolName: "text-tool",
                         output: .text(value: "This is a text response")
-                    )
+                    ))
                 ],
                 providerOptions: nil
             )

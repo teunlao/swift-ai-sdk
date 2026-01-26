@@ -724,7 +724,8 @@ struct GenerateTextAdvancedTests {
                 if case .tool(let toolMessage) = responseMessages[1] {
                     let hasResult = toolMessage.content.contains { part in
                         if case .toolResult(let resultPart) = part {
-                            if case .json(let json) = resultPart.output, case .object(let object) = json {
+                            if case .json(value: let json, providerOptions: _) = resultPart.output,
+                               case .object(let object) = json {
                                 return object["status"] == .string("success")
                             }
                         }
@@ -754,7 +755,7 @@ struct GenerateTextAdvancedTests {
 
             if case .tool(let toolMessage) = messages[1] {
                 if let first = toolMessage.content.first, case .toolResult(let resultPart) = first {
-                    if case .errorText(let value) = resultPart.output {
+                    if case .errorText(value: let value, providerOptions: _) = resultPart.output {
                         #expect(value == "test error")
                     }
                 }
@@ -806,7 +807,7 @@ struct GenerateTextAdvancedTests {
 
             if case .tool(let toolMessage) = messages[1] {
                 if let first = toolMessage.content.first, case .toolResult(let resultPart) = first {
-                    if case .errorText(let value) = resultPart.output {
+                    if case .errorText(value: let value, providerOptions: _) = resultPart.output {
                         #expect(value.contains("Invalid input for tool cityAttractions"))
                     }
                 }
@@ -1354,7 +1355,7 @@ struct GenerateTextAdvancedTests {
 
             if case .tool(let toolMessage) = messages[1], let first = toolMessage.content.first {
                 if case .toolResult(let resultPart) = first {
-                    if case .text(let value) = resultPart.output {
+                    if case .text(value: let value, providerOptions: _) = resultPart.output {
                         #expect(value == "result for value-no-approval")
                     }
                 }
@@ -1415,8 +1416,8 @@ struct GenerateTextAdvancedTests {
                 }
 
                 if case .tool(let toolParts, _) = options.prompt[2] {
-                    if let resultPart = toolParts.first {
-                        if case .text(let value) = resultPart.output {
+                    if let firstPart = toolParts.first, case .toolResult(let resultPart) = firstPart {
+                        if case .text(value: let value, providerOptions: _) = resultPart.output {
                             #expect(value == "result1")
                         }
                     }
@@ -1432,8 +1433,10 @@ struct GenerateTextAdvancedTests {
         #expect(messages.count == 2)
 
         if messages.count == 2 {
-            if case .tool(let toolMessage) = messages[0], let part = toolMessage.content.first, case .toolResult(let toolResult) = part {
-                if case .text(let value) = toolResult.output {
+            if case .tool(let toolMessage) = messages[0],
+               let part = toolMessage.content.first,
+               case .toolResult(let toolResult) = part {
+                if case .text(value: let value, providerOptions: _) = toolResult.output {
                     #expect(value == "result1")
                 }
             }
@@ -1456,8 +1459,10 @@ struct GenerateTextAdvancedTests {
     func deniedToolPromptIncludesExecutionDeniedResult() async throws {
         let scenario = try await runSingleDeniedToolScenario()
         if let options = scenario.modelCalls.first, options.prompt.count == 3 {
-            if case .tool(let toolParts, _) = options.prompt[2], let resultPart = toolParts.first {
-                #expect(resultPart.output == .executionDenied(reason: nil))
+            if case .tool(let toolParts, _) = options.prompt[2],
+               let firstPart = toolParts.first,
+               case .toolResult(let resultPart) = firstPart {
+                #expect(resultPart.output == LanguageModelV3ToolResultOutput.executionDenied(reason: nil))
             } else {
                 Issue.record("Expected tool result with execution denied output in prompt")
             }
@@ -1500,10 +1505,12 @@ struct GenerateTextAdvancedTests {
         if let toolMessage = scenario.result.response.messages.first, case .tool(let message) = toolMessage {
             #expect(message.content.count == 2)
             if message.content.count == 2 {
-                if case .toolResult(let firstResult) = message.content[0], case .text(let value1) = firstResult.output {
+                if case .toolResult(let firstResult) = message.content[0],
+                   case .text(value: let value1, providerOptions: _) = firstResult.output {
                     #expect(value1 == "result1")
                 }
-                if case .toolResult(let secondResult) = message.content[1], case .text(let value2) = secondResult.output {
+                if case .toolResult(let secondResult) = message.content[1],
+                   case .text(value: let value2, providerOptions: _) = secondResult.output {
                     #expect(value2 == "result1")
                 }
             }

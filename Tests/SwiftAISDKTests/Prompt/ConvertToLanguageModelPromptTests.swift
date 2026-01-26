@@ -484,7 +484,8 @@ struct ConvertToLanguageModelPromptTests {
                         .toolApprovalResponse(ToolApprovalResponse(
                             approvalId: "approvalId",
                             approved: true,
-                            reason: nil
+                            reason: nil,
+                            providerExecuted: nil
                         ))
                     ],
                     providerOptions: nil
@@ -530,7 +531,10 @@ struct ConvertToLanguageModelPromptTests {
         }
 
         #expect(toolContent.count == 1)
-        let part = toolContent[0]
+        guard case .toolResult(let part) = toolContent[0] else {
+            Issue.record("Expected tool result")
+            return
+        }
 
         #expect(part.toolCallId == "toolCallId")
         #expect(part.toolName == "toolName")
@@ -1397,11 +1401,14 @@ struct ConvertToLanguageModelMessageTests {
 
         #expect(content.count == 1)
 
-        let part = content[0]
+        guard case .toolResult(let part) = content[0] else {
+            Issue.record("Expected tool result")
+            return
+        }
         #expect(part.toolCallId == "toolCallId")
         #expect(part.toolName == "toolName")
 
-        guard case .json(value: let jsonValue) = part.output else {
+        guard case .json(value: let jsonValue, providerOptions: _) = part.output else {
             Issue.record("Expected JSON output")
             return
         }
@@ -1414,14 +1421,15 @@ struct ConvertToLanguageModelMessageTests {
         #expect(obj["some"] == .string("result"))
     }
 
-    @Test("should filter out tool-approval-response from tool messages")
+    @Test("should filter out non-provider-executed tool-approval-response from tool messages")
     func filtersToolApprovalResponse() throws {
         let message = ModelMessage.tool(ToolModelMessage(
             content: [
                 .toolApprovalResponse(ToolApprovalResponse(
                     approvalId: "approvalId",
                     approved: true,
-                    reason: nil
+                    reason: nil,
+                    providerExecuted: nil
                 )),
                 .toolResult(ToolResultPart(
                     toolCallId: "toolCallId",
@@ -1445,7 +1453,46 @@ struct ConvertToLanguageModelMessageTests {
 
         // Should only have tool result, not approval response
         #expect(content.count == 1)
-        #expect(content[0].toolName == "toolName")
+        guard case .toolResult(let part) = content[0] else {
+            Issue.record("Expected tool result")
+            return
+        }
+        #expect(part.toolName == "toolName")
+    }
+
+    @Test("should preserve provider-executed tool-approval-response in tool messages")
+    func preservesProviderExecutedToolApprovalResponse() throws {
+        let message = ModelMessage.tool(ToolModelMessage(
+            content: [
+                .toolApprovalResponse(ToolApprovalResponse(
+                    approvalId: "approvalId",
+                    approved: true,
+                    reason: nil,
+                    providerExecuted: true
+                ))
+            ],
+            providerOptions: nil
+        ))
+
+        let result = try convertToLanguageModelMessage(
+            message: message,
+            downloadedAssets: [:]
+        )
+
+        guard case .tool(let content, _) = result else {
+            Issue.record("Expected tool message")
+            return
+        }
+
+        #expect(content.count == 1)
+        guard case .toolApprovalResponse(let part) = content[0] else {
+            Issue.record("Expected tool approval response")
+            return
+        }
+
+        #expect(part.approvalId == "approvalId")
+        #expect(part.approved == true)
+        #expect(part.reason == nil)
     }
 
     // MARK: - User Message - File Parts
@@ -1950,7 +1997,10 @@ struct ConvertToLanguageModelMessageTests {
         }
 
         #expect(content.count == 1)
-        let part = content[0]
+        guard case .toolResult(let part) = content[0] else {
+            Issue.record("Expected tool result")
+            return
+        }
 
         #expect(part.providerOptions != nil)
 
@@ -1993,12 +2043,15 @@ struct ConvertToLanguageModelMessageTests {
         }
 
         #expect(content.count == 1)
-        let part = content[0]
+        guard case .toolResult(let part) = content[0] else {
+            Issue.record("Expected tool result")
+            return
+        }
 
         #expect(part.toolCallId == "toolCallId")
         #expect(part.toolName == "toolName")
 
-        guard case .json(value: let jsonValue) = part.output else {
+        guard case .json(value: let jsonValue, providerOptions: _) = part.output else {
             Issue.record("Expected JSON output")
             return
         }
@@ -2038,12 +2091,15 @@ struct ConvertToLanguageModelMessageTests {
         }
 
         #expect(content.count == 1)
-        let part = content[0]
+        guard case .toolResult(let part) = content[0] else {
+            Issue.record("Expected tool result")
+            return
+        }
 
         #expect(part.toolCallId == "toolCallId")
         #expect(part.toolName == "toolName")
 
-        guard case .content(value: let contentParts) = part.output else {
+        guard case .content(value: let contentParts, providerOptions: _) = part.output else {
             Issue.record("Expected content output")
             return
         }

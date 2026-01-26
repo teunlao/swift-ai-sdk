@@ -1245,7 +1245,12 @@ struct XAIChatLanguageModelTests {
         let parts = try await Self.collect(result.stream)
 
         // Verify tool input start
-        #expect(parts.contains { if case .toolInputStart(let id, let name, _, _) = $0 { return id == "call_yfBEybNYi" && name == "test-tool" } else { return false } })
+        #expect(parts.contains {
+            if case .toolInputStart(let id, let name, _, _, _, _) = $0 {
+                return id == "call_yfBEybNYi" && name == "test-tool"
+            }
+            return false
+        })
 
         // Verify tool input delta
         let toolInputDeltas = parts.compactMap { part -> String? in
@@ -2381,4 +2386,3 @@ struct XAIChatLanguageModelTests {
         #expect(textDeltas[1] == " world")
     }
 }
-

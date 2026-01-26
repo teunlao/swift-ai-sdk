@@ -54,7 +54,7 @@ func v3_streamPart_toolInput_and_callResult_roundTrip() throws {
     )
 
     let parts: [LanguageModelV3StreamPart] = [
-        .toolInputStart(id: "c1", toolName: "search", providerMetadata: pm, providerExecuted: true),
+        .toolInputStart(id: "c1", toolName: "search", providerMetadata: pm, providerExecuted: true, dynamic: nil, title: nil),
         .toolInputDelta(id: "c1", delta: "{\"q\":\"swi", providerMetadata: nil),
         .toolInputDelta(id: "c1", delta: "ft\"}", providerMetadata: nil),
         .toolInputEnd(id: "c1", providerMetadata: pm),
@@ -126,4 +126,3 @@ func v3_streamPart_raw_error_roundTrip() throws {
         #expect(back == p)
     }
 }
-

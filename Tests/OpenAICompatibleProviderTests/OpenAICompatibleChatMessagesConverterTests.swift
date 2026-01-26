@@ -86,11 +86,11 @@ struct OpenAICompatibleChatMessagesConverterTests {
             ),
             .tool(
                 content: [
-                    LanguageModelV3ToolResultPart(
+                    .toolResult(LanguageModelV3ToolResultPart(
                         toolCallId: "quux",
                         toolName: "thwomp",
                         output: .json(value: .object(["oof": .string("321rab")]))
-                    )
+                    ))
                 ],
                 providerOptions: nil
             )
@@ -274,11 +274,11 @@ struct OpenAICompatibleChatMessagesConverterTests {
             ),
             .tool(
                 content: [
-                    LanguageModelV3ToolResultPart(
+                    .toolResult(LanguageModelV3ToolResultPart(
                         toolCallId: "call-1",
                         toolName: "getWeather",
                         output: .text(value: "It is sunny today")
-                    )
+                    ))
                 ],
                 providerOptions: nil
             )
@@ -565,19 +565,19 @@ struct OpenAICompatibleChatMessagesConverterTests {
         let prompt: LanguageModelV3Prompt = [
             .tool(
                 content: [
-                    LanguageModelV3ToolResultPart(
+                    .toolResult(LanguageModelV3ToolResultPart(
                         toolCallId: "call123",
                         toolName: "calculator",
                         output: .json(value: .object(["stepOne": .string("data chunk 1")]))
-                    ),
-                    LanguageModelV3ToolResultPart(
+                    )),
+                    .toolResult(LanguageModelV3ToolResultPart(
                         toolCallId: "call123",
                         toolName: "calculator",
                         output: .json(value: .object(["stepTwo": .string("data chunk 2")])),
                         providerOptions: [
                             "openaiCompatible": ["partial": .bool(true)]
                         ]
-                    )
+                    ))
                 ],
                 providerOptions: [
                     // This message-level metadata gets omitted as we prioritize content-level

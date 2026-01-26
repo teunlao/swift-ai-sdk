@@ -630,7 +630,7 @@ struct StreamTextBasicTests {
         let parts: [LanguageModelV3StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(id: "id-0", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
-            .toolInputStart(id: "tool-1", toolName: "search", providerMetadata: nil, providerExecuted: false),
+            .toolInputStart(id: "tool-1", toolName: "search", providerMetadata: nil, providerExecuted: false, dynamic: nil, title: nil),
             .toolInputDelta(id: "tool-1", delta: "{\"q\":\"hi\"}", providerMetadata: nil),
             .toolInputEnd(id: "tool-1", providerMetadata: nil),
             .finish(
@@ -1454,7 +1454,7 @@ struct StreamTextBasicTests {
                 providerExecuted: false,
                 providerMetadata: nil
             )),
-            .toolInputStart(id: "call-1", toolName: "demo", providerMetadata: nil, providerExecuted: false),
+            .toolInputStart(id: "call-1", toolName: "demo", providerMetadata: nil, providerExecuted: false, dynamic: nil, title: nil),
             .toolInputDelta(id: "call-1", delta: "{\"", providerMetadata: nil),
             .toolInputDelta(id: "call-1", delta: "\"value\":1}", providerMetadata: nil),
             .toolInputEnd(id: "call-1", providerMetadata: nil),
@@ -1951,7 +1951,7 @@ struct StreamTextBasicTests {
     func toUIMessageStreamMapsToolEvents() async throws {
         let parts: [LanguageModelV3StreamPart] = [
             .streamStart(warnings: []),
-            .toolInputStart(id: "c1", toolName: "demo", providerMetadata: nil, providerExecuted: false),
+            .toolInputStart(id: "c1", toolName: "demo", providerMetadata: nil, providerExecuted: false, dynamic: nil, title: nil),
             .toolInputDelta(id: "c1", delta: "{\"x\":1}", providerMetadata: nil),
             .toolInputEnd(id: "c1", providerMetadata: nil),
             .toolCall(LanguageModelV3ToolCall(

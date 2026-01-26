@@ -143,11 +143,11 @@ struct ConvertToXAIChatMessagesTests {
                 ))
             ], providerOptions: nil),
             .tool(content: [
-                .init(
+                .toolResult(.init(
                     toolCallId: "call_123",
                     toolName: "weather",
                     output: .json(value: .object(["temperature": .number(20)]))
-                )
+                ))
             ], providerOptions: nil)
         ]
 

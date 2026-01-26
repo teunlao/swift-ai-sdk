@@ -1218,7 +1218,7 @@ struct GenerateTextTests {
         if case .toolResult(let toolResultPart) = toolMessage.content[0] {
             #expect(toolResultPart.toolCallId == "call-1")
             #expect(toolResultPart.toolName == "tool1")
-            if case .text(let output) = toolResultPart.output {
+            if case .text(value: let output, providerOptions: _) = toolResultPart.output {
                 #expect(output == "result1")
             } else {
                 Issue.record("Expected tool result output to be text")
@@ -1694,7 +1694,7 @@ struct GenerateTextTests {
                 if case .tool(let toolParts, _) = second.prompt[3] {
                     var found = false
                     for part in toolParts {
-                        if part.toolName == "tool1" {
+                        if case .toolResult(let resultPart) = part, resultPart.toolName == "tool1" {
                             found = true
                             break
                         }

@@ -96,7 +96,7 @@ struct ConvertToGoogleGenerativeAIMessagesTests {
             providerOptions: nil
         )
         let prompt: LanguageModelV3Prompt = [
-            .tool(content: [toolPart], providerOptions: nil)
+            .tool(content: [.toolResult(toolPart)], providerOptions: nil)
         ]
 
         let result = try convertToGoogleGenerativeAIMessages(prompt)
@@ -267,7 +267,7 @@ struct ConvertToGoogleGenerativeAIMessagesTests {
             providerOptions: nil
         )
         let prompt: LanguageModelV3Prompt = [
-            .tool(content: [toolPart], providerOptions: nil)
+            .tool(content: [.toolResult(toolPart)], providerOptions: nil)
         ]
 
         let result = try convertToGoogleGenerativeAIMessages(prompt)

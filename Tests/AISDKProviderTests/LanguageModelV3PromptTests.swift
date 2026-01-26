@@ -52,10 +52,10 @@ struct LanguageModelV3PromptTests {
         ])
 
         let m1 = LanguageModelV3Message.tool(content: [
-            .init(toolCallId: "c1", toolName: "weather", output: outText),
+            .toolResult(.init(toolCallId: "c1", toolName: "weather", output: outText)),
         ], providerOptions: nil)
         let m2 = LanguageModelV3Message.tool(content: [
-            .init(toolCallId: "c2", toolName: "render", output: outContent)
+            .toolResult(.init(toolCallId: "c2", toolName: "render", output: outContent))
         ], providerOptions: ["p": ["x": .bool(true)]])
 
         let enc = JSONEncoder(); let dec = JSONDecoder()
@@ -71,7 +71,7 @@ struct LanguageModelV3PromptTests {
             .system(content: "helpful", providerOptions: nil),
             .user(content: [.text(.init(text: "hi"))], providerOptions: nil),
             .assistant(content: [.text(.init(text: "hello"))], providerOptions: nil),
-            .tool(content: [.init(toolCallId: "c1", toolName: "noop", output: .json(value: ["k": .string("v")]))], providerOptions: nil)
+            .tool(content: [.toolResult(.init(toolCallId: "c1", toolName: "noop", output: .json(value: ["k": .string("v")])))] , providerOptions: nil)
         ]
         let data = try JSONEncoder().encode(prompt)
         let back = try JSONDecoder().decode(LanguageModelV3Prompt.self, from: data)

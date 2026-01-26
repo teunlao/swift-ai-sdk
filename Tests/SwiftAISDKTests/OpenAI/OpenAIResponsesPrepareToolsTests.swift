@@ -193,6 +193,108 @@ struct OpenAIResponsesPrepareToolsTests {
         #expect(result.toolChoice == JSONValue.object(["type": .string("image_generation")]))
     }
 
+    @Test("mcp tool defaults require_approval to never")
+    func mcpToolDefaultsRequireApprovalToNever() async throws {
+        let tool = providerTool(
+            id: "openai.mcp",
+            name: "mcp",
+            args: [
+                "serverLabel": .string("My MCP"),
+                "serverUrl": .string("https://mcp.example.com")
+            ]
+        )
+
+        let result = try await prepareOpenAIResponsesTools(
+            tools: [tool],
+            toolChoice: .tool(toolName: "mcp")
+        )
+
+        #expect(result.warnings.isEmpty)
+        #expect(result.toolChoice == JSONValue.object(["type": .string("mcp")]))
+        guard let tools = result.tools,
+              case .object(let toolObject) = tools.first else {
+            Issue.record("Expected mcp tool object")
+            return
+        }
+        #expect(toolObject["type"] == JSONValue.string("mcp"))
+        #expect(toolObject["server_label"] == JSONValue.string("My MCP"))
+        #expect(toolObject["server_url"] == JSONValue.string("https://mcp.example.com"))
+        #expect(toolObject["require_approval"] == JSONValue.string("never"))
+        #expect(toolObject["allowed_tools"] == nil)
+    }
+
+    @Test("mcp tool maps allowed_tools array")
+    func mcpToolMapsAllowedToolsArray() async throws {
+        let tool = providerTool(
+            id: "openai.mcp",
+            name: "mcp",
+            args: [
+                "serverLabel": .string("My MCP"),
+                "serverUrl": .string("https://mcp.example.com"),
+                "allowedTools": .array([.string("one"), .string("two")])
+            ]
+        )
+
+        let result = try await prepareOpenAIResponsesTools(
+            tools: [tool],
+            toolChoice: nil
+        )
+
+        guard let tools = result.tools,
+              case .object(let toolObject) = tools.first else {
+            Issue.record("Expected mcp tool object")
+            return
+        }
+
+        #expect(toolObject["allowed_tools"] == JSONValue.array([.string("one"), .string("two")]))
+    }
+
+    @Test("mcp tool maps filter allowed_tools and conditional require_approval")
+    func mcpToolMapsFilterAllowedToolsAndConditionalRequireApproval() async throws {
+        let tool = providerTool(
+            id: "openai.mcp",
+            name: "mcp",
+            args: [
+                "serverLabel": .string("My MCP"),
+                "connectorId": .string("connector-123"),
+                "allowedTools": .object([
+                    "readOnly": .bool(true),
+                    "toolNames": .array([.string("alpha"), .string("beta")])
+                ]),
+                "requireApproval": .object([
+                    "never": .object([
+                        "toolNames": .array([.string("alpha")])
+                    ])
+                ])
+            ]
+        )
+
+        let result = try await prepareOpenAIResponsesTools(
+            tools: [tool],
+            toolChoice: nil
+        )
+
+        guard let tools = result.tools,
+              case .object(let toolObject) = tools.first else {
+            Issue.record("Expected mcp tool object")
+            return
+        }
+
+        guard case .object(let allowedTools)? = toolObject["allowed_tools"] else {
+            Issue.record("Expected allowed_tools object")
+            return
+        }
+        #expect(allowedTools["read_only"] == JSONValue.bool(true))
+        #expect(allowedTools["tool_names"] == JSONValue.array([.string("alpha"), .string("beta")]))
+
+        guard case .object(let requireApproval)? = toolObject["require_approval"],
+              case .object(let neverObject)? = requireApproval["never"] else {
+            Issue.record("Expected require_approval.never object")
+            return
+        }
+        #expect(neverObject["tool_names"] == JSONValue.array([.string("alpha")]))
+    }
+
     @Test("web search preview tool maps args")
     func webSearchPreviewToolMapsArgs() async throws {
         let args: [String: JSONValue] = [

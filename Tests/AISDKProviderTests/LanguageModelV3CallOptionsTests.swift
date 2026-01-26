@@ -47,7 +47,7 @@ struct LanguageModelV3CallOptionsTests {
             .system(content: "you are helpful", providerOptions: ["x": ["y": .string("z")]]),
             .user(content: userParts, providerOptions: nil),
             .assistant(content: [.text(.init(text: "Working...")), toolCallPart], providerOptions: nil),
-            .tool(content: [.init(toolCallId: "c1", toolName: "noop", output: .text(value: "Done"))], providerOptions: nil)
+            .tool(content: [.toolResult(.init(toolCallId: "c1", toolName: "noop", output: .text(value: "Done")))], providerOptions: nil)
         ]
 
         let functionTool = LanguageModelV3Tool.function(.init(name: "search", inputSchema: ["type": .string("object")], description: "find"))

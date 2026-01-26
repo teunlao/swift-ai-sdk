@@ -2771,7 +2771,7 @@ struct AnthropicMessagesLanguageModelStreamAdvancedBatch2Tests {
 
         // Verify tool-input-start
         #expect(parts.contains(where: { (part: LanguageModelV3StreamPart) -> Bool in
-            if case .toolInputStart(let id, let toolName, _, _) = part {
+            if case .toolInputStart(let id, let toolName, _, _, _, _) = part {
                 return id == "toolu_01DBsB4vvYLnBDzZ5rBSxSLs" && toolName == "test-tool"
             }
             return false

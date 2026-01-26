@@ -46,7 +46,7 @@ struct CreateToolModelOutputTests {
             )
 
             // Check it's error-text and contains both keys (order may vary in Swift)
-            guard case .errorText(let value) = result else {
+            guard case .errorText(value: let value, providerOptions: _) = result else {
                 Issue.record("Expected errorText result")
                 return
             }
@@ -70,7 +70,7 @@ struct CreateToolModelOutputTests {
             )
 
             // We expect JSON serialization (order may vary, so check it's error-text type)
-            guard case .errorText(let value) = result else {
+            guard case .errorText(value: let value, providerOptions: _) = result else {
                 Issue.record("Expected errorText result")
                 return
             }
@@ -137,7 +137,7 @@ struct CreateToolModelOutputTests {
                 errorMode: .none
             )
 
-            guard case .json(let value) = result,
+            guard case .json(value: let value, providerOptions: _) = result,
                   case .object(let obj) = value else {
                 Issue.record("Expected json result with object value")
                 return
@@ -168,7 +168,7 @@ struct CreateToolModelOutputTests {
                 errorMode: .none
             )
 
-            guard case .content(let contentParts) = result else {
+            guard case .content(value: let contentParts, providerOptions: _) = result else {
                 Issue.record("Expected content result")
                 return
             }
@@ -239,7 +239,7 @@ struct CreateToolModelOutputTests {
                 errorMode: .none
             )
 
-            guard case .json(let value) = result,
+            guard case .json(value: let value, providerOptions: _) = result,
                   case .object(let obj) = value else {
                 Issue.record("Expected json result with object value")
                 return
@@ -326,7 +326,7 @@ struct CreateToolModelOutputTests {
                 errorMode: .none
             )
 
-            guard case .json(let value) = result,
+            guard case .json(value: let value, providerOptions: _) = result,
                   case .object(let obj) = value else {
                 Issue.record("Expected json result with object value")
                 return

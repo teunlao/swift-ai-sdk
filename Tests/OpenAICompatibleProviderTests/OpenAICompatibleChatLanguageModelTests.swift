@@ -2363,7 +2363,7 @@ struct OpenAICompatibleChatLanguageModelTests {
         // Verify tool-input-start
         var toolInputStarts: [(String, String)] = []
         for part in parts {
-            if case let .toolInputStart(id, toolName, _, _) = part {
+            if case let .toolInputStart(id, toolName, _, _, _, _) = part {
                 toolInputStarts.append((id, toolName))
             }
         }

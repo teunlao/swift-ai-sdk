@@ -227,7 +227,7 @@ struct AnthropicMessagesLanguageModelStreamAdvancedTests {
 
         let parts = try await collectParts(from: result.stream)
         let toolInputStart = parts.first { part in
-            if case .toolInputStart(let id, let toolName, _, let providerExecuted) = part {
+            if case .toolInputStart(let id, let toolName, _, let providerExecuted, _, _) = part {
                 return id == "toolu_01DBsB4vvYLnBDzZ5rBSxSLs" && toolName == "test-tool" && providerExecuted == false
             }
             return false
@@ -648,7 +648,7 @@ struct AnthropicMessagesLanguageModelStreamAdvancedTests {
 
         let parts = try await collectParts(from: result.stream)
         let toolInputStart = parts.first { part in
-            if case .toolInputStart(_, let toolName, _, let providerExecuted) = part {
+            if case .toolInputStart(_, let toolName, _, let providerExecuted, _, _) = part {
                 return toolName == "web_fetch" && providerExecuted == true
             }
             return false

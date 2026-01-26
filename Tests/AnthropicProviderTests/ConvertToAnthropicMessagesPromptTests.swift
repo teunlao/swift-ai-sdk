@@ -289,7 +289,7 @@ struct ConvertToAnthropicMessagesPromptToolTests {
             output: .json(value: .object(["answer": .number(42)]))
         )
         let prompt: LanguageModelV3Prompt = [
-            .tool(content: [toolPart], providerOptions: nil)
+            .tool(content: [.toolResult(toolPart)], providerOptions: nil)
         ]
 
         let (result, warnings) = try await convert(prompt)
@@ -321,7 +321,7 @@ struct ConvertToAnthropicMessagesPromptToolTests {
             output: output
         )
         let prompt: LanguageModelV3Prompt = [
-            .tool(content: [toolPart], providerOptions: nil)
+            .tool(content: [.toolResult(toolPart)], providerOptions: nil)
         ]
 
         let (result, warnings) = try await convert(prompt)
@@ -770,7 +770,7 @@ struct ConvertToAnthropicMessagesPromptMiscTests {
         )
         let prompt: LanguageModelV3Prompt = [
             .user(content: [.file(pdf)], providerOptions: nil),
-            .tool(content: [toolResult], providerOptions: nil)
+            .tool(content: [.toolResult(toolResult)], providerOptions: nil)
         ]
 
         let (result, _) = try await convert(prompt)

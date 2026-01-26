@@ -94,7 +94,7 @@ struct ConvertToModelMessagesTests {
             Issue.record("Expected tool result part")
             return
         }
-        if case let .json(value) = toolResult.output {
+        if case let .json(value: value, providerOptions: _) = toolResult.output {
             #expect(value == .string("4"))
         } else {
             Issue.record("Expected JSON output result")

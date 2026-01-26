@@ -98,7 +98,7 @@ struct ConvertToGroqChatMessagesTests {
         )
 
         let prompt: LanguageModelV3Prompt = [
-            .tool(content: [toolResult], providerOptions: nil)
+            .tool(content: [.toolResult(toolResult)], providerOptions: nil)
         ]
 
         let messages = try convertToGroqChatMessages(prompt)

@@ -216,6 +216,264 @@ struct OpenAIResponsesLanguageModelTests {
         }
     }
 
+    @Test("doGenerate maps mcp_call to toolCall and toolResult")
+    func testDoGenerateMapsMcpCall() async throws {
+        let responseJSON: [String: Any] = [
+            "id": "resp_mcp",
+            "created_at": 1_700_000_000.0,
+            "model": "gpt-4o-2024-07-18",
+            "output": [
+                [
+                    "id": "mcp_item_1",
+                    "type": "mcp_call",
+                    "name": "list_files",
+                    "arguments": "{\"path\":\"/\"}",
+                    "server_label": "My MCP",
+                    "output": "ok",
+                    "error": NSNull()
+                ]
+            ],
+            "service_tier": "default",
+            "usage": [
+                "input_tokens": 1,
+                "output_tokens": 1
+            ],
+            "warnings": [],
+            "incomplete_details": ["reason": NSNull()],
+            "finish_reason": NSNull(),
+            "error": NSNull()
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let fetch: FetchFunction = { request in
+            let httpResponse = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o-2024-07-18",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let result = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(prompt: samplePrompt)
+        )
+
+        let toolCalls = result.content.compactMap { content -> LanguageModelV3ToolCall? in
+            if case .toolCall(let call) = content { return call }
+            return nil
+        }
+        let toolResults = result.content.compactMap { content -> LanguageModelV3ToolResult? in
+            if case .toolResult(let result) = content { return result }
+            return nil
+        }
+
+        guard let toolCall = toolCalls.first else {
+            Issue.record("Expected tool-call for mcp_call")
+            return
+        }
+        #expect(toolCall.toolCallId == "mcp_item_1")
+        #expect(toolCall.toolName == "mcp.list_files")
+        #expect(toolCall.providerExecuted == true)
+        #expect(toolCall.dynamic == true)
+
+        guard let toolResult = toolResults.first else {
+            Issue.record("Expected tool-result for mcp_call")
+            return
+        }
+        #expect(toolResult.toolCallId == "mcp_item_1")
+        #expect(toolResult.toolName == "mcp.list_files")
+        #expect(toolResult.providerExecuted == true)
+
+        if let openaiMetadata = toolResult.providerMetadata?["openai"] {
+            #expect(openaiMetadata["itemId"] == .string("mcp_item_1"))
+        } else {
+            Issue.record("Missing provider metadata for mcp_call result")
+        }
+
+        guard case .object(let resultObject) = toolResult.result else {
+            Issue.record("Expected object result for mcp_call")
+            return
+        }
+        #expect(resultObject["type"] == .string("call"))
+        #expect(resultObject["serverLabel"] == .string("My MCP"))
+        #expect(resultObject["name"] == .string("list_files"))
+        #expect(resultObject["arguments"] == .string("{\"path\":\"/\"}"))
+        #expect(resultObject["output"] == .string("ok"))
+    }
+
+    @Test("doGenerate maps mcp_approval_request to toolCall and tool-approval-request")
+    func testDoGenerateMapsMcpApprovalRequest() async throws {
+        let responseJSON: [String: Any] = [
+            "id": "resp_mcp_approval",
+            "created_at": 1_700_000_000.0,
+            "model": "gpt-4o-2024-07-18",
+            "output": [
+                [
+                    "id": "mcp_req_item_1",
+                    "type": "mcp_approval_request",
+                    "name": "list_files",
+                    "arguments": "{\"path\":\"/\"}",
+                    "approval_request_id": "approval_1"
+                ]
+            ],
+            "service_tier": "default",
+            "usage": [
+                "input_tokens": 1,
+                "output_tokens": 1
+            ],
+            "warnings": [],
+            "incomplete_details": ["reason": NSNull()],
+            "finish_reason": NSNull(),
+            "error": NSNull()
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let fetch: FetchFunction = { request in
+            let httpResponse = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o-2024-07-18",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let result = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(prompt: samplePrompt)
+        )
+
+        let toolCalls = result.content.compactMap { content -> LanguageModelV3ToolCall? in
+            if case .toolCall(let call) = content { return call }
+            return nil
+        }
+        let approvalRequests = result.content.compactMap { content -> LanguageModelV3ToolApprovalRequest? in
+            if case .toolApprovalRequest(let request) = content { return request }
+            return nil
+        }
+
+        guard let toolCall = toolCalls.first else {
+            Issue.record("Expected tool-call for mcp_approval_request")
+            return
+        }
+        #expect(toolCall.toolCallId == "generated-0")
+        #expect(toolCall.toolName == "mcp.list_files")
+        #expect(toolCall.providerExecuted == true)
+        #expect(toolCall.dynamic == true)
+        if let openaiMetadata = toolCall.providerMetadata?["openai"] {
+            #expect(openaiMetadata["approvalRequestId"] == .string("approval_1"))
+        } else {
+            Issue.record("Missing provider metadata for mcp_approval_request tool call")
+        }
+
+        guard let approvalRequest = approvalRequests.first else {
+            Issue.record("Expected tool-approval-request for mcp_approval_request")
+            return
+        }
+        #expect(approvalRequest.approvalId == "approval_1")
+        #expect(approvalRequest.toolCallId == "generated-0")
+    }
+
+    @Test("doGenerate aliases mcp_call toolCallId using approvalRequestId from prompt")
+    func testDoGenerateAliasesMcpCallUsingPromptMapping() async throws {
+        let prompt: LanguageModelV3Prompt = [
+            .assistant(
+                content: [
+                    .toolCall(LanguageModelV3ToolCallPart(
+                        toolCallId: "dummy-tool-call",
+                        toolName: "mcp.list_files",
+                        input: .object([:]),
+                        providerExecuted: true,
+                        providerOptions: [
+                            "openai": ["approvalRequestId": .string("approval_1")]
+                        ]
+                    ))
+                ],
+                providerOptions: nil
+            ),
+            .user(content: [.text(LanguageModelV3TextPart(text: "Continue"))], providerOptions: nil)
+        ]
+
+        let responseJSON: [String: Any] = [
+            "id": "resp_mcp_call_after_approval",
+            "created_at": 1_700_000_000.0,
+            "model": "gpt-4o-2024-07-18",
+            "output": [
+                [
+                    "id": "mcp_item_2",
+                    "type": "mcp_call",
+                    "name": "list_files",
+                    "arguments": "{\"path\":\"/\"}",
+                    "server_label": "My MCP",
+                    "approval_request_id": "approval_1",
+                    "output": "ok",
+                    "error": NSNull()
+                ]
+            ],
+            "service_tier": "default",
+            "usage": [
+                "input_tokens": 1,
+                "output_tokens": 1
+            ],
+            "warnings": [],
+            "incomplete_details": ["reason": NSNull()],
+            "finish_reason": NSNull(),
+            "error": NSNull()
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let fetch: FetchFunction = { request in
+            let httpResponse = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o-2024-07-18",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let result = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(prompt: prompt)
+        )
+
+        let toolCalls = result.content.compactMap { content -> LanguageModelV3ToolCall? in
+            if case .toolCall(let call) = content { return call }
+            return nil
+        }
+        let toolResults = result.content.compactMap { content -> LanguageModelV3ToolResult? in
+            if case .toolResult(let result) = content { return result }
+            return nil
+        }
+
+        guard let toolCall = toolCalls.first, let toolResult = toolResults.first else {
+            Issue.record("Expected tool-call and tool-result for aliased mcp_call")
+            return
+        }
+
+        #expect(toolCall.toolCallId == "dummy-tool-call")
+        #expect(toolResult.toolCallId == "dummy-tool-call")
+        if let openaiMetadata = toolResult.providerMetadata?["openai"] {
+            #expect(openaiMetadata["itemId"] == .string("mcp_item_2"))
+        } else {
+            Issue.record("Missing provider metadata for aliased mcp_call result")
+        }
+    }
+
     @Test("doStream emits text deltas and finish metadata")
     func testDoStreamEmitsTextDeltas() async throws {
         actor RequestCapture {
@@ -720,7 +978,7 @@ struct OpenAIResponsesLanguageModelTests {
         }
 
         #expect(parts.contains { part in
-            if case .toolInputStart(let id, let name, _, let executed) = part {
+            if case .toolInputStart(let id, let name, _, let executed, _, _) = part {
                 return id == "tool-42" && name == "lookup_weather" && executed == nil
             }
             return false
@@ -1400,7 +1658,7 @@ struct OpenAIResponsesLanguageModelTests {
         }
 
         #expect(parts.contains { part in
-            if case .toolInputStart(let id, let name, _, let executed) = part {
+            if case .toolInputStart(let id, let name, _, let executed, _, _) = part {
                 return id == "web_call" && name == "web_search" && executed == true
             }
             return false
@@ -1431,6 +1689,115 @@ struct OpenAIResponsesLanguageModelTests {
            let json = decodeRequestBody(data) {
             #expect(json["stream"] as? Bool == true)
         }
+    }
+
+    @Test("doStream aliases mcp_call toolCallId after mcp_approval_request")
+    func testDoStreamAliasesMcpCallAfterApprovalRequest() async throws {
+        func chunk(_ value: Any) -> String {
+            let data = try! JSONSerialization.data(withJSONObject: value)
+            let encoded = String(data: data, encoding: .utf8)!
+            return "data:\(encoded)\n\n"
+        }
+
+        let chunks: [String] = [
+            chunk([
+                "type": "response.output_item.done",
+                "output_index": 0,
+                "item": [
+                    "id": "mcp_req_item_1",
+                    "type": "mcp_approval_request",
+                    "name": "list_files",
+                    "arguments": "{\"path\":\"/\"}",
+                    "approval_request_id": "approval_1"
+                ]
+            ]),
+            chunk([
+                "type": "response.output_item.done",
+                "output_index": 1,
+                "item": [
+                    "id": "mcp_item_2",
+                    "type": "mcp_call",
+                    "name": "list_files",
+                    "arguments": "{\"path\":\"/\"}",
+                    "server_label": "My MCP",
+                    "approval_request_id": "approval_1",
+                    "output": "ok",
+                    "error": NSNull()
+                ]
+            ]),
+            chunk([
+                "type": "response.completed",
+                "response": [
+                    "id": "resp_mcp_stream",
+                    "object": "response",
+                    "created_at": 1_741_600_000.0,
+                    "status": "completed",
+                    "usage": [
+                        "input_tokens": 2,
+                        "output_tokens": 1,
+                        "total_tokens": 3
+                    ]
+                ]
+            ]),
+            "data: [DONE]\n\n"
+        ]
+
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.openai.com/v1/responses")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "text/event-stream"]
+        )!
+
+        let fetch: FetchFunction = { _ in
+            let stream = AsyncThrowingStream<Data, Error> { continuation in
+                for string in chunks {
+                    continuation.yield(Data(string.utf8))
+                }
+                continuation.finish()
+            }
+            return FetchResponse(body: .stream(stream), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let streamResult = try await model.doStream(
+            options: LanguageModelV3CallOptions(prompt: samplePrompt)
+        )
+
+        var parts: [LanguageModelV3StreamPart] = []
+        for try await part in streamResult.stream {
+            parts.append(part)
+        }
+
+        #expect(parts.contains { part in
+            if case .toolCall(let call) = part {
+                return call.toolCallId == "generated-0" && call.toolName == "mcp.list_files" && call.dynamic == true
+            }
+            return false
+        })
+
+        #expect(parts.contains { part in
+            if case .toolApprovalRequest(let request) = part {
+                return request.approvalId == "approval_1" && request.toolCallId == "generated-0"
+            }
+            return false
+        })
+
+        #expect(parts.contains { part in
+            if case .toolResult(let result) = part {
+                guard result.toolCallId == "generated-0",
+                      result.toolName == "mcp.list_files",
+                      result.providerExecuted == true else {
+                    return false
+                }
+                return result.providerMetadata?["openai"]?["itemId"] == .string("mcp_item_2")
+            }
+            return false
+        })
     }
 
     @Test("doStream emits reasoning summary parts with deltas")
@@ -1749,7 +2116,7 @@ struct OpenAIResponsesLanguageModelTests {
         }
 
         #expect(parts.contains { part in
-            if case .toolInputStart(let id, let name, _, let executed) = part {
+            if case .toolInputStart(let id, let name, _, let executed, _, _) = part {
                 return id == "code_call" && name == "code_interpreter" && executed == true
             }
             return false
@@ -2161,7 +2528,7 @@ struct OpenAIResponsesLanguageModelTests {
         }
 
         #expect(parts.contains { part in
-            if case .toolInputStart(let id, let name, _, let executed) = part {
+            if case .toolInputStart(let id, let name, _, let executed, _, _) = part {
                 return id == "computer_call" && name == "computer_use" && executed == true
             }
             return false
