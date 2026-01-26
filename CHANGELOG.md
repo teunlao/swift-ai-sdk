@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-01-26
+
+### Added
+- OpenAI (Responses): provider-executed MCP tool support via `openai.tools.mcp(...)` (tool serialization + output mapping).
+- OpenAI (Responses): MCP approval workflow mapping (`mcp_approval_request` / `mcp_approval_response`) with tool call id aliasing via `approval_request_id`.
+
+### Docs
+- Docs/examples: document and demonstrate OpenAI MCP tool usage and approvals.
+
 ## [0.6.0] - 2026-01-26
 
 ### Changed
