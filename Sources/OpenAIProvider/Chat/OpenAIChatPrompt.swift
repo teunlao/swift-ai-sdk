@@ -176,16 +176,17 @@ struct OpenAIChatMessagesConverter {
                 messages.append(.object(messageObject))
 
             case .tool(let toolResponses, _):
-                for toolResponse in toolResponses {
+                for part in toolResponses {
+                    guard case .toolResult(let toolResponse) = part else { continue }
                     let contentValue: String
                     switch toolResponse.output {
-                    case .text(let value), .errorText(let value):
+                    case .text(let value, _), .errorText(let value, _):
                         contentValue = value
-                    case .executionDenied(let reason):
+                    case .executionDenied(let reason, _):
                         contentValue = reason ?? "Tool execution denied."
-                    case .json(let value), .errorJson(let value):
+                    case .json(let value, _), .errorJson(let value, _):
                         contentValue = try encodeJSONValue(value)
-                    case .content(let parts):
+                    case .content(let parts, _):
                         contentValue = try encodeEncodable(parts)
                     }
 

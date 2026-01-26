@@ -202,6 +202,79 @@ func prepareOpenAIResponsesTools(
                 }
                 openAITools.append(.object(payload))
 
+            case "openai.mcp":
+                let parsed = try await validateTypes(
+                    ValidateTypesOptions(value: providerTool.args, schema: openaiMcpArgsSchema)
+                )
+
+                let allowedTools: JSONValue?
+                if let parsedAllowedTools = parsed.allowedTools {
+                    switch parsedAllowedTools {
+                    case .toolNames(let names):
+                        allowedTools = .array(names.map(JSONValue.string))
+                    case .filter(let filter):
+                        var filterPayload: [String: JSONValue] = [:]
+                        if let readOnly = filter.readOnly {
+                            filterPayload["read_only"] = .bool(readOnly)
+                        }
+                        if let toolNames = filter.toolNames {
+                            filterPayload["tool_names"] = .array(toolNames.map(JSONValue.string))
+                        }
+                        allowedTools = .object(filterPayload)
+                    }
+                } else {
+                    allowedTools = nil
+                }
+
+                let requireApprovalParam: JSONValue?
+                if let requireApproval = parsed.requireApproval {
+                    switch requireApproval {
+                    case .always:
+                        requireApprovalParam = .string("always")
+                    case .never:
+                        requireApprovalParam = .string("never")
+                    case .conditional(let conditional):
+                        if let never = conditional.never {
+                            var neverPayload: [String: JSONValue] = [:]
+                            if let toolNames = never.toolNames {
+                                neverPayload["tool_names"] = .array(toolNames.map(JSONValue.string))
+                            }
+                            requireApprovalParam = .object([
+                                "never": .object(neverPayload)
+                            ])
+                        } else {
+                            requireApprovalParam = nil
+                        }
+                    }
+                } else {
+                    requireApprovalParam = nil
+                }
+
+                var payload: [String: JSONValue] = [
+                    "type": .string("mcp"),
+                    "server_label": .string(parsed.serverLabel),
+                    "require_approval": requireApprovalParam ?? .string("never")
+                ]
+                if let allowedTools {
+                    payload["allowed_tools"] = allowedTools
+                }
+                if let authorization = parsed.authorization {
+                    payload["authorization"] = .string(authorization)
+                }
+                if let connectorId = parsed.connectorId {
+                    payload["connector_id"] = .string(connectorId)
+                }
+                if let headers = parsed.headers {
+                    payload["headers"] = .object(headers.mapValues(JSONValue.string))
+                }
+                if let serverDescription = parsed.serverDescription {
+                    payload["server_description"] = .string(serverDescription)
+                }
+                if let serverUrl = parsed.serverUrl {
+                    payload["server_url"] = .string(serverUrl)
+                }
+                openAITools.append(.object(payload))
+
             default:
                 warnings.append(.unsupportedTool(tool: .providerDefined(providerTool), details: nil))
             }

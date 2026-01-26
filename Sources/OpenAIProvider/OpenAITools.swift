@@ -21,6 +21,11 @@ public struct OpenAITools: Sendable {
     }
 
     @discardableResult
+    public func mcp(_ args: OpenAIMCPArgs) -> Tool {
+        openaiMcpToolFactory(args)
+    }
+
+    @discardableResult
     public func localShell(_ options: ProviderDefinedToolFactoryWithOutputSchemaOptions = .init()) -> Tool {
         openaiLocalShellTool(options)
     }

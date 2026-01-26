@@ -17,6 +17,7 @@ struct OpenAIResponsesInputBuilder {
         var items: [JSONValue] = []
         var warnings: [LanguageModelV3CallWarning] = []
         var reasoningReferences: Set<String> = []
+        var processedApprovalIds: Set<String> = []
 
         for message in prompt {
             switch message {
@@ -229,7 +230,7 @@ struct OpenAIResponsesInputBuilder {
                             continue
                         }
 
-                        if case .json(let value) = resultPart.output,
+                        if case .json(let value, _) = resultPart.output,
                            case .object(let object) = value,
                            object["type"] == .string("execution-denied") {
                             continue
@@ -316,117 +317,145 @@ struct OpenAIResponsesInputBuilder {
 
             case let .tool(parts, _):
                 for part in parts {
-                    switch part.output {
-                    case .json(let value):
-                        if hasLocalShellTool, part.toolName == "local_shell" {
-                            let parsed = try await validateTypes(
-                                ValidateTypesOptions(value: jsonValueToFoundation(value), schema: openaiLocalShellOutputSchema)
-                            )
+                    switch part {
+                    case .toolApprovalResponse(let approvalResponse):
+                        if processedApprovalIds.contains(approvalResponse.approvalId) {
+                            continue
+                        }
+                        processedApprovalIds.insert(approvalResponse.approvalId)
 
+                        if store {
                             items.append(.object([
-                                "type": .string("local_shell_call_output"),
-                                "call_id": .string(part.toolCallId),
-                                "output": .string(parsed.output)
+                                "type": .string("item_reference"),
+                                "id": .string(approvalResponse.approvalId)
                             ]))
+                        }
+
+                        items.append(.object([
+                            "type": .string("mcp_approval_response"),
+                            "approval_request_id": .string(approvalResponse.approvalId),
+                            "approve": .bool(approvalResponse.approved)
+                        ]))
+
+                    case .toolResult(let toolResult):
+                        // Skip execution-denied with approvalId - already handled via tool-approval-response
+                        if case .executionDenied(_, let providerOptions) = toolResult.output,
+                           extractOpenAIStringOption(from: providerOptions, providerOptionsName: "openai", key: "approvalId") != nil {
                             continue
                         }
 
-                        if hasShellTool, part.toolName == "shell" {
-                            let parsed = try await validateTypes(
-                                ValidateTypesOptions(value: jsonValueToFoundation(value), schema: openaiShellOutputSchema)
-                            )
+                        switch toolResult.output {
+                        case .json(let value, _):
+                            if hasLocalShellTool, toolResult.toolName == "local_shell" {
+                                let parsed = try await validateTypes(
+                                    ValidateTypesOptions(value: jsonValueToFoundation(value), schema: openaiLocalShellOutputSchema)
+                                )
 
-                            let output: JSONValue = .array(parsed.output.map { item in
-                                let outcome: JSONValue
-                                switch item.outcome.type {
-                                case "timeout":
-                                    outcome = .object(["type": .string("timeout")])
-                                case "exit":
-                                    if let exitCode = item.outcome.exitCode {
-                                        outcome = .object([
-                                            "type": .string("exit"),
-                                            "exit_code": .number(exitCode)
-                                        ])
-                                    } else {
-                                        outcome = .object(["type": .string("exit")])
-                                    }
-                                default:
-                                    outcome = .object(["type": .string(item.outcome.type)])
-                                }
-
-                                return .object([
-                                    "stdout": .string(item.stdout),
-                                    "stderr": .string(item.stderr),
-                                    "outcome": outcome
-                                ])
-                            })
-
-                            items.append(.object([
-                                "type": .string("shell_call_output"),
-                                "call_id": .string(part.toolCallId),
-                                "output": output
-                            ]))
-                            continue
-                        }
-
-                        if hasApplyPatchTool, part.toolName == "apply_patch" {
-                            let parsed = try await validateTypes(
-                                ValidateTypesOptions(value: jsonValueToFoundation(value), schema: openaiApplyPatchOutputSchema)
-                            )
-
-                            var payload: [String: JSONValue] = [
-                                "type": .string("apply_patch_call_output"),
-                                "call_id": .string(part.toolCallId),
-                                "status": .string(parsed.status)
-                            ]
-                            if let output = parsed.output {
-                                payload["output"] = .string(output)
+                                items.append(.object([
+                                    "type": .string("local_shell_call_output"),
+                                    "call_id": .string(toolResult.toolCallId),
+                                    "output": .string(parsed.output)
+                                ]))
+                                continue
                             }
 
-                            items.append(.object(payload))
-                            continue
-                        }
+                            if hasShellTool, toolResult.toolName == "shell" {
+                                let parsed = try await validateTypes(
+                                    ValidateTypesOptions(value: jsonValueToFoundation(value), schema: openaiShellOutputSchema)
+                                )
 
-                        let jsonString = try encodeJSONValue(value)
-                        items.append(makeToolResultObject(toolCallId: part.toolCallId, output: .string(jsonString)))
+                                let output: JSONValue = .array(parsed.output.map { item in
+                                    let outcome: JSONValue
+                                    switch item.outcome.type {
+                                    case "timeout":
+                                        outcome = .object(["type": .string("timeout")])
+                                    case "exit":
+                                        if let exitCode = item.outcome.exitCode {
+                                            outcome = .object([
+                                                "type": .string("exit"),
+                                                "exit_code": .number(exitCode)
+                                            ])
+                                        } else {
+                                            outcome = .object(["type": .string("exit")])
+                                        }
+                                    default:
+                                        outcome = .object(["type": .string(item.outcome.type)])
+                                    }
 
-                    case .text(let value):
-                        items.append(makeToolResultObject(toolCallId: part.toolCallId, output: .string(value)))
-
-                    case .executionDenied(let reason):
-                        let message = reason ?? "Tool execution denied."
-                        items.append(makeToolResultObject(toolCallId: part.toolCallId, output: .string(message)))
-
-                    case .errorText(let value):
-                        items.append(makeToolResultObject(toolCallId: part.toolCallId, output: .string(value)))
-
-                    case .errorJson(let value):
-                        let jsonString = try encodeJSONValue(value)
-                        items.append(makeToolResultObject(toolCallId: part.toolCallId, output: .string(jsonString)))
-
-                    case .content(let contentParts):
-                        let converted = contentParts.map { item -> JSONValue in
-                            switch item {
-                            case .text(let text):
-                                return .object([
-                                    "type": .string("input_text"),
-                                    "text": .string(text)
-                                ])
-                            case .media(let data, let mediaType):
-                                if mediaType.hasPrefix("image/") {
                                     return .object([
-                                        "type": .string("input_image"),
-                                        "image_url": .string("data:\(mediaType);base64,\(data)")
+                                        "stdout": .string(item.stdout),
+                                        "stderr": .string(item.stderr),
+                                        "outcome": outcome
+                                    ])
+                                })
+
+                                items.append(.object([
+                                    "type": .string("shell_call_output"),
+                                    "call_id": .string(toolResult.toolCallId),
+                                    "output": output
+                                ]))
+                                continue
+                            }
+
+                            if hasApplyPatchTool, toolResult.toolName == "apply_patch" {
+                                let parsed = try await validateTypes(
+                                    ValidateTypesOptions(value: jsonValueToFoundation(value), schema: openaiApplyPatchOutputSchema)
+                                )
+
+                                var payload: [String: JSONValue] = [
+                                    "type": .string("apply_patch_call_output"),
+                                    "call_id": .string(toolResult.toolCallId),
+                                    "status": .string(parsed.status)
+                                ]
+                                if let output = parsed.output {
+                                    payload["output"] = .string(output)
+                                }
+
+                                items.append(.object(payload))
+                                continue
+                            }
+
+                            let jsonString = try encodeJSONValue(value)
+                            items.append(makeToolResultObject(toolCallId: toolResult.toolCallId, output: .string(jsonString)))
+
+                        case .text(let value, _):
+                            items.append(makeToolResultObject(toolCallId: toolResult.toolCallId, output: .string(value)))
+
+                        case .executionDenied(let reason, _):
+                            let message = reason ?? "Tool execution denied."
+                            items.append(makeToolResultObject(toolCallId: toolResult.toolCallId, output: .string(message)))
+
+                        case .errorText(let value, _):
+                            items.append(makeToolResultObject(toolCallId: toolResult.toolCallId, output: .string(value)))
+
+                        case .errorJson(let value, _):
+                            let jsonString = try encodeJSONValue(value)
+                            items.append(makeToolResultObject(toolCallId: toolResult.toolCallId, output: .string(jsonString)))
+
+                        case .content(let contentParts, _):
+                            let converted = contentParts.map { item -> JSONValue in
+                                switch item {
+                                case .text(let text):
+                                    return .object([
+                                        "type": .string("input_text"),
+                                        "text": .string(text)
+                                    ])
+                                case .media(let data, let mediaType):
+                                    if mediaType.hasPrefix("image/") {
+                                        return .object([
+                                            "type": .string("input_image"),
+                                            "image_url": .string("data:\(mediaType);base64,\(data)")
+                                        ])
+                                    }
+                                    return .object([
+                                        "type": .string("input_file"),
+                                        "filename": .string("data"),
+                                        "file_data": .string("data:\(mediaType);base64,\(data)")
                                     ])
                                 }
-                                return .object([
-                                    "type": .string("input_file"),
-                                    "filename": .string("data"),
-                                    "file_data": .string("data:\(mediaType);base64,\(data)")
-                                ])
                             }
+                            items.append(makeToolResultObject(toolCallId: toolResult.toolCallId, output: .array(converted)))
                         }
-                        items.append(makeToolResultObject(toolCallId: part.toolCallId, output: .array(converted)))
                     }
                 }
             }

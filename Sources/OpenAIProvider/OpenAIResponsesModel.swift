@@ -73,8 +73,11 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             }
         }()
 
+        let approvalRequestIdToToolCallIdFromPrompt = extractApprovalRequestIdToToolCallIdMapping(options.prompt)
+
         let mapped = try mapResponseOutput(
             value.output,
+            approvalRequestIdToToolCallIdFromPrompt: approvalRequestIdToToolCallIdFromPrompt,
             webSearchToolName: prepared.webSearchToolName,
             logprobsRequested: logprobsRequested
         )
@@ -148,6 +151,8 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             }
         }()
 
+        let approvalRequestIdToToolCallIdFromPrompt = extractApprovalRequestIdToToolCallIdMapping(options.prompt)
+
         let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
             continuation.yield(.streamStart(warnings: prepared.warnings))
 
@@ -161,6 +166,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
 
                 var ongoingToolCalls: [Int: ToolCallState] = [:]
                 var activeReasoning: [String: ReasoningState] = [:]
+                var approvalRequestIdToDummyToolCallIdFromStream: [String: String] = [:]
 
                 do {
                     for try await result in chunkStream {
@@ -188,6 +194,8 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                                 try handleOutputItemDone(
                                     chunkObject,
                                     webSearchToolName: webSearchToolName,
+                                    approvalRequestIdToToolCallIdFromPrompt: approvalRequestIdToToolCallIdFromPrompt,
+                                    approvalRequestIdToDummyToolCallIdFromStream: &approvalRequestIdToDummyToolCallIdFromStream,
                                     ongoingToolCalls: &ongoingToolCalls,
                                     activeReasoning: &activeReasoning,
                                     hasFunctionCall: &hasFunctionCall,
@@ -585,8 +593,34 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
         let hasFunctionCall: Bool
     }
 
+    private func extractApprovalRequestIdToToolCallIdMapping(_ prompt: LanguageModelV3Prompt) -> [String: String] {
+        var mapping: [String: String] = [:]
+        for message in prompt {
+            guard case .assistant(let parts, _) = message else { continue }
+            for part in parts {
+                guard case .toolCall(let toolCall) = part else { continue }
+                let providerOptions = toolCall.providerOptions
+                let approvalRequestId = providerOptions?["openai"]?["approvalRequestId"]?.stringValue
+                    ?? providerOptions?[providerOptionsName]?["approvalRequestId"]?.stringValue
+                if let approvalRequestId {
+                    mapping[approvalRequestId] = toolCall.toolCallId
+                }
+            }
+        }
+        return mapping
+    }
+
+    private func openAIApprovalRequestProviderMetadata(approvalRequestId: String) -> SharedV3ProviderMetadata {
+        [
+            "openai": [
+                "approvalRequestId": .string(approvalRequestId)
+            ]
+        ]
+    }
+
     private func mapResponseOutput(
         _ output: [JSONValue],
+        approvalRequestIdToToolCallIdFromPrompt: [String: String],
         webSearchToolName: String?,
         logprobsRequested: Bool
     ) throws -> MappedResponse {
@@ -723,6 +757,82 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                     isError: nil,
                     providerExecuted: true,
                     preliminary: nil,
+                    providerMetadata: nil
+                )))
+
+            case "mcp_call":
+                guard let itemId = object["id"]?.stringValue,
+                      let name = object["name"]?.stringValue,
+                      let arguments = object["arguments"]?.stringValue,
+                      let serverLabel = object["server_label"]?.stringValue else {
+                    continue
+                }
+
+                let approvalRequestId = object["approval_request_id"]?.stringValue
+                let toolCallId = approvalRequestId.flatMap { approvalRequestIdToToolCallIdFromPrompt[$0] } ?? itemId
+                let toolName = "mcp.\(name)"
+
+                content.append(.toolCall(LanguageModelV3ToolCall(
+                    toolCallId: toolCallId,
+                    toolName: toolName,
+                    input: arguments,
+                    providerExecuted: true,
+                    dynamic: true,
+                    providerMetadata: nil
+                )))
+
+                var resultPayload: [String: JSONValue] = [
+                    "type": .string("call"),
+                    "serverLabel": .string(serverLabel),
+                    "name": .string(name),
+                    "arguments": .string(arguments)
+                ]
+                if let output = object["output"], output != .null {
+                    resultPayload["output"] = output
+                }
+                if let error = object["error"], error != .null {
+                    resultPayload["error"] = error
+                }
+
+                let metadata = openAIProviderMetadata(["itemId": .string(itemId)])
+                content.append(.toolResult(LanguageModelV3ToolResult(
+                    toolCallId: toolCallId,
+                    toolName: toolName,
+                    result: .object(resultPayload),
+                    isError: nil,
+                    providerExecuted: true,
+                    preliminary: nil,
+                    providerMetadata: metadata
+                )))
+
+            case "mcp_list_tools":
+                // Skip list tools - we don't expose this to the UI or send it back
+                break
+
+            case "mcp_approval_request":
+                guard let itemId = object["id"]?.stringValue,
+                      let name = object["name"]?.stringValue,
+                      let arguments = object["arguments"]?.stringValue else {
+                    continue
+                }
+
+                let approvalRequestId = object["approval_request_id"]?.stringValue ?? itemId
+                let dummyToolCallId = config.generateId?() ?? generateID()
+                let toolName = "mcp.\(name)"
+
+                let approvalMetadata = openAIApprovalRequestProviderMetadata(approvalRequestId: approvalRequestId)
+                content.append(.toolCall(LanguageModelV3ToolCall(
+                    toolCallId: dummyToolCallId,
+                    toolName: toolName,
+                    input: arguments,
+                    providerExecuted: true,
+                    dynamic: true,
+                    providerMetadata: approvalMetadata
+                )))
+
+                content.append(.toolApprovalRequest(LanguageModelV3ToolApprovalRequest(
+                    approvalId: approvalRequestId,
+                    toolCallId: dummyToolCallId,
                     providerMetadata: nil
                 )))
 
@@ -1042,7 +1152,14 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 codeInterpreter: nil,
                 applyPatch: nil
             )
-            continuation.yield(.toolInputStart(id: callId, toolName: name, providerMetadata: nil, providerExecuted: nil))
+            continuation.yield(.toolInputStart(
+                id: callId,
+                toolName: name,
+                providerMetadata: nil,
+                providerExecuted: nil,
+                dynamic: nil,
+                title: nil
+            ))
         case "web_search_call":
             guard let callId = item["id"]?.stringValue else { return }
             ongoingToolCalls[outputIndex] = ToolCallState(
@@ -1052,7 +1169,14 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 codeInterpreter: nil,
                 applyPatch: nil
             )
-            continuation.yield(.toolInputStart(id: callId, toolName: webSearchToolName, providerMetadata: nil, providerExecuted: true))
+            continuation.yield(.toolInputStart(
+                id: callId,
+                toolName: webSearchToolName,
+                providerMetadata: nil,
+                providerExecuted: true,
+                dynamic: nil,
+                title: nil
+            ))
         case "computer_call":
             guard let callId = item["id"]?.stringValue else { return }
             ongoingToolCalls[outputIndex] = ToolCallState(
@@ -1062,7 +1186,14 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 codeInterpreter: nil,
                 applyPatch: nil
             )
-            continuation.yield(.toolInputStart(id: callId, toolName: "computer_use", providerMetadata: nil, providerExecuted: true))
+            continuation.yield(.toolInputStart(
+                id: callId,
+                toolName: "computer_use",
+                providerMetadata: nil,
+                providerExecuted: true,
+                dynamic: nil,
+                title: nil
+            ))
         case "code_interpreter_call":
             guard let callId = item["id"]?.stringValue,
                   let containerId = item["container_id"]?.stringValue else { return }
@@ -1074,7 +1205,14 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 codeInterpreter: state,
                 applyPatch: nil
             )
-            continuation.yield(.toolInputStart(id: callId, toolName: "code_interpreter", providerMetadata: nil, providerExecuted: true))
+            continuation.yield(.toolInputStart(
+                id: callId,
+                toolName: "code_interpreter",
+                providerMetadata: nil,
+                providerExecuted: true,
+                dynamic: nil,
+                title: nil
+            ))
             let initial = "{\"containerId\":\"\(containerId)\",\"code\":\""
             continuation.yield(.toolInputDelta(id: callId, delta: initial, providerMetadata: nil))
         case "apply_patch_call":
@@ -1091,7 +1229,14 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 codeInterpreter: nil,
                 applyPatch: ApplyPatchState(hasDiff: isDelete, endEmitted: isDelete)
             )
-            continuation.yield(.toolInputStart(id: callId, toolName: "apply_patch", providerMetadata: nil, providerExecuted: nil))
+            continuation.yield(.toolInputStart(
+                id: callId,
+                toolName: "apply_patch",
+                providerMetadata: nil,
+                providerExecuted: nil,
+                dynamic: nil,
+                title: nil
+            ))
             if isDelete {
                 let inputValue: JSONValue = .object([
                     "callId": .string(callId),
@@ -1158,6 +1303,8 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
     private func handleOutputItemDone(
         _ chunk: [String: JSONValue],
         webSearchToolName: String,
+        approvalRequestIdToToolCallIdFromPrompt: [String: String],
+        approvalRequestIdToDummyToolCallIdFromStream: inout [String: String],
         ongoingToolCalls: inout [Int: ToolCallState],
         activeReasoning: inout [String: ReasoningState],
         hasFunctionCall: inout Bool,
@@ -1210,6 +1357,84 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 isError: nil,
                 providerExecuted: true,
                 preliminary: nil,
+                providerMetadata: nil
+            )))
+        case "mcp_call":
+            guard let itemId = item["id"]?.stringValue,
+                  let name = item["name"]?.stringValue,
+                  let arguments = item["arguments"]?.stringValue,
+                  let serverLabel = item["server_label"]?.stringValue else { return }
+            ongoingToolCalls[outputIndex] = nil
+
+            let approvalRequestId = item["approval_request_id"]?.stringValue
+            let aliasedToolCallId: String
+            if let approvalRequestId {
+                aliasedToolCallId = approvalRequestIdToDummyToolCallIdFromStream[approvalRequestId]
+                    ?? approvalRequestIdToToolCallIdFromPrompt[approvalRequestId]
+                    ?? itemId
+            } else {
+                aliasedToolCallId = itemId
+            }
+
+            let toolName = "mcp.\(name)"
+            continuation.yield(.toolCall(LanguageModelV3ToolCall(
+                toolCallId: aliasedToolCallId,
+                toolName: toolName,
+                input: arguments,
+                providerExecuted: true,
+                dynamic: true,
+                providerMetadata: nil
+            )))
+
+            var resultPayload: [String: JSONValue] = [
+                "type": .string("call"),
+                "serverLabel": .string(serverLabel),
+                "name": .string(name),
+                "arguments": .string(arguments)
+            ]
+            if let output = item["output"], output != .null {
+                resultPayload["output"] = output
+            }
+            if let error = item["error"], error != .null {
+                resultPayload["error"] = error
+            }
+
+            let metadata = openAIProviderMetadata(["itemId": .string(itemId)])
+            continuation.yield(.toolResult(LanguageModelV3ToolResult(
+                toolCallId: aliasedToolCallId,
+                toolName: toolName,
+                result: .object(resultPayload),
+                isError: nil,
+                providerExecuted: true,
+                preliminary: nil,
+                providerMetadata: metadata
+            )))
+        case "mcp_list_tools":
+            // Skip list tools - we don't expose this to the UI or send it back
+            ongoingToolCalls[outputIndex] = nil
+        case "mcp_approval_request":
+            guard let itemId = item["id"]?.stringValue,
+                  let name = item["name"]?.stringValue,
+                  let arguments = item["arguments"]?.stringValue else { return }
+            ongoingToolCalls[outputIndex] = nil
+
+            let approvalRequestId = item["approval_request_id"]?.stringValue ?? itemId
+            let dummyToolCallId = config.generateId?() ?? generateID()
+            approvalRequestIdToDummyToolCallIdFromStream[approvalRequestId] = dummyToolCallId
+
+            let toolName = "mcp.\(name)"
+            let approvalMetadata = openAIApprovalRequestProviderMetadata(approvalRequestId: approvalRequestId)
+            continuation.yield(.toolCall(LanguageModelV3ToolCall(
+                toolCallId: dummyToolCallId,
+                toolName: toolName,
+                input: arguments,
+                providerExecuted: true,
+                dynamic: true,
+                providerMetadata: approvalMetadata
+            )))
+            continuation.yield(.toolApprovalRequest(LanguageModelV3ToolApprovalRequest(
+                approvalId: approvalRequestId,
+                toolCallId: dummyToolCallId,
                 providerMetadata: nil
             )))
         case "computer_call":
