@@ -146,18 +146,19 @@ public func convertToOpenAICompatibleChatMessages(
             messages.append(.object(builder))
 
         case .tool(let results, let options):
-            for result in results {
+            for part in results {
+                guard case .toolResult(let result) = part else { continue }
                 let output = result.output
                 let contentValue: String
                 switch output {
-                case .text(let value), .errorText(let value):
+                case .text(let value, _), .errorText(let value, _):
                     contentValue = value
-                case .executionDenied(let reason):
+                case .executionDenied(let reason, _):
                     contentValue = reason ?? "Tool execution denied."
-                case .json(let value), .errorJson(let value):
+                case .json(let value, _), .errorJson(let value, _):
                     let jsonData = try JSONEncoder().encode(value)
                     contentValue = String(data: jsonData, encoding: .utf8) ?? "{}"
-                case .content(let parts):
+                case .content(let parts, _):
                     let jsonData = try JSONEncoder().encode(parts)
                     contentValue = String(data: jsonData, encoding: .utf8) ?? "[]"
                 }

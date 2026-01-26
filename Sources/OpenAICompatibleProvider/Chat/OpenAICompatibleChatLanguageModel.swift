@@ -484,7 +484,14 @@ public final class OpenAICompatibleChatLanguageModel: LanguageModelV3 {
                 }
 
                 var state = ToolCallState(toolCallId: id, toolName: name, arguments: delta.function?.arguments ?? "", hasFinished: false)
-                continuation.yield(.toolInputStart(id: id, toolName: name, providerMetadata: nil, providerExecuted: nil))
+                continuation.yield(.toolInputStart(
+                    id: id,
+                    toolName: name,
+                    providerMetadata: nil,
+                    providerExecuted: nil,
+                    dynamic: nil,
+                    title: nil
+                ))
 
                 if let args = delta.function?.arguments {
                     continuation.yield(.toolInputDelta(id: id, delta: args, providerMetadata: nil))

@@ -182,7 +182,14 @@ public final class GoogleGenerativeAILanguageModel: LanguageModelV3 {
                                 }
 
                                 for toolCall in getToolCallsFromParts(parts: parts, generateId: config.generateId) {
-                                    continuation.yield(.toolInputStart(id: toolCall.toolCallId, toolName: toolCall.toolName, providerMetadata: toolCall.providerMetadata, providerExecuted: nil))
+                                    continuation.yield(.toolInputStart(
+                                        id: toolCall.toolCallId,
+                                        toolName: toolCall.toolName,
+                                        providerMetadata: toolCall.providerMetadata,
+                                        providerExecuted: nil,
+                                        dynamic: nil,
+                                        title: nil
+                                    ))
                                     continuation.yield(.toolInputDelta(id: toolCall.toolCallId, delta: toolCall.args, providerMetadata: toolCall.providerMetadata))
                                     continuation.yield(.toolInputEnd(id: toolCall.toolCallId, providerMetadata: toolCall.providerMetadata))
                                     continuation.yield(.toolCall(LanguageModelV3ToolCall(toolCallId: toolCall.toolCallId, toolName: toolCall.toolName, input: toolCall.args, providerMetadata: toolCall.providerMetadata)))

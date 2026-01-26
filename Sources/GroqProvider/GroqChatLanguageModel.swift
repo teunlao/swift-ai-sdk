@@ -359,7 +359,14 @@ public final class GroqChatLanguageModel: LanguageModelV3 {
                     throw InvalidResponseDataError(data: toolCallDelta, message: "Expected function name.")
                 }
 
-                continuation.yield(.toolInputStart(id: id, toolName: name, providerMetadata: nil, providerExecuted: nil))
+                continuation.yield(.toolInputStart(
+                    id: id,
+                    toolName: name,
+                    providerMetadata: nil,
+                    providerExecuted: nil,
+                    dynamic: nil,
+                    title: nil
+                ))
 
                 var newCall = GroqStreamingToolCall(id: id, name: name, arguments: "")
                 if let arguments = toolCallDelta.function?.arguments {

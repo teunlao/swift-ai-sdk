@@ -218,7 +218,14 @@ public final class XAIChatLanguageModel: LanguageModelV3 {
 
                             if let toolCalls = delta.toolCalls {
                                 for call in toolCalls {
-                                    continuation.yield(.toolInputStart(id: call.id, toolName: call.function.name, providerMetadata: nil, providerExecuted: nil))
+                                    continuation.yield(.toolInputStart(
+                                        id: call.id,
+                                        toolName: call.function.name,
+                                        providerMetadata: nil,
+                                        providerExecuted: nil,
+                                        dynamic: nil,
+                                        title: nil
+                                    ))
                                     continuation.yield(.toolInputDelta(id: call.id, delta: call.function.arguments, providerMetadata: nil))
                                     continuation.yield(.toolInputEnd(id: call.id, providerMetadata: nil))
                                     continuation.yield(.toolCall(LanguageModelV3ToolCall(toolCallId: call.id, toolName: call.function.name, input: call.function.arguments)))

@@ -137,11 +137,12 @@ func convertToBedrockChatMessages(_ prompt: LanguageModelV3Prompt) async throws 
 
                 case .tool(let parts, let providerOptions):
                     for part in parts {
-                        let converted = try await convertToolResult(part.output)
+                        guard case .toolResult(let toolResult) = part else { continue }
+                        let converted = try await convertToolResult(toolResult.output)
                         content.append(
                             .object([
                                 "toolResult": .object([
-                                    "toolUseId": .string(part.toolCallId),
+                                    "toolUseId": .string(toolResult.toolCallId),
                                     "content": .array(converted)
                                 ])
                             ])
@@ -260,7 +261,7 @@ func convertToBedrockChatMessages(_ prompt: LanguageModelV3Prompt) async throws 
 
 private func convertToolResult(_ output: LanguageModelV3ToolResultOutput) async throws -> [JSONValue] {
     switch output {
-    case .content(let parts):
+    case .content(let parts, _):
         return try parts.map { part in
             switch part {
             case .text(let text):
@@ -280,13 +281,13 @@ private func convertToolResult(_ output: LanguageModelV3ToolResultOutput) async 
                 ])
             }
         }
-    case .text(let text):
+    case .text(let text, _):
         return [.object(["text": .string(text)])]
-    case .errorText(let text):
+    case .errorText(let text, _):
         return [.object(["text": .string(text)])]
-    case .executionDenied(let reason):
+    case .executionDenied(let reason, _):
         return [.object(["text": .string(reason ?? "Tool execution denied.")])]
-    case .json(let json), .errorJson(let json):
+    case .json(let json, _), .errorJson(let json, _):
         let jsonText = try canonicalJSONString(from: json)
         return [.object(["text": .string(jsonText)])]
     }
@@ -387,7 +388,7 @@ private struct SystemMessage: Sendable {
 
 private enum UserEntry: Sendable {
     case user(parts: [LanguageModelV3UserMessagePart], providerOptions: SharedV3ProviderOptions?)
-    case tool(parts: [LanguageModelV3ToolResultPart], providerOptions: SharedV3ProviderOptions?)
+    case tool(parts: [LanguageModelV3ToolMessagePart], providerOptions: SharedV3ProviderOptions?)
 }
 
 private struct AssistantMessage: Sendable {

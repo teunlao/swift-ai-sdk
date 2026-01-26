@@ -117,8 +117,9 @@ public func convertToMistralChatMessages(
 
             messages.append(.object(payload))
 
-        case .tool(let results, _):
-            for result in results {
+        case .tool(let parts, _):
+            for part in parts {
+                guard case .toolResult(let result) = part else { continue }
                 let contentValue = try stringifyToolOutput(result.output)
 
                 messages.append(.object([
@@ -136,16 +137,16 @@ public func convertToMistralChatMessages(
 
 private func stringifyToolOutput(_ output: LanguageModelV3ToolResultOutput) throws -> String {
     switch output {
-    case .text(let value), .errorText(let value):
+    case .text(let value, _), .errorText(let value, _):
         return value
-    case .executionDenied(let reason):
+    case .executionDenied(let reason, _):
         return reason ?? "Tool execution denied."
-    case .json(let value), .errorJson(let value):
+    case .json(let value, _), .errorJson(let value, _):
         let encoder = JSONEncoder()
         encoder.outputFormatting = .withoutEscapingSlashes
         let data = try encoder.encode(value)
         return String(data: data, encoding: .utf8) ?? "{}"
-    case .content(let parts):
+    case .content(let parts, _):
         return try stringifyToolContentParts(parts)
     }
 }

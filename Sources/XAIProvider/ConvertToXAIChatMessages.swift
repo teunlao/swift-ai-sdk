@@ -72,18 +72,19 @@ func convertToXAIChatMessages(_ prompt: LanguageModelV3Prompt) throws -> (messag
             messages.append(XAIChatMessage(role: .assistant, textContent: text.isEmpty ? nil : text, toolCalls: toolCalls.isEmpty ? nil : toolCalls))
 
         case .tool(let results, _):
-            for result in results {
+            for part in results {
+                guard case .toolResult(let result) = part else { continue }
                 let content: String
                 switch result.output {
-                case .text(let value):
+                case .text(let value, _):
                     content = value
-                case .errorText(let value):
+                case .errorText(let value, _):
                     content = value
-                case .executionDenied(let reason):
+                case .executionDenied(let reason, _):
                     content = reason ?? "Tool execution denied."
-                case .json(let value), .errorJson(let value):
+                case .json(let value, _), .errorJson(let value, _):
                     content = stringifyJSONValue(value)
-                case .content(let parts):
+                case .content(let parts, _):
                     let jsonParts = parts.map { part -> JSONValue in
                         switch part {
                         case .text(let text):

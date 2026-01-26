@@ -192,7 +192,9 @@ public final class BedrockChatLanguageModel: LanguageModelV3 {
                                             id: toolCallId,
                                             toolName: toolName,
                                             providerMetadata: nil,
-                                            providerExecuted: nil
+                                            providerExecuted: nil,
+                                            dynamic: nil,
+                                            title: nil
                                         ))
                                     }
                                 } else {

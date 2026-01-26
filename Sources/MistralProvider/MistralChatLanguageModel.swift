@@ -220,7 +220,14 @@ public final class MistralChatLanguageModel: LanguageModelV3 {
                                         let callId = call.id ?? generateId()
                                         let arguments = call.function.arguments ?? ""
 
-                                        continuation.yield(.toolInputStart(id: callId, toolName: call.function.name, providerMetadata: nil, providerExecuted: nil))
+                                        continuation.yield(.toolInputStart(
+                                            id: callId,
+                                            toolName: call.function.name,
+                                            providerMetadata: nil,
+                                            providerExecuted: nil,
+                                            dynamic: nil,
+                                            title: nil
+                                        ))
                                         if !arguments.isEmpty {
                                             continuation.yield(.toolInputDelta(id: callId, delta: arguments, providerMetadata: nil))
                                         }

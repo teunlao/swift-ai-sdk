@@ -201,7 +201,14 @@ public final class CohereChatLanguageModel: LanguageModelV3 {
                                     arguments: initialArguments
                                 )
 
-                                continuation.yield(.toolInputStart(id: toolId, toolName: call.function.name, providerMetadata: nil, providerExecuted: nil))
+                                continuation.yield(.toolInputStart(
+                                    id: toolId,
+                                    toolName: call.function.name,
+                                    providerMetadata: nil,
+                                    providerExecuted: nil,
+                                    dynamic: nil,
+                                    title: nil
+                                ))
 
                                 if !initialArguments.isEmpty {
                                     continuation.yield(.toolInputDelta(id: toolId, delta: initialArguments, providerMetadata: nil))

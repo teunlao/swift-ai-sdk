@@ -1001,8 +1001,14 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                 contentBlocks[value.index] = .toolCall(state)
                 continuation.yield(
                     .toolInputStart(
-                        id: tool.id, toolName: tool.name, providerMetadata: nil,
-                        providerExecuted: false))
+                        id: tool.id,
+                        toolName: tool.name,
+                        providerMetadata: nil,
+                        providerExecuted: false,
+                        dynamic: nil,
+                        title: nil
+                    )
+                )
             }
 
         case .serverToolUse(let tool):
@@ -1025,7 +1031,13 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
             contentBlocks[value.index] = .toolCall(state)
             continuation.yield(
                 .toolInputStart(
-                    id: tool.id, toolName: tool.name, providerMetadata: nil, providerExecuted: true)
+                    id: tool.id,
+                    toolName: tool.name,
+                    providerMetadata: nil,
+                    providerExecuted: true,
+                    dynamic: nil,
+                    title: nil
+                )
             )
 
         case .mcpToolUse(let tool):
@@ -1049,7 +1061,9 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                     id: tool.id,
                     toolName: tool.name,
                     providerMetadata: providerMetadata,
-                    providerExecuted: true
+                    providerExecuted: true,
+                    dynamic: true,
+                    title: nil
                 )
             )
 

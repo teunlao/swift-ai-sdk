@@ -107,18 +107,19 @@ struct GroqChatMessageBuilder {
                 messages.append(.object(payload))
 
             case .tool(let parts, _):
-                for toolResult in parts {
+                for part in parts {
+                    guard case .toolResult(let toolResult) = part else { continue }
                     let contentValue: String
                     switch toolResult.output {
-                    case .text(let value):
+                    case .text(let value, _):
                         contentValue = value
-                    case .executionDenied(let reason):
+                    case .executionDenied(let reason, _):
                         contentValue = reason ?? "Tool execution denied."
-                    case .errorText(let value):
+                    case .errorText(let value, _):
                         contentValue = value
-                    case .json(let value), .errorJson(let value):
+                    case .json(let value, _), .errorJson(let value, _):
                         contentValue = stringifyJSONValue(value)
-                    case .content(let parts):
+                    case .content(let parts, _):
                         let jsonParts = parts.map { part -> JSONValue in
                             switch part {
                             case .text(let text):

@@ -303,14 +303,19 @@ private func appendUserFile(
 }
 
 private func appendToolMessageParts(
-    _ parts: [LanguageModelV3ToolResultPart],
+    _ parts: [LanguageModelV3ToolMessagePart],
     messageProviderOptions: SharedV3ProviderOptions?,
     anthropicContent: inout [JSONValue],
     betas: inout Set<String>,
     warnings: inout [LanguageModelV3CallWarning]
 ) async throws {
-    for (index, part) in parts.enumerated() {
-        let isLastPart = index == parts.count - 1
+    let toolResultParts: [LanguageModelV3ToolResultPart] = parts.compactMap { part in
+        if case .toolResult(let result) = part { return result }
+        return nil
+    }
+
+    for (index, part) in toolResultParts.enumerated() {
+        let isLastPart = index == toolResultParts.count - 1
         let cacheControl = getAnthropicCacheControl(from: part.providerOptions) ?? (isLastPart ? getAnthropicCacheControl(from: messageProviderOptions) : nil)
         let cacheControlJSON = cacheControlJSON(from: cacheControl)
 
@@ -320,7 +325,7 @@ private func appendToolMessageParts(
         ]
 
         switch part.output {
-        case .content(let items):
+        case .content(let items, _):
             let mapped = items.map { item -> JSONValue in
                 switch item {
                 case .text(let text):
@@ -344,14 +349,14 @@ private func appendToolMessageParts(
             }
             payload["content"] = .array(mapped)
 
-        case .text(let value):
+        case .text(let value, _):
             payload["content"] = .string(value)
-        case .errorText(let value):
+        case .errorText(let value, _):
             payload["content"] = .string(value)
             payload["is_error"] = .bool(true)
-        case .executionDenied(let reason):
+        case .executionDenied(let reason, _):
             payload["content"] = .string(reason ?? "Tool execution denied.")
-        case .json(let value), .errorJson(let value):
+        case .json(let value, _), .errorJson(let value, _):
             payload["content"] = .string(try jsonString(from: value))
             if case .errorJson = part.output {
                 payload["is_error"] = .bool(true)
@@ -565,10 +570,10 @@ private func appendAssistantToolResult(
         ]
 
         switch part.output {
-        case .json(let value):
+        case .json(let value, _):
             payload["is_error"] = .bool(false)
             payload["content"] = value
-        case .errorJson(let value):
+        case .errorJson(let value, _):
             payload["is_error"] = .bool(true)
             payload["content"] = value
         default:
@@ -587,7 +592,7 @@ private func appendAssistantToolResult(
 
     switch part.toolName {
     case "code_execution":
-        guard case .json(let value) = part.output else {
+        guard case .json(let value, _) = part.output else {
             warnings.append(.other(message: "provider executed tool result output type for tool \(part.toolName) is not supported"))
             return
         }
@@ -610,7 +615,7 @@ private func appendAssistantToolResult(
         anthropicContent.append(.object(payload))
 
     case "web_fetch":
-        guard case .json(let value) = part.output else {
+        guard case .json(let value, _) = part.output else {
             warnings.append(.other(message: "provider executed tool result output type for tool \(part.toolName) is not supported"))
             return
         }
@@ -646,7 +651,7 @@ private func appendAssistantToolResult(
         anthropicContent.append(.object(payload))
 
     case "web_search":
-        guard case .json(let value) = part.output else {
+        guard case .json(let value, _) = part.output else {
             warnings.append(.other(message: "provider executed tool result output type for tool \(part.toolName) is not supported"))
             return
         }
@@ -674,7 +679,7 @@ private func appendAssistantToolResult(
         anthropicContent.append(.object(payload))
 
     case "tool_search_tool_regex", "tool_search_tool_bm25":
-        guard case .json(let value) = part.output else {
+        guard case .json(let value, _) = part.output else {
             warnings.append(.other(message: "provider executed tool result output type for tool \(part.toolName) is not supported"))
             return
         }

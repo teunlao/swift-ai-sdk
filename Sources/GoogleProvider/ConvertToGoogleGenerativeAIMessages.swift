@@ -119,16 +119,18 @@ func convertToGoogleGenerativeAIMessages(
             var converted: [GoogleGenerativeAIContentPart] = []
 
             for part in parts {
-                switch part.output {
-                case .content(let value):
+                guard case .toolResult(let toolResult) = part else { continue }
+
+                switch toolResult.output {
+                case .content(let value, _):
                     for contentPart in value {
                         switch contentPart {
                         case .text(let text):
                             let response = JSONValue.object([
-                                "name": .string(part.toolName),
+                                "name": .string(toolResult.toolName),
                                 "content": .string(text)
                             ])
-                            converted.append(.functionResponse(.init(name: part.toolName, response: response)))
+                            converted.append(.functionResponse(.init(name: toolResult.toolName, response: response)))
                         case .media(let data, let mediaType):
                             converted.append(.inlineData(.init(mimeType: mediaType, data: data)))
                             converted.append(.text(.init(text: "Tool executed successfully and returned this image as a response")))
@@ -139,40 +141,40 @@ func convertToGoogleGenerativeAIMessages(
                         }
                     }
 
-                case .text(let value):
+                case .text(let value, _):
                     let response = JSONValue.object([
-                        "name": .string(part.toolName),
+                        "name": .string(toolResult.toolName),
                         "content": .string(value)
                     ])
-                    converted.append(.functionResponse(.init(name: part.toolName, response: response)))
+                    converted.append(.functionResponse(.init(name: toolResult.toolName, response: response)))
 
-                case .json(let value):
+                case .json(let value, _):
                     let response = JSONValue.object([
-                        "name": .string(part.toolName),
+                        "name": .string(toolResult.toolName),
                         "content": value
                     ])
-                    converted.append(.functionResponse(.init(name: part.toolName, response: response)))
+                    converted.append(.functionResponse(.init(name: toolResult.toolName, response: response)))
 
-                case .executionDenied(let reason):
+                case .executionDenied(let reason, _):
                     let response = JSONValue.object([
-                        "name": .string(part.toolName),
+                        "name": .string(toolResult.toolName),
                         "content": .string(reason ?? "Tool execution denied.")
                     ])
-                    converted.append(.functionResponse(.init(name: part.toolName, response: response)))
+                    converted.append(.functionResponse(.init(name: toolResult.toolName, response: response)))
 
-                case .errorText(let value):
+                case .errorText(let value, _):
                     let response = JSONValue.object([
-                        "name": .string(part.toolName),
+                        "name": .string(toolResult.toolName),
                         "content": .string(value)
                     ])
-                    converted.append(.functionResponse(.init(name: part.toolName, response: response)))
+                    converted.append(.functionResponse(.init(name: toolResult.toolName, response: response)))
 
-                case .errorJson(let value):
+                case .errorJson(let value, _):
                     let response = JSONValue.object([
-                        "name": .string(part.toolName),
+                        "name": .string(toolResult.toolName),
                         "content": value
                     ])
-                    converted.append(.functionResponse(.init(name: part.toolName, response: response)))
+                    converted.append(.functionResponse(.init(name: toolResult.toolName, response: response)))
                 }
             }
 

@@ -114,18 +114,19 @@ func convertToCohereChatPrompt(_ prompt: LanguageModelV3Prompt) throws -> Cohere
             messages.append(.object(payload))
 
         case .tool(let results, _):
-            for result in results {
+            for part in results {
+                guard case .toolResult(let result) = part else { continue }
                 let output = result.output
                 let contentValue: String
 
                 switch output {
-                case .text(let value), .errorText(let value):
+                case .text(let value, _), .errorText(let value, _):
                     contentValue = value
-                case .executionDenied(let reason):
+                case .executionDenied(let reason, _):
                     contentValue = reason ?? "Tool execution denied."
-                case .json(let value), .errorJson(let value):
+                case .json(let value, _), .errorJson(let value, _):
                     contentValue = try canonicalJSONString(from: value)
-                case .content(let parts):
+                case .content(let parts, _):
                     contentValue = try canonicalJSONString(from: parts)
                 }
 

@@ -435,7 +435,9 @@ public final class HuggingFaceResponsesLanguageModel: LanguageModelV3 {
                     id: function.callId,
                     toolName: function.name,
                     providerMetadata: nil,
-                    providerExecuted: nil
+                    providerExecuted: nil,
+                    dynamic: nil,
+                    title: nil
                 ))
 
             case .unknown:
