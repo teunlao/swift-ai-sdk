@@ -9,6 +9,7 @@ import Foundation
    | LanguageModelV3Text
    | LanguageModelV3Reasoning
    | LanguageModelV3File
+   | LanguageModelV3ToolApprovalRequest
    | LanguageModelV3Source
    | LanguageModelV3ToolCall
    | LanguageModelV3ToolResult;
@@ -18,6 +19,7 @@ public enum LanguageModelV3Content: Sendable, Equatable, Codable {
     case text(LanguageModelV3Text)
     case reasoning(LanguageModelV3Reasoning)
     case file(LanguageModelV3File)
+    case toolApprovalRequest(LanguageModelV3ToolApprovalRequest)
     case source(LanguageModelV3Source)
     case toolCall(LanguageModelV3ToolCall)
     case toolResult(LanguageModelV3ToolResult)
@@ -37,6 +39,8 @@ public enum LanguageModelV3Content: Sendable, Equatable, Codable {
             self = .reasoning(try LanguageModelV3Reasoning(from: decoder))
         case "file":
             self = .file(try LanguageModelV3File(from: decoder))
+        case "tool-approval-request":
+            self = .toolApprovalRequest(try LanguageModelV3ToolApprovalRequest(from: decoder))
         case "source":
             self = .source(try LanguageModelV3Source(from: decoder))
         case "tool-call":
@@ -59,6 +63,8 @@ public enum LanguageModelV3Content: Sendable, Equatable, Codable {
         case .reasoning(let value):
             try value.encode(to: encoder)
         case .file(let value):
+            try value.encode(to: encoder)
+        case .toolApprovalRequest(let value):
             try value.encode(to: encoder)
         case .source(let value):
             try value.encode(to: encoder)

@@ -32,7 +32,7 @@ public enum LanguageModelV3Message: Sendable, Equatable, Codable {
     case system(content: String, providerOptions: SharedV3ProviderOptions?)
     case user(content: [LanguageModelV3UserMessagePart], providerOptions: SharedV3ProviderOptions?)
     case assistant(content: [LanguageModelV3MessagePart], providerOptions: SharedV3ProviderOptions?)
-    case tool(content: [LanguageModelV3ToolResultPart], providerOptions: SharedV3ProviderOptions?)
+    case tool(content: [LanguageModelV3ToolMessagePart], providerOptions: SharedV3ProviderOptions?)
 
     private enum CodingKeys: String, CodingKey {
         case role
@@ -56,7 +56,7 @@ public enum LanguageModelV3Message: Sendable, Equatable, Codable {
             let content = try container.decode([LanguageModelV3MessagePart].self, forKey: .content)
             self = .assistant(content: content, providerOptions: providerOptions)
         case "tool":
-            let content = try container.decode([LanguageModelV3ToolResultPart].self, forKey: .content)
+            let content = try container.decode([LanguageModelV3ToolMessagePart].self, forKey: .content)
             self = .tool(content: content, providerOptions: providerOptions)
         default:
             throw DecodingError.dataCorruptedError(
@@ -180,6 +180,46 @@ public enum LanguageModelV3UserMessagePart: Sendable, Equatable, Codable {
         case .text(let part):
             try part.encode(to: encoder)
         case .file(let part):
+            try part.encode(to: encoder)
+        }
+    }
+}
+
+/**
+ Tool message part (for tool role content).
+ Discriminated union of tool-result and tool-approval-response parts.
+ */
+public enum LanguageModelV3ToolMessagePart: Sendable, Equatable, Codable {
+    case toolResult(LanguageModelV3ToolResultPart)
+    case toolApprovalResponse(LanguageModelV3ToolApprovalResponsePart)
+
+    private enum TypeKey: String, CodingKey {
+        case type
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: TypeKey.self)
+        let type = try container.decode(String.self, forKey: .type)
+
+        switch type {
+        case "tool-result":
+            self = .toolResult(try LanguageModelV3ToolResultPart(from: decoder))
+        case "tool-approval-response":
+            self = .toolApprovalResponse(try LanguageModelV3ToolApprovalResponsePart(from: decoder))
+        default:
+            throw DecodingError.dataCorruptedError(
+                forKey: .type,
+                in: container,
+                debugDescription: "Unknown tool message part type: \(type)"
+            )
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        switch self {
+        case .toolResult(let part):
+            try part.encode(to: encoder)
+        case .toolApprovalResponse(let part):
             try part.encode(to: encoder)
         }
     }
@@ -376,44 +416,93 @@ public struct LanguageModelV3ToolResultPart: Sendable, Equatable, Codable {
     }
 }
 
+/// Tool approval response content part of a prompt. Contains a decision to approve or deny
+/// a provider-executed tool call.
+public struct LanguageModelV3ToolApprovalResponsePart: Sendable, Equatable, Codable {
+    public let type: String = "tool-approval-response"
+    public let approvalId: String
+    public let approved: Bool
+    public let reason: String?
+    public let providerOptions: SharedV3ProviderOptions?
+
+    public init(
+        approvalId: String,
+        approved: Bool,
+        reason: String? = nil,
+        providerOptions: SharedV3ProviderOptions? = nil
+    ) {
+        self.approvalId = approvalId
+        self.approved = approved
+        self.reason = reason
+        self.providerOptions = providerOptions
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case type
+        case approvalId
+        case approved
+        case reason
+        case providerOptions
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        approvalId = try container.decode(String.self, forKey: .approvalId)
+        approved = try container.decode(Bool.self, forKey: .approved)
+        reason = try container.decodeIfPresent(String.self, forKey: .reason)
+        providerOptions = try container.decodeIfPresent(SharedV3ProviderOptions.self, forKey: .providerOptions)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(type, forKey: .type)
+        try container.encode(approvalId, forKey: .approvalId)
+        try container.encode(approved, forKey: .approved)
+        try container.encodeIfPresent(reason, forKey: .reason)
+        try container.encodeIfPresent(providerOptions, forKey: .providerOptions)
+    }
+}
+
 /// Tool result output (discriminated union)
 public enum LanguageModelV3ToolResultOutput: Sendable, Equatable, Codable {
-    case text(value: String)
-    case json(value: JSONValue)
-    case executionDenied(reason: String?)
-    case errorText(value: String)
-    case errorJson(value: JSONValue)
-    case content(value: [LanguageModelV3ToolResultContentPart])
+    case text(value: String, providerOptions: SharedV3ProviderOptions? = nil)
+    case json(value: JSONValue, providerOptions: SharedV3ProviderOptions? = nil)
+    case executionDenied(reason: String?, providerOptions: SharedV3ProviderOptions? = nil)
+    case errorText(value: String, providerOptions: SharedV3ProviderOptions? = nil)
+    case errorJson(value: JSONValue, providerOptions: SharedV3ProviderOptions? = nil)
+    case content(value: [LanguageModelV3ToolResultContentPart], providerOptions: SharedV3ProviderOptions? = nil)
 
     private enum CodingKeys: String, CodingKey {
         case type
         case value
         case reason
+        case providerOptions
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let type = try container.decode(String.self, forKey: .type)
+        let providerOptions = try container.decodeIfPresent(SharedV3ProviderOptions.self, forKey: .providerOptions)
 
         switch type {
         case "text":
             let value = try container.decode(String.self, forKey: .value)
-            self = .text(value: value)
+            self = .text(value: value, providerOptions: providerOptions)
         case "json":
             let value = try container.decode(JSONValue.self, forKey: .value)
-            self = .json(value: value)
+            self = .json(value: value, providerOptions: providerOptions)
         case "execution-denied":
             let reason = try container.decodeIfPresent(String.self, forKey: .reason)
-            self = .executionDenied(reason: reason)
+            self = .executionDenied(reason: reason, providerOptions: providerOptions)
         case "error-text":
             let value = try container.decode(String.self, forKey: .value)
-            self = .errorText(value: value)
+            self = .errorText(value: value, providerOptions: providerOptions)
         case "error-json":
             let value = try container.decode(JSONValue.self, forKey: .value)
-            self = .errorJson(value: value)
+            self = .errorJson(value: value, providerOptions: providerOptions)
         case "content":
             let value = try container.decode([LanguageModelV3ToolResultContentPart].self, forKey: .value)
-            self = .content(value: value)
+            self = .content(value: value, providerOptions: providerOptions)
         default:
             throw DecodingError.dataCorruptedError(
                 forKey: .type,
@@ -427,24 +516,30 @@ public enum LanguageModelV3ToolResultOutput: Sendable, Equatable, Codable {
         var container = encoder.container(keyedBy: CodingKeys.self)
 
         switch self {
-        case .text(let value):
+        case .text(let value, let providerOptions):
             try container.encode("text", forKey: .type)
             try container.encode(value, forKey: .value)
-        case .json(let value):
+            try container.encodeIfPresent(providerOptions, forKey: .providerOptions)
+        case .json(let value, let providerOptions):
             try container.encode("json", forKey: .type)
             try container.encode(value, forKey: .value)
-        case .executionDenied(let reason):
+            try container.encodeIfPresent(providerOptions, forKey: .providerOptions)
+        case .executionDenied(let reason, let providerOptions):
             try container.encode("execution-denied", forKey: .type)
             try container.encodeIfPresent(reason, forKey: .reason)
-        case .errorText(let value):
+            try container.encodeIfPresent(providerOptions, forKey: .providerOptions)
+        case .errorText(let value, let providerOptions):
             try container.encode("error-text", forKey: .type)
             try container.encode(value, forKey: .value)
-        case .errorJson(let value):
+            try container.encodeIfPresent(providerOptions, forKey: .providerOptions)
+        case .errorJson(let value, let providerOptions):
             try container.encode("error-json", forKey: .type)
             try container.encode(value, forKey: .value)
-        case .content(let value):
+            try container.encodeIfPresent(providerOptions, forKey: .providerOptions)
+        case .content(let value, let providerOptions):
             try container.encode("content", forKey: .type)
             try container.encode(value, forKey: .value)
+            try container.encodeIfPresent(providerOptions, forKey: .providerOptions)
         }
     }
 }

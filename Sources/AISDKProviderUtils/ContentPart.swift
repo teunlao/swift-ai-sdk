@@ -258,9 +258,14 @@ public struct ToolApprovalResponse: Sendable, Equatable {
     /// Optional reason for the approval or denial.
     public let reason: String?
 
-    public init(approvalId: String, approved: Bool, reason: String? = nil) {
+    /// Flag indicating whether the tool call is provider-executed.
+    /// Only provider-executed tool approval responses should be sent to the model.
+    public let providerExecuted: Bool?
+
+    public init(approvalId: String, approved: Bool, reason: String? = nil, providerExecuted: Bool? = nil) {
         self.approvalId = approvalId
         self.approved = approved
         self.reason = reason
+        self.providerExecuted = providerExecuted
     }
 }

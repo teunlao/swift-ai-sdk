@@ -11,8 +11,8 @@ import Foundation
    toolName: string;
    result: unknown;
    isError?: boolean;
-   providerExecuted?: boolean;
    preliminary?: boolean;
+   dynamic?: boolean;
    providerMetadata?: SharedV3ProviderMetadata;
  };
  ```
@@ -46,6 +46,10 @@ public struct LanguageModelV3ToolResult: Sendable, Equatable, Codable {
     /// If this flag is not set or is false, the tool result is not preliminary.
     public let preliminary: Bool?
 
+    /// Whether the tool is dynamic, i.e. defined at runtime.
+    /// For example, MCP (Model Context Protocol) tools that are executed by the provider.
+    public let dynamic: Bool?
+
     /// Additional provider-specific metadata for the tool result.
     public let providerMetadata: SharedV3ProviderMetadata?
 
@@ -56,6 +60,7 @@ public struct LanguageModelV3ToolResult: Sendable, Equatable, Codable {
         isError: Bool? = nil,
         providerExecuted: Bool? = nil,
         preliminary: Bool? = nil,
+        dynamic: Bool? = nil,
         providerMetadata: SharedV3ProviderMetadata? = nil
     ) {
         self.toolCallId = toolCallId
@@ -64,6 +69,7 @@ public struct LanguageModelV3ToolResult: Sendable, Equatable, Codable {
         self.isError = isError
         self.providerExecuted = providerExecuted
         self.preliminary = preliminary
+        self.dynamic = dynamic
         self.providerMetadata = providerMetadata
     }
 
@@ -75,6 +81,7 @@ public struct LanguageModelV3ToolResult: Sendable, Equatable, Codable {
         case isError
         case providerExecuted
         case preliminary
+        case dynamic
         case providerMetadata
     }
 
@@ -86,6 +93,7 @@ public struct LanguageModelV3ToolResult: Sendable, Equatable, Codable {
         isError = try container.decodeIfPresent(Bool.self, forKey: .isError)
         providerExecuted = try container.decodeIfPresent(Bool.self, forKey: .providerExecuted)
         preliminary = try container.decodeIfPresent(Bool.self, forKey: .preliminary)
+        dynamic = try container.decodeIfPresent(Bool.self, forKey: .dynamic)
         providerMetadata = try container.decodeIfPresent(SharedV3ProviderMetadata.self, forKey: .providerMetadata)
     }
 
@@ -98,6 +106,7 @@ public struct LanguageModelV3ToolResult: Sendable, Equatable, Codable {
         try container.encodeIfPresent(isError, forKey: .isError)
         try container.encodeIfPresent(providerExecuted, forKey: .providerExecuted)
         try container.encodeIfPresent(preliminary, forKey: .preliminary)
+        try container.encodeIfPresent(dynamic, forKey: .dynamic)
         try container.encodeIfPresent(providerMetadata, forKey: .providerMetadata)
     }
 }

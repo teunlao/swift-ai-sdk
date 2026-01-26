@@ -11,6 +11,7 @@ import Foundation
    toolName: string;
    input: string;
    providerExecuted?: boolean;
+   dynamic?: boolean;
    providerMetadata?: SharedV3ProviderMetadata;
  };
  ```
@@ -32,6 +33,10 @@ public struct LanguageModelV3ToolCall: Sendable, Equatable, Codable {
     /// If this flag is not set or is false, the tool call will be executed by the client.
     public let providerExecuted: Bool?
 
+    /// Whether the tool is dynamic, i.e. defined at runtime.
+    /// For example, MCP (Model Context Protocol) tools that are executed by the provider.
+    public let dynamic: Bool?
+
     /// Additional provider-specific metadata for the tool call.
     public let providerMetadata: SharedV3ProviderMetadata?
 
@@ -40,12 +45,14 @@ public struct LanguageModelV3ToolCall: Sendable, Equatable, Codable {
         toolName: String,
         input: String,
         providerExecuted: Bool? = nil,
+        dynamic: Bool? = nil,
         providerMetadata: SharedV3ProviderMetadata? = nil
     ) {
         self.toolCallId = toolCallId
         self.toolName = toolName
         self.input = input
         self.providerExecuted = providerExecuted
+        self.dynamic = dynamic
         self.providerMetadata = providerMetadata
     }
 
@@ -55,6 +62,7 @@ public struct LanguageModelV3ToolCall: Sendable, Equatable, Codable {
         case toolName
         case input
         case providerExecuted
+        case dynamic
         case providerMetadata
     }
 
@@ -64,6 +72,7 @@ public struct LanguageModelV3ToolCall: Sendable, Equatable, Codable {
         toolName = try container.decode(String.self, forKey: .toolName)
         input = try container.decode(String.self, forKey: .input)
         providerExecuted = try container.decodeIfPresent(Bool.self, forKey: .providerExecuted)
+        dynamic = try container.decodeIfPresent(Bool.self, forKey: .dynamic)
         providerMetadata = try container.decodeIfPresent(SharedV3ProviderMetadata.self, forKey: .providerMetadata)
     }
 
@@ -74,6 +83,7 @@ public struct LanguageModelV3ToolCall: Sendable, Equatable, Codable {
         try container.encode(toolName, forKey: .toolName)
         try container.encode(input, forKey: .input)
         try container.encodeIfPresent(providerExecuted, forKey: .providerExecuted)
+        try container.encodeIfPresent(dynamic, forKey: .dynamic)
         try container.encodeIfPresent(providerMetadata, forKey: .providerMetadata)
     }
 }

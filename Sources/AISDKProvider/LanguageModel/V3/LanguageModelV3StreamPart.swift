@@ -55,9 +55,19 @@ public enum LanguageModelV3StreamPart: Sendable, Equatable, Codable {
     case reasoningEnd(id: String, providerMetadata: SharedV3ProviderMetadata?)
 
     // Tool input blocks (streaming tool arguments):
-    case toolInputStart(id: String, toolName: String, providerMetadata: SharedV3ProviderMetadata?, providerExecuted: Bool?)
+    case toolInputStart(
+        id: String,
+        toolName: String,
+        providerMetadata: SharedV3ProviderMetadata?,
+        providerExecuted: Bool?,
+        dynamic: Bool?,
+        title: String?
+    )
     case toolInputDelta(id: String, delta: String, providerMetadata: SharedV3ProviderMetadata?)
     case toolInputEnd(id: String, providerMetadata: SharedV3ProviderMetadata?)
+
+    // Tool approval request:
+    case toolApprovalRequest(LanguageModelV3ToolApprovalRequest)
 
     // Tool call and result (complete types, not inline fields):
     case toolCall(LanguageModelV3ToolCall)
@@ -89,6 +99,8 @@ public enum LanguageModelV3StreamPart: Sendable, Equatable, Codable {
         case delta
         case toolName
         case providerExecuted
+        case dynamic
+        case title
         case warnings
         case modelId
         case timestamp
@@ -143,7 +155,16 @@ public enum LanguageModelV3StreamPart: Sendable, Equatable, Codable {
             let toolName = try container.decode(String.self, forKey: .toolName)
             let providerMetadata = try container.decodeIfPresent(SharedV3ProviderMetadata.self, forKey: .providerMetadata)
             let providerExecuted = try container.decodeIfPresent(Bool.self, forKey: .providerExecuted)
-            self = .toolInputStart(id: id, toolName: toolName, providerMetadata: providerMetadata, providerExecuted: providerExecuted)
+            let dynamic = try container.decodeIfPresent(Bool.self, forKey: .dynamic)
+            let title = try container.decodeIfPresent(String.self, forKey: .title)
+            self = .toolInputStart(
+                id: id,
+                toolName: toolName,
+                providerMetadata: providerMetadata,
+                providerExecuted: providerExecuted,
+                dynamic: dynamic,
+                title: title
+            )
 
         case "tool-input-delta":
             let id = try container.decode(String.self, forKey: .id)
@@ -155,6 +176,10 @@ public enum LanguageModelV3StreamPart: Sendable, Equatable, Codable {
             let id = try container.decode(String.self, forKey: .id)
             let providerMetadata = try container.decodeIfPresent(SharedV3ProviderMetadata.self, forKey: .providerMetadata)
             self = .toolInputEnd(id: id, providerMetadata: providerMetadata)
+
+        case "tool-approval-request":
+            let request = try LanguageModelV3ToolApprovalRequest(from: decoder)
+            self = .toolApprovalRequest(request)
 
         // Tool call and result (decode as complete types):
         case "tool-call":
@@ -251,12 +276,14 @@ public enum LanguageModelV3StreamPart: Sendable, Equatable, Codable {
             try container.encodeIfPresent(providerMetadata, forKey: .providerMetadata)
 
         // Tool input blocks:
-        case .toolInputStart(let id, let toolName, let providerMetadata, let providerExecuted):
+        case .toolInputStart(let id, let toolName, let providerMetadata, let providerExecuted, let dynamic, let title):
             try container.encode("tool-input-start", forKey: .type)
             try container.encode(id, forKey: .id)
             try container.encode(toolName, forKey: .toolName)
             try container.encodeIfPresent(providerMetadata, forKey: .providerMetadata)
             try container.encodeIfPresent(providerExecuted, forKey: .providerExecuted)
+            try container.encodeIfPresent(dynamic, forKey: .dynamic)
+            try container.encodeIfPresent(title, forKey: .title)
 
         case .toolInputDelta(let id, let delta, let providerMetadata):
             try container.encode("tool-input-delta", forKey: .type)
@@ -268,6 +295,9 @@ public enum LanguageModelV3StreamPart: Sendable, Equatable, Codable {
             try container.encode("tool-input-end", forKey: .type)
             try container.encode(id, forKey: .id)
             try container.encodeIfPresent(providerMetadata, forKey: .providerMetadata)
+
+        case .toolApprovalRequest(let request):
+            try request.encode(to: encoder)
 
         // Tool call and result (encode complete types):
         case .toolCall(let toolCall):
