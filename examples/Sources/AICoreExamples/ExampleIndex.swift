@@ -162,6 +162,7 @@ func registerAllExamples() {
   ExampleCatalog.register(StreamTextOpenAIResponsesChatbotExample.self, path: StreamTextOpenAIResponsesChatbotExample.name)
   ExampleCatalog.register(StreamTextOpenAIResponsesCodeInterpreterExample.self, path: StreamTextOpenAIResponsesCodeInterpreterExample.name)
   ExampleCatalog.register(StreamTextOpenAIResponsesFileSearchExample.self, path: StreamTextOpenAIResponsesFileSearchExample.name)
+  ExampleCatalog.register(StreamTextOpenAIResponsesMCPToolExample.self, path: StreamTextOpenAIResponsesMCPToolExample.name)
 
   // Agents
   ExampleCatalog.register(AgentOpenAIStreamExample.self, path: AgentOpenAIStreamExample.name)

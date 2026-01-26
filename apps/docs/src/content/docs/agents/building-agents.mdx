@@ -123,7 +123,7 @@ let agent = Agent<Never, Never>(settings: .init(
     "weather": weatherTool,
     "cityAttractions": attractionsTool
   ],
-  toolChoice: .tool(name: "weather") // Force the weather tool to be used
+  toolChoice: .tool(toolName: "weather") // Force the weather tool to be used
 ))
 ```
 

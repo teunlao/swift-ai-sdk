@@ -16,7 +16,7 @@ The OpenAI provider is available in the `OpenAIProvider` module. Add it to your 
 ```swift
 // Package.swift
 dependencies: [
-    .package(url: "https://github.com/teunlao/swift-ai-sdk", from: "1.0.0")
+    .package(url: "https://github.com/teunlao/swift-ai-sdk", from: "0.7.0")
 ],
 targets: [
     .target(
@@ -376,7 +376,7 @@ let result = try await generateText(
     )
   ],
   // Force web search tool (optional):
-  toolChoice: ["type": "tool", "toolName": "web_search"]
+  toolChoice: .tool(toolName: "web_search")
 )
 
 // URL sources
@@ -634,6 +634,45 @@ Your execute function must return:
 
 - **status** _'completed' | 'failed'_
 - **output** _string_ (optional)
+
+#### MCP Tool
+
+The OpenAI Responses API supports provider-executed MCP (Model Context Protocol) tools via the `openai.tools.mcp` tool.
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+
+let mcp = openai.tools.mcp(OpenAIMCPArgs(
+  serverLabel: "zip1",
+  serverUrl: "https://zip1.io/mcp",
+  serverDescription: "Link shortener",
+  requireApproval: .always
+))
+
+let result = try streamText(
+  model: openai.responses("gpt-5"),
+  prompt: "Shorten https://openai.com and return only the shortened URL.",
+  tools: [
+    "mcp": mcp
+  ],
+  toolChoice: .tool(toolName: "mcp"),
+  experimentalApprove: { _ in
+    // Approve (or deny) provider-executed MCP calls when OpenAI requests approval.
+    .approve
+  }
+)
+
+for try await delta in result.textStream { print(delta, terminator: "") }
+print("")
+```
+
+When an MCP tool is called, the tool name is emitted as `mcp.<toolName>` (for example: `mcp.shorten`).
+
+<Aside type="note">
+  MCP tool results are provider-executed and are surfaced as tool calls/results with a JSON output payload:
+  <code>{ '{' } type: "call", serverLabel, name, arguments, output?, error? { '}' }</code>.
+</Aside>
 
 #### Image Inputs
 
