@@ -943,6 +943,112 @@ struct OpenAIResponsesInputBuilderTests {
         #expect(result.input == expected)
     }
 
+    @Test("hasConversation=true skips assistant text parts with itemId")
+    func hasConversationSkipsAssistantTextPartsWithItemId() async throws {
+        let textPart = LanguageModelV3TextPart(
+            text: "Hello",
+            providerOptions: ["openai": ["itemId": .string("id_123")]]
+        )
+
+        let prompt: LanguageModelV3Prompt = [
+            .assistant(content: [.text(textPart)], providerOptions: nil)
+        ]
+
+        let result = try await OpenAIResponsesInputBuilder.makeInput(
+            prompt: prompt,
+            systemMessageMode: .system,
+            store: true,
+            hasConversation: true,
+            hasLocalShellTool: false
+        )
+
+        #expect(result.input.isEmpty)
+        #expect(result.warnings.isEmpty)
+    }
+
+    @Test("hasConversation=true skips assistant tool-call parts with itemId")
+    func hasConversationSkipsAssistantToolCallPartsWithItemId() async throws {
+        let toolCallPart = LanguageModelV3ToolCallPart(
+            toolCallId: "call_123",
+            toolName: "search",
+            input: .object(["query": .string("weather")]),
+            providerOptions: ["openai": ["itemId": .string("fc_456")]]
+        )
+
+        let prompt: LanguageModelV3Prompt = [
+            .assistant(content: [.toolCall(toolCallPart)], providerOptions: nil)
+        ]
+
+        let result = try await OpenAIResponsesInputBuilder.makeInput(
+            prompt: prompt,
+            systemMessageMode: .system,
+            store: true,
+            hasConversation: true,
+            hasLocalShellTool: false
+        )
+
+        #expect(result.input.isEmpty)
+        #expect(result.warnings.isEmpty)
+    }
+
+    @Test("execution-denied tool results are skipped")
+    func executionDeniedToolResultsAreSkipped() async throws {
+        let prompt: LanguageModelV3Prompt = [
+            .assistant(
+                content: [
+                    .toolResult(
+                        LanguageModelV3ToolResultPart(
+                            toolCallId: "tool_call_1",
+                            toolName: "web_search",
+                            output: .executionDenied(reason: "Denied")
+                        )
+                    )
+                ],
+                providerOptions: nil
+            )
+        ]
+
+        let result = try await OpenAIResponsesInputBuilder.makeInput(
+            prompt: prompt,
+            systemMessageMode: .system,
+            store: true,
+            hasLocalShellTool: false
+        )
+
+        #expect(result.input.isEmpty)
+        #expect(result.warnings.isEmpty)
+    }
+
+    @Test("store=true uses tool result itemId when available")
+    func storeTrueToolResultUsesItemIdWhenAvailable() async throws {
+        let toolResult = LanguageModelV3ToolResultPart(
+            toolCallId: "call_1",
+            toolName: "web_search",
+            output: .json(value: .array([])),
+            providerOptions: ["openai": ["itemId": .string("tr_123")]]
+        )
+
+        let prompt: LanguageModelV3Prompt = [
+            .assistant(content: [.toolResult(toolResult)], providerOptions: nil)
+        ]
+
+        let result = try await OpenAIResponsesInputBuilder.makeInput(
+            prompt: prompt,
+            systemMessageMode: .system,
+            store: true,
+            hasLocalShellTool: false
+        )
+
+        let expected: OpenAIResponsesInput = [
+            .object([
+                "type": .string("item_reference"),
+                "id": .string("tr_123")
+            ])
+        ]
+
+        #expect(result.input == expected)
+    }
+
     @Test("should convert multiple tool call parts in a single message")
     func multipleToolCallPartsInSingleMessage() async throws {
         let prompt: LanguageModelV3Prompt = [

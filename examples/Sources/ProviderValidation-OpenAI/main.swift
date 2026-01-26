@@ -6,30 +6,14 @@
 
  Run with: swift run ProviderValidation-OpenAI
 
- ## API Discrepancies Found
+ ## Notes
 
- The following OpenAI tools have different API signatures in the Swift implementation
- compared to what's shown in the documentation:
+ The documentation examples intentionally use the Swift APIs as implemented:
 
- 1. **webSearch** - Docs show individual parameters, actual API uses `OpenAIWebSearchArgs`
-    - Docs: `openai.tools.webSearch(searchContextSize: "high", userLocation: [...])`
-    - Actual: `openai.tools.webSearch(OpenAIWebSearchArgs(searchContextSize: ..., userLocation: ...))`
-
- 2. **fileSearch** - Docs show individual parameters, actual API uses `OpenAIFileSearchArgs`
-    - Docs: `openai.tools.fileSearch(vectorStoreIds: [...], maxNumResults: 5, ...)`
-    - Actual: `openai.tools.fileSearch(OpenAIFileSearchArgs(vectorStoreIds: ..., ...))`
-
- 3. **imageGeneration** - Docs show individual parameters, actual API uses `OpenAIImageGenerationArgs`
-    - Docs: `openai.tools.imageGeneration(outputFormat: "webp", quality: "low")`
-    - Actual: `openai.tools.imageGeneration(OpenAIImageGenerationArgs(outputFormat: ..., quality: ...))`
-
- 4. **codeInterpreter** - Docs show dictionary container, actual API uses enum
-    - Docs: `openai.tools.codeInterpreter(container: ["fileIds": [...]])`
-    - Actual: `openai.tools.codeInterpreter(OpenAICodeInterpreterArgs(container: .auto(fileIds: [...])))`
-
- 5. **localShell** - Docs show execute closure parameter, actual API takes no parameters
-    - Docs: `openai.tools.localShell(execute: { ... })`
-    - Actual: `openai.tools.localShell()`
+ - Tool factories take typed args structs where appropriate (e.g. `OpenAIWebSearchArgs`, `OpenAIFileSearchArgs`,
+   `OpenAIImageGenerationArgs`, `OpenAICodeInterpreterArgs`).
+ - Provider-defined tools that run locally (`localShell`, `shell`, `applyPatch`) can be configured via
+   `ProviderDefinedToolFactoryWithOutputSchemaOptions` (for `execute`, approval hooks, etc).
 
  These validation tests use the actual Swift API implementation.
  The documentation should be updated to reflect the correct API signatures.
@@ -94,6 +78,8 @@ struct ProviderValidationOpenAI {
             ("16. Image Generation Tool Syntax", testImageGenerationToolSyntax),
             ("17. Code Interpreter Tool Syntax", testCodeInterpreterToolSyntax),
             ("18. Local Shell Tool Syntax", testLocalShellToolSyntax),
+            ("18.1 Shell Tool Syntax", testShellToolSyntax),
+            ("18.2 Apply Patch Tool Syntax", testApplyPatchToolSyntax),
 
             // Multi-Modal Inputs
             ("19. Image Input Syntax - Data", testImageInputDataSyntax),
@@ -112,7 +98,7 @@ struct ProviderValidationOpenAI {
 
             // Chat Models - Advanced Features
             ("28. Chat Model Reasoning Syntax", testChatModelReasoningSyntax),
-            ("29. Chat Model Structured Outputs Syntax", testChatModelStructuredOutputsSyntax),
+            ("29. Chat Model Strict JSON Schema Syntax", testChatModelStrictJsonSchemaSyntax),
             ("30. Chat Model Logprobs Syntax", testChatModelLogprobsSyntax),
             ("31. Chat Model Predicted Outputs Syntax", testChatModelPredictedOutputsSyntax),
             ("32. Chat Model Image Detail Syntax", testChatModelImageDetailSyntax),
@@ -369,12 +355,12 @@ func testVerbosityControlSyntax() async throws {
 
 func testWebSearchToolSyntax() async throws {
     // From docs: openai.tools.webSearch
-    // Note: Actual API uses OpenAIWebSearchArgs struct
     print("   Testing web search tool syntax")
 
     let _: [String: Any] = [
         "web_search": openai.tools.webSearch(
             OpenAIWebSearchArgs(
+                externalWebAccess: true,
                 searchContextSize: "high",
                 userLocation: OpenAIWebSearchArgs.UserLocation(
                     city: "San Francisco",
@@ -452,15 +438,56 @@ func testCodeInterpreterToolSyntax() async throws {
 
 func testLocalShellToolSyntax() async throws {
     // From docs: openai.tools.localShell
-    // Note: Actual API takes no arguments
     print("   Testing local shell tool syntax")
 
     let _: [String: Any] = [
-        "local_shell": openai.tools.localShell()
+        "local_shell": openai.tools.localShell(.init(
+            execute: { _, _ in
+                .value(.object([
+                    "output": .string("...")
+                ]))
+            }
+        ))
     ]
 
     print("   ✓ Local shell tool structure is valid")
     print("   Tool: openai.tools.localShell")
+}
+
+func testShellToolSyntax() async throws {
+    // From docs: openai.tools.shell
+    print("   Testing shell tool syntax")
+
+    let _: [String: Any] = [
+        "shell": openai.tools.shell(.init(
+            execute: { _, _ in
+                .value(.object([
+                    "output": .array([])
+                ]))
+            }
+        ))
+    ]
+
+    print("   ✓ Shell tool structure is valid")
+    print("   Tool: openai.tools.shell")
+}
+
+func testApplyPatchToolSyntax() async throws {
+    // From docs: openai.tools.applyPatch
+    print("   Testing apply patch tool syntax")
+
+    let _: [String: Any] = [
+        "apply_patch": openai.tools.applyPatch(.init(
+            execute: { _, _ in
+                .value(.object([
+                    "status": .string("completed")
+                ]))
+            }
+        ))
+    ]
+
+    print("   ✓ Apply patch tool structure is valid")
+    print("   Tool: openai.tools.applyPatch")
 }
 
 // MARK: - Multi-Modal Inputs Tests
@@ -641,18 +668,18 @@ func testChatModelReasoningSyntax() async throws {
     print("   Options: reasoningEffort=low")
 }
 
-func testChatModelStructuredOutputsSyntax() async throws {
-    // From docs: structured outputs with structuredOutputs option
-    print("   Testing chat model structured outputs syntax")
+func testChatModelStrictJsonSchemaSyntax() async throws {
+    // From docs: strict structured outputs with strictJsonSchema option
+    print("   Testing chat model strictJsonSchema syntax")
 
     let _: [String: Any] = [
         "openai": [
-            "structuredOutputs": false
+            "strictJsonSchema": false
         ]
     ]
 
-    print("   ✓ Chat model structured outputs providerOptions structure is valid")
-    print("   Options: structuredOutputs=false")
+    print("   ✓ Chat model strictJsonSchema providerOptions structure is valid")
+    print("   Options: strictJsonSchema=false")
 }
 
 func testChatModelLogprobsSyntax() async throws {

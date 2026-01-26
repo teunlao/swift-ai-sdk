@@ -58,6 +58,7 @@ public func prepareToolsAndToolChoice(
                 name: name,
                 inputSchema: jsonSchema,
                 description: tool.description,
+                strict: tool.strict,
                 providerOptions: providerOptions
             )
             languageModelTools.append(.function(functionTool))

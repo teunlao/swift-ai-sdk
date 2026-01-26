@@ -7,12 +7,16 @@ public let TOP_LOGPROBS_MAX = 20
 public let openAIResponsesReasoningModelIds: [OpenAIResponsesModelId] = [
     "o1",
     "o1-2024-12-17",
-    "o3-mini",
-    "o3-mini-2025-01-31",
     "o3",
     "o3-2025-04-16",
+    "o3-deep-research",
+    "o3-deep-research-2025-06-26",
+    "o3-mini",
+    "o3-mini-2025-01-31",
     "o4-mini",
     "o4-mini-2025-04-16",
+    "o4-mini-deep-research",
+    "o4-mini-deep-research-2025-06-26",
     "codex-mini-latest",
     "computer-use-preview",
     "gpt-5",
@@ -23,7 +27,15 @@ public let openAIResponsesReasoningModelIds: [OpenAIResponsesModelId] = [
     "gpt-5-nano",
     "gpt-5-nano-2025-08-07",
     "gpt-5-pro",
-    "gpt-5-pro-2025-10-06"
+    "gpt-5-pro-2025-10-06",
+    "gpt-5.1",
+    "gpt-5.1-chat-latest",
+    "gpt-5.1-codex-mini",
+    "gpt-5.1-codex",
+    "gpt-5.1-codex-max",
+    "gpt-5.2",
+    "gpt-5.2-chat-latest",
+    "gpt-5.2-pro"
 ].map(OpenAIResponsesModelId.init(rawValue:))
 
 public let openAIResponsesModelIds: [OpenAIResponsesModelId] = (
@@ -80,6 +92,7 @@ public enum OpenAIResponsesLogprobsOption: Sendable, Equatable {
 }
 
 public struct OpenAIResponsesProviderOptions: Sendable, Equatable {
+    public var conversation: String?
     public var include: [OpenAIResponsesIncludeValue]?
     public var instructions: String?
     public var logprobs: OpenAIResponsesLogprobsOption?
@@ -88,6 +101,7 @@ public struct OpenAIResponsesProviderOptions: Sendable, Equatable {
     public var parallelToolCalls: Bool?
     public var previousResponseId: String?
     public var promptCacheKey: String?
+    public var promptCacheRetention: String?
     public var reasoningEffort: String?
     public var reasoningSummary: String?
     public var safetyIdentifier: String?
@@ -95,9 +109,13 @@ public struct OpenAIResponsesProviderOptions: Sendable, Equatable {
     public var store: Bool?
     public var strictJsonSchema: Bool?
     public var textVerbosity: String?
+    public var truncation: String?
     public var user: String?
+    public var systemMessageMode: OpenAIResponsesSystemMessageMode?
+    public var forceReasoning: Bool?
 
     public init(
+        conversation: String? = nil,
         include: [OpenAIResponsesIncludeValue]? = nil,
         instructions: String? = nil,
         logprobs: OpenAIResponsesLogprobsOption? = nil,
@@ -106,6 +124,7 @@ public struct OpenAIResponsesProviderOptions: Sendable, Equatable {
         parallelToolCalls: Bool? = nil,
         previousResponseId: String? = nil,
         promptCacheKey: String? = nil,
+        promptCacheRetention: String? = nil,
         reasoningEffort: String? = nil,
         reasoningSummary: String? = nil,
         safetyIdentifier: String? = nil,
@@ -113,8 +132,12 @@ public struct OpenAIResponsesProviderOptions: Sendable, Equatable {
         store: Bool? = nil,
         strictJsonSchema: Bool? = nil,
         textVerbosity: String? = nil,
-        user: String? = nil
+        truncation: String? = nil,
+        user: String? = nil,
+        systemMessageMode: OpenAIResponsesSystemMessageMode? = nil,
+        forceReasoning: Bool? = nil
     ) {
+        self.conversation = conversation
         self.include = include
         self.instructions = instructions
         self.logprobs = logprobs
@@ -123,6 +146,7 @@ public struct OpenAIResponsesProviderOptions: Sendable, Equatable {
         self.parallelToolCalls = parallelToolCalls
         self.previousResponseId = previousResponseId
         self.promptCacheKey = promptCacheKey
+        self.promptCacheRetention = promptCacheRetention
         self.reasoningEffort = reasoningEffort
         self.reasoningSummary = reasoningSummary
         self.safetyIdentifier = safetyIdentifier
@@ -130,7 +154,10 @@ public struct OpenAIResponsesProviderOptions: Sendable, Equatable {
         self.store = store
         self.strictJsonSchema = strictJsonSchema
         self.textVerbosity = textVerbosity
+        self.truncation = truncation
         self.user = user
+        self.systemMessageMode = systemMessageMode
+        self.forceReasoning = forceReasoning
     }
 }
 
@@ -138,6 +165,9 @@ private let openAIResponsesProviderOptionsJSONSchema: JSONValue = .object([
     "type": .string("object"),
     "additionalProperties": .bool(true),
     "properties": .object([
+        "conversation": .object([
+            "type": .array([.string("string"), .string("null")])
+        ]),
         "include": .object([
             "type": .array([.string("array"), .string("null")]),
             "items": .object([
@@ -166,6 +196,9 @@ private let openAIResponsesProviderOptionsJSONSchema: JSONValue = .object([
         "promptCacheKey": .object([
             "type": .array([.string("string"), .string("null")])
         ]),
+        "promptCacheRetention": .object([
+            "type": .array([.string("string"), .string("null")])
+        ]),
         "reasoningEffort": .object([
             "type": .array([.string("string"), .string("null")])
         ]),
@@ -187,8 +220,17 @@ private let openAIResponsesProviderOptionsJSONSchema: JSONValue = .object([
         "textVerbosity": .object([
             "type": .array([.string("string"), .string("null")])
         ]),
+        "truncation": .object([
+            "type": .array([.string("string"), .string("null")])
+        ]),
         "user": .object([
             "type": .array([.string("string"), .string("null")])
+        ]),
+        "systemMessageMode": .object([
+            "type": .array([.string("string"), .string("null")])
+        ]),
+        "forceReasoning": .object([
+            "type": .array([.string("boolean"), .string("null")])
         ])
     ])
 ])
@@ -196,8 +238,7 @@ private let openAIResponsesProviderOptionsJSONSchema: JSONValue = .object([
 private let openAIResponsesProviderOptionIncludeValues: [OpenAIResponsesIncludeValue] = [
     .reasoningEncryptedContent,
     .fileSearchCallResults,
-    .messageOutputTextLogprobs,
-    .codeInterpreterCallOutputs
+    .messageOutputTextLogprobs
 ]
 
 public let openAIResponsesProviderOptionsSchema = FlexibleSchema<OpenAIResponsesProviderOptions>(
@@ -226,6 +267,8 @@ public let openAIResponsesProviderOptionsSchema = FlexibleSchema<OpenAIResponses
 private func parseOpenAIResponsesProviderOptions(dict: [String: JSONValue]) throws -> OpenAIResponsesProviderOptions {
     var options = OpenAIResponsesProviderOptions()
 
+    options.conversation = try parseOptionalString(dict, key: "conversation")
+
     if let includeValue = dict["include"], includeValue != .null {
         guard case .array(let includeArray) = includeValue else {
             throw TypeValidationError.wrap(value: includeValue, cause: SchemaValidationIssuesError(vendor: "openai", issues: "include must be an array"))
@@ -252,6 +295,16 @@ private func parseOpenAIResponsesProviderOptions(dict: [String: JSONValue]) thro
     options.parallelToolCalls = try parseOptionalBool(dict, key: "parallelToolCalls")
     options.previousResponseId = try parseOptionalString(dict, key: "previousResponseId")
     options.promptCacheKey = try parseOptionalString(dict, key: "promptCacheKey")
+    if let retentionValue = dict["promptCacheRetention"], retentionValue != .null {
+        guard case .string(let retention) = retentionValue else {
+            throw TypeValidationError.wrap(value: retentionValue, cause: SchemaValidationIssuesError(vendor: "openai", issues: "promptCacheRetention must be a string"))
+        }
+        let allowedRetention = ["in_memory", "24h"]
+        guard allowedRetention.contains(retention) else {
+            throw TypeValidationError.wrap(value: retentionValue, cause: SchemaValidationIssuesError(vendor: "openai", issues: "invalid promptCacheRetention"))
+        }
+        options.promptCacheRetention = retention
+    }
     options.reasoningEffort = try parseOptionalString(dict, key: "reasoningEffort")
     options.reasoningSummary = try parseOptionalString(dict, key: "reasoningSummary")
     options.safetyIdentifier = try parseOptionalString(dict, key: "safetyIdentifier")
@@ -277,7 +330,35 @@ private func parseOpenAIResponsesProviderOptions(dict: [String: JSONValue]) thro
         }
         options.textVerbosity = verbosity
     }
+    if let truncationValue = dict["truncation"], truncationValue != .null {
+        guard case .string(let truncation) = truncationValue else {
+            throw TypeValidationError.wrap(value: truncationValue, cause: SchemaValidationIssuesError(vendor: "openai", issues: "truncation must be a string"))
+        }
+        let allowedTruncation = ["auto", "disabled"]
+        guard allowedTruncation.contains(truncation) else {
+            throw TypeValidationError.wrap(value: truncationValue, cause: SchemaValidationIssuesError(vendor: "openai", issues: "invalid truncation"))
+        }
+        options.truncation = truncation
+    }
     options.user = try parseOptionalString(dict, key: "user")
+
+    if let systemModeValue = dict["systemMessageMode"], systemModeValue != .null {
+        guard case .string(let rawMode) = systemModeValue else {
+            throw TypeValidationError.wrap(value: systemModeValue, cause: SchemaValidationIssuesError(vendor: "openai", issues: "systemMessageMode must be a string"))
+        }
+        switch rawMode {
+        case "system":
+            options.systemMessageMode = .system
+        case "developer":
+            options.systemMessageMode = .developer
+        case "remove":
+            options.systemMessageMode = .remove
+        default:
+            throw TypeValidationError.wrap(value: systemModeValue, cause: SchemaValidationIssuesError(vendor: "openai", issues: "invalid systemMessageMode"))
+        }
+    }
+
+    options.forceReasoning = try parseOptionalBool(dict, key: "forceReasoning")
 
     if let logprobsValue = dict["logprobs"], logprobsValue != .null {
         switch logprobsValue {

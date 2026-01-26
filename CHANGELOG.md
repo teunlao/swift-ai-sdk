@@ -6,6 +6,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-01-26
+
+### Changed
+- BREAKING (OpenAI): `strictJsonSchema` now defaults to `true` for both Chat and Responses models.
+- BREAKING (OpenAI Chat): provider option `structuredOutputs` is no longer supported. Use `strictJsonSchema: false` to disable strict structured outputs.
+- BREAKING (OpenAI): tool definitions now only include `"strict"` when the tool sets `strict` explicitly.
+
+### Added
+- Tools: add `strict` to tool definitions and forward to providers that support it.
+- OpenAI: add provider options `promptCacheRetention`, `systemMessageMode`, and `forceReasoning` (Chat + Responses).
+- OpenAI (Responses): add provider option `truncation`.
+
+### Fixed
+- OpenAI: update reasoning model capability detection to match upstream allowlist behavior.
+- OpenAI: match GPT-5.1/5.2 parameter compatibility rules when `reasoningEffort` is `none`.
+- Docs/examples: update OpenAI docs and examples to match new options/defaults.
+
+## [0.5.11] - 2026-01-26
+
+### Added
+- OpenAI: Responses option `conversation`.
+- OpenAI: provider tools `shell` and `apply_patch` (with `execute` examples).
+
+### Fixed
+- OpenAI: Responses input now skips execution-denied tool results and uses `itemId` for tool-result item references when available.
+- OpenAI: Responses apply-patch tool call mapping now requires `itemId` and forwards it via provider metadata (non-stream + streaming).
+
 ## [0.5.10] - 2026-01-25
 
 ### Fixed

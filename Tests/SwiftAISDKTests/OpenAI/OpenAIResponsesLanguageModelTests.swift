@@ -606,7 +606,7 @@ struct OpenAIResponsesLanguageModelTests {
             #expect(format["name"] as? String == "response")
             #expect(format["description"] as? String == "A response")
             #expect(format["type"] as? String == "json_schema")
-            #expect(format["strict"] as? Bool == false)
+            #expect(format["strict"] as? Bool == true)
         } else {
             Issue.record("Missing JSON response format in request body")
         }
@@ -2282,10 +2282,239 @@ struct OpenAIResponsesLanguageModelTests {
 
         #expect(parts.contains { part in
             if case .toolCall(let call) = part {
-                return call.toolCallId == "call_shell" && call.toolName == "local_shell" && call.providerExecuted == true
+                return call.toolCallId == "call_shell" && call.toolName == "local_shell" && call.providerExecuted == nil
             }
             return false
         })
+    }
+
+    @Test("doGenerate maps apply_patch tool calls")
+    func testDoGenerateMapsApplyPatchToolCall() async throws {
+        actor BodyCapture {
+            var request: URLRequest?
+            func store(_ request: URLRequest) { self.request = request }
+            func current() -> URLRequest? { request }
+        }
+
+        let capture = BodyCapture()
+
+        let responseJSON: [String: Any] = [
+            "id": "resp_apply_patch",
+            "created_at": 1_742_250_000.0,
+            "model": "gpt-4o",
+            "output": [
+                [
+                    "id": "apc_1",
+                    "type": "apply_patch_call",
+                    "status": "completed",
+                    "call_id": "call_apply",
+                    "operation": [
+                        "type": "delete_file",
+                        "path": "obsolete.txt"
+                    ]
+                ]
+            ],
+            "service_tier": "default",
+            "usage": [
+                "input_tokens": 2,
+                "output_tokens": 1,
+                "output_tokens_details": ["reasoning_tokens": 0],
+                "input_tokens_details": ["cached_tokens": 0]
+            ],
+            "warnings": [],
+            "incomplete_details": ["reason": NSNull()],
+            "finish_reason": NSNull(),
+            "error": NSNull()
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            let httpResponse = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let tool = LanguageModelV3Tool.providerDefined(.init(id: "openai.apply_patch", name: "apply_patch", args: [:]))
+
+        let result = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: samplePrompt,
+                tools: [tool]
+            )
+        )
+
+        let toolCalls = result.content.compactMap { content -> LanguageModelV3ToolCall? in
+            if case .toolCall(let call) = content { return call }
+            return nil
+        }
+
+        #expect(toolCalls.count == 1)
+        #expect(toolCalls.first?.toolCallId == "call_apply")
+        #expect(toolCalls.first?.toolName == "apply_patch")
+        #expect(toolCalls.first?.providerMetadata?["openai"]?["itemId"] == .string("apc_1"))
+
+        if let input = toolCalls.first?.input,
+           let data = input.data(using: .utf8),
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let callId = json["callId"] as? String,
+           let operation = json["operation"] as? [String: Any] {
+            #expect(callId == "call_apply")
+            #expect(operation["type"] as? String == "delete_file")
+            #expect(operation["path"] as? String == "obsolete.txt")
+        } else {
+            Issue.record("Expected apply_patch tool input JSON")
+        }
+
+        guard let request = await capture.current(),
+              let body = decodeRequestBody(request.httpBody),
+              let tools = body["tools"] as? [[String: Any]] else {
+            Issue.record("Expected tools in request body")
+            return
+        }
+
+        #expect(tools.count == 1)
+        #expect(tools.first?["type"] as? String == "apply_patch")
+    }
+
+    @Test("doStream emits apply_patch tool input and tool call")
+    func testDoStreamEmitsApplyPatchToolCall() async throws {
+        func chunk(_ value: Any) -> String {
+            let data = try! JSONSerialization.data(withJSONObject: value)
+            let encoded = String(data: data, encoding: .utf8)!
+            return "data:\(encoded)\n\n"
+        }
+
+        let chunks: [String] = [
+            chunk([
+                "type": "response.output_item.added",
+                "output_index": 0,
+                "item": [
+                    "id": "apc_1",
+                    "type": "apply_patch_call",
+                    "status": "in_progress",
+                    "call_id": "call_apply",
+                    "operation": [
+                        "type": "create_file",
+                        "path": "shopping-checklist.md",
+                        "diff": ""
+                    ]
+                ]
+            ]),
+            chunk([
+                "type": "response.apply_patch_call_operation_diff.delta",
+                "output_index": 0,
+                "delta": "+Hello"
+            ]),
+            chunk([
+                "type": "response.apply_patch_call_operation_diff.done",
+                "output_index": 0,
+                "diff": "+Hello"
+            ]),
+            chunk([
+                "type": "response.output_item.done",
+                "output_index": 0,
+                "item": [
+                    "id": "apc_1",
+                    "type": "apply_patch_call",
+                    "status": "completed",
+                    "call_id": "call_apply",
+                    "operation": [
+                        "type": "create_file",
+                        "path": "shopping-checklist.md",
+                        "diff": "+Hello"
+                    ]
+                ]
+            ]),
+            chunk([
+                "type": "response.completed",
+                "response": [
+                    "id": "resp_apply_patch",
+                    "object": "response",
+                    "created_at": 1_742_250_000.0,
+                    "status": "completed",
+                    "usage": ["input_tokens": 2, "output_tokens": 1, "total_tokens": 3]
+                ]
+            ]),
+            "data: [DONE]\n\n"
+        ]
+
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.openai.com/v1/responses")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "text/event-stream"]
+        )!
+
+        let fetch: FetchFunction = { _ in
+            let stream = AsyncThrowingStream<Data, Error> { continuation in
+                for string in chunks {
+                    continuation.yield(Data(string.utf8))
+                }
+                continuation.finish()
+            }
+            return FetchResponse(body: .stream(stream), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let tool = LanguageModelV3Tool.providerDefined(.init(id: "openai.apply_patch", name: "apply_patch", args: [:]))
+
+        let streamResult = try await model.doStream(
+            options: LanguageModelV3CallOptions(
+                prompt: samplePrompt,
+                tools: [tool]
+            )
+        )
+
+        var inputDeltas: [String] = []
+        var toolInputEnded = false
+        var toolCall: LanguageModelV3ToolCall?
+
+        for try await part in streamResult.stream {
+            switch part {
+            case .toolInputDelta(let id, let delta, _):
+                if id == "call_apply" {
+                    inputDeltas.append(delta)
+                }
+            case .toolInputEnd(let id, _):
+                if id == "call_apply" { toolInputEnded = true }
+            case .toolCall(let call):
+                if call.toolCallId == "call_apply" {
+                    toolCall = call
+                }
+            default:
+                break
+            }
+        }
+
+        #expect(toolInputEnded)
+        #expect(toolCall?.toolName == "apply_patch")
+        #expect(toolCall?.providerMetadata?["openai"]?["itemId"] == .string("apc_1"))
+
+        guard let toolCall else {
+            Issue.record("Missing apply_patch tool call")
+            return
+        }
+
+        let deltasString = inputDeltas.joined()
+        let deltasObject = try JSONSerialization.jsonObject(with: Data(deltasString.utf8))
+        let toolCallObject = try JSONSerialization.jsonObject(with: Data(toolCall.input.utf8))
+
+        #expect(try jsonValue(from: deltasObject) == jsonValue(from: toolCallObject))
     }
 
 
@@ -2356,6 +2585,118 @@ struct OpenAIResponsesLanguageModelTests {
         }
         #expect(json["service_tier"] as? String == "priority")
         #expect(json["user"] as? String == "test-user")
+    }
+
+    @Test("doGenerate forwards conversation provider option")
+    func testDoGenerateConversation() async throws {
+        actor BodyCapture {
+            var data: Data?
+            func store(_ body: Data?) { data = body }
+            func current() -> Data? { data }
+        }
+
+        let capture = BodyCapture()
+
+        let responseJSON: [String: Any] = [
+            "id": "resp_conv",
+            "created_at": 1_742_200_000.0,
+            "model": "gpt-4o",
+            "output": [],
+            "service_tier": "default",
+            "usage": ["input_tokens": 2, "output_tokens": 1, "total_tokens": 3],
+            "warnings": [],
+            "incomplete_details": ["reason": NSNull()],
+            "finish_reason": NSNull(),
+            "error": NSNull()
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let fetch: FetchFunction = { request in
+            await capture.store(request.httpBody)
+            let httpResponse = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: samplePrompt,
+                providerOptions: [
+                    "openai": [
+                        "conversation": .string("conv_123")
+                    ]
+                ]
+            )
+        )
+
+        guard let json = decodeRequestBody(await capture.current()) else {
+            Issue.record("Missing request body for conversation test")
+            return
+        }
+
+        #expect(json["conversation"] as? String == "conv_123")
+    }
+
+    @Test("doGenerate warns when both conversation and previousResponseId are provided")
+    func testDoGenerateWarnsOnConversationAndPreviousResponseId() async throws {
+        let responseJSON: [String: Any] = [
+            "id": "resp_conflict",
+            "created_at": 1_742_200_000.0,
+            "model": "gpt-4o",
+            "output": [],
+            "service_tier": "default",
+            "usage": ["input_tokens": 2, "output_tokens": 1, "total_tokens": 3],
+            "warnings": [],
+            "incomplete_details": ["reason": NSNull()],
+            "finish_reason": NSNull(),
+            "error": NSNull()
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let fetch: FetchFunction = { request in
+            let httpResponse = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let result = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: samplePrompt,
+                providerOptions: [
+                    "openai": [
+                        "conversation": .string("conv_123"),
+                        "previousResponseId": .string("resp_old")
+                    ]
+                ]
+            )
+        )
+
+        #expect(
+            result.warnings.contains(
+                .unsupportedSetting(
+                    setting: "conversation",
+                    details: "conversation and previousResponseId cannot be used together"
+                )
+            )
+        )
     }
 
     // MARK: - Missing Basic Tests (lines 161-250)
@@ -2665,8 +3006,12 @@ struct OpenAIResponsesLanguageModelTests {
         #expect(json["top_p"] == nil)
 
         if let input = json["input"] as? [[String: Any]] {
-            #expect(input.count == 1)
-            #expect(input[0]["role"] as? String == "user")
+            #expect(input.count == 2)
+            #expect(input[0]["role"] as? String == "developer")
+            if let content = input[0]["content"] as? String {
+                #expect(content == "You are a helpful assistant.")
+            }
+            #expect(input[1]["role"] as? String == "user")
         }
     }
 
@@ -2737,7 +3082,7 @@ struct OpenAIResponsesLanguageModelTests {
         #expect(format["type"] as? String == "json_schema")
         #expect(format["name"] as? String == "response")
         #expect(format["description"] as? String == "A response")
-        #expect(format["strict"] as? Bool == false)
+        #expect(format["strict"] as? Bool == true)
         #expect(format["schema"] != nil)
     }
 
@@ -3832,11 +4177,11 @@ struct OpenAIResponsesLanguageModelTests {
         #expect(format["type"] as? String == "json_schema")
         #expect(format["name"] as? String == "MyResponse")
         #expect(format["description"] as? String == "Test response")
-        #expect(format["strict"] as? Bool == false)
+        #expect(format["strict"] as? Bool == true)
     }
 
-    @Test("should send responseFormat json_schema format with strictSchemas false")
-    func testShouldSendResponseFormatJsonSchemaWithStrictSchemasFalse() async throws {
+    @Test("should send responseFormat json_schema format with strictJsonSchema false")
+    func testShouldSendResponseFormatJsonSchemaWithStrictJsonSchemaFalse() async throws {
         actor BodyCapture {
             var data: Data?
             func store(_ body: Data?) { data = body }
@@ -3884,7 +4229,7 @@ struct OpenAIResponsesLanguageModelTests {
                 responseFormat: .json(schema: schema, name: "test", description: nil),
                 providerOptions: [
                     "openai": [
-                        "strictSchemas": .bool(false)
+                        "strictJsonSchema": .bool(false)
                     ]
                 ]
             )

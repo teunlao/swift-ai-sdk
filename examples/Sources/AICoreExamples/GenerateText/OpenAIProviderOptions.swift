@@ -19,7 +19,6 @@ struct GenerateTextOpenAIProviderOptionsExample: Example {
           "user": .string("<user_id>"),
           "maxCompletionTokens": .number(100),
           "store": .bool(false),
-          "structuredOutputs": .bool(false),
           "serviceTier": .string("auto"),
           "strictJsonSchema": .bool(false),
           "textVerbosity": .string("medium"),

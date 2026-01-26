@@ -267,10 +267,6 @@ public final class OpenAIChatLanguageModel: LanguageModelV3 {
             warnings.append(.unsupportedSetting(setting: "topK", details: nil))
         }
 
-        let systemMode = getSystemMessageMode(for: modelIdentifier.rawValue)
-        let conversion = try OpenAIChatMessagesConverter.convert(prompt: options.prompt, systemMessageMode: systemMode)
-        warnings.append(contentsOf: conversion.warnings)
-
         let openAIOptions = try await parseProviderOptions(
             provider: "openai",
             providerOptions: options.providerOptions,
@@ -289,21 +285,23 @@ public final class OpenAIChatLanguageModel: LanguageModelV3 {
         }
 
         let mergedOptions = mergeOptions(primary: openAIOptions, override: providerSpecificOptions)
-        let structuredOutputs = mergedOptions?.structuredOutputs ?? true
-        let strictJsonSchema = mergedOptions?.strictJsonSchema ?? false
+        let strictJsonSchema = mergedOptions?.strictJsonSchema ?? true
 
-        if case .json(let schema, _, _) = options.responseFormat, schema != nil, !structuredOutputs {
-            warnings.append(.unsupportedSetting(
-                setting: "responseFormat",
-                details: "JSON response format schema is only supported with structuredOutputs"
-            ))
-        }
+        let modelId = modelIdentifier.rawValue
+        let modelIsReasoningModel = isReasoningModel(modelId)
+        let supportsNonReasoningParameters = supportsNonReasoningParameters(modelId)
+        let isReasoningModel = mergedOptions?.forceReasoning ?? modelIsReasoningModel
+
+        let modelDefaultSystemMode: OpenAIChatSystemMessageMode = modelIsReasoningModel ? .developer : .system
+        let systemMode = mergedOptions?.systemMessageMode
+            ?? (isReasoningModel ? .developer : modelDefaultSystemMode)
+
+        let conversion = try OpenAIChatMessagesConverter.convert(prompt: options.prompt, systemMessageMode: systemMode)
+        warnings.append(contentsOf: conversion.warnings)
 
         let preparedTools = OpenAIChatToolPreparer.prepare(
             tools: options.tools,
-            toolChoice: options.toolChoice,
-            structuredOutputs: structuredOutputs,
-            strictJsonSchema: strictJsonSchema
+            toolChoice: options.toolChoice
         )
         warnings.append(contentsOf: preparedTools.warnings)
 
@@ -373,6 +371,9 @@ public final class OpenAIChatLanguageModel: LanguageModelV3 {
         if let promptCacheKey = mergedOptions?.promptCacheKey {
             body["prompt_cache_key"] = .string(promptCacheKey)
         }
+        if let promptCacheRetention = mergedOptions?.promptCacheRetention {
+            body["prompt_cache_retention"] = .string(promptCacheRetention.rawValue)
+        }
         if let safetyIdentifier = mergedOptions?.safetyIdentifier {
             body["safety_identifier"] = .string(safetyIdentifier)
         }
@@ -391,7 +392,7 @@ public final class OpenAIChatLanguageModel: LanguageModelV3 {
             case .text:
                 break
             case .json(let schema, let name, let description):
-                if structuredOutputs, let schema {
+                if let schema {
                     var jsonSchema: [String: JSONValue] = [
                         "schema": schema,
                         "strict": .bool(strictJsonSchema),
@@ -417,7 +418,14 @@ public final class OpenAIChatLanguageModel: LanguageModelV3 {
             body["tool_choice"] = toolChoice
         }
 
-        adjustForModelConstraints(body: &body, warnings: &warnings)
+        let allowsNonReasoningParameters = mergedOptions?.reasoningEffort == .none && supportsNonReasoningParameters
+        adjustForModelConstraints(
+            body: &body,
+            warnings: &warnings,
+            isReasoningModel: isReasoningModel,
+            allowsNonReasoningParameters: allowsNonReasoningParameters,
+            modelId: modelId
+        )
 
         if mergedOptions?.serviceTier == .flex, !supportsFlexProcessing(modelIdentifier.rawValue) {
             warnings.append(.unsupportedSetting(
@@ -455,25 +463,38 @@ public final class OpenAIChatLanguageModel: LanguageModelV3 {
         if let store = override.store { result.store = store }
         if let metadata = override.metadata { result.metadata = metadata }
         if let prediction = override.prediction { result.prediction = prediction }
-        if let structured = override.structuredOutputs { result.structuredOutputs = structured }
         if let serviceTier = override.serviceTier { result.serviceTier = serviceTier }
         if let strict = override.strictJsonSchema { result.strictJsonSchema = strict }
         if let verbosity = override.textVerbosity { result.textVerbosity = verbosity }
         if let promptCacheKey = override.promptCacheKey { result.promptCacheKey = promptCacheKey }
+        if let promptCacheRetention = override.promptCacheRetention { result.promptCacheRetention = promptCacheRetention }
         if let safetyIdentifier = override.safetyIdentifier { result.safetyIdentifier = safetyIdentifier }
+        if let systemMessageMode = override.systemMessageMode { result.systemMessageMode = systemMessageMode }
+        if let forceReasoning = override.forceReasoning { result.forceReasoning = forceReasoning }
 
         return result
     }
 
-    private func adjustForModelConstraints(body: inout [String: JSONValue], warnings: inout [LanguageModelV3CallWarning]) {
-        let id = modelIdentifier.rawValue
-        if isReasoningModel(id) {
-            if body.removeValue(forKey: "temperature") != nil {
-                warnings.append(.unsupportedSetting(setting: "temperature", details: "temperature is not supported for reasoning models"))
+    private func adjustForModelConstraints(
+        body: inout [String: JSONValue],
+        warnings: inout [LanguageModelV3CallWarning],
+        isReasoningModel: Bool,
+        allowsNonReasoningParameters: Bool,
+        modelId: String
+    ) {
+        if isReasoningModel {
+            if !allowsNonReasoningParameters {
+                if body.removeValue(forKey: "temperature") != nil {
+                    warnings.append(.unsupportedSetting(setting: "temperature", details: "temperature is not supported for reasoning models"))
+                }
+                if body.removeValue(forKey: "top_p") != nil {
+                    warnings.append(.unsupportedSetting(setting: "topP", details: "topP is not supported for reasoning models"))
+                }
+                if body.removeValue(forKey: "logprobs") != nil {
+                    warnings.append(.other(message: "logprobs is not supported for reasoning models"))
+                }
             }
-            if body.removeValue(forKey: "top_p") != nil {
-                warnings.append(.unsupportedSetting(setting: "topP", details: "topP is not supported for reasoning models"))
-            }
+
             if body.removeValue(forKey: "frequency_penalty") != nil {
                 warnings.append(.unsupportedSetting(setting: "frequencyPenalty", details: "frequencyPenalty is not supported for reasoning models"))
             }
@@ -483,16 +504,13 @@ public final class OpenAIChatLanguageModel: LanguageModelV3 {
             if body.removeValue(forKey: "logit_bias") != nil {
                 warnings.append(.other(message: "logitBias is not supported for reasoning models"))
             }
-            if body.removeValue(forKey: "logprobs") != nil {
-                warnings.append(.other(message: "logprobs is not supported for reasoning models"))
-            }
             if body.removeValue(forKey: "top_logprobs") != nil {
                 warnings.append(.other(message: "topLogprobs is not supported for reasoning models"))
             }
             if let maxTokens = body.removeValue(forKey: "max_tokens"), body["max_completion_tokens"] == nil {
                 body["max_completion_tokens"] = maxTokens
             }
-        } else if id.hasPrefix("gpt-4o-search-preview") || id.hasPrefix("gpt-4o-mini-search-preview") {
+        } else if modelId.hasPrefix("gpt-4o-search-preview") || modelId.hasPrefix("gpt-4o-mini-search-preview") {
             if body.removeValue(forKey: "temperature") != nil {
                 warnings.append(.unsupportedSetting(
                     setting: "temperature",
@@ -537,7 +555,16 @@ public final class OpenAIChatLanguageModel: LanguageModelV3 {
     }
 
     private func isReasoningModel(_ modelId: String) -> Bool {
-        (modelId.hasPrefix("o") || modelId.hasPrefix("gpt-5")) && !modelId.hasPrefix("gpt-5-chat")
+        modelId.hasPrefix("o1")
+        || modelId.hasPrefix("o3")
+        || modelId.hasPrefix("o4-mini")
+        || modelId.hasPrefix("codex-mini")
+        || modelId.hasPrefix("computer-use-preview")
+        || (modelId.hasPrefix("gpt-5") && !modelId.hasPrefix("gpt-5-chat"))
+    }
+
+    private func supportsNonReasoningParameters(_ modelId: String) -> Bool {
+        modelId.hasPrefix("gpt-5.1") || modelId.hasPrefix("gpt-5.2")
     }
 
     private func supportsFlexProcessing(_ modelId: String) -> Bool {

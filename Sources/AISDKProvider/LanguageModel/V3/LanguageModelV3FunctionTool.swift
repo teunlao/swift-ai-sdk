@@ -17,7 +17,7 @@ import Foundation
  };
  ```
  */
-public struct LanguageModelV3FunctionTool: Sendable, Equatable, Codable {
+ public struct LanguageModelV3FunctionTool: Sendable, Equatable, Codable {
     /// The type of the tool (always 'function').
     public let type: String = "function"
 
@@ -33,6 +33,13 @@ public struct LanguageModelV3FunctionTool: Sendable, Equatable, Codable {
     /// Represented as JSON Schema (JSONValue for now, can be more specific later).
     public let inputSchema: JSONValue
 
+    /// Strict mode setting for the tool.
+    ///
+    /// Providers that support strict mode will use this setting to determine how the
+    /// input should be generated. Strict mode will always produce valid inputs, but
+    /// it might limit what input schemas are supported.
+    public let strict: Bool?
+
     /// The provider-specific options for the tool.
     public let providerOptions: SharedV3ProviderOptions?
 
@@ -40,11 +47,13 @@ public struct LanguageModelV3FunctionTool: Sendable, Equatable, Codable {
         name: String,
         inputSchema: JSONValue,
         description: String? = nil,
+        strict: Bool? = nil,
         providerOptions: SharedV3ProviderOptions? = nil
     ) {
         self.name = name
         self.inputSchema = inputSchema
         self.description = description
+        self.strict = strict
         self.providerOptions = providerOptions
     }
 
@@ -53,6 +62,7 @@ public struct LanguageModelV3FunctionTool: Sendable, Equatable, Codable {
         case name
         case description
         case inputSchema
+        case strict
         case providerOptions
     }
 
@@ -61,6 +71,7 @@ public struct LanguageModelV3FunctionTool: Sendable, Equatable, Codable {
         name = try container.decode(String.self, forKey: .name)
         description = try container.decodeIfPresent(String.self, forKey: .description)
         inputSchema = try container.decode(JSONValue.self, forKey: .inputSchema)
+        strict = try container.decodeIfPresent(Bool.self, forKey: .strict)
         providerOptions = try container.decodeIfPresent(SharedV3ProviderOptions.self, forKey: .providerOptions)
     }
 
@@ -70,6 +81,7 @@ public struct LanguageModelV3FunctionTool: Sendable, Equatable, Codable {
         try container.encode(name, forKey: .name)
         try container.encodeIfPresent(description, forKey: .description)
         try container.encode(inputSchema, forKey: .inputSchema)
+        try container.encodeIfPresent(strict, forKey: .strict)
         try container.encodeIfPresent(providerOptions, forKey: .providerOptions)
     }
 }

@@ -5,12 +5,13 @@ import Testing
 
 @Suite("OpenAIChatPrepareTools")
 struct OpenAIChatPrepareToolsTests {
-    private func makeFunctionTool(name: String = "testFunction", description: String? = nil) -> LanguageModelV3Tool {
+    private func makeFunctionTool(name: String = "testFunction", description: String? = nil, strict: Bool? = nil) -> LanguageModelV3Tool {
         .function(
             LanguageModelV3FunctionTool(
                 name: name,
                 inputSchema: .object(["type": .string("object")]),
-                description: description
+                description: description,
+                strict: strict
             )
         )
     }
@@ -29,9 +30,7 @@ struct OpenAIChatPrepareToolsTests {
     func noToolsYieldsNil() throws {
         let result = OpenAIChatToolPreparer.prepare(
             tools: [],
-            toolChoice: nil,
-            structuredOutputs: false,
-            strictJsonSchema: false
+            toolChoice: nil
         )
 
         #expect(result.tools == nil)
@@ -43,9 +42,7 @@ struct OpenAIChatPrepareToolsTests {
     func functionToolWithoutStructuredOutputs() throws {
         let result = OpenAIChatToolPreparer.prepare(
             tools: [makeFunctionTool(description: "A test function")],
-            toolChoice: nil,
-            structuredOutputs: false,
-            strictJsonSchema: true
+            toolChoice: nil
         )
 
         guard let tools = result.tools, case .array(let array) = tools, array.count == 1 else {
@@ -63,13 +60,11 @@ struct OpenAIChatPrepareToolsTests {
         #expect(result.warnings.isEmpty)
     }
 
-    @Test("function tool adds strict when structured outputs enabled")
-    func functionToolWithStructuredOutputs() throws {
+    @Test("function tool passes through strict")
+    func functionToolWithStrictSetting() throws {
         let result = OpenAIChatToolPreparer.prepare(
-            tools: [makeFunctionTool()],
-            toolChoice: nil,
-            structuredOutputs: true,
-            strictJsonSchema: true
+            tools: [makeFunctionTool(strict: true)],
+            toolChoice: nil
         )
 
         guard let tools = result.tools, case .array(let array) = tools, array.count == 1 else {
@@ -89,12 +84,10 @@ struct OpenAIChatPrepareToolsTests {
         let tool = makeProviderTool(id: "openai.unsupported_tool", name: "unsupported")
         let result = OpenAIChatToolPreparer.prepare(
             tools: [tool],
-            toolChoice: nil,
-            structuredOutputs: false,
-            strictJsonSchema: false
+            toolChoice: nil
         )
 
-        #expect(result.tools == nil)
+        #expect(result.tools == .array([]))
         #expect(result.warnings.count == 1)
         if let warning = result.warnings.first {
             if case .unsupportedTool(let reportedTool, _) = warning {
@@ -109,9 +102,7 @@ struct OpenAIChatPrepareToolsTests {
     func toolChoiceAuto() throws {
         let result = OpenAIChatToolPreparer.prepare(
             tools: [makeFunctionTool()],
-            toolChoice: .auto,
-            structuredOutputs: false,
-            strictJsonSchema: false
+            toolChoice: .auto
         )
 
         #expect(result.toolChoice == .string("auto"))
@@ -121,9 +112,7 @@ struct OpenAIChatPrepareToolsTests {
     func toolChoiceRequired() throws {
         let result = OpenAIChatToolPreparer.prepare(
             tools: [makeFunctionTool()],
-            toolChoice: .required,
-            structuredOutputs: false,
-            strictJsonSchema: false
+            toolChoice: .required
         )
 
         #expect(result.toolChoice == .string("required"))
@@ -142,9 +131,7 @@ struct OpenAIChatPrepareToolsTests {
 
         let result = OpenAIChatToolPreparer.prepare(
             tools: [tool],
-            toolChoice: LanguageModelV3ToolChoice.none,
-            structuredOutputs: false,
-            strictJsonSchema: false
+            toolChoice: LanguageModelV3ToolChoice.none
         )
 
         #expect(result.toolChoice == .string("none"))
@@ -154,9 +141,7 @@ struct OpenAIChatPrepareToolsTests {
     func toolChoiceForFunction() throws {
         let result = OpenAIChatToolPreparer.prepare(
             tools: [makeFunctionTool(name: "lookup")],
-            toolChoice: .tool(toolName: "lookup"),
-            structuredOutputs: false,
-            strictJsonSchema: false
+            toolChoice: .tool(toolName: "lookup")
         )
 
         #expect(result.toolChoice == .object([

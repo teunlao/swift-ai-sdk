@@ -31,15 +31,18 @@ public struct OpenAIWebSearchArgs: Sendable, Equatable {
     }
 
     public let filters: Filters?
+    public let externalWebAccess: Bool?
     public let searchContextSize: String?
     public let userLocation: UserLocation?
 
     public init(
         filters: Filters? = nil,
+        externalWebAccess: Bool? = nil,
         searchContextSize: String? = nil,
         userLocation: UserLocation? = nil
     ) {
         self.filters = filters
+        self.externalWebAccess = externalWebAccess
         self.searchContextSize = searchContextSize
         self.userLocation = userLocation
     }
@@ -49,6 +52,9 @@ private let webSearchArgsJSONSchema: JSONValue = .object([
     "type": .string("object"),
     "additionalProperties": .bool(false),
     "properties": .object([
+        "externalWebAccess": .object([
+            "type": .array([.string("boolean"), .string("null")])
+        ]),
         "filters": .object([
             "type": .array([.string("object"), .string("null")]),
             "additionalProperties": .bool(false),
@@ -122,6 +128,15 @@ public let openaiWebSearchArgsSchema = FlexibleSchema<OpenAIWebSearchArgs>(
                     }
                 }
 
+                var externalWebAccess: Bool? = nil
+                if let externalWebAccessValue = dict["externalWebAccess"], externalWebAccessValue != .null {
+                    guard case .bool(let bool) = externalWebAccessValue else {
+                        let error = SchemaValidationIssuesError(vendor: "openai", issues: "externalWebAccess must be a boolean")
+                        return .failure(error: TypeValidationError.wrap(value: externalWebAccessValue, cause: error))
+                    }
+                    externalWebAccess = bool
+                }
+
                 var searchContextSize: String? = nil
                 if let sizeValue = dict["searchContextSize"], sizeValue != .null {
                     guard case .string(let size) = sizeValue,
@@ -162,6 +177,7 @@ public let openaiWebSearchArgsSchema = FlexibleSchema<OpenAIWebSearchArgs>(
 
                 let args = OpenAIWebSearchArgs(
                     filters: filters,
+                    externalWebAccess: externalWebAccess,
                     searchContextSize: searchContextSize,
                     userLocation: userLocation
                 )
@@ -203,6 +219,10 @@ private func encodeOpenAIWebSearchArgs(_ args: OpenAIWebSearchArgs) -> [String: 
         if !filtersPayload.isEmpty {
             payload["filters"] = .object(filtersPayload)
         }
+    }
+
+    if let externalWebAccess = args.externalWebAccess {
+        payload["externalWebAccess"] = .bool(externalWebAccess)
     }
 
     if let size = args.searchContextSize {

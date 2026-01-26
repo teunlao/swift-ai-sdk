@@ -129,6 +129,13 @@ public struct Tool: Sendable {
     /// The schema of the input that the tool expects.
     public let inputSchema: FlexibleSchema<JSONValue>
 
+    /// Strict mode setting for the tool.
+    ///
+    /// Providers that support strict mode will use this setting to determine how the
+    /// input should be generated. Strict mode will always produce valid inputs, but
+    /// it might limit what input schemas are supported.
+    public let strict: Bool?
+
     /// Whether the tool needs approval before it can be executed.
     public let needsApproval: NeedsApproval?
 
@@ -172,6 +179,7 @@ public struct Tool: Sendable {
         description: String? = nil,
         providerOptions: [String: JSONValue]? = nil,
         inputSchema: FlexibleSchema<JSONValue>,
+        strict: Bool? = nil,
         needsApproval: NeedsApproval? = nil,
         onInputStart: (@Sendable (ToolCallOptions) async throws -> Void)? = nil,
         onInputDelta: (@Sendable (ToolCallDeltaOptions) async throws -> Void)? = nil,
@@ -187,6 +195,7 @@ public struct Tool: Sendable {
         self.description = description
         self.providerOptions = providerOptions
         self.inputSchema = inputSchema
+        self.strict = strict
         self.needsApproval = needsApproval
         self.onInputStart = onInputStart
         self.onInputDelta = onInputDelta
@@ -461,6 +470,7 @@ public func tool(
     description: String? = nil,
     providerOptions: [String: JSONValue]? = nil,
     inputSchema: FlexibleSchema<JSONValue>,
+    strict: Bool? = nil,
     needsApproval: NeedsApproval? = nil,
     onInputStart: (@Sendable (ToolCallOptions) async throws -> Void)? = nil,
     onInputDelta: (@Sendable (ToolCallDeltaOptions) async throws -> Void)? = nil,
@@ -473,6 +483,7 @@ public func tool(
         description: description,
         providerOptions: providerOptions,
         inputSchema: inputSchema,
+        strict: strict,
         needsApproval: needsApproval,
         onInputStart: onInputStart,
         onInputDelta: onInputDelta,
@@ -493,6 +504,7 @@ public func dynamicTool(
     description: String? = nil,
     providerOptions: [String: JSONValue]? = nil,
     inputSchema: FlexibleSchema<JSONValue>,
+    strict: Bool? = nil,
     execute: @escaping @Sendable (JSONValue, ToolCallOptions) async throws -> ToolExecutionResult<JSONValue>,
     toModelOutput: (@Sendable (JSONValue) -> LanguageModelV3ToolResultOutput)? = nil
 ) -> Tool {
@@ -500,6 +512,7 @@ public func dynamicTool(
         description: description,
         providerOptions: providerOptions,
         inputSchema: inputSchema,
+        strict: strict,
         execute: execute,
         toModelOutput: toModelOutput,
         type: .dynamic

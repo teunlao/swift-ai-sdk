@@ -178,6 +178,12 @@ The following provider options are available:
 - **metadata** _Record&lt;string, string&gt;_
   Additional metadata to store with the generation.
 
+- **conversation** _string_
+  The ID of the OpenAI Conversation to continue.
+  You must create a conversation first via the [OpenAI API](https://platform.openai.com/docs/api-reference/conversations/create).
+  Cannot be used together with `previousResponseId`.
+  Defaults to `undefined`.
+
 - **previousResponseId** _string_
   The ID of the previous response. You can use it to continue a conversation. Defaults to `undefined`.
 
@@ -189,14 +195,30 @@ The following provider options are available:
 - **user** _string_
   A unique identifier representing your end-user, which can help OpenAI to monitor and detect abuse. Defaults to `undefined`.
 
-- **reasoningEffort** _'minimal' | 'low' | 'medium' | 'high'_
+- **reasoningEffort** _'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'_
   Reasoning effort for reasoning models. Defaults to `medium`. If you use `providerOptions` to set the `reasoningEffort` option, this model setting will be ignored.
+
+<Aside type="note">
+  The 'none' type for `reasoningEffort` is only available for OpenAI's GPT-5.1
+  models. Also, the 'xhigh' type for `reasoningEffort` is only available for
+  OpenAI's GPT-5.1-Codex-Max model. Setting `reasoningEffort` to 'none' or
+  'xhigh' with unsupported models will result in an error.
+</Aside>
 
 - **reasoningSummary** _'auto' | 'detailed'_
   Controls whether the model returns its reasoning process. Set to `'auto'` for a condensed summary, `'detailed'` for more comprehensive reasoning. Defaults to `undefined` (no reasoning summaries). When enabled, reasoning summaries appear in the stream as events with type `'reasoning'` and in non-streaming responses within the `reasoning` field.
 
 - **strictJsonSchema** _boolean_
-  Whether to use strict JSON schema validation. Defaults to `false`.
+  Whether to use strict JSON schema validation. Defaults to `true`.
+
+<Aside type="caution">
+  OpenAI structured outputs have several
+  [limitations](https://openai.com/index/introducing-structured-outputs-in-the-api),
+  in particular around the [supported
+  schemas](https://platform.openai.com/docs/guides/structured-outputs/supported-schemas),
+  and are therefore opt-in. For example, optional schema properties are not
+  supported.
+</Aside>
 
 - **serviceTier** _'auto' | 'flex' | 'priority' | 'default'_
   Service tier for the request. Set to 'flex' for 50% cheaper processing
@@ -215,11 +237,26 @@ The following provider options are available:
   `['message.output_text.logprobs']` for logprobs.
   Defaults to `undefined`.
 
+- **truncation** _string_
+  The truncation strategy to use for the model response.
+
+  - `auto`: If the input to this Response exceeds the model's context window size, the model will truncate the response to fit the context window by dropping items from the beginning of the conversation.
+  - `disabled` (default): If the input size will exceed the context window size for a model, the request will fail with a 400 error.
+
 - **promptCacheKey** _string_
   A cache key for manual prompt caching control. Used by OpenAI to cache responses for similar requests to optimize your cache hit rates.
 
+- **promptCacheRetention** _'in_memory' | '24h'_
+  The retention policy for the prompt cache. Set to `'24h'` to enable extended prompt caching, which keeps cached prefixes active for up to 24 hours. Defaults to `'in_memory'` for standard prompt caching. Note: `'24h'` is currently only available for the 5.1 series of models.
+
 - **safetyIdentifier** _string_
   A stable identifier used to help detect users of your application that may be violating OpenAI's usage policies. The IDs should be a string that uniquely identifies each user.
+
+- **systemMessageMode** _'system' | 'developer' | 'remove'_
+  Controls the role of the system message when making requests. By default (when omitted), for models that support reasoning the `system` message is automatically converted to a `developer` message. Setting `systemMessageMode` to `system` passes the system message as a system-level instruction; `developer` passes it as a developer message; `remove` omits the system message from the request.
+
+- **forceReasoning** _boolean_
+  Force treating this model as a reasoning model. This is useful for "stealth" reasoning models (e.g. via a custom baseURL) where the model ID is not recognized by the SDK's allowlist. When enabled, the SDK applies reasoning-model parameter compatibility rules and defaults `systemMessageMode` to `developer` unless overridden.
 
 The OpenAI responses provider also returns provider-specific metadata:
 
@@ -329,6 +366,7 @@ let result = try await generateText(
   tools: [
     "web_search": openai.tools.webSearch(
       OpenAIWebSearchArgs(
+        externalWebAccess: true,
         searchContextSize: "high",
         userLocation: OpenAIWebSearchArgs.UserLocation(
           city: "San Francisco",
@@ -485,8 +523,8 @@ The code interpreter tool can be configured with:
 
 #### Local Shell Tool
 
-The OpenAI responses API support the local shell tool for Codex models through the `openai.tools.localShell` tool.
-Local shell is a tool that allows agents to run shell commands locally on a machine you or the user provides.
+The OpenAI responses API supports the local shell tool for Codex models through the `openai.tools.localShell` tool.
+Local shell lets the model propose shell commands that your integration executes locally and returns the output.
 
 ```swift
 import SwiftAISDK
@@ -495,7 +533,20 @@ import OpenAIProvider
 let result = try await generateText(
   model: openai.responses("gpt-5-codex"),
   tools: [
-    "local_shell": openai.tools.localShell()
+    "local_shell": openai.tools.localShell(.init(
+      execute: { input, _ in
+        let parsed = try await validateTypes(
+          ValidateTypesOptions(value: input, schema: openaiLocalShellInputSchema)
+        )
+
+        // parsed.action.command is [String]
+        // ... run parsed.action.command ...
+
+        return .value(.object([
+          "output": .string("...")
+        ]))
+      }
+    ))
   ],
   prompt: "List the files in my home directory.",
   stopWhen: stepCountIs(2)
@@ -503,9 +554,86 @@ let result = try await generateText(
 ```
 
 <Aside type="note">
-  The tool must be named `local_shell`. This name is required by OpenAI's API
-  specification and cannot be customized. The model can only be
+  The tool must be named `local_shell`. This name is required by OpenAI's API specification and cannot be customized.
 </Aside>
+
+#### Shell Tool
+
+The OpenAI Responses API supports the shell tool through the `openai.tools.shell` tool.
+The model proposes shell commands; your integration executes them and returns the outputs.
+
+<Aside type="caution">
+  Running arbitrary shell commands can be dangerous. Always sandbox execution or enforce strict allow-/deny-lists before forwarding a command to the system shell.
+</Aside>
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+
+let result = try await generateText(
+  model: openai("gpt-5.1"),
+  tools: [
+    "shell": openai.tools.shell(.init(
+      execute: { input, _ in
+        let parsed = try await validateTypes(
+          ValidateTypesOptions(value: input, schema: openaiShellInputSchema)
+        )
+
+        // parsed.action.commands is [String]
+        // ... run parsed.action.commands ...
+
+        return .value(.object([
+          "output": .array([])
+        ]))
+      }
+    ))
+  ],
+  prompt: "List the files in the current directory and show disk usage."
+)
+```
+
+Your execute function must return an output array with results for each command:
+
+- **stdout** _string_ - Standard output from the command
+- **stderr** _string_ - Standard error from the command
+- **outcome** - Either `{ type: 'timeout' }` or `{ type: 'exit', exitCode: number }`
+
+#### Apply Patch Tool
+
+The OpenAI Responses API supports the apply patch tool through the `openai.tools.applyPatch` tool.
+The model emits structured patch operations that your application applies and reports back on.
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+
+let result = try await generateText(
+  model: openai("gpt-5.1"),
+  tools: [
+    "apply_patch": openai.tools.applyPatch(.init(
+      execute: { input, _ in
+        let parsed = try await validateTypes(
+          ValidateTypesOptions(value: input, schema: openaiApplyPatchInputSchema)
+        )
+
+        // parsed.callId, parsed.operation
+        // ... apply patch ...
+
+        return .value(.object([
+          "status": .string("completed")
+        ]))
+      }
+    ))
+  ],
+  prompt: "Create a python file that calculates the factorial of a number",
+  stopWhen: stepCountIs(5)
+)
+```
+
+Your execute function must return:
+
+- **status** _'completed' | 'failed'_
+- **output** _string_ (optional)
 
 #### Image Inputs
 
@@ -702,18 +830,18 @@ The following optional provider options are available for OpenAI chat models:
   A unique identifier representing your end-user, which can help OpenAI to
   monitor and detect abuse. [Learn more](https://platform.openai.com/docs/guides/safety-best-practices/end-user-ids).
 
-- **reasoningEffort** _'minimal' | 'low' | 'medium' | 'high'_
+- **reasoningEffort** _'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'_
 
   Reasoning effort for reasoning models. Defaults to `medium`. If you use
   `providerOptions` to set the `reasoningEffort` option, this
   model setting will be ignored.
 
-- **structuredOutputs** _boolean_
-
-  Whether to use structured outputs.
-  Defaults to `true`.
-
-  When enabled, tool calls and object generation will be strict and follow the provided schema.
+<Aside type="note">
+  The 'none' type for `reasoningEffort` is only available for OpenAI's GPT-5.1
+  models. Also, the 'xhigh' type for `reasoningEffort` is only available for
+  OpenAI's GPT-5.1-Codex-Max model. Setting `reasoningEffort` to 'none' or
+  'xhigh' with unsupported models will result in an error.
+</Aside>
 
 - **maxCompletionTokens** _number_
 
@@ -742,25 +870,19 @@ The following optional provider options are available for OpenAI chat models:
 - **strictJsonSchema** _boolean_
 
   Whether to use strict JSON schema validation.
-  Defaults to `false`.
+  Defaults to `true`.
 
 - **textVerbosity** _'low' | 'medium' | 'high'_
 
   Controls the verbosity of the model's responses. Lower values will result in more concise responses, while higher values will result in more verbose responses.
 
-> Tip: Instead of manually building `providerOptions`, you can use the Swift helper `openai.options.responses(...)` to produce the same dictionary. For example:
->
-> ```swift
-> let options = openai.options.responses(
->   include: [.fileSearchCallResults],
->   serviceTier: "auto",
->   reasoningEffort: "high"
-> )
-> ```
-
 - **promptCacheKey** _string_
 
   A cache key for manual prompt caching control. Used by OpenAI to cache responses for similar requests to optimize your cache hit rates.
+
+- **promptCacheRetention** _'in_memory' | '24h'_
+
+  The retention policy for the prompt cache. Set to `'24h'` to enable extended prompt caching, which keeps cached prefixes active for up to 24 hours. Defaults to `'in_memory'` for standard prompt caching. Note: `'24h'` is currently only available for the 5.1 series of models.
 
 - **safetyIdentifier** _string_
 
@@ -806,6 +928,30 @@ print("Reasoning tokens:", result.providerMetadata?["openai"]?["reasoningTokens"
   reasoning models when supported.
 </Aside>
 
+- You can control how system messages are handled by providerOptions `systemMessageMode`:
+
+  - `developer`: treat the system message as a developer message (default for reasoning models).
+  - `system`: keep the system message as a system-level instruction.
+  - `remove`: omit the system message from the request.
+
+```swift
+import SwiftAISDK
+import OpenAIProvider
+
+let result = try await generateText(
+  model: openai.chat("gpt-5"),
+  messages: [
+    ["role": "system", "content": "You are a helpful assistant."],
+    ["role": "user", "content": "Tell me a joke."]
+  ],
+  providerOptions: [
+    "openai": [
+      "systemMessageMode": "system"
+    ]
+  ]
+)
+```
+
 <Aside type="note">
   Reasoning models require additional runtime inference to complete their
   reasoning phase before generating a response. This introduces longer latency
@@ -817,10 +963,10 @@ print("Reasoning tokens:", result.providerMetadata?["openai"]?["reasoningTokens"
   reasoning models.
 </Aside>
 
-#### Structured Outputs
+#### Strict Structured Outputs
 
-Structured outputs are enabled by default.
-You can disable them by setting the `structuredOutputs` option to `false`.
+Strict structured outputs are enabled by default.
+You can disable them by setting the `strictJsonSchema` option to `false`.
 
 ```swift
 import SwiftAISDK
@@ -835,7 +981,7 @@ let result = try await generateObject(
   schemaDescription: "A recipe for lasagna.",
   providerOptions: [
     "openai": [
-      "structuredOutputs": false
+      "strictJsonSchema": false
     ]
   ]
 )
@@ -850,8 +996,6 @@ print(result.object)
   and are therefore opt-in.
 
 For example, optional schema properties are not supported.
-You need to change Zod `.nullish()` and `.optional()` to `.nullable()`.
-
 </Aside>
 
 #### Logprobs

@@ -17,10 +17,12 @@ enum OpenAIChatLogprobsOption: Sendable, Equatable {
 }
 
 enum OpenAIChatReasoningEffort: String, Sendable {
+    case none
     case minimal
     case low
     case medium
     case high
+    case xhigh
 }
 
 enum OpenAIChatServiceTier: String, Sendable {
@@ -36,10 +38,15 @@ enum OpenAIChatTextVerbosity: String, Sendable {
     case high
 }
 
-enum OpenAIChatSystemMessageMode {
+enum OpenAIChatSystemMessageMode: Sendable, Equatable {
     case system
     case developer
     case remove
+}
+
+enum OpenAIChatPromptCacheRetention: String, Sendable {
+    case inMemory = "in_memory"
+    case twentyFourHours = "24h"
 }
 
 struct OpenAIChatProviderOptions: Sendable, Equatable {
@@ -52,12 +59,14 @@ struct OpenAIChatProviderOptions: Sendable, Equatable {
     var store: Bool?
     var metadata: [String: String]?
     var prediction: [String: JSONValue]?
-    var structuredOutputs: Bool?
     var serviceTier: OpenAIChatServiceTier?
     var strictJsonSchema: Bool?
     var textVerbosity: OpenAIChatTextVerbosity?
     var promptCacheKey: String?
+    var promptCacheRetention: OpenAIChatPromptCacheRetention?
     var safetyIdentifier: String?
+    var systemMessageMode: OpenAIChatSystemMessageMode?
+    var forceReasoning: Bool?
 }
 
 
@@ -183,14 +192,6 @@ let openAIChatProviderOptionsSchema = FlexibleSchema<OpenAIChatProviderOptions>(
                     result.prediction = entries
                 }
 
-                if let structured = dict["structuredOutputs"], structured != .null {
-                    guard case .bool(let flag) = structured else {
-                        let error = SchemaValidationIssuesError(vendor: "openai", issues: "structuredOutputs must be a boolean")
-                        return .failure(error: TypeValidationError.wrap(value: structured, cause: error))
-                    }
-                    result.structuredOutputs = flag
-                }
-
                 if let tierValue = dict["serviceTier"], tierValue != .null {
                     guard case .string(let string) = tierValue,
                           let tier = OpenAIChatServiceTier(rawValue: string) else {
@@ -225,12 +226,47 @@ let openAIChatProviderOptionsSchema = FlexibleSchema<OpenAIChatProviderOptions>(
                     result.promptCacheKey = string
                 }
 
+                if let cacheRetentionValue = dict["promptCacheRetention"], cacheRetentionValue != .null {
+                    guard case .string(let string) = cacheRetentionValue,
+                          let retention = OpenAIChatPromptCacheRetention(rawValue: string) else {
+                        let error = SchemaValidationIssuesError(vendor: "openai", issues: "promptCacheRetention must be one of in_memory, 24h")
+                        return .failure(error: TypeValidationError.wrap(value: cacheRetentionValue, cause: error))
+                    }
+                    result.promptCacheRetention = retention
+                }
+
                 if let safetyValue = dict["safetyIdentifier"], safetyValue != .null {
                     guard case .string(let string) = safetyValue else {
                         let error = SchemaValidationIssuesError(vendor: "openai", issues: "safetyIdentifier must be a string")
                         return .failure(error: TypeValidationError.wrap(value: safetyValue, cause: error))
                     }
                     result.safetyIdentifier = string
+                }
+
+                if let systemModeValue = dict["systemMessageMode"], systemModeValue != .null {
+                    guard case .string(let rawMode) = systemModeValue else {
+                        let error = SchemaValidationIssuesError(vendor: "openai", issues: "systemMessageMode must be a string")
+                        return .failure(error: TypeValidationError.wrap(value: systemModeValue, cause: error))
+                    }
+                    switch rawMode {
+                    case "system":
+                        result.systemMessageMode = .system
+                    case "developer":
+                        result.systemMessageMode = .developer
+                    case "remove":
+                        result.systemMessageMode = .remove
+                    default:
+                        let error = SchemaValidationIssuesError(vendor: "openai", issues: "systemMessageMode must be one of system, developer, remove")
+                        return .failure(error: TypeValidationError.wrap(value: systemModeValue, cause: error))
+                    }
+                }
+
+                if let forceReasoningValue = dict["forceReasoning"], forceReasoningValue != .null {
+                    guard case .bool(let flag) = forceReasoningValue else {
+                        let error = SchemaValidationIssuesError(vendor: "openai", issues: "forceReasoning must be a boolean")
+                        return .failure(error: TypeValidationError.wrap(value: forceReasoningValue, cause: error))
+                    }
+                    result.forceReasoning = flag
                 }
 
                 return .success(value: result)

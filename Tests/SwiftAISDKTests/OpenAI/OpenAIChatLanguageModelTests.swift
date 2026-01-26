@@ -1071,8 +1071,8 @@ struct OpenAIChatLanguageModelTests {
         }
     }
 
-    @Test("Forward json format and omit schema when structuredOutputs disabled")
-    func testResponseFormatJsonStructuredOutputsDisabled() async throws {
+    @Test("Ignore unknown structuredOutputs provider option for responseFormat json")
+    func testResponseFormatJsonStructuredOutputsIgnored() async throws {
         final class RequestCapture: @unchecked Sendable {
             var body: [String: Any]?
         }
@@ -1128,19 +1128,19 @@ struct OpenAIChatLanguageModelTests {
 
         #expect(body["model"] as? String == "gpt-4o-2024-08-06")
         if let responseFormat = body["response_format"] as? [String: Any] {
-            #expect(responseFormat["type"] as? String == "json_object")
-            #expect(responseFormat["json_schema"] == nil)
+            #expect(responseFormat["type"] as? String == "json_schema")
+            if let jsonSchema = responseFormat["json_schema"] as? [String: Any] {
+                #expect(jsonSchema["name"] as? String == "response")
+                #expect(jsonSchema["strict"] as? Bool == true)
+                #expect(jsonSchema["schema"] != nil)
+            } else {
+                Issue.record("json_schema missing")
+            }
         } else {
             Issue.record("response_format missing")
         }
 
-        // Check for warning
-        #expect(result.warnings.count == 1)
-        if case .unsupportedSetting(let setting, _) = result.warnings.first {
-            #expect(setting == "responseFormat")
-        } else {
-            Issue.record("Expected unsupported-setting warning")
-        }
+        #expect(result.warnings.isEmpty)
     }
 
     @Test("Include schema when structuredOutputs enabled")
@@ -1199,14 +1199,14 @@ struct OpenAIChatLanguageModelTests {
 
         #expect(body["model"] as? String == "gpt-4o-2024-08-06")
         if let responseFormat = body["response_format"] as? [String: Any] {
-            #expect(responseFormat["type"] as? String == "json_schema")
-            if let jsonSchema = responseFormat["json_schema"] as? [String: Any] {
-                #expect(jsonSchema["name"] as? String == "response")
-                #expect(jsonSchema["strict"] as? Bool == false)
-                #expect(jsonSchema["schema"] != nil)
-            } else {
-                Issue.record("json_schema missing")
-            }
+                #expect(responseFormat["type"] as? String == "json_schema")
+                if let jsonSchema = responseFormat["json_schema"] as? [String: Any] {
+                    #expect(jsonSchema["name"] as? String == "response")
+                    #expect(jsonSchema["strict"] as? Bool == true)
+                    #expect(jsonSchema["schema"] != nil)
+                } else {
+                    Issue.record("json_schema missing")
+                }
         } else {
             Issue.record("response_format missing")
         }
@@ -1274,7 +1274,7 @@ struct OpenAIChatLanguageModelTests {
             #expect(responseFormat["type"] as? String == "json_schema")
             if let jsonSchema = responseFormat["json_schema"] as? [String: Any] {
                 #expect(jsonSchema["name"] as? String == "response")
-                #expect(jsonSchema["strict"] as? Bool == false)
+                #expect(jsonSchema["strict"] as? Bool == true)
             } else {
                 Issue.record("json_schema missing")
             }
@@ -1347,7 +1347,7 @@ struct OpenAIChatLanguageModelTests {
             if let jsonSchema = responseFormat["json_schema"] as? [String: Any] {
                 #expect(jsonSchema["name"] as? String == "test-name")
                 #expect(jsonSchema["description"] as? String == "test description")
-                #expect(jsonSchema["strict"] as? Bool == false)
+                #expect(jsonSchema["strict"] as? Bool == true)
             } else {
                 Issue.record("json_schema missing")
             }
@@ -1585,19 +1585,14 @@ struct OpenAIChatLanguageModelTests {
 
         #expect(body["model"] as? String == "o1-preview")
         if let messages = body["messages"] as? [[String: Any]] {
-            #expect(messages.count == 1)
-            #expect(messages.first?["role"] as? String == "user")
+            #expect(messages.count == 2)
+            #expect(messages.first?["role"] as? String == "developer")
+            #expect(messages.last?["role"] as? String == "user")
         } else {
             Issue.record("messages missing")
         }
 
-        // Check warning
-        #expect(result.warnings.count == 1)
-        if case .other(let message) = result.warnings.first {
-            #expect(message == "system messages are removed for this model")
-        } else {
-            Issue.record("Expected 'other' warning about system messages")
-        }
+        #expect(result.warnings.isEmpty)
     }
 
     @Test("Use developer messages for o1")
@@ -2650,7 +2645,7 @@ struct OpenAIChatLanguageModelTests {
 
         #expect(firstTool["type"] as? String == "function")
         #expect(function["name"] as? String == "test-tool")
-        #expect(function["strict"] as? Bool == false)
+        #expect(function["strict"] == nil)
 
         // Check tool_choice
         guard let toolChoice = body["tool_choice"] as? [String: Any],
@@ -2663,8 +2658,8 @@ struct OpenAIChatLanguageModelTests {
         #expect(choiceFunction["name"] as? String == "test-tool")
     }
 
-    @Test("Set strict for tool usage when structuredOutputs enabled")
-    func testStrictToolWithStructuredOutputs() async throws {
+    @Test("Do not send strict for tools by default")
+    func testToolStrictNotSentByDefault() async throws {
         final class RequestCapture: @unchecked Sendable {
             var body: [String: Any]?
         }
@@ -2731,7 +2726,7 @@ struct OpenAIChatLanguageModelTests {
 
         #expect(body["model"] as? String == "gpt-4o-2024-08-06")
 
-        // Check strict is false for gpt-4o-2024-08-06 (structured outputs model)
+        // Check strict is not set by default for tool definitions
         guard let tools = body["tools"] as? [[String: Any]],
               let firstTool = tools.first,
               let function = firstTool["function"] as? [String: Any] else {
@@ -2739,7 +2734,7 @@ struct OpenAIChatLanguageModelTests {
             return
         }
 
-        #expect(function["strict"] as? Bool == false)
+        #expect(function["strict"] == nil)
 
         // Check response content has tool call
         #expect(result.content.count > 0)

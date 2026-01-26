@@ -10,9 +10,7 @@ struct OpenAIChatPreparedTools {
 enum OpenAIChatToolPreparer {
     static func prepare(
         tools: [LanguageModelV3Tool]?,
-        toolChoice: LanguageModelV3ToolChoice?,
-        structuredOutputs: Bool,
-        strictJsonSchema: Bool
+        toolChoice: LanguageModelV3ToolChoice?
     ) -> OpenAIChatPreparedTools {
         guard let tools, !tools.isEmpty else {
             return OpenAIChatPreparedTools(tools: nil, toolChoice: nil, warnings: [])
@@ -33,8 +31,8 @@ enum OpenAIChatToolPreparer {
                     functionObject["description"] = .string(description)
                 }
 
-                if structuredOutputs {
-                    functionObject["strict"] = .bool(strictJsonSchema)
+                if let strict = function.strict {
+                    functionObject["strict"] = .bool(strict)
                 }
 
                 preparedTools.append(.object([
@@ -68,7 +66,7 @@ enum OpenAIChatToolPreparer {
         }
 
         return OpenAIChatPreparedTools(
-            tools: preparedTools.isEmpty ? nil : .array(preparedTools),
+            tools: .array(preparedTools),
             toolChoice: toolChoiceValue,
             warnings: warnings
         )

@@ -10,8 +10,7 @@ struct OpenAIResponsesPreparedTools: Sendable {
 
 func prepareOpenAIResponsesTools(
     tools: [LanguageModelV3Tool]?,
-    toolChoice: LanguageModelV3ToolChoice?,
-    strictJsonSchema: Bool
+    toolChoice: LanguageModelV3ToolChoice?
 ) async throws -> OpenAIResponsesPreparedTools {
     guard let tools, !tools.isEmpty else {
         return OpenAIResponsesPreparedTools(tools: nil, toolChoice: nil, warnings: [])
@@ -26,11 +25,13 @@ func prepareOpenAIResponsesTools(
             var payload: [String: JSONValue] = [
                 "type": .string("function"),
                 "name": .string(functionTool.name),
-                "parameters": functionTool.inputSchema,
-                "strict": .bool(strictJsonSchema)
+                "parameters": functionTool.inputSchema
             ]
             if let description = functionTool.description {
                 payload["description"] = .string(description)
+            }
+            if let strict = functionTool.strict {
+                payload["strict"] = .bool(strict)
             }
             openAITools.append(.object(payload))
 
@@ -74,6 +75,16 @@ func prepareOpenAIResponsesTools(
                     "type": .string("local_shell")
                 ]))
 
+            case "openai.shell":
+                openAITools.append(.object([
+                    "type": .string("shell")
+                ]))
+
+            case "openai.apply_patch":
+                openAITools.append(.object([
+                    "type": .string("apply_patch")
+                ]))
+
             case "openai.web_search_preview":
                 let parsed = try await validateTypes(
                     ValidateTypesOptions(value: providerTool.args, schema: openaiWebSearchPreviewArgsSchema)
@@ -104,6 +115,9 @@ func prepareOpenAIResponsesTools(
                     if !filtersPayload.isEmpty {
                         payload["filters"] = .object(filtersPayload)
                     }
+                }
+                if let externalWebAccess = parsed.externalWebAccess {
+                    payload["external_web_access"] = .bool(externalWebAccess)
                 }
                 if let size = parsed.searchContextSize {
                     payload["search_context_size"] = .string(size)
@@ -194,7 +208,7 @@ func prepareOpenAIResponsesTools(
         }
     }
 
-    let finalTools = openAITools.isEmpty ? nil : openAITools
+    let finalTools = openAITools
     let finalToolChoice = try mapToolChoice(toolChoice)
 
     return OpenAIResponsesPreparedTools(tools: finalTools, toolChoice: finalToolChoice, warnings: warnings)
@@ -230,7 +244,7 @@ private func mapToolChoice(_ choice: LanguageModelV3ToolChoice?) throws -> JSONV
     case .required:
         return .string("required")
     case .tool(let toolName):
-        if ["code_interpreter", "file_search", "image_generation", "web_search_preview", "web_search"].contains(toolName) {
+        if ["code_interpreter", "file_search", "image_generation", "web_search_preview", "web_search", "mcp", "apply_patch"].contains(toolName) {
             return .object(["type": .string(toolName)])
         }
         return .object([

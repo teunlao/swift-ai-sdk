@@ -197,6 +197,18 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                                     ongoingToolCalls: &ongoingToolCalls,
                                     continuation: continuation
                                 )
+                            case "response.apply_patch_call_operation_diff.delta":
+                                handleApplyPatchCallOperationDiffDelta(
+                                    chunkObject,
+                                    ongoingToolCalls: &ongoingToolCalls,
+                                    continuation: continuation
+                                )
+                            case "response.apply_patch_call_operation_diff.done":
+                                handleApplyPatchCallOperationDiffDone(
+                                    chunkObject,
+                                    ongoingToolCalls: &ongoingToolCalls,
+                                    continuation: continuation
+                                )
                             case "response.image_generation_call.partial_image":
                                 handleImageGenerationPartial(
                                     chunkObject,
@@ -330,20 +342,33 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             schema: openAIResponsesProviderOptionsSchema
         )
 
-        let store = openAIOptions?.store ?? true
-        let modelConfig = getOpenAIResponsesModelConfig(for: modelIdentifier)
+        let storeOption = openAIOptions?.store
+        let storeForInput = storeOption ?? true
+        let hasConversation = openAIOptions?.conversation != nil
+        if openAIOptions?.conversation != nil, openAIOptions?.previousResponseId != nil {
+            addUnsupportedSetting("conversation", details: "conversation and previousResponseId cannot be used together")
+        }
+        let modelCapabilities = getOpenAIResponsesModelConfig(for: modelIdentifier)
+        let isReasoningModel = openAIOptions?.forceReasoning ?? modelCapabilities.isReasoningModel
+        let systemMessageMode = openAIOptions?.systemMessageMode
+            ?? (isReasoningModel ? .developer : modelCapabilities.systemMessageMode)
         let hasLocalShellTool = containsLocalShellTool(options.tools)
+        let hasShellTool = containsProviderTool(options.tools, id: "openai.shell")
+        let hasApplyPatchTool = containsProviderTool(options.tools, id: "openai.apply_patch")
 
         let (input, inputWarnings) = try await OpenAIResponsesInputBuilder.makeInput(
             prompt: options.prompt,
-            systemMessageMode: modelConfig.systemMessageMode,
+            systemMessageMode: systemMessageMode,
             fileIdPrefixes: config.fileIdPrefixes,
-            store: store,
-            hasLocalShellTool: hasLocalShellTool
+            store: storeForInput,
+            hasConversation: hasConversation,
+            hasLocalShellTool: hasLocalShellTool,
+            hasShellTool: hasShellTool,
+            hasApplyPatchTool: hasApplyPatchTool
         )
         warnings.append(contentsOf: inputWarnings)
 
-        let strictJsonSchema = openAIOptions?.strictJsonSchema ?? false
+        let strictJsonSchema = openAIOptions?.strictJsonSchema ?? true
         let webSearchToolName = findWebSearchToolName(options.tools)
 
         var includeSet: Set<OpenAIResponsesIncludeValue> = []
@@ -377,14 +402,13 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             addInclude(.codeInterpreterCallOutputs)
         }
 
-        if store == false && modelConfig.isReasoningModel {
+        if storeOption == false && isReasoningModel {
             addInclude(.reasoningEncryptedContent)
         }
 
         let preparedTools = try await prepareOpenAIResponsesTools(
             tools: options.tools,
-            toolChoice: options.toolChoice,
-            strictJsonSchema: strictJsonSchema
+            toolChoice: options.toolChoice
         )
         warnings.append(contentsOf: preparedTools.warnings)
 
@@ -395,7 +419,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
         )
 
         var reasoningValue: JSONValue?
-        if modelConfig.isReasoningModel,
+        if isReasoningModel,
            openAIOptions?.reasoningEffort != nil || openAIOptions?.reasoningSummary != nil {
             var payload: [String: JSONValue] = [:]
             if let effort = openAIOptions?.reasoningEffort {
@@ -425,37 +449,44 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             metadata: openAIOptions?.metadata,
             parallelToolCalls: openAIOptions?.parallelToolCalls,
             previousResponseId: openAIOptions?.previousResponseId,
-            store: store,
+            conversation: openAIOptions?.conversation,
+            store: storeOption,
             user: openAIOptions?.user,
             instructions: openAIOptions?.instructions,
             serviceTier: openAIOptions?.serviceTier,
             include: includeSet.isEmpty ? nil : includeSet.map { $0.rawValue },
             promptCacheKey: openAIOptions?.promptCacheKey,
+            promptCacheRetention: openAIOptions?.promptCacheRetention,
             safetyIdentifier: openAIOptions?.safetyIdentifier,
             topLogprobs: topLogprobs,
             reasoning: reasoningValue,
-            truncation: modelConfig.requiredAutoTruncation ? "auto" : nil,
+            truncation: openAIOptions?.truncation ?? (modelCapabilities.requiredAutoTruncation ? "auto" : nil),
             tools: preparedTools.tools,
             toolChoice: preparedTools.toolChoice
         )
 
-        if modelConfig.isReasoningModel {
-            if body.temperature != nil {
-                addUnsupportedSetting("temperature", details: "temperature is not supported for reasoning models")
-                body.temperature = nil
-            }
-            if body.topP != nil {
-                addUnsupportedSetting("topP", details: "topP is not supported for reasoning models")
-                body.topP = nil
+        if isReasoningModel {
+            let allowsNonReasoningParameters = openAIOptions?.reasoningEffort == "none"
+                && modelCapabilities.supportsNonReasoningParameters
+
+            if !allowsNonReasoningParameters {
+                if body.temperature != nil {
+                    addUnsupportedSetting("temperature", details: "temperature is not supported for reasoning models")
+                    body.temperature = nil
+                }
+                if body.topP != nil {
+                    addUnsupportedSetting("topP", details: "topP is not supported for reasoning models")
+                    body.topP = nil
+                }
             }
         }
 
         if let serviceTier = body.serviceTier {
             switch serviceTier {
-            case "flex" where !modelConfig.supportsFlexProcessing:
+            case "flex" where !modelCapabilities.supportsFlexProcessing:
                 addUnsupportedSetting("serviceTier", details: "flex processing is only available for o3, o4-mini, and gpt-5 models")
                 body.serviceTier = nil
-            case "priority" where !modelConfig.supportsPriorityProcessing:
+            case "priority" where !modelCapabilities.supportsPriorityProcessing:
                 addUnsupportedSetting("serviceTier", details: "priority processing is only available for supported models (gpt-4, gpt-5, gpt-5-mini, o3, o4-mini) and requires Enterprise access. gpt-5-nano is not supported")
                 body.serviceTier = nil
             default:
@@ -467,7 +498,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             body: body,
             warnings: warnings,
             webSearchToolName: webSearchToolName,
-            store: store,
+            store: storeForInput,
             openAIOptions: openAIOptions
         )
     }
@@ -812,6 +843,52 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                     providerMetadata: nil
                 )))
 
+            case "shell_call":
+                guard let toolCallId = object["call_id"]?.stringValue,
+                      let actionObject = object["action"]?.objectValue,
+                      let commands = actionObject["commands"]?.arrayValue?.compactMap({ $0.stringValue }),
+                      let itemId = object["id"]?.stringValue else {
+                    continue
+                }
+
+                let inputValue: JSONValue = .object([
+                    "action": .object([
+                        "commands": .array(commands.map(JSONValue.string))
+                    ])
+                ])
+                let inputString = try jsonString(from: inputValue)
+                let metadata = openAIProviderMetadata(["itemId": .string(itemId)])
+
+                content.append(.toolCall(LanguageModelV3ToolCall(
+                    toolCallId: toolCallId,
+                    toolName: "shell",
+                    input: inputString,
+                    providerExecuted: nil,
+                    providerMetadata: metadata
+                )))
+
+            case "apply_patch_call":
+                guard let toolCallId = object["call_id"]?.stringValue,
+                      let operation = object["operation"],
+                      let itemId = object["id"]?.stringValue else {
+                    continue
+                }
+
+                let inputValue: JSONValue = .object([
+                    "callId": .string(toolCallId),
+                    "operation": operation
+                ])
+                let inputString = try jsonString(from: inputValue)
+                let metadata = openAIProviderMetadata(["itemId": .string(itemId)])
+
+                content.append(.toolCall(LanguageModelV3ToolCall(
+                    toolCallId: toolCallId,
+                    toolName: "apply_patch",
+                    input: inputString,
+                    providerExecuted: nil,
+                    providerMetadata: metadata
+                )))
+
             case "local_shell_call":
                 guard let toolCallId = object["call_id"]?.stringValue,
                       let action = object["action"],
@@ -827,7 +904,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                     toolCallId: toolCallId,
                     toolName: "local_shell",
                     input: inputString,
-                    providerExecuted: true,
+                    providerExecuted: nil,
                     providerMetadata: metadata
                 )))
 
@@ -892,16 +969,22 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
     }
 
     // MARK: - Streaming helpers
-
+    
     private struct ToolCallState {
         let toolName: String
         let toolCallId: String
         let providerExecuted: Bool
         let codeInterpreter: CodeInterpreterState?
+        var applyPatch: ApplyPatchState?
     }
 
     private struct CodeInterpreterState {
         let containerId: String
+    }
+
+    private struct ApplyPatchState {
+        var hasDiff: Bool
+        var endEmitted: Bool
     }
 
     private struct ReasoningState {
@@ -945,7 +1028,8 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 toolName: name,
                 toolCallId: callId,
                 providerExecuted: false,
-                codeInterpreter: nil
+                codeInterpreter: nil,
+                applyPatch: nil
             )
             continuation.yield(.toolInputStart(id: callId, toolName: name, providerMetadata: nil, providerExecuted: nil))
         case "web_search_call":
@@ -954,7 +1038,8 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 toolName: webSearchToolName,
                 toolCallId: callId,
                 providerExecuted: true,
-                codeInterpreter: nil
+                codeInterpreter: nil,
+                applyPatch: nil
             )
             continuation.yield(.toolInputStart(id: callId, toolName: webSearchToolName, providerMetadata: nil, providerExecuted: true))
         case "computer_call":
@@ -963,7 +1048,8 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 toolName: "computer_use",
                 toolCallId: callId,
                 providerExecuted: true,
-                codeInterpreter: nil
+                codeInterpreter: nil,
+                applyPatch: nil
             )
             continuation.yield(.toolInputStart(id: callId, toolName: "computer_use", providerMetadata: nil, providerExecuted: true))
         case "code_interpreter_call":
@@ -974,11 +1060,54 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 toolName: "code_interpreter",
                 toolCallId: callId,
                 providerExecuted: true,
-                codeInterpreter: state
+                codeInterpreter: state,
+                applyPatch: nil
             )
             continuation.yield(.toolInputStart(id: callId, toolName: "code_interpreter", providerMetadata: nil, providerExecuted: true))
             let initial = "{\"containerId\":\"\(containerId)\",\"code\":\""
             continuation.yield(.toolInputDelta(id: callId, delta: initial, providerMetadata: nil))
+        case "apply_patch_call":
+            guard let callId = item["call_id"]?.stringValue,
+                  let operationObject = item["operation"]?.objectValue,
+                  let operationType = operationObject["type"]?.stringValue,
+                  let path = operationObject["path"]?.stringValue else { return }
+
+            let isDelete = operationType == "delete_file"
+            ongoingToolCalls[outputIndex] = ToolCallState(
+                toolName: "apply_patch",
+                toolCallId: callId,
+                providerExecuted: false,
+                codeInterpreter: nil,
+                applyPatch: ApplyPatchState(hasDiff: isDelete, endEmitted: isDelete)
+            )
+            continuation.yield(.toolInputStart(id: callId, toolName: "apply_patch", providerMetadata: nil, providerExecuted: nil))
+            if isDelete {
+                let inputValue: JSONValue = .object([
+                    "callId": .string(callId),
+                    "operation": .object([
+                        "type": .string(operationType),
+                        "path": .string(path)
+                    ])
+                ])
+                let inputString = try jsonString(from: inputValue)
+                continuation.yield(.toolInputDelta(id: callId, delta: inputString, providerMetadata: nil))
+                continuation.yield(.toolInputEnd(id: callId, providerMetadata: nil))
+            } else {
+                let escapedCallId = escapeJSONString(callId)
+                let escapedOperationType = escapeJSONString(operationType)
+                let escapedPath = escapeJSONString(path)
+                let prefix = "{\"callId\":\"\(escapedCallId)\",\"operation\":{\"type\":\"\(escapedOperationType)\",\"path\":\"\(escapedPath)\",\"diff\":\""
+                continuation.yield(.toolInputDelta(id: callId, delta: prefix, providerMetadata: nil))
+            }
+        case "shell_call":
+            guard let callId = item["call_id"]?.stringValue else { return }
+            ongoingToolCalls[outputIndex] = ToolCallState(
+                toolName: "shell",
+                toolCallId: callId,
+                providerExecuted: false,
+                codeInterpreter: nil,
+                applyPatch: nil
+            )
         case "file_search_call":
             guard let callId = item["id"]?.stringValue else { return }
             continuation.yield(.toolCall(LanguageModelV3ToolCall(
@@ -1159,6 +1288,67 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 preliminary: nil,
                 providerMetadata: nil
             )))
+        case "apply_patch_call":
+            guard let callId = item["call_id"]?.stringValue,
+                  let status = item["status"]?.stringValue,
+                  let operation = item["operation"],
+                  let operationType = operation.objectValue?["type"]?.stringValue,
+                  let itemId = item["id"]?.stringValue else { return }
+
+            if var state = ongoingToolCalls[outputIndex],
+               var applyPatch = state.applyPatch,
+               applyPatch.endEmitted == false,
+               operationType != "delete_file" {
+                if applyPatch.hasDiff == false,
+                   let diff = operation.objectValue?["diff"]?.stringValue {
+                    continuation.yield(.toolInputDelta(id: state.toolCallId, delta: escapeJSONString(diff), providerMetadata: nil))
+                    applyPatch.hasDiff = true
+                }
+
+                continuation.yield(.toolInputDelta(id: state.toolCallId, delta: "\"}}", providerMetadata: nil))
+                continuation.yield(.toolInputEnd(id: state.toolCallId, providerMetadata: nil))
+                applyPatch.endEmitted = true
+                state.applyPatch = applyPatch
+                ongoingToolCalls[outputIndex] = state
+            }
+
+            if status == "completed" {
+                let inputValue: JSONValue = .object([
+                    "callId": .string(callId),
+                    "operation": operation
+                ])
+                let inputString = try jsonString(from: inputValue)
+                let metadata = openAIProviderMetadata(["itemId": .string(itemId)])
+                continuation.yield(.toolCall(LanguageModelV3ToolCall(
+                    toolCallId: callId,
+                    toolName: "apply_patch",
+                    input: inputString,
+                    providerExecuted: nil,
+                    providerMetadata: metadata
+                )))
+            }
+
+            ongoingToolCalls[outputIndex] = nil
+        case "shell_call":
+            guard let callId = item["call_id"]?.stringValue,
+                  let actionObject = item["action"]?.objectValue,
+                  let commands = actionObject["commands"]?.arrayValue?.compactMap({ $0.stringValue }),
+                  let itemId = item["id"]?.stringValue else { return }
+            ongoingToolCalls[outputIndex] = nil
+            let inputValue: JSONValue = .object([
+                "action": .object([
+                    "commands": .array(commands.map(JSONValue.string))
+                ])
+            ])
+            let inputString = try jsonString(from: inputValue)
+            let metadata = openAIProviderMetadata(["itemId": .string(itemId)])
+            continuation.yield(.toolCall(LanguageModelV3ToolCall(
+                toolCallId: callId,
+                toolName: "shell",
+                input: inputString,
+                providerExecuted: nil,
+                providerMetadata: metadata
+            )))
         case "local_shell_call":
             guard let callId = item["call_id"]?.stringValue,
                   let action = item["action"],
@@ -1171,7 +1361,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 toolCallId: callId,
                 toolName: "local_shell",
                 input: inputString,
-                providerExecuted: true,
+                providerExecuted: nil,
                 providerMetadata: metadata
             )))
         case "message":
@@ -1205,6 +1395,49 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             return
         }
         continuation.yield(.toolInputDelta(id: state.toolCallId, delta: delta, providerMetadata: nil))
+    }
+
+    private func handleApplyPatchCallOperationDiffDelta(
+        _ chunk: [String: JSONValue],
+        ongoingToolCalls: inout [Int: ToolCallState],
+        continuation: AsyncThrowingStream<LanguageModelV3StreamPart, Error>.Continuation
+    ) {
+        guard let outputIndex = chunk["output_index"]?.intValue,
+              let delta = chunk["delta"]?.stringValue,
+              var state = ongoingToolCalls[outputIndex],
+              var applyPatch = state.applyPatch else {
+            return
+        }
+
+        continuation.yield(.toolInputDelta(id: state.toolCallId, delta: escapeJSONString(delta), providerMetadata: nil))
+        applyPatch.hasDiff = true
+        state.applyPatch = applyPatch
+        ongoingToolCalls[outputIndex] = state
+    }
+
+    private func handleApplyPatchCallOperationDiffDone(
+        _ chunk: [String: JSONValue],
+        ongoingToolCalls: inout [Int: ToolCallState],
+        continuation: AsyncThrowingStream<LanguageModelV3StreamPart, Error>.Continuation
+    ) {
+        guard let outputIndex = chunk["output_index"]?.intValue,
+              let diff = chunk["diff"]?.stringValue,
+              var state = ongoingToolCalls[outputIndex],
+              var applyPatch = state.applyPatch,
+              applyPatch.endEmitted == false else {
+            return
+        }
+
+        if applyPatch.hasDiff == false {
+            continuation.yield(.toolInputDelta(id: state.toolCallId, delta: escapeJSONString(diff), providerMetadata: nil))
+            applyPatch.hasDiff = true
+        }
+
+        continuation.yield(.toolInputDelta(id: state.toolCallId, delta: "\"}}", providerMetadata: nil))
+        continuation.yield(.toolInputEnd(id: state.toolCallId, providerMetadata: nil))
+        applyPatch.endEmitted = true
+        state.applyPatch = applyPatch
+        ongoingToolCalls[outputIndex] = state
     }
 
     private func handleImageGenerationPartial(

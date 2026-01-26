@@ -13,12 +13,14 @@ struct OpenAIResponsesRequestBody: Encodable, Sendable {
     var metadata: JSONValue?
     var parallelToolCalls: Bool?
     var previousResponseId: String?
+    var conversation: String?
     var store: Bool?
     var user: String?
     var instructions: String?
     var serviceTier: String?
     var include: [String]?
     var promptCacheKey: String?
+    var promptCacheRetention: String?
     var safetyIdentifier: String?
     var topLogprobs: Int?
     var reasoning: JSONValue?
@@ -38,12 +40,14 @@ struct OpenAIResponsesRequestBody: Encodable, Sendable {
         case metadata
         case parallelToolCalls = "parallel_tool_calls"
         case previousResponseId = "previous_response_id"
+        case conversation
         case store
         case user
         case instructions
         case serviceTier = "service_tier"
         case include
         case promptCacheKey = "prompt_cache_key"
+        case promptCacheRetention = "prompt_cache_retention"
         case safetyIdentifier = "safety_identifier"
         case topLogprobs = "top_logprobs"
         case reasoning
@@ -65,12 +69,14 @@ struct OpenAIResponsesRequestBody: Encodable, Sendable {
         try container.encodeIfPresent(metadata, forKey: .metadata)
         try container.encodeIfPresent(parallelToolCalls, forKey: .parallelToolCalls)
         try container.encodeIfPresent(previousResponseId, forKey: .previousResponseId)
+        try container.encodeIfPresent(conversation, forKey: .conversation)
         try container.encodeIfPresent(store, forKey: .store)
         try container.encodeIfPresent(user, forKey: .user)
         try container.encodeIfPresent(instructions, forKey: .instructions)
         try container.encodeIfPresent(serviceTier, forKey: .serviceTier)
         try container.encodeIfPresent(include, forKey: .include)
         try container.encodeIfPresent(promptCacheKey, forKey: .promptCacheKey)
+        try container.encodeIfPresent(promptCacheRetention, forKey: .promptCacheRetention)
         try container.encodeIfPresent(safetyIdentifier, forKey: .safetyIdentifier)
         try container.encodeIfPresent(topLogprobs, forKey: .topLogprobs)
         try container.encodeIfPresent(reasoning, forKey: .reasoning)

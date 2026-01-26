@@ -12,6 +12,7 @@ struct OpenAIResponsesModelConfig: Sendable {
     let requiredAutoTruncation: Bool
     let supportsFlexProcessing: Bool
     let supportsPriorityProcessing: Bool
+    let supportsNonReasoningParameters: Bool
 }
 
 func getOpenAIResponsesModelConfig(for modelId: OpenAIResponsesModelId) -> OpenAIResponsesModelConfig {
@@ -24,37 +25,27 @@ func getOpenAIResponsesModelConfig(for modelId: OpenAIResponsesModelId) -> OpenA
         || id.hasPrefix("o3")
         || id.hasPrefix("o4-mini")
 
+    // https://platform.openai.com/docs/guides/latest-model#gpt-5-1-parameter-compatibility
+    // GPT-5.1 and GPT-5.2 support temperature/topP/logprobs when reasoningEffort is none.
+    let supportsNonReasoningParameters = id.hasPrefix("gpt-5.1") || id.hasPrefix("gpt-5.2")
+
+    // Use allowlist approach: only known reasoning models should use 'developer' role.
+    // This prevents issues with fine-tuned models, third-party models, and custom models.
+    let isReasoningModel = id.hasPrefix("o1")
+        || id.hasPrefix("o3")
+        || id.hasPrefix("o4-mini")
+        || id.hasPrefix("codex-mini")
+        || id.hasPrefix("computer-use-preview")
+        || (id.hasPrefix("gpt-5") && !id.hasPrefix("gpt-5-chat"))
+
     let defaults = OpenAIResponsesModelConfig(
-        isReasoningModel: false,
-        systemMessageMode: .system,
+        isReasoningModel: isReasoningModel,
+        systemMessageMode: isReasoningModel ? .developer : .system,
         requiredAutoTruncation: false,
         supportsFlexProcessing: supportsFlexProcessing,
-        supportsPriorityProcessing: supportsPriorityProcessing
+        supportsPriorityProcessing: supportsPriorityProcessing,
+        supportsNonReasoningParameters: supportsNonReasoningParameters
     )
-
-    if id.hasPrefix("gpt-5-chat") {
-        return defaults
-    }
-
-    if id.hasPrefix("o") || id.hasPrefix("gpt-5") || id.hasPrefix("codex-") || id.hasPrefix("computer-use") {
-        if id.hasPrefix("o1-mini") || id.hasPrefix("o1-preview") {
-            return OpenAIResponsesModelConfig(
-                isReasoningModel: true,
-                systemMessageMode: .remove,
-                requiredAutoTruncation: defaults.requiredAutoTruncation,
-                supportsFlexProcessing: supportsFlexProcessing,
-                supportsPriorityProcessing: supportsPriorityProcessing
-            )
-        }
-
-        return OpenAIResponsesModelConfig(
-            isReasoningModel: true,
-            systemMessageMode: .developer,
-            requiredAutoTruncation: defaults.requiredAutoTruncation,
-            supportsFlexProcessing: supportsFlexProcessing,
-            supportsPriorityProcessing: supportsPriorityProcessing
-        )
-    }
 
     return defaults
 }

@@ -20,8 +20,7 @@ struct OpenAIResponsesPrepareToolsTests {
     func codeInterpreterDefaultsToAutoContainer() async throws {
         let result = try await prepareOpenAIResponsesTools(
             tools: [providerTool(id: "openai.code_interpreter", name: "code_interpreter")],
-            toolChoice: nil,
-            strictJsonSchema: false
+            toolChoice: nil
         )
 
         #expect(result.warnings.isEmpty)
@@ -53,8 +52,7 @@ struct OpenAIResponsesPrepareToolsTests {
 
         let result = try await prepareOpenAIResponsesTools(
             tools: [tool],
-            toolChoice: nil,
-            strictJsonSchema: false
+            toolChoice: nil
         )
 
         guard let tools = result.tools, case .object(let toolObject) = tools.first else {
@@ -82,8 +80,7 @@ struct OpenAIResponsesPrepareToolsTests {
 
         let result = try await prepareOpenAIResponsesTools(
             tools: [tool],
-            toolChoice: nil,
-            strictJsonSchema: false
+            toolChoice: nil
         )
 
         guard let tools = result.tools,
@@ -101,15 +98,14 @@ struct OpenAIResponsesPrepareToolsTests {
     func codeInterpreterToolChoiceMapping() async throws {
         let result = try await prepareOpenAIResponsesTools(
             tools: [providerTool(id: "openai.code_interpreter", name: "code_interpreter")],
-            toolChoice: .tool(toolName: "code_interpreter"),
-            strictJsonSchema: false
+            toolChoice: .tool(toolName: "code_interpreter")
         )
 
         #expect(result.toolChoice == JSONValue.object(["type": .string("code_interpreter")]))
     }
 
-    @Test("function tool respects strict json schema flag")
-    func functionToolRespectsStrictJsonSchema() async throws {
+    @Test("function tool passes through strict")
+    func functionToolPassesThroughStrict() async throws {
         let functionTool = LanguageModelV3Tool.function(
             LanguageModelV3FunctionTool(
                 name: "testFunction",
@@ -119,7 +115,8 @@ struct OpenAIResponsesPrepareToolsTests {
                         "input": .object(["type": .string("string")])
                     ])
                 ]),
-                description: "A test function"
+                description: "A test function",
+                strict: true
             )
         )
         let codeInterpreter = providerTool(
@@ -130,8 +127,7 @@ struct OpenAIResponsesPrepareToolsTests {
 
         let result = try await prepareOpenAIResponsesTools(
             tools: [functionTool, codeInterpreter],
-            toolChoice: nil,
-            strictJsonSchema: true
+            toolChoice: nil
         )
 
         guard let tools = result.tools, tools.count == 2 else {
@@ -171,8 +167,7 @@ struct OpenAIResponsesPrepareToolsTests {
 
         let result = try await prepareOpenAIResponsesTools(
             tools: [tool],
-            toolChoice: nil,
-            strictJsonSchema: false
+            toolChoice: nil
         )
 
         guard let tools = result.tools,
@@ -192,8 +187,7 @@ struct OpenAIResponsesPrepareToolsTests {
         let tool = providerTool(id: "openai.image_generation", name: "image_generation")
         let result = try await prepareOpenAIResponsesTools(
             tools: [tool],
-            toolChoice: .tool(toolName: "image_generation"),
-            strictJsonSchema: false
+            toolChoice: .tool(toolName: "image_generation")
         )
 
         #expect(result.toolChoice == JSONValue.object(["type": .string("image_generation")]))
@@ -218,8 +212,7 @@ struct OpenAIResponsesPrepareToolsTests {
 
         let result = try await prepareOpenAIResponsesTools(
             tools: [tool],
-            toolChoice: nil,
-            strictJsonSchema: false
+            toolChoice: nil
         )
 
         guard let tools = result.tools,
@@ -249,8 +242,7 @@ struct OpenAIResponsesPrepareToolsTests {
 
         let result = try await prepareOpenAIResponsesTools(
             tools: [tool],
-            toolChoice: .tool(toolName: "web_search"),
-            strictJsonSchema: false
+            toolChoice: .tool(toolName: "web_search")
         )
 
         #expect(result.toolChoice == JSONValue.object(["type": .string("web_search")]))
@@ -261,6 +253,32 @@ struct OpenAIResponsesPrepareToolsTests {
             return
         }
         #expect(filters["allowed_domains"] == JSONValue.array([.string("example.com"), .string("test.com")]))
+    }
+
+    @Test("web search tool maps external web access")
+    func webSearchToolMapsExternalWebAccess() async throws {
+        let args: [String: JSONValue] = [
+            "externalWebAccess": .bool(false)
+        ]
+        let tool = providerTool(
+            id: "openai.web_search",
+            name: "web_search",
+            args: args
+        )
+
+        let result = try await prepareOpenAIResponsesTools(
+            tools: [tool],
+            toolChoice: nil
+        )
+
+        guard let tools = result.tools,
+              case .object(let toolObject) = tools.first else {
+            Issue.record("Expected web_search tool object")
+            return
+        }
+
+        #expect(toolObject["type"] == JSONValue.string("web_search"))
+        #expect(toolObject["external_web_access"] == JSONValue.bool(false))
     }
 
     @Test("file search tool maps ranking options")
@@ -286,8 +304,7 @@ struct OpenAIResponsesPrepareToolsTests {
 
         let result = try await prepareOpenAIResponsesTools(
             tools: [tool],
-            toolChoice: nil,
-            strictJsonSchema: false
+            toolChoice: nil
         )
 
         guard let tools = result.tools,
@@ -310,8 +327,7 @@ struct OpenAIResponsesPrepareToolsTests {
     func localShellToolMapped() async throws {
         let result = try await prepareOpenAIResponsesTools(
             tools: [providerTool(id: "openai.local_shell", name: "local_shell")],
-            toolChoice: nil,
-            strictJsonSchema: false
+            toolChoice: nil
         )
 
         guard let tools = result.tools,
@@ -323,16 +339,58 @@ struct OpenAIResponsesPrepareToolsTests {
         #expect(toolObject["type"] == JSONValue.string("local_shell"))
     }
 
+    @Test("shell tool mapped without args")
+    func shellToolMapped() async throws {
+        let result = try await prepareOpenAIResponsesTools(
+            tools: [providerTool(id: "openai.shell", name: "shell")],
+            toolChoice: nil
+        )
+
+        guard let tools = result.tools,
+              case .object(let toolObject) = tools.first else {
+            Issue.record("Expected shell tool object")
+            return
+        }
+        #expect(toolObject.keys.count == 1)
+        #expect(toolObject["type"] == JSONValue.string("shell"))
+    }
+
+    @Test("apply patch tool choice mapping")
+    func applyPatchToolChoiceMapping() async throws {
+        let tool = providerTool(id: "openai.apply_patch", name: "apply_patch")
+        let result = try await prepareOpenAIResponsesTools(
+            tools: [tool],
+            toolChoice: .tool(toolName: "apply_patch")
+        )
+
+        #expect(result.toolChoice == JSONValue.object(["type": .string("apply_patch")]))
+    }
+
+    @Test("apply patch tool mapped without args")
+    func applyPatchToolMapped() async throws {
+        let result = try await prepareOpenAIResponsesTools(
+            tools: [providerTool(id: "openai.apply_patch", name: "apply_patch")],
+            toolChoice: nil
+        )
+
+        guard let tools = result.tools,
+              case .object(let toolObject) = tools.first else {
+            Issue.record("Expected apply_patch tool object")
+            return
+        }
+        #expect(toolObject.keys.count == 1)
+        #expect(toolObject["type"] == JSONValue.string("apply_patch"))
+    }
+
     @Test("unsupported provider tool produces warning")
     func unsupportedProviderToolProducesWarning() async throws {
         let tool = providerTool(id: "openai.unsupported", name: "unsupported", args: [:])
         let result = try await prepareOpenAIResponsesTools(
             tools: [tool],
-            toolChoice: nil,
-            strictJsonSchema: false
+            toolChoice: nil
         )
 
-        #expect(result.tools == nil)
+        #expect(result.tools?.isEmpty == true)
         #expect(result.warnings.count == 1)
         if let warning = result.warnings.first {
             if case .unsupportedTool(let returnedTool, _) = warning {
@@ -354,8 +412,7 @@ struct OpenAIResponsesPrepareToolsTests {
 
         let result = try await prepareOpenAIResponsesTools(
             tools: [functionTool],
-            toolChoice: .tool(toolName: "custom_tool"),
-            strictJsonSchema: false
+            toolChoice: .tool(toolName: "custom_tool")
         )
 
         #expect(result.toolChoice == JSONValue.object([

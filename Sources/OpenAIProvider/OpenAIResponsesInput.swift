@@ -8,7 +8,10 @@ struct OpenAIResponsesInputBuilder {
         systemMessageMode: OpenAIResponsesSystemMessageMode = .system,
         fileIdPrefixes: [String]? = ["file-"],
         store: Bool = true,
-        hasLocalShellTool: Bool = false
+        hasConversation: Bool = false,
+        hasLocalShellTool: Bool = false,
+        hasShellTool: Bool = false,
+        hasApplyPatchTool: Bool = false
     ) async throws -> (input: OpenAIResponsesInput, warnings: [LanguageModelV3CallWarning]) {
         var items: [JSONValue] = []
         var warnings: [LanguageModelV3CallWarning] = []
@@ -42,7 +45,13 @@ struct OpenAIResponsesInputBuilder {
                 for part in parts {
                     switch part {
                     case .text(let textPart):
-                        if store, let itemId = extractOpenAIItemId(from: textPart.providerOptions) {
+                        let itemId = extractOpenAIItemId(from: textPart.providerOptions)
+
+                        if hasConversation, itemId != nil {
+                            continue
+                        }
+
+                        if store, let itemId {
                             items.append(.object([
                                 "type": .string("item_reference"),
                                 "id": .string(itemId)
@@ -60,7 +69,7 @@ struct OpenAIResponsesInputBuilder {
                             ])
                         ]
 
-                        if let itemId = extractOpenAIItemId(from: textPart.providerOptions) {
+                        if let itemId {
                             payload["id"] = .string(itemId)
                         }
 
@@ -68,6 +77,10 @@ struct OpenAIResponsesInputBuilder {
 
                     case .toolCall(let callPart):
                         let itemId = extractOpenAIItemId(from: callPart.providerOptions)
+
+                        if hasConversation, itemId != nil {
+                            continue
+                        }
 
                         if callPart.providerExecuted == true {
                             if store, let itemId {
@@ -123,6 +136,76 @@ struct OpenAIResponsesInputBuilder {
                             continue
                         }
 
+                        if hasShellTool, callPart.toolName == "shell" {
+                            let parsed = try await validateTypes(
+                                ValidateTypesOptions(value: callPart.input, schema: openaiShellInputSchema)
+                            )
+
+                            var action: [String: JSONValue] = [
+                                "commands": .array(parsed.action.commands.map(JSONValue.string))
+                            ]
+                            if let timeout = parsed.action.timeoutMs {
+                                action["timeout_ms"] = .number(timeout)
+                            }
+                            if let maxOutputLength = parsed.action.maxOutputLength {
+                                action["max_output_length"] = .number(maxOutputLength)
+                            }
+
+                            var payload: [String: JSONValue] = [
+                                "type": .string("shell_call"),
+                                "call_id": .string(callPart.toolCallId),
+                                "status": .string("completed"),
+                                "action": .object(action)
+                            ]
+
+                            if let itemId {
+                                payload["id"] = .string(itemId)
+                            }
+
+                            items.append(.object(payload))
+                            continue
+                        }
+
+                        if hasApplyPatchTool, callPart.toolName == "apply_patch" {
+                            let parsed = try await validateTypes(
+                                ValidateTypesOptions(value: callPart.input, schema: openaiApplyPatchInputSchema)
+                            )
+
+                            let operation: JSONValue = switch parsed.operation {
+                            case let .createFile(path, diff):
+                                .object([
+                                    "type": .string("create_file"),
+                                    "path": .string(path),
+                                    "diff": .string(diff)
+                                ])
+                            case let .deleteFile(path):
+                                .object([
+                                    "type": .string("delete_file"),
+                                    "path": .string(path)
+                                ])
+                            case let .updateFile(path, diff):
+                                .object([
+                                    "type": .string("update_file"),
+                                    "path": .string(path),
+                                    "diff": .string(diff)
+                                ])
+                            }
+
+                            var payload: [String: JSONValue] = [
+                                "type": .string("apply_patch_call"),
+                                "call_id": .string(parsed.callId),
+                                "status": .string("completed"),
+                                "operation": operation
+                            ]
+
+                            if let itemId {
+                                payload["id"] = .string(itemId)
+                            }
+
+                            items.append(.object(payload))
+                            continue
+                        }
+
                         let arguments = try encodeJSONValue(callPart.input)
                         var payload: [String: JSONValue] = [
                             "type": .string("function_call"),
@@ -136,10 +219,25 @@ struct OpenAIResponsesInputBuilder {
                         items.append(.object(payload))
 
                     case .toolResult(let resultPart):
+                        if case .executionDenied = resultPart.output {
+                            continue
+                        }
+
+                        if case .json(let value) = resultPart.output,
+                           case .object(let object) = value,
+                           object["type"] == .string("execution-denied") {
+                            continue
+                        }
+
+                        if hasConversation {
+                            continue
+                        }
+
                         if store {
+                            let itemId = extractOpenAIItemId(from: resultPart.providerOptions) ?? resultPart.toolCallId
                             items.append(.object([
                                 "type": .string("item_reference"),
-                                "id": .string(resultPart.toolCallId)
+                                "id": .string(itemId)
                             ]))
                         } else {
                             warnings.append(.other(message: "Results for OpenAI tool \(resultPart.toolName) are not sent to the API when store is false"))
@@ -155,6 +253,10 @@ struct OpenAIResponsesInputBuilder {
                         guard let reasoningId = providerOptions?.itemId else {
                             let partDescription = stringifyReasoningPart(reasoningPart)
                             warnings.append(.other(message: "Non-OpenAI reasoning parts are not supported. Skipping reasoning part: \(partDescription)."))
+                            continue
+                        }
+
+                        if hasConversation {
                             continue
                         }
 
@@ -221,6 +323,63 @@ struct OpenAIResponsesInputBuilder {
                             ]))
                             continue
                         }
+
+                        if hasShellTool, part.toolName == "shell" {
+                            let parsed = try await validateTypes(
+                                ValidateTypesOptions(value: jsonValueToFoundation(value), schema: openaiShellOutputSchema)
+                            )
+
+                            let output: JSONValue = .array(parsed.output.map { item in
+                                let outcome: JSONValue
+                                switch item.outcome.type {
+                                case "timeout":
+                                    outcome = .object(["type": .string("timeout")])
+                                case "exit":
+                                    if let exitCode = item.outcome.exitCode {
+                                        outcome = .object([
+                                            "type": .string("exit"),
+                                            "exit_code": .number(exitCode)
+                                        ])
+                                    } else {
+                                        outcome = .object(["type": .string("exit")])
+                                    }
+                                default:
+                                    outcome = .object(["type": .string(item.outcome.type)])
+                                }
+
+                                return .object([
+                                    "stdout": .string(item.stdout),
+                                    "stderr": .string(item.stderr),
+                                    "outcome": outcome
+                                ])
+                            })
+
+                            items.append(.object([
+                                "type": .string("shell_call_output"),
+                                "call_id": .string(part.toolCallId),
+                                "output": output
+                            ]))
+                            continue
+                        }
+
+                        if hasApplyPatchTool, part.toolName == "apply_patch" {
+                            let parsed = try await validateTypes(
+                                ValidateTypesOptions(value: jsonValueToFoundation(value), schema: openaiApplyPatchOutputSchema)
+                            )
+
+                            var payload: [String: JSONValue] = [
+                                "type": .string("apply_patch_call_output"),
+                                "call_id": .string(part.toolCallId),
+                                "status": .string(parsed.status)
+                            ]
+                            if let output = parsed.output {
+                                payload["output"] = .string(output)
+                            }
+
+                            items.append(.object(payload))
+                            continue
+                        }
+
                         let jsonString = try encodeJSONValue(value)
                         items.append(makeToolResultObject(toolCallId: part.toolCallId, output: .string(jsonString)))
 
