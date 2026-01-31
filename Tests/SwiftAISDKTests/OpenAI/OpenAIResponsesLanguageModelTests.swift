@@ -5541,11 +5541,11 @@ struct OpenAIResponsesLanguageModelTests {
     func testShouldHandleBothUrlCitationAndFileCitationAnnotations() async throws {
         let chunks = [
             #"data:{"type":"response.content_part.added","item_id":"msg_123","output_index":0,"content_index":0,"part":{"type":"output_text","text":"","annotations":[]}}"# + "\n\n",
-            #"data:{"type":"response.output_text.annotation.added","item_id":"msg_123","output_index":0,"content_index":0,"annotation_index":0,"annotation":{"type":"url_citation","url":"https://example.com","title":"Example URL"}}"# + "\n\n",
-            #"data:{"type":"response.output_text.annotation.added","item_id":"msg_123","output_index":0,"content_index":0,"annotation_index":1,"annotation":{"type":"file_citation","file_id":"file-abc123","quote":"This is a quote from the file"}}"# + "\n\n",
-            #"data:{"type":"response.content_part.done","item_id":"msg_123","output_index":0,"content_index":0,"part":{"type":"output_text","text":"Based on web search and file content.","annotations":[{"type":"url_citation","start_index":0,"end_index":10,"url":"https://example.com","title":"Example URL"},{"type":"file_citation","start_index":20,"end_index":30,"file_id":"file-abc123","quote":"This is a quote from the file"}]}}"# + "\n\n",
-            #"data:{"type":"response.output_item.done","output_index":0,"item":{"id":"msg_123","type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"Based on web search and file content.","annotations":[{"type":"url_citation","start_index":0,"end_index":10,"url":"https://example.com","title":"Example URL"},{"type":"file_citation","start_index":20,"end_index":30,"file_id":"file-abc123","quote":"This is a quote from the file"}]}]}}"# + "\n\n",
-            #"data:{"type":"response.completed","response":{"id":"resp_123","object":"response","created_at":1234567890,"status":"completed","error":null,"incomplete_details":null,"instructions":null,"max_output_tokens":null,"model":"gpt-4o","output":[{"id":"msg_123","type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"Based on web search and file content.","annotations":[{"type":"url_citation","start_index":0,"end_index":10,"url":"https://example.com","title":"Example URL"},{"type":"file_citation","start_index":20,"end_index":30,"file_id":"file-abc123","quote":"This is a quote from the file"}]}]}],"parallel_tool_calls":true,"previous_response_id":null,"reasoning":{"effort":null,"summary":null},"store":true,"temperature":0,"text":{"format":{"type":"text"}},"tool_choice":"auto","tools":[],"top_p":1,"truncation":"disabled","usage":{"input_tokens":100,"input_tokens_details":{"cached_tokens":0},"output_tokens":50,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":150},"user":null,"metadata":{}}}"# + "\n\n",
+            #"data:{"type":"response.output_text.annotation.added","item_id":"msg_123","output_index":0,"content_index":0,"annotation_index":0,"annotation":{"type":"url_citation","url":"https://example.com","title":"Example URL","start_index":123,"end_index":234}}"# + "\n\n",
+            #"data:{"type":"response.output_text.annotation.added","item_id":"msg_123","output_index":0,"content_index":0,"annotation_index":1,"annotation":{"type":"file_citation","index":123,"file_id":"file-abc123","filename":"resource1.json"}}"# + "\n\n",
+            #"data:{"type":"response.content_part.done","item_id":"msg_123","output_index":0,"content_index":0,"part":{"type":"output_text","text":"Based on web search and file content.","annotations":[{"type":"url_citation","start_index":0,"end_index":10,"url":"https://example.com","title":"Example URL"},{"type":"file_citation","index":123,"file_id":"file-abc123","filename":"resource1.json"}]}}"# + "\n\n",
+            #"data:{"type":"response.output_item.done","output_index":0,"item":{"id":"msg_123","type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"Based on web search and file content.","annotations":[{"type":"url_citation","start_index":0,"end_index":10,"url":"https://example.com","title":"Example URL"},{"type":"file_citation","index":123,"file_id":"file-abc123","filename":"resource1.json"}]}]}}"# + "\n\n",
+            #"data:{"type":"response.completed","response":{"id":"resp_123","object":"response","created_at":1234567890,"status":"completed","error":null,"incomplete_details":null,"instructions":null,"max_output_tokens":null,"model":"gpt-4o","output":[{"id":"msg_123","type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"Based on web search and file content.","annotations":[{"type":"url_citation","start_index":0,"end_index":10,"url":"https://example.com","title":"Example URL"},{"type":"file_citation","index":123,"file_id":"file-abc123","filename":"resource1.json"}]}]}],"parallel_tool_calls":true,"previous_response_id":null,"reasoning":{"effort":null,"summary":null},"store":true,"temperature":0,"text":{"format":{"type":"text"}},"tool_choice":"auto","tools":[],"top_p":1,"truncation":"disabled","usage":{"input_tokens":100,"input_tokens_details":{"cached_tokens":0},"output_tokens":50,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":150},"user":null,"metadata":{}}}"# + "\n\n",
             "data: [DONE]\n\n"
         ]
 
@@ -5573,31 +5573,103 @@ struct OpenAIResponsesLanguageModelTests {
 
         let result = try await model.doStream(options: LanguageModelV3CallOptions(prompt: samplePrompt))
 
-        var events: [String] = []
+        var order: [String] = []
+        var urlSource: (id: String, url: String, title: String?)?
+        var documentSource: (
+            id: String,
+            mediaType: String,
+            title: String,
+            filename: String?,
+            providerMetadata: SharedV3ProviderMetadata?
+        )?
+        var textEnd: (id: String, providerMetadata: SharedV3ProviderMetadata?)?
+
         for try await chunk in result.stream {
             switch chunk {
             case .streamStart:
-                events.append("stream-start")
-            case .source(.url(let id, _, _, _)):
-                events.append("source:url:\(id)")
-            case .source(.document(let id, _, _, _, _)):
-                events.append("source:document:\(id)")
-            case .textEnd(let id, _):
-                events.append("text-end:\(id)")
+                order.append("stream-start")
+            case .source(.url(let id, let url, let title, let providerMetadata)):
+                order.append("source:url")
+                urlSource = (id: id, url: url, title: title)
+                #expect(providerMetadata == nil)
+            case .source(.document(let id, let mediaType, let title, let filename, let providerMetadata)):
+                order.append("source:document")
+                documentSource = (
+                    id: id,
+                    mediaType: mediaType,
+                    title: title,
+                    filename: filename,
+                    providerMetadata: providerMetadata
+                )
+            case .textEnd(let id, let providerMetadata):
+                order.append("text-end")
+                textEnd = (id: id, providerMetadata: providerMetadata)
             case .finish:
-                events.append("finish")
+                order.append("finish")
             default:
                 break
             }
         }
 
-        #expect(events == [
+        #expect(order == [
             "stream-start",
-            "source:url:generated-0",
-            "source:document:generated-1",
-            "text-end:msg_123",
+            "source:url",
+            "source:document",
+            "text-end",
             "finish"
         ])
+
+        if let urlSource {
+            #expect(urlSource.id == "generated-0")
+            #expect(urlSource.url == "https://example.com")
+            #expect(urlSource.title == "Example URL")
+        } else {
+            Issue.record("Missing url source event")
+        }
+
+        if let documentSource {
+            #expect(documentSource.id == "generated-1")
+            #expect(documentSource.mediaType == "text/plain")
+            #expect(documentSource.title == "resource1.json")
+            #expect(documentSource.filename == "resource1.json")
+            #expect(documentSource.providerMetadata == [
+                "openai": [
+                    "type": .string("file_citation"),
+                    "fileId": .string("file-abc123"),
+                    "index": 123
+                ]
+            ])
+        } else {
+            Issue.record("Missing document source event")
+        }
+
+        let expectedAnnotations: [JSONValue] = [
+            .object([
+                "type": .string("url_citation"),
+                "url": .string("https://example.com"),
+                "title": .string("Example URL"),
+                "start_index": 123,
+                "end_index": 234
+            ]),
+            .object([
+                "type": .string("file_citation"),
+                "file_id": .string("file-abc123"),
+                "filename": .string("resource1.json"),
+                "index": 123
+            ])
+        ]
+
+        if let textEnd {
+            #expect(textEnd.id == "msg_123")
+            #expect(textEnd.providerMetadata == [
+                "openai": [
+                    "itemId": .string("msg_123"),
+                    "annotations": .array(expectedAnnotations)
+                ]
+            ])
+        } else {
+            Issue.record("Missing text-end event")
+        }
     }
 
     // Port of openai-responses-language-model.test.ts: "should handle file_citation annotations without optional fields in streaming"
@@ -5637,18 +5709,286 @@ struct OpenAIResponsesLanguageModelTests {
 
         let result = try await model.doStream(options: LanguageModelV3CallOptions(prompt: samplePrompt))
 
-        var sourceCount = 0
+        var sources: [(
+            id: String,
+            mediaType: String,
+            title: String,
+            filename: String?,
+            providerMetadata: SharedV3ProviderMetadata?
+        )] = []
+        var textEnd: (id: String, providerMetadata: SharedV3ProviderMetadata?)?
+
         for try await chunk in result.stream {
-            if case .source(.document(let id, let mediaType, let title, let filename, _)) = chunk {
-                sourceCount += 1
-                #expect(id == "generated-\(sourceCount - 1)")
-                #expect(mediaType == "text/plain")
-                #expect(title == "resource1.json")
-                #expect(filename == "resource1.json")
+            switch chunk {
+            case .source(.document(let id, let mediaType, let title, let filename, let providerMetadata)):
+                sources.append((
+                    id: id,
+                    mediaType: mediaType,
+                    title: title,
+                    filename: filename,
+                    providerMetadata: providerMetadata
+                ))
+            case .textEnd(let id, let providerMetadata):
+                textEnd = (id: id, providerMetadata: providerMetadata)
+            default:
+                break
             }
         }
 
-        #expect(sourceCount == 2)
+        #expect(sources.count == 2)
+
+        if sources.count == 2 {
+            #expect(sources[0].id == "generated-0")
+            #expect(sources[0].mediaType == "text/plain")
+            #expect(sources[0].title == "resource1.json")
+            #expect(sources[0].filename == "resource1.json")
+            #expect(sources[0].providerMetadata == [
+                "openai": [
+                    "type": .string("file_citation"),
+                    "fileId": .string("file-YRcoCqn3Fo2K4JgraG"),
+                    "index": 145
+                ]
+            ])
+
+            #expect(sources[1].id == "generated-1")
+            #expect(sources[1].mediaType == "text/plain")
+            #expect(sources[1].title == "resource1.json")
+            #expect(sources[1].filename == "resource1.json")
+            #expect(sources[1].providerMetadata == [
+                "openai": [
+                    "type": .string("file_citation"),
+                    "fileId": .string("file-YRcoCqn3Fo2K4JgraG"),
+                    "index": 192
+                ]
+            ])
+        }
+
+        let expectedAnnotations: [JSONValue] = [
+            .object([
+                "type": .string("file_citation"),
+                "file_id": .string("file-YRcoCqn3Fo2K4JgraG"),
+                "filename": .string("resource1.json"),
+                "index": 145
+            ]),
+            .object([
+                "type": .string("file_citation"),
+                "file_id": .string("file-YRcoCqn3Fo2K4JgraG"),
+                "filename": .string("resource1.json"),
+                "index": 192
+            ])
+        ]
+
+        if let textEnd {
+            #expect(textEnd.id == "msg_456")
+            #expect(textEnd.providerMetadata == [
+                "openai": [
+                    "itemId": .string("msg_456"),
+                    "annotations": .array(expectedAnnotations)
+                ]
+            ])
+        } else {
+            Issue.record("Missing text-end event")
+        }
+    }
+
+
+    // Port of openai-responses-language-model.test.ts: "should handle container_file_citation annotations in streaming"
+    @Test("should handle container_file_citation annotations in streaming")
+    func testShouldHandleContainerFileCitationAnnotationsInStreaming() async throws {
+        let chunks = [
+            #"data:{"type":"response.content_part.added","item_id":"msg_container","output_index":0,"content_index":0,"part":{"type":"output_text","text":"","annotations":[]}}"# + "\n\n",
+            #"data:{"type":"response.output_text.annotation.added","item_id":"msg_container","output_index":0,"content_index":0,"annotation_index":0,"annotation":{"type":"container_file_citation","container_id":"cntr_test","end_index":10,"file_id":"file-container","filename":"data.csv","start_index":0}}"# + "\n\n",
+            #"data:{"type":"response.output_item.done","output_index":0,"item":{"id":"msg_container","type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"Generated with container file.","annotations":[{"type":"container_file_citation","container_id":"cntr_test","file_id":"file-container","filename":"data.csv","start_index":0,"end_index":10}]}]}}"# + "\n\n",
+            #"data:{"type":"response.completed","response":{"id":"resp_container","object":"response","created_at":1234567890,"status":"completed","error":null,"incomplete_details":null,"instructions":null,"max_output_tokens":null,"model":"gpt-5","output":[{"id":"msg_container","type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"Generated with container file.","annotations":[{"type":"container_file_citation","container_id":"cntr_test","file_id":"file-container","filename":"data.csv","start_index":0,"end_index":10}]}]}],"parallel_tool_calls":true,"previous_response_id":null,"reasoning":{"effort":null,"summary":null},"store":true,"temperature":0,"text":{"format":{"type":"text"}},"tool_choice":"auto","tools":[],"top_p":1,"truncation":"disabled","usage":{"input_tokens":10,"input_tokens_details":{"cached_tokens":0},"output_tokens":5,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":15},"user":null,"metadata":{}}}"# + "\n\n",
+            "data: [DONE]\n\n"
+        ]
+
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.openai.com/v1/responses")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "text/event-stream"]
+        )!
+
+        let fetch: FetchFunction = { _ in
+            let stream = AsyncThrowingStream<Data, Error> { continuation in
+                for string in chunks {
+                    continuation.yield(Data(string.utf8))
+                }
+                continuation.finish()
+            }
+            return FetchResponse(body: .stream(stream), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-5",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let result = try await model.doStream(options: LanguageModelV3CallOptions(prompt: samplePrompt))
+
+        var documentSource: (
+            id: String,
+            mediaType: String,
+            title: String,
+            filename: String?,
+            providerMetadata: SharedV3ProviderMetadata?
+        )?
+        var textEnd: (id: String, providerMetadata: SharedV3ProviderMetadata?)?
+
+        for try await chunk in result.stream {
+            switch chunk {
+            case .source(.document(let id, let mediaType, let title, let filename, let providerMetadata)):
+                documentSource = (
+                    id: id,
+                    mediaType: mediaType,
+                    title: title,
+                    filename: filename,
+                    providerMetadata: providerMetadata
+                )
+            case .textEnd(let id, let providerMetadata):
+                textEnd = (id: id, providerMetadata: providerMetadata)
+            default:
+                break
+            }
+        }
+
+        if let documentSource {
+            #expect(documentSource.id == "generated-0")
+            #expect(documentSource.mediaType == "text/plain")
+            #expect(documentSource.title == "data.csv")
+            #expect(documentSource.filename == "data.csv")
+            #expect(documentSource.providerMetadata == [
+                "openai": [
+                    "type": .string("container_file_citation"),
+                    "fileId": .string("file-container"),
+                    "containerId": .string("cntr_test")
+                ]
+            ])
+        } else {
+            Issue.record("Missing document source event")
+        }
+
+        let expectedAnnotations: [JSONValue] = [
+            .object([
+                "type": .string("container_file_citation"),
+                "container_id": .string("cntr_test"),
+                "file_id": .string("file-container"),
+                "filename": .string("data.csv"),
+                "start_index": 0,
+                "end_index": 10
+            ])
+        ]
+
+        if let textEnd {
+            #expect(textEnd.id == "msg_container")
+            #expect(textEnd.providerMetadata == [
+                "openai": [
+                    "itemId": .string("msg_container"),
+                    "annotations": .array(expectedAnnotations)
+                ]
+            ])
+        } else {
+            Issue.record("Missing text-end event")
+        }
+    }
+
+    // Port of openai-responses-language-model.test.ts: "should handle file_path annotations in streaming"
+    @Test("should handle file_path annotations in streaming")
+    func testShouldHandleFilePathAnnotationsInStreaming() async throws {
+        let chunks = [
+            #"data:{"type":"response.content_part.added","item_id":"msg_file_path","output_index":0,"content_index":0,"part":{"type":"output_text","text":"","annotations":[]}}"# + "\n\n",
+            #"data:{"type":"response.output_text.annotation.added","item_id":"msg_file_path","output_index":0,"content_index":0,"annotation_index":0,"annotation":{"type":"file_path","file_id":"file-path-123","index":0}}"# + "\n\n",
+            #"data:{"type":"response.output_item.done","output_index":0,"item":{"id":"msg_file_path","type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"Output written to file.","annotations":[{"type":"file_path","file_id":"file-path-123","index":0}]}]}}"# + "\n\n",
+            #"data:{"type":"response.completed","response":{"id":"resp_file_path","object":"response","created_at":1234567890,"status":"completed","error":null,"incomplete_details":null,"instructions":null,"max_output_tokens":null,"model":"gpt-4o","output":[{"id":"msg_file_path","type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"Output written to file.","annotations":[{"type":"file_path","file_id":"file-path-123","index":0}]}]}],"parallel_tool_calls":true,"previous_response_id":null,"reasoning":{"effort":null,"summary":null},"store":true,"temperature":0,"text":{"format":{"type":"text"}},"tool_choice":"auto","tools":[],"top_p":1,"truncation":"disabled","usage":{"input_tokens":10,"input_tokens_details":{"cached_tokens":0},"output_tokens":5,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":15},"user":null,"metadata":{}}}"# + "\n\n",
+            "data: [DONE]\n\n"
+        ]
+
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.openai.com/v1/responses")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "text/event-stream"]
+        )!
+
+        let fetch: FetchFunction = { _ in
+            let stream = AsyncThrowingStream<Data, Error> { continuation in
+                for string in chunks {
+                    continuation.yield(Data(string.utf8))
+                }
+                continuation.finish()
+            }
+            return FetchResponse(body: .stream(stream), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let result = try await model.doStream(options: LanguageModelV3CallOptions(prompt: samplePrompt))
+
+        var documentSource: (
+            id: String,
+            mediaType: String,
+            title: String,
+            filename: String?,
+            providerMetadata: SharedV3ProviderMetadata?
+        )?
+        var textEnd: (id: String, providerMetadata: SharedV3ProviderMetadata?)?
+
+        for try await chunk in result.stream {
+            switch chunk {
+            case .source(.document(let id, let mediaType, let title, let filename, let providerMetadata)):
+                documentSource = (
+                    id: id,
+                    mediaType: mediaType,
+                    title: title,
+                    filename: filename,
+                    providerMetadata: providerMetadata
+                )
+            case .textEnd(let id, let providerMetadata):
+                textEnd = (id: id, providerMetadata: providerMetadata)
+            default:
+                break
+            }
+        }
+
+        if let documentSource {
+            #expect(documentSource.id == "generated-0")
+            #expect(documentSource.mediaType == "application/octet-stream")
+            #expect(documentSource.title == "file-path-123")
+            #expect(documentSource.filename == "file-path-123")
+            #expect(documentSource.providerMetadata == [
+                "openai": [
+                    "type": .string("file_path"),
+                    "fileId": .string("file-path-123"),
+                    "index": 0
+                ]
+            ])
+        } else {
+            Issue.record("Missing document source event")
+        }
+
+        let expectedAnnotations: [JSONValue] = [
+            .object([
+                "type": .string("file_path"),
+                "file_id": .string("file-path-123"),
+                "index": 0
+            ])
+        ]
+
+        if let textEnd {
+            #expect(textEnd.id == "msg_file_path")
+            #expect(textEnd.providerMetadata == [
+                "openai": [
+                    "itemId": .string("msg_file_path"),
+                    "annotations": .array(expectedAnnotations)
+                ]
+            ])
+        } else {
+            Issue.record("Missing text-end event")
+        }
     }
 
     // Port of openai-responses-language-model.test.ts: "should handle mixed url_citation and file_citation annotations"
@@ -5685,10 +6025,9 @@ struct OpenAIResponsesLanguageModelTests {
                                 ],
                                 [
                                     "type": "file_citation",
-                                    "start_index": 20,
-                                    "end_index": 30,
                                     "file_id": "file-abc123",
-                                    "quote": "This is a quote from the file"
+                                    "filename": "resource1.json",
+                                    "index": 123
                                 ]
                             ]
                         ]
@@ -5736,14 +6075,35 @@ struct OpenAIResponsesLanguageModelTests {
 
         #expect(result.content.count == 3)
 
-        // Check text content
         guard case .text(let text) = result.content[0] else {
             Issue.record("Expected text at index 0")
             return
         }
         #expect(text.text == "Based on web search and file content.")
 
-        // Check URL source
+        let expectedAnnotations: [JSONValue] = [
+            .object([
+                "type": .string("url_citation"),
+                "start_index": 0,
+                "end_index": 10,
+                "url": .string("https://example.com"),
+                "title": .string("Example URL")
+            ]),
+            .object([
+                "type": .string("file_citation"),
+                "file_id": .string("file-abc123"),
+                "filename": .string("resource1.json"),
+                "index": 123
+            ])
+        ]
+
+        #expect(text.providerMetadata == [
+            "openai": [
+                "itemId": .string("msg_123"),
+                "annotations": .array(expectedAnnotations)
+            ]
+        ])
+
         guard case .source(.url(_, let url, let title, _)) = result.content[1] else {
             Issue.record("Expected url source at index 1")
             return
@@ -5751,14 +6111,20 @@ struct OpenAIResponsesLanguageModelTests {
         #expect(url == "https://example.com")
         #expect(title == "Example URL")
 
-        // Check document source
-        guard case .source(.document(_, let mediaType, let docTitle, let filename, _)) = result.content[2] else {
+        guard case .source(.document(_, let mediaType, let docTitle, let filename, let providerMetadata)) = result.content[2] else {
             Issue.record("Expected document source at index 2")
             return
         }
         #expect(mediaType == "text/plain")
-        #expect(docTitle == "This is a quote from the file")
-        #expect(filename == "file-abc123")
+        #expect(docTitle == "resource1.json")
+        #expect(filename == "resource1.json")
+        #expect(providerMetadata == [
+            "openai": [
+                "type": .string("file_citation"),
+                "fileId": .string("file-abc123"),
+                "index": 123
+            ]
+        ])
     }
 
     // Port of openai-responses-language-model.test.ts: "should handle file_citation annotations only"
@@ -5788,10 +6154,9 @@ struct OpenAIResponsesLanguageModelTests {
                             "annotations": [
                                 [
                                     "type": "file_citation",
-                                    "start_index": 0,
-                                    "end_index": 20,
                                     "file_id": "file-xyz789",
-                                    "quote": "Important information from document"
+                                    "filename": "resource1.json",
+                                    "index": 123
                                 ]
                             ]
                         ]
@@ -5845,13 +6210,36 @@ struct OpenAIResponsesLanguageModelTests {
         }
         #expect(text.text == "Based on the file content.")
 
-        guard case .source(.document(_, let mediaType, let title, let filename, _)) = result.content[1] else {
+        let expectedAnnotations: [JSONValue] = [
+            .object([
+                "type": .string("file_citation"),
+                "file_id": .string("file-xyz789"),
+                "filename": .string("resource1.json"),
+                "index": 123
+            ])
+        ]
+
+        #expect(text.providerMetadata == [
+            "openai": [
+                "itemId": .string("msg_456"),
+                "annotations": .array(expectedAnnotations)
+            ]
+        ])
+
+        guard case .source(.document(_, let mediaType, let title, let filename, let providerMetadata)) = result.content[1] else {
             Issue.record("Expected document source at index 1")
             return
         }
         #expect(mediaType == "text/plain")
-        #expect(title == "Important information from document")
-        #expect(filename == "file-xyz789")
+        #expect(title == "resource1.json")
+        #expect(filename == "resource1.json")
+        #expect(providerMetadata == [
+            "openai": [
+                "type": .string("file_citation"),
+                "fileId": .string("file-xyz789"),
+                "index": 123
+            ]
+        ])
     }
 
     // Port of openai-responses-language-model.test.ts: "should handle file_citation annotations without optional fields"
@@ -5931,13 +6319,275 @@ struct OpenAIResponsesLanguageModelTests {
 
         #expect(result.content.count == 2)
 
-        guard case .source(.document(_, let mediaType, let title, let filename, _)) = result.content[1] else {
+        guard case .text(let text) = result.content[0] else {
+            Issue.record("Expected text at index 0")
+            return
+        }
+        #expect(text.text == "The data shows trends.")
+
+        let expectedAnnotations: [JSONValue] = [
+            .object([
+                "type": .string("file_citation"),
+                "file_id": .string("file-YRcoCqn3Fo2K4JgraG"),
+                "filename": .string("resource1.json"),
+                "index": 145
+            ])
+        ]
+
+        #expect(text.providerMetadata == [
+            "openai": [
+                "itemId": .string("msg_789"),
+                "annotations": .array(expectedAnnotations)
+            ]
+        ])
+
+        guard case .source(.document(_, let mediaType, let title, let filename, let providerMetadata)) = result.content[1] else {
             Issue.record("Expected document source at index 1")
             return
         }
         #expect(mediaType == "text/plain")
         #expect(title == "resource1.json")
         #expect(filename == "resource1.json")
+        #expect(providerMetadata == [
+            "openai": [
+                "type": .string("file_citation"),
+                "fileId": .string("file-YRcoCqn3Fo2K4JgraG"),
+                "index": 145
+            ]
+        ])
+    }
+
+    // Port of openai-responses-language-model.test.ts: "should handle container_file_citation annotations"
+    @Test("should handle container_file_citation annotations")
+    func testShouldHandleContainerFileCitationAnnotations() async throws {
+        let responseJSON: [String: Any] = [
+            "id": "resp_container",
+            "object": "response",
+            "created_at": 1234567890,
+            "status": "completed",
+            "error": NSNull(),
+            "incomplete_details": NSNull(),
+            "input": [],
+            "instructions": NSNull(),
+            "max_output_tokens": NSNull(),
+            "model": "gpt-5",
+            "output": [
+                [
+                    "id": "msg_container",
+                    "type": "message",
+                    "status": "completed",
+                    "role": "assistant",
+                    "content": [
+                        [
+                            "type": "output_text",
+                            "text": "Generated with container file.",
+                            "annotations": [
+                                [
+                                    "type": "container_file_citation",
+                                    "container_id": "cntr_test",
+                                    "file_id": "file-container",
+                                    "filename": "data.csv",
+                                    "start_index": 0,
+                                    "end_index": 10,
+                                    "index": 2
+                                ]
+                            ]
+                        ]
+                    ]
+                ]
+            ],
+            "parallel_tool_calls": true,
+            "previous_response_id": NSNull(),
+            "reasoning": ["effort": NSNull(), "summary": NSNull()],
+            "store": true,
+            "temperature": 0,
+            "text": ["format": ["type": "text"]],
+            "tool_choice": "auto",
+            "tools": [],
+            "top_p": 1,
+            "truncation": "disabled",
+            "usage": [
+                "input_tokens": 10,
+                "input_tokens_details": ["cached_tokens": 0],
+                "output_tokens": 5,
+                "output_tokens_details": ["reasoning_tokens": 0],
+                "total_tokens": 15
+            ],
+            "user": NSNull(),
+            "metadata": [:]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let fetch: FetchFunction = { request in
+            let httpResponse = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-5",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: samplePrompt))
+
+        #expect(result.content.count == 2)
+
+        guard case .text(let text) = result.content[0] else {
+            Issue.record("Expected text at index 0")
+            return
+        }
+        #expect(text.text == "Generated with container file.")
+
+        let expectedAnnotations: [JSONValue] = [
+            .object([
+                "type": .string("container_file_citation"),
+                "container_id": .string("cntr_test"),
+                "file_id": .string("file-container"),
+                "filename": .string("data.csv"),
+                "start_index": 0,
+                "end_index": 10
+            ])
+        ]
+
+        #expect(text.providerMetadata == [
+            "openai": [
+                "itemId": .string("msg_container"),
+                "annotations": .array(expectedAnnotations)
+            ]
+        ])
+
+        guard case .source(.document(_, let mediaType, let title, let filename, let providerMetadata)) = result.content[1] else {
+            Issue.record("Expected document source at index 1")
+            return
+        }
+        #expect(mediaType == "text/plain")
+        #expect(title == "data.csv")
+        #expect(filename == "data.csv")
+        #expect(providerMetadata == [
+            "openai": [
+                "type": .string("container_file_citation"),
+                "fileId": .string("file-container"),
+                "containerId": .string("cntr_test")
+            ]
+        ])
+    }
+
+    // Port of openai-responses-language-model.test.ts: "should handle file_path annotations"
+    @Test("should handle file_path annotations")
+    func testShouldHandleFilePathAnnotations() async throws {
+        let responseJSON: [String: Any] = [
+            "id": "resp_file_path",
+            "object": "response",
+            "created_at": 1234567890,
+            "status": "completed",
+            "error": NSNull(),
+            "incomplete_details": NSNull(),
+            "input": [],
+            "instructions": NSNull(),
+            "max_output_tokens": NSNull(),
+            "model": "gpt-4o",
+            "output": [
+                [
+                    "id": "msg_file_path",
+                    "type": "message",
+                    "status": "completed",
+                    "role": "assistant",
+                    "content": [
+                        [
+                            "type": "output_text",
+                            "text": "Output written to file.",
+                            "annotations": [
+                                [
+                                    "type": "file_path",
+                                    "file_id": "file-path-123",
+                                    "index": 0
+                                ]
+                            ]
+                        ]
+                    ]
+                ]
+            ],
+            "parallel_tool_calls": true,
+            "previous_response_id": NSNull(),
+            "reasoning": ["effort": NSNull(), "summary": NSNull()],
+            "store": true,
+            "temperature": 0,
+            "text": ["format": ["type": "text"]],
+            "tool_choice": "auto",
+            "tools": [],
+            "top_p": 1,
+            "truncation": "disabled",
+            "usage": [
+                "input_tokens": 10,
+                "input_tokens_details": ["cached_tokens": 0],
+                "output_tokens": 5,
+                "output_tokens_details": ["reasoning_tokens": 0],
+                "total_tokens": 15
+            ],
+            "user": NSNull(),
+            "metadata": [:]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let fetch: FetchFunction = { request in
+            let httpResponse = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: samplePrompt))
+
+        #expect(result.content.count == 2)
+
+        guard case .text(let text) = result.content[0] else {
+            Issue.record("Expected text at index 0")
+            return
+        }
+        #expect(text.text == "Output written to file.")
+
+        let expectedAnnotations: [JSONValue] = [
+            .object([
+                "type": .string("file_path"),
+                "file_id": .string("file-path-123"),
+                "index": 0
+            ])
+        ]
+
+        #expect(text.providerMetadata == [
+            "openai": [
+                "itemId": .string("msg_file_path"),
+                "annotations": .array(expectedAnnotations)
+            ]
+        ])
+
+        guard case .source(.document(_, let mediaType, let title, let filename, let providerMetadata)) = result.content[1] else {
+            Issue.record("Expected document source at index 1")
+            return
+        }
+        #expect(mediaType == "application/octet-stream")
+        #expect(title == "file-path-123")
+        #expect(filename == "file-path-123")
+        #expect(providerMetadata == [
+            "openai": [
+                "type": .string("file_path"),
+                "fileId": .string("file-path-123"),
+                "index": 0
+            ]
+        ])
     }
 
     // MARK: - Computer Use Tool Tests
