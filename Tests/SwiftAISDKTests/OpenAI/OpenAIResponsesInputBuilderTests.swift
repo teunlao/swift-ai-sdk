@@ -1056,7 +1056,8 @@ struct OpenAIResponsesInputBuilderTests {
             toolCallId: "call_1",
             toolName: "web_search",
             output: .json(value: .array([])),
-            providerOptions: ["openai": ["itemId": .string("tr_123")]]
+            providerMetadata: ["openai": ["itemId": .string("tr_123")]],
+            providerOptions: nil
         )
 
         let prompt: LanguageModelV3Prompt = [
@@ -2313,6 +2314,56 @@ struct OpenAIResponsesInputBuilderTests {
               case .string(let args) = obj["arguments"],
               args.contains("\"a\":1"),
               args.contains("\"b\":2") else {
+            Issue.record("Unexpected output structure")
+            return
+        }
+    }
+
+    @Test("should map custom provider tool names to OpenAI tool names (shell)")
+    func toolNameMappingForShellCall() async throws {
+        let toolNameMapping = OpenAIToolNameMapping(
+            customToolNameToProviderToolName: ["my_shell": "shell"],
+            providerToolNameToCustomToolName: ["shell": "my_shell"]
+        )
+
+        let prompt: LanguageModelV3Prompt = [
+            .assistant(
+                content: [
+                    .toolCall(LanguageModelV3ToolCallPart(
+                        toolCallId: "call-1",
+                        toolName: "my_shell",
+                        input: .object([
+                            "action": .object([
+                                "commands": .array([.string("echo hi")])
+                            ])
+                        ]),
+                        providerExecuted: nil,
+                        providerMetadata: ["openai": ["itemId": .string("sh_1")]]
+                    ))
+                ],
+                providerOptions: nil
+            )
+        ]
+
+        let result = try await OpenAIResponsesInputBuilder.makeInput(
+            prompt: prompt,
+            toolNameMapping: toolNameMapping,
+            systemMessageMode: .system,
+            store: false,
+            hasShellTool: true
+        )
+
+        #expect(result.warnings.isEmpty)
+        #expect(result.input.count == 1)
+
+        guard case .object(let obj) = result.input[0],
+              case .string("shell_call") = obj["type"],
+              case .string("call-1") = obj["call_id"],
+              case .string("completed") = obj["status"],
+              case .object(let action) = obj["action"],
+              case .array(let commands) = action["commands"],
+              commands == [.string("echo hi")],
+              case .string("sh_1") = obj["id"] else {
             Issue.record("Unexpected output structure")
             return
         }

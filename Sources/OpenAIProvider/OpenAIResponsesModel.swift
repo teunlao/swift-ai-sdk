@@ -12,6 +12,17 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
     private let modelIdentifier: OpenAIResponsesModelId
     private let config: OpenAIConfig
     private let providerOptionsName: String
+    private static let providerToolNames: [String: String] = [
+        "openai.code_interpreter": "code_interpreter",
+        "openai.file_search": "file_search",
+        "openai.image_generation": "image_generation",
+        "openai.local_shell": "local_shell",
+        "openai.shell": "shell",
+        "openai.web_search": "web_search",
+        "openai.web_search_preview": "web_search_preview",
+        "openai.mcp": "mcp",
+        "openai.apply_patch": "apply_patch"
+    ]
 
     public init(modelId: OpenAIResponsesModelId, config: OpenAIConfig) {
         self.modelIdentifier = modelId
@@ -79,6 +90,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             value.output,
             approvalRequestIdToToolCallIdFromPrompt: approvalRequestIdToToolCallIdFromPrompt,
             webSearchToolName: prepared.webSearchToolName,
+            toolNameMapping: prepared.toolNameMapping,
             logprobsRequested: logprobsRequested
         )
 
@@ -140,7 +152,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
         )
 
         let chunkStream = response.value
-        let webSearchToolName = prepared.webSearchToolName ?? "web_search"
+        let webSearchToolName = prepared.toolNameMapping.toCustomToolName(prepared.webSearchToolName ?? "web_search")
         let logprobsRequested: Bool = {
             guard let logprobs = prepared.openAIOptions?.logprobs else { return false }
             switch logprobs {
@@ -186,6 +198,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                                 try handleOutputItemAdded(
                                     chunkObject,
                                     webSearchToolName: webSearchToolName,
+                                    toolNameMapping: prepared.toolNameMapping,
                                     ongoingToolCalls: &ongoingToolCalls,
                                     activeReasoning: &activeReasoning,
                                     continuation: continuation
@@ -194,6 +207,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                                 try handleOutputItemDone(
                                     chunkObject,
                                     webSearchToolName: webSearchToolName,
+                                    toolNameMapping: prepared.toolNameMapping,
                                     approvalRequestIdToToolCallIdFromPrompt: approvalRequestIdToToolCallIdFromPrompt,
                                     approvalRequestIdToDummyToolCallIdFromStream: &approvalRequestIdToDummyToolCallIdFromStream,
                                     ongoingToolCalls: &ongoingToolCalls,
@@ -222,6 +236,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                             case "response.image_generation_call.partial_image":
                                 handleImageGenerationPartial(
                                     chunkObject,
+                                    toolNameMapping: prepared.toolNameMapping,
                                     continuation: continuation
                                 )
                             case "response.code_interpreter_call_code.delta":
@@ -329,6 +344,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
         let body: OpenAIResponsesRequestBody
         let warnings: [LanguageModelV3CallWarning]
         let webSearchToolName: String?
+        let toolNameMapping: OpenAIToolNameMapping
         let store: Bool
         let openAIOptions: OpenAIResponsesProviderOptions?
     }
@@ -373,10 +389,15 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
         let hasLocalShellTool = containsLocalShellTool(options.tools)
         let hasShellTool = containsProviderTool(options.tools, id: "openai.shell")
         let hasApplyPatchTool = containsProviderTool(options.tools, id: "openai.apply_patch")
+        let toolNameMapping = OpenAIToolNameMapping.create(
+            tools: options.tools,
+            providerToolNames: Self.providerToolNames
+        )
 
         let (input, inputWarnings) = try await OpenAIResponsesInputBuilder.makeInput(
             prompt: options.prompt,
             providerOptionsName: providerOptionsName,
+            toolNameMapping: toolNameMapping,
             systemMessageMode: systemMessageMode,
             fileIdPrefixes: config.fileIdPrefixes,
             store: storeForInput,
@@ -517,6 +538,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             body: body,
             warnings: warnings,
             webSearchToolName: webSearchToolName,
+            toolNameMapping: toolNameMapping,
             store: storeForInput,
             openAIOptions: openAIOptions
         )
@@ -622,6 +644,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
         _ output: [JSONValue],
         approvalRequestIdToToolCallIdFromPrompt: [String: String],
         webSearchToolName: String?,
+        toolNameMapping: OpenAIToolNameMapping,
         logprobsRequested: Bool
     ) throws -> MappedResponse {
         var content: [LanguageModelV3Content] = []
@@ -737,7 +760,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 let action = object["action"] ?? .null
                 let status = object["status"]?.stringValue ?? "unknown"
 
-                let toolName = webSearchToolName ?? "web_search"
+                let toolName = toolNameMapping.toCustomToolName(webSearchToolName ?? "web_search")
                 let inputObject: JSONValue = .object(["action": action])
                 let inputString = try jsonString(from: inputObject)
 
@@ -842,7 +865,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
 
                 content.append(.toolCall(LanguageModelV3ToolCall(
                     toolCallId: toolCallId,
-                    toolName: "computer_use",
+                    toolName: toolNameMapping.toCustomToolName("computer_use"),
                     input: "",
                     providerExecuted: true,
                     providerMetadata: nil
@@ -854,7 +877,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 ])
                 content.append(.toolResult(LanguageModelV3ToolResult(
                     toolCallId: toolCallId,
-                    toolName: "computer_use",
+                    toolName: toolNameMapping.toCustomToolName("computer_use"),
                     result: resultValue,
                     isError: nil,
                     providerExecuted: true,
@@ -867,7 +890,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
 
                 content.append(.toolCall(LanguageModelV3ToolCall(
                     toolCallId: toolCallId,
-                    toolName: "file_search",
+                    toolName: toolNameMapping.toCustomToolName("file_search"),
                     input: "{}",
                     providerExecuted: true,
                     providerMetadata: nil
@@ -898,7 +921,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
 
                 content.append(.toolResult(LanguageModelV3ToolResult(
                     toolCallId: toolCallId,
-                    toolName: "file_search",
+                    toolName: toolNameMapping.toCustomToolName("file_search"),
                     result: resultValue,
                     isError: nil,
                     providerExecuted: true,
@@ -922,7 +945,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
 
                 content.append(.toolCall(LanguageModelV3ToolCall(
                     toolCallId: toolCallId,
-                    toolName: "code_interpreter",
+                    toolName: toolNameMapping.toCustomToolName("code_interpreter"),
                     input: inputString,
                     providerExecuted: true,
                     providerMetadata: nil
@@ -931,7 +954,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 let resultValue: JSONValue = .object(["outputs": outputs])
                 content.append(.toolResult(LanguageModelV3ToolResult(
                     toolCallId: toolCallId,
-                    toolName: "code_interpreter",
+                    toolName: toolNameMapping.toCustomToolName("code_interpreter"),
                     result: resultValue,
                     isError: nil,
                     providerExecuted: true,
@@ -947,7 +970,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
 
                 content.append(.toolCall(LanguageModelV3ToolCall(
                     toolCallId: toolCallId,
-                    toolName: "image_generation",
+                    toolName: toolNameMapping.toCustomToolName("image_generation"),
                     input: "{}",
                     providerExecuted: true,
                     providerMetadata: nil
@@ -956,7 +979,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 let resultValue: JSONValue = .object(["result": .string(resultString)])
                 content.append(.toolResult(LanguageModelV3ToolResult(
                     toolCallId: toolCallId,
-                    toolName: "image_generation",
+                    toolName: toolNameMapping.toCustomToolName("image_generation"),
                     result: resultValue,
                     isError: nil,
                     providerExecuted: true,
@@ -982,7 +1005,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
 
                 content.append(.toolCall(LanguageModelV3ToolCall(
                     toolCallId: toolCallId,
-                    toolName: "shell",
+                    toolName: toolNameMapping.toCustomToolName("shell"),
                     input: inputString,
                     providerExecuted: nil,
                     providerMetadata: metadata
@@ -1004,7 +1027,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
 
                 content.append(.toolCall(LanguageModelV3ToolCall(
                     toolCallId: toolCallId,
-                    toolName: "apply_patch",
+                    toolName: toolNameMapping.toCustomToolName("apply_patch"),
                     input: inputString,
                     providerExecuted: nil,
                     providerMetadata: metadata
@@ -1023,7 +1046,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
 
                 content.append(.toolCall(LanguageModelV3ToolCall(
                     toolCallId: toolCallId,
-                    toolName: "local_shell",
+                    toolName: toolNameMapping.toCustomToolName("local_shell"),
                     input: inputString,
                     providerExecuted: nil,
                     providerMetadata: metadata
@@ -1131,6 +1154,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
     private func handleOutputItemAdded(
         _ chunk: [String: JSONValue],
         webSearchToolName: String,
+        toolNameMapping: OpenAIToolNameMapping,
         ongoingToolCalls: inout [Int: ToolCallState],
         activeReasoning: inout [String: ReasoningState],
         continuation: AsyncThrowingStream<LanguageModelV3StreamPart, Error>.Continuation
@@ -1179,8 +1203,9 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             ))
         case "computer_call":
             guard let callId = item["id"]?.stringValue else { return }
+            let toolName = toolNameMapping.toCustomToolName("computer_use")
             ongoingToolCalls[outputIndex] = ToolCallState(
-                toolName: "computer_use",
+                toolName: toolName,
                 toolCallId: callId,
                 providerExecuted: true,
                 codeInterpreter: nil,
@@ -1188,7 +1213,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             )
             continuation.yield(.toolInputStart(
                 id: callId,
-                toolName: "computer_use",
+                toolName: toolName,
                 providerMetadata: nil,
                 providerExecuted: true,
                 dynamic: nil,
@@ -1198,8 +1223,9 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             guard let callId = item["id"]?.stringValue,
                   let containerId = item["container_id"]?.stringValue else { return }
             let state = CodeInterpreterState(containerId: containerId)
+            let toolName = toolNameMapping.toCustomToolName("code_interpreter")
             ongoingToolCalls[outputIndex] = ToolCallState(
-                toolName: "code_interpreter",
+                toolName: toolName,
                 toolCallId: callId,
                 providerExecuted: true,
                 codeInterpreter: state,
@@ -1207,7 +1233,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             )
             continuation.yield(.toolInputStart(
                 id: callId,
-                toolName: "code_interpreter",
+                toolName: toolName,
                 providerMetadata: nil,
                 providerExecuted: true,
                 dynamic: nil,
@@ -1222,8 +1248,9 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                   let path = operationObject["path"]?.stringValue else { return }
 
             let isDelete = operationType == "delete_file"
+            let toolName = toolNameMapping.toCustomToolName("apply_patch")
             ongoingToolCalls[outputIndex] = ToolCallState(
-                toolName: "apply_patch",
+                toolName: toolName,
                 toolCallId: callId,
                 providerExecuted: false,
                 codeInterpreter: nil,
@@ -1231,7 +1258,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             )
             continuation.yield(.toolInputStart(
                 id: callId,
-                toolName: "apply_patch",
+                toolName: toolName,
                 providerMetadata: nil,
                 providerExecuted: nil,
                 dynamic: nil,
@@ -1257,8 +1284,9 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             }
         case "shell_call":
             guard let callId = item["call_id"]?.stringValue else { return }
+            let toolName = toolNameMapping.toCustomToolName("shell")
             ongoingToolCalls[outputIndex] = ToolCallState(
-                toolName: "shell",
+                toolName: toolName,
                 toolCallId: callId,
                 providerExecuted: false,
                 codeInterpreter: nil,
@@ -1268,7 +1296,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             guard let callId = item["id"]?.stringValue else { return }
             continuation.yield(.toolCall(LanguageModelV3ToolCall(
                 toolCallId: callId,
-                toolName: "file_search",
+                toolName: toolNameMapping.toCustomToolName("file_search"),
                 input: "{}",
                 providerExecuted: true,
                 providerMetadata: nil
@@ -1277,7 +1305,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             guard let callId = item["id"]?.stringValue else { return }
             continuation.yield(.toolCall(LanguageModelV3ToolCall(
                 toolCallId: callId,
-                toolName: "image_generation",
+                toolName: toolNameMapping.toCustomToolName("image_generation"),
                 input: "{}",
                 providerExecuted: true,
                 providerMetadata: nil
@@ -1303,6 +1331,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
     private func handleOutputItemDone(
         _ chunk: [String: JSONValue],
         webSearchToolName: String,
+        toolNameMapping: OpenAIToolNameMapping,
         approvalRequestIdToToolCallIdFromPrompt: [String: String],
         approvalRequestIdToDummyToolCallIdFromStream: inout [String: String],
         ongoingToolCalls: inout [Int: ToolCallState],
@@ -1441,9 +1470,10 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             guard let callId = item["id"]?.stringValue else { return }
             ongoingToolCalls[outputIndex] = nil
             continuation.yield(.toolInputEnd(id: callId, providerMetadata: nil))
+            let toolName = toolNameMapping.toCustomToolName("computer_use")
             continuation.yield(.toolCall(LanguageModelV3ToolCall(
                 toolCallId: callId,
-                toolName: "computer_use",
+                toolName: toolName,
                 input: "",
                 providerExecuted: true,
                 providerMetadata: nil
@@ -1455,7 +1485,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             ])
             continuation.yield(.toolResult(LanguageModelV3ToolResult(
                 toolCallId: callId,
-                toolName: "computer_use",
+                toolName: toolName,
                 result: resultValue,
                 isError: nil,
                 providerExecuted: true,
@@ -1489,7 +1519,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             ])
             continuation.yield(.toolResult(LanguageModelV3ToolResult(
                 toolCallId: callId,
-                toolName: "file_search",
+                toolName: toolNameMapping.toCustomToolName("file_search"),
                 result: resultValue,
                 isError: nil,
                 providerExecuted: true,
@@ -1504,7 +1534,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             ])
             continuation.yield(.toolResult(LanguageModelV3ToolResult(
                 toolCallId: callId,
-                toolName: "code_interpreter",
+                toolName: toolNameMapping.toCustomToolName("code_interpreter"),
                 result: resultValue,
                 isError: nil,
                 providerExecuted: true,
@@ -1517,7 +1547,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             let resultValue: JSONValue = .object(["result": .string(resultString)])
             continuation.yield(.toolResult(LanguageModelV3ToolResult(
                 toolCallId: callId,
-                toolName: "image_generation",
+                toolName: toolNameMapping.toCustomToolName("image_generation"),
                 result: resultValue,
                 isError: nil,
                 providerExecuted: true,
@@ -1557,7 +1587,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 let metadata = openAIProviderMetadata(["itemId": .string(itemId)])
                 continuation.yield(.toolCall(LanguageModelV3ToolCall(
                     toolCallId: callId,
-                    toolName: "apply_patch",
+                    toolName: toolNameMapping.toCustomToolName("apply_patch"),
                     input: inputString,
                     providerExecuted: nil,
                     providerMetadata: metadata
@@ -1580,7 +1610,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             let metadata = openAIProviderMetadata(["itemId": .string(itemId)])
             continuation.yield(.toolCall(LanguageModelV3ToolCall(
                 toolCallId: callId,
-                toolName: "shell",
+                toolName: toolNameMapping.toCustomToolName("shell"),
                 input: inputString,
                 providerExecuted: nil,
                 providerMetadata: metadata
@@ -1595,7 +1625,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             let metadata = openAIProviderMetadata(["itemId": .string(itemId)])
             continuation.yield(.toolCall(LanguageModelV3ToolCall(
                 toolCallId: callId,
-                toolName: "local_shell",
+                toolName: toolNameMapping.toCustomToolName("local_shell"),
                 input: inputString,
                 providerExecuted: nil,
                 providerMetadata: metadata
@@ -1678,6 +1708,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
 
     private func handleImageGenerationPartial(
         _ chunk: [String: JSONValue],
+        toolNameMapping: OpenAIToolNameMapping,
         continuation: AsyncThrowingStream<LanguageModelV3StreamPart, Error>.Continuation
     ) {
         guard let toolCallId = chunk["item_id"]?.stringValue,
@@ -1687,7 +1718,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
         let resultValue: JSONValue = .object(["result": .string(partial)])
         continuation.yield(.toolResult(LanguageModelV3ToolResult(
             toolCallId: toolCallId,
-            toolName: "image_generation",
+            toolName: toolNameMapping.toCustomToolName("image_generation"),
             result: resultValue,
             isError: nil,
             providerExecuted: true,
@@ -1735,7 +1766,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             let inputString = try jsonString(from: inputValue)
             continuation.yield(.toolCall(LanguageModelV3ToolCall(
                 toolCallId: state.toolCallId,
-                toolName: "code_interpreter",
+                toolName: state.toolName,
                 input: inputString,
                 providerExecuted: true,
                 providerMetadata: nil

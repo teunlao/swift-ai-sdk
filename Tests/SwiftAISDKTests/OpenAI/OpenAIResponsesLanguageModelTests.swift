@@ -2754,6 +2754,93 @@ struct OpenAIResponsesLanguageModelTests {
         #expect(tools.first?["type"] as? String == "apply_patch")
     }
 
+    @Test("doGenerate maps provider tool calls to custom tool names (apply_patch)")
+    func testDoGenerateMapsApplyPatchCustomToolName() async throws {
+        actor BodyCapture {
+            var request: URLRequest?
+            func store(_ request: URLRequest) { self.request = request }
+            func current() -> URLRequest? { request }
+        }
+
+        let capture = BodyCapture()
+
+        let responseJSON: [String: Any] = [
+            "id": "resp_apply_patch",
+            "created_at": 1_742_250_000.0,
+            "model": "gpt-4o",
+            "output": [
+                [
+                    "id": "apc_1",
+                    "type": "apply_patch_call",
+                    "status": "completed",
+                    "call_id": "call_apply",
+                    "operation": [
+                        "type": "delete_file",
+                        "path": "obsolete.txt"
+                    ]
+                ]
+            ],
+            "service_tier": "default",
+            "usage": [
+                "input_tokens": 2,
+                "output_tokens": 1,
+                "output_tokens_details": ["reasoning_tokens": 0],
+                "input_tokens_details": ["cached_tokens": 0]
+            ],
+            "warnings": [],
+            "incomplete_details": ["reason": NSNull()],
+            "finish_reason": NSNull(),
+            "error": NSNull()
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            let httpResponse = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let tool = LanguageModelV3Tool.providerDefined(.init(id: "openai.apply_patch", name: "my_apply_patch", args: [:]))
+
+        let result = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: samplePrompt,
+                tools: [tool]
+            )
+        )
+
+        let toolCalls = result.content.compactMap { content -> LanguageModelV3ToolCall? in
+            if case .toolCall(let call) = content { return call }
+            return nil
+        }
+
+        #expect(toolCalls.count == 1)
+        #expect(toolCalls.first?.toolCallId == "call_apply")
+        #expect(toolCalls.first?.toolName == "my_apply_patch")
+        #expect(toolCalls.first?.providerMetadata?["openai"]?["itemId"] == .string("apc_1"))
+
+        guard let request = await capture.current(),
+              let body = decodeRequestBody(request.httpBody),
+              let tools = body["tools"] as? [[String: Any]] else {
+            Issue.record("Expected tools in request body")
+            return
+        }
+
+        #expect(tools.count == 1)
+        #expect(tools.first?["type"] as? String == "apply_patch")
+    }
+
     @Test("doStream emits apply_patch tool input and tool call")
     func testDoStreamEmitsApplyPatchToolCall() async throws {
         func chunk(_ value: Any) -> String {

@@ -6,6 +6,7 @@ struct OpenAIResponsesInputBuilder {
     static func makeInput(
         prompt: LanguageModelV3Prompt,
         providerOptionsName: String = "openai",
+        toolNameMapping: OpenAIToolNameMapping = .init(),
         systemMessageMode: OpenAIResponsesSystemMessageMode = .system,
         fileIdPrefixes: [String]? = ["file-"],
         store: Bool = true,
@@ -109,9 +110,11 @@ struct OpenAIResponsesInputBuilder {
                             continue
                         }
 
-                        if hasLocalShellTool, callPart.toolName == "local_shell" {
+                        let resolvedToolName = toolNameMapping.toProviderToolName(callPart.toolName)
+
+                        if hasLocalShellTool, resolvedToolName == "local_shell" {
                             let parsed = try await validateTypes(
-                                ValidateTypesOptions(value: callPart.input, schema: openaiLocalShellInputSchema)
+                                ValidateTypesOptions(value: jsonValueToFoundation(callPart.input), schema: openaiLocalShellInputSchema)
                             )
 
                             var action: [String: JSONValue] = [
@@ -145,9 +148,9 @@ struct OpenAIResponsesInputBuilder {
                             continue
                         }
 
-                        if hasShellTool, callPart.toolName == "shell" {
+                        if hasShellTool, resolvedToolName == "shell" {
                             let parsed = try await validateTypes(
-                                ValidateTypesOptions(value: callPart.input, schema: openaiShellInputSchema)
+                                ValidateTypesOptions(value: jsonValueToFoundation(callPart.input), schema: openaiShellInputSchema)
                             )
 
                             var action: [String: JSONValue] = [
@@ -175,9 +178,9 @@ struct OpenAIResponsesInputBuilder {
                             continue
                         }
 
-                        if hasApplyPatchTool, callPart.toolName == "apply_patch" {
+                        if hasApplyPatchTool, resolvedToolName == "apply_patch" {
                             let parsed = try await validateTypes(
-                                ValidateTypesOptions(value: callPart.input, schema: openaiApplyPatchInputSchema)
+                                ValidateTypesOptions(value: jsonValueToFoundation(callPart.input), schema: openaiApplyPatchInputSchema)
                             )
 
                             let operation: JSONValue = switch parsed.operation {
@@ -219,7 +222,7 @@ struct OpenAIResponsesInputBuilder {
                         var payload: [String: JSONValue] = [
                             "type": .string("function_call"),
                             "call_id": .string(callPart.toolCallId),
-                            "name": .string(callPart.toolName),
+                            "name": .string(resolvedToolName),
                             "arguments": .string(arguments)
                         ]
                         if let itemId {
@@ -242,14 +245,15 @@ struct OpenAIResponsesInputBuilder {
                             continue
                         }
 
-                        if store {
-                            let itemId = extractOpenAIItemId(from: resultPart.providerOptions, providerOptionsName: providerOptionsName)
-                                ?? resultPart.toolCallId
-                            items.append(.object([
-                                "type": .string("item_reference"),
-                                "id": .string(itemId)
-                            ]))
-                        } else {
+	                        if store {
+	                            let itemId =
+	                                extractOpenAIItemId(from: resultPart.providerMetadata, providerOptionsName: providerOptionsName)
+	                                ?? resultPart.toolCallId
+	                            items.append(.object([
+	                                "type": .string("item_reference"),
+	                                "id": .string(itemId)
+	                            ]))
+	                        } else {
                             warnings.append(.other(message: "Results for OpenAI tool \(resultPart.toolName) are not sent to the API when store is false"))
                         }
 
@@ -346,9 +350,11 @@ struct OpenAIResponsesInputBuilder {
                             continue
                         }
 
+                        let resolvedToolName = toolNameMapping.toProviderToolName(toolResult.toolName)
+
                         switch toolResult.output {
                         case .json(let value, _):
-                            if hasLocalShellTool, toolResult.toolName == "local_shell" {
+                            if hasLocalShellTool, resolvedToolName == "local_shell" {
                                 let parsed = try await validateTypes(
                                     ValidateTypesOptions(value: jsonValueToFoundation(value), schema: openaiLocalShellOutputSchema)
                                 )
@@ -361,7 +367,7 @@ struct OpenAIResponsesInputBuilder {
                                 continue
                             }
 
-                            if hasShellTool, toolResult.toolName == "shell" {
+                            if hasShellTool, resolvedToolName == "shell" {
                                 let parsed = try await validateTypes(
                                     ValidateTypesOptions(value: jsonValueToFoundation(value), schema: openaiShellOutputSchema)
                                 )
@@ -399,7 +405,7 @@ struct OpenAIResponsesInputBuilder {
                                 continue
                             }
 
-                            if hasApplyPatchTool, toolResult.toolName == "apply_patch" {
+                            if hasApplyPatchTool, resolvedToolName == "apply_patch" {
                                 let parsed = try await validateTypes(
                                     ValidateTypesOptions(value: jsonValueToFoundation(value), schema: openaiApplyPatchOutputSchema)
                                 )
