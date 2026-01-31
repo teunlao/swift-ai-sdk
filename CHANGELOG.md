@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-01-31
+
+### Added
+- LanguageModelV3: add optional `providerMetadata` support for `tool-call` and `tool-result` prompt parts.
+
+### Fixed
+- OpenAI (Responses): map provider-defined tool names to OpenAI tool names in requests, and back to custom tool names in responses/streaming (matches upstream behavior).
+- OpenAI (Responses): use `providerMetadata.itemId` for provider tool-result item references when `store=true` (matches upstream behavior).
+- OpenAI (Responses): validate provider tool call inputs using a JSONValue→Foundation conversion (fixes schema validation for `shell`, `local_shell`, `apply_patch`).
+
 ## [0.7.1] - 2026-01-31
 
 ### Fixed
