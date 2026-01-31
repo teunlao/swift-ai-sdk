@@ -385,22 +385,25 @@ public struct LanguageModelV3ToolResultPart: Sendable, Equatable, Codable {
     public let toolCallId: String
     public let toolName: String
     public let output: LanguageModelV3ToolResultOutput
+    public let providerMetadata: SharedV3ProviderMetadata?
     public let providerOptions: SharedV3ProviderOptions?
 
     public init(
         toolCallId: String,
         toolName: String,
         output: LanguageModelV3ToolResultOutput,
+        providerMetadata: SharedV3ProviderMetadata? = nil,
         providerOptions: SharedV3ProviderOptions? = nil
     ) {
         self.toolCallId = toolCallId
         self.toolName = toolName
         self.output = output
+        self.providerMetadata = providerMetadata
         self.providerOptions = providerOptions
     }
 
     private enum CodingKeys: String, CodingKey {
-        case type, toolCallId, toolName, output, providerOptions
+        case type, toolCallId, toolName, output, providerMetadata, providerOptions
     }
 
     public init(from decoder: Decoder) throws {
@@ -408,6 +411,7 @@ public struct LanguageModelV3ToolResultPart: Sendable, Equatable, Codable {
         toolCallId = try container.decode(String.self, forKey: .toolCallId)
         toolName = try container.decode(String.self, forKey: .toolName)
         output = try container.decode(LanguageModelV3ToolResultOutput.self, forKey: .output)
+        providerMetadata = try container.decodeIfPresent(SharedV3ProviderMetadata.self, forKey: .providerMetadata)
         providerOptions = try container.decodeIfPresent(SharedV3ProviderOptions.self, forKey: .providerOptions)
     }
 
@@ -417,6 +421,7 @@ public struct LanguageModelV3ToolResultPart: Sendable, Equatable, Codable {
         try container.encode(toolCallId, forKey: .toolCallId)
         try container.encode(toolName, forKey: .toolName)
         try container.encode(output, forKey: .output)
+        try container.encodeIfPresent(providerMetadata, forKey: .providerMetadata)
         try container.encodeIfPresent(providerOptions, forKey: .providerOptions)
     }
 }
