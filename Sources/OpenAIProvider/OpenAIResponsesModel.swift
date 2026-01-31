@@ -176,6 +176,8 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 var serviceTier: String?
                 var hasFunctionCall = false
 
+                var ongoingAnnotations: [JSONValue] = []
+
                 var ongoingToolCalls: [Int: ToolCallState] = [:]
                 var activeReasoning: [String: ReasoningState] = [:]
                 var approvalRequestIdToDummyToolCallIdFromStream: [String: String] = [:]
@@ -199,6 +201,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                                     chunkObject,
                                     webSearchToolName: webSearchToolName,
                                     toolNameMapping: prepared.toolNameMapping,
+                                    ongoingAnnotations: &ongoingAnnotations,
                                     ongoingToolCalls: &ongoingToolCalls,
                                     activeReasoning: &activeReasoning,
                                     continuation: continuation
@@ -208,6 +211,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                                     chunkObject,
                                     webSearchToolName: webSearchToolName,
                                     toolNameMapping: prepared.toolNameMapping,
+                                    ongoingAnnotations: &ongoingAnnotations,
                                     approvalRequestIdToToolCallIdFromPrompt: approvalRequestIdToToolCallIdFromPrompt,
                                     approvalRequestIdToDummyToolCallIdFromStream: &approvalRequestIdToDummyToolCallIdFromStream,
                                     ongoingToolCalls: &ongoingToolCalls,
@@ -272,6 +276,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                             case "response.output_text.annotation.added":
                                 handleAnnotationAdded(
                                     chunkObject,
+                                    ongoingAnnotations: &ongoingAnnotations,
                                     continuation: continuation
                                 )
                             case "response.created":
@@ -683,8 +688,6 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                     continue
                 }
 
-                let metadata = openAIProviderMetadata(["itemId": .string(itemId)])
-
                 for part in parts {
                     guard let partObject = part.objectValue,
                           partObject["type"]?.stringValue == "output_text",
@@ -696,41 +699,91 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                         logprobs.append(logprobValue)
                     }
 
-                    content.append(.text(LanguageModelV3Text(text: text, providerMetadata: metadata)))
+                    let rawAnnotations = partObject["annotations"]?.arrayValue ?? []
+                    let annotations = rawAnnotations.compactMap { filterOpenAIResponsesAnnotation($0) }
+                    var textMetadataItems: [String: JSONValue] = ["itemId": .string(itemId)]
+                    if !annotations.isEmpty {
+                        textMetadataItems["annotations"] = .array(annotations)
+                    }
+                    let textMetadata = openAIProviderMetadata(textMetadataItems)
 
-                    if let annotations = partObject["annotations"]?.arrayValue {
-                        for annotation in annotations {
-                            guard let annotationObject = annotation.objectValue,
-                                  let annotationType = annotationObject["type"]?.stringValue else {
-                                continue
+                    content.append(.text(LanguageModelV3Text(text: text, providerMetadata: textMetadata)))
+
+                    for annotation in annotations {
+                        guard let annotationObject = annotation.objectValue,
+                              let annotationType = annotationObject["type"]?.stringValue else {
+                            continue
+                        }
+
+                        switch annotationType {
+                        case "url_citation":
+                            guard let url = annotationObject["url"]?.stringValue else { continue }
+                            let title = annotationObject["title"]?.stringValue
+                            content.append(.source(.url(
+                                id: nextSourceId(),
+                                url: url,
+                                title: title,
+                                providerMetadata: nil
+                            )))
+
+                        case "file_citation":
+                            guard let fileId = annotationObject["file_id"]?.stringValue,
+                                  let filename = annotationObject["filename"]?.stringValue else { continue }
+
+                            var metadataItems: [String: JSONValue] = [
+                                "type": .string("file_citation"),
+                                "fileId": .string(fileId)
+                            ]
+                            if let index = annotationObject["index"], index != .null {
+                                metadataItems["index"] = index
                             }
 
-                            switch annotationType {
-                            case "url_citation":
-                                guard let url = annotationObject["url"]?.stringValue else { continue }
-                                let title = annotationObject["title"]?.stringValue
-                                content.append(.source(.url(
-                                    id: nextSourceId(),
-                                    url: url,
-                                    title: title,
-                                    providerMetadata: nil
-                                )))
-                            case "file_citation":
-                                let title = annotationObject["quote"]?.stringValue
-                                    ?? annotationObject["filename"]?.stringValue
-                                    ?? "Document"
-                                let filename = annotationObject["filename"]?.stringValue
-                                    ?? annotationObject["file_id"]?.stringValue
-                                content.append(.source(.document(
-                                    id: nextSourceId(),
-                                    mediaType: "text/plain",
-                                    title: title,
-                                    filename: filename,
-                                    providerMetadata: nil
-                                )))
-                            default:
-                                break
+                            content.append(.source(.document(
+                                id: nextSourceId(),
+                                mediaType: "text/plain",
+                                title: filename,
+                                filename: filename,
+                                providerMetadata: openAIProviderMetadata(metadataItems)
+                            )))
+
+                        case "container_file_citation":
+                            guard let fileId = annotationObject["file_id"]?.stringValue,
+                                  let containerId = annotationObject["container_id"]?.stringValue,
+                                  let filename = annotationObject["filename"]?.stringValue else { continue }
+
+                            content.append(.source(.document(
+                                id: nextSourceId(),
+                                mediaType: "text/plain",
+                                title: filename,
+                                filename: filename,
+                                providerMetadata: openAIProviderMetadata([
+                                    "type": .string("container_file_citation"),
+                                    "fileId": .string(fileId),
+                                    "containerId": .string(containerId)
+                                ])
+                            )))
+
+                        case "file_path":
+                            guard let fileId = annotationObject["file_id"]?.stringValue else { continue }
+
+                            var metadataItems: [String: JSONValue] = [
+                                "type": .string("file_path"),
+                                "fileId": .string(fileId)
+                            ]
+                            if let index = annotationObject["index"], index != .null {
+                                metadataItems["index"] = index
                             }
+
+                            content.append(.source(.document(
+                                id: nextSourceId(),
+                                mediaType: "application/octet-stream",
+                                title: fileId,
+                                filename: fileId,
+                                providerMetadata: openAIProviderMetadata(metadataItems)
+                            )))
+
+                        default:
+                            break
                         }
                     }
                 }
@@ -1151,10 +1204,83 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
         return [providerOptionsName: filtered]
     }
 
+    private func filterOpenAIResponsesAnnotation(_ annotation: JSONValue) -> JSONValue? {
+        guard let object = annotation.objectValue,
+              let type = object["type"]?.stringValue else {
+            return nil
+        }
+
+        switch type {
+        case "url_citation":
+            guard let url = object["url"]?.stringValue,
+                  let title = object["title"]?.stringValue,
+                  let startIndex = object["start_index"], startIndex != .null,
+                  let endIndex = object["end_index"], endIndex != .null else {
+                return nil
+            }
+
+            return .object([
+                "type": .string("url_citation"),
+                "start_index": startIndex,
+                "end_index": endIndex,
+                "url": .string(url),
+                "title": .string(title)
+            ])
+
+        case "file_citation":
+            guard let fileId = object["file_id"]?.stringValue,
+                  let filename = object["filename"]?.stringValue,
+                  let index = object["index"], index != .null else {
+                return nil
+            }
+
+            return .object([
+                "type": .string("file_citation"),
+                "file_id": .string(fileId),
+                "filename": .string(filename),
+                "index": index
+            ])
+
+        case "container_file_citation":
+            guard let containerId = object["container_id"]?.stringValue,
+                  let fileId = object["file_id"]?.stringValue,
+                  let filename = object["filename"]?.stringValue,
+                  let startIndex = object["start_index"], startIndex != .null,
+                  let endIndex = object["end_index"], endIndex != .null else {
+                return nil
+            }
+
+            return .object([
+                "type": .string("container_file_citation"),
+                "container_id": .string(containerId),
+                "file_id": .string(fileId),
+                "filename": .string(filename),
+                "start_index": startIndex,
+                "end_index": endIndex
+            ])
+
+        case "file_path":
+            guard let fileId = object["file_id"]?.stringValue,
+                  let index = object["index"], index != .null else {
+                return nil
+            }
+
+            return .object([
+                "type": .string("file_path"),
+                "file_id": .string(fileId),
+                "index": index
+            ])
+
+        default:
+            return nil
+        }
+    }
+
     private func handleOutputItemAdded(
         _ chunk: [String: JSONValue],
         webSearchToolName: String,
         toolNameMapping: OpenAIToolNameMapping,
+        ongoingAnnotations: inout [JSONValue],
         ongoingToolCalls: inout [Int: ToolCallState],
         activeReasoning: inout [String: ReasoningState],
         continuation: AsyncThrowingStream<LanguageModelV3StreamPart, Error>.Continuation
@@ -1312,6 +1438,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             )))
         case "message":
             guard let id = item["id"]?.stringValue else { return }
+            ongoingAnnotations.removeAll(keepingCapacity: true)
             let metadata = openAIProviderMetadata(["itemId": .string(id)])
             continuation.yield(.textStart(id: id, providerMetadata: metadata))
         case "reasoning":
@@ -1332,6 +1459,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
         _ chunk: [String: JSONValue],
         webSearchToolName: String,
         toolNameMapping: OpenAIToolNameMapping,
+        ongoingAnnotations: inout [JSONValue],
         approvalRequestIdToToolCallIdFromPrompt: [String: String],
         approvalRequestIdToDummyToolCallIdFromStream: inout [String: String],
         ongoingToolCalls: inout [Int: ToolCallState],
@@ -1632,7 +1760,12 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             )))
         case "message":
             if let id = item["id"]?.stringValue {
-                continuation.yield(.textEnd(id: id, providerMetadata: nil))
+                var metadataItems: [String: JSONValue] = ["itemId": .string(id)]
+                if !ongoingAnnotations.isEmpty {
+                    metadataItems["annotations"] = .array(ongoingAnnotations)
+                }
+                let metadata = openAIProviderMetadata(metadataItems)
+                continuation.yield(.textEnd(id: id, providerMetadata: metadata))
             }
         case "reasoning":
             guard let id = item["id"]?.stringValue,
@@ -1832,12 +1965,16 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
 
     private func handleAnnotationAdded(
         _ chunk: [String: JSONValue],
+        ongoingAnnotations: inout [JSONValue],
         continuation: AsyncThrowingStream<LanguageModelV3StreamPart, Error>.Continuation
     ) {
-        guard let annotation = chunk["annotation"]?.objectValue,
+        guard let annotationValue = chunk["annotation"],
+              let filteredAnnotationValue = filterOpenAIResponsesAnnotation(annotationValue),
+              let annotation = filteredAnnotationValue.objectValue,
               let type = annotation["type"]?.stringValue else {
             return
         }
+        ongoingAnnotations.append(filteredAnnotationValue)
 
         switch type {
         case "url_citation":
@@ -1849,19 +1986,65 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 title: title,
                 providerMetadata: nil
             )))
+
         case "file_citation":
-            let title = annotation["quote"]?.stringValue
-                ?? annotation["filename"]?.stringValue
-                ?? "Document"
-            let filename = annotation["filename"]?.stringValue
-                ?? annotation["file_id"]?.stringValue
+            guard let fileId = annotation["file_id"]?.stringValue,
+                  let filename = annotation["filename"]?.stringValue else { return }
+            let title = filename
+
+            var metadataItems: [String: JSONValue] = [
+                "type": .string("file_citation"),
+                "fileId": .string(fileId)
+            ]
+            if let index = annotation["index"], index != .null {
+                metadataItems["index"] = index
+            }
+
             continuation.yield(.source(.document(
                 id: nextSourceId(),
                 mediaType: "text/plain",
                 title: title,
                 filename: filename,
-                providerMetadata: nil
+                providerMetadata: openAIProviderMetadata(metadataItems)
             )))
+
+        case "container_file_citation":
+            guard let fileId = annotation["file_id"]?.stringValue,
+                  let containerId = annotation["container_id"]?.stringValue,
+                  let filename = annotation["filename"]?.stringValue else { return }
+            let title = filename
+
+            continuation.yield(.source(.document(
+                id: nextSourceId(),
+                mediaType: "text/plain",
+                title: title,
+                filename: filename,
+                providerMetadata: openAIProviderMetadata([
+                    "type": .string("container_file_citation"),
+                    "fileId": .string(fileId),
+                    "containerId": .string(containerId)
+                ])
+            )))
+
+        case "file_path":
+            guard let fileId = annotation["file_id"]?.stringValue else { return }
+
+            var metadataItems: [String: JSONValue] = [
+                "type": .string("file_path"),
+                "fileId": .string(fileId)
+            ]
+            if let index = annotation["index"], index != .null {
+                metadataItems["index"] = index
+            }
+
+            continuation.yield(.source(.document(
+                id: nextSourceId(),
+                mediaType: "application/octet-stream",
+                title: fileId,
+                filename: fileId,
+                providerMetadata: openAIProviderMetadata(metadataItems)
+            )))
+
         default:
             break
         }
