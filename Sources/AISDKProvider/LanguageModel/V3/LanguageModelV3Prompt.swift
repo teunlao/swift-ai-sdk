@@ -334,6 +334,7 @@ public struct LanguageModelV3ToolCallPart: Sendable, Equatable, Codable {
     public let toolName: String
     public let input: JSONValue
     public let providerExecuted: Bool?
+    public let providerMetadata: SharedV3ProviderMetadata?
     public let providerOptions: SharedV3ProviderOptions?
 
     public init(
@@ -341,17 +342,19 @@ public struct LanguageModelV3ToolCallPart: Sendable, Equatable, Codable {
         toolName: String,
         input: JSONValue,
         providerExecuted: Bool? = nil,
+        providerMetadata: SharedV3ProviderMetadata? = nil,
         providerOptions: SharedV3ProviderOptions? = nil
     ) {
         self.toolCallId = toolCallId
         self.toolName = toolName
         self.input = input
         self.providerExecuted = providerExecuted
+        self.providerMetadata = providerMetadata
         self.providerOptions = providerOptions
     }
 
     private enum CodingKeys: String, CodingKey {
-        case type, toolCallId, toolName, input, providerExecuted, providerOptions
+        case type, toolCallId, toolName, input, providerExecuted, providerMetadata, providerOptions
     }
 
     public init(from decoder: Decoder) throws {
@@ -360,6 +363,7 @@ public struct LanguageModelV3ToolCallPart: Sendable, Equatable, Codable {
         toolName = try container.decode(String.self, forKey: .toolName)
         input = try container.decode(JSONValue.self, forKey: .input)
         providerExecuted = try container.decodeIfPresent(Bool.self, forKey: .providerExecuted)
+        providerMetadata = try container.decodeIfPresent(SharedV3ProviderMetadata.self, forKey: .providerMetadata)
         providerOptions = try container.decodeIfPresent(SharedV3ProviderOptions.self, forKey: .providerOptions)
     }
 
@@ -370,6 +374,7 @@ public struct LanguageModelV3ToolCallPart: Sendable, Equatable, Codable {
         try container.encode(toolName, forKey: .toolName)
         try container.encode(input, forKey: .input)
         try container.encodeIfPresent(providerExecuted, forKey: .providerExecuted)
+        try container.encodeIfPresent(providerMetadata, forKey: .providerMetadata)
         try container.encodeIfPresent(providerOptions, forKey: .providerOptions)
     }
 }

@@ -83,7 +83,9 @@ struct OpenAIResponsesInputBuilder {
                         items.append(.object(payload))
 
                     case .toolCall(let callPart):
-                        let itemId = extractOpenAIItemId(from: callPart.providerOptions, providerOptionsName: providerOptionsName)
+                        let itemId =
+                            extractOpenAIItemId(from: callPart.providerOptions, providerOptionsName: providerOptionsName)
+                            ?? extractOpenAIItemId(from: callPart.providerMetadata, providerOptionsName: providerOptionsName)
 
                         if hasConversation, itemId != nil {
                             continue

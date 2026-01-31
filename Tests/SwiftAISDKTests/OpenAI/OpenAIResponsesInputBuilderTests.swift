@@ -890,6 +890,37 @@ struct OpenAIResponsesInputBuilderTests {
         #expect(result.input == expected)
     }
 
+    @Test("tool call itemId supports providerMetadata fallback")
+    func toolCallItemIdFromProviderMetadataFallback() async throws {
+        let toolCallPart = LanguageModelV3ToolCallPart(
+            toolCallId: "call_123",
+            toolName: "search",
+            input: .object(["query": .string("weather in San Francisco")]),
+            providerMetadata: ["openai": ["itemId": .string("id_456")]],
+            providerOptions: nil
+        )
+
+        let prompt: LanguageModelV3Prompt = [
+            .assistant(content: [.toolCall(toolCallPart)], providerOptions: nil)
+        ]
+
+        let result = try await OpenAIResponsesInputBuilder.makeInput(
+            prompt: prompt,
+            systemMessageMode: .system,
+            store: true,
+            hasLocalShellTool: false
+        )
+
+        let expected: OpenAIResponsesInput = [
+            .object([
+                "type": .string("item_reference"),
+                "id": .string("id_456")
+            ])
+        ]
+
+        #expect(result.input == expected)
+    }
+
     @Test("should use item_reference for tool calls with itemId when store=true (pairs with reasoning)")
     func toolCallWithReasoningIdsStoreTrue() async throws {
         let reasoningPart = LanguageModelV3ReasoningPart(
