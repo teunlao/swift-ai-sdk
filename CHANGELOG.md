@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.7.3] - 2026-01-31
+
+### Fixed
+- OpenAI (Responses): include filtered citation annotations in `providerMetadata` for assistant text and streaming `text-end` (matches upstream behavior).
+- OpenAI (Responses): emit document source `providerMetadata` for `file_citation`, `container_file_citation`, and `file_path` (matches upstream behavior).
+
 ## [0.7.2] - 2026-01-31
 
 ### Added
