@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-01-31
+
+### Fixed
+- OpenAI (Responses): read `itemId` from tool-call `providerMetadata` as a fallback (matches upstream behavior).
+
 ## [0.7.0] - 2026-01-26
 
 ### Added
