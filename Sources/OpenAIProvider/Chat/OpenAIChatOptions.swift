@@ -96,6 +96,13 @@ let openAIChatProviderOptionsSchema = FlexibleSchema<OpenAIChatProviderOptions>(
                     }
                     var bias: [String: Double] = [:]
                     for (key, value) in entries {
+                        let trimmedKey = key.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if let keyNumber = Double(trimmedKey), keyNumber.isFinite {
+                            // ok
+                        } else {
+                            let error = SchemaValidationIssuesError(vendor: "openai", issues: "logitBias keys must be numbers")
+                            return .failure(error: TypeValidationError.wrap(value: value, cause: error))
+                        }
                         guard case .number(let number) = value else {
                             let error = SchemaValidationIssuesError(vendor: "openai", issues: "logitBias values must be numbers")
                             return .failure(error: TypeValidationError.wrap(value: value, cause: error))

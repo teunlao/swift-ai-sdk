@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.7.6] - 2026-02-01
+
+### Fixed
+- OpenAI Chat: validate `logitBias` keys are numeric (matches upstream schema behavior).
+
 ## [0.7.5] - 2026-02-01
 
 ### Added

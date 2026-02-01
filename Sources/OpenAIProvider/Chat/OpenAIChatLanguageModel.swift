@@ -419,7 +419,7 @@ public final class OpenAIChatLanguageModel: LanguageModelV3 {
             body["tool_choice"] = toolChoice
         }
 
-        let allowsNonReasoningParameters = mergedOptions?.reasoningEffort == .none && supportsNonReasoningParameters
+        let allowsNonReasoningParameters = mergedOptions?.reasoningEffort == OpenAIChatReasoningEffort.none && supportsNonReasoningParameters
         adjustForModelConstraints(
             body: &body,
             warnings: &warnings,

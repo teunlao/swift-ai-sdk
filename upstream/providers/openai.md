@@ -12,7 +12,7 @@
 - [x] Streaming SSE mapping (text deltas, tool workflows, citations, errors)
 - [x] Error mapping (OpenAI error payloads; response error parts)
 - [x] Model/feature gates (reasoning model rules, strictJsonSchema defaults)
-- [x] Provider option validation (Chat `metadata` key/value limits)
+- [x] Provider option validation (Chat `metadata` + `logitBias` constraints)
 
 ## Known gaps / TODO
 
