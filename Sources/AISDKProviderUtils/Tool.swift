@@ -123,6 +123,9 @@ public struct Tool: Sendable {
     /// Not used for provider-defined tools.
     public let description: String?
 
+    /// An optional title of the tool.
+    public let title: String?
+
     /// Additional provider-specific metadata.
     public let providerOptions: [String: JSONValue]?
 
@@ -177,6 +180,7 @@ public struct Tool: Sendable {
 
     public init(
         description: String? = nil,
+        title: String? = nil,
         providerOptions: [String: JSONValue]? = nil,
         inputSchema: FlexibleSchema<JSONValue>,
         strict: Bool? = nil,
@@ -193,6 +197,7 @@ public struct Tool: Sendable {
         args: [String: JSONValue]? = nil
     ) {
         self.description = description
+        self.title = title
         self.providerOptions = providerOptions
         self.inputSchema = inputSchema
         self.strict = strict
@@ -468,6 +473,7 @@ public struct ToolCallApprovalOptions: Sendable {
  */
 public func tool(
     description: String? = nil,
+    title: String? = nil,
     providerOptions: [String: JSONValue]? = nil,
     inputSchema: FlexibleSchema<JSONValue>,
     strict: Bool? = nil,
@@ -481,6 +487,7 @@ public func tool(
 ) -> Tool {
     Tool(
         description: description,
+        title: title,
         providerOptions: providerOptions,
         inputSchema: inputSchema,
         strict: strict,
@@ -502,6 +509,7 @@ public func tool(
  */
 public func dynamicTool(
     description: String? = nil,
+    title: String? = nil,
     providerOptions: [String: JSONValue]? = nil,
     inputSchema: FlexibleSchema<JSONValue>,
     strict: Bool? = nil,
@@ -510,6 +518,7 @@ public func dynamicTool(
 ) -> Tool {
     Tool(
         description: description,
+        title: title,
         providerOptions: providerOptions,
         inputSchema: inputSchema,
         strict: strict,

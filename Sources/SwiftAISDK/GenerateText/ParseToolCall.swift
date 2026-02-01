@@ -165,6 +165,8 @@ public func parseToolCall(
             return try await doParseToolCall(toolCall: repairedToolCall, tools: tools)
         }
     } catch {
+        let title = tools?[toolCall.toolName]?.title
+
         // Use parsed input when possible
         let parsedInput = await safeParseJSON(ParseJSONOptions(text: toolCall.input))
         let input: JSONValue
@@ -180,6 +182,7 @@ public func parseToolCall(
         return .dynamic(DynamicToolCall(
             toolCallId: toolCall.toolCallId,
             toolName: toolCall.toolName,
+            title: title,
             input: input,
             providerExecuted: toolCall.providerExecuted,
             providerMetadata: toolCall.providerMetadata,
@@ -285,6 +288,7 @@ private func doParseToolCall(
         return .dynamic(DynamicToolCall(
             toolCallId: toolCall.toolCallId,
             toolName: toolCall.toolName,
+            title: tool.title,
             input: parsedValue,
             providerExecuted: toolCall.providerExecuted,
             providerMetadata: toolCall.providerMetadata,
@@ -295,6 +299,7 @@ private func doParseToolCall(
         return .static(StaticToolCall(
             toolCallId: toolCall.toolCallId,
             toolName: toolName,
+            title: tool.title,
             input: parsedValue,
             providerExecuted: toolCall.providerExecuted,
             providerMetadata: toolCall.providerMetadata

@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-02-01
+
+### Added
+- Tools: add optional `title` to tool definitions and propagate it to parsed tool calls (including stream parts) to match upstream.
+
 ## [0.8.0] - 2026-02-01
 
 ### Changed

@@ -209,6 +209,7 @@ extension TextStreamPart: Codable {
         case toolCallId
         // Tool input fields / tool events
         case toolName
+        case title
         case providerExecuted
         case dynamic
         case invalid
@@ -322,6 +323,7 @@ extension TextStreamPart: Codable {
                 ?? (try? container.decode(String.self, forKey: .id))
                 ?? ""
             let toolName = try container.decode(String.self, forKey: .toolName)
+            let title = try container.decodeIfPresent(String.self, forKey: .title)
             let input = (try? container.decode(JSONValue.self, forKey: .input)) ?? .null
             let providerExecuted = try container.decodeIfPresent(Bool.self, forKey: .providerExecuted)
             let providerMetadata = try container.decodeIfPresent(ProviderMetadata.self, forKey: .providerMetadata)
@@ -337,6 +339,7 @@ extension TextStreamPart: Codable {
                 let value = DynamicToolCall(
                     toolCallId: toolCallId,
                     toolName: toolName,
+                    title: title,
                     input: input,
                     providerExecuted: providerExecuted,
                     providerMetadata: providerMetadata,
@@ -348,6 +351,7 @@ extension TextStreamPart: Codable {
                 let value = StaticToolCall(
                     toolCallId: toolCallId,
                     toolName: toolName,
+                    title: title,
                     input: input,
                     providerExecuted: providerExecuted,
                     providerMetadata: providerMetadata
@@ -448,6 +452,7 @@ extension TextStreamPart: Codable {
                 ?? (try? container.decode(String.self, forKey: .id))
                 ?? ""
             let toolName = try container.decode(String.self, forKey: .toolName)
+            let title = try container.decodeIfPresent(String.self, forKey: .title)
             let input = (try? container.decode(JSONValue.self, forKey: .input)) ?? .null
             let providerExecuted = try container.decodeIfPresent(Bool.self, forKey: .providerExecuted)
             let providerMetadata = try container.decodeIfPresent(ProviderMetadata.self, forKey: .providerMetadata)
@@ -463,6 +468,7 @@ extension TextStreamPart: Codable {
                 typedCall = .dynamic(DynamicToolCall(
                     toolCallId: toolCallId,
                     toolName: toolName,
+                    title: title,
                     input: input,
                     providerExecuted: providerExecuted,
                     providerMetadata: providerMetadata,
@@ -473,6 +479,7 @@ extension TextStreamPart: Codable {
                 typedCall = .static(StaticToolCall(
                     toolCallId: toolCallId,
                     toolName: toolName,
+                    title: title,
                     input: input,
                     providerExecuted: providerExecuted,
                     providerMetadata: providerMetadata
@@ -624,6 +631,7 @@ extension TextStreamPart: Codable {
             case .static(let v):
                 try container.encode(v.toolCallId, forKey: .toolCallId)
                 try container.encode(v.toolName, forKey: .toolName)
+                try container.encodeIfPresent(v.title, forKey: .title)
                 try container.encode(v.input, forKey: .input)
                 try container.encodeIfPresent(v.providerExecuted, forKey: .providerExecuted)
                 try container.encodeIfPresent(v.providerMetadata, forKey: .providerMetadata)
@@ -631,6 +639,7 @@ extension TextStreamPart: Codable {
             case .dynamic(let v):
                 try container.encode(v.toolCallId, forKey: .toolCallId)
                 try container.encode(v.toolName, forKey: .toolName)
+                try container.encodeIfPresent(v.title, forKey: .title)
                 try container.encode(v.input, forKey: .input)
                 try container.encode(true, forKey: .dynamic)
                 try container.encodeIfPresent(v.providerExecuted, forKey: .providerExecuted)
@@ -697,6 +706,7 @@ extension TextStreamPart: Codable {
             case .static(let v):
                 try container.encode(v.toolCallId, forKey: .toolCallId)
                 try container.encode(v.toolName, forKey: .toolName)
+                try container.encodeIfPresent(v.title, forKey: .title)
                 try container.encode(v.input, forKey: .input)
                 try container.encodeIfPresent(v.providerExecuted, forKey: .providerExecuted)
                 try container.encodeIfPresent(v.providerMetadata, forKey: .providerMetadata)
@@ -704,6 +714,7 @@ extension TextStreamPart: Codable {
             case .dynamic(let v):
                 try container.encode(v.toolCallId, forKey: .toolCallId)
                 try container.encode(v.toolName, forKey: .toolName)
+                try container.encodeIfPresent(v.title, forKey: .title)
                 try container.encode(v.input, forKey: .input)
                 try container.encode(true, forKey: .dynamic)
                 try container.encodeIfPresent(v.providerExecuted, forKey: .providerExecuted)

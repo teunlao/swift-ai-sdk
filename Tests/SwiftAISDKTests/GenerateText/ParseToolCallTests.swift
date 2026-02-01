@@ -30,6 +30,7 @@ struct ParseToolCallTests {
             ),
             tools: [
                 "testTool": tool(
+                    title: "Test Tool",
                     inputSchema: FlexibleSchema(
                         jsonSchema(
                             .object([
@@ -56,6 +57,7 @@ struct ParseToolCallTests {
 
         #expect(staticCall.toolCallId == "123")
         #expect(staticCall.toolName == "testTool")
+        #expect(staticCall.title == "Test Tool")
         #expect(
             staticCall.input
                 == JSONValue.object([
@@ -260,6 +262,7 @@ struct ParseToolCallTests {
             ),
             tools: [
                 "testTool": tool(
+                    title: "Test Tool",
                     inputSchema: FlexibleSchema(
                         jsonSchema(
                             .object([
@@ -286,6 +289,7 @@ struct ParseToolCallTests {
 
         #expect(dynamicCall.invalid == true)
         #expect(dynamicCall.toolName == "testTool")
+        #expect(dynamicCall.title == "Test Tool")
         #expect(InvalidToolInputError.isInstance(dynamicCall.error!))
 
         // Verify parsed input (partial object)
@@ -337,6 +341,7 @@ struct ParseToolCallTests {
             ),
             tools: [
                 "testTool": tool(
+                    title: "Test Tool",
                     inputSchema: FlexibleSchema(
                         jsonSchema(
                             .object([
@@ -375,6 +380,7 @@ struct ParseToolCallTests {
             return
         }
 
+        #expect(staticCall.title == "Test Tool")
         #expect(
             staticCall.input
                 == JSONValue.object([
@@ -397,6 +403,7 @@ struct ParseToolCallTests {
             ),
             tools: [
                 "testTool": tool(
+                    title: "Test Tool",
                     inputSchema: FlexibleSchema(
                         jsonSchema(
                             .object([
@@ -423,6 +430,7 @@ struct ParseToolCallTests {
 
         #expect(dynamicCall.invalid == true)
         #expect(InvalidToolInputError.isInstance(dynamicCall.error!))
+        #expect(dynamicCall.title == "Test Tool")
         #expect(dynamicCall.input == .string("invalid json"))
     }
 
@@ -442,6 +450,7 @@ struct ParseToolCallTests {
             ),
             tools: [
                 "testTool": tool(
+                    title: "Test Tool",
                     inputSchema: FlexibleSchema(
                         jsonSchema(
                             .object([
@@ -467,6 +476,7 @@ struct ParseToolCallTests {
         }
 
         #expect(dynamicCall.invalid == true)
+        #expect(dynamicCall.title == "Test Tool")
         #expect(ToolCallRepairError.isInstance(dynamicCall.error!))
     }
 
@@ -482,6 +492,7 @@ struct ParseToolCallTests {
             ),
             tools: [
                 "testTool": dynamicTool(
+                    title: "Test Tool",
                     inputSchema: FlexibleSchema(
                         jsonSchema(
                             .object([
@@ -510,6 +521,7 @@ struct ParseToolCallTests {
         #expect(dynamicCall.invalid == false)
         #expect(dynamicCall.toolCallId == "123")
         #expect(dynamicCall.toolName == "testTool")
+        #expect(dynamicCall.title == "Test Tool")
         #expect(
             dynamicCall.input
                 == JSONValue.object([

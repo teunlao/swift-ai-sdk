@@ -24,6 +24,9 @@ public struct StaticToolCall: Sendable {
     /// The name of the tool that was called.
     public let toolName: String
 
+    /// Optional display title for the tool.
+    public let title: String?
+
     /// The input/arguments for the tool call.
     public let input: JSONValue
 
@@ -44,12 +47,14 @@ public struct StaticToolCall: Sendable {
     public init(
         toolCallId: String,
         toolName: String,
+        title: String? = nil,
         input: JSONValue,
         providerExecuted: Bool? = nil,
         providerMetadata: ProviderMetadata? = nil
     ) {
         self.toolCallId = toolCallId
         self.toolName = toolName
+        self.title = title
         self.input = input
         self.providerExecuted = providerExecuted
         self.providerMetadata = providerMetadata
@@ -69,6 +74,9 @@ public struct DynamicToolCall: Sendable {
 
     /// The name of the tool that was called.
     public let toolName: String
+
+    /// Optional display title for the tool.
+    public let title: String?
 
     /// The input/arguments for the tool call.
     public let input: JSONValue
@@ -97,6 +105,7 @@ public struct DynamicToolCall: Sendable {
     public init(
         toolCallId: String,
         toolName: String,
+        title: String? = nil,
         input: JSONValue,
         providerExecuted: Bool? = nil,
         providerMetadata: ProviderMetadata? = nil,
@@ -105,6 +114,7 @@ public struct DynamicToolCall: Sendable {
     ) {
         self.toolCallId = toolCallId
         self.toolName = toolName
+        self.title = title
         self.input = input
         self.providerExecuted = providerExecuted
         self.providerMetadata = providerMetadata
@@ -142,6 +152,14 @@ public enum TypedToolCall: Sendable {
         switch self {
         case .static(let call): return call.input
         case .dynamic(let call): return call.input
+        }
+    }
+
+    /// Optional display title for the tool.
+    public var title: String? {
+        switch self {
+        case .static(let call): return call.title
+        case .dynamic(let call): return call.title
         }
     }
 
