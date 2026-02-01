@@ -139,6 +139,7 @@ private func makeToolResult(
             StaticToolResult(
                 toolCallId: call.toolCallId,
                 toolName: call.toolName,
+                title: call.title,
                 input: call.input,
                 output: output,
                 providerExecuted: providerExecuted,
@@ -150,6 +151,7 @@ private func makeToolResult(
             DynamicToolResult(
                 toolCallId: call.toolCallId,
                 toolName: call.toolName,
+                title: call.title,
                 input: call.input,
                 output: output,
                 providerExecuted: providerExecuted,
@@ -170,6 +172,7 @@ private func makeToolError(
             StaticToolError(
                 toolCallId: call.toolCallId,
                 toolName: call.toolName,
+                title: call.title,
                 input: call.input,
                 error: error,
                 providerExecuted: providerExecuted
@@ -180,6 +183,7 @@ private func makeToolError(
             DynamicToolError(
                 toolCallId: call.toolCallId,
                 toolName: call.toolName,
+                title: call.title,
                 input: call.input,
                 error: error,
                 providerExecuted: providerExecuted

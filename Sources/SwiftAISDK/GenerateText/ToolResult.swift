@@ -23,6 +23,9 @@ public struct StaticToolResult: Sendable {
     /// The name of the tool that was called.
     public let toolName: String
 
+    /// Optional display title for the tool.
+    public let title: String?
+
     /// The input that was passed to the tool.
     public let input: JSONValue
 
@@ -45,6 +48,7 @@ public struct StaticToolResult: Sendable {
     public init(
         toolCallId: String,
         toolName: String,
+        title: String? = nil,
         input: JSONValue,
         output: JSONValue,
         providerExecuted: Bool? = nil,
@@ -53,6 +57,7 @@ public struct StaticToolResult: Sendable {
     ) {
         self.toolCallId = toolCallId
         self.toolName = toolName
+        self.title = title
         self.input = input
         self.output = output
         self.providerExecuted = providerExecuted
@@ -73,6 +78,9 @@ public struct DynamicToolResult: Sendable {
 
     /// The name of the tool that was called.
     public let toolName: String
+
+    /// Optional display title for the tool.
+    public let title: String?
 
     /// The input that was passed to the tool.
     public let input: JSONValue
@@ -96,6 +104,7 @@ public struct DynamicToolResult: Sendable {
     public init(
         toolCallId: String,
         toolName: String,
+        title: String? = nil,
         input: JSONValue,
         output: JSONValue,
         providerExecuted: Bool? = nil,
@@ -104,6 +113,7 @@ public struct DynamicToolResult: Sendable {
     ) {
         self.toolCallId = toolCallId
         self.toolName = toolName
+        self.title = title
         self.input = input
         self.output = output
         self.providerExecuted = providerExecuted
@@ -141,6 +151,14 @@ public enum TypedToolResult: Sendable {
         switch self {
         case .static(let result): return result.input
         case .dynamic(let result): return result.input
+        }
+    }
+
+    /// Optional display title for the tool.
+    public var title: String? {
+        switch self {
+        case .static(let result): return result.title
+        case .dynamic(let result): return result.title
         }
     }
 

@@ -23,6 +23,9 @@ public struct StaticToolError: Sendable {
     /// The name of the tool that was called.
     public let toolName: String
 
+    /// Optional display title for the tool.
+    public let title: String?
+
     /// The input that was passed to the tool.
     public let input: JSONValue
 
@@ -39,12 +42,14 @@ public struct StaticToolError: Sendable {
     public init(
         toolCallId: String,
         toolName: String,
+        title: String? = nil,
         input: JSONValue,
         error: any Error,
         providerExecuted: Bool? = nil
     ) {
         self.toolCallId = toolCallId
         self.toolName = toolName
+        self.title = title
         self.input = input
         self.error = error
         self.providerExecuted = providerExecuted
@@ -64,6 +69,9 @@ public struct DynamicToolError: Sendable {
     /// The name of the tool that was called.
     public let toolName: String
 
+    /// Optional display title for the tool.
+    public let title: String?
+
     /// The input that was passed to the tool.
     public let input: JSONValue
 
@@ -80,12 +88,14 @@ public struct DynamicToolError: Sendable {
     public init(
         toolCallId: String,
         toolName: String,
+        title: String? = nil,
         input: JSONValue,
         error: any Error,
         providerExecuted: Bool? = nil
     ) {
         self.toolCallId = toolCallId
         self.toolName = toolName
+        self.title = title
         self.input = input
         self.error = error
         self.providerExecuted = providerExecuted
@@ -121,6 +131,14 @@ public enum TypedToolError: Sendable {
         switch self {
         case .static(let error): return error.input
         case .dynamic(let error): return error.input
+        }
+    }
+
+    /// Optional display title for the tool.
+    public var title: String? {
+        switch self {
+        case .static(let error): return error.title
+        case .dynamic(let error): return error.title
         }
     }
 

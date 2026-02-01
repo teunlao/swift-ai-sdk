@@ -364,6 +364,7 @@ extension TextStreamPart: Codable {
                 ?? (try? container.decode(String.self, forKey: .id))
                 ?? ""
             let toolName = try container.decode(String.self, forKey: .toolName)
+            let title = try container.decodeIfPresent(String.self, forKey: .title)
             let output = (try? container.decode(JSONValue.self, forKey: .result)) ?? .null
             let input = (try? container.decode(JSONValue.self, forKey: .input)) ?? .null
             let providerExecuted = try container.decodeIfPresent(Bool.self, forKey: .providerExecuted)
@@ -374,6 +375,7 @@ extension TextStreamPart: Codable {
                 let value = DynamicToolResult(
                     toolCallId: toolCallId,
                     toolName: toolName,
+                    title: title,
                     input: input,
                     output: output,
                     providerExecuted: providerExecuted,
@@ -385,6 +387,7 @@ extension TextStreamPart: Codable {
                 let value = StaticToolResult(
                     toolCallId: toolCallId,
                     toolName: toolName,
+                    title: title,
                     input: input,
                     output: output,
                     providerExecuted: providerExecuted,
@@ -399,6 +402,7 @@ extension TextStreamPart: Codable {
                 ?? (try? container.decode(String.self, forKey: .id))
                 ?? ""
             let toolName = try container.decode(String.self, forKey: .toolName)
+            let title = try container.decodeIfPresent(String.self, forKey: .title)
             let input = (try? container.decode(JSONValue.self, forKey: .input)) ?? .null
             let providerExecuted = try container.decodeIfPresent(Bool.self, forKey: .providerExecuted)
             let dynamic = try container.decodeIfPresent(Bool.self, forKey: .dynamic) ?? false
@@ -410,6 +414,7 @@ extension TextStreamPart: Codable {
                 let value = DynamicToolError(
                     toolCallId: toolCallId,
                     toolName: toolName,
+                    title: title,
                     input: input,
                     error: err,
                     providerExecuted: providerExecuted
@@ -419,6 +424,7 @@ extension TextStreamPart: Codable {
                 let value = StaticToolError(
                     toolCallId: toolCallId,
                     toolName: toolName,
+                    title: title,
                     input: input,
                     error: err,
                     providerExecuted: providerExecuted
@@ -656,6 +662,7 @@ extension TextStreamPart: Codable {
             case .static(let v):
                 try container.encode(v.toolCallId, forKey: .toolCallId)
                 try container.encode(v.toolName, forKey: .toolName)
+                try container.encodeIfPresent(v.title, forKey: .title)
                 try container.encode(v.output, forKey: .result)
                 try container.encode(v.input, forKey: .input)
                 try container.encodeIfPresent(v.providerExecuted, forKey: .providerExecuted)
@@ -664,6 +671,7 @@ extension TextStreamPart: Codable {
             case .dynamic(let v):
                 try container.encode(v.toolCallId, forKey: .toolCallId)
                 try container.encode(v.toolName, forKey: .toolName)
+                try container.encodeIfPresent(v.title, forKey: .title)
                 try container.encode(v.output, forKey: .result)
                 try container.encode(v.input, forKey: .input)
                 try container.encode(true, forKey: .dynamic)
@@ -678,12 +686,14 @@ extension TextStreamPart: Codable {
             case .static(let v):
                 try container.encode(v.toolCallId, forKey: .toolCallId)
                 try container.encode(v.toolName, forKey: .toolName)
+                try container.encodeIfPresent(v.title, forKey: .title)
                 try container.encode(String(describing: v.error), forKey: .error)
                 try container.encode(v.input, forKey: .input)
                 try container.encodeIfPresent(v.providerExecuted, forKey: .providerExecuted)
             case .dynamic(let v):
                 try container.encode(v.toolCallId, forKey: .toolCallId)
                 try container.encode(v.toolName, forKey: .toolName)
+                try container.encodeIfPresent(v.title, forKey: .title)
                 try container.encode(String(describing: v.error), forKey: .error)
                 try container.encode(v.input, forKey: .input)
                 try container.encode(true, forKey: .dynamic)
