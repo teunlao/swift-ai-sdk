@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.7.77] - 2026-02-01
+
+### Fixed
+- OpenAI tools: add output schemas for `web_search` and `web_search_preview` provider tools (matches upstream).
+
 ## [0.7.6] - 2026-02-01
 
 ### Fixed

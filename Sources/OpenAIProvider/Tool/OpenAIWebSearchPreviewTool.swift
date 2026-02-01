@@ -117,12 +117,41 @@ private let webSearchPreviewInputJSONSchema: JSONValue = .object([
     "additionalProperties": .bool(true)
 ])
 
-public let openaiWebSearchPreviewToolFactory = createProviderDefinedToolFactory(
+private let webSearchPreviewOutputJSONSchema: JSONValue = .object([
+    "type": .string("object"),
+    "required": .array([.string("action")]),
+    "additionalProperties": .bool(false),
+    "properties": .object([
+        "action": .object([
+            "type": .string("object"),
+            "required": .array([.string("type")]),
+            "additionalProperties": .bool(false),
+            "properties": .object([
+                "type": .object([
+                    "type": .string("string"),
+                    "enum": .array([.string("search"), .string("openPage"), .string("findInPage")])
+                ]),
+                "query": .object([
+                    "type": .string("string")
+                ]),
+                "url": .object([
+                    "type": .array([.string("string"), .string("null")])
+                ]),
+                "pattern": .object([
+                    "type": .array([.string("string"), .string("null")])
+                ])
+            ])
+        ])
+    ])
+])
+
+public let openaiWebSearchPreviewToolFactory = createProviderDefinedToolFactoryWithOutputSchema(
     id: "openai.web_search_preview",
     name: "web_search_preview",
-    inputSchema: FlexibleSchema(jsonSchema(webSearchPreviewInputJSONSchema))
+    inputSchema: FlexibleSchema(jsonSchema(webSearchPreviewInputJSONSchema)),
+    outputSchema: FlexibleSchema(jsonSchema(webSearchPreviewOutputJSONSchema))
 ) { (args: OpenAIWebSearchPreviewArgs) in
-    var options = ProviderDefinedToolFactoryOptions()
+    var options = ProviderDefinedToolFactoryWithOutputSchemaOptions()
     options.args = encodeOpenAIWebSearchPreviewArgs(args)
     return options
 }

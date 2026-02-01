@@ -198,12 +198,61 @@ private let webSearchInputJSONSchema: JSONValue = .object([
     "additionalProperties": .bool(true)
 ])
 
-public let openaiWebSearchToolFactory = createProviderDefinedToolFactory(
+private let webSearchOutputJSONSchema: JSONValue = .object([
+    "type": .string("object"),
+    "required": .array([.string("action")]),
+    "additionalProperties": .bool(false),
+    "properties": .object([
+        "action": .object([
+            "type": .string("object"),
+            "required": .array([.string("type")]),
+            "additionalProperties": .bool(false),
+            "properties": .object([
+                "type": .object([
+                    "type": .string("string"),
+                    "enum": .array([.string("search"), .string("openPage"), .string("findInPage")])
+                ]),
+                "query": .object([
+                    "type": .string("string")
+                ]),
+                "url": .object([
+                    "type": .array([.string("string"), .string("null")])
+                ]),
+                "pattern": .object([
+                    "type": .array([.string("string"), .string("null")])
+                ])
+            ])
+        ]),
+        "sources": .object([
+            "type": .string("array"),
+            "items": .object([
+                "type": .string("object"),
+                "required": .array([.string("type")]),
+                "additionalProperties": .bool(false),
+                "properties": .object([
+                    "type": .object([
+                        "type": .string("string"),
+                        "enum": .array([.string("url"), .string("api")])
+                    ]),
+                    "url": .object([
+                        "type": .string("string")
+                    ]),
+                    "name": .object([
+                        "type": .string("string")
+                    ])
+                ])
+            ])
+        ])
+    ])
+])
+
+public let openaiWebSearchToolFactory = createProviderDefinedToolFactoryWithOutputSchema(
     id: "openai.web_search",
     name: "web_search",
-    inputSchema: FlexibleSchema(jsonSchema(webSearchInputJSONSchema))
+    inputSchema: FlexibleSchema(jsonSchema(webSearchInputJSONSchema)),
+    outputSchema: FlexibleSchema(jsonSchema(webSearchOutputJSONSchema))
 ) { (args: OpenAIWebSearchArgs) in
-    var options = ProviderDefinedToolFactoryOptions()
+    var options = ProviderDefinedToolFactoryWithOutputSchemaOptions()
     options.args = encodeOpenAIWebSearchArgs(args)
     return options
 }

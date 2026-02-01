@@ -7,7 +7,7 @@
 ## What is verified (checked + tested)
 
 - [x] Prompt conversion (Chat + Responses; files/images/PDF; systemMessageMode)
-- [x] Tool call serialization (function + provider tools: `local_shell`, `shell`, `apply_patch`; MCP approvals)
+- [x] Tool call serialization (function + provider tools: `local_shell`, `shell`, `apply_patch`, `web_search`, `web_search_preview`; MCP approvals)
 - [x] Response decoding (text/reasoning/tool calls + providerMetadata mapping)
 - [x] Streaming SSE mapping (text deltas, tool workflows, citations, errors)
 - [x] Error mapping (OpenAI error payloads; response error parts)
