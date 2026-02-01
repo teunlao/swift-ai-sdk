@@ -50,6 +50,7 @@ func makeInvalidToolCallError(from toolCall: TypedToolCall) -> TypedToolError {
         DynamicToolError(
             toolCallId: toolCall.toolCallId,
             toolName: toolCall.toolName,
+            title: toolCall.title,
             input: toolCall.input,
             error: error,
             providerExecuted: toolCall.providerExecuted
@@ -83,6 +84,7 @@ func makeProviderToolResult(
                 StaticToolResult(
                     toolCallId: call.toolCallId,
                     toolName: call.toolName,
+                    title: call.title,
                     input: call.input,
                     output: output,
                     providerExecuted: providerExecuted,
@@ -95,6 +97,7 @@ func makeProviderToolResult(
                 DynamicToolResult(
                     toolCallId: call.toolCallId,
                     toolName: call.toolName,
+                    title: call.title,
                     input: call.input,
                     output: output,
                     providerExecuted: providerExecuted,
@@ -133,6 +136,7 @@ func makeProviderToolError(
                 StaticToolError(
                     toolCallId: call.toolCallId,
                     toolName: call.toolName,
+                    title: call.title,
                     input: call.input,
                     error: error,
                     providerExecuted: providerExecuted
@@ -143,6 +147,7 @@ func makeProviderToolError(
                 DynamicToolError(
                     toolCallId: call.toolCallId,
                     toolName: call.toolName,
+                    title: call.title,
                     input: call.input,
                     error: error,
                     providerExecuted: providerExecuted

@@ -32,7 +32,9 @@ public enum SingleRequestTextStreamPart: Sendable {
         id: String,
         toolName: String,
         providerMetadata: ProviderMetadata?,
-        providerExecuted: Bool?
+        providerExecuted: Bool?,
+        dynamic: Bool?,
+        title: String?
     )
     case toolInputDelta(id: String, delta: String, providerMetadata: ProviderMetadata?)
     case toolInputEnd(id: String, providerMetadata: ProviderMetadata?)

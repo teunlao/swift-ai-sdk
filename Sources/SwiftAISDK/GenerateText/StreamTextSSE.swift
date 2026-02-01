@@ -157,6 +157,7 @@ private final class StreamTextSSEEncoder {
                 "toolCallId": error.toolCallId,
                 "toolName": error.toolName,
             ]
+            if let title = error.title { payload["title"] = title }
             // Serialize error as string description to keep payload lightweight
             payload["error"] = String(describing: error.error)
             if let executed = error.providerExecuted { payload["providerExecuted"] = executed }
@@ -181,6 +182,7 @@ private final class StreamTextSSEEncoder {
             // Inline basic info of the tool call for convenience
             payload["toolCallId"] = request.toolCall.toolCallId
             payload["toolName"] = request.toolCall.toolName
+            if let title = request.toolCall.title { payload["title"] = title }
             payload["input"] = toJSONAny(request.toolCall.input)
             if let executed = request.toolCall.providerExecuted { payload["providerExecuted"] = executed }
             if let meta = providerMetadataDictionary(request.toolCall.providerMetadata) {
@@ -223,6 +225,7 @@ private final class StreamTextSSEEncoder {
                 "toolName": value.toolName,
                 "input": toJSONAny(value.input)
             ]
+            if let title = value.title { payload["title"] = title }
             if let metadata = value.providerMetadata { payload["providerMetadata"] = metadata }
             if let executed = value.providerExecuted { payload["providerExecuted"] = executed }
             if let invalid = value.invalid { payload["invalid"] = invalid }
@@ -234,6 +237,7 @@ private final class StreamTextSSEEncoder {
                 "toolName": value.toolName,
                 "input": toJSONAny(value.input)
             ]
+            if let title = value.title { payload["title"] = title }
             if let metadata = value.providerMetadata { payload["providerMetadata"] = metadata }
             if let executed = value.providerExecuted { payload["providerExecuted"] = executed }
             if let invalid = value.invalid { payload["invalid"] = invalid }
@@ -252,6 +256,7 @@ private final class StreamTextSSEEncoder {
                 "result": toJSONAny(value.output),
                 "input": toJSONAny(value.input)
             ]
+            if let title = value.title { payload["title"] = title }
             if let metadata = providerMetadataDictionary(value.providerMetadata) { payload["providerMetadata"] = metadata }
             if let executed = value.providerExecuted { payload["providerExecuted"] = executed }
             if let prelim = value.preliminary { payload["preliminary"] = prelim }
@@ -264,6 +269,7 @@ private final class StreamTextSSEEncoder {
                 "result": toJSONAny(value.output),
                 "input": toJSONAny(value.input)
             ]
+            if let title = value.title { payload["title"] = title }
             if let metadata = providerMetadataDictionary(value.providerMetadata) { payload["providerMetadata"] = metadata }
             if let executed = value.providerExecuted { payload["providerExecuted"] = executed }
             if let preliminary = value.preliminary { payload["preliminary"] = preliminary }

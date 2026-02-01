@@ -77,12 +77,14 @@ public func runToolsTransformation(
                     case .reasoningEnd(let id, let providerMetadata):
                         emit(.reasoningEnd(id: id, providerMetadata: providerMetadata))
 
-                    case .toolInputStart(let id, let toolName, let providerMetadata, let providerExecuted, _, _):
+                    case .toolInputStart(let id, let toolName, let providerMetadata, let providerExecuted, let dynamic, let title):
                         emit(.toolInputStart(
                             id: id,
                             toolName: toolName,
                             providerMetadata: providerMetadata,
-                            providerExecuted: providerExecuted
+                            providerExecuted: providerExecuted,
+                            dynamic: dynamic,
+                            title: title
                         ))
 
                     case .toolInputDelta(let id, let delta, let providerMetadata):

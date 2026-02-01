@@ -79,6 +79,7 @@ struct StreamTextSSEIntegrationTests {
             .toolCall(.static(StaticToolCall(
                 toolCallId: "call-1",
                 toolName: "demo",
+                title: "Demo Tool",
                 input: .object(["value": 1]),
                 providerExecuted: false,
                 providerMetadata: nil
@@ -90,6 +91,7 @@ struct StreamTextSSEIntegrationTests {
             .toolResult(TypedToolResult.static(StaticToolResult(
                 toolCallId: "call-1",
                 toolName: "demo",
+                title: "Demo Tool",
                 input: .null,
                 output: .object(["ok": .bool(true)]),
                 providerExecuted: false,
@@ -111,6 +113,12 @@ struct StreamTextSSEIntegrationTests {
         #expect(types.contains("tool-input-delta"))
         #expect(types.contains("tool-input-end"))
         #expect(types.contains("tool-result"))
+
+        let toolCall = try #require(encoderEvents.first(where: { $0["type"] as? String == "tool-call" }))
+        #expect(toolCall["title"] as? String == "Demo Tool")
+
+        let toolResult = try #require(encoderEvents.first(where: { $0["type"] as? String == "tool-result" }))
+        #expect(toolResult["title"] as? String == "Demo Tool")
     }
 
     @Test("SSE includes providerMetadata for tool-input and tool-error/result")
@@ -121,8 +129,23 @@ struct StreamTextSSEIntegrationTests {
             .toolInputStart(id: "c1", toolName: "demo", providerMetadata: meta, providerExecuted: false, dynamic: true, title: "Demo Tool"),
             .toolInputDelta(id: "c1", delta: "{}", providerMetadata: meta),
             .toolInputEnd(id: "c1", providerMetadata: meta),
-            .toolError(.static(StaticToolError(toolCallId: "c1", toolName: "demo", input: .object([:]), error: NSError(domain: "x", code: 1)))),
-            .toolResult(.static(StaticToolResult(toolCallId: "c1", toolName: "demo", input: .null, output: .object(["ok": .bool(true)]), providerExecuted: false, preliminary: false, providerMetadata: meta))),
+            .toolError(.static(StaticToolError(
+                toolCallId: "c1",
+                toolName: "demo",
+                title: "Demo Tool",
+                input: .object([:]),
+                error: NSError(domain: "x", code: 1)
+            ))),
+            .toolResult(.static(StaticToolResult(
+                toolCallId: "c1",
+                toolName: "demo",
+                title: "Demo Tool",
+                input: .null,
+                output: .object(["ok": .bool(true)]),
+                providerExecuted: false,
+                preliminary: false,
+                providerMetadata: meta
+            ))),
             .finish(finishReason: .stop, totalUsage: LanguageModelUsage())
         ]
 
@@ -145,10 +168,39 @@ struct StreamTextSSEIntegrationTests {
 
         let toolError = try #require(events.first(where: { $0["type"] as? String == "tool-error" }))
         #expect(toolError["input"] != nil)
+        #expect(toolError["title"] as? String == "Demo Tool")
 
         let toolResult = try #require(events.first(where: { $0["type"] as? String == "tool-result" }))
         #expect(toolResult["input"] != nil)
+        #expect(toolResult["title"] as? String == "Demo Tool")
         #expect((toolResult["providerMetadata"] as? NSDictionary)?["prov"] != nil)
+    }
+
+    @Test("SSE includes title for tool approval requests")
+    func sseIncludesTitleForToolApprovalRequest() async throws {
+        let call = TypedToolCall.static(StaticToolCall(
+            toolCallId: "c2",
+            toolName: "demo",
+            title: "Demo Tool",
+            input: .object(["q": .string("hi")]),
+            providerExecuted: false,
+            providerMetadata: nil
+        ))
+
+        let parts: [TextStreamPart] = [
+            .toolApprovalRequest(ToolApprovalRequestOutput(approvalId: "a1", toolCall: call)),
+            .finish(finishReason: .stop, totalUsage: LanguageModelUsage())
+        ]
+
+        let stream = AsyncThrowingStream<TextStreamPart, Error> { c in
+            parts.forEach { c.yield($0) }
+            c.finish()
+        }
+
+        let events = try await decodeEvents(convertReadableStreamToArray(makeStreamTextSSEStream(from: stream)))
+        let approval = try #require(events.first(where: { $0["type"] as? String == "tool-approval-request" }))
+        #expect(approval["toolName"] as? String == "demo")
+        #expect(approval["title"] as? String == "Demo Tool")
     }
 
     @Test("SSE includes finish-step payload and finish usage when enabled")
