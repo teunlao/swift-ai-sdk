@@ -12,6 +12,13 @@ export default defineConfig({
         alt: "Swift AI SDK",
         replacesTitle: true,
       },
+      favicon: "/favicon.ico",
+      head: [
+        {
+          tag: "link",
+          attrs: { rel: "apple-touch-icon", sizes: "180x180", href: "/apple-touch-icon.png" },
+        },
+      ],
 			customCss: ['./src/styles/custom.css'],
     social: [
         { icon: "github", label: "GitHub", href: "https://github.com/teunlao/swift-ai-sdk" }
