@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.7.4] - 2026-02-01
+
+### Fixed
+- OpenAI (Responses): validate `shell` tool result output shape and require `exitCode` for `exit` outcomes (matches upstream discriminated union behavior).
+
 ## [0.7.3] - 2026-01-31
 
 ### Fixed

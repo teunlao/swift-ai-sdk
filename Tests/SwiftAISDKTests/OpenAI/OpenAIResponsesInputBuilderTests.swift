@@ -2368,4 +2368,110 @@ struct OpenAIResponsesInputBuilderTests {
             return
         }
     }
+
+    // MARK: - Tool Outputs
+
+    @Test("should convert shell tool output json to shell_call_output")
+    func toolOutputShellCallOutput() async throws {
+        let prompt: LanguageModelV3Prompt = [
+            .tool(
+                content: [
+                    .toolResult(LanguageModelV3ToolResultPart(
+                        toolCallId: "call-1",
+                        toolName: "shell",
+                        output: .json(value: .object([
+                            "output": .array([
+                                .object([
+                                    "stdout": .string("hi\n"),
+                                    "stderr": .string(""),
+                                    "outcome": .object([
+                                        "type": .string("exit"),
+                                        "exitCode": .number(0)
+                                    ])
+                                ]),
+                                .object([
+                                    "stdout": .string(""),
+                                    "stderr": .string("timed out"),
+                                    "outcome": .object([
+                                        "type": .string("timeout")
+                                    ])
+                                ])
+                            ])
+                        ]))
+                    ))
+                ],
+                providerOptions: nil
+            )
+        ]
+
+        let result = try await OpenAIResponsesInputBuilder.makeInput(
+            prompt: prompt,
+            systemMessageMode: .system,
+            store: true,
+            hasShellTool: true
+        )
+
+        #expect(result.warnings.isEmpty)
+
+        let expected: OpenAIResponsesInput = [
+            .object([
+                "type": .string("shell_call_output"),
+                "call_id": .string("call-1"),
+                "output": .array([
+                    .object([
+                        "stdout": .string("hi\n"),
+                        "stderr": .string(""),
+                        "outcome": .object([
+                            "type": .string("exit"),
+                            "exit_code": .number(0)
+                        ])
+                    ]),
+                    .object([
+                        "stdout": .string(""),
+                        "stderr": .string("timed out"),
+                        "outcome": .object([
+                            "type": .string("timeout")
+                        ])
+                    ])
+                ])
+            ])
+        ]
+
+        #expect(result.input == expected)
+    }
+
+    @Test("should throw when shell tool exit outcome is missing exitCode")
+    func toolOutputShellExitMissingExitCodeThrows() async throws {
+        let prompt: LanguageModelV3Prompt = [
+            .tool(
+                content: [
+                    .toolResult(LanguageModelV3ToolResultPart(
+                        toolCallId: "call-1",
+                        toolName: "shell",
+                        output: .json(value: .object([
+                            "output": .array([
+                                .object([
+                                    "stdout": .string("hi\n"),
+                                    "stderr": .string(""),
+                                    "outcome": .object([
+                                        "type": .string("exit")
+                                    ])
+                                ])
+                            ])
+                        ]))
+                    ))
+                ],
+                providerOptions: nil
+            )
+        ]
+
+        await #expect(throws: Error.self) {
+            try await OpenAIResponsesInputBuilder.makeInput(
+                prompt: prompt,
+                systemMessageMode: .system,
+                store: true,
+                hasShellTool: true
+            )
+        }
+    }
 }

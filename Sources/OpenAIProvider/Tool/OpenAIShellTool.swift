@@ -14,17 +14,53 @@ public struct OpenAIShellInput: Codable, Sendable, Equatable {
 
 public struct OpenAIShellOutput: Codable, Sendable, Equatable {
     public struct Item: Codable, Sendable, Equatable {
-        public struct Outcome: Codable, Sendable, Equatable {
-            public let type: String
-            public let exitCode: Double?
-        }
-
         public let stdout: String
         public let stderr: String
-        public let outcome: Outcome
+        public let outcome: OpenAIShellOutcome
     }
 
     public let output: [Item]
+}
+
+public enum OpenAIShellOutcome: Codable, Sendable, Equatable {
+    case timeout
+    case exit(exitCode: Double)
+
+    private enum CodingKeys: String, CodingKey {
+        case type
+        case exitCode
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let type = try container.decode(String.self, forKey: .type)
+
+        switch type {
+        case "timeout":
+            self = .timeout
+        case "exit":
+            let exitCode = try container.decode(Double.self, forKey: .exitCode)
+            self = .exit(exitCode: exitCode)
+        default:
+            throw DecodingError.dataCorruptedError(
+                forKey: .type,
+                in: container,
+                debugDescription: "Unknown shell outcome type: \(type)"
+            )
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+
+        switch self {
+        case .timeout:
+            try container.encode("timeout", forKey: .type)
+        case .exit(let exitCode):
+            try container.encode("exit", forKey: .type)
+            try container.encode(exitCode, forKey: .exitCode)
+        }
+    }
 }
 
 private let shellInputJSONSchema: JSONValue = .object([
@@ -104,4 +140,3 @@ public let openaiShellTool = createProviderDefinedToolFactoryWithOutputSchema(
     inputSchema: FlexibleSchema(jsonSchema(shellInputJSONSchema)),
     outputSchema: FlexibleSchema(jsonSchema(shellOutputJSONSchema))
 )
-

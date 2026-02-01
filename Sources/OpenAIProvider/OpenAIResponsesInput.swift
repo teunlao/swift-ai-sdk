@@ -373,21 +373,14 @@ struct OpenAIResponsesInputBuilder {
                                 )
 
                                 let output: JSONValue = .array(parsed.output.map { item in
-                                    let outcome: JSONValue
-                                    switch item.outcome.type {
-                                    case "timeout":
-                                        outcome = .object(["type": .string("timeout")])
-                                    case "exit":
-                                        if let exitCode = item.outcome.exitCode {
-                                            outcome = .object([
-                                                "type": .string("exit"),
-                                                "exit_code": .number(exitCode)
-                                            ])
-                                        } else {
-                                            outcome = .object(["type": .string("exit")])
-                                        }
-                                    default:
-                                        outcome = .object(["type": .string(item.outcome.type)])
+                                    let outcome: JSONValue = switch item.outcome {
+                                    case .timeout:
+                                        .object(["type": .string("timeout")])
+                                    case .exit(let exitCode):
+                                        .object([
+                                            "type": .string("exit"),
+                                            "exit_code": .number(exitCode)
+                                        ])
                                     }
 
                                     return .object([
