@@ -1013,7 +1013,7 @@ public func getGroundingMetadataSchema() -> Schema<JSONValue> {
                 ])
             ]),
             "retrievalMetadata": .object([
-                "oneOf": .array([
+                "anyOf": .array([
                     .object([
                         "type": .string("object"),
                         "properties": .object([

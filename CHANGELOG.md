@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-02-01
+
+### Changed
+- BREAKING: JSON schema validation now enforces union types (`type: [...]`), enums/const, and common bounds (string lengths, array sizes, numeric limits) for `Schema<JSONValue>` validation.
+
+### Fixed
+- Provider utils: improve JSON schema validation to match upstream Zod behavior for tool input/output schemas (e.g. OpenAI `web_search*` output validation is now strict).
+- Google: use `anyOf` (union) for `retrievalMetadata` grounding metadata schema to match upstream.
+
 ## [0.7.77] - 2026-02-01
 
 ### Fixed

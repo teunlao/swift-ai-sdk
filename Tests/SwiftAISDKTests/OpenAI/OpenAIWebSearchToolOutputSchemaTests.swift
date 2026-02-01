@@ -30,7 +30,10 @@ struct OpenAIWebSearchToolOutputSchemaTests {
         }
 
         let invalid: [String: Any] = [
-            "action": [:]
+            "action": [
+                "type": "openPage",
+                "url": 123
+            ]
         ]
 
         switch await safeValidateTypes(ValidateTypesOptions(value: invalid, schema: schema)) {
@@ -64,7 +67,9 @@ struct OpenAIWebSearchToolOutputSchemaTests {
         }
 
         let invalid: [String: Any] = [
-            "action": [:]
+            "action": [
+                "type": "bogus"
+            ]
         ]
 
         switch await safeValidateTypes(ValidateTypesOptions(value: invalid, schema: schema)) {
