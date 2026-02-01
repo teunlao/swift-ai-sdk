@@ -6,6 +6,12 @@ export default defineConfig({
  	integrations: [
 		starlight({
 			title: "Swift AI SDK",
+      logo: {
+        dark: "./src/assets/logo-light.png",
+        light: "./src/assets/logo-dark.png",
+        alt: "Swift AI SDK",
+        replacesTitle: true,
+      },
 			customCss: ['./src/styles/custom.css'],
     social: [
         { icon: "github", label: "GitHub", href: "https://github.com/teunlao/swift-ai-sdk" }

@@ -1,3 +1,11 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="logos/logo-black.png" />
+    <source media="(prefers-color-scheme: light)" srcset="logos/logo-white.png" />
+    <img alt="Swift AI SDK" src="logos/logo-white.png" width="520" />
+  </picture>
+</p>
+
 # Swift AI SDK
 
 [![Tests](https://github.com/teunlao/swift-ai-sdk/actions/workflows/test.yml/badge.svg)](https://github.com/teunlao/swift-ai-sdk/actions/workflows/test.yml)
