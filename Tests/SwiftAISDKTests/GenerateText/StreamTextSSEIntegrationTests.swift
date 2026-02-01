@@ -159,6 +159,7 @@ struct StreamTextSSEIntegrationTests {
         #expect((inputStart["providerMetadata"] as? NSDictionary)?["prov"] != nil)
         #expect(inputStart["dynamic"] as? Bool == true)
         #expect(inputStart["title"] as? String == "Demo Tool")
+        #expect(inputStart["toolName"] as? String == "demo")
 
         let inputDelta = try #require(events.first(where: { $0["type"] as? String == "tool-input-delta" }))
         #expect((inputDelta["providerMetadata"] as? NSDictionary)?["prov"] != nil)

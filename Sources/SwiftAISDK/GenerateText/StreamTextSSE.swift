@@ -117,7 +117,7 @@ private final class StreamTextSSEEncoder {
             return encodeToolResult(result)
 
         case let .toolInputStart(id, toolName, providerMetadata, executed, dynamicFlag, title):
-            var payload: [String: Any] = ["type": "tool-input-start", "id": id, "name": toolName]
+            var payload: [String: Any] = ["type": "tool-input-start", "id": id, "toolName": toolName]
             if let executed { payload["providerExecuted"] = executed }
             if let dynamicFlag { payload["dynamic"] = dynamicFlag }
             if let title { payload["title"] = title }
@@ -226,7 +226,7 @@ private final class StreamTextSSEEncoder {
                 "input": toJSONAny(value.input)
             ]
             if let title = value.title { payload["title"] = title }
-            if let metadata = value.providerMetadata { payload["providerMetadata"] = metadata }
+            if let metadata = providerMetadataDictionary(value.providerMetadata) { payload["providerMetadata"] = metadata }
             if let executed = value.providerExecuted { payload["providerExecuted"] = executed }
             if let invalid = value.invalid { payload["invalid"] = invalid }
             return [encode(event: payload)]
@@ -238,10 +238,11 @@ private final class StreamTextSSEEncoder {
                 "input": toJSONAny(value.input)
             ]
             if let title = value.title { payload["title"] = title }
-            if let metadata = value.providerMetadata { payload["providerMetadata"] = metadata }
+            if let metadata = providerMetadataDictionary(value.providerMetadata) { payload["providerMetadata"] = metadata }
             if let executed = value.providerExecuted { payload["providerExecuted"] = executed }
             if let invalid = value.invalid { payload["invalid"] = invalid }
-            if let error = value.error { payload["error"] = error }
+            payload["dynamic"] = true
+            if let error = value.error { payload["error"] = String(describing: error) }
             return [encode(event: payload)]
         }
     }
