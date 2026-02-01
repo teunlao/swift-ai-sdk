@@ -47,8 +47,8 @@ A unified AI SDK for Swift: streaming chat/completions, structured outputs, tool
 
 ## Implementation Status
 
-**Updated**: 2025-10-26
-**Upstream:** Based on Vercel AI SDK 6.0.0-beta.42
+**Updated**: 2026-02-01
+**Upstream:** Based on Vercel AI SDK 6.0.66 (commit `f5b2b5e`)
 
 | Category | Tests | Coverage |
 |----------|-------|----------|
@@ -107,7 +107,7 @@ Add the package to your `Package.swift`:
 ```swift
 // Package.swift
 dependencies: [
-  .package(url: "https://github.com/teunlao/swift-ai-sdk.git", from: "0.7.0")
+  .package(url: "https://github.com/teunlao/swift-ai-sdk.git", from: "0.7.4")
 ],
 targets: [
   .target(
@@ -250,7 +250,7 @@ See `examples/` in this repo and the docs site under `apps/docs`.
 
 ## Upstream & Parity
 
-Based on Vercel AI SDK 6.0.39 (commit `c0fff03`).
+Based on Vercel AI SDK 6.0.66 (commit `f5b2b5e`).
 
 ## Contributing
 
