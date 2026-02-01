@@ -1,8 +1,8 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="logos/logo-black.png" />
-    <source media="(prefers-color-scheme: light)" srcset="logos/logo-white.png" />
-    <img alt="Swift AI SDK" src="logos/logo-white.png" width="520" />
+    <source media="(prefers-color-scheme: dark)" srcset="logos/logo-white.png" />
+    <source media="(prefers-color-scheme: light)" srcset="logos/logo-black.png" />
+    <img alt="Swift AI SDK" src="logos/logo-black.png" width="460" />
   </picture>
 </p>
 
