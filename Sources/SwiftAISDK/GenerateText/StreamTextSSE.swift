@@ -116,10 +116,11 @@ private final class StreamTextSSEEncoder {
         case let .toolResult(result):
             return encodeToolResult(result)
 
-        case let .toolInputStart(id, toolName, providerMetadata, executed, dynamicFlag):
+        case let .toolInputStart(id, toolName, providerMetadata, executed, dynamicFlag, title):
             var payload: [String: Any] = ["type": "tool-input-start", "id": id, "name": toolName]
             if let executed { payload["providerExecuted"] = executed }
             if let dynamicFlag { payload["dynamic"] = dynamicFlag }
+            if let title { payload["title"] = title }
             if let meta = providerMetadataDictionary(providerMetadata) { payload["providerMetadata"] = meta }
             return [encode(event: payload)]
 

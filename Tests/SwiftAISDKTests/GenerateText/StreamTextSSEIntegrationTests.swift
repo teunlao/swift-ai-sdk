@@ -83,7 +83,7 @@ struct StreamTextSSEIntegrationTests {
                 providerExecuted: false,
                 providerMetadata: nil
             ))),
-            .toolInputStart(id: "call-1", toolName: "demo", providerMetadata: nil, providerExecuted: false, dynamic: nil),
+            .toolInputStart(id: "call-1", toolName: "demo", providerMetadata: nil, providerExecuted: false, dynamic: nil, title: nil),
             .toolInputDelta(id: "call-1", delta: "{", providerMetadata: nil),
             .toolInputDelta(id: "call-1", delta: "}", providerMetadata: nil),
             .toolInputEnd(id: "call-1", providerMetadata: nil),
@@ -118,7 +118,7 @@ struct StreamTextSSEIntegrationTests {
         let meta: ProviderMetadata = ["prov": ["tag": .string("m")]]
         // Build a stream of low-level TextStreamPart events to feed the encoder directly.
         let parts: [TextStreamPart] = [
-            .toolInputStart(id: "c1", toolName: "demo", providerMetadata: meta, providerExecuted: false, dynamic: true),
+            .toolInputStart(id: "c1", toolName: "demo", providerMetadata: meta, providerExecuted: false, dynamic: true, title: "Demo Tool"),
             .toolInputDelta(id: "c1", delta: "{}", providerMetadata: meta),
             .toolInputEnd(id: "c1", providerMetadata: meta),
             .toolError(.static(StaticToolError(toolCallId: "c1", toolName: "demo", input: .object([:]), error: NSError(domain: "x", code: 1)))),
@@ -135,6 +135,7 @@ struct StreamTextSSEIntegrationTests {
         let inputStart = try #require(events.first(where: { $0["type"] as? String == "tool-input-start" }))
         #expect((inputStart["providerMetadata"] as? NSDictionary)?["prov"] != nil)
         #expect(inputStart["dynamic"] as? Bool == true)
+        #expect(inputStart["title"] as? String == "Demo Tool")
 
         let inputDelta = try #require(events.first(where: { $0["type"] as? String == "tool-input-delta" }))
         #expect((inputDelta["providerMetadata"] as? NSDictionary)?["prov"] != nil)

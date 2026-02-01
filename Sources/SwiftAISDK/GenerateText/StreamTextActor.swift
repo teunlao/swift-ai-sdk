@@ -722,7 +722,7 @@ actor StreamTextActor {
                     .reasoningEnd(id: id, providerMetadata: providerMetadata)
                 )
 
-case let .toolInputStart(id, toolName, providerMetadata, providerExecuted, dynamicFlag, _):
+case let .toolInputStart(id, toolName, providerMetadata, providerExecuted, dynamicFlag, title):
                 if !didEmitStartStep {
                     if !framingEmitted {
                         framingEmitted = true
@@ -756,7 +756,8 @@ case let .toolInputStart(id, toolName, providerMetadata, providerExecuted, dynam
                         toolName: toolName,
                         providerMetadata: providerMetadata,
                         providerExecuted: providerExecuted,
-                        dynamic: dynamicFlag ?? (tool?.type == .dynamic ? true : nil)
+                        dynamic: dynamicFlag ?? (tool?.type == .dynamic ? true : nil),
+                        title: title
                     )
                 )
             case let .toolInputDelta(id, delta, providerMetadata):

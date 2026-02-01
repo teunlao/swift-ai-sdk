@@ -995,7 +995,7 @@ private actor StreamTextPipelineAggregator {
             await handleReasoningDelta(id: id, delta: delta, providerMetadata: providerMetadata)
         case .reasoningEnd(let id, let providerMetadata):
             await handleReasoningEnd(id: id, providerMetadata: providerMetadata)
-        case .toolInputStart(let id, let toolName, _, _, _):
+        case .toolInputStart(let id, let toolName, _, _, _, _):
             activeToolNames[id] = toolName
         case .toolInputDelta(let id, _, _):
             if activeToolNames[id] != nil { /* callbacks handled in actor */ }

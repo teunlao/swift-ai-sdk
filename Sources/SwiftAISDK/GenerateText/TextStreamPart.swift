@@ -46,7 +46,8 @@ public enum TextStreamPart: Sendable {
         toolName: String,
         providerMetadata: ProviderMetadata?,
         providerExecuted: Bool?,
-        dynamic: Bool?
+        dynamic: Bool?,
+        title: String?
     )
 
     /// Indicates the end of tool input streaming.
@@ -137,8 +138,8 @@ extension TextStreamPart: Equatable {
             return lId == rId && lText == rText && lMeta == rMeta
 
         // Tool input events
-        case let (.toolInputStart(lId, lName, lMeta, lExec, lDyn), .toolInputStart(rId, rName, rMeta, rExec, rDyn)):
-            return lId == rId && lName == rName && lMeta == rMeta && lExec == rExec && lDyn == rDyn
+        case let (.toolInputStart(lId, lName, lMeta, lExec, lDyn, lTitle), .toolInputStart(rId, rName, rMeta, rExec, rDyn, rTitle)):
+            return lId == rId && lName == rName && lMeta == rMeta && lExec == rExec && lDyn == rDyn && lTitle == rTitle
         case let (.toolInputEnd(lId, lMeta), .toolInputEnd(rId, rMeta)):
             return lId == rId && lMeta == rMeta
         case let (.toolInputDelta(lId, lDelta, lMeta), .toolInputDelta(rId, rDelta, rMeta)):
@@ -284,12 +285,14 @@ extension TextStreamPart: Codable {
             let metadata = try container.decodeIfPresent(ProviderMetadata.self, forKey: .providerMetadata)
             let providerExecuted = try container.decodeIfPresent(Bool.self, forKey: .providerExecuted)
             let dynamic = try container.decodeIfPresent(Bool.self, forKey: .dynamic)
+            let title = try container.decodeIfPresent(String.self, forKey: .title)
             self = .toolInputStart(
                 id: id,
                 toolName: toolName,
                 providerMetadata: metadata,
                 providerExecuted: providerExecuted,
-                dynamic: dynamic
+                dynamic: dynamic,
+                title: title
             )
 
         case "tool-input-end":
@@ -599,13 +602,14 @@ extension TextStreamPart: Codable {
             try container.encodeIfPresent(metadata, forKey: .providerMetadata)
 
         // Tool input events
-        case .toolInputStart(let id, let toolName, let metadata, let providerExecuted, let dynamic):
+        case .toolInputStart(let id, let toolName, let metadata, let providerExecuted, let dynamic, let title):
             try container.encode("tool-input-start", forKey: .type)
             try container.encode(id, forKey: .id)
             try container.encode(toolName, forKey: .toolName)
             try container.encodeIfPresent(metadata, forKey: .providerMetadata)
             try container.encodeIfPresent(providerExecuted, forKey: .providerExecuted)
             try container.encodeIfPresent(dynamic, forKey: .dynamic)
+            try container.encodeIfPresent(title, forKey: .title)
 
         case .toolInputEnd(let id, let metadata):
             try container.encode("tool-input-end", forKey: .type)
@@ -789,7 +793,7 @@ extension TextStreamPart: CustomStringConvertible {
             return "reasoningEnd(id: \(id))"
         case .reasoningDelta(let id, let text, _):
             return "reasoningDelta(id: \(id), text: \(text.prefix(20))...)"
-        case .toolInputStart(let id, let name, _, _, _):
+        case .toolInputStart(let id, let name, _, _, _, _):
             return "toolInputStart(id: \(id), toolName: \(name))"
         case .toolInputEnd(let id, _):
             return "toolInputEnd(id: \(id))"
