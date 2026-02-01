@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.7.5] - 2026-02-01
+
+### Added
+- OpenAI: port upstream `openai-language-model-capabilities` helper and share it across Chat/Responses.
+
+### Fixed
+- OpenAI Chat: validate `metadata` provider option key/value lengths (keys ≤ 64, values ≤ 512) to match upstream.
+
 ## [0.7.4] - 2026-02-01
 
 ### Fixed

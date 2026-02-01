@@ -175,8 +175,16 @@ let openAIChatProviderOptionsSchema = FlexibleSchema<OpenAIChatProviderOptions>(
                     }
                     var metadata: [String: String] = [:]
                     for (key, value) in entries {
+                        if key.utf16.count > 64 {
+                            let error = SchemaValidationIssuesError(vendor: "openai", issues: "metadata keys must be at most 64 characters")
+                            return .failure(error: TypeValidationError.wrap(value: value, cause: error))
+                        }
                         guard case .string(let stringValue) = value else {
                             let error = SchemaValidationIssuesError(vendor: "openai", issues: "metadata values must be strings")
+                            return .failure(error: TypeValidationError.wrap(value: value, cause: error))
+                        }
+                        if stringValue.utf16.count > 512 {
+                            let error = SchemaValidationIssuesError(vendor: "openai", issues: "metadata values must be at most 512 characters")
                             return .failure(error: TypeValidationError.wrap(value: value, cause: error))
                         }
                         metadata[key] = stringValue

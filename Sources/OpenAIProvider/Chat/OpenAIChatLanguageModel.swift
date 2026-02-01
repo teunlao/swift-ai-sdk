@@ -288,9 +288,10 @@ public final class OpenAIChatLanguageModel: LanguageModelV3 {
         let strictJsonSchema = mergedOptions?.strictJsonSchema ?? true
 
         let modelId = modelIdentifier.rawValue
-        let modelIsReasoningModel = isReasoningModel(modelId)
-        let supportsNonReasoningParameters = supportsNonReasoningParameters(modelId)
-        let isReasoningModel = mergedOptions?.forceReasoning ?? modelIsReasoningModel
+        let modelCapabilities = getOpenAILanguageModelCapabilities(for: modelId)
+        let modelIsReasoningModel = modelCapabilities.isReasoningModel
+        let supportsNonReasoningParameters = modelCapabilities.supportsNonReasoningParameters
+        let isReasoningModel = mergedOptions?.forceReasoning ?? modelCapabilities.isReasoningModel
 
         let modelDefaultSystemMode: OpenAIChatSystemMessageMode = modelIsReasoningModel ? .developer : .system
         let systemMode = mergedOptions?.systemMessageMode
@@ -427,7 +428,7 @@ public final class OpenAIChatLanguageModel: LanguageModelV3 {
             modelId: modelId
         )
 
-        if mergedOptions?.serviceTier == .flex, !supportsFlexProcessing(modelIdentifier.rawValue) {
+        if mergedOptions?.serviceTier == .flex, !modelCapabilities.supportsFlexProcessing {
             warnings.append(.unsupportedSetting(
                 setting: "serviceTier",
                 details: "flex processing is only available for o3, o4-mini, and gpt-5 models"
@@ -435,7 +436,7 @@ public final class OpenAIChatLanguageModel: LanguageModelV3 {
             body.removeValue(forKey: "service_tier")
         }
 
-        if mergedOptions?.serviceTier == .priority, !supportsPriorityProcessing(modelIdentifier.rawValue) {
+        if mergedOptions?.serviceTier == .priority, !modelCapabilities.supportsPriorityProcessing {
             warnings.append(.unsupportedSetting(
                 setting: "serviceTier",
                 details: "priority processing is only available for supported models (gpt-4, gpt-5, gpt-5-mini, o3, o4-mini) and requires Enterprise access. gpt-5-nano is not supported"
@@ -544,45 +545,6 @@ public final class OpenAIChatLanguageModel: LanguageModelV3 {
         return (chunk.id, chunk.model, timestamp)
     }
 
-    private func getSystemMessageMode(for modelId: String) -> OpenAIChatSystemMessageMode {
-        if !isReasoningModel(modelId) {
-            return .system
-        }
-        if let mode = reasoningModels[modelId] {
-            return mode
-        }
-        return .developer
-    }
-
-    private func isReasoningModel(_ modelId: String) -> Bool {
-        modelId.hasPrefix("o1")
-        || modelId.hasPrefix("o3")
-        || modelId.hasPrefix("o4-mini")
-        || modelId.hasPrefix("codex-mini")
-        || modelId.hasPrefix("computer-use-preview")
-        || (modelId.hasPrefix("gpt-5") && !modelId.hasPrefix("gpt-5-chat"))
-    }
-
-    private func supportsNonReasoningParameters(_ modelId: String) -> Bool {
-        modelId.hasPrefix("gpt-5.1") || modelId.hasPrefix("gpt-5.2")
-    }
-
-    private func supportsFlexProcessing(_ modelId: String) -> Bool {
-        modelId.hasPrefix("o3") ||
-        modelId.hasPrefix("o4-mini") ||
-        (modelId.hasPrefix("gpt-5") && !modelId.hasPrefix("gpt-5-chat"))
-    }
-
-    private func supportsPriorityProcessing(_ modelId: String) -> Bool {
-        modelId.hasPrefix("gpt-4") ||
-        modelId.hasPrefix("gpt-5-mini") ||
-        (modelId.hasPrefix("gpt-5") &&
-         !modelId.hasPrefix("gpt-5-nano") &&
-         !modelId.hasPrefix("gpt-5-chat")) ||
-        modelId.hasPrefix("o3") ||
-        modelId.hasPrefix("o4-mini")
-    }
-
     private func handleToolCallDeltas(
         _ deltas: [OpenAIChatChunkToolCallDelta],
         toolCalls: inout [Int: ToolCallState],
@@ -673,18 +635,6 @@ public final class OpenAIChatLanguageModel: LanguageModelV3 {
         var hasFinished: Bool
     }
 
-    private let reasoningModels: [String: OpenAIChatSystemMessageMode] = [
-        "o1-mini": .remove,
-        "o1-mini-2024-09-12": .remove,
-        "o1-preview": .remove,
-        "o1-preview-2024-09-12": .remove,
-        "o3": .developer,
-        "o3-2025-04-16": .developer,
-        "o3-mini": .developer,
-        "o3-mini-2025-01-31": .developer,
-        "o4-mini": .developer,
-        "o4-mini-2025-04-16": .developer
-    ]
 }
 
 private extension JSONEncoder {
