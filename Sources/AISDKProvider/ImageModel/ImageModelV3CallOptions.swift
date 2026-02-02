@@ -24,6 +24,14 @@ public struct ImageModelV3CallOptions: Sendable {
     /// `nil` will use the provider's default seed
     public let seed: Int?
 
+    /// Array of images for image editing or variation generation.
+    /// Port of `files?: ImageModelV3File[]`.
+    public let files: [ImageModelV3File]?
+
+    /// Mask image for inpainting operations.
+    /// Port of `mask?: ImageModelV3File`.
+    public let mask: ImageModelV3File?
+
     /// Additional provider-specific options
     public let providerOptions: SharedV3ProviderOptions?
 
@@ -39,6 +47,8 @@ public struct ImageModelV3CallOptions: Sendable {
         size: String? = nil,
         aspectRatio: String? = nil,
         seed: Int? = nil,
+        files: [ImageModelV3File]? = nil,
+        mask: ImageModelV3File? = nil,
         providerOptions: SharedV3ProviderOptions? = nil,
         abortSignal: (@Sendable () -> Bool)? = nil,
         headers: [String: String]? = nil
@@ -48,8 +58,35 @@ public struct ImageModelV3CallOptions: Sendable {
         self.size = size
         self.aspectRatio = aspectRatio
         self.seed = seed
+        self.files = files
+        self.mask = mask
         self.providerOptions = providerOptions
         self.abortSignal = abortSignal
         self.headers = headers
+    }
+
+    /// Backwards-compatible initializer (pre `files`/`mask`).
+    public init(
+        prompt: String,
+        n: Int,
+        size: String? = nil,
+        aspectRatio: String? = nil,
+        seed: Int? = nil,
+        providerOptions: SharedV3ProviderOptions? = nil,
+        abortSignal: (@Sendable () -> Bool)? = nil,
+        headers: [String: String]? = nil
+    ) {
+        self.init(
+            prompt: prompt,
+            n: n,
+            size: size,
+            aspectRatio: aspectRatio,
+            seed: seed,
+            files: nil,
+            mask: nil,
+            providerOptions: providerOptions,
+            abortSignal: abortSignal,
+            headers: headers
+        )
     }
 }

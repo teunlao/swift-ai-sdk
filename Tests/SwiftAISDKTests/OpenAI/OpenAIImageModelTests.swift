@@ -14,7 +14,7 @@ struct OpenAIImageModelTests {
     ) -> OpenAIConfig {
         OpenAIConfig(
             provider: "openai.image",
-            url: { _ in "https://api.openai.com/v1/images/generations" },
+            url: { options in "https://api.openai.com/v1\(options.path)" },
             headers: providerHeaders,
             fetch: fetch,
             _internal: .init(currentDate: { Date(timeIntervalSince1970: 1_733_837_122) })
@@ -762,5 +762,137 @@ struct OpenAIImageModelTests {
             ]),
             .null
         ])
+    }
+
+    @Test("doGenerate calls /images/edits with multipart form-data when files are provided")
+    func testDoGenerateUsesEditsEndpointWhenFilesProvided() async throws {
+        actor RequestCapture {
+            var request: URLRequest?
+            func store(_ request: URLRequest) { self.request = request }
+            func current() -> URLRequest? { request }
+        }
+
+        let capture = RequestCapture()
+        let responseData = try JSONSerialization.data(withJSONObject: makeResponseJSON())
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.openai.com/v1/images/edits")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIImageModel(modelId: "dall-e-2", config: makeConfig(fetch: fetch))
+        let inputFile: ImageModelV3File = .file(
+            mediaType: "image/png",
+            data: .binary(Data("PNGDATA".utf8)),
+            providerOptions: nil
+        )
+
+        _ = try await model.doGenerate(
+            options: ImageModelV3CallOptions(
+                prompt: imagePrompt,
+                n: 1,
+                size: "1024x1024",
+                aspectRatio: nil,
+                seed: nil,
+                files: [inputFile],
+                mask: nil,
+                providerOptions: ["openai": ["style": .string("vivid")]],
+                abortSignal: nil,
+                headers: ["Custom-Header": "request"]
+            )
+        )
+
+        guard let request = await capture.current() else {
+            Issue.record("Missing request capture")
+            return
+        }
+
+        #expect(request.url?.absoluteString == "https://api.openai.com/v1/images/edits")
+
+        let headers = request.allHTTPHeaderFields ?? [:]
+        let normalized = Dictionary(uniqueKeysWithValues: headers.map { ($0.key.lowercased(), $0.value) })
+        let contentType = normalized["content-type"] ?? ""
+        #expect(contentType.hasPrefix("multipart/form-data; boundary="))
+
+        guard let body = request.httpBody else {
+            Issue.record("Missing multipart body")
+            return
+        }
+        let bodyString = String(decoding: body, as: UTF8.self)
+        #expect(bodyString.contains("name=\"model\""))
+        #expect(bodyString.contains("dall-e-2"))
+        #expect(bodyString.contains("name=\"prompt\""))
+        #expect(bodyString.contains(imagePrompt))
+        #expect(bodyString.contains("name=\"image\""))
+        #expect(bodyString.contains("filename=\"image.png\""))
+        #expect(bodyString.lowercased().contains("content-type: image/png"))
+        #expect(bodyString.contains("PNGDATA"))
+        #expect(bodyString.contains("name=\"style\""))
+        #expect(bodyString.contains("vivid"))
+    }
+
+    @Test("doGenerate includes mask part when provided")
+    func testDoGenerateIncludesMaskWhenProvided() async throws {
+        actor BodyCapture {
+            var body: Data?
+            func store(_ data: Data?) { body = data }
+            func current() -> Data? { body }
+        }
+
+        let capture = BodyCapture()
+        let responseData = try JSONSerialization.data(withJSONObject: makeResponseJSON())
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.openai.com/v1/images/edits")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request.httpBody)
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIImageModel(modelId: "dall-e-2", config: makeConfig(fetch: fetch))
+        let inputFile: ImageModelV3File = .file(
+            mediaType: "image/png",
+            data: .binary(Data("IMG".utf8)),
+            providerOptions: nil
+        )
+        let mask: ImageModelV3File = .file(
+            mediaType: "image/png",
+            data: .binary(Data("MASK".utf8)),
+            providerOptions: nil
+        )
+
+        _ = try await model.doGenerate(
+            options: ImageModelV3CallOptions(
+                prompt: imagePrompt,
+                n: 1,
+                size: "256x256",
+                aspectRatio: nil,
+                seed: nil,
+                files: [inputFile],
+                mask: mask,
+                providerOptions: [:],
+                abortSignal: nil,
+                headers: nil
+            )
+        )
+
+        guard let body = await capture.current() else {
+            Issue.record("Missing request body")
+            return
+        }
+        let bodyString = String(decoding: body, as: UTF8.self)
+        #expect(bodyString.contains("name=\"mask\""))
+        #expect(bodyString.contains("filename=\"mask.png\""))
+        #expect(bodyString.contains("MASK"))
     }
 }
