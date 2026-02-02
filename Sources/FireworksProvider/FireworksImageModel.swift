@@ -97,9 +97,12 @@ public final class FireworksImageModel: ImageModelV3 {
         }
 
         var body: [String: JSONValue] = [
-            "prompt": .string(options.prompt),
             "samples": .number(Double(options.n))
         ]
+
+        if let prompt = options.prompt {
+            body["prompt"] = .string(prompt)
+        }
 
         if let aspectRatio = options.aspectRatio {
             body["aspect_ratio"] = .string(aspectRatio)

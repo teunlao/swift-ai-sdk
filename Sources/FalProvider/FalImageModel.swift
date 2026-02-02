@@ -47,9 +47,12 @@ public final class FalImageModel: ImageModelV3 {
 
     public func doGenerate(options: ImageModelV3CallOptions) async throws -> ImageModelV3GenerateResult {
         var body: [String: JSONValue] = [
-            "prompt": .string(options.prompt),
             "num_images": .number(Double(options.n))
         ]
+
+        if let prompt = options.prompt {
+            body["prompt"] = .string(prompt)
+        }
 
         if let seed = options.seed {
             body["seed"] = .number(Double(seed))

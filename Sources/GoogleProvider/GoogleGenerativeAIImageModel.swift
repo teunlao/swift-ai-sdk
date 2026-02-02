@@ -113,8 +113,9 @@ final class GoogleGenerativeAIImageModel: ImageModelV3 {
         let headers = combineHeaders(config.headers(), options.headers?.mapValues { Optional($0) })
         let normalizedHeaders = headers.compactMapValues { $0 }
 
+        let prompt = options.prompt ?? ""
         let body = JSONValue.object([
-            "instances": .array([.object(["prompt": .string(options.prompt)])]),
+            "instances": .array([.object(["prompt": .string(prompt)])]),
             "parameters": .object(parameters)
         ])
 

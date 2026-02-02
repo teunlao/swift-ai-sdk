@@ -4,8 +4,8 @@
  Port of `@ai-sdk/provider/src/image-model/v3/image-model-v3-call-options.ts`.
  */
 public struct ImageModelV3CallOptions: Sendable {
-    /// Prompt for the image generation
-    public let prompt: String
+    /// Prompt for the image generation. Some operations may not require a prompt.
+    public let prompt: String?
 
     /// Number of images to generate
     public let n: Int
@@ -42,51 +42,26 @@ public struct ImageModelV3CallOptions: Sendable {
     public let headers: [String: String]?
 
     public init(
-        prompt: String,
+        prompt: String? = nil,
         n: Int,
         size: String? = nil,
         aspectRatio: String? = nil,
         seed: Int? = nil,
-        files: [ImageModelV3File]? = nil,
-        mask: ImageModelV3File? = nil,
         providerOptions: SharedV3ProviderOptions? = nil,
         abortSignal: (@Sendable () -> Bool)? = nil,
-        headers: [String: String]? = nil
+        headers: [String: String]? = nil,
+        files: [ImageModelV3File]? = nil,
+        mask: ImageModelV3File? = nil
     ) {
         self.prompt = prompt
         self.n = n
         self.size = size
         self.aspectRatio = aspectRatio
         self.seed = seed
-        self.files = files
-        self.mask = mask
         self.providerOptions = providerOptions
         self.abortSignal = abortSignal
         self.headers = headers
-    }
-
-    /// Backwards-compatible initializer (pre `files`/`mask`).
-    public init(
-        prompt: String,
-        n: Int,
-        size: String? = nil,
-        aspectRatio: String? = nil,
-        seed: Int? = nil,
-        providerOptions: SharedV3ProviderOptions? = nil,
-        abortSignal: (@Sendable () -> Bool)? = nil,
-        headers: [String: String]? = nil
-    ) {
-        self.init(
-            prompt: prompt,
-            n: n,
-            size: size,
-            aspectRatio: aspectRatio,
-            seed: seed,
-            files: nil,
-            mask: nil,
-            providerOptions: providerOptions,
-            abortSignal: abortSignal,
-            headers: headers
-        )
+        self.files = files
+        self.mask = mask
     }
 }

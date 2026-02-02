@@ -62,7 +62,7 @@ public final class BedrockImageModel: ImageModelV3 {
         let overrides: [String: JSONValue] = options.providerOptions?["bedrock"] ?? [:]
 
         var textToImageParams: [String: JSONValue] = [
-            "text": .string(options.prompt)
+            "text": .string(options.prompt ?? "")
         ]
 
         if let negativeTextValue = overrides["negativeText"],

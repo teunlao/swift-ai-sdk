@@ -99,9 +99,12 @@ public final class OpenAIImageModel: ImageModelV3 {
 
     private func makeRequestBody(options: ImageModelV3CallOptions) throws -> JSONValue {
         var payload: [String: JSONValue] = [
-            "model": .string(modelIdentifier.rawValue),
-            "prompt": .string(options.prompt)
+            "model": .string(modelIdentifier.rawValue)
         ]
+
+        if let prompt = options.prompt {
+            payload["prompt"] = .string(prompt)
+        }
 
         if options.n > 0 {
             payload["n"] = .number(Double(options.n))
@@ -129,7 +132,7 @@ public final class OpenAIImageModel: ImageModelV3 {
     }
 
     private func prepareEditsRequest(
-        prompt: String,
+        prompt: String?,
         files: [ImageModelV3File],
         mask: ImageModelV3File?,
         n: Int,
@@ -138,7 +141,9 @@ public final class OpenAIImageModel: ImageModelV3 {
     ) async throws -> PreparedMultipartRequest {
         var builder = MultipartFormDataBuilder()
         builder.appendField(name: "model", value: modelIdentifier.rawValue)
-        builder.appendField(name: "prompt", value: prompt)
+        if let prompt {
+            builder.appendField(name: "prompt", value: prompt)
+        }
 
         if n > 0 {
             builder.appendField(name: "n", value: String(n))

@@ -226,7 +226,7 @@ public final class GoogleVertexImageModel: ImageModelV3 {
             url: "\(config.baseURL)/models/\(modelIdentifier.rawValue):predict",
             headers: headers,
             body: JSONValue.object([
-                "instances": .array([.object(["prompt": .string(options.prompt)])]),
+                "instances": .array([.object(["prompt": .string(options.prompt ?? "")])]),
                 "parameters": .object(parameters)
             ]),
             failedResponseHandler: googleVertexFailedResponseHandler,

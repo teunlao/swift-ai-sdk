@@ -104,9 +104,12 @@ public final class ReplicateImageModel: ImageModelV3 {
 
         // Prepare body
         var input: [String: JSONValue] = [
-            "prompt": .string(options.prompt),
             "num_outputs": .number(Double(options.n))
         ]
+
+        if let prompt = options.prompt {
+            input["prompt"] = .string(prompt)
+        }
 
         if let aspect = options.aspectRatio { input["aspect_ratio"] = .string(aspect) }
         if let size = options.size { input["size"] = .string(size) }

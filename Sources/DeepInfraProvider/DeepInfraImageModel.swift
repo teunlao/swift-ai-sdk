@@ -48,9 +48,11 @@ public final class DeepInfraImageModel: ImageModelV3 {
     public var provider: String { config.provider }
 
     public func doGenerate(options: ImageModelV3CallOptions) async throws -> ImageModelV3GenerateResult {
-        var payload: [String: JSONValue] = [
-            "prompt": .string(options.prompt)
-        ]
+        var payload: [String: JSONValue] = [:]
+
+        if let prompt = options.prompt {
+            payload["prompt"] = .string(prompt)
+        }
 
         payload["num_images"] = .number(Double(options.n))
 

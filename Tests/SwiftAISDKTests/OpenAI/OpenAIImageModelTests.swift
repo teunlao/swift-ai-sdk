@@ -800,11 +800,11 @@ struct OpenAIImageModelTests {
                 size: "1024x1024",
                 aspectRatio: nil,
                 seed: nil,
-                files: [inputFile],
-                mask: nil,
                 providerOptions: ["openai": ["style": .string("vivid")]],
                 abortSignal: nil,
-                headers: ["Custom-Header": "request"]
+                headers: ["Custom-Header": "request"],
+                files: [inputFile],
+                mask: nil
             )
         )
 
@@ -878,11 +878,11 @@ struct OpenAIImageModelTests {
                 size: "256x256",
                 aspectRatio: nil,
                 seed: nil,
-                files: [inputFile],
-                mask: mask,
                 providerOptions: [:],
                 abortSignal: nil,
-                headers: nil
+                headers: nil,
+                files: [inputFile],
+                mask: mask
             )
         )
 

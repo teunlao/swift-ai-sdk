@@ -61,10 +61,13 @@ public final class OpenAICompatibleImageModel: ImageModelV3 {
         let providerSpecific = options.providerOptions?["openai"] ?? [:]
         var body: [String: JSONValue] = [
             "model": .string(modelIdentifier.rawValue),
-            "prompt": .string(options.prompt),
             "n": .number(Double(options.n)),
             "response_format": .string("b64_json")
         ]
+
+        if let prompt = options.prompt {
+            body["prompt"] = .string(prompt)
+        }
 
         if let size = options.size {
             body["size"] = .string(size)

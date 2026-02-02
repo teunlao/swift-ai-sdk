@@ -112,9 +112,12 @@ public final class LumaImageModel: ImageModelV3 {
         let parsedProviderOptions = parseProviderOptions(options.providerOptions)
 
         var body: [String: JSONValue] = [
-            "prompt": .string(options.prompt),
             "model": .string(modelIdentifier.rawValue)
         ]
+
+        if let prompt = options.prompt {
+            body["prompt"] = .string(prompt)
+        }
 
         if let aspectRatio = options.aspectRatio {
             body["aspect_ratio"] = .string(aspectRatio)
