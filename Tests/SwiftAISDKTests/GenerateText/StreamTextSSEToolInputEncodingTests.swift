@@ -29,7 +29,7 @@ struct StreamTextSSEToolInputEncodingTests {
                 dynamic: nil,
                 title: "Demo Tool"
             ),
-            .finish(finishReason: .stop, totalUsage: LanguageModelUsage())
+            .finish(finishReason: .stop, rawFinishReason: nil, totalUsage: LanguageModelUsage())
         ]
 
         let stream = AsyncThrowingStream<TextStreamPart, Error> { c in
@@ -45,4 +45,3 @@ struct StreamTextSSEToolInputEncodingTests {
         #expect(inputStart["title"] as? String == "Demo Tool")
     }
 }
-

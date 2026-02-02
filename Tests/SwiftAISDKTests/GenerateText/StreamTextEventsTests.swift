@@ -16,7 +16,7 @@ struct StreamTextEventsTests {
             .textDelta(id: "A", text: "Hel", providerMetadata: nil),
             .textDelta(id: "A", text: "lo", providerMetadata: nil),
             .textEnd(id: "A", providerMetadata: nil),
-            .finish(finishReason: .stop, totalUsage: usage)
+            .finish(finishReason: .stop, rawFinishReason: nil, totalUsage: usage)
         ]
     }
 
@@ -40,7 +40,7 @@ struct StreamTextEventsTests {
             Issue.record("missing events")
         }
         #expect(events.contains { if case .textDelta(text: "Hel", _) = $0 { return true } else { return false } })
-        #expect(events.contains { if case .finish(reason: .stop, _) = $0 { return true } else { return false } })
+        #expect(events.contains { if case .finish(reason: .stop, rawFinishReason: _, usage: _) = $0 { return true } else { return false } })
     }
 
     @Test("event summary aggregates text and finish metadata")
@@ -64,7 +64,7 @@ struct StreamTextEventsTests {
     func eventSummaryFlagsAbort() async throws {
         let parts: [TextStreamPart] = [
             .start,
-            .abort
+            .abort(reason: nil)
         ]
         let stream = AsyncThrowingStream<TextStreamPart, Error> { continuation in
             for part in parts { continuation.yield(part) }

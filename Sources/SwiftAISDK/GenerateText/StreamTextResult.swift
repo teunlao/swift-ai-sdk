@@ -54,6 +54,9 @@ public protocol StreamTextResult: Sendable {
     /// Finish reason reported by the final step (consumes the stream).
     var finishReason: FinishReason { get async throws }
 
+    /// Raw finish reason reported by the provider (consumes the stream).
+    var rawFinishReason: String? { get async throws }
+
     /// Token usage of the final step (consumes the stream).
     var usage: LanguageModelUsage { get async throws }
 

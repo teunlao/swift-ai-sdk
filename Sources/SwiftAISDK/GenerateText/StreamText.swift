@@ -673,6 +673,10 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
         get async throws { try await aggregator.finishReasonValue() }
     }
 
+    public var rawFinishReason: String? {
+        get async throws { try await aggregator.rawFinishReasonValue() }
+    }
+
     public var usage: LanguageModelUsage {
         get async throws { try await finalStep.usage }
     }
@@ -943,6 +947,7 @@ private actor StreamTextPipelineAggregator {
     private var activeToolInputs: [String: JSONValue] = [:]
     private var activeToolNames: [String: String] = [:]
     private var finishReason: FinishReason? = nil
+    private var rawFinishReason: String? = nil
     private var totalUsage: LanguageModelUsage? = nil
     private var finalStep: DefaultStepResult? = nil
     private var finishError: Error? = nil
@@ -979,8 +984,8 @@ private actor StreamTextPipelineAggregator {
         switch part {
         case .start:
             return
-        case .abort:
-            await handleAbort()
+        case let .abort(reason):
+            await handleAbort(reason: reason)
         case .startStep(let request, let warnings):
             await startStep(request: request, warnings: warnings)
         case .textStart(let id, let providerMetadata):
@@ -1017,15 +1022,16 @@ private actor StreamTextPipelineAggregator {
             recordedContent.append(.file(file: file, providerMetadata: nil))
         case .raw:
             return
-        case .finishStep(let response, let usage, let finishReason, let providerMetadata):
+        case .finishStep(let response, let usage, let finishReason, let rawFinishReason, let providerMetadata):
             await finalizeStep(
                 response: response,
                 usage: usage,
                 finishReason: finishReason,
+                rawFinishReason: rawFinishReason,
                 providerMetadata: providerMetadata
             )
-        case .finish(let finishReason, let usage):
-            await handleFinish(finishReason: finishReason, usage: usage)
+        case .finish(let finishReason, let rawFinishReason, let usage):
+            await handleFinish(finishReason: finishReason, rawFinishReason: rawFinishReason, usage: usage)
         case .error(let errorValue):
             let normalized = (wrapGatewayError(errorValue) as? Error) ?? errorValue
             await deliverError(normalized)
@@ -1078,6 +1084,11 @@ private actor StreamTextPipelineAggregator {
         return reason
     }
 
+    func rawFinishReasonValue() async throws -> String? {
+        try await waitForCompletion()
+        return rawFinishReason
+    }
+
     func appendInitialResponseMessages(_ messages: [ResponseMessage]) {
         guard !messages.isEmpty else { return }
         recordedResponseMessages.append(contentsOf: messages)
@@ -1122,7 +1133,7 @@ private actor StreamTextPipelineAggregator {
         await deliverError(error)
     }
 
-    private func handleAbort() async {
+    private func handleAbort(reason _: String?) async {
         await onAbort?(recordedSteps)
         finishError = NoOutputGeneratedError()
     }
@@ -1239,6 +1250,7 @@ private actor StreamTextPipelineAggregator {
         response: LanguageModelResponseMetadata,
         usage: LanguageModelUsage,
         finishReason: FinishReason,
+        rawFinishReason: String?,
         providerMetadata: ProviderMetadata?
     ) async {
         finalizePendingContent()
@@ -1258,6 +1270,7 @@ private actor StreamTextPipelineAggregator {
         let stepResult = DefaultStepResult(
             content: contentSnapshot,
             finishReason: finishReason,
+            rawFinishReason: rawFinishReason,
             usage: usage,
             warnings: currentWarnings,
             request: currentRequest,
@@ -1279,9 +1292,10 @@ private actor StreamTextPipelineAggregator {
         currentTimestamp = nil
     }
 
-    private func handleFinish(finishReason: FinishReason, usage: LanguageModelUsage) async {
+    private func handleFinish(finishReason: FinishReason, rawFinishReason: String?, usage: LanguageModelUsage) async {
         totalUsage = usage
         self.finishReason = finishReason
+        self.rawFinishReason = rawFinishReason
         if let step = recordedSteps.last {
             finalStep = step
             if let onFinish {

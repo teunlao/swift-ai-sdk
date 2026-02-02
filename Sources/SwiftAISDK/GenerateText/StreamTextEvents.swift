@@ -16,8 +16,8 @@ public enum StreamTextEvent: Sendable {
     case toolOutputDenied(ToolOutputDenied)
     case source(Source)
     case file(GeneratedFile)
-    case finish(reason: FinishReason, usage: LanguageModelUsage)
-    case abort
+    case finish(reason: FinishReason, rawFinishReason: String?, usage: LanguageModelUsage)
+    case abort(reason: String?)
 }
 
 /// Converts a `TextStreamPart` stream into a higher-level event stream mirroring the
@@ -113,7 +113,7 @@ public func summarizeStreamTextEvents(
             summary.sources.append(source)
         case let .file(file):
             summary.files.append(file)
-        case let .finish(reason, usage):
+        case let .finish(reason, _, usage):
             summary.finishReason = reason
             summary.usage = usage
         case .abort:
@@ -176,13 +176,13 @@ private final class StreamTextEventEncoder {
         case .finishStep:
             return []
 
-        case let .finish(reason, usage):
+        case let .finish(reason, rawFinishReason, usage):
             finishedEmitted = true
-            return [.finish(reason: reason, usage: usage)]
+            return [.finish(reason: reason, rawFinishReason: rawFinishReason, usage: usage)]
 
-        case .abort:
+        case let .abort(reason):
             finishedEmitted = true
-            return [.abort]
+            return [.abort(reason: reason)]
 
         case .raw:
             return []
@@ -197,6 +197,6 @@ private final class StreamTextEventEncoder {
     }
 
     func finalize() -> [StreamTextEvent] {
-        finishedEmitted ? [] : [.finish(reason: .unknown, usage: LanguageModelUsage())]
+        finishedEmitted ? [] : [.finish(reason: .unknown, rawFinishReason: nil, usage: LanguageModelUsage())]
     }
 }

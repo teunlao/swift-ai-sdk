@@ -30,7 +30,7 @@ struct StreamTextSSEToolCallEncodingTests {
                 providerExecuted: false,
                 providerMetadata: meta
             ))),
-            .finish(finishReason: .stop, totalUsage: LanguageModelUsage())
+            .finish(finishReason: .stop, rawFinishReason: nil, totalUsage: LanguageModelUsage())
         ]
 
         let stream = AsyncThrowingStream<TextStreamPart, Error> { c in
@@ -66,7 +66,7 @@ struct StreamTextSSEToolCallEncodingTests {
                 invalid: true,
                 error: err
             ))),
-            .finish(finishReason: .stop, totalUsage: LanguageModelUsage())
+            .finish(finishReason: .stop, rawFinishReason: nil, totalUsage: LanguageModelUsage())
         ]
 
         let stream = AsyncThrowingStream<TextStreamPart, Error> { c in

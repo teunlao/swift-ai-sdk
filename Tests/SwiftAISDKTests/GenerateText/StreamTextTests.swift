@@ -188,7 +188,7 @@ struct StreamTextBasicTests {
         #expect(step.response.timestamp == fallbackDate)
         #expect(step.response.modelId == "mock-model-id")
 
-        if case let .finishStep(response, _, _, _) = emitted.first(where: { part in
+        if case let .finishStep(response, _, _, _, _) = emitted.first(where: { part in
             if case .finishStep = part { return true } else { return false }
         }) {
             #expect(response.id == "fallback-id")

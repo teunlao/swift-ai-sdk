@@ -94,6 +94,7 @@ public enum TextStreamPart: Sendable {
         response: LanguageModelResponseMetadata,
         usage: LanguageModelUsage,
         finishReason: FinishReason,
+        rawFinishReason: String?,
         providerMetadata: ProviderMetadata?
     )
 
@@ -103,10 +104,10 @@ public enum TextStreamPart: Sendable {
     case start
 
     /// Indicates the completion of the entire generation.
-    case finish(finishReason: FinishReason, totalUsage: LanguageModelUsage)
+    case finish(finishReason: FinishReason, rawFinishReason: String?, totalUsage: LanguageModelUsage)
 
     /// Indicates the stream was aborted.
-    case abort
+    case abort(reason: String?)
 
     /// An error that occurred during streaming.
     case error(Error)
@@ -174,16 +175,16 @@ extension TextStreamPart: Equatable {
         // Step events
         case let (.startStep(lReq, lWarn), .startStep(rReq, rWarn)):
             return lReq == rReq && lWarn == rWarn
-        case let (.finishStep(lResp, lUsage, lReason, lMeta), .finishStep(rResp, rUsage, rReason, rMeta)):
-            return lResp == rResp && lUsage == rUsage && lReason == rReason && lMeta == rMeta
+        case let (.finishStep(lResp, lUsage, lReason, lRaw, lMeta), .finishStep(rResp, rUsage, rReason, rRaw, rMeta)):
+            return lResp == rResp && lUsage == rUsage && lReason == rReason && lRaw == rRaw && lMeta == rMeta
 
         // Stream control events
         case (.start, .start):
             return true
-        case let (.finish(lReason, lUsage), .finish(rReason, rUsage)):
-            return lReason == rReason && lUsage == rUsage
-        case (.abort, .abort):
-            return true
+        case let (.finish(lReason, lRaw, lUsage), .finish(rReason, rRaw, rUsage)):
+            return lReason == rReason && lRaw == rRaw && lUsage == rUsage
+        case let (.abort(lReason), .abort(rReason)):
+            return lReason == rReason
         case (.error, .error):
             // Errors are not directly comparable, compare type names
             return true
@@ -225,6 +226,7 @@ extension TextStreamPart: Codable {
         case response
         case usage
         case finishReason
+        case rawFinishReason
         case totalUsage
         // Error fields
         case error
@@ -232,6 +234,8 @@ extension TextStreamPart: Codable {
         case rawValue
         // Approval fields
         case approvalId
+        // Abort fields
+        case reason
     }
 
     private enum FileCodingKeys: String, CodingKey {
@@ -506,11 +510,13 @@ extension TextStreamPart: Codable {
             let response = try container.decode(LanguageModelResponseMetadata.self, forKey: .response)
             let usage = try container.decode(LanguageModelUsage.self, forKey: .usage)
             let finishReason = try container.decode(FinishReason.self, forKey: .finishReason)
+            let rawFinishReason = try container.decodeIfPresent(String.self, forKey: .rawFinishReason)
             let metadata = try container.decodeIfPresent(ProviderMetadata.self, forKey: .providerMetadata)
             self = .finishStep(
                 response: response,
                 usage: usage,
                 finishReason: finishReason,
+                rawFinishReason: rawFinishReason,
                 providerMetadata: metadata
             )
 
@@ -520,11 +526,13 @@ extension TextStreamPart: Codable {
 
         case "finish":
             let finishReason = try container.decode(FinishReason.self, forKey: .finishReason)
+            let rawFinishReason = try container.decodeIfPresent(String.self, forKey: .rawFinishReason)
             let totalUsage = try container.decode(LanguageModelUsage.self, forKey: .totalUsage)
-            self = .finish(finishReason: finishReason, totalUsage: totalUsage)
+            self = .finish(finishReason: finishReason, rawFinishReason: rawFinishReason, totalUsage: totalUsage)
 
         case "abort":
-            self = .abort
+            let reason = try container.decodeIfPresent(String.self, forKey: .reason)
+            self = .abort(reason: reason)
 
         case "error":
             // Error is `unknown` in TypeScript, decode as JSONValue for flexibility
@@ -743,24 +751,27 @@ extension TextStreamPart: Codable {
             try container.encode(request, forKey: .request)
             try container.encode(warnings, forKey: .warnings)
 
-        case .finishStep(let response, let usage, let finishReason, let metadata):
+        case .finishStep(let response, let usage, let finishReason, let rawFinishReason, let metadata):
             try container.encode("finish-step", forKey: .type)
             try container.encode(response, forKey: .response)
             try container.encode(usage, forKey: .usage)
             try container.encode(finishReason, forKey: .finishReason)
+            try container.encodeIfPresent(rawFinishReason, forKey: .rawFinishReason)
             try container.encodeIfPresent(metadata, forKey: .providerMetadata)
 
         // Stream control events
         case .start:
             try container.encode("start", forKey: .type)
 
-        case .finish(let finishReason, let totalUsage):
+        case .finish(let finishReason, let rawFinishReason, let totalUsage):
             try container.encode("finish", forKey: .type)
             try container.encode(finishReason, forKey: .finishReason)
+            try container.encodeIfPresent(rawFinishReason, forKey: .rawFinishReason)
             try container.encode(totalUsage, forKey: .totalUsage)
 
-        case .abort:
+        case .abort(let reason):
             try container.encode("abort", forKey: .type)
+            try container.encodeIfPresent(reason, forKey: .reason)
 
         case .error(let error):
             try container.encode("error", forKey: .type)
@@ -815,13 +826,22 @@ extension TextStreamPart: CustomStringConvertible {
             return "toolApprovalRequest(...)"
         case .startStep:
             return "startStep(...)"
-        case .finishStep(_, _, let reason, _):
+        case .finishStep(_, _, let reason, let raw, _):
+            if let raw {
+                return "finishStep(finishReason: \(reason), rawFinishReason: \(raw))"
+            }
             return "finishStep(finishReason: \(reason))"
         case .start:
             return "start"
-        case .finish(let reason, _):
+        case .finish(let reason, let raw, _):
+            if let raw {
+                return "finish(finishReason: \(reason), rawFinishReason: \(raw))"
+            }
             return "finish(finishReason: \(reason))"
-        case .abort:
+        case .abort(let reason):
+            if let reason {
+                return "abort(reason: \(reason))"
+            }
             return "abort"
         case .error:
             return "error(...)"

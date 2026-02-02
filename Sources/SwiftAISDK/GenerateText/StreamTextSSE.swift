@@ -63,12 +63,13 @@ private final class StreamTextSSEEncoder {
             }
             return [encode(event: payload)]
 
-        case let .finishStep(response, usage, finishReason, metadata):
+        case let .finishStep(response, usage, finishReason, rawFinishReason, metadata):
             var payload: [String: Any] = [
                 "type": "finish-step",
                 "finishReason": finishReason.rawValue,
                 "usage": usageDictionary(usage)
             ]
+            if let rawFinishReason { payload["rawFinishReason"] = rawFinishReason }
             if let responseData = try? jsonEncoder.encode(response),
                let json = try? JSONSerialization.jsonObject(with: responseData) as? [String: Any] {
                 payload["response"] = json
@@ -76,9 +77,11 @@ private final class StreamTextSSEEncoder {
             if let meta = providerMetadataDictionary(metadata) { payload["providerMetadata"] = meta }
             return [encode(event: payload)]
 
-        case .abort:
+        case let .abort(reason):
             finishedEmitted = true
-            return [encode(event: ["type": "abort"])]
+            var payload: [String: Any] = ["type": "abort"]
+            if let reason { payload["reason"] = reason }
+            return [encode(event: payload)]
 
         case let .textStart(id, providerMetadata):
             var payload: [String: Any] = ["type": "text-start", "id": id]
@@ -191,9 +194,10 @@ private final class StreamTextSSEEncoder {
             if case .dynamic = request.toolCall { payload["dynamic"] = true }
             return [encode(event: payload)]
 
-        case let .finish(finishReason, usage):
+        case let .finish(finishReason, rawFinishReason, usage):
             finishedEmitted = true
             var payload: [String: Any] = ["type": "finish", "finishReason": finishReason.rawValue]
+            if let rawFinishReason { payload["rawFinishReason"] = rawFinishReason }
             if includeUsage {
                 payload["usage"] = usageDictionary(usage)
             }

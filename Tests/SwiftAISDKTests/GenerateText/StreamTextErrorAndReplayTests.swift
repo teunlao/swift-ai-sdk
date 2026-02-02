@@ -154,7 +154,7 @@ struct StreamTextSSEEncodingTests {
             .textStart(id: "A", providerMetadata: nil),
             .textDelta(id: "A", text: "Hello", providerMetadata: nil),
             .textEnd(id: "A", providerMetadata: nil),
-            .finish(finishReason: .stop, totalUsage: defaultUsage)
+            .finish(finishReason: .stop, rawFinishReason: nil, totalUsage: defaultUsage)
         ]
         let stream = AsyncThrowingStream<TextStreamPart, Error> { c in
             for part in parts { c.yield(part) }
@@ -173,7 +173,7 @@ struct StreamTextSSEEncodingTests {
     func sseEncoderOmitsUsageWhenDisabled() async throws {
         let parts: [TextStreamPart] = [
             .start,
-            .finish(finishReason: .stop, totalUsage: defaultUsage)
+            .finish(finishReason: .stop, rawFinishReason: nil, totalUsage: defaultUsage)
         ]
         let stream = AsyncThrowingStream<TextStreamPart, Error> { c in
             for part in parts { c.yield(part) }
@@ -213,7 +213,7 @@ struct StreamTextSSEEncodingTests {
             .toolError(toolErr),
             .toolApprovalRequest(approval),
             .toolOutputDenied(denied),
-            .finish(finishReason: .stop, totalUsage: defaultUsage)
+            .finish(finishReason: .stop, rawFinishReason: nil, totalUsage: defaultUsage)
         ]
         let stream = AsyncThrowingStream<TextStreamPart, Error> { c in
             parts.forEach { c.yield($0) }
@@ -250,7 +250,7 @@ struct StreamTextSSEEncodingTests {
             .startStep(request: LanguageModelRequestMetadata(body: nil), warnings: []),
             .toolResult(prelim),
             .toolResult(final),
-            .finish(finishReason: .stop, totalUsage: defaultUsage)
+            .finish(finishReason: .stop, rawFinishReason: nil, totalUsage: defaultUsage)
         ]
 
         let stream = AsyncThrowingStream<TextStreamPart, Error> { continuation in

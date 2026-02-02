@@ -122,11 +122,19 @@ private final class StreamTextLogEncoder {
             message = "source \(source.logDescription())"
         case let .file(file):
             message = "file \(file.logDescription())"
-        case let .finish(reason, usage):
+        case let .finish(reason, rawFinishReason, usage):
             let usageSummary = usage.logDescription()
-            message = "stream:finish reason=\(reason.rawValue) \(usageSummary)"
-        case .abort:
-            message = "stream:abort"
+            if let rawFinishReason {
+                message = "stream:finish reason=\(reason.rawValue) raw=\(rawFinishReason) \(usageSummary)"
+            } else {
+                message = "stream:finish reason=\(reason.rawValue) \(usageSummary)"
+            }
+        case let .abort(reason):
+            if let reason {
+                message = "stream:abort reason=\(reason)"
+            } else {
+                message = "stream:abort"
+            }
         }
         return [format(message)]
     }

@@ -32,7 +32,7 @@ struct StreamTextSSEToolApprovalEncodingTests {
 
         let parts: [TextStreamPart] = [
             .toolApprovalRequest(ToolApprovalRequestOutput(approvalId: "a1", toolCall: call)),
-            .finish(finishReason: .stop, totalUsage: LanguageModelUsage())
+            .finish(finishReason: .stop, rawFinishReason: nil, totalUsage: LanguageModelUsage())
         ]
 
         let stream = AsyncThrowingStream<TextStreamPart, Error> { c in
@@ -53,4 +53,3 @@ struct StreamTextSSEToolApprovalEncodingTests {
         #expect(input?["q"] as? String == "hi")
     }
 }
-

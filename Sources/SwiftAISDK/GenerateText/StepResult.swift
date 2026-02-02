@@ -58,6 +58,13 @@ public protocol StepResult: Sendable {
     /// The reason why the generation finished.
     var finishReason: FinishReason { get }
 
+    /// The raw finish reason as returned by the underlying provider (when available).
+    ///
+    /// Upstream exposes this as `rawFinishReason` (string | undefined).
+    /// Swift providers commonly expose only a unified finish reason; in those cases
+    /// this value may equal `finishReason.rawValue` or be `nil` depending on source.
+    var rawFinishReason: String? { get }
+
     /// The token usage of the generated text.
     var usage: LanguageModelUsage { get }
 
@@ -147,6 +154,7 @@ public final class DefaultStepResult: StepResult {
 
     public let content: [ContentPart]
     public let finishReason: FinishReason
+    public let rawFinishReason: String?
     public let usage: LanguageModelUsage
     public let warnings: [CallWarning]?
     public let request: LanguageModelRequestMetadata
@@ -158,6 +166,7 @@ public final class DefaultStepResult: StepResult {
     public init(
         content: [ContentPart],
         finishReason: FinishReason,
+        rawFinishReason: String? = nil,
         usage: LanguageModelUsage,
         warnings: [CallWarning]? = nil,
         request: LanguageModelRequestMetadata,
@@ -166,6 +175,7 @@ public final class DefaultStepResult: StepResult {
     ) {
         self.content = content
         self.finishReason = finishReason
+        self.rawFinishReason = rawFinishReason
         self.usage = usage
         self.warnings = warnings
         self.request = request

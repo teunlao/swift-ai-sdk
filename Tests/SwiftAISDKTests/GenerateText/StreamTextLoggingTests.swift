@@ -14,7 +14,7 @@ struct StreamTextLoggingTests {
             .startStep(request: LanguageModelRequestMetadata(body: nil), warnings: []),
             .textDelta(id: "a", text: "Hi", providerMetadata: nil),
             .textEnd(id: "a", providerMetadata: nil),
-            .finish(finishReason: .stop, totalUsage: usage),
+            .finish(finishReason: .stop, rawFinishReason: nil, totalUsage: usage),
         ]
         return AsyncThrowingStream { continuation in
             for part in parts { continuation.yield(part) }
@@ -77,20 +77,20 @@ struct StreamTextLoggingTests {
             preliminary: false
         ))
 
-        let parts: [TextStreamPart] = [
-            .start,
-            .startStep(request: LanguageModelRequestMetadata(body: nil), warnings: []),
-            .toolCall(.static(StaticToolCall(
-                toolCallId: "c1",
-                toolName: "streamer",
-                input: .null,
-                providerExecuted: false,
-                providerMetadata: nil
-            ))),
-            .toolResult(prelim),
-            .toolResult(final),
-            .finish(finishReason: .stop, totalUsage: LanguageModelUsage())
-        ]
+	        let parts: [TextStreamPart] = [
+	            .start,
+	            .startStep(request: LanguageModelRequestMetadata(body: nil), warnings: []),
+	            .toolCall(.static(StaticToolCall(
+	                toolCallId: "c1",
+	                toolName: "streamer",
+	                input: .null,
+	                providerExecuted: false,
+	                providerMetadata: nil
+	            ))),
+	            .toolResult(prelim),
+	            .toolResult(final),
+	            .finish(finishReason: .stop, rawFinishReason: nil, totalUsage: LanguageModelUsage())
+	        ]
 
         let stream = AsyncThrowingStream<TextStreamPart, Error> { continuation in
             parts.forEach { continuation.yield($0) }

@@ -347,20 +347,26 @@ struct ChatCommand: AsyncParsableCommand {
                     await logger.verbose("   Output: \(result.output)")
                 }
 
-            case .finishStep(_, let usage, let finishReason, _):
+            case .finishStep(_, let usage, let finishReason, let rawFinishReason, _):
                 stepNumber += 1
                 print("\n")
                 print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
                 print("📍 Step \(stepNumber) completed")
                 print("   Reason: \(finishReason.rawValue)")
+                if let rawFinishReason {
+                    print("   Raw reason: \(rawFinishReason)")
+                }
                 print("   Usage: \(usage.totalTokens ?? 0) tokens")
                 totalUsage = addLanguageModelUsage(totalUsage, usage)
                 print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 
-            case .finish(let finishReason, let usage):
+            case .finish(let finishReason, let rawFinishReason, let usage):
                 print("\n")
                 print("🏁 Completed")
                 print("   Final reason: \(finishReason.rawValue)")
+                if let rawFinishReason {
+                    print("   Raw reason: \(rawFinishReason)")
+                }
                 print("   Total usage: \(usage.totalTokens ?? totalUsage.totalTokens ?? 0) tokens")
                 print("   Steps: \(stepNumber)")
 

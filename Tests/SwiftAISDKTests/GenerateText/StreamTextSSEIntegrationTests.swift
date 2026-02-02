@@ -98,7 +98,7 @@ struct StreamTextSSEIntegrationTests {
                 preliminary: false,
                 providerMetadata: nil
             ))),
-            .finish(finishReason: .stop, totalUsage: LanguageModelUsage())
+            .finish(finishReason: .stop, rawFinishReason: nil, totalUsage: LanguageModelUsage())
         ]
 
         let stream = AsyncThrowingStream<TextStreamPart, Error> { c in
@@ -146,7 +146,7 @@ struct StreamTextSSEIntegrationTests {
                 preliminary: false,
                 providerMetadata: meta
             ))),
-            .finish(finishReason: .stop, totalUsage: LanguageModelUsage())
+            .finish(finishReason: .stop, rawFinishReason: nil, totalUsage: LanguageModelUsage())
         ]
 
         let stream = AsyncThrowingStream<TextStreamPart, Error> { c in
@@ -190,7 +190,7 @@ struct StreamTextSSEIntegrationTests {
 
         let parts: [TextStreamPart] = [
             .toolApprovalRequest(ToolApprovalRequestOutput(approvalId: "a1", toolCall: call)),
-            .finish(finishReason: .stop, totalUsage: LanguageModelUsage())
+            .finish(finishReason: .stop, rawFinishReason: nil, totalUsage: LanguageModelUsage())
         ]
 
         let stream = AsyncThrowingStream<TextStreamPart, Error> { c in
@@ -219,8 +219,8 @@ struct StreamTextSSEIntegrationTests {
         let parts: [TextStreamPart] = [
             .start,
             .startStep(request: request, warnings: []),
-            .finishStep(response: response, usage: usage, finishReason: .stop, providerMetadata: providerMetadata),
-            .finish(finishReason: .stop, totalUsage: usage)
+            .finishStep(response: response, usage: usage, finishReason: .stop, rawFinishReason: nil, providerMetadata: providerMetadata),
+            .finish(finishReason: .stop, rawFinishReason: nil, totalUsage: usage)
         ]
 
         let stream = AsyncThrowingStream<TextStreamPart, Error> { c in
@@ -249,7 +249,7 @@ struct StreamTextSSEIntegrationTests {
             .reasoningStart(id: "r", providerMetadata: meta),
             .reasoningDelta(id: "r", text: "think", providerMetadata: meta),
             .reasoningEnd(id: "r", providerMetadata: meta),
-            .finish(finishReason: .stop, totalUsage: LanguageModelUsage())
+            .finish(finishReason: .stop, rawFinishReason: nil, totalUsage: LanguageModelUsage())
         ]
         let stream = AsyncThrowingStream<TextStreamPart, Error> { c in
             parts.forEach { c.yield($0) }
@@ -277,8 +277,8 @@ struct StreamTextSSEIntegrationTests {
         let parts: [TextStreamPart] = [
             .start,
             .startStep(request: LanguageModelRequestMetadata(body: nil), warnings: []),
-            .finishStep(response: response, usage: usage, finishReason: .stop, providerMetadata: nil),
-            .finish(finishReason: .stop, totalUsage: usage)
+            .finishStep(response: response, usage: usage, finishReason: .stop, rawFinishReason: nil, providerMetadata: nil),
+            .finish(finishReason: .stop, rawFinishReason: nil, totalUsage: usage)
         ]
         let stream = AsyncThrowingStream<TextStreamPart, Error> { c in
             parts.forEach { c.yield($0) }
@@ -294,7 +294,7 @@ struct StreamTextSSEIntegrationTests {
     @Test("SSE emits abort event")
     func sseEmitsAbort() async throws {
         let stream = AsyncThrowingStream<TextStreamPart, Error> { c in
-            c.yield(.abort)
+            c.yield(.abort(reason: nil))
             c.finish()
         }
         let events = try await decodeEvents(convertReadableStreamToArray(makeStreamTextSSEStream(from: stream)))
@@ -311,7 +311,7 @@ struct StreamTextSSEIntegrationTests {
         let parts: [TextStreamPart] = [
             .start,
             .startStep(request: req, warnings: warn),
-            .finish(finishReason: .stop, totalUsage: LanguageModelUsage())
+            .finish(finishReason: .stop, rawFinishReason: nil, totalUsage: LanguageModelUsage())
         ]
         let stream = AsyncThrowingStream<TextStreamPart, Error> { c in
             parts.forEach { c.yield($0) }
@@ -337,7 +337,7 @@ struct StreamTextSSEIntegrationTests {
             .textEnd(id: "t", providerMetadata: nil),
             .source(docSource),
             .file(file),
-            .finish(finishReason: .stop, totalUsage: LanguageModelUsage())
+            .finish(finishReason: .stop, rawFinishReason: nil, totalUsage: LanguageModelUsage())
         ]
         let stream = AsyncThrowingStream<TextStreamPart, Error> { c in
             parts.forEach { c.yield($0) }
@@ -364,7 +364,7 @@ struct StreamTextSSEIntegrationTests {
         let approval = ToolApprovalRequestOutput(approvalId: "ap-1", toolCall: .dynamic(dynamicCall))
         let parts: [TextStreamPart] = [
             .toolApprovalRequest(approval),
-            .finish(finishReason: .stop, totalUsage: LanguageModelUsage())
+            .finish(finishReason: .stop, rawFinishReason: nil, totalUsage: LanguageModelUsage())
         ]
         let stream = AsyncThrowingStream<TextStreamPart, Error> { c in
             parts.forEach { c.yield($0) }
@@ -393,13 +393,13 @@ struct StreamTextSSEIntegrationTests {
         let parts: [TextStreamPart] = [
             .start,
             .startStep(request: LanguageModelRequestMetadata(body: nil), warnings: []),
-            .finishStep(response: response1, usage: usage1, finishReason: .toolCalls, providerMetadata: nil),
+            .finishStep(response: response1, usage: usage1, finishReason: .toolCalls, rawFinishReason: nil, providerMetadata: nil),
             .startStep(request: LanguageModelRequestMetadata(body: nil), warnings: []),
             .textStart(id: "t", providerMetadata: nil),
             .textDelta(id: "t", text: "ok", providerMetadata: nil),
             .textEnd(id: "t", providerMetadata: nil),
-            .finishStep(response: response2, usage: usage2, finishReason: .stop, providerMetadata: nil),
-            .finish(finishReason: .stop, totalUsage: LanguageModelUsage(inputTokens: 3, outputTokens: 4, totalTokens: 7))
+            .finishStep(response: response2, usage: usage2, finishReason: .stop, rawFinishReason: nil, providerMetadata: nil),
+            .finish(finishReason: .stop, rawFinishReason: nil, totalUsage: LanguageModelUsage(inputTokens: 3, outputTokens: 4, totalTokens: 7))
         ]
         let stream = AsyncThrowingStream<TextStreamPart, Error> { c in
             parts.forEach { c.yield($0) }
@@ -428,7 +428,7 @@ struct StreamTextSSEIntegrationTests {
     func sseIgnoresRaw() async throws {
         let stream = AsyncThrowingStream<TextStreamPart, Error> { c in
             c.yield(.raw(rawValue: .string("x")))
-            c.yield(.finish(finishReason: .stop, totalUsage: LanguageModelUsage()))
+            c.yield(.finish(finishReason: .stop, rawFinishReason: nil, totalUsage: LanguageModelUsage()))
             c.finish()
         }
         let lines = try await convertReadableStreamToArray(makeStreamTextSSEStream(from: stream))
@@ -444,7 +444,7 @@ struct StreamTextSSEIntegrationTests {
             .textStart(id: "t", providerMetadata: meta),
             .textDelta(id: "t", text: "A", providerMetadata: meta),
             .textEnd(id: "t", providerMetadata: meta),
-            .finish(finishReason: .stop, totalUsage: LanguageModelUsage())
+            .finish(finishReason: .stop, rawFinishReason: nil, totalUsage: LanguageModelUsage())
         ]
         let stream = AsyncThrowingStream<TextStreamPart, Error> { c in
             parts.forEach { c.yield($0) }

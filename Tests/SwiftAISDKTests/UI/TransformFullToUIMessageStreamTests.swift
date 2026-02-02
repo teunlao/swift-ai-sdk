@@ -29,9 +29,10 @@ struct TransformFullToUIMessageStreamTests {
                 ),
                 usage: LanguageModelUsage(),
                 finishReason: .stop,
+                rawFinishReason: nil,
                 providerMetadata: nil
             ),
-            .finish(finishReason: .stop, totalUsage: LanguageModelUsage())
+            .finish(finishReason: .stop, rawFinishReason: nil, totalUsage: LanguageModelUsage())
         ]
 
         let fullStream = makeAsyncStream(from: parts)
@@ -96,9 +97,10 @@ struct TransformFullToUIMessageStreamTests {
                 ),
                 usage: LanguageModelUsage(),
                 finishReason: .stop,
+                rawFinishReason: nil,
                 providerMetadata: nil
             ),
-            .finish(finishReason: .stop, totalUsage: LanguageModelUsage())
+            .finish(finishReason: .stop, rawFinishReason: nil, totalUsage: LanguageModelUsage())
         ]
 
         let fullStream = makeAsyncStream(from: parts)
@@ -159,9 +161,10 @@ struct TransformFullToUIMessageStreamTests {
                 ),
                 usage: LanguageModelUsage(),
                 finishReason: .stop,
+                rawFinishReason: nil,
                 providerMetadata: nil
             ),
-            .finish(finishReason: .stop, totalUsage: LanguageModelUsage())
+            .finish(finishReason: .stop, rawFinishReason: nil, totalUsage: LanguageModelUsage())
         ]
 
         let fullStream = makeAsyncStream(from: parts)
@@ -206,9 +209,10 @@ struct TransformFullToUIMessageStreamTests {
                 ),
                 usage: LanguageModelUsage(),
                 finishReason: .stop,
+                rawFinishReason: nil,
                 providerMetadata: nil
             ),
-            .finish(finishReason: .stop, totalUsage: LanguageModelUsage())
+            .finish(finishReason: .stop, rawFinishReason: nil, totalUsage: LanguageModelUsage())
         ]
 
         let fullStream = makeAsyncStream(from: parts)
@@ -253,9 +257,10 @@ struct TransformFullToUIMessageStreamTests {
                 ),
                 usage: LanguageModelUsage(),
                 finishReason: .stop,
+                rawFinishReason: nil,
                 providerMetadata: nil
             ),
-            .finish(finishReason: .stop, totalUsage: LanguageModelUsage())
+            .finish(finishReason: .stop, rawFinishReason: nil, totalUsage: LanguageModelUsage())
         ]
 
         let fullStream = makeAsyncStream(from: parts)
@@ -296,9 +301,10 @@ struct TransformFullToUIMessageStreamTests {
                 ),
                 usage: LanguageModelUsage(),
                 finishReason: .stop,
+                rawFinishReason: nil,
                 providerMetadata: nil
             ),
-            .finish(finishReason: .stop, totalUsage: LanguageModelUsage())
+            .finish(finishReason: .stop, rawFinishReason: nil, totalUsage: LanguageModelUsage())
         ]
 
         let fullStream = makeAsyncStream(from: parts)
@@ -338,9 +344,10 @@ struct TransformFullToUIMessageStreamTests {
                 response: LanguageModelResponseMetadata(id: "resp-7", timestamp: Date(), modelId: "m", headers: nil),
                 usage: LanguageModelUsage(),
                 finishReason: .stop,
+                rawFinishReason: nil,
                 providerMetadata: nil
             ),
-            .finish(finishReason: .stop, totalUsage: LanguageModelUsage())
+            .finish(finishReason: .stop, rawFinishReason: nil, totalUsage: LanguageModelUsage())
         ]
 
         let stream = makeAsyncStream(from: parts)
@@ -382,9 +389,10 @@ struct TransformFullToUIMessageStreamTests {
                 response: LanguageModelResponseMetadata(id: "resp-8", timestamp: Date(), modelId: "m", headers: nil),
                 usage: LanguageModelUsage(),
                 finishReason: .stop,
+                rawFinishReason: nil,
                 providerMetadata: nil
             ),
-            .finish(finishReason: .stop, totalUsage: LanguageModelUsage())
+            .finish(finishReason: .stop, rawFinishReason: nil, totalUsage: LanguageModelUsage())
         ]
         let stream = makeAsyncStream(from: parts)
         let ui = transformFullToUIMessageStream(stream: stream)

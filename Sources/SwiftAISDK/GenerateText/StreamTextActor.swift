@@ -38,6 +38,7 @@ actor StreamTextActor {
     private var recordedSteps: [StepResult] = []
     private var accumulatedUsage: LanguageModelUsage = LanguageModelUsage()
     private var recordedFinishReason: FinishReason? = nil
+    private var recordedRawFinishReason: String? = nil
     private var externalStopRequested = false
     private var abortEmitted = false
     // Tool tracking for the current step
@@ -108,7 +109,7 @@ actor StreamTextActor {
         // until the provider finishes so we can still publish a final `.finish`.
         if !terminated && !abortEmitted {
             abortEmitted = true
-            await fullBroadcaster.send(.abort)
+            await fullBroadcaster.send(.abort(reason: nil))
         }
     }
 
@@ -984,14 +985,22 @@ case let .toolInputStart(id, toolName, providerMetadata, providerExecuted, dynam
                 )
                 await fullBroadcaster.send(
                     .finishStep(
-                        response: response, usage: usage, finishReason: finishReason,
-                        providerMetadata: providerMetadata))
+                        response: response,
+                        usage: usage,
+                        finishReason: finishReason,
+                        rawFinishReason: finishReason.rawValue,
+                        providerMetadata: providerMetadata
+                    )
+                )
                 let contentSnapshot = recordedContent
                 let modelMessages = toResponseMessages(content: contentSnapshot, tools: tools)
                 let responseMessages = convertModelMessagesToResponseMessages(modelMessages)
                 let mergedMessages = recordedResponseMessages + responseMessages
                 let stepResult = DefaultStepResult(
-                    content: contentSnapshot, finishReason: finishReason, usage: usage,
+                    content: contentSnapshot,
+                    finishReason: finishReason,
+                    rawFinishReason: finishReason.rawValue,
+                    usage: usage,
                     warnings: capturedWarnings, request: recordedRequest,
                     response: StepResultResponse(
                         from: response, messages: mergedMessages, body: nil),
@@ -1006,6 +1015,7 @@ case let .toolInputStart(id, toolName, providerMetadata, providerExecuted, dynam
                 // will resolve it with the last step's reason to mirror upstream.
                 // Keep the last seen reason in `recordedFinishReason`.
                 recordedFinishReason = finishReason
+                recordedRawFinishReason = finishReason.rawValue
             case .file(let file):
                 let genFile = toGeneratedFile(file)
                 recordedContent.append(.file(file: genFile, providerMetadata: nil))
@@ -1067,7 +1077,10 @@ case let .toolInputStart(id, toolName, providerMetadata, providerExecuted, dynam
             let responseMessages = convertModelMessagesToResponseMessages(modelMessages)
             let mergedMessages = recordedResponseMessages + responseMessages
             let stepResult = DefaultStepResult(
-                content: contentSnapshot, finishReason: finishReason, usage: usage,
+                content: contentSnapshot,
+                finishReason: finishReason,
+                rawFinishReason: finishReason.rawValue,
+                usage: usage,
                 warnings: capturedWarnings, request: recordedRequest,
                 response: StepResultResponse(from: resp, messages: mergedMessages, body: nil),
                 providerMetadata: providerMetadata)
@@ -1078,6 +1091,7 @@ case let .toolInputStart(id, toolName, providerMetadata, providerExecuted, dynam
             currentToolCallsById.removeAll()
             currentToolOutputs.removeAll()
             recordedFinishReason = finishReason
+            recordedRawFinishReason = finishReason.rawValue
         }
         // Resolve promises BEFORE publishing the terminal `.finish` event.
         // This guarantees observers that await promises in response to `.finish`
@@ -1098,11 +1112,15 @@ case let .toolInputStart(id, toolName, providerMetadata, providerExecuted, dynam
             // then emit session-level `.finish` before closing the broadcasters.
             if externalStopRequested && !abortEmitted {
                 abortEmitted = true
-                await fullBroadcaster.send(.abort)
+                await fullBroadcaster.send(.abort(reason: nil))
             }
             let finalReason = recordedFinishReason ?? .unknown
             await fullBroadcaster.send(
-                .finish(finishReason: finalReason, totalUsage: accumulatedUsage)
+                .finish(
+                    finishReason: finalReason,
+                    rawFinishReason: recordedRawFinishReason ?? finalReason.rawValue,
+                    totalUsage: accumulatedUsage
+                )
             )
             await textBroadcaster.finish()
             await fullBroadcaster.finish()

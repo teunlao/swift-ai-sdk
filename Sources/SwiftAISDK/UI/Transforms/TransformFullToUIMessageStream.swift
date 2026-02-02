@@ -13,7 +13,7 @@ public func transformFullToUIMessageStream(
     stream: AsyncThrowingStream<TextStreamPart, Error>,
     options: UIMessageTransformOptions = UIMessageTransformOptions()
 ) -> AsyncThrowingStream<AnyUIMessageChunk, Error> {
-    AsyncThrowingStream<AnyUIMessageChunk, Error>(bufferingPolicy: .unbounded) { continuation in
+    AsyncThrowingStream(AnyUIMessageChunk.self, bufferingPolicy: .unbounded) { continuation in
         let task = Task {
             do {
                 // Emit stream start if requested
@@ -142,9 +142,11 @@ public func transformFullToUIMessageStream(
                     case .finishStep:
                         if stepOpen { continuation.yield(.finishStep); stepOpen = false }
 
-                    case let .finish(finishReason, totalUsage):
+                    case let .finish(finishReason, rawFinishReason, totalUsage):
                         if options.sendFinish {
-                            if let mapper = options.messageMetadata, let meta = mapper(.finish(finishReason: finishReason, totalUsage: totalUsage)) {
+                            if let mapper = options.messageMetadata,
+                               let meta = mapper(.finish(finishReason: finishReason, rawFinishReason: rawFinishReason, totalUsage: totalUsage))
+                            {
                                 continuation.yield(AnyUIMessageChunk.messageMetadata(meta))
                             }
                             continuation.yield(.finish(messageMetadata: nil))
