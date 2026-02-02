@@ -590,121 +590,291 @@ private func appendAssistantToolResult(
         return
     }
 
-    switch part.toolName {
+    let providerToolName = toolNameMapping.toProviderToolName(part.toolName)
+
+    switch providerToolName {
     case "code_execution":
-        guard case .json(let value, _) = part.output else {
-            warnings.append(.other(message: "provider executed tool result output type for tool \(part.toolName) is not supported"))
+        switch part.output {
+        case .errorJson(let value, _):
+            // Handle provider-executed error outputs (20250522 + 20250825)
+            if case .object(let object) = value,
+               let typeValue = object["type"],
+               case .string(let typeString) = typeValue {
+                let errorCode = extractedErrorCode(from: value)
+
+                if typeString == "code_execution_tool_result_error" {
+                    var payload: [String: JSONValue] = [
+                        "type": .string("code_execution_tool_result"),
+                        "tool_use_id": .string(part.toolCallId),
+                        "content": .object([
+                            "type": .string("code_execution_tool_result_error"),
+                            "error_code": .string(errorCode),
+                        ]),
+                    ]
+                    if let cacheControlJSON { payload["cache_control"] = cacheControlJSON }
+                    anthropicContent.append(.object(payload))
+                    return
+                }
+
+                if typeString == "bash_code_execution_tool_result_error" {
+                    var payload: [String: JSONValue] = [
+                        "type": .string("bash_code_execution_tool_result"),
+                        "tool_use_id": .string(part.toolCallId),
+                        "content": .object([
+                            "type": .string("bash_code_execution_tool_result_error"),
+                            "error_code": .string(errorCode),
+                        ]),
+                    ]
+                    if let cacheControlJSON { payload["cache_control"] = cacheControlJSON }
+                    anthropicContent.append(.object(payload))
+                    return
+                }
+
+                if typeString == "text_editor_code_execution_tool_result_error" {
+                    var payload: [String: JSONValue] = [
+                        "type": .string("text_editor_code_execution_tool_result"),
+                        "tool_use_id": .string(part.toolCallId),
+                        "content": .object([
+                            "type": .string("text_editor_code_execution_tool_result_error"),
+                            "error_code": .string(errorCode),
+                        ]),
+                    ]
+                    if let cacheControlJSON { payload["cache_control"] = cacheControlJSON }
+                    anthropicContent.append(.object(payload))
+                    return
+                }
+            }
+
+            warnings.append(.other(message: "provider executed tool result output value is not a valid code execution result for tool \(part.toolName)"))
             return
+
+        case .json(let value, _):
+            guard case .object(let object) = value,
+                  let typeValue = object["type"],
+                  case .string(let typeString) = typeValue
+            else {
+                warnings.append(.other(message: "provider executed tool result output value is not a valid code execution result for tool \(part.toolName)"))
+                return
+            }
+
+            if typeString == "code_execution_result" {
+                // code execution 20250522 (and programmatic tool calling result)
+                let parsed = try await validateTypes(
+                    ValidateTypesOptions(value: jsonValueToFoundation(value), schema: anthropicCodeExecution20250522OutputSchema)
+                )
+
+                let content = parsed.content.map { file in
+                    JSONValue.object([
+                        "type": .string(file.type),
+                        "file_id": .string(file.fileId),
+                    ])
+                }
+
+                var payload: [String: JSONValue] = [
+                    "type": .string("code_execution_tool_result"),
+                    "tool_use_id": .string(part.toolCallId),
+                    "content": .object([
+                        "type": .string(parsed.type),
+                        "stdout": .string(parsed.stdout),
+                        "stderr": .string(parsed.stderr),
+                        "return_code": .number(Double(parsed.returnCode)),
+                        "content": .array(content),
+                    ]),
+                ]
+                if let cacheControlJSON { payload["cache_control"] = cacheControlJSON }
+                anthropicContent.append(.object(payload))
+                return
+            }
+
+            // code execution 20250825
+            let parsed = try await validateTypes(
+                ValidateTypesOptions(value: jsonValueToFoundation(value), schema: anthropicCodeExecution20250825OutputSchema)
+            )
+
+            switch parsed {
+            case .codeExecutionResult(let result):
+                let content = result.content.map { file in
+                    JSONValue.object([
+                        "type": .string(file.type),
+                        "file_id": .string(file.fileId),
+                    ])
+                }
+
+                var payload: [String: JSONValue] = [
+                    "type": .string("code_execution_tool_result"),
+                    "tool_use_id": .string(part.toolCallId),
+                    "content": .object([
+                        "type": .string(result.type),
+                        "stdout": .string(result.stdout),
+                        "stderr": .string(result.stderr),
+                        "return_code": .number(Double(result.returnCode)),
+                        "content": .array(content),
+                    ]),
+                ]
+                if let cacheControlJSON { payload["cache_control"] = cacheControlJSON }
+                anthropicContent.append(.object(payload))
+
+            case .bashCodeExecutionResult, .toolError, .textEditorViewResult, .textEditorCreateResult, .textEditorStrReplaceResult:
+                guard let encoded = encodeToJSONValue(parsed) else {
+                    warnings.append(.other(message: "provider executed tool result output value is not a valid code execution result for tool \(part.toolName)"))
+                    return
+                }
+
+                let blockType: String
+                if case .bashCodeExecutionResult = parsed {
+                    blockType = "bash_code_execution_tool_result"
+                } else if case .toolError(let error) = parsed, error.type == "bash_code_execution_tool_result_error" {
+                    blockType = "bash_code_execution_tool_result"
+                } else {
+                    blockType = "text_editor_code_execution_tool_result"
+                }
+
+                var payload: [String: JSONValue] = [
+                    "type": .string(blockType),
+                    "tool_use_id": .string(part.toolCallId),
+                    "content": encoded,
+                ]
+                if let cacheControlJSON { payload["cache_control"] = cacheControlJSON }
+                anthropicContent.append(.object(payload))
+            }
+
+        default:
+            warnings.append(.other(message: "provider executed tool result output type for tool \(part.toolName) is not supported"))
         }
-
-        let parsed = try await validateTypes(
-            ValidateTypesOptions(value: jsonValueToFoundation(value), schema: anthropicCodeExecution20250522OutputSchema)
-        )
-
-        var payload: [String: JSONValue] = [
-            "type": .string("code_execution_tool_result"),
-            "tool_use_id": .string(part.toolCallId),
-            "content": .object([
-                "type": .string(parsed.type),
-                "stdout": .string(parsed.stdout),
-                "stderr": .string(parsed.stderr),
-                "return_code": .number(Double(parsed.returnCode))
-            ])
-        ]
-        if let cacheControlJSON { payload["cache_control"] = cacheControlJSON }
-        anthropicContent.append(.object(payload))
 
     case "web_fetch":
-        guard case .json(let value, _) = part.output else {
+        switch part.output {
+        case .errorJson(let value, _):
+            let errorCode = extractedErrorCode(from: value)
+            var payload: [String: JSONValue] = [
+                "type": .string("web_fetch_tool_result"),
+                "tool_use_id": .string(part.toolCallId),
+                "content": .object([
+                    "type": .string("web_fetch_tool_result_error"),
+                    "error_code": .string(errorCode),
+                ]),
+            ]
+            if let cacheControlJSON { payload["cache_control"] = cacheControlJSON }
+            anthropicContent.append(.object(payload))
+
+        case .json(let value, _):
+            let parsed = try await validateTypes(
+                ValidateTypesOptions(value: jsonValueToFoundation(value), schema: anthropicWebFetch20250910OutputSchema)
+            )
+
+            var contentPayload: [String: JSONValue] = [
+                "type": .string("document"),
+                "title": .string(parsed.content.title),
+                "source": .object([
+                    "type": .string(parsed.content.source.type),
+                    "media_type": .string(parsed.content.source.mediaType),
+                    "data": .string(parsed.content.source.data)
+                ])
+            ]
+            if let citations = parsed.content.citations {
+                contentPayload["citations"] = .object(["enabled": .bool(citations.enabled)])
+            }
+
+            var payload: [String: JSONValue] = [
+                "type": .string("web_fetch_tool_result"),
+                "tool_use_id": .string(part.toolCallId),
+                "content": .object([
+                    "type": .string("web_fetch_result"),
+                    "url": .string(parsed.url),
+                    "retrieved_at": parsed.retrievedAt.map(JSONValue.string) ?? .null,
+                    "content": .object(contentPayload)
+                ])
+            ]
+            if let cacheControlJSON { payload["cache_control"] = cacheControlJSON }
+            anthropicContent.append(.object(payload))
+
+        default:
             warnings.append(.other(message: "provider executed tool result output type for tool \(part.toolName) is not supported"))
-            return
         }
-
-        let parsed = try await validateTypes(
-            ValidateTypesOptions(value: jsonValueToFoundation(value), schema: anthropicWebFetch20250910OutputSchema)
-        )
-
-        var contentPayload: [String: JSONValue] = [
-            "type": .string("document"),
-            "title": .string(parsed.content.title),
-            "source": .object([
-                "type": .string(parsed.content.source.type),
-                "media_type": .string(parsed.content.source.mediaType),
-                "data": .string(parsed.content.source.data)
-            ])
-        ]
-        if let citations = parsed.content.citations {
-            contentPayload["citations"] = .object(["enabled": .bool(citations.enabled)])
-        }
-
-        var payload: [String: JSONValue] = [
-            "type": .string("web_fetch_tool_result"),
-            "tool_use_id": .string(part.toolCallId),
-            "content": .object([
-                "type": .string("web_fetch_result"),
-                "url": .string(parsed.url),
-                "retrieved_at": parsed.retrievedAt.map(JSONValue.string) ?? .null,
-                "content": .object(contentPayload)
-            ])
-        ]
-        if let cacheControlJSON { payload["cache_control"] = cacheControlJSON }
-        anthropicContent.append(.object(payload))
 
     case "web_search":
-        guard case .json(let value, _) = part.output else {
+        switch part.output {
+        case .errorJson(let value, _):
+            let errorCode = extractedErrorCode(from: value)
+            var payload: [String: JSONValue] = [
+                "type": .string("web_search_tool_result"),
+                "tool_use_id": .string(part.toolCallId),
+                "content": .object([
+                    "type": .string("web_search_tool_result_error"),
+                    "error_code": .string(errorCode),
+                ]),
+            ]
+            if let cacheControlJSON { payload["cache_control"] = cacheControlJSON }
+            anthropicContent.append(.object(payload))
+
+        case .json(let value, _):
+            let results = try await validateTypes(
+                ValidateTypesOptions(value: jsonValueToFoundation(value), schema: anthropicWebSearch20250305OutputSchema)
+            )
+
+            let mapped = results.map { result in
+                JSONValue.object([
+                    "url": .string(result.url),
+                    "title": .string(result.title),
+                    "page_age": result.pageAge.map(JSONValue.string) ?? .null,
+                    "encrypted_content": .string(result.encryptedContent),
+                    "type": .string("web_search_result")
+                ])
+            }
+
+            var payload: [String: JSONValue] = [
+                "type": .string("web_search_tool_result"),
+                "tool_use_id": .string(part.toolCallId),
+                "content": .array(mapped)
+            ]
+            if let cacheControlJSON { payload["cache_control"] = cacheControlJSON }
+            anthropicContent.append(.object(payload))
+
+        default:
             warnings.append(.other(message: "provider executed tool result output type for tool \(part.toolName) is not supported"))
-            return
         }
-
-        let results = try await validateTypes(
-            ValidateTypesOptions(value: jsonValueToFoundation(value), schema: anthropicWebSearch20250305OutputSchema)
-        )
-
-        let mapped = results.map { result in
-            JSONValue.object([
-                "url": .string(result.url),
-                "title": .string(result.title),
-                "page_age": result.pageAge.map(JSONValue.string) ?? .null,
-                "encrypted_content": .string(result.encryptedContent),
-                "type": .string("web_search_result")
-            ])
-        }
-
-        var payload: [String: JSONValue] = [
-            "type": .string("web_search_tool_result"),
-            "tool_use_id": .string(part.toolCallId),
-            "content": .array(mapped)
-        ]
-        if let cacheControlJSON { payload["cache_control"] = cacheControlJSON }
-        anthropicContent.append(.object(payload))
 
     case "tool_search_tool_regex", "tool_search_tool_bm25":
-        guard case .json(let value, _) = part.output else {
+        switch part.output {
+        case .errorJson(let value, _):
+            let errorCode = extractedErrorCode(from: value)
+            var payload: [String: JSONValue] = [
+                "type": .string("tool_search_tool_result"),
+                "tool_use_id": .string(part.toolCallId),
+                "content": .object([
+                    "type": .string("tool_search_tool_result_error"),
+                    "error_code": .string(errorCode),
+                ]),
+            ]
+            if let cacheControlJSON { payload["cache_control"] = cacheControlJSON }
+            anthropicContent.append(.object(payload))
+
+        case .json(let value, _):
+            let toolReferences = try await validateTypes(
+                ValidateTypesOptions(value: jsonValueToFoundation(value), schema: anthropicToolSearchRegex20251119OutputSchema)
+            )
+
+            let mapped = toolReferences.map { reference in
+                JSONValue.object([
+                    "type": .string("tool_reference"),
+                    "tool_name": .string(reference.toolName)
+                ])
+            }
+
+            var payload: [String: JSONValue] = [
+                "type": .string("tool_search_tool_result"),
+                "tool_use_id": .string(part.toolCallId),
+                "content": .object([
+                    "type": .string("tool_search_tool_search_result"),
+                    "tool_references": .array(mapped)
+                ])
+            ]
+            if let cacheControlJSON { payload["cache_control"] = cacheControlJSON }
+            anthropicContent.append(.object(payload))
+
+        default:
             warnings.append(.other(message: "provider executed tool result output type for tool \(part.toolName) is not supported"))
-            return
         }
-
-        let toolReferences = try await validateTypes(
-            ValidateTypesOptions(value: jsonValueToFoundation(value), schema: anthropicToolSearchRegex20251119OutputSchema)
-        )
-
-        let mapped = toolReferences.map { reference in
-            JSONValue.object([
-                "type": .string("tool_reference"),
-                "tool_name": .string(reference.toolName)
-            ])
-        }
-
-        var payload: [String: JSONValue] = [
-            "type": .string("tool_search_tool_result"),
-            "tool_use_id": .string(part.toolCallId),
-            "content": .object([
-                "type": .string("tool_search_tool_search_result"),
-                "tool_references": .array(mapped)
-            ])
-        ]
-        if let cacheControlJSON { payload["cache_control"] = cacheControlJSON }
-        anthropicContent.append(.object(payload))
 
     default:
         warnings.append(.other(message: "provider executed tool result for tool \(part.toolName) is not supported"))
@@ -721,6 +891,34 @@ private func jsonString(from value: JSONValue) throws -> String {
 
 private func stringifyJSONValue(_ value: JSONValue) -> String {
     (try? jsonString(from: value)) ?? "null"
+}
+
+private func extractedErrorCode(from value: JSONValue) -> String {
+    if case .object(let object) = value {
+        if let errorCodeValue = object["errorCode"], case .string(let errorCode) = errorCodeValue {
+            return errorCode
+        }
+        if let errorCodeValue = object["error_code"], case .string(let errorCode) = errorCodeValue {
+            return errorCode
+        }
+    }
+
+    if case .string(let string) = value {
+        // Try to parse a stringified JSON error.
+        if let data = string.data(using: .utf8),
+           let parsed = try? JSONDecoder().decode(JSONValue.self, from: data) {
+            return extractedErrorCode(from: parsed)
+        }
+    }
+
+    return "unknown"
+}
+
+private func encodeToJSONValue<T: Encodable>(_ value: T) -> JSONValue? {
+    guard let data = try? JSONEncoder().encode(value) else {
+        return nil
+    }
+    return try? JSONDecoder().decode(JSONValue.self, from: data)
 }
 
 private func cacheControlJSON(from cacheControl: AnthropicCacheControl?) -> JSONValue? {

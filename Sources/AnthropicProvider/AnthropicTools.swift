@@ -45,6 +45,29 @@ public struct AnthropicTools: Sendable {
         anthropicCodeExecution20250522()
     }
 
+    /// Claude can analyze data, create visualizations, perform complex calculations,
+    /// run system commands, create and edit files, and process uploaded files directly within
+    /// the API conversation.
+    ///
+    /// This tool supports:
+    /// - Programmatic tool calling (via allowedCallers)
+    /// - Bash code execution
+    /// - Text editor code execution
+    ///
+    /// Tool name must be `code_execution`.
+    @discardableResult
+    public func codeExecution20250825() -> Tool {
+        anthropicCodeExecution20250825()
+    }
+
+    /// The memory tool enables Claude to view and modify long-term memory content.
+    ///
+    /// Tool name must be `memory`.
+    @discardableResult
+    public func memory20250818() -> Tool {
+        anthropicMemory20250818()
+    }
+
     /// Claude can interact with computer environments through the computer use tool, which
     /// provides screenshot capabilities and mouse/keyboard control for autonomous desktop interaction.
     ///

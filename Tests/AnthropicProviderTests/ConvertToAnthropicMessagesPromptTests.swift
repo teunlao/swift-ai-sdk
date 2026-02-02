@@ -672,10 +672,11 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
                 toolCallId: "tool-1",
                 toolName: "code_execution",
                 output: .json(value: .object([
-                    "type": .string("completion"),
+                    "type": .string("code_execution_result"),
                     "stdout": .string("done"),
                     "stderr": .string(""),
-                    "return_code": .number(0)
+                    "return_code": .number(0),
+                    "content": .array([])
                 ]))
             )
         )

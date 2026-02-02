@@ -145,12 +145,13 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
             fetch: config.fetch
         )
 
-        let citationDocuments = extractCitationDocuments(from: options.prompt)
+        let initialCitationDocuments = extractCitationDocuments(from: options.prompt)
 
         let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
             continuation.yield(.streamStart(warnings: prepared.warnings))
 
             Task {
+                var citationDocuments = initialCitationDocuments
                 var contentBlocks: [Int: ContentBlockState] = [:]
                 var blockType: String?
                 var serverToolCalls: [String: String] = [:]
@@ -180,7 +181,8 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                                 handleContentBlockStart(
                                     value,
                                     usesJsonResponseTool: prepared.usesJsonResponseTool,
-                                    citationDocuments: citationDocuments,
+                                    toolNameMapping: prepared.toolNameMapping,
+                                    citationDocuments: &citationDocuments,
                                     contentBlocks: &contentBlocks,
                                     serverToolCalls: &serverToolCalls,
                                     mcpToolCalls: &mcpToolCalls,
@@ -224,6 +226,66 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                                         modelId: value.message.model,
                                         timestamp: nil
                                     ))
+
+                                // Programmatic tool calling: process pre-populated content blocks
+                                // (for deferred tool calls, content may be in message_start)
+                                if prepared.usesJsonResponseTool == false,
+                                   let content = value.message.content {
+                                    for part in content {
+                                        guard case .toolUse(let tool) = part else { continue }
+
+                                        var providerMetadata: SharedV3ProviderMetadata? = nil
+                                        if let caller = tool.caller {
+                                            var callerObject: [String: JSONValue] = [
+                                                "type": .string(caller.type)
+                                            ]
+                                            if let toolId = caller.toolId {
+                                                callerObject["toolId"] = .string(toolId)
+                                            }
+                                            providerMetadata = [
+                                                "anthropic": [
+                                                    "caller": .object(callerObject)
+                                                ]
+                                            ]
+                                        }
+
+                                        continuation.yield(
+                                            .toolInputStart(
+                                                id: tool.id,
+                                                toolName: tool.name,
+                                                providerMetadata: nil,
+                                                providerExecuted: false,
+                                                dynamic: nil,
+                                                title: nil
+                                            )
+                                        )
+
+                                        let inputStr = stringifyJSON(tool.input ?? .object([:]))
+                                        continuation.yield(
+                                            .toolInputDelta(
+                                                id: tool.id,
+                                                delta: inputStr,
+                                                providerMetadata: nil
+                                            )
+                                        )
+
+                                        continuation.yield(
+                                            .toolInputEnd(
+                                                id: tool.id,
+                                                providerMetadata: nil
+                                            )
+                                        )
+
+                                        let toolCall = LanguageModelV3ToolCall(
+                                            toolCallId: tool.id,
+                                            toolName: tool.name,
+                                            input: inputStr,
+                                            providerExecuted: false,
+                                            providerMetadata: providerMetadata
+                                        )
+                                        continuation.yield(.toolCall(toolCall))
+                                    }
+                                }
 
                             case .messageDelta(let value):
                                 if let usageInfo = value.usage {
@@ -510,7 +572,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
         var content: [LanguageModelV3Content] = []
         var serverToolCalls: [String: String] = [:]
         var mcpToolCalls: [String: (toolName: String, providerMetadata: SharedV3ProviderMetadata)] = [:]
-        let citationDocuments = extractCitationDocuments(from: prompt)
+        var citationDocuments = extractCitationDocuments(from: prompt)
 
         for part in response.content {
             switch part {
@@ -550,34 +612,84 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                     .reasoning(LanguageModelV3Reasoning(text: "", providerMetadata: metadata)))
 
             case .toolUse(let value):
-                if usesJsonResponseTool {
+                let isJsonResponseTool = usesJsonResponseTool && value.name == "json"
+                if isJsonResponseTool {
                     content.append(.text(LanguageModelV3Text(text: stringifyJSON(value.input))))
                 } else {
+                    var providerMetadata: SharedV3ProviderMetadata? = nil
+                    if let caller = value.caller {
+                        var callerObject: [String: JSONValue] = [
+                            "type": .string(caller.type)
+                        ]
+                        if let toolId = caller.toolId {
+                            callerObject["toolId"] = .string(toolId)
+                        }
+                        providerMetadata = [
+                            "anthropic": [
+                                "caller": .object(callerObject)
+                            ]
+                        ]
+                    }
+
                     let toolCall = LanguageModelV3ToolCall(
                         toolCallId: value.id,
                         toolName: value.name,
-                        input: stringifyJSON(value.input)
+                        input: stringifyJSON(value.input),
+                        providerMetadata: providerMetadata
                     )
                     content.append(.toolCall(toolCall))
                 }
 
             case .serverToolUse(let value):
-                guard
-                    value.name == "web_search" || value.name == "code_execution"
-                        || value.name == "web_fetch"
-                        || value.name == "tool_search_tool_regex"
-                        || value.name == "tool_search_tool_bm25"
-                else { continue }
-                if value.name == "tool_search_tool_regex" || value.name == "tool_search_tool_bm25" {
+                if value.name == "text_editor_code_execution" || value.name == "bash_code_execution" {
+                    var inputToSerialize: JSONValue?
+                    if case .object(let inputObject) = value.input {
+                        var merged = inputObject
+                        merged["type"] = .string(value.name)
+                        inputToSerialize = .object(merged)
+                    } else {
+                        inputToSerialize = .object(["type": .string(value.name)])
+                    }
+
+                    let toolCall = LanguageModelV3ToolCall(
+                        toolCallId: value.id,
+                        toolName: toolNameMapping.toCustomToolName("code_execution"),
+                        input: stringifyJSON(inputToSerialize),
+                        providerExecuted: true
+                    )
+                    content.append(.toolCall(toolCall))
+                } else if value.name == "web_search" || value.name == "code_execution"
+                            || value.name == "web_fetch" {
+                    var inputToSerialize = value.input
+                    if value.name == "code_execution",
+                       case .object(let inputObject) = value.input,
+                       inputObject["code"] != nil,
+                       inputObject["type"] == nil {
+                        var injected = inputObject
+                        injected["type"] = .string("programmatic-tool-call")
+                        inputToSerialize = .object(injected)
+                    }
+
+                    let toolCall = LanguageModelV3ToolCall(
+                        toolCallId: value.id,
+                        toolName: toolNameMapping.toCustomToolName(value.name),
+                        input: stringifyJSON(inputToSerialize),
+                        providerExecuted: true
+                    )
+                    content.append(.toolCall(toolCall))
+                } else if value.name == "tool_search_tool_regex"
+                            || value.name == "tool_search_tool_bm25" {
                     serverToolCalls[value.id] = value.name
+                    let toolCall = LanguageModelV3ToolCall(
+                        toolCallId: value.id,
+                        toolName: toolNameMapping.toCustomToolName(value.name),
+                        input: stringifyJSON(value.input),
+                        providerExecuted: true
+                    )
+                    content.append(.toolCall(toolCall))
+                } else {
+                    continue
                 }
-                let toolCall = LanguageModelV3ToolCall(
-                    toolCallId: value.id,
-                    toolName: value.name,
-                    input: stringifyJSON(value.input),
-                    providerExecuted: true
-                )
-                content.append(.toolCall(toolCall))
 
             case .mcpToolUse(let value):
                 let providerMetadata: SharedV3ProviderMetadata = [
@@ -611,7 +723,20 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                 content.append(.toolResult(toolResult))
 
             case .toolSearchToolResult(let value):
-                let providerToolName = serverToolCalls[value.toolUseId] ?? "tool_search_tool_regex"
+                var providerToolName = serverToolCalls[value.toolUseId]
+                if providerToolName == nil {
+                    let bm25CustomName = toolNameMapping.toCustomToolName("tool_search_tool_bm25")
+                    let regexCustomName = toolNameMapping.toCustomToolName("tool_search_tool_regex")
+
+                    if bm25CustomName != "tool_search_tool_bm25" {
+                        providerToolName = "tool_search_tool_bm25"
+                    } else if regexCustomName != "tool_search_tool_regex" {
+                        providerToolName = "tool_search_tool_regex"
+                    } else {
+                        providerToolName = "tool_search_tool_regex"
+                    }
+                }
+                let customToolName = toolNameMapping.toCustomToolName(providerToolName ?? "tool_search_tool_regex")
                 guard case .object(let payload) = value.content,
                       let typeValue = payload["type"],
                       case .string(let type) = typeValue
@@ -636,7 +761,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
 
                     let toolResult = LanguageModelV3ToolResult(
                         toolCallId: value.toolUseId,
-                        toolName: providerToolName,
+                        toolName: customToolName,
                         result: .array(mapped),
                         providerExecuted: true
                     )
@@ -645,7 +770,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                     let errorCode = payload["error_code"] ?? .null
                     let toolResult = LanguageModelV3ToolResult(
                         toolCallId: value.toolUseId,
-                        toolName: providerToolName,
+                        toolName: customToolName,
                         result: .object([
                             "type": .string("tool_search_tool_result_error"),
                             "errorCode": errorCode,
@@ -657,6 +782,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                 }
 
             case .webFetchResult(let value):
+                let toolName = toolNameMapping.toCustomToolName("web_fetch")
                 if case .object(let payload) = value.content,
                     let type = payload["type"], case .string(let typeString) = type
                 {
@@ -698,9 +824,20 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                         }
                         resultObject["content"] = .object(contentObject)
 
+                        let documentTitle: String
+                        if let titleValue = resultContent["title"],
+                           case .string(let title) = titleValue,
+                           title.isEmpty == false {
+                            documentTitle = title
+                        } else {
+                            documentTitle = url
+                        }
+                        citationDocuments.append(
+                            CitationDocument(title: documentTitle, filename: nil, mediaType: mediaType))
+
                         let toolResult = LanguageModelV3ToolResult(
                             toolCallId: value.toolUseId,
-                            toolName: "web_fetch",
+                            toolName: toolName,
                             result: .object(resultObject),
                             providerExecuted: true
                         )
@@ -710,7 +847,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                         let errorCode = payload["error_code"] ?? .null
                         let toolResult = LanguageModelV3ToolResult(
                             toolCallId: value.toolUseId,
-                            toolName: "web_fetch",
+                            toolName: toolName,
                             result: .object([
                                 "type": .string("web_fetch_tool_result_error"),
                                 "errorCode": errorCode,
@@ -726,6 +863,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                 }
 
             case .webSearchResult(let value):
+                let toolName = toolNameMapping.toCustomToolName("web_search")
                 switch value.content {
                 case .array(let results):
                     var array: [JSONValue] = []
@@ -764,7 +902,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
 
                     let toolResult = LanguageModelV3ToolResult(
                         toolCallId: value.toolUseId,
-                        toolName: "web_search",
+                        toolName: toolName,
                         result: .array(array),
                         providerExecuted: true
                     )
@@ -778,7 +916,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                     let errorCode = object["error_code"] ?? .null
                     let toolResult = LanguageModelV3ToolResult(
                         toolCallId: value.toolUseId,
-                        toolName: "web_search",
+                        toolName: toolName,
                         result: .object([
                             "type": .string("web_search_tool_result_error"),
                             "errorCode": errorCode,
@@ -793,6 +931,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                 }
 
             case .codeExecutionResult(let value):
+                let toolName = toolNameMapping.toCustomToolName("code_execution")
                 if case .object(let payload) = value.content,
                     let type = payload["type"], case .string(let typeString) = type
                 {
@@ -801,14 +940,16 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                         let stdout = payload["stdout"] ?? .string("")
                         let stderr = payload["stderr"] ?? .string("")
                         let returnCode = payload["return_code"] ?? .number(0)
+                        let contentList = payload["content"] ?? .array([])
                         let toolResult = LanguageModelV3ToolResult(
                             toolCallId: value.toolUseId,
-                            toolName: "code_execution",
+                            toolName: toolName,
                             result: .object([
                                 "type": .string("code_execution_result"),
                                 "stdout": stdout,
                                 "stderr": stderr,
                                 "return_code": returnCode,
+                                "content": contentList,
                             ]),
                             providerExecuted: true
                         )
@@ -818,7 +959,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                         let errorCode = payload["error_code"] ?? .null
                         let toolResult = LanguageModelV3ToolResult(
                             toolCallId: value.toolUseId,
-                            toolName: "code_execution",
+                            toolName: toolName,
                             result: .object([
                                 "type": .string("code_execution_tool_result_error"),
                                 "errorCode": errorCode,
@@ -832,6 +973,16 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                         break
                     }
                 }
+
+            case .textEditorCodeExecutionResult(let value),
+                 .bashCodeExecutionResult(let value):
+                let toolResult = LanguageModelV3ToolResult(
+                    toolCallId: value.toolUseId,
+                    toolName: toolNameMapping.toCustomToolName("code_execution"),
+                    result: value.content,
+                    providerExecuted: true
+                )
+                content.append(.toolResult(toolResult))
             }
         }
 
@@ -865,6 +1016,14 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
         var input: String
         var providerExecuted: Bool
         var providerMetadata: SharedV3ProviderMetadata?
+        var firstDelta: Bool
+        var providerToolName: String?
+        var caller: ToolCallerInfo?
+    }
+
+    private struct ToolCallerInfo {
+        var type: String
+        var toolId: String?
     }
 
     private enum ContentBlockState {
@@ -958,13 +1117,16 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
         case .webFetchResult: return "web_fetch_tool_result"
         case .webSearchResult: return "web_search_tool_result"
         case .codeExecutionResult: return "code_execution_tool_result"
+        case .textEditorCodeExecutionResult: return "text_editor_code_execution_tool_result"
+        case .bashCodeExecutionResult: return "bash_code_execution_tool_result"
         }
     }
 
     private func handleContentBlockStart(
         _ value: ContentBlockStart,
         usesJsonResponseTool: Bool,
-        citationDocuments: [CitationDocument],
+        toolNameMapping: AnthropicToolNameMapping,
+        citationDocuments: inout [CitationDocument],
         contentBlocks: inout [Int: ContentBlockState],
         serverToolCalls: inout [String: String],
         mcpToolCalls: inout [String: (toolName: String, providerMetadata: SharedV3ProviderMetadata)],
@@ -972,6 +1134,11 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
     ) {
         switch value.contentBlock {
         case .text:
+            // When a json response tool is used, the tool call is returned as text,
+            // so we ignore the text content.
+            if usesJsonResponseTool {
+                return
+            }
             contentBlocks[value.index] = .text
             continuation.yield(.textStart(id: String(value.index), providerMetadata: nil))
 
@@ -987,16 +1154,31 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
             continuation.yield(.reasoningStart(id: String(value.index), providerMetadata: metadata))
 
         case .toolUse(let tool):
-            if usesJsonResponseTool {
+            let isJsonResponseTool = usesJsonResponseTool && tool.name == "json"
+            if isJsonResponseTool {
                 contentBlocks[value.index] = .text
                 continuation.yield(.textStart(id: String(value.index), providerMetadata: nil))
             } else {
+                let hasNonEmptyInput: Bool
+                if let input = tool.input, case .object(let object) = input {
+                    hasNonEmptyInput = object.isEmpty == false
+                } else {
+                    hasNonEmptyInput = false
+                }
+                let initialInput = hasNonEmptyInput ? stringifyJSON(tool.input) : ""
+                let callerInfo: ToolCallerInfo? = tool.caller.map {
+                    ToolCallerInfo(type: $0.type, toolId: $0.toolId)
+                }
+
                 let state = ToolCallState(
                     toolCallId: tool.id,
                     toolName: tool.name,
-                    input: "",
+                    input: initialInput,
                     providerExecuted: false,
-                    providerMetadata: nil
+                    providerMetadata: nil,
+                    firstDelta: initialInput.isEmpty,
+                    providerToolName: nil,
+                    caller: callerInfo
                 )
                 contentBlocks[value.index] = .toolCall(state)
                 continuation.yield(
@@ -1012,33 +1194,63 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
             }
 
         case .serverToolUse(let tool):
-            guard
-                tool.name == "web_fetch" || tool.name == "web_search"
-                    || tool.name == "code_execution"
-                    || tool.name == "tool_search_tool_regex"
-                    || tool.name == "tool_search_tool_bm25"
-            else { return }
-            if tool.name == "tool_search_tool_regex" || tool.name == "tool_search_tool_bm25" {
-                serverToolCalls[tool.id] = tool.name
-            }
-            let state = ToolCallState(
-                toolCallId: tool.id,
-                toolName: tool.name,
-                input: "",
-                providerExecuted: true,
-                providerMetadata: nil
-            )
-            contentBlocks[value.index] = .toolCall(state)
-            continuation.yield(
-                .toolInputStart(
-                    id: tool.id,
-                    toolName: tool.name,
-                    providerMetadata: nil,
+            if tool.name == "web_fetch" || tool.name == "web_search"
+                || tool.name == "code_execution"
+                || tool.name == "text_editor_code_execution"
+                || tool.name == "bash_code_execution" {
+                let providerToolName =
+                    (tool.name == "text_editor_code_execution" || tool.name == "bash_code_execution")
+                    ? "code_execution"
+                    : tool.name
+                let customToolName = toolNameMapping.toCustomToolName(providerToolName)
+
+                let state = ToolCallState(
+                    toolCallId: tool.id,
+                    toolName: customToolName,
+                    input: "",
                     providerExecuted: true,
-                    dynamic: nil,
-                    title: nil
+                    providerMetadata: nil,
+                    firstDelta: true,
+                    providerToolName: tool.name,
+                    caller: nil
                 )
-            )
+                contentBlocks[value.index] = .toolCall(state)
+                continuation.yield(
+                    .toolInputStart(
+                        id: tool.id,
+                        toolName: customToolName,
+                        providerMetadata: nil,
+                        providerExecuted: true,
+                        dynamic: nil,
+                        title: nil
+                    )
+                )
+            } else if tool.name == "tool_search_tool_regex" || tool.name == "tool_search_tool_bm25" {
+                serverToolCalls[tool.id] = tool.name
+                let customToolName = toolNameMapping.toCustomToolName(tool.name)
+
+                let state = ToolCallState(
+                    toolCallId: tool.id,
+                    toolName: customToolName,
+                    input: "",
+                    providerExecuted: true,
+                    providerMetadata: nil,
+                    firstDelta: true,
+                    providerToolName: tool.name,
+                    caller: nil
+                )
+                contentBlocks[value.index] = .toolCall(state)
+                continuation.yield(
+                    .toolInputStart(
+                        id: tool.id,
+                        toolName: customToolName,
+                        providerMetadata: nil,
+                        providerExecuted: true,
+                        dynamic: nil,
+                        title: nil
+                    )
+                )
+            }
 
         case .mcpToolUse(let tool):
             let providerMetadata: SharedV3ProviderMetadata = [
@@ -1053,7 +1265,10 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                 toolName: tool.name,
                 input: "",
                 providerExecuted: true,
-                providerMetadata: providerMetadata
+                providerMetadata: providerMetadata,
+                firstDelta: true,
+                providerToolName: nil,
+                caller: nil
             )
             contentBlocks[value.index] = .toolCall(state)
             continuation.yield(
@@ -1080,19 +1295,38 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
             continuation.yield(.toolResult(toolResult))
 
         case .toolSearchToolResult(let result):
-            let toolName = serverToolCalls[result.toolUseId] ?? "tool_search_tool_regex"
-            if let toolResult = convertToolSearchToolResult(result, toolName: toolName) {
+            var providerToolName = serverToolCalls[result.toolUseId]
+            if providerToolName == nil {
+                let bm25CustomName = toolNameMapping.toCustomToolName("tool_search_tool_bm25")
+                let regexCustomName = toolNameMapping.toCustomToolName("tool_search_tool_regex")
+
+                if bm25CustomName != "tool_search_tool_bm25" {
+                    providerToolName = "tool_search_tool_bm25"
+                } else if regexCustomName != "tool_search_tool_regex" {
+                    providerToolName = "tool_search_tool_regex"
+                } else {
+                    providerToolName = "tool_search_tool_regex"
+                }
+            }
+            let customToolName = toolNameMapping.toCustomToolName(providerToolName ?? "tool_search_tool_regex")
+            if let toolResult = convertToolSearchToolResult(result, toolName: customToolName) {
                 continuation.yield(.toolResult(toolResult))
             }
 
         case .webFetchResult(let result):
-            if let toolResult = convertWebFetchToolResult(result) {
+            let toolName = toolNameMapping.toCustomToolName("web_fetch")
+            let (toolResult, document) = convertWebFetchToolResult(result, toolName: toolName)
+            if let document {
+                citationDocuments.append(document)
+            }
+            if let toolResult {
                 continuation.yield(.toolResult(toolResult))
             }
 
         case .webSearchResult(let result):
+            let toolName = toolNameMapping.toCustomToolName("web_search")
             let (toolResult, sources) = convertWebSearchToolResult(
-                result, generateSourceId: generateIdentifier)
+                result, toolName: toolName, generateSourceId: generateIdentifier)
             if let toolResult {
                 continuation.yield(.toolResult(toolResult))
             }
@@ -1101,9 +1335,20 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
             }
 
         case .codeExecutionResult(let result):
-            if let toolResult = convertCodeExecutionToolResult(result) {
+            let toolName = toolNameMapping.toCustomToolName("code_execution")
+            if let toolResult = convertCodeExecutionToolResult(result, toolName: toolName) {
                 continuation.yield(.toolResult(toolResult))
             }
+
+        case .textEditorCodeExecutionResult(let result),
+             .bashCodeExecutionResult(let result):
+            let toolResult = LanguageModelV3ToolResult(
+                toolCallId: result.toolUseId,
+                toolName: toolNameMapping.toCustomToolName("code_execution"),
+                result: result.content,
+                providerExecuted: true
+            )
+            continuation.yield(.toolResult(toolResult))
         }
     }
 
@@ -1134,17 +1379,34 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                 .reasoningDelta(id: String(value.index), delta: "", providerMetadata: metadata))
 
         case .inputJSONDelta(let partialJSON):
+            // Skip empty deltas to enable replacing the first character
+            // in the code execution 20250825 tool.
+            if partialJSON.isEmpty {
+                return
+            }
+
             if usesJsonResponseTool {
                 continuation.yield(
                     .textDelta(id: String(value.index), delta: partialJSON, providerMetadata: nil))
             } else if case .toolCall(var toolState) = contentBlocks[value.index] {
+                var delta = partialJSON
+                // For the code execution 20250825, we need to add the type to the delta
+                // and change the tool name.
+                if toolState.firstDelta,
+                   let providerToolName = toolState.providerToolName,
+                   providerToolName == "bash_code_execution" || providerToolName == "text_editor_code_execution",
+                   delta.first == "{" {
+                    delta = "{\"type\": \"\(providerToolName)\"," + String(delta.dropFirst())
+                }
+
                 continuation.yield(
                     .toolInputDelta(
                         id: toolState.toolCallId,
-                        delta: partialJSON,
+                        delta: delta,
                         providerMetadata: toolState.providerMetadata
                     ))
-                toolState.input += partialJSON
+                toolState.input += delta
+                toolState.firstDelta = false
                 contentBlocks[value.index] = .toolCall(toolState)
             }
 
@@ -1176,12 +1438,41 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
             } else {
                 continuation.yield(
                     .toolInputEnd(id: toolState.toolCallId, providerMetadata: toolState.providerMetadata))
+
+                var finalInput = toolState.input.isEmpty ? "{}" : toolState.input
+                if toolState.providerToolName == "code_execution" {
+                    if let data = finalInput.data(using: .utf8),
+                       let json = try? JSONDecoder().decode(JSONValue.self, from: data),
+                       case .object(let object) = json,
+                       object["code"] != nil,
+                       object["type"] == nil {
+                        var injected = object
+                        injected["type"] = .string("programmatic-tool-call")
+                        finalInput = stringifyJSON(.object(injected))
+                    }
+                }
+
+                var providerMetadata = toolState.providerMetadata
+                if providerMetadata == nil, let caller = toolState.caller {
+                    var callerObject: [String: JSONValue] = [
+                        "type": .string(caller.type)
+                    ]
+                    if let toolId = caller.toolId {
+                        callerObject["toolId"] = .string(toolId)
+                    }
+                    providerMetadata = [
+                        "anthropic": [
+                            "caller": .object(callerObject)
+                        ]
+                    ]
+                }
+
                 let toolCall = LanguageModelV3ToolCall(
                     toolCallId: toolState.toolCallId,
                     toolName: toolState.toolName,
-                    input: toolState.input,
+                    input: finalInput,
                     providerExecuted: toolState.providerExecuted,
-                    providerMetadata: toolState.providerMetadata
+                    providerMetadata: providerMetadata
                 )
                 continuation.yield(.toolCall(toolCall))
             }
@@ -1220,12 +1511,13 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
         return try? JSONDecoder().decode(JSONValue.self, from: data)
     }
 
-    private func convertWebFetchToolResult(_ content: WebFetchToolResultContent)
-        -> LanguageModelV3ToolResult?
-    {
-        guard case .object(let payload) = content.content else { return nil }
+    private func convertWebFetchToolResult(
+        _ content: WebFetchToolResultContent,
+        toolName: String
+    ) -> (LanguageModelV3ToolResult?, CitationDocument?) {
+        guard case .object(let payload) = content.content else { return (nil, nil) }
         guard let typeValue = payload["type"], case .string(let type) = typeValue else {
-            return nil
+            return (nil, nil)
         }
 
         if type == "web_fetch_result" {
@@ -1236,6 +1528,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                 "url": url,
                 "retrievedAt": retrievedAt,
             ]
+            var document: CitationDocument? = nil
 
             if let contentValue = payload["content"], case .object(let inner) = contentValue,
                 let sourceValue = inner["source"], case .object(let sourceObject) = sourceValue
@@ -1253,34 +1546,51 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                     mappedContent["citations"] = citations
                 }
                 resultObject["content"] = .object(mappedContent)
+
+                let documentTitle: String
+                if let titleValue = inner["title"],
+                   case .string(let titleString) = titleValue,
+                   titleString.isEmpty == false {
+                    documentTitle = titleString
+                } else if case .string(let urlString) = url {
+                    documentTitle = urlString
+                } else {
+                    documentTitle = ""
+                }
+
+                if let mediaTypeValue = sourceObject["media_type"],
+                   case .string(let mediaType) = mediaTypeValue {
+                    document = CitationDocument(title: documentTitle, filename: nil, mediaType: mediaType)
+                }
             }
 
-            return LanguageModelV3ToolResult(
+            return (LanguageModelV3ToolResult(
                 toolCallId: content.toolUseId,
-                toolName: "web_fetch",
+                toolName: toolName,
                 result: .object(resultObject),
                 providerExecuted: true
-            )
+            ), document)
         }
 
         if type == "web_fetch_tool_result_error" {
-            return LanguageModelV3ToolResult(
+            return (LanguageModelV3ToolResult(
                 toolCallId: content.toolUseId,
-                toolName: "web_fetch",
+                toolName: toolName,
                 result: .object([
                     "type": .string("web_fetch_tool_result_error"),
                     "errorCode": payload["error_code"] ?? .null,
                 ]),
                 isError: true,
                 providerExecuted: true
-            )
+            ), nil)
         }
 
-        return nil
+        return (nil, nil)
     }
 
     private func convertWebSearchToolResult(
         _ content: WebSearchToolResultContent,
+        toolName: String,
         generateSourceId: @Sendable () -> String
     ) -> (LanguageModelV3ToolResult?, [LanguageModelV3Source]) {
         switch content.content {
@@ -1299,6 +1609,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                         "title": titleValue,
                         "pageAge": pageAge,
                         "encryptedContent": object["encrypted_content"] ?? .string(""),
+                        "type": object["type"] ?? .string("web_search_result"),
                     ]))
 
                 if case .string(let url) = urlValue,
@@ -1316,7 +1627,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
 
             let toolResult = LanguageModelV3ToolResult(
                 toolCallId: content.toolUseId,
-                toolName: "web_search",
+                toolName: toolName,
                 result: .array(resultsJSON),
                 providerExecuted: true
             )
@@ -1325,7 +1636,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
         case .object(let object):
             let toolResult = LanguageModelV3ToolResult(
                 toolCallId: content.toolUseId,
-                toolName: "web_search",
+                toolName: toolName,
                 result: .object([
                     "type": .string("web_search_tool_result_error"),
                     "errorCode": object["error_code"] ?? .null,
@@ -1340,7 +1651,10 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
         }
     }
 
-    private func convertCodeExecutionToolResult(_ content: CodeExecutionToolResultContent)
+    private func convertCodeExecutionToolResult(
+        _ content: CodeExecutionToolResultContent,
+        toolName: String
+    )
         -> LanguageModelV3ToolResult?
     {
         guard case .object(let payload) = content.content else { return nil }
@@ -1351,12 +1665,13 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
         if type == "code_execution_result" {
             return LanguageModelV3ToolResult(
                 toolCallId: content.toolUseId,
-                toolName: "code_execution",
+                toolName: toolName,
                 result: .object([
                     "type": .string("code_execution_result"),
                     "stdout": payload["stdout"] ?? .string(""),
                     "stderr": payload["stderr"] ?? .string(""),
                     "return_code": payload["return_code"] ?? .number(0),
+                    "content": payload["content"] ?? .array([]),
                 ]),
                 providerExecuted: true
             )
@@ -1365,7 +1680,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
         if type == "code_execution_tool_result_error" {
             return LanguageModelV3ToolResult(
                 toolCallId: content.toolUseId,
-                toolName: "code_execution",
+                toolName: toolName,
                 result: .object([
                     "type": .string("code_execution_tool_result_error"),
                     "errorCode": payload["error_code"] ?? .null,

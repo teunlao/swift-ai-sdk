@@ -24,12 +24,33 @@ public struct AnthropicCodeExecutionToolResult: Codable, Equatable, Sendable {
     public let stdout: String
     public let stderr: String
     public let returnCode: Int
+    public let content: [OutputFile]
+
+    public struct OutputFile: Codable, Equatable, Sendable {
+        public let type: String
+        public let fileId: String
+
+        enum CodingKeys: String, CodingKey {
+            case type
+            case fileId = "file_id"
+        }
+    }
 
     enum CodingKeys: String, CodingKey {
         case type
         case stdout
         case stderr
         case returnCode = "return_code"
+        case content
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        type = try container.decode(String.self, forKey: .type)
+        stdout = try container.decode(String.self, forKey: .stdout)
+        stderr = try container.decode(String.self, forKey: .stderr)
+        returnCode = try container.decode(Int.self, forKey: .returnCode)
+        content = try container.decodeIfPresent([OutputFile].self, forKey: .content) ?? []
     }
 }
 

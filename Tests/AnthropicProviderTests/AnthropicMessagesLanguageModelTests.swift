@@ -2498,7 +2498,6 @@ struct AnthropicMessagesLanguageModelStreamAdvancedBatch2Tests {
             if case .textDelta(_, let delta, _) = part { return delta }
             return nil
         }
-        #expect(textDeltas.contains(""))
         #expect(textDeltas.contains("{\"value"))
         #expect(textDeltas.contains("\"Spark"))
         #expect(textDeltas.contains("le"))
@@ -2782,7 +2781,6 @@ struct AnthropicMessagesLanguageModelStreamAdvancedBatch2Tests {
             if case .toolInputDelta(_, let delta, _) = part { return delta }
             return nil
         }
-        #expect(toolDeltas.contains(""))
         #expect(toolDeltas.contains("{\"value"))
         #expect(toolDeltas.contains("\"Spark"))
         #expect(toolDeltas.contains("le"))

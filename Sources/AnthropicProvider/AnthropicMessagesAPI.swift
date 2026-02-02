@@ -111,6 +111,8 @@ public enum AnthropicMessageContent: Codable, Sendable {
     case webFetchResult(WebFetchToolResultContent)
     case webSearchResult(WebSearchToolResultContent)
     case codeExecutionResult(CodeExecutionToolResultContent)
+    case textEditorCodeExecutionResult(CodeExecutionToolResultContent)
+    case bashCodeExecutionResult(CodeExecutionToolResultContent)
 
     enum CodingKeys: String, CodingKey {
         case type
@@ -128,6 +130,8 @@ public enum AnthropicMessageContent: Codable, Sendable {
         case webFetchToolResult = "web_fetch_tool_result"
         case webSearchToolResult = "web_search_tool_result"
         case codeExecutionToolResult = "code_execution_tool_result"
+        case textEditorCodeExecutionToolResult = "text_editor_code_execution_tool_result"
+        case bashCodeExecutionToolResult = "bash_code_execution_tool_result"
     }
 
     public init(from decoder: Decoder) throws {
@@ -161,6 +165,10 @@ public enum AnthropicMessageContent: Codable, Sendable {
             self = .webSearchResult(try singleValue.decode(WebSearchToolResultContent.self))
         case .codeExecutionToolResult:
             self = .codeExecutionResult(try singleValue.decode(CodeExecutionToolResultContent.self))
+        case .textEditorCodeExecutionToolResult:
+            self = .textEditorCodeExecutionResult(try singleValue.decode(CodeExecutionToolResultContent.self))
+        case .bashCodeExecutionToolResult:
+            self = .bashCodeExecutionResult(try singleValue.decode(CodeExecutionToolResultContent.self))
         }
     }
 
@@ -188,6 +196,10 @@ public enum AnthropicMessageContent: Codable, Sendable {
             try value.encode(to: encoder)
         case .codeExecutionResult(let value):
             try value.encode(to: encoder)
+        case .textEditorCodeExecutionResult(let value):
+            try value.encode(to: encoder)
+        case .bashCodeExecutionResult(let value):
+            try value.encode(to: encoder)
         }
     }
 }
@@ -210,16 +222,28 @@ public struct RedactedThinkingContent: Codable, Sendable {
 }
 
 public struct ToolUseContent: Codable, Sendable {
+    public struct Caller: Codable, Sendable {
+        public let type: String
+        public let toolId: String?
+
+        enum CodingKeys: String, CodingKey {
+            case type
+            case toolId = "tool_id"
+        }
+    }
+
     public let type: String
     public let id: String
     public let name: String
     public let input: JSONValue?
+    public let caller: Caller?
 
     enum CodingKeys: String, CodingKey {
         case type
         case id
         case name
         case input
+        case caller
     }
 
     public init(from decoder: Decoder) throws {
@@ -228,6 +252,7 @@ public struct ToolUseContent: Codable, Sendable {
         id = try container.decode(String.self, forKey: .id)
         name = try container.decode(String.self, forKey: .name)
         input = try? container.decode(JSONValue.self, forKey: .input)
+        caller = try? container.decode(Caller.self, forKey: .caller)
     }
 }
 
@@ -549,6 +574,7 @@ public struct MessageStart: Codable, Sendable {
     public struct MessageInfo: Codable, Sendable {
         public let id: String?
         public let model: String?
+        public let content: [AnthropicMessageContent]?
         public let usage: AnthropicUsage?
     }
 

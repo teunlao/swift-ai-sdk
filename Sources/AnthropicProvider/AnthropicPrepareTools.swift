@@ -107,6 +107,13 @@ public func prepareAnthropicTools(
                     "name": .string("code_execution")
                 ]))
 
+            case "anthropic.code_execution_20250825":
+                betas.insert("code-execution-2025-08-25")
+                anthropicTools.append(.object([
+                    "type": .string("code_execution_20250825"),
+                    "name": .string("code_execution")
+                ]))
+
             case "anthropic.computer_20250124":
                 betas.insert("computer-use-2025-01-24")
                 let width = numberValue(providerTool.args["display_width_px"]) ?? 0
@@ -183,6 +190,13 @@ public func prepareAnthropicTools(
                 anthropicTools.append(.object([
                     "name": .string("bash"),
                     "type": .string("bash_20241022")
+                ]))
+
+            case "anthropic.memory_20250818":
+                betas.insert("context-management-2025-06-27")
+                anthropicTools.append(.object([
+                    "name": .string("memory"),
+                    "type": .string("memory_20250818")
                 ]))
 
             case "anthropic.web_fetch_20250910":
