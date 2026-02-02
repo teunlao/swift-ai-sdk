@@ -266,6 +266,13 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                                     chunkObject,
                                     continuation: continuation
                                 )
+                            case "response.reasoning_summary_part.done":
+                                handleReasoningSummaryPartDone(
+                                    chunkObject,
+                                    store: prepared.store,
+                                    activeReasoning: &activeReasoning,
+                                    continuation: continuation
+                                )
                             case "response.output_text.delta":
                                 handleTextDelta(
                                     chunkObject,
@@ -1184,9 +1191,15 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
         var endEmitted: Bool
     }
 
+    private enum ReasoningSummaryPartStatus: Sendable {
+        case active
+        case canConclude
+        case concluded
+    }
+
     private struct ReasoningState {
         var encryptedContent: String?
-        var summaryParts: [Int]
+        var summaryParts: [Int: ReasoningSummaryPartStatus]
     }
 
     private struct ResponseMetadata {
@@ -1444,7 +1457,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
         case "reasoning":
             guard let id = item["id"]?.stringValue else { return }
             let encrypted = item["encrypted_content"]?.stringValue
-            activeReasoning[id] = ReasoningState(encryptedContent: encrypted, summaryParts: [0])
+            activeReasoning[id] = ReasoningState(encryptedContent: encrypted, summaryParts: [0: .active])
             let metadata = openAIProviderMetadata([
                 "itemId": .string(id),
                 "reasoningEncryptedContent": encrypted.map(JSONValue.string) ?? .null
@@ -1770,11 +1783,13 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
         case "reasoning":
             guard let id = item["id"]?.stringValue,
                   let state = activeReasoning[id] else { return }
+            let finalEncryptedContent = item["encrypted_content"]?.stringValue
             let metadata = openAIProviderMetadata([
                 "itemId": .string(id),
-                "reasoningEncryptedContent": state.encryptedContent.map(JSONValue.string) ?? .null
+                "reasoningEncryptedContent": finalEncryptedContent.map(JSONValue.string) ?? .null
             ])
-            for summaryIndex in state.summaryParts {
+            for (summaryIndex, status) in state.summaryParts {
+                if status == .concluded { continue }
                 continuation.yield(.reasoningEnd(id: "\(id):\(summaryIndex)", providerMetadata: metadata))
             }
             activeReasoning[id] = nil
@@ -1923,14 +1938,32 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             return
         }
 
-        if !state.summaryParts.contains(summaryIndex) {
-            state.summaryParts.append(summaryIndex)
+        // The first reasoning start is emitted by `response.output_item.added`.
+        guard summaryIndex > 0 else { return }
+
+        if state.summaryParts[summaryIndex] == nil {
+            // Since there is a new active summary part, conclude all can-conclude parts.
+            var concludedIndices: [Int] = []
+            concludedIndices.reserveCapacity(state.summaryParts.count)
+            for (index, status) in state.summaryParts where status == .canConclude {
+                concludedIndices.append(index)
+            }
+            concludedIndices.sort()
+
+            for index in concludedIndices {
+                let endMetadata = openAIProviderMetadata(["itemId": .string(itemId)])
+                continuation.yield(.reasoningEnd(id: "\(itemId):\(index)", providerMetadata: endMetadata))
+                state.summaryParts[index] = .concluded
+            }
+
+            state.summaryParts[summaryIndex] = .active
             activeReasoning[itemId] = state
-            let metadata = openAIProviderMetadata([
+
+            let startMetadata = openAIProviderMetadata([
                 "itemId": .string(itemId),
                 "reasoningEncryptedContent": state.encryptedContent.map(JSONValue.string) ?? .null
             ])
-            continuation.yield(.reasoningStart(id: "\(itemId):\(summaryIndex)", providerMetadata: metadata))
+            continuation.yield(.reasoningStart(id: "\(itemId):\(summaryIndex)", providerMetadata: startMetadata))
         }
     }
 
@@ -1945,6 +1978,30 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
         }
         let metadata = openAIProviderMetadata(["itemId": .string(itemId)])
         continuation.yield(.reasoningDelta(id: "\(itemId):\(summaryIndex)", delta: delta, providerMetadata: metadata))
+    }
+
+    private func handleReasoningSummaryPartDone(
+        _ chunk: [String: JSONValue],
+        store: Bool,
+        activeReasoning: inout [String: ReasoningState],
+        continuation: AsyncThrowingStream<LanguageModelV3StreamPart, Error>.Continuation
+    ) {
+        guard let itemId = chunk["item_id"]?.stringValue,
+              let summaryIndex = chunk["summary_index"]?.intValue,
+              var state = activeReasoning[itemId],
+              state.summaryParts[summaryIndex] != nil else {
+            return
+        }
+
+        if store {
+            let metadata = openAIProviderMetadata(["itemId": .string(itemId)])
+            continuation.yield(.reasoningEnd(id: "\(itemId):\(summaryIndex)", providerMetadata: metadata))
+            state.summaryParts[summaryIndex] = .concluded
+        } else {
+            state.summaryParts[summaryIndex] = .canConclude
+        }
+
+        activeReasoning[itemId] = state
     }
 
     private func handleTextDelta(

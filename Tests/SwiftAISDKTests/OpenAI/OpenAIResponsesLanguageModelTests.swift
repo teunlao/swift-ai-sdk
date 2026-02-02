@@ -1914,6 +1914,290 @@ struct OpenAIResponsesLanguageModelTests {
         })
     }
 
+    @Test("doStream emits reasoning-end early for summary parts when store is true")
+    func testDoStreamReasoningSummaryPartDoneEmitsEarlyEndWhenStoreTrue() async throws {
+        func chunk(_ value: Any) -> String {
+            let data = try! JSONSerialization.data(withJSONObject: value)
+            let encoded = String(data: data, encoding: .utf8)!
+            return "data:\(encoded)\n\n"
+        }
+
+        let chunks: [String] = [
+            chunk([
+                "type": "response.output_item.added",
+                "output_index": 0,
+                "item": [
+                    "id": "reasoning_item",
+                    "type": "reasoning",
+                    "status": "in_progress",
+                    "encrypted_content": "opaque"
+                ]
+            ]),
+            chunk([
+                "type": "response.reasoning_summary_part.added",
+                "item_id": "reasoning_item",
+                "summary_index": 1
+            ]),
+            chunk([
+                "type": "response.reasoning_summary_text.delta",
+                "item_id": "reasoning_item",
+                "summary_index": 1,
+                "delta": "Second step"
+            ]),
+            chunk([
+                "type": "response.reasoning_summary_part.done",
+                "item_id": "reasoning_item",
+                "summary_index": 1
+            ]),
+            chunk([
+                "type": "response.output_item.done",
+                "output_index": 0,
+                "item": [
+                    "id": "reasoning_item",
+                    "type": "reasoning",
+                    "status": "completed",
+                    "encrypted_content": "opaque",
+                    "summary": [
+                        ["type": "summary_text", "text": "First step"],
+                        ["type": "summary_text", "text": "Second step"]
+                    ]
+                ]
+            ]),
+            chunk([
+                "type": "response.completed",
+                "response": [
+                    "id": "resp_reasoning_stream",
+                    "object": "response",
+                    "created_at": 1_741_600_000.0,
+                    "status": "completed",
+                    "usage": [
+                        "input_tokens": 2,
+                        "output_tokens": 2,
+                        "total_tokens": 4
+                    ]
+                ]
+            ]),
+            "data: [DONE]\n\n"
+        ]
+
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.openai.com/v1/responses")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "text/event-stream"]
+        )!
+
+        let fetch: FetchFunction = { _ in
+            let stream = AsyncThrowingStream<Data, Error> { continuation in
+                for string in chunks {
+                    continuation.yield(Data(string.utf8))
+                }
+                continuation.finish()
+            }
+            return FetchResponse(body: .stream(stream), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "o3-mini",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let streamResult = try await model.doStream(
+            options: LanguageModelV3CallOptions(prompt: samplePrompt)
+        )
+
+        var parts: [LanguageModelV3StreamPart] = []
+        for try await part in streamResult.stream {
+            parts.append(part)
+        }
+
+        let end1Parts = parts.compactMap { part -> SharedV3ProviderMetadata? in
+            if case .reasoningEnd(let id, let metadata) = part, id == "reasoning_item:1" {
+                return metadata
+            }
+            return nil
+        }
+        #expect(end1Parts.count == 1)
+        #expect(end1Parts.first?["openai"]?["reasoningEncryptedContent"] == nil)
+
+        let end1Index = parts.firstIndex { part in
+            if case .reasoningEnd(let id, _) = part { return id == "reasoning_item:1" }
+            return false
+        }
+        let end0Index = parts.firstIndex { part in
+            if case .reasoningEnd(let id, _) = part { return id == "reasoning_item:0" }
+            return false
+        }
+        #expect(end1Index != nil)
+        #expect(end0Index != nil)
+        #expect(end1Index! < end0Index!)
+
+        let end0Metadata = parts.compactMap { part -> SharedV3ProviderMetadata? in
+            if case .reasoningEnd(let id, let metadata) = part, id == "reasoning_item:0" {
+                return metadata
+            }
+            return nil
+        }.first
+
+        #expect(end0Metadata?["openai"]?["reasoningEncryptedContent"] == .string("opaque"))
+    }
+
+    @Test("doStream concludes can-conclude reasoning parts when store is false and new part starts")
+    func testDoStreamReasoningSummaryPartDoneConcludesOnNextPartWhenStoreFalse() async throws {
+        func chunk(_ value: Any) -> String {
+            let data = try! JSONSerialization.data(withJSONObject: value)
+            let encoded = String(data: data, encoding: .utf8)!
+            return "data:\(encoded)\n\n"
+        }
+
+        let chunks: [String] = [
+            chunk([
+                "type": "response.output_item.added",
+                "output_index": 0,
+                "item": [
+                    "id": "reasoning_item",
+                    "type": "reasoning",
+                    "status": "in_progress"
+                ]
+            ]),
+            chunk([
+                "type": "response.reasoning_summary_part.added",
+                "item_id": "reasoning_item",
+                "summary_index": 1
+            ]),
+            chunk([
+                "type": "response.reasoning_summary_text.delta",
+                "item_id": "reasoning_item",
+                "summary_index": 1,
+                "delta": "Second step"
+            ]),
+            chunk([
+                "type": "response.reasoning_summary_part.done",
+                "item_id": "reasoning_item",
+                "summary_index": 1
+            ]),
+            chunk([
+                "type": "response.reasoning_summary_part.added",
+                "item_id": "reasoning_item",
+                "summary_index": 2
+            ]),
+            chunk([
+                "type": "response.reasoning_summary_text.delta",
+                "item_id": "reasoning_item",
+                "summary_index": 2,
+                "delta": "Third step"
+            ]),
+            chunk([
+                "type": "response.output_item.done",
+                "output_index": 0,
+                "item": [
+                    "id": "reasoning_item",
+                    "type": "reasoning",
+                    "status": "completed",
+                    "encrypted_content": "opaque_final",
+                    "summary": [
+                        ["type": "summary_text", "text": "First step"],
+                        ["type": "summary_text", "text": "Second step"],
+                        ["type": "summary_text", "text": "Third step"]
+                    ]
+                ]
+            ]),
+            chunk([
+                "type": "response.completed",
+                "response": [
+                    "id": "resp_reasoning_stream",
+                    "object": "response",
+                    "created_at": 1_741_600_000.0,
+                    "status": "completed",
+                    "usage": [
+                        "input_tokens": 2,
+                        "output_tokens": 2,
+                        "total_tokens": 4
+                    ]
+                ]
+            ]),
+            "data: [DONE]\n\n"
+        ]
+
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.openai.com/v1/responses")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "text/event-stream"]
+        )!
+
+        let fetch: FetchFunction = { _ in
+            let stream = AsyncThrowingStream<Data, Error> { continuation in
+                for string in chunks {
+                    continuation.yield(Data(string.utf8))
+                }
+                continuation.finish()
+            }
+            return FetchResponse(body: .stream(stream), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "o3-mini",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let streamResult = try await model.doStream(
+            options: LanguageModelV3CallOptions(
+                prompt: samplePrompt,
+                providerOptions: [
+                    "openai": [
+                        "store": .bool(false)
+                    ]
+                ]
+            )
+        )
+
+        var parts: [LanguageModelV3StreamPart] = []
+        for try await part in streamResult.stream {
+            parts.append(part)
+        }
+
+        // When store is false, reasoning_item:1 should be concluded when the next part (2) starts,
+        // without encrypted content.
+        let end1Parts = parts.compactMap { part -> SharedV3ProviderMetadata? in
+            if case .reasoningEnd(let id, let metadata) = part, id == "reasoning_item:1" {
+                return metadata
+            }
+            return nil
+        }
+        #expect(end1Parts.count == 1)
+        #expect(end1Parts.first?["openai"]?["reasoningEncryptedContent"] == nil)
+
+        let end1Index = parts.firstIndex { part in
+            if case .reasoningEnd(let id, _) = part { return id == "reasoning_item:1" }
+            return false
+        }
+        let start2Index = parts.firstIndex { part in
+            if case .reasoningStart(let id, _) = part { return id == "reasoning_item:2" }
+            return false
+        }
+        #expect(end1Index != nil)
+        #expect(start2Index != nil)
+        #expect(end1Index! < start2Index!)
+
+        // The remaining reasoning parts should be concluded at output_item.done with encrypted content from the done item.
+        let end0Metadata = parts.compactMap { part -> SharedV3ProviderMetadata? in
+            if case .reasoningEnd(let id, let metadata) = part, id == "reasoning_item:0" {
+                return metadata
+            }
+            return nil
+        }.first
+        #expect(end0Metadata?["openai"]?["reasoningEncryptedContent"] == .string("opaque_final"))
+
+        let end2Metadata = parts.compactMap { part -> SharedV3ProviderMetadata? in
+            if case .reasoningEnd(let id, let metadata) = part, id == "reasoning_item:2" {
+                return metadata
+            }
+            return nil
+        }.first
+        #expect(end2Metadata?["openai"]?["reasoningEncryptedContent"] == .string("opaque_final"))
+    }
+
     @Test("doGenerate maps incomplete length finish reason")
     func testDoGenerateIncompleteLengthFinishReason() async throws {
         let responseJSON: [String: Any] = [
