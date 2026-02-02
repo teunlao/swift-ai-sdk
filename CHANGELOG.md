@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.8.2] - 2026-02-02
+
+### Added
+- Tools: propagate optional `title` through tool call/result/error types and stream parts.
+
+### Fixed
+- StreamText SSE: ensure tool events use upstream field names (`toolName`) and JSON-serializable payloads for `providerMetadata`/errors.
+
 ## [0.8.1] - 2026-02-01
 
 ### Added
