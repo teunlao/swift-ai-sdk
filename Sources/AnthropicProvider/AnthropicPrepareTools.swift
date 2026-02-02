@@ -129,6 +129,24 @@ public func prepareAnthropicTools(
                 }
                 anthropicTools.append(.object(payload))
 
+            case "anthropic.computer_20251124":
+                betas.insert("computer-use-2025-11-24")
+                let width = numberValue(providerTool.args["display_width_px"]) ?? 0
+                let height = numberValue(providerTool.args["display_height_px"]) ?? 0
+                var payload: [String: JSONValue] = [
+                    "name": .string("computer"),
+                    "type": .string("computer_20251124"),
+                    "display_width_px": .number(width),
+                    "display_height_px": .number(height)
+                ]
+                if let displayNumber = numberValue(providerTool.args["display_number"]) {
+                    payload["display_number"] = .number(displayNumber)
+                }
+                if let enableZoom = boolValue(providerTool.args["enable_zoom"]) {
+                    payload["enable_zoom"] = .bool(enableZoom)
+                }
+                anthropicTools.append(.object(payload))
+
             case "anthropic.computer_20241022":
                 betas.insert("computer-use-2024-10-22")
                 let width = numberValue(providerTool.args["display_width_px"]) ?? 0

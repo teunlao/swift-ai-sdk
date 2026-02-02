@@ -167,8 +167,8 @@ struct AnthropicMessagesLanguageModelStreamAdvancedTests {
            let toolChoice = json["tool_choice"] as? [String: Any],
            let tools = json["tools"] as? [[String: Any]] {
             #expect(json["stream"] as? Bool == true)
-            #expect(toolChoice["name"] as? String == "json")
-            #expect(toolChoice["type"] as? String == "tool")
+            #expect(toolChoice["type"] as? String == "any")
+            #expect(toolChoice["name"] == nil)
             #expect(toolChoice["disable_parallel_tool_use"] as? Bool == true)
             #expect(tools.count == 1)
             #expect(tools.first?["name"] as? String == "json")
@@ -619,6 +619,59 @@ struct AnthropicMessagesLanguageModelStreamAdvancedTests {
         } else {
             Issue.record("Missing usage metadata")
         }
+    }
+
+    @Test("includes container and contextManagement in finish provider metadata")
+    func containerAndContextManagementMetadata() async throws {
+        let payloads = [
+            #"{"type":"message_start","message":{"id":"msg_container","type":"message","role":"assistant","model":"claude-sonnet-4-5-20250929","stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":17,"cache_creation_input_tokens":null,"cache_read_input_tokens":null},"container":{"expires_at":"2026-01-01T00:00:00Z","id":"container_123"},"content":[]}}"#,
+            #"{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null,"container":{"expires_at":"2026-01-01T00:00:00Z","id":"container_123","skills":[{"type":"anthropic","skill_id":"tool_search","version":"1.0.0"}]}},"context_management":{"applied_edits":[{"type":"clear_tool_uses_20250919","cleared_tool_uses":3,"cleared_input_tokens":100}]},"usage":{"output_tokens":227}}"#,
+            #"{"type":"message_stop"}"#,
+        ]
+        let events = events(from: payloads)
+
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .stream(makeStream(from: events)), urlResponse: makeHTTPResponse())
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-sonnet-4-5-20250929"),
+            config: makeAdvancedConfig(fetch: fetch)
+        )
+
+        let result = try await model.doStream(options: .init(prompt: advancedTestPrompt))
+        let parts = try await collectParts(from: result.stream)
+
+        guard let finishPart = parts.first(where: { if case .finish = $0 { return true } else { return false } }),
+              case .finish(_, _, let metadata) = finishPart else {
+            Issue.record("Missing finish part")
+            return
+        }
+
+        let expectedContainer: JSONValue = .object([
+            "expiresAt": .string("2026-01-01T00:00:00Z"),
+            "id": .string("container_123"),
+            "skills": .array([
+                .object([
+                    "type": .string("anthropic"),
+                    "skillId": .string("tool_search"),
+                    "version": .string("1.0.0"),
+                ])
+            ])
+        ])
+
+        let expectedContextManagement: JSONValue = .object([
+            "appliedEdits": .array([
+                .object([
+                    "type": .string("clear_tool_uses_20250919"),
+                    "clearedToolUses": .number(3),
+                    "clearedInputTokens": .number(100),
+                ])
+            ])
+        ])
+
+        #expect(metadata?["anthropic"]?["container"] == expectedContainer)
+        #expect(metadata?["anthropic"]?["contextManagement"] == expectedContextManagement)
     }
 
     @Test("streams provider executed web fetch tool results")

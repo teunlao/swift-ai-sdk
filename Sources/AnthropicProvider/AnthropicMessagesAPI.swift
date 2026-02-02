@@ -61,6 +61,8 @@ public struct AnthropicMessagesResponse: Codable, Sendable {
     public let stopReason: String?
     public let stopSequence: String?
     public let usage: AnthropicUsage
+    public let container: AnthropicContainer?
+    public let contextManagement: AnthropicResponseContextManagement?
 
     enum CodingKeys: String, CodingKey {
         case type
@@ -70,6 +72,107 @@ public struct AnthropicMessagesResponse: Codable, Sendable {
         case stopReason = "stop_reason"
         case stopSequence = "stop_sequence"
         case usage
+        case container
+        case contextManagement = "context_management"
+    }
+}
+
+public struct AnthropicContainer: Codable, Sendable {
+    public struct Skill: Codable, Sendable {
+        public let type: String
+        public let skillId: String
+        public let version: String
+
+        enum CodingKeys: String, CodingKey {
+            case type
+            case skillId = "skill_id"
+            case version
+        }
+    }
+
+    public let expiresAt: String
+    public let id: String
+    public let skills: [Skill]?
+
+    enum CodingKeys: String, CodingKey {
+        case expiresAt = "expires_at"
+        case id
+        case skills
+    }
+}
+
+public struct AnthropicResponseContextManagement: Codable, Sendable {
+    public enum AppliedEdit: Codable, Sendable {
+        case clearToolUses20250919(ClearToolUses20250919)
+        case clearThinking20251015(ClearThinking20251015)
+
+        enum CodingKeys: String, CodingKey {
+            case type
+        }
+
+        enum EditType: String {
+            case clearToolUses20250919 = "clear_tool_uses_20250919"
+            case clearThinking20251015 = "clear_thinking_20251015"
+        }
+
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            let rawType = try container.decode(String.self, forKey: .type)
+            guard let type = EditType(rawValue: rawType) else {
+                throw DecodingError.dataCorruptedError(
+                    forKey: .type,
+                    in: container,
+                    debugDescription: "Unsupported context management edit type: \(rawType)"
+                )
+            }
+
+            let single = try decoder.singleValueContainer()
+            switch type {
+            case .clearToolUses20250919:
+                self = .clearToolUses20250919(try single.decode(ClearToolUses20250919.self))
+            case .clearThinking20251015:
+                self = .clearThinking20251015(try single.decode(ClearThinking20251015.self))
+            }
+        }
+
+        public func encode(to encoder: Encoder) throws {
+            switch self {
+            case .clearToolUses20250919(let value):
+                try value.encode(to: encoder)
+            case .clearThinking20251015(let value):
+                try value.encode(to: encoder)
+            }
+        }
+    }
+
+    public struct ClearToolUses20250919: Codable, Sendable {
+        public let type: String
+        public let clearedToolUses: Int
+        public let clearedInputTokens: Int
+
+        enum CodingKeys: String, CodingKey {
+            case type
+            case clearedToolUses = "cleared_tool_uses"
+            case clearedInputTokens = "cleared_input_tokens"
+        }
+    }
+
+    public struct ClearThinking20251015: Codable, Sendable {
+        public let type: String
+        public let clearedThinkingTurns: Int
+        public let clearedInputTokens: Int
+
+        enum CodingKeys: String, CodingKey {
+            case type
+            case clearedThinkingTurns = "cleared_thinking_turns"
+            case clearedInputTokens = "cleared_input_tokens"
+        }
+    }
+
+    public let appliedEdits: [AppliedEdit]
+
+    enum CodingKeys: String, CodingKey {
+        case appliedEdits = "applied_edits"
     }
 }
 
@@ -576,6 +679,17 @@ public struct MessageStart: Codable, Sendable {
         public let model: String?
         public let content: [AnthropicMessageContent]?
         public let usage: AnthropicUsage?
+        public let container: AnthropicContainer?
+        public let stopReason: String?
+
+        enum CodingKeys: String, CodingKey {
+            case id
+            case model
+            case content
+            case usage
+            case container
+            case stopReason = "stop_reason"
+        }
     }
 
     public let type: String
@@ -726,16 +840,26 @@ public struct MessageDelta: Codable, Sendable {
     public struct Delta: Codable, Sendable {
         public let stopReason: String?
         public let stopSequence: String?
+        public let container: AnthropicContainer?
 
         enum CodingKeys: String, CodingKey {
             case stopReason = "stop_reason"
             case stopSequence = "stop_sequence"
+            case container
         }
     }
 
     public let type: String
     public let delta: Delta
     public let usage: AnthropicUsage?
+    public let contextManagement: AnthropicResponseContextManagement?
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case delta
+        case usage
+        case contextManagement = "context_management"
+    }
 }
 
 // MARK: - Reasoning Metadata

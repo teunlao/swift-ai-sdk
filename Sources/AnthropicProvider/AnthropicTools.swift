@@ -100,6 +100,25 @@ public struct AnthropicTools: Sendable {
         anthropicComputer20250124(options)
     }
 
+    /// Claude can interact with computer environments through the computer use tool, which
+    /// provides screenshot capabilities and mouse/keyboard control for autonomous desktop interaction.
+    ///
+    /// This version adds the zoom action for detailed screen region inspection.
+    ///
+    /// Image results are supported.
+    ///
+    /// Tool name must be `computer`.
+    ///
+    /// - Parameters:
+    ///   - displayWidthPx: The width of the display being controlled by the model in pixels.
+    ///   - displayHeightPx: The height of the display being controlled by the model in pixels.
+    ///   - displayNumber: The display number to control (only relevant for X11 environments). If specified, the tool will be provided a display number in the tool definition.
+    ///   - enableZoom: Enable zoom action. Set to true to allow Claude to zoom into specific screen regions. Default: false.
+    @discardableResult
+    public func computer20251124(_ options: AnthropicComputerOptions) -> Tool {
+        anthropicComputer20251124(options)
+    }
+
     /// Claude can use an Anthropic-defined text editor tool to view and modify text files,
     /// helping you debug, fix, and improve your code or other text documents. This allows Claude
     /// to directly interact with your files, providing hands-on assistance rather than just suggesting changes.

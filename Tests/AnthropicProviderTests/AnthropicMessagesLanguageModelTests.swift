@@ -308,7 +308,7 @@ private func makeConfig(fetch: @escaping FetchFunction) -> AnthropicMessagesConf
         } else {
             Issue.record("Expected thinking payload")
         }
-            #expect(json["max_tokens"] as? Int == 5096)
+            #expect(json["max_tokens"] as? Int == 4096)
             #expect(json["temperature"] == nil)
             #expect(json["top_p"] == nil)
             #expect(json["top_k"] == nil)
@@ -370,7 +370,7 @@ private func makeConfig(fetch: @escaping FetchFunction) -> AnthropicMessagesConf
             #expect(json["stop_sequences"] as? [String] == ["abc", "def"])
             #expect(json["temperature"] as? Double == 0.5)
             #expect(json["top_k"] as? Int == 1)
-            #expect(json["top_p"] as? Double == 0.9)
+            #expect(json["top_p"] == nil)
             if let messages = json["messages"] as? [[String: Any]] {
                 #expect(messages.first?["role"] as? String == "user")
             } else {
@@ -1316,8 +1316,8 @@ private func makeConfig(fetch: @escaping FetchFunction) -> AnthropicMessagesConf
 
             // Check tool_choice
             if let toolChoice = json["tool_choice"] as? [String: Any] {
-                #expect(toolChoice["type"] as? String == "tool")
-                #expect(toolChoice["name"] as? String == "json")
+                #expect(toolChoice["type"] as? String == "any")
+                #expect(toolChoice["name"] == nil)
                 #expect(toolChoice["disable_parallel_tool_use"] as? Bool == true)
             } else {
                 Issue.record("Expected tool_choice in request")
@@ -2425,8 +2425,8 @@ struct AnthropicMessagesLanguageModelStreamAdvancedBatch2Tests {
 
         // Verify tool_choice
         if let toolChoice = json["tool_choice"] as? [String: Any] {
-            #expect(toolChoice["type"] as? String == "tool")
-            #expect(toolChoice["name"] as? String == "json")
+            #expect(toolChoice["type"] as? String == "any")
+            #expect(toolChoice["name"] == nil)
             #expect(toolChoice["disable_parallel_tool_use"] as? Bool == true)
         }
 
@@ -3151,7 +3151,7 @@ struct AnthropicMessagesLanguageModelThinkingAndErrorsTests {
 
         let json = try JSONSerialization.jsonObject(with: body) as? [String: Any]
         #expect(json?["model"] as? String == "claude-3-haiku-20240307")
-        #expect(json?["max_tokens"] as? Int == 4096 + 1000)  // maxTokens + budgetTokens
+        #expect(json?["max_tokens"] as? Int == 4096)
 
         if let thinking = json?["thinking"] as? [String: Any] {
             #expect(thinking["type"] as? String == "enabled")

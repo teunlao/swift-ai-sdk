@@ -23,6 +23,7 @@ public struct AnthropicMessagesConfig: @unchecked Sendable {
     public let supportedUrls: @Sendable () -> [String: [NSRegularExpression]]
     public let generateId: @Sendable () -> String
     public let requestTransform: RequestTransform
+    public let supportsNativeStructuredOutput: Bool?
 
     public init(
         provider: String,
@@ -31,7 +32,8 @@ public struct AnthropicMessagesConfig: @unchecked Sendable {
         fetch: FetchFunction? = nil,
         supportedUrls: @escaping @Sendable () -> [String: [NSRegularExpression]] = { [:] },
         generateId: @escaping @Sendable () -> String = defaultAnthropicId,
-        requestTransform: RequestTransform = .init()
+        requestTransform: RequestTransform = .init(),
+        supportsNativeStructuredOutput: Bool? = nil
     ) {
         self.provider = provider
         self.baseURL = baseURL
@@ -40,6 +42,7 @@ public struct AnthropicMessagesConfig: @unchecked Sendable {
         self.supportedUrls = supportedUrls
         self.generateId = generateId
         self.requestTransform = requestTransform
+        self.supportsNativeStructuredOutput = supportsNativeStructuredOutput
     }
 }
 
@@ -49,6 +52,7 @@ private struct AnthropicRequestArguments {
     let betas: Set<String>
     let usesJsonResponseTool: Bool
     let toolNameMapping: AnthropicToolNameMapping
+    let toolStreaming: Bool
 }
 
 public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
@@ -130,13 +134,18 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
     {
         let prepared = try await prepareRequest(options: options)
 
+        var betas = prepared.betas
+        if prepared.toolStreaming {
+            betas.insert("fine-grained-tool-streaming-2025-05-14")
+        }
+
         var requestBody = prepared.body
         requestBody["stream"] = .bool(true)
         let transformedBody = config.requestTransform.transformBody?(requestBody) ?? requestBody
 
         let response = try await postJsonToAPI(
             url: buildRequestURL(isStreaming: true),
-            headers: getHeaders(betas: prepared.betas, additional: options.headers),
+            headers: getHeaders(betas: betas, additional: options.headers),
             body: JSONValue.object(transformedBody),
             failedResponseHandler: anthropicFailedResponseHandler,
             successfulResponseHandler: createEventSourceResponseHandler(
@@ -161,6 +170,8 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                 var rawUsage: [String: JSONValue]? = nil
                 var cacheCreationInputTokens: Int? = nil
                 var stopSequence: String? = nil
+                var container: JSONValue = .null
+                var contextManagement: JSONValue = .null
 
                 do {
                     for try await chunk in response.value {
@@ -220,6 +231,15 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                                     cacheCreationInputTokens = usageInfo.cacheCreationInputTokens
                                     rawUsage = anthropicUsageMetadata(usageInfo)
                                 }
+
+                                container = anthropicContainerMetadata(value.message.container)
+
+                                if let stopReason = value.message.stopReason {
+                                    finishReason = mapAnthropicStopReason(
+                                        finishReason: stopReason,
+                                        isJsonResponseFromTool: prepared.usesJsonResponseTool
+                                    )
+                                }
                                 continuation.yield(
                                     .responseMetadata(
                                         id: value.message.id,
@@ -229,8 +249,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
 
                                 // Programmatic tool calling: process pre-populated content blocks
                                 // (for deferred tool calls, content may be in message_start)
-                                if prepared.usesJsonResponseTool == false,
-                                   let content = value.message.content {
+                                if let content = value.message.content {
                                     for part in content {
                                         guard case .toolUse(let tool) = part else { continue }
 
@@ -317,6 +336,11 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                                     isJsonResponseFromTool: prepared.usesJsonResponseTool
                                 )
                                 stopSequence = value.delta.stopSequence
+                                container = anthropicContainerMetadata(value.delta.container)
+
+                                if let newContextManagement = value.contextManagement {
+                                    contextManagement = anthropicContextManagementMetadata(newContextManagement)
+                                }
 
                             case .messageStop:
                                 var metadata: [String: JSONValue] = [:]
@@ -325,6 +349,8 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                                     cacheCreationInputTokens.map { .number(Double($0)) } ?? .null
                                 metadata["stopSequence"] =
                                     stopSequence.map(JSONValue.string) ?? .null
+                                metadata["container"] = container
+                                metadata["contextManagement"] = contextManagement
 
                                 continuation.yield(
                                     .finish(
@@ -382,36 +408,30 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
             warnings.append(.unsupportedSetting(setting: "seed", details: nil))
         }
 
-        var jsonResponseTool: LanguageModelV3FunctionTool?
-        var usesJsonResponseTool = false
+        var temperature = options.temperature
+        if let value = temperature, value > 1 {
+            warnings.append(
+                .unsupportedSetting(
+                    setting: "temperature",
+                    details: "\(value) exceeds anthropic maximum of 1.0. clamped to 1.0"
+                ))
+            temperature = 1
+        } else if let value = temperature, value < 0 {
+            warnings.append(
+                .unsupportedSetting(
+                    setting: "temperature",
+                    details: "\(value) is below anthropic minimum of 0. clamped to 0"
+                ))
+            temperature = 0
+        }
 
-        if case let .json(schema, _, _) = options.responseFormat {
-            if schema == nil {
-                warnings.append(
-                    .unsupportedSetting(
-                        setting: "responseFormat",
-                        details:
-                            "JSON response format requires a schema. The response format is ignored."
-                    )
+        if case let .json(schema, _, _) = options.responseFormat, schema == nil {
+            warnings.append(
+                .unsupportedSetting(
+                    setting: "responseFormat",
+                    details: "JSON response format requires a schema. The response format is ignored."
                 )
-            } else if options.tools != nil {
-                warnings.append(
-                    .unsupportedSetting(
-                        setting: "tools",
-                        details:
-                            "JSON response format does not support tools. The provided tools are ignored."
-                    )
-                )
-            }
-
-            if let schema {
-                jsonResponseTool = LanguageModelV3FunctionTool(
-                    name: "json",
-                    inputSchema: schema,
-                    description: "Respond with a JSON object."
-                )
-                usesJsonResponseTool = true
-            }
+            )
         }
 
         let anthropicOptions = try await parseProviderOptions(
@@ -420,6 +440,34 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
             schema: anthropicProviderOptionsSchema
         )
 
+        let capabilities = getModelCapabilities(modelId: modelIdentifier.rawValue)
+        let supportsStructuredOutput =
+            (config.supportsNativeStructuredOutput ?? true) && capabilities.supportsStructuredOutput
+
+        let structuredOutputMode = anthropicOptions?.structuredOutputMode ?? .auto
+        let useStructuredOutput =
+            structuredOutputMode == .outputFormat
+            || (structuredOutputMode == .auto && supportsStructuredOutput)
+
+        let responseFormatSchema: JSONValue? =
+            if case let .json(schema, _, _) = options.responseFormat { schema } else { nil }
+
+        // If we're not using native output_format, fall back to the json tool.
+        let jsonResponseTool: LanguageModelV3FunctionTool? =
+            (options.responseFormat != nil
+             && responseFormatSchema != nil
+             && useStructuredOutput == false)
+            ? LanguageModelV3FunctionTool(
+                name: "json",
+                inputSchema: responseFormatSchema!,
+                description: "Respond with a JSON object."
+            )
+            : nil
+
+        let usesJsonResponseTool = jsonResponseTool != nil
+        let contextManagement = anthropicOptions?.contextManagement
+        let toolStreaming = anthropicOptions?.toolStreaming ?? true
+
         let toolNameMapping = AnthropicToolNameMapping.create(
             tools: options.tools,
             providerToolNames: [
@@ -427,6 +475,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                 "anthropic.code_execution_20250825": "code_execution",
                 "anthropic.computer_20241022": "computer",
                 "anthropic.computer_20250124": "computer",
+                "anthropic.computer_20251124": "computer",
                 "anthropic.text_editor_20241022": "str_replace_editor",
                 "anthropic.text_editor_20250124": "str_replace_editor",
                 "anthropic.text_editor_20250429": "str_replace_based_edit_tool",
@@ -461,28 +510,56 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
             args["system"] = .array(system)
         }
 
-        let baseMaxTokens = options.maxOutputTokens ?? 4096
-        args["max_tokens"] = .number(Double(baseMaxTokens))
+        let inputMaxOutputTokens = options.maxOutputTokens
+        let maxTokens = inputMaxOutputTokens ?? capabilities.maxOutputTokens
 
-        if let temperature = options.temperature {
+        args["max_tokens"] = .number(Double(maxTokens))
+
+        // Standard sampling settings
+        if let temperature {
             args["temperature"] = .number(temperature)
         }
-        if let topP = options.topP {
-            args["top_p"] = .number(topP)
-        }
+
         if let topK = options.topK {
             args["top_k"] = .number(Double(topK))
         }
+
+        var topP = options.topP
+
+        let isThinking = anthropicOptions?.thinking?.type == .enabled
+        var thinkingBudget = anthropicOptions?.thinking?.budgetTokens
+
+        if isThinking == false, topP != nil, temperature != nil {
+            warnings.append(
+                .unsupportedSetting(
+                    setting: "topP",
+                    details: "topP is not supported when temperature is set. topP is ignored."
+                )
+            )
+            topP = nil
+        }
+
+        if let topP {
+            args["top_p"] = .number(topP)
+        }
+
         if let stopSequences = options.stopSequences, !stopSequences.isEmpty {
             args["stop_sequences"] = .array(stopSequences.map(JSONValue.string))
         }
 
-        if anthropicOptions?.thinking?.type == .enabled {
-            guard let budget = anthropicOptions?.thinking?.budgetTokens else {
-                throw UnsupportedFunctionalityError(functionality: "thinking requires a budget")
+        // Thinking
+        if isThinking {
+            if thinkingBudget == nil {
+                warnings.append(
+                    .other(
+                        message:
+                            "thinking budget is required when thinking is enabled. using default budget of 1024 tokens."
+                    )
+                )
+                thinkingBudget = 1024
             }
 
-            if options.temperature != nil {
+            if temperature != nil {
                 warnings.append(
                     .unsupportedSetting(
                         setting: "temperature",
@@ -510,19 +587,176 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                 args.removeValue(forKey: "top_p")
             }
 
-            args["thinking"] = .object([
-                "type": .string("enabled"),
-                "budget_tokens": .number(Double(budget)),
+            if let budget = thinkingBudget {
+                args["thinking"] = .object([
+                    "type": .string("enabled"),
+                    "budget_tokens": .number(Double(budget)),
+                ])
+                args["max_tokens"] = .number(Double(maxTokens + budget))
+            }
+        }
+
+        // limit max output tokens for known models (including thinking budget)
+        if capabilities.isKnownModel,
+            case .number(let rawMaxTokensValue) = args["max_tokens"],
+            Int(rawMaxTokensValue) > capabilities.maxOutputTokens
+        {
+            if inputMaxOutputTokens != nil {
+                warnings.append(
+                    .unsupportedSetting(
+                        setting: "maxOutputTokens",
+                        details:
+                            "\(Int(rawMaxTokensValue)) (maxOutputTokens + thinkingBudget) is greater than \(modelIdentifier.rawValue) \(capabilities.maxOutputTokens) max output tokens. The max output tokens have been limited to \(capabilities.maxOutputTokens)."
+                    )
+                )
+            }
+            args["max_tokens"] = .number(Double(capabilities.maxOutputTokens))
+        }
+
+        // Effort
+        if let effort = anthropicOptions?.effort {
+            args["output_config"] = .object(["effort": .string(effort.rawValue)])
+            betas.insert("effort-2025-11-24")
+        }
+
+        // Native structured outputs
+        let usingNativeOutputFormat =
+            useStructuredOutput && responseFormatSchema != nil
+        if usingNativeOutputFormat, let schema = responseFormatSchema {
+            args["output_format"] = .object([
+                "type": .string("json_schema"),
+                "schema": schema,
             ])
-            args["max_tokens"] = .number(Double(baseMaxTokens + budget))
+            betas.insert("structured-outputs-2025-11-13")
+        }
+
+        // MCP servers
+        if let servers = anthropicOptions?.mcpServers, !servers.isEmpty {
+            betas.insert("mcp-client-2025-04-04")
+            args["mcp_servers"] = .array(
+                servers.map { server in
+                    var payload: [String: JSONValue] = [
+                        "type": .string(server.type.rawValue),
+                        "name": .string(server.name),
+                        "url": .string(server.url),
+                    ]
+                    if let authorizationToken = server.authorizationToken {
+                        payload["authorization_token"] = .string(authorizationToken)
+                    }
+                    if let config = server.toolConfiguration {
+                        var toolConfig: [String: JSONValue] = [:]
+                        if let allowedTools = config.allowedTools {
+                            toolConfig["allowed_tools"] = .array(allowedTools.map(JSONValue.string))
+                        }
+                        if let enabled = config.enabled {
+                            toolConfig["enabled"] = .bool(enabled)
+                        }
+                        if !toolConfig.isEmpty {
+                            payload["tool_configuration"] = .object(toolConfig)
+                        }
+                    }
+                    return .object(payload)
+                }
+            )
+        }
+
+        // Container: ID-only (string) or ID+skills (object)
+        if let container = anthropicOptions?.container,
+            let containerId = container.id
+        {
+            if let skills = container.skills, !skills.isEmpty {
+                betas.insert("code-execution-2025-08-25")
+                betas.insert("skills-2025-10-02")
+                betas.insert("files-api-2025-04-14")
+
+                if options.tools?.contains(where: { tool in
+                    guard case .providerDefined(let providerTool) = tool else { return false }
+                    return providerTool.id == "anthropic.code_execution_20250825"
+                }) != true {
+                    warnings.append(.other(message: "code execution tool is required when using skills"))
+                }
+
+                args["container"] = .object([
+                    "id": .string(containerId),
+                    "skills": .array(
+                        skills.map { skill in
+                            var skillPayload: [String: JSONValue] = [
+                                "type": .string(skill.type.rawValue),
+                                "skill_id": .string(skill.skillId),
+                            ]
+                            if let version = skill.version {
+                                skillPayload["version"] = .string(version)
+                            }
+                            return .object(skillPayload)
+                        })
+                ])
+            } else {
+                args["container"] = .string(containerId)
+            }
+        }
+
+        // Context management
+        if let contextManagement {
+            betas.insert("context-management-2025-06-27")
+            let edits: [JSONValue] = contextManagement.edits.compactMap { edit in
+                switch edit {
+                case .clearToolUses20250919(let settings):
+                    var payload: [String: JSONValue] = [
+                        "type": .string("clear_tool_uses_20250919")
+                    ]
+                    if let trigger = settings.trigger {
+                        payload["trigger"] = .object([
+                            "type": .string(trigger.type.rawValue),
+                            "value": .number(trigger.value),
+                        ])
+                    }
+                    if let keep = settings.keep {
+                        payload["keep"] = .object([
+                            "type": .string(keep.type),
+                            "value": .number(keep.value),
+                        ])
+                    }
+                    if let clearAtLeast = settings.clearAtLeast {
+                        payload["clear_at_least"] = .object([
+                            "type": .string(clearAtLeast.type),
+                            "value": .number(clearAtLeast.value),
+                        ])
+                    }
+                    if let clearToolInputs = settings.clearToolInputs {
+                        payload["clear_tool_inputs"] = .bool(clearToolInputs)
+                    }
+                    if let excludeTools = settings.excludeTools {
+                        payload["exclude_tools"] = .array(excludeTools.map(JSONValue.string))
+                    }
+                    return .object(payload)
+
+                case .clearThinking20251015(let settings):
+                    var payload: [String: JSONValue] = [
+                        "type": .string("clear_thinking_20251015")
+                    ]
+                    if let keep = settings.keep {
+                        switch keep {
+                        case .all:
+                            payload["keep"] = .string("all")
+                        case .thinkingTurns(let value):
+                            payload["keep"] = .object([
+                                "type": .string("thinking_turns"),
+                                "value": .number(value),
+                            ])
+                        }
+                    }
+                    return .object(payload)
+                }
+            }
+            args["context_management"] = .object(["edits": .array(edits)])
         }
 
         let preparedTools = try await prepareAnthropicTools(
-            tools: jsonResponseTool != nil ? [.function(jsonResponseTool!)] : options.tools,
-            toolChoice: jsonResponseTool != nil
-                ? .tool(toolName: jsonResponseTool!.name) : options.toolChoice,
-            disableParallelToolUse: jsonResponseTool != nil
-                ? true : anthropicOptions?.disableParallelToolUse
+            tools: jsonResponseTool != nil
+                ? (options.tools ?? []) + [.function(jsonResponseTool!)]
+                : options.tools,
+            toolChoice: jsonResponseTool != nil ? .required : options.toolChoice,
+            disableParallelToolUse: jsonResponseTool != nil ? true : anthropicOptions?.disableParallelToolUse
         )
 
         warnings.append(contentsOf: preparedTools.warnings)
@@ -540,7 +774,8 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
             warnings: warnings,
             betas: betas,
             usesJsonResponseTool: usesJsonResponseTool,
-            toolNameMapping: toolNameMapping
+            toolNameMapping: toolNameMapping,
+            toolStreaming: toolStreaming
         )
     }
 
@@ -561,6 +796,62 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
             combined = combineHeaders(combined, additional.mapValues { Optional($0) })
         }
         return combined.compactMapValues { $0 }
+    }
+
+    private struct AnthropicModelCapabilities: Sendable {
+        let maxOutputTokens: Int
+        let supportsStructuredOutput: Bool
+        let isKnownModel: Bool
+    }
+
+    /// Port of `getModelCapabilities` from `@ai-sdk/anthropic/src/anthropic-messages-language-model.ts`.
+    private func getModelCapabilities(modelId: String) -> AnthropicModelCapabilities {
+        if modelId.contains("claude-sonnet-4-5")
+            || modelId.contains("claude-opus-4-5")
+            || modelId.contains("claude-haiku-4-5")
+        {
+            return AnthropicModelCapabilities(
+                maxOutputTokens: 64000,
+                supportsStructuredOutput: true,
+                isKnownModel: true
+            )
+        } else if modelId.contains("claude-opus-4-1") {
+            return AnthropicModelCapabilities(
+                maxOutputTokens: 32000,
+                supportsStructuredOutput: true,
+                isKnownModel: true
+            )
+        } else if modelId.contains("claude-sonnet-4-") || modelId.contains("claude-3-7-sonnet") {
+            return AnthropicModelCapabilities(
+                maxOutputTokens: 64000,
+                supportsStructuredOutput: false,
+                isKnownModel: true
+            )
+        } else if modelId.contains("claude-opus-4-") {
+            return AnthropicModelCapabilities(
+                maxOutputTokens: 32000,
+                supportsStructuredOutput: false,
+                isKnownModel: true
+            )
+        } else if modelId.contains("claude-3-5-haiku") {
+            return AnthropicModelCapabilities(
+                maxOutputTokens: 8192,
+                supportsStructuredOutput: false,
+                isKnownModel: true
+            )
+        } else if modelId.contains("claude-3-haiku") {
+            return AnthropicModelCapabilities(
+                maxOutputTokens: 4096,
+                supportsStructuredOutput: false,
+                isKnownModel: true
+            )
+        } else {
+            return AnthropicModelCapabilities(
+                maxOutputTokens: 4096,
+                supportsStructuredOutput: false,
+                isKnownModel: false
+            )
+        }
     }
 
     private func mapResponseContent(
@@ -1754,6 +2045,56 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
         return "null"
     }
 
+    private func anthropicContainerMetadata(_ container: AnthropicContainer?) -> JSONValue {
+        guard let container else { return .null }
+
+        var payload: [String: JSONValue] = [
+            "expiresAt": .string(container.expiresAt),
+            "id": .string(container.id),
+        ]
+
+        if let skills = container.skills {
+            payload["skills"] = .array(
+                skills.map { skill in
+                    .object([
+                        "type": .string(skill.type),
+                        "skillId": .string(skill.skillId),
+                        "version": .string(skill.version),
+                    ])
+                }
+            )
+        } else {
+            payload["skills"] = .null
+        }
+
+        return .object(payload)
+    }
+
+    private func anthropicContextManagementMetadata(
+        _ contextManagement: AnthropicResponseContextManagement?
+    ) -> JSONValue {
+        guard let contextManagement else { return .null }
+
+        let appliedEdits: [JSONValue] = contextManagement.appliedEdits.compactMap { edit in
+            switch edit {
+            case .clearToolUses20250919(let value):
+                return .object([
+                    "type": .string(value.type),
+                    "clearedToolUses": .number(Double(value.clearedToolUses)),
+                    "clearedInputTokens": .number(Double(value.clearedInputTokens)),
+                ])
+            case .clearThinking20251015(let value):
+                return .object([
+                    "type": .string(value.type),
+                    "clearedThinkingTurns": .number(Double(value.clearedThinkingTurns)),
+                    "clearedInputTokens": .number(Double(value.clearedInputTokens)),
+                ])
+            }
+        }
+
+        return .object(["appliedEdits": .array(appliedEdits)])
+    }
+
     private func makeProviderMetadata(
         response: AnthropicMessagesResponse
     ) -> SharedV3ProviderMetadata? {
@@ -1766,7 +2107,9 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
             "cacheCreationInputTokens": response.usage.cacheCreationInputTokens.map {
                 .number(Double($0))
             } ?? .null,
-            "stopSequence": response.stopSequence.map(JSONValue.string) ?? .null
+            "stopSequence": response.stopSequence.map(JSONValue.string) ?? .null,
+            "container": anthropicContainerMetadata(response.container),
+            "contextManagement": anthropicContextManagementMetadata(response.contextManagement),
         ]
 
         return ["anthropic": anthropicMetadata]

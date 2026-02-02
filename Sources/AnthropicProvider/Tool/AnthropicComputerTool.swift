@@ -17,10 +17,19 @@ public struct AnthropicComputerOptions: Sendable, Equatable {
     /// The display number to control (only relevant for X11 environments). If specified, the tool will be provided a display number in the tool definition.
     public var displayNumber: Int?
 
-    public init(displayWidthPx: Int, displayHeightPx: Int, displayNumber: Int? = nil) {
+    /// Enable zoom action (computer_20251124 only). Default: nil (provider default).
+    public var enableZoom: Bool?
+
+    public init(
+        displayWidthPx: Int,
+        displayHeightPx: Int,
+        displayNumber: Int? = nil,
+        enableZoom: Bool? = nil
+    ) {
         self.displayWidthPx = displayWidthPx
         self.displayHeightPx = displayHeightPx
         self.displayNumber = displayNumber
+        self.enableZoom = enableZoom
     }
 }
 
@@ -232,4 +241,111 @@ private let computer20250124Factory = createProviderDefinedToolFactory(
 @discardableResult
 public func anthropicComputer20250124(_ options: AnthropicComputerOptions) -> Tool {
     computer20250124Factory(.init(args: computer20250124Args(for: options)))
+}
+
+// MARK: - Computer 20251124
+
+private let computer20251124InputSchema = FlexibleSchema(
+    jsonSchema(
+        .object([
+            "type": .string("object"),
+            "properties": .object([
+                "action": .object([
+                    "type": .string("string"),
+                    "enum": .array([
+                        .string("key"),
+                        .string("hold_key"),
+                        .string("type"),
+                        .string("cursor_position"),
+                        .string("mouse_move"),
+                        .string("left_mouse_down"),
+                        .string("left_mouse_up"),
+                        .string("left_click"),
+                        .string("left_click_drag"),
+                        .string("right_click"),
+                        .string("middle_click"),
+                        .string("double_click"),
+                        .string("triple_click"),
+                        .string("scroll"),
+                        .string("wait"),
+                        .string("screenshot"),
+                        .string("zoom")
+                    ])
+                ]),
+                "coordinate": .object([
+                    "type": .array([.string("array"), .string("null")]),
+                    "items": .object(["type": .string("integer")]),
+                    "minItems": .number(2),
+                    "maxItems": .number(2)
+                ]),
+                "duration": .object([
+                    "type": .array([.string("number"), .string("null")])
+                ]),
+                "region": .object([
+                    "type": .array([.string("array"), .string("null")]),
+                    "items": .object(["type": .string("integer")]),
+                    "minItems": .number(4),
+                    "maxItems": .number(4)
+                ]),
+                "scroll_amount": .object([
+                    "type": .array([.string("number"), .string("null")])
+                ]),
+                "scroll_direction": .object([
+                    "type": .array([.string("string"), .string("null")]),
+                    "enum": .array([.string("up"), .string("down"), .string("left"), .string("right")])
+                ]),
+                "start_coordinate": .object([
+                    "type": .array([.string("array"), .string("null")]),
+                    "items": .object(["type": .string("integer")]),
+                    "minItems": .number(2),
+                    "maxItems": .number(2)
+                ]),
+                "text": .object([
+                    "type": .array([.string("string"), .string("null")])
+                ])
+            ]),
+            "required": .array([.string("action")]),
+            "additionalProperties": .bool(true)
+        ])
+    )
+)
+
+private func computer20251124Args(for options: AnthropicComputerOptions) -> [String: JSONValue] {
+    var args: [String: JSONValue] = [
+        "display_width_px": .number(Double(options.displayWidthPx)),
+        "display_height_px": .number(Double(options.displayHeightPx))
+    ]
+    if let displayNumber = options.displayNumber {
+        args["display_number"] = .number(Double(displayNumber))
+    }
+    if let enableZoom = options.enableZoom {
+        args["enable_zoom"] = .bool(enableZoom)
+    }
+    return args
+}
+
+private let computer20251124Factory = createProviderDefinedToolFactory(
+    id: "anthropic.computer_20251124",
+    name: "computer",
+    inputSchema: computer20251124InputSchema
+)
+
+/// Creates a computer use tool (version 20251124) that gives Claude direct access to computer environments.
+///
+/// Claude can interact with computer environments through the computer use tool, which provides screenshot
+/// capabilities and mouse/keyboard control for autonomous desktop interaction.
+///
+/// This version adds the zoom action for detailed screen region inspection.
+///
+/// Image results are supported.
+///
+/// Tool name must be `computer`.
+///
+/// - Parameter options: Configuration including display dimensions, optional display number, and optional zoom enablement.
+/// - Returns: A configured computer use tool
+///
+/// Port of `@ai-sdk/anthropic/src/tool/computer_20251124.ts`.
+@discardableResult
+public func anthropicComputer20251124(_ options: AnthropicComputerOptions) -> Tool {
+    computer20251124Factory(.init(args: computer20251124Args(for: options)))
 }
