@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.8.3] - 2026-02-02
+
+### Fixed
+- Google (Gemini): send `tools` as an array (`[{ functionDeclarations: [...] }]`) for function tools (matches upstream; fixes Gemini/Vertex request parsing errors).
+- OpenAI (Responses): align reasoning summary streaming (`reasoning_summary_part.done` handling + final `encrypted_content` on `output_item.done`) with upstream.
+
 ## [0.8.2] - 2026-02-02
 
 ### Added
