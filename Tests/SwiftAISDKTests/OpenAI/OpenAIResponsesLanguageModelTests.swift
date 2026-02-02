@@ -307,6 +307,152 @@ struct OpenAIResponsesLanguageModelTests {
         #expect(resultObject["output"] == .string("ok"))
     }
 
+    @Test("doGenerate does not send truncation by default")
+    func testDoGenerateDoesNotSendTruncationByDefault() async throws {
+        actor RequestCapture {
+            var request: URLRequest?
+            func store(_ request: URLRequest) { self.request = request }
+            func current() -> URLRequest? { request }
+        }
+
+        let capture = RequestCapture()
+
+        let responseJSON: [String: Any] = [
+            "id": "resp_trunc_default",
+            "created_at": 1_700_000_000.0,
+            "model": "gpt-4o-2024-07-18",
+            "output": [],
+            "service_tier": NSNull(),
+            "usage": ["input_tokens": 1, "output_tokens": 1, "total_tokens": 2],
+            "warnings": [],
+            "incomplete_details": ["reason": NSNull()],
+            "finish_reason": NSNull(),
+            "error": NSNull()
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            let httpResponse = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o-2024-07-18",
+            config: makeConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: samplePrompt))
+
+        guard let request = await capture.current() else {
+            Issue.record("Missing captured request")
+            return
+        }
+
+        let body = decodeRequestBody(request.httpBody)
+        #expect(body?["truncation"] == nil)
+    }
+
+    @Test("doGenerate sends truncation when specified in provider options")
+    func testDoGenerateSendsTruncationWhenSpecified() async throws {
+        actor RequestCapture {
+            var request: URLRequest?
+            func store(_ request: URLRequest) { self.request = request }
+            func current() -> URLRequest? { request }
+        }
+
+        let capture = RequestCapture()
+
+        let responseJSON: [String: Any] = [
+            "id": "resp_trunc_auto",
+            "created_at": 1_700_000_000.0,
+            "model": "gpt-4o-2024-07-18",
+            "output": [],
+            "service_tier": NSNull(),
+            "usage": ["input_tokens": 1, "output_tokens": 1, "total_tokens": 2],
+            "warnings": [],
+            "incomplete_details": ["reason": NSNull()],
+            "finish_reason": NSNull(),
+            "error": NSNull()
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            let httpResponse = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o-2024-07-18",
+            config: makeConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(options: LanguageModelV3CallOptions(
+            prompt: samplePrompt,
+            providerOptions: [
+                "openai": [
+                    "truncation": .string("auto")
+                ]
+            ]
+        ))
+
+        guard let request = await capture.current() else {
+            Issue.record("Missing captured request")
+            return
+        }
+
+        let body = decodeRequestBody(request.httpBody)
+        #expect(body?["truncation"] as? String == "auto")
+    }
+
+    @Test("doGenerate maps unknown finish reason to other")
+    func testDoGenerateUnknownFinishReasonMapsToOther() async throws {
+        let responseJSON: [String: Any] = [
+            "id": "resp_incomplete_other",
+            "created_at": 1_742_250_000.0,
+            "model": "gpt-4o",
+            "output": [],
+            "service_tier": NSNull(),
+            "usage": ["input_tokens": 2, "output_tokens": 2, "total_tokens": 4],
+            "warnings": [],
+            "incomplete_details": ["reason": "some_new_reason"],
+            "finish_reason": NSNull(),
+            "error": NSNull()
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let fetch: FetchFunction = { _ in
+            let httpResponse = HTTPURLResponse(
+                url: URL(string: "https://api.openai.com/v1/responses")!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: samplePrompt))
+        #expect(result.finishReason == .other)
+    }
+
     @Test("doGenerate maps mcp_approval_request to toolCall and tool-approval-request")
     func testDoGenerateMapsMcpApprovalRequest() async throws {
         let responseJSON: [String: Any] = [

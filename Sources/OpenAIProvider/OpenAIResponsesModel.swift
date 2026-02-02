@@ -512,7 +512,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             safetyIdentifier: openAIOptions?.safetyIdentifier,
             topLogprobs: topLogprobs,
             reasoning: reasoningValue,
-            truncation: openAIOptions?.truncation ?? (modelCapabilities.requiredAutoTruncation ? "auto" : nil),
+            truncation: openAIOptions?.truncation,
             tools: preparedTools.tools,
             toolChoice: preparedTools.toolChoice
         )

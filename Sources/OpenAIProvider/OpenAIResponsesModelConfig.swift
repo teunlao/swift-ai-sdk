@@ -9,7 +9,6 @@ public enum OpenAIResponsesSystemMessageMode: Sendable {
 struct OpenAIResponsesModelConfig: Sendable {
     let isReasoningModel: Bool
     let systemMessageMode: OpenAIResponsesSystemMessageMode
-    let requiredAutoTruncation: Bool
     let supportsFlexProcessing: Bool
     let supportsPriorityProcessing: Bool
     let supportsNonReasoningParameters: Bool
@@ -21,7 +20,6 @@ func getOpenAIResponsesModelConfig(for modelId: OpenAIResponsesModelId) -> OpenA
     let defaults = OpenAIResponsesModelConfig(
         isReasoningModel: capabilities.isReasoningModel,
         systemMessageMode: capabilities.systemMessageMode,
-        requiredAutoTruncation: false,
         supportsFlexProcessing: capabilities.supportsFlexProcessing,
         supportsPriorityProcessing: capabilities.supportsPriorityProcessing,
         supportsNonReasoningParameters: capabilities.supportsNonReasoningParameters

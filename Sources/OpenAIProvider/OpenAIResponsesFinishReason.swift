@@ -13,6 +13,6 @@ func mapOpenAIResponsesFinishReason(
     case "content_filter":
         return .contentFilter
     default:
-        return hasFunctionCall ? .toolCalls : .unknown
+        return hasFunctionCall ? .toolCalls : .other
     }
 }
