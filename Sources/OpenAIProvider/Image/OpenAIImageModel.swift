@@ -93,7 +93,7 @@ public final class OpenAIImageModel: ImageModelV3 {
             payload["size"] = .string(size)
         }
 
-        if !openAIImageModelsWithDefaultResponseFormat.contains(modelIdentifier) {
+        if !openAIImageHasDefaultResponseFormat(modelId: modelIdentifier) {
             payload["response_format"] = .string("b64_json")
         }
 

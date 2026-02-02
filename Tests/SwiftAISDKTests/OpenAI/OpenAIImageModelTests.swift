@@ -251,6 +251,210 @@ struct OpenAIImageModelTests {
         #expect(json["response_format"] == nil)
     }
 
+    @Test("response_format omitted for date-suffixed gpt-image-1 (Azure deployment name)")
+    func testResponseFormatOmittedForDateSuffixedGPTImage1() async throws {
+        actor RequestCapture {
+            var body: Data?
+            func store(_ data: Data?) { body = data }
+            func current() -> Data? { body }
+        }
+
+        let capture = RequestCapture()
+        let responseData = try JSONSerialization.data(withJSONObject: makeResponseJSON())
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.openai.com/v1/images/generations")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request.httpBody)
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIImageModel(
+            modelId: "gpt-image-1-2024-12-17",
+            config: makeConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(
+            options: ImageModelV3CallOptions(
+                prompt: imagePrompt,
+                n: 1,
+                size: "1024x1024",
+                aspectRatio: nil,
+                seed: nil,
+                providerOptions: [:],
+                abortSignal: nil,
+                headers: nil
+            )
+        )
+
+        guard let data = await capture.current(),
+              let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else {
+            Issue.record("Missing request body")
+            return
+        }
+
+        #expect(json["model"] as? String == "gpt-image-1-2024-12-17")
+        #expect(json["response_format"] == nil)
+    }
+
+    @Test("response_format omitted for date-suffixed gpt-image-1-mini (Azure deployment name)")
+    func testResponseFormatOmittedForDateSuffixedGPTImage1Mini() async throws {
+        actor RequestCapture {
+            var body: Data?
+            func store(_ data: Data?) { body = data }
+            func current() -> Data? { body }
+        }
+
+        let capture = RequestCapture()
+        let responseData = try JSONSerialization.data(withJSONObject: makeResponseJSON())
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.openai.com/v1/images/generations")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request.httpBody)
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIImageModel(
+            modelId: "gpt-image-1-mini-2024-12-17",
+            config: makeConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(
+            options: ImageModelV3CallOptions(
+                prompt: imagePrompt,
+                n: 1,
+                size: "1024x1024",
+                aspectRatio: nil,
+                seed: nil,
+                providerOptions: [:],
+                abortSignal: nil,
+                headers: nil
+            )
+        )
+
+        guard let data = await capture.current(),
+              let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else {
+            Issue.record("Missing request body")
+            return
+        }
+
+        #expect(json["model"] as? String == "gpt-image-1-mini-2024-12-17")
+        #expect(json["response_format"] == nil)
+    }
+
+    @Test("response_format omitted for gpt-image-1.5")
+    func testResponseFormatOmittedForGPTImageOnePointFive() async throws {
+        actor RequestCapture {
+            var body: Data?
+            func store(_ data: Data?) { body = data }
+            func current() -> Data? { body }
+        }
+
+        let capture = RequestCapture()
+        let responseData = try JSONSerialization.data(withJSONObject: makeResponseJSON())
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.openai.com/v1/images/generations")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request.httpBody)
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIImageModel(
+            modelId: "gpt-image-1.5",
+            config: makeConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(
+            options: ImageModelV3CallOptions(
+                prompt: imagePrompt,
+                n: 1,
+                size: "1024x1024",
+                aspectRatio: nil,
+                seed: nil,
+                providerOptions: [:],
+                abortSignal: nil,
+                headers: nil
+            )
+        )
+
+        guard let data = await capture.current(),
+              let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else {
+            Issue.record("Missing request body")
+            return
+        }
+
+        #expect(json["model"] as? String == "gpt-image-1.5")
+        #expect(json["response_format"] == nil)
+    }
+
+    @Test("response_format omitted for date-suffixed gpt-image-1.5 (Azure deployment name)")
+    func testResponseFormatOmittedForDateSuffixedGPTImageOnePointFive() async throws {
+        actor RequestCapture {
+            var body: Data?
+            func store(_ data: Data?) { body = data }
+            func current() -> Data? { body }
+        }
+
+        let capture = RequestCapture()
+        let responseData = try JSONSerialization.data(withJSONObject: makeResponseJSON())
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.openai.com/v1/images/generations")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request.httpBody)
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIImageModel(
+            modelId: "gpt-image-1.5-2024-12-17",
+            config: makeConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(
+            options: ImageModelV3CallOptions(
+                prompt: imagePrompt,
+                n: 1,
+                size: "1024x1024",
+                aspectRatio: nil,
+                seed: nil,
+                providerOptions: [:],
+                abortSignal: nil,
+                headers: nil
+            )
+        )
+
+        guard let data = await capture.current(),
+              let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else {
+            Issue.record("Missing request body")
+            return
+        }
+
+        #expect(json["model"] as? String == "gpt-image-1.5-2024-12-17")
+        #expect(json["response_format"] == nil)
+    }
+
     // Port of should pass headers
     @Test("doGenerate passes custom headers and organization/project")
     func testDoGeneratePassesHeaders() async throws {
@@ -341,6 +545,13 @@ struct OpenAIImageModelTests {
             #expect(count == 1)
         } else {
             Issue.record("Expected .value(1) for unknown model maxImagesPerCall")
+        }
+
+        let gptImageOnePointFiveModel = try provider.imageModel(modelId: "gpt-image-1.5")
+        if case .value(let count) = gptImageOnePointFiveModel.maxImagesPerCall {
+            #expect(count == 10)
+        } else {
+            Issue.record("Expected .value(10) for gpt-image-1.5 maxImagesPerCall")
         }
     }
 
