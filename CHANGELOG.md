@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.8.4] - 2026-02-02
+
+### Added
+- Anthropic: add provider-defined tools `code_execution` (beta `code-execution-2025-08-25`) and `memory` (beta `context-management-2025-06-27`).
+
+### Fixed
+- Anthropic: align tool name mapping for provider/server tool calls & results (including streaming + programmatic tool calling) with upstream.
+- OpenAI (Responses): align truncation handling and finish-reason mapping with upstream.
+
 ## [0.8.3] - 2026-02-02
 
 ### Fixed
