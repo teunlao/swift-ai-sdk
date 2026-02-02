@@ -914,8 +914,9 @@ struct GoogleGenerativeAILanguageModelTests {
         }
 
         let json = try decodeRequestBody(request)
-        if let tools = json["tools"] as? [String: Any],
-           let functionDeclarations = tools["functionDeclarations"] as? [[String: Any]],
+        if let tools = json["tools"] as? [[String: Any]],
+           let firstTool = tools.first,
+           let functionDeclarations = firstTool["functionDeclarations"] as? [[String: Any]],
            let firstFunction = functionDeclarations.first {
             #expect(firstFunction["name"] as? String == "test-tool")
             #expect(firstFunction["description"] as? String == "")
@@ -1009,8 +1010,9 @@ struct GoogleGenerativeAILanguageModelTests {
         }
 
         // Check tools are present
-        if let tools = json["tools"] as? [String: Any],
-           let functionDeclarations = tools["functionDeclarations"] as? [[String: Any]],
+        if let tools = json["tools"] as? [[String: Any]],
+           let firstTool = tools.first,
+           let functionDeclarations = firstTool["functionDeclarations"] as? [[String: Any]],
            let firstFunction = functionDeclarations.first {
             #expect(firstFunction["name"] as? String == "test-tool")
             #expect(firstFunction["description"] as? String == "")

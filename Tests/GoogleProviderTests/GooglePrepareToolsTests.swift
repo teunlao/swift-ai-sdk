@@ -31,10 +31,16 @@ struct GooglePrepareToolsTests {
             modelId: GoogleGenerativeAIModelId(rawValue: "gemini-2.5-flash")
         )
 
-        guard case let .object(toolsObject)? = prepared.tools else {
-            Issue.record("Expected tools object")
+        guard case let .array(toolsArray)? = prepared.tools else {
+            Issue.record("Expected tools array")
             return
         }
+        guard toolsArray.count == 1,
+              case let .object(toolsObject) = toolsArray[0] else {
+            Issue.record("Expected single tools entry object")
+            return
+        }
+
         guard let functionDeclarationsValue = toolsObject["functionDeclarations"],
               case let .array(functionDeclarations) = functionDeclarationsValue else {
             Issue.record("Expected function declarations array")
@@ -215,8 +221,13 @@ struct GooglePrepareToolsTests {
             modelId: GoogleGenerativeAIModelId(rawValue: "gemini-2.5-flash")
         )
 
-        guard case let .object(toolsObject)? = prepared.tools else {
-            Issue.record("Expected tools object")
+        guard case let .array(toolsArray)? = prepared.tools else {
+            Issue.record("Expected tools array")
+            return
+        }
+        guard toolsArray.count == 1,
+              case let .object(toolsObject) = toolsArray[0] else {
+            Issue.record("Expected single tools entry object")
             return
         }
         guard case let .array(functionDeclarations)? = toolsObject["functionDeclarations"] else {
@@ -440,8 +451,13 @@ struct GooglePrepareToolsTests {
             modelId: GoogleGenerativeAIModelId(rawValue: "gemini-pro")
         )
 
-        guard case let .object(toolsObject)? = prepared.tools else {
-            Issue.record("Expected tools object")
+        guard case let .array(toolsArray)? = prepared.tools else {
+            Issue.record("Expected tools array")
+            return
+        }
+        guard toolsArray.count == 1,
+              case let .object(toolsObject) = toolsArray[0] else {
+            Issue.record("Expected single tools entry object")
             return
         }
         guard let functionDeclarationsValue = toolsObject["functionDeclarations"],

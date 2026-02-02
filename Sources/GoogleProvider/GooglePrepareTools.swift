@@ -140,8 +140,12 @@ func prepareGoogleTools(
     if functionDeclarations.isEmpty {
         toolsPayload = nil
     } else {
-        toolsPayload = .object([
-            "functionDeclarations": .array(functionDeclarations)
+        // Matches upstream Vercel AI SDK: `tools` is an array of tool objects.
+        // For function tools, the payload is `[{ functionDeclarations: [...] }]`.
+        toolsPayload = .array([
+            .object([
+                "functionDeclarations": .array(functionDeclarations)
+            ])
         ])
     }
 
