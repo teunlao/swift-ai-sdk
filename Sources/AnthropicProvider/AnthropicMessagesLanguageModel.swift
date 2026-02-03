@@ -759,6 +759,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                 : options.tools,
             toolChoice: jsonResponseTool != nil ? .required : options.toolChoice,
             disableParallelToolUse: jsonResponseTool != nil ? true : anthropicOptions?.disableParallelToolUse,
+            supportsStructuredOutput: jsonResponseTool == nil ? supportsStructuredOutput : false,
             cacheControlValidator: cacheControlValidator
         )
 

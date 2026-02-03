@@ -57,6 +57,7 @@ public func prepareToolsAndToolChoice(
             let functionTool = LanguageModelV3FunctionTool(
                 name: name,
                 inputSchema: jsonSchema,
+                inputExamples: tool.inputExamples,
                 description: tool.description,
                 strict: tool.strict,
                 providerOptions: providerOptions

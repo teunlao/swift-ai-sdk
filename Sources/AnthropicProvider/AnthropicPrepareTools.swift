@@ -55,6 +55,7 @@ public func prepareAnthropicTools(
     tools: [LanguageModelV3Tool]?,
     toolChoice: LanguageModelV3ToolChoice?,
     disableParallelToolUse: Bool?,
+    supportsStructuredOutput: Bool = false,
     cacheControlValidator: CacheControlValidator? = nil
 ) async throws -> AnthropicPreparedTools {
     guard let tools, !tools.isEmpty else {
@@ -76,6 +77,14 @@ public func prepareAnthropicTools(
             if let description = functionTool.description {
                 payload["description"] = .string(description)
             }
+
+            if supportsStructuredOutput {
+                betas.insert("structured-outputs-2025-11-13")
+                if let strict = functionTool.strict {
+                    payload["strict"] = .bool(strict)
+                }
+            }
+
             let cacheControl = validator.getCacheControl(
                 functionTool.providerOptions,
                 context: CacheControlContext(type: "tool definition", canCache: true)
@@ -100,6 +109,11 @@ public func prepareAnthropicTools(
                         betas.insert("advanced-tool-use-2025-11-20")
                     }
                 }
+            }
+
+            if let inputExamples = functionTool.inputExamples {
+                payload["input_examples"] = .array(inputExamples.map { .object($0.input) })
+                betas.insert("advanced-tool-use-2025-11-20")
             }
             anthropicTools.append(.object(payload))
 

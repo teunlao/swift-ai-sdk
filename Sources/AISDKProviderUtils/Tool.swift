@@ -132,6 +132,10 @@ public struct Tool: Sendable {
     /// The schema of the input that the tool expects.
     public let inputSchema: FlexibleSchema<JSONValue>
 
+    /// An optional list of input examples that show the language
+    /// model what the input should look like.
+    public let inputExamples: [LanguageModelV3ToolInputExample]?
+
     /// Strict mode setting for the tool.
     ///
     /// Providers that support strict mode will use this setting to determine how the
@@ -183,6 +187,7 @@ public struct Tool: Sendable {
         title: String? = nil,
         providerOptions: [String: JSONValue]? = nil,
         inputSchema: FlexibleSchema<JSONValue>,
+        inputExamples: [LanguageModelV3ToolInputExample]? = nil,
         strict: Bool? = nil,
         needsApproval: NeedsApproval? = nil,
         onInputStart: (@Sendable (ToolCallOptions) async throws -> Void)? = nil,
@@ -200,6 +205,7 @@ public struct Tool: Sendable {
         self.title = title
         self.providerOptions = providerOptions
         self.inputSchema = inputSchema
+        self.inputExamples = inputExamples
         self.strict = strict
         self.needsApproval = needsApproval
         self.onInputStart = onInputStart
@@ -476,6 +482,7 @@ public func tool(
     title: String? = nil,
     providerOptions: [String: JSONValue]? = nil,
     inputSchema: FlexibleSchema<JSONValue>,
+    inputExamples: [LanguageModelV3ToolInputExample]? = nil,
     strict: Bool? = nil,
     needsApproval: NeedsApproval? = nil,
     onInputStart: (@Sendable (ToolCallOptions) async throws -> Void)? = nil,
@@ -490,6 +497,7 @@ public func tool(
         title: title,
         providerOptions: providerOptions,
         inputSchema: inputSchema,
+        inputExamples: inputExamples,
         strict: strict,
         needsApproval: needsApproval,
         onInputStart: onInputStart,

@@ -237,6 +237,42 @@ struct PrepareToolsAndToolChoiceTests {
         }
     }
 
+    // MARK: - Test 9: Tool input examples pass-through
+
+    @Test("should pass through inputExamples")
+    func testPassesThroughInputExamples() async throws {
+        let toolWithInputExamples: [String: Tool] = [
+            "weather": tool(
+                description: "Get the weather in a location",
+                inputSchema: FlexibleSchema(jsonSchema(
+                    .object([
+                        "type": .string("object"),
+                        "properties": .object([
+                            "location": .object(["type": .string("string")])
+                        ])
+                    ])
+                )),
+                inputExamples: [
+                    LanguageModelV3ToolInputExample(input: ["location": .string("San Francisco")])
+                ]
+            )
+        ]
+
+        let result = try await prepareToolsAndToolChoice(
+            tools: toolWithInputExamples,
+            toolChoice: nil,
+            activeTools: nil
+        )
+
+        #expect(result.tools?.count == 1)
+        if case .function(let tool) = result.tools?[0] {
+            #expect(tool.inputExamples?.count == 1)
+            #expect(tool.inputExamples?.first?.input["location"] == .string("San Francisco"))
+        } else {
+            Issue.record("Expected function tool for weather")
+        }
+    }
+
     // MARK: - Helper Functions
 
     private func createMockTools() -> [String: Tool] {
