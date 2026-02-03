@@ -217,7 +217,28 @@ public let anthropicWebFetch20250910ArgsSchema = FlexibleSchema(
     Schema<AnthropicWebFetchToolArgs>.codable(
         AnthropicWebFetchToolArgs.self,
         jsonSchema: .object([
-            "type": .string("object")
+            "type": .string("object"),
+            "additionalProperties": .bool(false),
+            "properties": .object([
+                "maxUses": .object(["type": .string("number")]),
+                "allowedDomains": .object([
+                    "type": .string("array"),
+                    "items": .object(["type": .string("string")]),
+                ]),
+                "blockedDomains": .object([
+                    "type": .string("array"),
+                    "items": .object(["type": .string("string")]),
+                ]),
+                "citations": .object([
+                    "type": .string("object"),
+                    "additionalProperties": .bool(false),
+                    "required": .array([.string("enabled")]),
+                    "properties": .object([
+                        "enabled": .object(["type": .string("boolean")])
+                    ]),
+                ]),
+                "maxContentTokens": .object(["type": .string("number")]),
+            ]),
         ])
     )
 )
@@ -225,7 +246,57 @@ public let anthropicWebFetch20250910ArgsSchema = FlexibleSchema(
 public let anthropicWebFetch20250910OutputSchema = FlexibleSchema(
     Schema<AnthropicWebFetchToolResult>.codable(
         AnthropicWebFetchToolResult.self,
-        jsonSchema: .object(["type": .string("object")])
+        jsonSchema: .object([
+            "type": .string("object"),
+            "required": .array([.string("type"), .string("url"), .string("content"), .string("retrievedAt")]),
+            "additionalProperties": .bool(false),
+            "properties": .object([
+                "type": .object(["const": .string("web_fetch_result")]),
+                "url": .object(["type": .string("string")]),
+                "content": .object([
+                    "type": .string("object"),
+                    "required": .array([.string("type"), .string("title"), .string("source")]),
+                    "additionalProperties": .bool(false),
+                    "properties": .object([
+                        "type": .object(["const": .string("document")]),
+                        "title": .object(["type": .array([.string("string"), .string("null")])]),
+                        "citations": .object([
+                            "type": .string("object"),
+                            "required": .array([.string("enabled")]),
+                            "additionalProperties": .bool(false),
+                            "properties": .object([
+                                "enabled": .object(["type": .string("boolean")])
+                            ]),
+                        ]),
+                        "source": .object([
+                            "oneOf": .array([
+                                .object([
+                                    "type": .string("object"),
+                                    "required": .array([.string("type"), .string("mediaType"), .string("data")]),
+                                    "additionalProperties": .bool(false),
+                                    "properties": .object([
+                                        "type": .object(["const": .string("base64")]),
+                                        "mediaType": .object(["const": .string("application/pdf")]),
+                                        "data": .object(["type": .string("string")]),
+                                    ]),
+                                ]),
+                                .object([
+                                    "type": .string("object"),
+                                    "required": .array([.string("type"), .string("mediaType"), .string("data")]),
+                                    "additionalProperties": .bool(false),
+                                    "properties": .object([
+                                        "type": .object(["const": .string("text")]),
+                                        "mediaType": .object(["const": .string("text/plain")]),
+                                        "data": .object(["type": .string("string")]),
+                                    ]),
+                                ]),
+                            ])
+                        ]),
+                    ]),
+                ]),
+                "retrievedAt": .object(["type": .array([.string("string"), .string("null")])]),
+            ]),
+        ])
     )
 )
 
@@ -339,7 +410,31 @@ public let anthropicWebSearch20250305ArgsSchema = FlexibleSchema(
     Schema<AnthropicWebSearchToolArgs>.codable(
         AnthropicWebSearchToolArgs.self,
         jsonSchema: .object([
-            "type": .string("object")
+            "type": .string("object"),
+            "additionalProperties": .bool(false),
+            "properties": .object([
+                "maxUses": .object(["type": .string("number")]),
+                "allowedDomains": .object([
+                    "type": .string("array"),
+                    "items": .object(["type": .string("string")]),
+                ]),
+                "blockedDomains": .object([
+                    "type": .string("array"),
+                    "items": .object(["type": .string("string")]),
+                ]),
+                "userLocation": .object([
+                    "type": .string("object"),
+                    "additionalProperties": .bool(false),
+                    "required": .array([.string("type")]),
+                    "properties": .object([
+                        "type": .object(["const": .string("approximate")]),
+                        "city": .object(["type": .string("string")]),
+                        "region": .object(["type": .string("string")]),
+                        "country": .object(["type": .string("string")]),
+                        "timezone": .object(["type": .string("string")]),
+                    ]),
+                ]),
+            ]),
         ])
     )
 )
@@ -347,7 +442,27 @@ public let anthropicWebSearch20250305ArgsSchema = FlexibleSchema(
 public let anthropicWebSearch20250305OutputSchema = FlexibleSchema(
     Schema<[AnthropicWebSearchToolResult]>.codable(
         [AnthropicWebSearchToolResult].self,
-        jsonSchema: .object(["type": .string("array")])
+        jsonSchema: .object([
+            "type": .string("array"),
+            "items": .object([
+                "type": .string("object"),
+                "required": .array([
+                    .string("url"),
+                    .string("title"),
+                    .string("pageAge"),
+                    .string("encryptedContent"),
+                    .string("type"),
+                ]),
+                "additionalProperties": .bool(false),
+                "properties": .object([
+                    "url": .object(["type": .string("string")]),
+                    "title": .object(["type": .array([.string("string"), .string("null")])]),
+                    "pageAge": .object(["type": .array([.string("string"), .string("null")])]),
+                    "encryptedContent": .object(["type": .string("string")]),
+                    "type": .object(["const": .string("web_search_result")]),
+                ]),
+            ]),
+        ])
     )
 )
 
