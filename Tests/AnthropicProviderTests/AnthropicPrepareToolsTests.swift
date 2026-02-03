@@ -342,6 +342,83 @@ struct AnthropicPrepareToolsStrictModeTests {
         #expect(result.betas == Set(["computer-use-2025-11-24"]))
     }
 
+    @Test("computer_20251124 omits enable_zoom when not provided")
+    func computer20251124WithoutEnableZoom() async throws {
+        let args: [String: JSONValue] = [
+            "display_width_px": .number(1024),
+            "display_height_px": .number(768),
+            "display_number": .number(1),
+        ]
+        let result = try await prepareAnthropicTools(
+            tools: [makeProviderTool(id: "anthropic.computer_20251124", name: "computer", args: args)],
+            toolChoice: nil,
+            disableParallelToolUse: nil
+        )
+
+        let expected = JSONValue.object([
+            "name": .string("computer"),
+            "type": .string("computer_20251124"),
+            "display_width_px": .number(1024),
+            "display_height_px": .number(768),
+            "display_number": .number(1),
+        ])
+
+        #expect(result.tools == [expected])
+        #expect(result.betas == Set(["computer-use-2025-11-24"]))
+    }
+
+    @Test("computer_20251124 supports enable_zoom false")
+    func computer20251124EnableZoomFalse() async throws {
+        let args: [String: JSONValue] = [
+            "display_width_px": .number(1024),
+            "display_height_px": .number(768),
+            "display_number": .number(1),
+            "enable_zoom": .bool(false),
+        ]
+        let result = try await prepareAnthropicTools(
+            tools: [makeProviderTool(id: "anthropic.computer_20251124", name: "computer", args: args)],
+            toolChoice: nil,
+            disableParallelToolUse: nil
+        )
+
+        let expected = JSONValue.object([
+            "name": .string("computer"),
+            "type": .string("computer_20251124"),
+            "display_width_px": .number(1024),
+            "display_height_px": .number(768),
+            "display_number": .number(1),
+            "enable_zoom": .bool(false),
+        ])
+
+        #expect(result.tools == [expected])
+        #expect(result.betas == Set(["computer-use-2025-11-24"]))
+    }
+
+    @Test("computer_20250124 adds beta and payload")
+    func computer20250124() async throws {
+        let args: [String: JSONValue] = [
+            "display_width_px": .number(1024),
+            "display_height_px": .number(768),
+            "display_number": .number(1),
+        ]
+        let result = try await prepareAnthropicTools(
+            tools: [makeProviderTool(id: "anthropic.computer_20250124", name: "computer", args: args)],
+            toolChoice: nil,
+            disableParallelToolUse: nil
+        )
+
+        let expected = JSONValue.object([
+            "name": .string("computer"),
+            "type": .string("computer_20250124"),
+            "display_width_px": .number(1024),
+            "display_height_px": .number(768),
+            "display_number": .number(1),
+        ])
+
+        #expect(result.tools == [expected])
+        #expect(result.betas == Set(["computer-use-2025-01-24"]))
+    }
+
     @Test("text_editor_20250728 handles max characters")
     func textEditor20250728WithMax() async throws {
         let args: [String: JSONValue] = ["maxCharacters": .number(10_000)]
