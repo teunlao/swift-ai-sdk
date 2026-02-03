@@ -134,14 +134,14 @@ struct OpenAIImageModelTests {
 
         #expect(result.warnings.count == 2)
         if result.warnings.count == 2 {
-            if case .unsupportedSetting(let setting, let details) = result.warnings[0] {
-                #expect(setting == "aspectRatio")
+            if case .unsupported(let feature, let details) = result.warnings[0] {
+                #expect(feature == "aspectRatio")
                 #expect(details == "This model does not support aspect ratio. Use `size` instead.")
             } else {
                 Issue.record("Unexpected warning type")
             }
-            if case .unsupportedSetting(let setting, _) = result.warnings[1] {
-                #expect(setting == "seed")
+            if case .unsupported(let feature, _) = result.warnings[1] {
+                #expect(feature == "seed")
             } else {
                 Issue.record("Unexpected warning type")
             }

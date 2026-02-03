@@ -122,7 +122,7 @@ public final class GladiaTranscriptionModel: TranscriptionModelV3 {
         }
     }
 
-    private func prepareRequestBody(options: TranscriptionModelV3CallOptions) async throws -> ([String: JSONValue], [TranscriptionModelV3CallWarning]) {
+    private func prepareRequestBody(options: TranscriptionModelV3CallOptions) async throws -> ([String: JSONValue], [SharedV3Warning]) {
         let gladiaOptions = try await parseProviderOptions(
             provider: "gladia",
             providerOptions: options.providerOptions,
@@ -130,7 +130,7 @@ public final class GladiaTranscriptionModel: TranscriptionModelV3 {
         )
 
         var body: [String: JSONValue] = [:]
-        let warnings: [TranscriptionModelV3CallWarning] = []
+        let warnings: [SharedV3Warning] = []
 
         guard let gladiaOptions else {
             return (body, warnings)
@@ -369,7 +369,7 @@ public final class GladiaTranscriptionModel: TranscriptionModelV3 {
         fullResult: GladiaTranscriptionResultResponse,
         headers: [String: String],
         body: Any?,
-        warnings: [TranscriptionModelV3CallWarning],
+        warnings: [SharedV3Warning],
         timestamp: Date
     ) throws -> TranscriptionModelV3Result {
         let language = payload.transcription.languages.first

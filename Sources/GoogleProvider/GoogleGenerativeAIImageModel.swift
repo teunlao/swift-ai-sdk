@@ -65,15 +65,30 @@ final class GoogleGenerativeAIImageModel: ImageModelV3 {
     }
 
     public func doGenerate(options: ImageModelV3CallOptions) async throws -> ImageModelV3GenerateResult {
-        var warnings: [ImageModelV3CallWarning] = []
+        var warnings: [SharedV3Warning] = []
 
         // Default aspectRatio to '1:1' matching upstream
         let defaultAspectRatio = "1:1"
 
+        // Google Generative AI does not support image editing
+        if let files = options.files, !files.isEmpty {
+            throw UnsupportedFunctionalityError(
+                functionality: "image editing",
+                message: "Google Generative AI does not support image editing. Use Google Vertex AI (@ai-sdk/google-vertex) for image editing capabilities."
+            )
+        }
+
+        if options.mask != nil {
+            throw UnsupportedFunctionalityError(
+                functionality: "image editing with masks",
+                message: "Google Generative AI does not support image editing with masks. Use Google Vertex AI (@ai-sdk/google-vertex) for image editing capabilities."
+            )
+        }
+
         if options.size != nil {
             warnings.append(
-                .unsupportedSetting(
-                    setting: "size",
+                .unsupported(
+                    feature: "size",
                     details: "This model does not support the `size` option. Use `aspectRatio` instead."
                 )
             )
@@ -81,8 +96,8 @@ final class GoogleGenerativeAIImageModel: ImageModelV3 {
 
         if options.seed != nil {
             warnings.append(
-                .unsupportedSetting(
-                    setting: "seed",
+                .unsupported(
+                    feature: "seed",
                     details: "This model does not support the `seed` option through this provider."
                 )
             )

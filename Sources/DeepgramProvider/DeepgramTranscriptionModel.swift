@@ -27,7 +27,7 @@ public final class DeepgramTranscriptionModel: TranscriptionModelV3 {
         let url: String
         let headers: [String: String]
         let body: Data
-        let warnings: [TranscriptionModelV3CallWarning]
+        let warnings: [SharedV3Warning]
     }
 
     private let modelIdentifier: DeepgramTranscriptionModelId

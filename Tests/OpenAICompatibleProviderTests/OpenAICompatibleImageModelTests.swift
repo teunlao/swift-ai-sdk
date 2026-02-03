@@ -134,15 +134,15 @@ struct OpenAICompatibleImageModelTests {
         #expect(result.warnings.count == 2)
 
         let aspectRatioWarning = result.warnings.first { warning in
-            if case .unsupportedSetting(let setting, _) = warning {
-                return setting == "aspectRatio"
+            if case .unsupported(let feature, _) = warning {
+                return feature == "aspectRatio"
             }
             return false
         }
 
         let seedWarning = result.warnings.first { warning in
-            if case .unsupportedSetting(let setting, _) = warning {
-                return setting == "seed"
+            if case .unsupported(let feature, _) = warning {
+                return feature == "seed"
             }
             return false
         }

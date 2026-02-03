@@ -972,11 +972,12 @@ struct OpenAICompatibleChatLanguageModelTests {
         )
 
         #expect(result.warnings.count == 1)
-        if case .unsupportedSetting(let setting, let details) = result.warnings.first {
-            #expect(setting == "responseFormat")
+        if let warning = result.warnings.first,
+           case .unsupported(let feature, let details) = warning {
+            #expect(feature == "responseFormat")
             #expect(details == "JSON response format schema is only supported with structuredOutputs")
         } else {
-            Issue.record("Expected unsupported-setting warning")
+            Issue.record("Expected unsupported warning")
         }
 
         guard let request = await capture.current(),

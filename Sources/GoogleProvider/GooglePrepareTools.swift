@@ -5,7 +5,7 @@ import AISDKProviderUtils
 struct GooglePreparedTools: Sendable {
     let tools: JSONValue?
     let toolConfig: JSONValue?
-    let toolWarnings: [LanguageModelV3CallWarning]
+    let toolWarnings: [SharedV3Warning]
 }
 
 private func toJSONValue(_ value: Any) -> JSONValue? {
@@ -17,7 +17,7 @@ func prepareGoogleTools(
     toolChoice: LanguageModelV3ToolChoice?,
     modelId: GoogleGenerativeAIModelId
 ) -> GooglePreparedTools {
-    var warnings: [LanguageModelV3CallWarning] = []
+    var warnings: [SharedV3Warning] = []
 
     guard let tools, !tools.isEmpty else {
         return GooglePreparedTools(tools: nil, toolConfig: nil, toolWarnings: warnings)
@@ -30,21 +30,14 @@ func prepareGoogleTools(
     ]
     let modelIdString = modelId.rawValue
 
-    let isGemini2 = modelIdString.contains("gemini-2") || latestIds.contains(modelIdString)
+    let isGemini2OrNewer = modelIdString.contains("gemini-2") || modelIdString.contains("gemini-3") || latestIds.contains(modelIdString)
     let supportsDynamicRetrieval = modelIdString.contains("gemini-1.5-flash") && !modelIdString.contains("-8b")
 
     let hasFunctionTools = tools.contains { if case .function = $0 { return true } else { return false } }
     let hasProviderDefinedTools = tools.contains { if case .providerDefined = $0 { return true } else { return false } }
 
     if hasFunctionTools && hasProviderDefinedTools {
-        if let firstFunction = tools.first(where: { if case .function = $0 { return true } else { return false } }) {
-            warnings.append(
-                .unsupportedTool(
-                    tool: firstFunction,
-                    details: "Cannot mix function tools with provider-defined tools in the same request. Please use either function tools or provider-defined tools, but not both."
-                )
-            )
-        }
+        warnings.append(.unsupported(feature: "combination of function and provider-defined tools", details: nil))
     }
 
     if hasProviderDefinedTools {
@@ -55,7 +48,7 @@ func prepareGoogleTools(
 
             switch providerTool.id {
             case "google.google_search":
-                if isGemini2 {
+                if isGemini2OrNewer {
                     googleToolsEntries.append(.object([
                         "googleSearch": .object([:])
                     ]))
@@ -78,36 +71,102 @@ func prepareGoogleTools(
                     ]))
                 }
 
+            case "google.enterprise_web_search":
+                if isGemini2OrNewer {
+                    googleToolsEntries.append(.object([
+                        "enterpriseWebSearch": .object([:])
+                    ]))
+                } else {
+                    warnings.append(
+                        .unsupported(
+                            feature: "provider-defined tool \(providerTool.id)",
+                            details: "Enterprise Web Search requires Gemini 2.0 or newer."
+                        )
+                    )
+                }
+
             case "google.url_context":
-                if isGemini2 {
+                if isGemini2OrNewer {
                     googleToolsEntries.append(.object([
                         "urlContext": .object([:])
                     ]))
                 } else {
                     warnings.append(
-                        .unsupportedTool(
-                            tool: tool,
+                        .unsupported(
+                            feature: "provider-defined tool \(providerTool.id)",
                             details: "The URL context tool is not supported with other Gemini models than Gemini 2."
                         )
                     )
                 }
 
             case "google.code_execution":
-                if isGemini2 {
+                if isGemini2OrNewer {
                     googleToolsEntries.append(.object([
                         "codeExecution": .object([:])
                     ]))
                 } else {
                     warnings.append(
-                        .unsupportedTool(
-                            tool: tool,
-                            details: "The code execution tool is not supported with other Gemini models than Gemini 2."
+                        .unsupported(
+                            feature: "provider-defined tool \(providerTool.id)",
+                            details: "The code execution tools is not supported with other Gemini models than Gemini 2."
+                        )
+                    )
+                }
+
+            case "google.file_search":
+                let supportsFileSearch = modelIdString.contains("gemini-2.5") || modelIdString.contains("gemini-3")
+                if supportsFileSearch {
+                    googleToolsEntries.append(.object([
+                        "fileSearch": .object(providerTool.args)
+                    ]))
+                } else {
+                    warnings.append(
+                        .unsupported(
+                            feature: "provider-defined tool \(providerTool.id)",
+                            details: "The file search tool is only supported with Gemini 2.5 models and Gemini 3 models."
+                        )
+                    )
+                }
+
+            case "google.vertex_rag_store":
+                if isGemini2OrNewer {
+                    let ragCorpus = providerTool.args["ragCorpus"] ?? .null
+                    let topK = providerTool.args["topK"] ?? .null
+                    googleToolsEntries.append(.object([
+                        "retrieval": .object([
+                            "vertex_rag_store": .object([
+                                "rag_resources": .object([
+                                    "rag_corpus": ragCorpus
+                                ]),
+                                "similarity_top_k": topK
+                            ])
+                        ])
+                    ]))
+                } else {
+                    warnings.append(
+                        .unsupported(
+                            feature: "provider-defined tool \(providerTool.id)",
+                            details: "The RAG store tool is not supported with other Gemini models than Gemini 2."
+                        )
+                    )
+                }
+
+            case "google.google_maps":
+                if isGemini2OrNewer {
+                    googleToolsEntries.append(.object([
+                        "googleMaps": .object([:])
+                    ]))
+                } else {
+                    warnings.append(
+                        .unsupported(
+                            feature: "provider-defined tool \(providerTool.id)",
+                            details: "The Google Maps grounding tool is not supported with Gemini models other than Gemini 2 or newer."
                         )
                     )
                 }
 
             default:
-                warnings.append(.unsupportedTool(tool: tool, details: nil))
+                warnings.append(.unsupported(feature: "provider-defined tool \(providerTool.id)", details: nil))
             }
         }
 
@@ -119,7 +178,9 @@ func prepareGoogleTools(
 
     for tool in tools {
         guard case .function(let functionTool) = tool else {
-            warnings.append(.unsupportedTool(tool: tool, details: nil))
+            if case .providerDefined(let providerTool) = tool {
+                warnings.append(.unsupported(feature: "provider-defined tool \(providerTool.id)", details: nil))
+            }
             continue
         }
 

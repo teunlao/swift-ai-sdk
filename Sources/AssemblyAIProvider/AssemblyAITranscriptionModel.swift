@@ -44,7 +44,7 @@ public final class AssemblyAITranscriptionModel: TranscriptionModelV3 {
 
     private struct PreparedRequest {
         let body: [String: JSONValue]
-        let warnings: [TranscriptionModelV3CallWarning]
+        let warnings: [SharedV3Warning]
     }
 
     private let modelIdentifier: AssemblyAITranscriptionModelId

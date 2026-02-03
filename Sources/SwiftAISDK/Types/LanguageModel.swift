@@ -53,9 +53,9 @@ public typealias FinishReason = LanguageModelV3FinishReason
  The call will proceed, but e.g. some settings might not be supported,
  which can lead to suboptimal results.
 
- Type alias for `LanguageModelV3CallWarning` from the Provider package.
+ Type alias for `SharedV3Warning` from the Provider package.
  */
-public typealias CallWarning = LanguageModelV3CallWarning
+public typealias CallWarning = SharedV3Warning
 
 /**
  A source that has been used as input to generate the response.

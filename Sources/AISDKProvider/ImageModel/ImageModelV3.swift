@@ -98,7 +98,7 @@ public struct ImageModelV3GenerateResult: Sendable {
     public let images: ImageModelV3GeneratedImages
 
     /// Warnings for the call, e.g. unsupported settings
-    public let warnings: [ImageModelV3CallWarning]
+    public let warnings: [SharedV3Warning]
 
     /// Additional provider-specific metadata
     public let providerMetadata: ImageModelV3ProviderMetadata?
@@ -108,7 +108,7 @@ public struct ImageModelV3GenerateResult: Sendable {
 
     public init(
         images: ImageModelV3GeneratedImages,
-        warnings: [ImageModelV3CallWarning] = [],
+        warnings: [SharedV3Warning] = [],
         providerMetadata: ImageModelV3ProviderMetadata? = nil,
         response: ImageModelV3ResponseInfo
     ) {

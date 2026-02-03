@@ -354,7 +354,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
 
     private struct PreparedRequest {
         let body: OpenAIResponsesRequestBody
-        let warnings: [LanguageModelV3CallWarning]
+        let warnings: [SharedV3Warning]
         let webSearchToolName: String?
         let toolNameMapping: OpenAIToolNameMapping
         let store: Bool
@@ -362,10 +362,10 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
     }
 
     private func prepareRequest(options: LanguageModelV3CallOptions) async throws -> PreparedRequest {
-        var warnings: [LanguageModelV3CallWarning] = []
+        var warnings: [SharedV3Warning] = []
 
         func addUnsupportedSetting(_ name: String, details: String? = nil) {
-            warnings.append(.unsupportedSetting(setting: name, details: details))
+            warnings.append(.unsupported(feature: name, details: details))
         }
 
         if options.topK != nil { addUnsupportedSetting("topK") }

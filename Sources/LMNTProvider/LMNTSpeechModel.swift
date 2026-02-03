@@ -71,7 +71,7 @@ public final class LMNTSpeechModel: SpeechModelV3 {
             schema: lmntSpeechCallOptionsSchema
         )
 
-        var warnings: [SpeechModelV3CallWarning] = []
+        var warnings: [SharedV3Warning] = []
 
         // Build request body
         var body: [String: Any] = [
@@ -89,7 +89,7 @@ public final class LMNTSpeechModel: SpeechModelV3 {
             if allowed.contains(output) {
                 body["response_format"] = output
             } else {
-                warnings.append(.unsupportedSetting(setting: "outputFormat", details: "Unsupported output format: \(output). Using mp3 instead."))
+                warnings.append(.unsupported(feature: "outputFormat", details: "Unsupported output format: \(output). Using mp3 instead."))
             }
         }
 

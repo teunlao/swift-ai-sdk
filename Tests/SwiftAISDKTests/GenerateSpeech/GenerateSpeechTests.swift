@@ -37,7 +37,7 @@ private final class ValueBox<T>: @unchecked Sendable {
 
 private func makeMockResult(
     audio file: DefaultGeneratedAudioFile,
-    warnings: [SpeechModelV3CallWarning] = [],
+    warnings: [SharedV3Warning] = [],
     timestamp: Date = Date(),
     modelId: String = "test-model-id",
     headers: [String: String]? = nil,
@@ -111,7 +111,7 @@ struct GenerateSpeechTests {
 
     @Test("should return warnings")
     func shouldReturnWarnings() async throws {
-        let warnings: [SpeechModelV3CallWarning] = [
+        let warnings: [SharedV3Warning] = [
             .other(message: "Setting is not supported")
         ]
 
@@ -140,9 +140,9 @@ struct GenerateSpeechTests {
 
     @Test("should call logWarnings with the correct warnings")
     func shouldCallLogWarningsWithWarnings() async throws {
-        let expectedWarnings: [SpeechModelV3CallWarning] = [
+        let expectedWarnings: [SharedV3Warning] = [
             .other(message: "Setting is not supported"),
-            .unsupportedSetting(setting: "voice", details: "Voice parameter not supported")
+            .unsupported(feature: "voice", details: "Voice parameter not supported")
         ]
 
         let previousLogger = logWarningsForGenerateSpeech

@@ -16,7 +16,7 @@ private struct CohereFunctionToolDefinition {
 struct CoherePreparedTools {
     let tools: [JSONValue]?
     let toolChoice: CohereToolChoice?
-    let toolWarnings: [LanguageModelV3CallWarning]
+    let toolWarnings: [SharedV3Warning]
 }
 
 func prepareCohereTools(
@@ -24,7 +24,7 @@ func prepareCohereTools(
     toolChoice: LanguageModelV3ToolChoice?
 ) -> CoherePreparedTools {
     let normalizedTools = (tools?.isEmpty == false) ? tools : nil
-    var toolWarnings: [LanguageModelV3CallWarning] = []
+    var toolWarnings: [SharedV3Warning] = []
 
     guard let normalizedTools else {
         return CoherePreparedTools(tools: nil, toolChoice: nil, toolWarnings: [])
@@ -35,8 +35,8 @@ func prepareCohereTools(
 
     for tool in normalizedTools {
         switch tool {
-        case .providerDefined:
-            toolWarnings.append(.unsupportedTool(tool: tool, details: nil))
+        case .providerDefined(let providerTool):
+            toolWarnings.append(.unsupported(feature: "provider-defined tool \(providerTool.id)", details: nil))
 
         case .function(let functionTool):
             var functionObject: [String: JSONValue] = [

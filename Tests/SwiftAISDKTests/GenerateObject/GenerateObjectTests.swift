@@ -32,7 +32,7 @@ struct GenerateObjectTests {
         content: [LanguageModelV3Content],
         finishReason: FinishReason = .stop,
         usage: LanguageModelV3Usage? = nil,
-        warnings: [LanguageModelV3CallWarning] = [],
+        warnings: [SharedV3Warning] = [],
         request: LanguageModelV3RequestInfo? = nil,
         response: LanguageModelV3ResponseInfo? = nil,
         providerMetadata: ProviderMetadata? = nil
@@ -277,7 +277,7 @@ struct GenerateObjectTests {
 
     @Test("should return warnings")
     func returnsWarnings() async throws {
-        let warnings: [LanguageModelV3CallWarning] = [
+        let warnings: [SharedV3Warning] = [
             .other(message: "Setting is not supported")
         ]
 
@@ -299,9 +299,9 @@ struct GenerateObjectTests {
 
     @Test("should call logWarnings with the correct warnings")
     func logsWarnings() async throws {
-        let expectedWarnings: [LanguageModelV3CallWarning] = [
+        let expectedWarnings: [SharedV3Warning] = [
             .other(message: "Setting is not supported"),
-            .unsupportedSetting(setting: "temperature", details: "Temperature parameter not supported")
+            .unsupported(feature: "temperature", details: "Temperature parameter not supported")
         ]
 
         let (_, logged) = try await captureLoggedWarnings {

@@ -36,7 +36,7 @@ public struct SpeechModelV3Result: Sendable {
     public let audio: SpeechModelV3Audio
 
     /// Warnings for the call, e.g., unsupported settings
-    public let warnings: [SpeechModelV3CallWarning]
+    public let warnings: [SharedV3Warning]
 
     /// Optional request information for telemetry and debugging purposes
     public let request: RequestInfo?
@@ -51,7 +51,7 @@ public struct SpeechModelV3Result: Sendable {
 
     public init(
         audio: SpeechModelV3Audio,
-        warnings: [SpeechModelV3CallWarning] = [],
+        warnings: [SharedV3Warning] = [],
         request: RequestInfo? = nil,
         response: ResponseInfo,
         providerMetadata: [String: [String: JSONValue]]? = nil
@@ -83,7 +83,7 @@ public struct SpeechModelV3Result: Sendable {
         public let modelId: String
 
         /// Response headers
-        public let headers: SharedV3Headers?
+        public let headers: SharedV2Headers?
 
         /// Response body
         /// Marked @unchecked Sendable to match TypeScript's unknown type.
@@ -92,7 +92,7 @@ public struct SpeechModelV3Result: Sendable {
         public init(
             timestamp: Date,
             modelId: String,
-            headers: SharedV3Headers? = nil,
+            headers: SharedV2Headers? = nil,
             body: Any? = nil
         ) {
             self.timestamp = timestamp

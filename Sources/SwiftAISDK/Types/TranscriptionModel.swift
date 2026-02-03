@@ -26,6 +26,6 @@ public typealias TranscriptionModel = any TranscriptionModelV3
  The call will proceed, but e.g. some settings might not be supported,
  which can lead to suboptimal results.
 
- Type alias for `TranscriptionModelV3CallWarning` from the Provider package.
+ Type alias for `SharedV3Warning` from the Provider package.
  */
-public typealias TranscriptionWarning = TranscriptionModelV3CallWarning
+public typealias TranscriptionWarning = SharedV3Warning

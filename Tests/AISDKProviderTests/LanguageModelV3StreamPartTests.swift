@@ -18,7 +18,7 @@ func v3_streamPart_text_reasoning_roundTrip() throws {
         .reasoningStart(id: "r1", providerMetadata: pm),
         .reasoningDelta(id: "r1", delta: "why", providerMetadata: pm),
         .reasoningEnd(id: "r1", providerMetadata: pm),
-        .streamStart(warnings: [.unsupportedSetting(setting: "foo", details: nil)])
+        .streamStart(warnings: [.unsupported(feature: "foo", details: nil)])
     ]
 
     let enc = JSONEncoder()

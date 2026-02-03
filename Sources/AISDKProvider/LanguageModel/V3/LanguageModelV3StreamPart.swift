@@ -28,7 +28,7 @@ import Foundation
    | LanguageModelV3Source
 
    // stream start event with warnings:
-   | { type: 'stream-start'; warnings: Array<LanguageModelV3CallWarning>; }
+   | { type: 'stream-start'; warnings: Array<SharedV3Warning>; }
 
    // metadata for the response:
    | ({ type: 'response-metadata' } & LanguageModelV3ResponseMetadata)
@@ -78,7 +78,7 @@ public enum LanguageModelV3StreamPart: Sendable, Equatable, Codable {
     case source(LanguageModelV3Source)
 
     // Stream start with warnings:
-    case streamStart(warnings: [LanguageModelV3CallWarning])
+    case streamStart(warnings: [SharedV3Warning])
 
     // Response metadata (intersection type: flatten fields):
     case responseMetadata(id: String?, modelId: String?, timestamp: Date?)
@@ -201,7 +201,7 @@ public enum LanguageModelV3StreamPart: Sendable, Equatable, Codable {
 
         // Stream start:
         case "stream-start":
-            let warnings = try container.decode([LanguageModelV3CallWarning].self, forKey: .warnings)
+            let warnings = try container.decode([SharedV3Warning].self, forKey: .warnings)
             self = .streamStart(warnings: warnings)
 
         // Response metadata (flatten intersection type):

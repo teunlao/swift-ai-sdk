@@ -62,11 +62,11 @@ public final class OpenAITranscriptionModel: TranscriptionModelV3 {
     private struct PreparedRequest {
         let body: Data
         let contentType: String
-        let warnings: [TranscriptionModelV3CallWarning]
+        let warnings: [SharedV3Warning]
     }
 
     private func prepareRequest(options: TranscriptionModelV3CallOptions) async throws -> PreparedRequest {
-        let warnings: [TranscriptionModelV3CallWarning] = []
+        let warnings: [SharedV3Warning] = []
 
         let openAIOptions = try await parseProviderOptions(
             provider: "openai",

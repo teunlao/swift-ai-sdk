@@ -5,7 +5,7 @@ import AISDKProviderUtils
 struct GroqPreparedTools: Sendable {
     let tools: [JSONValue]?
     let toolChoice: JSONValue?
-    let toolWarnings: [LanguageModelV3CallWarning]
+    let toolWarnings: [SharedV3Warning]
 }
 
 func prepareGroqTools(
@@ -17,7 +17,7 @@ func prepareGroqTools(
         return GroqPreparedTools(tools: nil, toolChoice: nil, toolWarnings: [])
     }
 
-    var toolWarnings: [LanguageModelV3CallWarning] = []
+    var toolWarnings: [SharedV3Warning] = []
     var groqTools: [JSONValue] = []
 
     for tool in tools {
@@ -43,14 +43,14 @@ func prepareGroqTools(
                     ]))
                 } else {
                     toolWarnings.append(
-                        .unsupportedTool(
-                            tool: tool,
+                        .unsupported(
+                            feature: "provider-defined tool \(providerTool.id)",
                             details: "Browser search is only supported on the following models: \(GroqBrowserSearchSupportedModels.supportedModelsString()). Current model: \(modelId.rawValue)"
                         )
                     )
                 }
             } else {
-                toolWarnings.append(.unsupportedTool(tool: tool, details: nil))
+                toolWarnings.append(.unsupported(feature: "provider-defined tool \(providerTool.id)", details: nil))
             }
         }
     }

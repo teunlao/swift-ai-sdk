@@ -198,23 +198,23 @@ public final class OpenAICompatibleCompletionLanguageModel: LanguageModelV3 {
 
     private struct PreparedRequest {
         let body: [String: JSONValue]
-        let warnings: [LanguageModelV3CallWarning]
+        let warnings: [SharedV3Warning]
     }
 
     private func prepareRequest(options: LanguageModelV3CallOptions) async throws -> PreparedRequest {
-        var warnings: [LanguageModelV3CallWarning] = []
+        var warnings: [SharedV3Warning] = []
 
         if options.topK != nil {
-            warnings.append(.unsupportedSetting(setting: "topK", details: nil))
+            warnings.append(.unsupported(feature: "topK", details: nil))
         }
         if options.tools != nil {
-            warnings.append(.unsupportedSetting(setting: "tools", details: nil))
+            warnings.append(.unsupported(feature: "tools", details: nil))
         }
         if options.toolChoice != nil {
-            warnings.append(.unsupportedSetting(setting: "toolChoice", details: nil))
+            warnings.append(.unsupported(feature: "toolChoice", details: nil))
         }
         if let responseFormat = options.responseFormat, case .json = responseFormat {
-            warnings.append(.unsupportedSetting(setting: "responseFormat", details: "JSON response format is not supported."))
+            warnings.append(.unsupported(feature: "responseFormat", details: "JSON response format is not supported."))
         }
 
         let baseOptions = try await parseProviderOptions(

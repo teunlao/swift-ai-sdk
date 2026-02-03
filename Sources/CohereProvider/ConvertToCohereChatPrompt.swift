@@ -12,7 +12,7 @@ import AISDKProviderUtils
 func convertToCohereChatPrompt(_ prompt: LanguageModelV3Prompt) throws -> CohereChatPromptConversion {
     var messages: [JSONValue] = []
     var documents: [JSONValue] = []
-    let warnings: [LanguageModelV3CallWarning] = []
+    let warnings: [SharedV3Warning] = []
 
     for message in prompt {
         switch message {

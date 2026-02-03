@@ -257,14 +257,14 @@ public final class OpenAIChatLanguageModel: LanguageModelV3 {
 
     private struct PreparedRequest {
         let body: [String: JSONValue]
-        let warnings: [LanguageModelV3CallWarning]
+        let warnings: [SharedV3Warning]
     }
 
     private func prepareRequest(options: LanguageModelV3CallOptions) async throws -> PreparedRequest {
-        var warnings: [LanguageModelV3CallWarning] = []
+        var warnings: [SharedV3Warning] = []
 
         if options.topK != nil {
-            warnings.append(.unsupportedSetting(setting: "topK", details: nil))
+            warnings.append(.unsupported(feature: "topK", details: nil))
         }
 
         let openAIOptions = try await parseProviderOptions(
@@ -429,16 +429,16 @@ public final class OpenAIChatLanguageModel: LanguageModelV3 {
         )
 
         if mergedOptions?.serviceTier == .flex, !modelCapabilities.supportsFlexProcessing {
-            warnings.append(.unsupportedSetting(
-                setting: "serviceTier",
+            warnings.append(.unsupported(
+                feature: "serviceTier",
                 details: "flex processing is only available for o3, o4-mini, and gpt-5 models"
             ))
             body.removeValue(forKey: "service_tier")
         }
 
         if mergedOptions?.serviceTier == .priority, !modelCapabilities.supportsPriorityProcessing {
-            warnings.append(.unsupportedSetting(
-                setting: "serviceTier",
+            warnings.append(.unsupported(
+                feature: "serviceTier",
                 details: "priority processing is only available for supported models (gpt-4, gpt-5, gpt-5-mini, o3, o4-mini) and requires Enterprise access. gpt-5-nano is not supported"
             ))
             body.removeValue(forKey: "service_tier")
@@ -478,7 +478,7 @@ public final class OpenAIChatLanguageModel: LanguageModelV3 {
 
     private func adjustForModelConstraints(
         body: inout [String: JSONValue],
-        warnings: inout [LanguageModelV3CallWarning],
+        warnings: inout [SharedV3Warning],
         isReasoningModel: Bool,
         allowsNonReasoningParameters: Bool,
         modelId: String
@@ -486,10 +486,10 @@ public final class OpenAIChatLanguageModel: LanguageModelV3 {
         if isReasoningModel {
             if !allowsNonReasoningParameters {
                 if body.removeValue(forKey: "temperature") != nil {
-                    warnings.append(.unsupportedSetting(setting: "temperature", details: "temperature is not supported for reasoning models"))
+                    warnings.append(.unsupported(feature: "temperature", details: "temperature is not supported for reasoning models"))
                 }
                 if body.removeValue(forKey: "top_p") != nil {
-                    warnings.append(.unsupportedSetting(setting: "topP", details: "topP is not supported for reasoning models"))
+                    warnings.append(.unsupported(feature: "topP", details: "topP is not supported for reasoning models"))
                 }
                 if body.removeValue(forKey: "logprobs") != nil {
                     warnings.append(.other(message: "logprobs is not supported for reasoning models"))
@@ -497,10 +497,10 @@ public final class OpenAIChatLanguageModel: LanguageModelV3 {
             }
 
             if body.removeValue(forKey: "frequency_penalty") != nil {
-                warnings.append(.unsupportedSetting(setting: "frequencyPenalty", details: "frequencyPenalty is not supported for reasoning models"))
+                warnings.append(.unsupported(feature: "frequencyPenalty", details: "frequencyPenalty is not supported for reasoning models"))
             }
             if body.removeValue(forKey: "presence_penalty") != nil {
-                warnings.append(.unsupportedSetting(setting: "presencePenalty", details: "presencePenalty is not supported for reasoning models"))
+                warnings.append(.unsupported(feature: "presencePenalty", details: "presencePenalty is not supported for reasoning models"))
             }
             if body.removeValue(forKey: "logit_bias") != nil {
                 warnings.append(.other(message: "logitBias is not supported for reasoning models"))
@@ -513,8 +513,8 @@ public final class OpenAIChatLanguageModel: LanguageModelV3 {
             }
         } else if modelId.hasPrefix("gpt-4o-search-preview") || modelId.hasPrefix("gpt-4o-mini-search-preview") {
             if body.removeValue(forKey: "temperature") != nil {
-                warnings.append(.unsupportedSetting(
-                    setting: "temperature",
+                warnings.append(.unsupported(
+                    feature: "temperature",
                     details: "temperature is not supported for the search preview models and has been removed."
                 ))
             }

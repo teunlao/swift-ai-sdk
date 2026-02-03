@@ -486,16 +486,16 @@ private enum GenerateTextResultJSONEncoder {
 
     private static func warning(_ warning: CallWarning) -> JSONValue {
         switch warning {
-        case .unsupportedSetting(let setting, let details):
+        case .unsupported(let feature, let details):
             return object([
-                "type": .string("unsupported-setting"),
-                "setting": .string(setting),
+                "type": .string("unsupported"),
+                "feature": .string(feature),
                 "details": optionalString(details)
             ])
-        case .unsupportedTool(let tool, let details):
+        case .compatibility(let feature, let details):
             return object([
-                "type": .string("unsupported-tool"),
-                "tool": JSONValueEncoding.jsonValue(from: tool) ?? .null,
+                "type": .string("compatibility"),
+                "feature": .string(feature),
                 "details": optionalString(details)
             ])
         case .other(let message):

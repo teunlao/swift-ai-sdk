@@ -8,9 +8,9 @@ struct OpenAIChatMessagesConverter {
     static func convert(
         prompt: LanguageModelV3Prompt,
         systemMessageMode: OpenAIChatSystemMessageMode
-    ) throws -> (messages: OpenAIChatPrompt, warnings: [LanguageModelV3CallWarning]) {
+    ) throws -> (messages: OpenAIChatPrompt, warnings: [SharedV3Warning]) {
         var messages: OpenAIChatPrompt = []
-        var warnings: [LanguageModelV3CallWarning] = []
+        var warnings: [SharedV3Warning] = []
 
         for message in prompt {
             switch message {

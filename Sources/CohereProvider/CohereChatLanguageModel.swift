@@ -20,7 +20,7 @@ public final class CohereChatLanguageModel: LanguageModelV3 {
 
     private struct PreparedRequest {
         let body: [String: JSONValue]
-        let warnings: [LanguageModelV3CallWarning]
+        let warnings: [SharedV3Warning]
     }
 
     private let modelIdentifier: CohereChatModelId
@@ -269,7 +269,7 @@ public final class CohereChatLanguageModel: LanguageModelV3 {
     }
 
     private func prepareRequest(options: LanguageModelV3CallOptions, stream: Bool) async throws -> PreparedRequest {
-        var warnings: [LanguageModelV3CallWarning] = []
+        var warnings: [SharedV3Warning] = []
 
         let cohereOptions = try await parseProviderOptions(
             provider: "cohere",

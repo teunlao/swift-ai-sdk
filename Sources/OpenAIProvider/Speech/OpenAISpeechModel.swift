@@ -55,11 +55,11 @@ public final class OpenAISpeechModel: SpeechModelV3 {
 
     private struct PreparedRequest {
         let body: [String: JSONValue]
-        let warnings: [SpeechModelV3CallWarning]
+        let warnings: [SharedV3Warning]
     }
 
     private func prepareRequest(options: SpeechModelV3CallOptions) async throws -> PreparedRequest {
-        var warnings: [SpeechModelV3CallWarning] = []
+        var warnings: [SharedV3Warning] = []
 
         let openAIOptions = try await parseProviderOptions(
             provider: "openai",
@@ -106,16 +106,16 @@ public final class OpenAISpeechModel: SpeechModelV3 {
             if allowedOutputFormats.contains(format) {
                 body["response_format"] = .string(format)
             } else {
-                warnings.append(.unsupportedSetting(
-                    setting: "outputFormat",
+                warnings.append(.unsupported(
+                    feature: "outputFormat",
                     details: "Unsupported output format: \(format). Using mp3 instead."
                 ))
             }
         }
 
         if let language = options.language {
-            warnings.append(.unsupportedSetting(
-                setting: "language",
+            warnings.append(.unsupported(
+                feature: "language",
                 details: "OpenAI speech models do not support language selection. Language parameter \"\(language)\" was ignored."
             ))
         }

@@ -26,6 +26,6 @@ public typealias SpeechModel = any SpeechModelV3
  The call will proceed, but e.g. some settings might not be supported,
  which can lead to suboptimal results.
 
- Type alias for `SpeechModelV3CallWarning` from the Provider package.
+ Type alias for `SharedV3Warning` from the Provider package.
  */
-public typealias SpeechWarning = SpeechModelV3CallWarning
+public typealias SpeechWarning = SharedV3Warning

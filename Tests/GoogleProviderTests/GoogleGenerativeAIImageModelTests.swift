@@ -321,19 +321,19 @@ struct GoogleGenerativeAIImageModelTests {
 
         #expect(result.warnings.count == 2)
         let warning1 = result.warnings[0]
-        if case let .unsupportedSetting(setting, details) = warning1 {
-            #expect(setting == "size")
+        if case let .unsupported(feature, details) = warning1 {
+            #expect(feature == "size")
             #expect(details == "This model does not support the `size` option. Use `aspectRatio` instead.")
         } else {
-            Issue.record("Expected unsupported-setting warning for size")
+            Issue.record("Expected unsupported warning for size")
         }
 
         let warning2 = result.warnings[1]
-        if case let .unsupportedSetting(setting, details) = warning2 {
-            #expect(setting == "seed")
+        if case let .unsupported(feature, details) = warning2 {
+            #expect(feature == "seed")
             #expect(details == "This model does not support the `seed` option through this provider.")
         } else {
-            Issue.record("Expected unsupported-setting warning for seed")
+            Issue.record("Expected unsupported warning for seed")
         }
     }
 

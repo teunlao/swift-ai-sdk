@@ -300,7 +300,7 @@ struct AnthropicPrepareToolsBasicTests {
 
         #expect(result.tools == nil)
         #expect(result.toolChoice == nil)
-        #expect(result.warnings == [.unsupportedTool(tool: unsupported, details: nil)])
+        #expect(result.warnings == [.unsupported(feature: "provider-defined tool unsupported.tool", details: nil)])
     }
 }
 

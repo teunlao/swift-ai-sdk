@@ -85,7 +85,7 @@ public final class FalTranscriptionModel: TranscriptionModelV3 {
 
     private struct PreparedRequest {
         let body: [String: JSONValue]
-        let warnings: [TranscriptionModelV3CallWarning]
+        let warnings: [SharedV3Warning]
     }
 
     private func prepareRequest(options: TranscriptionModelV3CallOptions) async throws -> PreparedRequest {
@@ -94,7 +94,7 @@ public final class FalTranscriptionModel: TranscriptionModelV3 {
             "diarize": .bool(true),
             "chunk_level": .string("word")
         ]
-        let warnings: [TranscriptionModelV3CallWarning] = []
+        let warnings: [SharedV3Warning] = []
 
         if let falOptions = try await parseProviderOptions(
             provider: "fal",

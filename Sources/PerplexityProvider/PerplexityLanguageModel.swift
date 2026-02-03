@@ -19,7 +19,7 @@ public final class PerplexityLanguageModel: LanguageModelV3 {
 
     private struct PreparedRequest {
         let body: [String: JSONValue]
-        let warnings: [LanguageModelV3CallWarning]
+        let warnings: [SharedV3Warning]
     }
 
     private let modelIdentifier: PerplexityLanguageModelId
@@ -195,16 +195,16 @@ public final class PerplexityLanguageModel: LanguageModelV3 {
     }
 
     private func prepareRequest(options: LanguageModelV3CallOptions, stream: Bool) async throws -> PreparedRequest {
-        var warnings: [LanguageModelV3CallWarning] = []
+        var warnings: [SharedV3Warning] = []
 
         if options.topK != nil {
-            warnings.append(.unsupportedSetting(setting: "topK", details: nil))
+            warnings.append(.unsupported(feature: "topK", details: nil))
         }
         if options.stopSequences != nil {
-            warnings.append(.unsupportedSetting(setting: "stopSequences", details: nil))
+            warnings.append(.unsupported(feature: "stopSequences", details: nil))
         }
         if options.seed != nil {
-            warnings.append(.unsupportedSetting(setting: "seed", details: nil))
+            warnings.append(.unsupported(feature: "seed", details: nil))
         }
 
         var body: [String: JSONValue] = [

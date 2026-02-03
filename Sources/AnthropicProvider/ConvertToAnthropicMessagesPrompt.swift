@@ -11,7 +11,7 @@ func convertToAnthropicMessagesPrompt(
     prompt: LanguageModelV3Prompt,
     sendReasoning: Bool,
     toolNameMapping: AnthropicToolNameMapping = .init(),
-    warnings: inout [LanguageModelV3CallWarning]
+    warnings: inout [SharedV3Warning]
 ) async throws -> AnthropicPromptConversionResult {
     let blocks = groupIntoAnthropicBlocks(prompt)
 
@@ -307,7 +307,7 @@ private func appendToolMessageParts(
     messageProviderOptions: SharedV3ProviderOptions?,
     anthropicContent: inout [JSONValue],
     betas: inout Set<String>,
-    warnings: inout [LanguageModelV3CallWarning]
+    warnings: inout [SharedV3Warning]
 ) async throws {
     let toolResultParts: [LanguageModelV3ToolResultPart] = parts.compactMap { part in
         if case .toolResult(let result) = part { return result }
@@ -378,7 +378,7 @@ private func appendAssistantMessageParts(
     mcpToolUseIds: inout Set<String>,
     sendReasoning: Bool,
     toolNameMapping: AnthropicToolNameMapping,
-    warnings: inout [LanguageModelV3CallWarning]
+    warnings: inout [SharedV3Warning]
 ) async throws {
     for (index, part) in parts.enumerated() {
         let isLastPart = index == parts.count - 1
@@ -561,7 +561,7 @@ private func appendAssistantToolResult(
     betas: inout Set<String>,
     mcpToolUseIds: Set<String>,
     toolNameMapping: AnthropicToolNameMapping,
-    warnings: inout [LanguageModelV3CallWarning]
+    warnings: inout [SharedV3Warning]
 ) async throws {
     if mcpToolUseIds.contains(part.toolCallId) {
         var payload: [String: JSONValue] = [

@@ -495,8 +495,9 @@ struct OpenAIResponsesPrepareToolsTests {
         #expect(result.tools?.isEmpty == true)
         #expect(result.warnings.count == 1)
         if let warning = result.warnings.first {
-            if case .unsupportedTool(let returnedTool, _) = warning {
-                #expect(returnedTool == tool)
+            if case let .unsupported(feature, details) = warning {
+                #expect(feature == "provider-defined tool openai.unsupported")
+                #expect(details == nil)
             } else {
                 Issue.record("Unexpected warning type: \(warning)")
             }

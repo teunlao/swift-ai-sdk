@@ -19,7 +19,7 @@ public final class BedrockChatLanguageModel: LanguageModelV3 {
 
     private struct PreparedRequest {
         let command: [String: JSONValue]
-        let warnings: [LanguageModelV3CallWarning]
+        let warnings: [SharedV3Warning]
         let usesJsonResponseTool: Bool
         let betas: Set<String>
     }
@@ -322,7 +322,7 @@ public final class BedrockChatLanguageModel: LanguageModelV3 {
     // MARK: - Preparation
 
     private func prepareRequest(options: LanguageModelV3CallOptions) async throws -> PreparedRequest {
-        var warnings: [LanguageModelV3CallWarning] = []
+        var warnings: [SharedV3Warning] = []
 
         let bedrockOptions = try await parseProviderOptions(
             provider: "bedrock",
@@ -331,15 +331,15 @@ public final class BedrockChatLanguageModel: LanguageModelV3 {
         )
 
         if options.frequencyPenalty != nil {
-            warnings.append(.unsupportedSetting(setting: "frequencyPenalty", details: nil))
+            warnings.append(.unsupported(feature: "frequencyPenalty", details: nil))
         }
 
         if options.presencePenalty != nil {
-            warnings.append(.unsupportedSetting(setting: "presencePenalty", details: nil))
+            warnings.append(.unsupported(feature: "presencePenalty", details: nil))
         }
 
         if options.seed != nil {
-            warnings.append(.unsupportedSetting(setting: "seed", details: nil))
+            warnings.append(.unsupported(feature: "seed", details: nil))
         }
 
         if let responseFormat = options.responseFormat,
@@ -422,13 +422,13 @@ public final class BedrockChatLanguageModel: LanguageModelV3 {
             }
 
             if inferenceConfig.removeValue(forKey: "temperature") != nil {
-                warnings.append(.unsupportedSetting(setting: "temperature", details: "temperature is not supported when thinking is enabled"))
+                warnings.append(.unsupported(feature: "temperature", details: "temperature is not supported when thinking is enabled"))
             }
             if inferenceConfig.removeValue(forKey: "topP") != nil {
-                warnings.append(.unsupportedSetting(setting: "topP", details: "topP is not supported when thinking is enabled"))
+                warnings.append(.unsupported(feature: "topP", details: "topP is not supported when thinking is enabled"))
             }
             if inferenceConfig.removeValue(forKey: "topK") != nil {
-                warnings.append(.unsupportedSetting(setting: "topK", details: "topK is not supported when thinking is enabled"))
+                warnings.append(.unsupported(feature: "topK", details: "topK is not supported when thinking is enabled"))
             }
         }
 
@@ -465,7 +465,7 @@ public final class BedrockChatLanguageModel: LanguageModelV3 {
         )
     }
 
-    private func stripToolContent(from prompt: LanguageModelV3Prompt, warnings: inout [LanguageModelV3CallWarning]) -> LanguageModelV3Prompt {
+    private func stripToolContent(from prompt: LanguageModelV3Prompt, warnings: inout [SharedV3Warning]) -> LanguageModelV3Prompt {
         var modified: LanguageModelV3Prompt = []
         var removed = false
 
@@ -494,8 +494,8 @@ public final class BedrockChatLanguageModel: LanguageModelV3 {
         }
 
         if removed {
-            warnings.append(.unsupportedSetting(
-                setting: "toolContent",
+            warnings.append(.unsupported(
+                feature: "toolContent",
                 details: "Tool calls and results removed from conversation because Bedrock does not support tool content without active tools."
             ))
         }

@@ -72,7 +72,7 @@ public struct LanguageModelV3GenerateResult: Sendable {
     public let response: LanguageModelV3ResponseInfo?
 
     /// Warnings for the call, e.g. unsupported settings.
-    public let warnings: [LanguageModelV3CallWarning]
+    public let warnings: [SharedV3Warning]
 
     public init(
         content: [LanguageModelV3Content],
@@ -81,7 +81,7 @@ public struct LanguageModelV3GenerateResult: Sendable {
         providerMetadata: SharedV3ProviderMetadata? = nil,
         request: LanguageModelV3RequestInfo? = nil,
         response: LanguageModelV3ResponseInfo? = nil,
-        warnings: [LanguageModelV3CallWarning] = []
+        warnings: [SharedV3Warning] = []
     ) {
         self.content = content
         self.finishReason = finishReason
@@ -176,4 +176,3 @@ public struct LanguageModelV3StreamResponseInfo: Sendable {
         self.headers = headers
     }
 }
-

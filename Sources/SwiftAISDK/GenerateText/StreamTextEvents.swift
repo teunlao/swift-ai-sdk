@@ -5,7 +5,7 @@ import AISDKProviderUtils
 /// High-level event emitted while observing a StreamText full stream.
 public enum StreamTextEvent: Sendable {
     case start
-    case startStep(index: Int, warnings: [LanguageModelV3CallWarning])
+    case startStep(index: Int, warnings: [SharedV3Warning])
     case textDelta(text: String, id: String)
     case textEnd(id: String)
     case reasoningDelta(text: String, id: String)

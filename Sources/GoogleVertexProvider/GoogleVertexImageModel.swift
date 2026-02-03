@@ -169,12 +169,12 @@ public final class GoogleVertexImageModel: ImageModelV3 {
     }
 
     public func doGenerate(options: ImageModelV3CallOptions) async throws -> ImageModelV3GenerateResult {
-        var warnings: [ImageModelV3CallWarning] = []
+        var warnings: [SharedV3Warning] = []
 
         if options.size != nil {
             warnings.append(
-                .unsupportedSetting(
-                    setting: "size",
+                .unsupported(
+                    feature: "size",
                     details: "This model does not support the `size` option. Use `aspectRatio` instead."
                 )
             )

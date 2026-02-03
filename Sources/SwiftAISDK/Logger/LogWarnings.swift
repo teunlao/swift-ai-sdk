@@ -56,10 +56,10 @@ private nonisolated(unsafe) var _warningsLoggingDisabledForProcess: Bool = false
 
 /// Union type for all warning types
 public enum Warning: Sendable, Equatable {
-    case languageModel(LanguageModelV3CallWarning)
-    case imageModel(ImageModelV3CallWarning)
-    case speechModel(SpeechModelV3CallWarning)
-    case transcriptionModel(TranscriptionModelV3CallWarning)
+    case languageModel(SharedV3Warning)
+    case imageModel(SharedV3Warning)
+    case speechModel(SharedV3Warning)
+    case transcriptionModel(SharedV3Warning)
 }
 
 /// Custom logger function type
@@ -118,81 +118,28 @@ private func formatWarning(_ warning: Warning) -> String {
 
     switch warning {
     case .languageModel(let w):
-        return formatLanguageModelWarning(w, prefix: prefix)
+        return formatSharedV3Warning(w, prefix: prefix)
     case .imageModel(let w):
-        return formatImageModelWarning(w, prefix: prefix)
+        return formatSharedV3Warning(w, prefix: prefix)
     case .speechModel(let w):
-        return formatSpeechModelWarning(w, prefix: prefix)
+        return formatSharedV3Warning(w, prefix: prefix)
     case .transcriptionModel(let w):
-        return formatTranscriptionModelWarning(w, prefix: prefix)
+        return formatSharedV3Warning(w, prefix: prefix)
     }
 }
 
-/// Format LanguageModelV3CallWarning
-private func formatLanguageModelWarning(_ warning: LanguageModelV3CallWarning, prefix: String) -> String {
+/// Format SharedV3Warning
+private func formatSharedV3Warning(_ warning: SharedV3Warning, prefix: String) -> String {
     switch warning {
-    case .unsupportedSetting(let setting, let details):
-        var message = "\(prefix) The \"\(setting)\" setting is not supported by this model"
+    case .unsupported(let feature, let details):
+        var message = "\(prefix) The feature \"\(feature)\" is not supported"
         if let details = details {
             message += " - \(details)"
         }
         return message
 
-    case .unsupportedTool(let tool, let details):
-        let toolName: String
-        switch tool {
-        case .function(let functionTool):
-            toolName = functionTool.name
-        case .providerDefined:
-            toolName = "unknown tool"
-        }
-
-        var message = "\(prefix) The tool \"\(toolName)\" is not supported by this model"
-        if let details = details {
-            message += " - \(details)"
-        }
-        return message
-
-    case .other(let message):
-        return "\(prefix) \(message)"
-    }
-}
-
-/// Format ImageModelV3CallWarning
-private func formatImageModelWarning(_ warning: ImageModelV3CallWarning, prefix: String) -> String {
-    switch warning {
-    case .unsupportedSetting(let setting, let details):
-        var message = "\(prefix) The \"\(setting)\" setting is not supported by this model"
-        if let details = details {
-            message += " - \(details)"
-        }
-        return message
-
-    case .other(let message):
-        return "\(prefix) \(message)"
-    }
-}
-
-/// Format SpeechModelV3CallWarning
-private func formatSpeechModelWarning(_ warning: SpeechModelV3CallWarning, prefix: String) -> String {
-    switch warning {
-    case .unsupportedSetting(let setting, let details):
-        var message = "\(prefix) The \"\(setting)\" setting is not supported by this model"
-        if let details = details {
-            message += " - \(details)"
-        }
-        return message
-
-    case .other(let message):
-        return "\(prefix) \(message)"
-    }
-}
-
-/// Format TranscriptionModelV3CallWarning
-private func formatTranscriptionModelWarning(_ warning: TranscriptionModelV3CallWarning, prefix: String) -> String {
-    switch warning {
-    case .unsupportedSetting(let setting, let details):
-        var message = "\(prefix) The \"\(setting)\" setting is not supported by this model"
+    case .compatibility(let feature, let details):
+        var message = "\(prefix) Using compatibility mode for \"\(feature)\""
         if let details = details {
             message += " - \(details)"
         }

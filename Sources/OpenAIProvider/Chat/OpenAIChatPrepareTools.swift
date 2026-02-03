@@ -4,7 +4,7 @@ import AISDKProvider
 struct OpenAIChatPreparedTools {
     let tools: JSONValue?
     let toolChoice: JSONValue?
-    let warnings: [LanguageModelV3CallWarning]
+    let warnings: [SharedV3Warning]
 }
 
 enum OpenAIChatToolPreparer {
@@ -16,7 +16,7 @@ enum OpenAIChatToolPreparer {
             return OpenAIChatPreparedTools(tools: nil, toolChoice: nil, warnings: [])
         }
 
-        var warnings: [LanguageModelV3CallWarning] = []
+        var warnings: [SharedV3Warning] = []
         var preparedTools: [JSONValue] = []
 
         for tool in tools {
@@ -40,8 +40,8 @@ enum OpenAIChatToolPreparer {
                     "function": .object(functionObject)
                 ]))
 
-            case .providerDefined:
-                warnings.append(.unsupportedTool(tool: tool, details: nil))
+            case .providerDefined(let providerTool):
+                warnings.append(.unsupported(feature: "provider-defined tool \(providerTool.id)", details: nil))
             }
         }
 

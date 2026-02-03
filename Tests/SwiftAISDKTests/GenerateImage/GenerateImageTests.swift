@@ -42,7 +42,7 @@ struct GenerateImageTests {
 
     private func createMockResponse(
         images: TestImages,
-        warnings: [ImageModelV3CallWarning] = [],
+        warnings: [SharedV3Warning] = [],
         timestamp: Date? = nil,
         modelId: String? = nil,
         providerMetadata: ImageModelV3ProviderMetadata? = nil,
@@ -162,7 +162,7 @@ struct GenerateImageTests {
     func logsWarnings() async throws {
         try await LogWarningsTestLock.shared.withLock {
             let warning1: ImageGenerationWarning = .other(message: "Setting is not supported")
-            let warning2: ImageGenerationWarning = .unsupportedSetting(setting: "size", details: "Size parameter not supported")
+            let warning2: ImageGenerationWarning = .unsupported(feature: "size", details: "Size parameter not supported")
             let expected = [warning1, warning2]
 
             guard let token = LogWarningsTestLock.currentOwnerID() else {

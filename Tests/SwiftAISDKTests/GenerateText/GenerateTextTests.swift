@@ -24,7 +24,7 @@ struct GenerateTextTests {
         content: [LanguageModelV3Content],
         finishReason: LanguageModelV3FinishReason = .stop,
         usage: LanguageModelUsage? = nil,
-        warnings: [LanguageModelV3CallWarning] = [],
+        warnings: [SharedV3Warning] = [],
         providerMetadata: ProviderMetadata? = nil,
         request: LanguageModelV3RequestInfo? = nil,
         response: LanguageModelV3ResponseInfo? = nil

@@ -215,12 +215,12 @@ struct GroqChatLanguageModelTests {
             return
         }
         #expect(responseFormat["type"] as? String == "json_object")
-        let warningFound = result.warnings.contains { warning in
-            if case .unsupportedSetting(let setting, let details) = warning {
-                return setting == "responseFormat" && details == "JSON response format schema is only supported with structuredOutputs"
+        let warningFound = result.warnings.contains(where: { warning in
+            if case .unsupported(let feature, let details) = warning {
+                return feature == "responseFormat" && details == "JSON response format schema is only supported with structuredOutputs"
             }
             return false
-        }
+        })
         #expect(warningFound)
     }
 
@@ -291,12 +291,12 @@ struct GroqChatLanguageModelTests {
         ]
 
         let result = try await model.doGenerate(options: .init(prompt: prompt, topK: 5))
-        let warningFound = result.warnings.contains { warning in
-            if case .unsupportedSetting(let setting, _) = warning {
-                return setting == "topK"
+        let warningFound = result.warnings.contains(where: { warning in
+            if case .unsupported(let feature, _) = warning {
+                return feature == "topK"
             }
             return false
-        }
+        })
         #expect(warningFound)
     }
 

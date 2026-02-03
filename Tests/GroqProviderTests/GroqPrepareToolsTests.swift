@@ -70,14 +70,12 @@ struct GroqPrepareToolsTests {
         #expect(prepared.tools?.isEmpty == true || prepared.tools == nil)
         #expect(prepared.toolChoice == nil)
         #expect(prepared.toolWarnings.count == 1)
-        if case .unsupportedTool(let unsupportedTool, _) = prepared.toolWarnings.first {
-            if case .providerDefined(let providerTool) = unsupportedTool {
-                #expect(providerTool.id == "some.unsupported_tool")
-            } else {
-                Issue.record("Expected provider-defined tool")
-            }
+        if let warning = prepared.toolWarnings.first,
+           case let .unsupported(feature, details) = warning {
+            #expect(feature == "provider-defined tool some.unsupported_tool")
+            #expect(details == nil)
         } else {
-            Issue.record("Expected unsupported-tool warning")
+            Issue.record("Expected unsupported warning")
         }
     }
 
@@ -176,10 +174,12 @@ struct GroqPrepareToolsTests {
             modelId: GroqChatModelId(rawValue: "other-model")
         )
 
-        #expect(prepared.toolWarnings.contains { warning in
-            if case .unsupportedTool = warning { return true }
+        #expect(prepared.toolWarnings.contains(where: { warning in
+            if case let .unsupported(feature, _) = warning {
+                return feature == "provider-defined tool groq.browser_search"
+            }
             return false
-        })
+        }))
     }
 
     @Test("browser search supported models map to provider tool")
@@ -262,20 +262,20 @@ struct GroqPrepareToolsTests {
 
         // Verify both tools are present
         if let tools = prepared.tools {
-            let hasFunction = tools.contains { tool in
+            let hasFunction = tools.contains(where: { tool in
                 if case let .object(obj) = tool,
                    obj["type"] == .string("function") {
                     return true
                 }
                 return false
-            }
-            let hasBrowserSearch = tools.contains { tool in
+            })
+            let hasBrowserSearch = tools.contains(where: { tool in
                 if case let .object(obj) = tool,
                    obj["type"] == .string("browser_search") {
                     return true
                 }
                 return false
-            }
+            })
             #expect(hasFunction)
             #expect(hasBrowserSearch)
         }

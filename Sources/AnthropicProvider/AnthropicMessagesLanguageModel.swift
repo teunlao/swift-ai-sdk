@@ -48,7 +48,7 @@ public struct AnthropicMessagesConfig: @unchecked Sendable {
 
 private struct AnthropicRequestArguments {
     let body: [String: JSONValue]
-    let warnings: [LanguageModelV3CallWarning]
+    let warnings: [SharedV3Warning]
     let betas: Set<String>
     let usesJsonResponseTool: Bool
     let toolNameMapping: AnthropicToolNameMapping
@@ -396,30 +396,30 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
     private func prepareRequest(options: LanguageModelV3CallOptions) async throws
         -> AnthropicRequestArguments
     {
-        var warnings: [LanguageModelV3CallWarning] = []
+        var warnings: [SharedV3Warning] = []
 
         if options.frequencyPenalty != nil {
-            warnings.append(.unsupportedSetting(setting: "frequencyPenalty", details: nil))
+            warnings.append(.unsupported(feature: "frequencyPenalty", details: nil))
         }
         if options.presencePenalty != nil {
-            warnings.append(.unsupportedSetting(setting: "presencePenalty", details: nil))
+            warnings.append(.unsupported(feature: "presencePenalty", details: nil))
         }
         if options.seed != nil {
-            warnings.append(.unsupportedSetting(setting: "seed", details: nil))
+            warnings.append(.unsupported(feature: "seed", details: nil))
         }
 
         var temperature = options.temperature
         if let value = temperature, value > 1 {
             warnings.append(
-                .unsupportedSetting(
-                    setting: "temperature",
+                .unsupported(
+                    feature: "temperature",
                     details: "\(value) exceeds anthropic maximum of 1.0. clamped to 1.0"
                 ))
             temperature = 1
         } else if let value = temperature, value < 0 {
             warnings.append(
-                .unsupportedSetting(
-                    setting: "temperature",
+                .unsupported(
+                    feature: "temperature",
                     details: "\(value) is below anthropic minimum of 0. clamped to 0"
                 ))
             temperature = 0
@@ -427,8 +427,8 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
 
         if case let .json(schema, _, _) = options.responseFormat, schema == nil {
             warnings.append(
-                .unsupportedSetting(
-                    setting: "responseFormat",
+                .unsupported(
+                    feature: "responseFormat",
                     details: "JSON response format requires a schema. The response format is ignored."
                 )
             )
@@ -531,8 +531,8 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
 
         if isThinking == false, topP != nil, temperature != nil {
             warnings.append(
-                .unsupportedSetting(
-                    setting: "topP",
+                .unsupported(
+                    feature: "topP",
                     details: "topP is not supported when temperature is set. topP is ignored."
                 )
             )
@@ -561,8 +561,8 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
 
             if temperature != nil {
                 warnings.append(
-                    .unsupportedSetting(
-                        setting: "temperature",
+                    .unsupported(
+                        feature: "temperature",
                         details: "temperature is not supported when thinking is enabled"
                     )
                 )
@@ -570,8 +570,8 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
             }
             if options.topK != nil {
                 warnings.append(
-                    .unsupportedSetting(
-                        setting: "topK",
+                    .unsupported(
+                        feature: "topK",
                         details: "topK is not supported when thinking is enabled"
                     )
                 )
@@ -579,8 +579,8 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
             }
             if options.topP != nil {
                 warnings.append(
-                    .unsupportedSetting(
-                        setting: "topP",
+                    .unsupported(
+                        feature: "topP",
                         details: "topP is not supported when thinking is enabled"
                     )
                 )
@@ -603,8 +603,8 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
         {
             if inputMaxOutputTokens != nil {
                 warnings.append(
-                    .unsupportedSetting(
-                        setting: "maxOutputTokens",
+                    .unsupported(
+                        feature: "maxOutputTokens",
                         details:
                             "\(Int(rawMaxTokensValue)) (maxOutputTokens + thinkingBudget) is greater than \(modelIdentifier.rawValue) \(capabilities.maxOutputTokens) max output tokens. The max output tokens have been limited to \(capabilities.maxOutputTokens)."
                     )

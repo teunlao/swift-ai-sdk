@@ -12,7 +12,7 @@ import AISDKProviderUtils
 struct CohereChatPromptConversion {
     let messages: [JSONValue]
     let documents: [JSONValue]
-    let warnings: [LanguageModelV3CallWarning]
+    let warnings: [SharedV3Warning]
 }
 
 enum CohereToolChoice: String, Sendable {

@@ -224,7 +224,7 @@ private struct GatewayGenerateResponse: Decodable {
     let finishReason: LanguageModelV3FinishReason
     let usage: LanguageModelV3Usage
     let providerMetadata: SharedV3ProviderMetadata?
-    let warnings: [LanguageModelV3CallWarning]?
+    let warnings: [SharedV3Warning]?
 
     let response: Metadata?
     let request: Metadata?
@@ -281,7 +281,7 @@ private struct GatewayGenerateResponse: Decodable {
         usage = usagePayload?.toUsage() ?? LanguageModelV3Usage()
 
         providerMetadata = try container.decodeIfPresent(SharedV3ProviderMetadata.self, forKey: .providerMetadata)
-        warnings = try container.decodeIfPresent([LanguageModelV3CallWarning].self, forKey: .warnings)
+        warnings = try container.decodeIfPresent([SharedV3Warning].self, forKey: .warnings)
 
         response = try container.decodeIfPresent(Metadata.self, forKey: .response)
         request = try container.decodeIfPresent(Metadata.self, forKey: .request)

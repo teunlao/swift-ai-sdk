@@ -14,7 +14,7 @@ struct BedrockPreparedTools: Sendable {
     let toolConfig: [String: JSONValue]
     let additionalTools: [String: JSONValue]?
     let betas: Set<String>
-    let warnings: [LanguageModelV3CallWarning]
+    let warnings: [SharedV3Warning]
 }
 
 func prepareBedrockTools(
@@ -22,7 +22,7 @@ func prepareBedrockTools(
     toolChoice: LanguageModelV3ToolChoice?,
     modelId: String
 ) async -> BedrockPreparedTools {
-    var warnings: [LanguageModelV3CallWarning] = []
+    var warnings: [SharedV3Warning] = []
     var betas: Set<String> = []
     var additionalTools: [String: JSONValue]? = nil
     var bedrockTools: [JSONValue] = []
@@ -35,7 +35,12 @@ func prepareBedrockTools(
     let filteredTools: [LanguageModelV3Tool] = tools.compactMap { tool in
         if case .providerDefined(let providerTool) = tool,
            providerTool.id == "anthropic.web_search_20250305" {
-            warnings.append(.unsupportedTool(tool: tool, details: "The web_search_20250305 tool is not supported on Amazon Bedrock."))
+            warnings.append(
+                .unsupported(
+                    feature: "web_search_20250305 tool",
+                    details: "The web_search_20250305 tool is not supported on Amazon Bedrock."
+                )
+            )
             return nil
         }
         return tool
@@ -78,7 +83,7 @@ func prepareBedrockTools(
                 if let bedrockTool = try await makeAnthropicBedrockTool(providerTool) {
                     bedrockTools.append(bedrockTool)
                 } else {
-                    warnings.append(.unsupportedTool(tool: .providerDefined(providerTool), details: nil))
+                    warnings.append(.unsupported(feature: "tool \(providerTool.id)", details: nil))
                 }
             }
         } catch {
@@ -87,8 +92,8 @@ func prepareBedrockTools(
 
         if !functionTools.isEmpty {
             warnings.append(
-                .unsupportedSetting(
-                    setting: "tools",
+                .unsupported(
+                    feature: "mixing Anthropic provider-defined tools and standard function tools",
                     details: "Mixed Anthropic provider-defined tools and standard function tools are not supported in a single Bedrock call. Only Anthropic tools will be used."
                 )
             )
@@ -99,7 +104,7 @@ func prepareBedrockTools(
     } else {
         // Provider-defined tools are unsupported for non-Anthropic models
         for providerTool in providerDefinedTools {
-            warnings.append(.unsupportedTool(tool: .providerDefined(providerTool), details: nil))
+            warnings.append(.unsupported(feature: "tool \(providerTool.id)", details: nil))
         }
     }
 

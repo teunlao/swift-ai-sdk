@@ -14,9 +14,9 @@ struct OpenAIResponsesInputBuilder {
         hasLocalShellTool: Bool = false,
         hasShellTool: Bool = false,
         hasApplyPatchTool: Bool = false
-    ) async throws -> (input: OpenAIResponsesInput, warnings: [LanguageModelV3CallWarning]) {
+    ) async throws -> (input: OpenAIResponsesInput, warnings: [SharedV3Warning]) {
         var items: [JSONValue] = []
-        var warnings: [LanguageModelV3CallWarning] = []
+        var warnings: [SharedV3Warning] = []
         var reasoningReferences: Set<String> = []
         var processedApprovalIds: Set<String> = []
 

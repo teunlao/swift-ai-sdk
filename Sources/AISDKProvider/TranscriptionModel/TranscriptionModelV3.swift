@@ -45,7 +45,7 @@ public struct TranscriptionModelV3Result: Sendable {
     public let durationInSeconds: Double?
 
     /// Warnings for the call, e.g., unsupported settings
-    public let warnings: [TranscriptionModelV3CallWarning]
+    public let warnings: [SharedV3Warning]
 
     /// Optional request information for telemetry and debugging purposes
     public let request: RequestInfo?
@@ -63,7 +63,7 @@ public struct TranscriptionModelV3Result: Sendable {
         segments: [Segment],
         language: String? = nil,
         durationInSeconds: Double? = nil,
-        warnings: [TranscriptionModelV3CallWarning] = [],
+        warnings: [SharedV3Warning] = [],
         request: RequestInfo? = nil,
         response: ResponseInfo,
         providerMetadata: [String: [String: JSONValue]]? = nil

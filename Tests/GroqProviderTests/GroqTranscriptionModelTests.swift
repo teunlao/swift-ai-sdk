@@ -22,7 +22,7 @@ struct GroqTranscriptionModelTests {
         )
     }
 
-    private func makeResponse(headers: [String: String]? = nil) -> (FetchFunction, [LanguageModelV3CallWarning]) {
+    private func makeResponse(headers: [String: String]? = nil) -> (FetchFunction, [SharedV3Warning]) {
         let responseJSON: [String: Any] = [
             "text": "Hello world!",
             "language": "en",

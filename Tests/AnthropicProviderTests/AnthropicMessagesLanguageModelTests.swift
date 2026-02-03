@@ -3168,15 +3168,15 @@ struct AnthropicMessagesLanguageModelThinkingAndErrorsTests {
         // Verify warnings
         #expect(result.warnings.count == 3)
         #expect(result.warnings.contains(where: {
-            if case .unsupportedSetting(let setting, _) = $0 { return setting == "temperature" }
+            if case .unsupported(let feature, _) = $0 { return feature == "temperature" }
             return false
         }))
         #expect(result.warnings.contains(where: {
-            if case .unsupportedSetting(let setting, _) = $0 { return setting == "topK" }
+            if case .unsupported(let feature, _) = $0 { return feature == "topK" }
             return false
         }))
         #expect(result.warnings.contains(where: {
-            if case .unsupportedSetting(let setting, _) = $0 { return setting == "topP" }
+            if case .unsupported(let feature, _) = $0 { return feature == "topP" }
             return false
         }))
     }

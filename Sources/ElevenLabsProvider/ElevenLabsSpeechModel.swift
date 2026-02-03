@@ -83,12 +83,12 @@ public final class ElevenLabsSpeechModel: SpeechModelV3 {
     private struct PreparedRequest {
         let body: [String: JSONValue]
         let queryItems: [URLQueryItem]
-        let warnings: [SpeechModelV3CallWarning]
+        let warnings: [SharedV3Warning]
         let voiceId: ElevenLabsSpeechVoiceId
     }
 
     private func prepareRequest(options: SpeechModelV3CallOptions) async throws -> PreparedRequest {
-        var warnings: [SpeechModelV3CallWarning] = []
+        var warnings: [SharedV3Warning] = []
 
         let providerOptions = try await parseProviderOptions(
             provider: "elevenlabs",
@@ -173,7 +173,7 @@ public final class ElevenLabsSpeechModel: SpeechModelV3 {
         }
 
         if let instructions = options.instructions, !instructions.isEmpty {
-            warnings.append(.unsupportedSetting(setting: "instructions", details: "ElevenLabs speech models do not support instructions. The instructions parameter was ignored."))
+            warnings.append(.unsupported(feature: "instructions", details: "ElevenLabs speech models do not support instructions. The instructions parameter was ignored."))
         }
 
         var queryItems: [URLQueryItem] = []

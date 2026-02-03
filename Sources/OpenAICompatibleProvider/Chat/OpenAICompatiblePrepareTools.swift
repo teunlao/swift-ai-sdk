@@ -4,7 +4,7 @@ import AISDKProvider
 struct OpenAICompatiblePreparedTools {
     let tools: JSONValue?
     let toolChoice: JSONValue?
-    let warnings: [LanguageModelV3CallWarning]
+    let warnings: [SharedV3Warning]
 }
 
 enum OpenAICompatibleToolPreparer {
@@ -16,7 +16,7 @@ enum OpenAICompatibleToolPreparer {
             return OpenAICompatiblePreparedTools(tools: nil, toolChoice: nil, warnings: [])
         }
 
-        var warnings: [LanguageModelV3CallWarning] = []
+        var warnings: [SharedV3Warning] = []
         var prepared: [JSONValue] = []
 
         for tool in tools {
@@ -30,14 +30,17 @@ enum OpenAICompatibleToolPreparer {
                 if let description = function.description {
                     functionObject["description"] = .string(description)
                 }
+                if let strict = function.strict {
+                    functionObject["strict"] = .bool(strict)
+                }
 
                 prepared.append(.object([
                     "type": .string("function"),
                     "function": .object(functionObject)
                 ]))
 
-            case .providerDefined:
-                warnings.append(.unsupportedTool(tool: tool, details: nil))
+            case .providerDefined(let providerTool):
+                warnings.append(.unsupported(feature: "provider-defined tool \(providerTool.id)", details: nil))
             }
         }
 

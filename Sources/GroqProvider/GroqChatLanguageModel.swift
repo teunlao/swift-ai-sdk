@@ -18,7 +18,7 @@ public final class GroqChatLanguageModel: LanguageModelV3 {
 
     private struct PreparedRequest {
         let body: [String: JSONValue]
-        let warnings: [LanguageModelV3CallWarning]
+        let warnings: [SharedV3Warning]
     }
 
     private let modelIdentifier: GroqChatModelId
@@ -232,7 +232,7 @@ public final class GroqChatLanguageModel: LanguageModelV3 {
     // MARK: - Preparation
 
     private func prepareRequest(options: LanguageModelV3CallOptions, stream: Bool) async throws -> PreparedRequest {
-        var warnings: [LanguageModelV3CallWarning] = []
+        var warnings: [SharedV3Warning] = []
 
         let groqOptions = try await parseProviderOptions(
             provider: "groq",
@@ -243,15 +243,15 @@ public final class GroqChatLanguageModel: LanguageModelV3 {
         let structuredOutputs = groqOptions?.structuredOutputs ?? true
 
         if options.topK != nil {
-            warnings.append(.unsupportedSetting(setting: "topK", details: nil))
+            warnings.append(.unsupported(feature: "topK", details: nil))
         }
 
         if case let .json(schema, _, _)? = options.responseFormat,
            schema != nil,
            structuredOutputs == false {
             warnings.append(
-                .unsupportedSetting(
-                    setting: "responseFormat",
+                .unsupported(
+                    feature: "responseFormat",
                     details: "JSON response format schema is only supported with structuredOutputs"
                 )
             )

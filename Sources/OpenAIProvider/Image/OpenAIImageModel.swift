@@ -23,14 +23,17 @@ public final class OpenAIImageModel: ImageModelV3 {
     }
 
     public func doGenerate(options: ImageModelV3CallOptions) async throws -> ImageModelV3GenerateResult {
-        var warnings: [ImageModelV3CallWarning] = []
+        var warnings: [SharedV3Warning] = []
 
         if options.aspectRatio != nil {
-            warnings.append(.unsupportedSetting(setting: "aspectRatio", details: "This model does not support aspect ratio. Use `size` instead."))
+            warnings.append(.unsupported(
+                feature: "aspectRatio",
+                details: "This model does not support aspect ratio. Use `size` instead."
+            ))
         }
 
         if options.seed != nil {
-            warnings.append(.unsupportedSetting(setting: "seed", details: nil))
+            warnings.append(.unsupported(feature: "seed", details: nil))
         }
 
         let headers = combineHeaders(config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 }

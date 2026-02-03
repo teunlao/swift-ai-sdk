@@ -96,7 +96,7 @@ public final class HumeSpeechModel: SpeechModelV3 {
     public func doGenerate(options: SpeechModelV3CallOptions) async throws -> SpeechModelV3Result {
         let now = config.currentDate()
 
-        var warnings: [SpeechModelV3CallWarning] = []
+        var warnings: [SharedV3Warning] = []
 
         // Parse provider-specific options
         let providerOptions = try await parseProviderOptions(
@@ -129,8 +129,8 @@ public final class HumeSpeechModel: SpeechModelV3 {
                 requestBody.format = .init(type: outputFormat)
             } else {
                 warnings.append(
-                    .unsupportedSetting(
-                        setting: "outputFormat",
+                    .unsupported(
+                        feature: "outputFormat",
                         details: "Unsupported output format: \(outputFormat). Using mp3 instead."
                     )
                 )
@@ -139,8 +139,8 @@ public final class HumeSpeechModel: SpeechModelV3 {
 
         if let language = options.language {
             warnings.append(
-                .unsupportedSetting(
-                    setting: "language",
+                .unsupported(
+                    feature: "language",
                     details: "Hume speech models do not support language selection. Language parameter \"\(language)\" was ignored."
                 )
             )

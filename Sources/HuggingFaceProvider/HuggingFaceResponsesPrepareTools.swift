@@ -11,7 +11,7 @@ import AISDKProvider
 struct HuggingFacePreparedTools {
     let tools: JSONValue?
     let toolChoice: JSONValue?
-    let warnings: [LanguageModelV3CallWarning]
+    let warnings: [SharedV3Warning]
 }
 
 func prepareHuggingFaceResponsesTools(
@@ -19,7 +19,7 @@ func prepareHuggingFaceResponsesTools(
     toolChoice: LanguageModelV3ToolChoice?
 ) -> HuggingFacePreparedTools {
     let normalizedTools = tools?.isEmpty == false ? tools : nil
-    var warnings: [LanguageModelV3CallWarning] = []
+    var warnings: [SharedV3Warning] = []
 
     guard let normalizedTools else {
         return HuggingFacePreparedTools(tools: nil, toolChoice: nil, warnings: warnings)
@@ -40,8 +40,8 @@ func prepareHuggingFaceResponsesTools(
             }
             huggingfaceTools.append(.object(object))
 
-        case .providerDefined:
-            warnings.append(.unsupportedTool(tool: tool, details: nil))
+        case .providerDefined(let providerTool):
+            warnings.append(.unsupported(feature: "provider-defined tool \(providerTool.id)", details: nil))
             continue
         }
     }

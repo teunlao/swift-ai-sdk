@@ -227,8 +227,8 @@ struct OpenAISpeechModelTests {
             )
         )
 
-        #expect(result.warnings.contains(.unsupportedSetting(setting: "outputFormat", details: "Unsupported output format: unknown-format. Using mp3 instead.")))
-        #expect(result.warnings.contains(.unsupportedSetting(setting: "language", details: "OpenAI speech models do not support language selection. Language parameter \"fr\" was ignored.")))
+        #expect(result.warnings.contains(.unsupported(feature: "outputFormat", details: "Unsupported output format: unknown-format. Using mp3 instead.")))
+        #expect(result.warnings.contains(.unsupported(feature: "language", details: "OpenAI speech models do not support language selection. Language parameter \"fr\" was ignored.")))
     }
 
     // Port of openai-speech-model.test.ts: "should return audio data with correct content type"

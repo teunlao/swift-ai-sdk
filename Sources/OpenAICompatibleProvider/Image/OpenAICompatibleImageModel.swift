@@ -43,14 +43,17 @@ public final class OpenAICompatibleImageModel: ImageModelV3 {
     public var maxImagesPerCall: ImageModelV3MaxImagesPerCall { .value(10) }
 
     public func doGenerate(options: ImageModelV3CallOptions) async throws -> ImageModelV3GenerateResult {
-        var warnings: [ImageModelV3CallWarning] = []
+        var warnings: [SharedV3Warning] = []
 
         if options.aspectRatio != nil {
-            warnings.append(.unsupportedSetting(setting: "aspectRatio", details: "This model does not support aspect ratio. Use `size` instead."))
+            warnings.append(.unsupported(
+                feature: "aspectRatio",
+                details: "This model does not support aspect ratio. Use `size` instead."
+            ))
         }
 
         if options.seed != nil {
-            warnings.append(.unsupportedSetting(setting: "seed", details: nil))
+            warnings.append(.unsupported(feature: "seed", details: nil))
         }
 
         let defaultHeaders = config.headers().mapValues { Optional($0) }

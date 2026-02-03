@@ -6,8 +6,8 @@ import AISDKProvider
 private func convert(
     _ prompt: LanguageModelV3Prompt,
     sendReasoning: Bool = true
-) async throws -> (AnthropicPromptConversionResult, [LanguageModelV3CallWarning]) {
-    var warnings: [LanguageModelV3CallWarning] = []
+) async throws -> (AnthropicPromptConversionResult, [SharedV3Warning]) {
+    var warnings: [SharedV3Warning] = []
     let result = try await convertToAnthropicMessagesPrompt(
         prompt: prompt,
         sendReasoning: sendReasoning,

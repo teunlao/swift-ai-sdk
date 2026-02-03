@@ -50,11 +50,11 @@ public final class BedrockImageModel: ImageModelV3 {
     }
 
     public func doGenerate(options: ImageModelV3CallOptions) async throws -> ImageModelV3GenerateResult {
-        var warnings: [ImageModelV3CallWarning] = []
+        var warnings: [SharedV3Warning] = []
 
         if options.aspectRatio != nil {
-            warnings.append(.unsupportedSetting(
-                setting: "aspectRatio",
+            warnings.append(.unsupported(
+                feature: "aspectRatio",
                 details: "This model does not support aspect ratio. Use `size` instead."
             ))
         }

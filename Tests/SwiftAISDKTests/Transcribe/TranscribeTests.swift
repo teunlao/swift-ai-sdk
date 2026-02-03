@@ -44,7 +44,7 @@ private func makeMockResponse(
     segments: [TranscriptionModelV3Result.Segment] = sampleSegments,
     language: String? = sampleLanguage,
     durationInSeconds: Double? = sampleDuration,
-    warnings: [TranscriptionModelV3CallWarning] = [],
+    warnings: [SharedV3Warning] = [],
     timestamp: Date = Date(),
     modelId: String = "test-model-id",
     headers: [String: String]? = nil,
@@ -126,7 +126,7 @@ struct TranscribeTests {
 
     @Test("should return warnings")
     func shouldReturnWarnings() async throws {
-        let warnings: [TranscriptionModelV3CallWarning] = [
+        let warnings: [SharedV3Warning] = [
             .other(message: "Setting is not supported")
         ]
 
@@ -155,9 +155,9 @@ struct TranscribeTests {
     @Test("should call logWarnings with the correct warnings")
     func shouldCallLogWarningsWithExpectedWarnings() async throws {
         try await LogWarningsTestLock.shared.withLock {
-            let expectedWarnings: [TranscriptionModelV3CallWarning] = [
+            let expectedWarnings: [SharedV3Warning] = [
                 .other(message: "Setting is not supported"),
-                .unsupportedSetting(setting: "mediaType", details: "MediaType parameter not supported")
+                .unsupported(feature: "mediaType", details: "MediaType parameter not supported")
             ]
 
             let previousLogger = logWarningsForTranscribe

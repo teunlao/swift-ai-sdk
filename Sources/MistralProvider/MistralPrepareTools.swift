@@ -12,7 +12,7 @@ import AISDKProviderUtils
 struct MistralPreparedTools: Sendable {
     let tools: [JSONValue]?
     let toolChoice: JSONValue?
-    let toolWarnings: [LanguageModelV3CallWarning]
+    let toolWarnings: [SharedV3Warning]
 }
 
 func prepareMistralTools(
@@ -23,7 +23,7 @@ func prepareMistralTools(
         return MistralPreparedTools(tools: nil, toolChoice: nil, toolWarnings: [])
     }
 
-    var warnings: [LanguageModelV3CallWarning] = []
+    var warnings: [SharedV3Warning] = []
     var functionTools: [(name: String, payload: JSONValue)] = []
 
     for tool in tools {
@@ -36,13 +36,16 @@ func prepareMistralTools(
             if let description = functionTool.description {
                 functionPayload["description"] = .string(description)
             }
+            if let strict = functionTool.strict {
+                functionPayload["strict"] = .bool(strict)
+            }
             functionTools.append((functionTool.name, .object([
                 "type": .string("function"),
                 "function": .object(functionPayload)
             ])))
 
-        case .providerDefined:
-            warnings.append(.unsupportedTool(tool: tool, details: nil))
+        case .providerDefined(let providerTool):
+            warnings.append(.unsupported(feature: "provider-defined tool \(providerTool.id)", details: nil))
         }
     }
 

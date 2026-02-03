@@ -103,16 +103,21 @@ public struct EmbeddingModelV3DoEmbedResult: Sendable {
     /// Optional response information for debugging purposes
     public let response: EmbeddingModelV3ResponseInfo?
 
+    /// Warnings for the call, e.g. unsupported settings.
+    public let warnings: [SharedV3Warning]
+
     public init(
         embeddings: [EmbeddingModelV3Embedding],
         usage: EmbeddingModelV3Usage? = nil,
         providerMetadata: SharedV3ProviderMetadata? = nil,
-        response: EmbeddingModelV3ResponseInfo? = nil
+        response: EmbeddingModelV3ResponseInfo? = nil,
+        warnings: [SharedV3Warning] = []
     ) {
         self.embeddings = embeddings
         self.usage = usage
         self.providerMetadata = providerMetadata
         self.response = response
+        self.warnings = warnings
     }
 }
 

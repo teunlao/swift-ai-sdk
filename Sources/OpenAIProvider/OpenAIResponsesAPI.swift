@@ -80,10 +80,12 @@ public struct LanguageModelV3CallWarningRecord: Codable, Sendable {
         self.setting = setting
     }
 
-    public func toWarning() -> LanguageModelV3CallWarning {
+    public func toWarning() -> SharedV3Warning {
         switch type {
         case "unsupported-setting":
-            return .unsupportedSetting(setting: setting ?? "unknown", details: message)
+            return .unsupported(feature: setting ?? "unknown", details: message)
+        case "compatibility":
+            return .compatibility(feature: setting ?? "unknown", details: message)
         default:
             return .other(message: message ?? "OpenAI warning")
         }

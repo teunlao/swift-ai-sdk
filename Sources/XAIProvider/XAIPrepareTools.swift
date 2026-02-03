@@ -6,7 +6,7 @@ import AISDKProvider
 struct XAIPreparedTools {
     let tools: [JSONValue]?
     let toolChoice: JSONValue?
-    let warnings: [LanguageModelV3CallWarning]
+    let warnings: [SharedV3Warning]
 }
 
 func prepareXAITools(
@@ -14,7 +14,7 @@ func prepareXAITools(
     toolChoice: LanguageModelV3ToolChoice?
 ) -> XAIPreparedTools {
     let normalizedTools = tools?.isEmpty == true ? nil : tools
-    var warnings: [LanguageModelV3CallWarning] = []
+    var warnings: [SharedV3Warning] = []
 
     guard let normalizedTools else {
         // No tools configured -> return undefined equivalents
@@ -25,8 +25,8 @@ func prepareXAITools(
 
     for tool in normalizedTools {
         switch tool {
-        case .providerDefined:
-            warnings.append(.unsupportedTool(tool: tool, details: nil))
+        case .providerDefined(let providerTool):
+            warnings.append(.unsupported(feature: "provider-defined tool \(providerTool.name)", details: nil))
         case .function(let functionTool):
             var functionPayload: [String: JSONValue] = [
                 "name": .string(functionTool.name),

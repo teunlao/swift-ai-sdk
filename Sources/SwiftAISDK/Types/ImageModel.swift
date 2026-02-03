@@ -26,9 +26,9 @@ public typealias ImageModel = any ImageModelV3
  The call will proceed, but e.g. some settings might not be supported,
  which can lead to suboptimal results.
 
- Type alias for `ImageModelV3CallWarning` from the Provider package.
+ Type alias for `SharedV3Warning` from the Provider package.
  */
-public typealias ImageGenerationWarning = ImageModelV3CallWarning
+public typealias ImageGenerationWarning = SharedV3Warning
 
 /**
  Metadata from the model provider for this call.

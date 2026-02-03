@@ -69,11 +69,11 @@ public final class ElevenLabsTranscriptionModel: TranscriptionModelV3 {
     private struct PreparedRequest {
         let body: Data
         let contentType: String
-        let warnings: [TranscriptionModelV3CallWarning]
+        let warnings: [SharedV3Warning]
     }
 
     private func prepareRequest(options: TranscriptionModelV3CallOptions) async throws -> PreparedRequest {
-        let warnings: [TranscriptionModelV3CallWarning] = []
+        let warnings: [SharedV3Warning] = []
 
         let providerOptions = try await parseProviderOptions(
             provider: "elevenlabs",

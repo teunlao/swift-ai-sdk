@@ -79,19 +79,19 @@ public final class FireworksImageModel: ImageModelV3 {
     }
 
     public func doGenerate(options: ImageModelV3CallOptions) async throws -> ImageModelV3GenerateResult {
-        var warnings: [ImageModelV3CallWarning] = []
+        var warnings: [SharedV3Warning] = []
         let backendConfig = fireworksImageModelBackendConfig[modelIdentifier]
 
         if backendConfig?.supportsSize != true, options.size != nil {
-            warnings.append(.unsupportedSetting(
-                setting: "size",
+            warnings.append(.unsupported(
+                feature: "size",
                 details: "This model does not support the `size` option. Use `aspectRatio` instead."
             ))
         }
 
         if backendConfig?.supportsSize == true, options.aspectRatio != nil {
-            warnings.append(.unsupportedSetting(
-                setting: "aspectRatio",
+            warnings.append(.unsupported(
+                feature: "aspectRatio",
                 details: "This model does not support the `aspectRatio` option."
             ))
         }

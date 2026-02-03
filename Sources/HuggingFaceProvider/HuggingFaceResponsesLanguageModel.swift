@@ -150,23 +150,23 @@ public final class HuggingFaceResponsesLanguageModel: LanguageModelV3 {
 
     // MARK: - Argument Preparation
 
-    private func prepareArguments(options: LanguageModelV3CallOptions) async throws -> (body: [String: JSONValue], warnings: [LanguageModelV3CallWarning]) {
-        var warnings: [LanguageModelV3CallWarning] = []
+    private func prepareArguments(options: LanguageModelV3CallOptions) async throws -> (body: [String: JSONValue], warnings: [SharedV3Warning]) {
+        var warnings: [SharedV3Warning] = []
 
         if options.topK != nil {
-            warnings.append(.unsupportedSetting(setting: "topK", details: nil))
+            warnings.append(.unsupported(feature: "topK", details: nil))
         }
         if options.seed != nil {
-            warnings.append(.unsupportedSetting(setting: "seed", details: nil))
+            warnings.append(.unsupported(feature: "seed", details: nil))
         }
         if options.presencePenalty != nil {
-            warnings.append(.unsupportedSetting(setting: "presencePenalty", details: nil))
+            warnings.append(.unsupported(feature: "presencePenalty", details: nil))
         }
         if options.frequencyPenalty != nil {
-            warnings.append(.unsupportedSetting(setting: "frequencyPenalty", details: nil))
+            warnings.append(.unsupported(feature: "frequencyPenalty", details: nil))
         }
         if options.stopSequences != nil {
-            warnings.append(.unsupportedSetting(setting: "stopSequences", details: nil))
+            warnings.append(.unsupported(feature: "stopSequences", details: nil))
         }
 
         let converted = try convertToHuggingFaceResponsesMessages(prompt: options.prompt)

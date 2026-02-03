@@ -5,7 +5,7 @@ import AISDKProviderUtils
 struct OpenAIResponsesPreparedTools: Sendable {
     let tools: [JSONValue]?
     let toolChoice: JSONValue?
-    let warnings: [LanguageModelV3CallWarning]
+    let warnings: [SharedV3Warning]
 }
 
 func prepareOpenAIResponsesTools(
@@ -16,7 +16,7 @@ func prepareOpenAIResponsesTools(
         return OpenAIResponsesPreparedTools(tools: nil, toolChoice: nil, warnings: [])
     }
 
-    var warnings: [LanguageModelV3CallWarning] = []
+    var warnings: [SharedV3Warning] = []
     var openAITools: [JSONValue] = []
 
     for tool in tools {
@@ -276,7 +276,7 @@ func prepareOpenAIResponsesTools(
                 openAITools.append(.object(payload))
 
             default:
-                warnings.append(.unsupportedTool(tool: .providerDefined(providerTool), details: nil))
+                warnings.append(.unsupported(feature: "provider-defined tool \(providerTool.id)", details: nil))
             }
         }
     }

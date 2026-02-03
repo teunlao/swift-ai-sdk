@@ -4,9 +4,9 @@ import AISDKProviderUtils
 
 /// Converts AI SDK prompts to the xAI wire format.
 /// Mirrors `packages/xai/src/convert-to-xai-chat-messages.ts`.
-func convertToXAIChatMessages(_ prompt: LanguageModelV3Prompt) throws -> (messages: XAIChatPrompt, warnings: [LanguageModelV3CallWarning]) {
+func convertToXAIChatMessages(_ prompt: LanguageModelV3Prompt) throws -> (messages: XAIChatPrompt, warnings: [SharedV3Warning]) {
     var messages: XAIChatPrompt = []
-    let warnings: [LanguageModelV3CallWarning] = []
+    let warnings: [SharedV3Warning] = []
 
     for message in prompt {
         switch message {

@@ -50,7 +50,7 @@ public enum SingleRequestTextStreamPart: Sendable {
 
     case source(Source)
     case file(GeneratedFile)
-    case streamStart(warnings: [LanguageModelV3CallWarning])
+    case streamStart(warnings: [SharedV3Warning])
     case responseMetadata(id: String?, timestamp: Date?, modelId: String?)
     case finish(
         finishReason: FinishReason,

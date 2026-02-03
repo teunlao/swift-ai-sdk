@@ -160,15 +160,15 @@ private final class StreamTextLogEncoder {
 
 // MARK: - Helpers
 
-private extension LanguageModelV3CallWarning {
+private extension SharedV3Warning {
     func codeDescription() -> String {
         switch self {
-        case let .unsupportedSetting(setting, details):
-            if let details { return "unsupported-setting(\(setting)): \(details)" }
-            return "unsupported-setting(\(setting))"
-        case let .unsupportedTool(tool, details):
-            if let details { return "unsupported-tool(\(tool)): \(details)" }
-            return "unsupported-tool(\(tool))"
+        case let .unsupported(feature, details):
+            if let details { return "unsupported(\(feature)): \(details)" }
+            return "unsupported(\(feature))"
+        case let .compatibility(feature, details):
+            if let details { return "compatibility(\(feature)): \(details)" }
+            return "compatibility(\(feature))"
         case let .other(message):
             return "other(\(message))"
         }

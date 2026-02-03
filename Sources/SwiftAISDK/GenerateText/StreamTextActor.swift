@@ -21,7 +21,7 @@ actor StreamTextActor {
     private var terminated = false
     private var onTerminate: (@Sendable () -> Void)? = nil
 
-    private var capturedWarnings: [LanguageModelV3CallWarning] = []
+    private var capturedWarnings: [SharedV3Warning] = []
     private var capturedResponseId: String?
     private var capturedModelId: String?
     private var capturedTimestamp: Date?

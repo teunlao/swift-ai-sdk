@@ -5,7 +5,7 @@ import AISDKProviderUtils
 public struct AnthropicPreparedTools: Sendable {
     public let tools: [JSONValue]?
     public let toolChoice: JSONValue?
-    public let warnings: [LanguageModelV3CallWarning]
+    public let warnings: [SharedV3Warning]
     public let betas: Set<String>
 }
 
@@ -61,7 +61,7 @@ public func prepareAnthropicTools(
     }
 
     var anthropicTools: [JSONValue] = []
-    var toolWarnings: [LanguageModelV3CallWarning] = []
+    var toolWarnings: [SharedV3Warning] = []
     var betas: Set<String> = []
 
     for tool in tools {
@@ -298,7 +298,7 @@ public func prepareAnthropicTools(
                 ]))
 
             default:
-                toolWarnings.append(.unsupportedTool(tool: .providerDefined(providerTool), details: nil))
+                toolWarnings.append(.unsupported(feature: "provider-defined tool \(providerTool.id)", details: nil))
             }
         }
     }

@@ -306,7 +306,7 @@ struct StreamTextSSEIntegrationTests {
     func sseIncludesStartStepRequestAndWarnings() async throws {
         let req = LanguageModelRequestMetadata(body: .object(["prompt": .string("hi")]))
         let warn: [CallWarning] = [
-            .unsupportedSetting(setting: "temperature", details: "not supported")
+            .unsupported(feature: "temperature", details: "not supported")
         ]
         let parts: [TextStreamPart] = [
             .start,

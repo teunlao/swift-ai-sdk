@@ -1057,9 +1057,9 @@ struct GenerateTextAdvancedTests {
     @Test("logWarnings captures warnings for single step")
     func logWarningsCapturesWarningsForSingleStep() async throws {
         try await LogWarningsTestLock.shared.withLock {
-            let expectedWarnings: [LanguageModelV3CallWarning] = [
+            let expectedWarnings: [SharedV3Warning] = [
                 .other(message: "Setting is not supported"),
-                .unsupportedSetting(setting: "temperature", details: "Temperature parameter not supported")
+                .unsupported(feature: "temperature", details: "Temperature parameter not supported")
             ]
 
             let previousLogger = AI_SDK_LOG_WARNINGS
@@ -1108,8 +1108,8 @@ struct GenerateTextAdvancedTests {
     @Test("logWarnings captures warnings per step")
     func logWarningsCapturesWarningsPerStep() async throws {
         try await LogWarningsTestLock.shared.withLock {
-            let warning1 = LanguageModelV3CallWarning.other(message: "Warning from step 1")
-            let warning2 = LanguageModelV3CallWarning.other(message: "Warning from step 2")
+            let warning1 = SharedV3Warning.other(message: "Warning from step 1")
+            let warning2 = SharedV3Warning.other(message: "Warning from step 2")
 
             let previousLogger = AI_SDK_LOG_WARNINGS
             resetLogWarningsState()

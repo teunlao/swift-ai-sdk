@@ -55,12 +55,12 @@ public final class FalSpeechModel: SpeechModelV3 {
 
     private struct PreparedRequest {
         let body: [String: JSONValue]
-        let warnings: [SpeechModelV3CallWarning]
+        let warnings: [SharedV3Warning]
         let requestBodyString: String?
     }
 
     private func prepareRequest(options: SpeechModelV3CallOptions) async throws -> PreparedRequest {
-        var warnings: [SpeechModelV3CallWarning] = []
+        var warnings: [SharedV3Warning] = []
 
         let falOptions = try await parseProviderOptions(
             provider: "fal",
@@ -81,11 +81,11 @@ public final class FalSpeechModel: SpeechModelV3 {
         }
 
         if options.language != nil {
-            warnings.append(.unsupportedSetting(setting: "language", details: "fal speech models do not support 'language'; use providerOptions.fal.language_boost instead."))
+            warnings.append(.unsupported(feature: "language", details: "fal speech models do not support 'language'; use providerOptions.fal.language_boost instead."))
         }
 
         if let output = options.outputFormat, output != "url", output != "hex" {
-            warnings.append(.unsupportedSetting(setting: "outputFormat", details: "Unsupported or unhandled outputFormat: \(output). Using 'url' instead."))
+            warnings.append(.unsupported(feature: "outputFormat", details: "Unsupported or unhandled outputFormat: \(output). Using 'url' instead."))
         }
 
         if let falOptions {

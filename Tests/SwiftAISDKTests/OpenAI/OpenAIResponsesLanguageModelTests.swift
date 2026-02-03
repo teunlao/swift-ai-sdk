@@ -191,8 +191,8 @@ struct OpenAIResponsesLanguageModelTests {
         #expect(result.warnings.count == 1)
         if result.warnings.count == 1 {
             switch result.warnings[0] {
-            case .unsupportedSetting(let setting, _):
-                #expect(setting == "topK")
+            case .unsupported(let feature, _):
+                #expect(feature == "topK")
             default:
                 Issue.record("Unexpected warning type")
             }
@@ -920,7 +920,7 @@ struct OpenAIResponsesLanguageModelTests {
         #expect(result.warnings.count == 2)
         if result.warnings.count == 2 {
             let settings = result.warnings.compactMap { warning -> String? in
-                if case let .unsupportedSetting(setting, _) = warning { return setting }
+                if case let .unsupported(feature, _) = warning { return feature }
                 return nil
             }
             #expect(settings.contains("temperature"))
@@ -1447,12 +1447,12 @@ struct OpenAIResponsesLanguageModelTests {
             )
         )
 
-        #expect(result.warnings.contains { warning in
-            if case let .unsupportedSetting(setting, _) = warning {
-                return setting == "reasoningEffort"
+        #expect(result.warnings.contains(where: { warning in
+            if case let .unsupported(feature, _) = warning {
+                return feature == "reasoningEffort"
             }
             return false
-        })
+        }))
     }
 
     @Test("doGenerate forwards instructions and include options")
@@ -3575,8 +3575,8 @@ struct OpenAIResponsesLanguageModelTests {
 
         #expect(
             result.warnings.contains(
-                .unsupportedSetting(
-                    setting: "conversation",
+                .unsupported(
+                    feature: "conversation",
                     details: "conversation and previousResponseId cannot be used together"
                 )
             )
@@ -3867,18 +3867,18 @@ struct OpenAIResponsesLanguageModelTests {
         )
 
         #expect(result.warnings.count >= 2)
-        #expect(result.warnings.contains { warning in
-            if case let .unsupportedSetting(setting, _) = warning {
-                return setting == "temperature"
+        #expect(result.warnings.contains(where: { warning in
+            if case let .unsupported(feature, _) = warning {
+                return feature == "temperature"
             }
             return false
-        })
-        #expect(result.warnings.contains { warning in
-            if case let .unsupportedSetting(setting, _) = warning {
-                return setting == "topP"
+        }))
+        #expect(result.warnings.contains(where: { warning in
+            if case let .unsupported(feature, _) = warning {
+                return feature == "topP"
             }
             return false
-        })
+        }))
 
         guard let json = decodeRequestBody(await capture.current()) else {
             Issue.record("Missing request body")
@@ -5166,11 +5166,11 @@ struct OpenAIResponsesLanguageModelTests {
 
         #expect(result.warnings.count == 1)
         if let warning = result.warnings.first {
-            if case let .unsupportedSetting(setting, details) = warning {
-                #expect(setting == "temperature")
+            if case let .unsupported(feature, details) = warning {
+                #expect(feature == "temperature")
                 #expect(details == "temperature is not supported")
             } else {
-                Issue.record("Expected unsupported-setting warning")
+                Issue.record("Expected unsupported warning")
             }
         }
     }

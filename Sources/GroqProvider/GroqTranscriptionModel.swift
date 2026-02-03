@@ -147,7 +147,7 @@ public final class GroqTranscriptionModel: TranscriptionModelV3 {
     private struct PreparedRequest {
         let body: Data
         let headers: [String: String]
-        let warnings: [TranscriptionModelV3CallWarning]
+        let warnings: [SharedV3Warning]
     }
 
     private func prepareRequest(options: TranscriptionModelV3CallOptions) async throws -> PreparedRequest {

@@ -1474,8 +1474,8 @@ struct OpenAIChatLanguageModelTests {
         // Check warnings
         #expect(result.warnings.count == 4)
         let warningSettings = result.warnings.compactMap { warning -> String? in
-            if case .unsupportedSetting(let setting, _) = warning {
-                return setting
+            if case .unsupported(let feature, _) = warning {
+                return feature
             }
             return nil
         }
@@ -2070,11 +2070,12 @@ struct OpenAIChatLanguageModelTests {
         #expect(body["model"] as? String == "gpt-4o-search-preview")
         #expect(body["temperature"] == nil)
         #expect(result.warnings.count == 1)
-        if case .unsupportedSetting(let setting, let details) = result.warnings.first {
-            #expect(setting == "temperature")
+        if let warning = result.warnings.first,
+           case .unsupported(let feature, let details) = warning {
+            #expect(feature == "temperature")
             #expect(details == "temperature is not supported for the search preview models and has been removed.")
         } else {
-            Issue.record("Expected unsupported-setting warning for temperature")
+            Issue.record("Expected unsupported warning for temperature")
         }
     }
 
@@ -2127,11 +2128,12 @@ struct OpenAIChatLanguageModelTests {
         #expect(body["model"] as? String == "gpt-4o-mini-search-preview")
         #expect(body["temperature"] == nil)
         #expect(result.warnings.count == 1)
-        if case .unsupportedSetting(let setting, let details) = result.warnings.first {
-            #expect(setting == "temperature")
+        if let warning = result.warnings.first,
+           case .unsupported(let feature, let details) = warning {
+            #expect(feature == "temperature")
             #expect(details == "temperature is not supported for the search preview models and has been removed.")
         } else {
-            Issue.record("Expected unsupported-setting warning for temperature")
+            Issue.record("Expected unsupported warning for temperature")
         }
     }
 
@@ -2184,11 +2186,12 @@ struct OpenAIChatLanguageModelTests {
         #expect(body["model"] as? String == "gpt-4o-mini-search-preview-2025-03-11")
         #expect(body["temperature"] == nil)
         #expect(result.warnings.count == 1)
-        if case .unsupportedSetting(let setting, let details) = result.warnings.first {
-            #expect(setting == "temperature")
+        if let warning = result.warnings.first,
+           case .unsupported(let feature, let details) = warning {
+            #expect(feature == "temperature")
             #expect(details == "temperature is not supported for the search preview models and has been removed.")
         } else {
-            Issue.record("Expected unsupported-setting warning for temperature")
+            Issue.record("Expected unsupported warning for temperature")
         }
     }
 
@@ -2292,11 +2295,12 @@ struct OpenAIChatLanguageModelTests {
 
         #expect(body["service_tier"] == nil)
         #expect(result.warnings.count == 1)
-        if case .unsupportedSetting(let setting, let details) = result.warnings.first {
-            #expect(setting == "serviceTier")
+        if let warning = result.warnings.first,
+           case .unsupported(let feature, let details) = warning {
+            #expect(feature == "serviceTier")
             #expect(details == "flex processing is only available for o3, o4-mini, and gpt-5 models")
         } else {
-            Issue.record("Expected unsupported-setting warning for serviceTier")
+            Issue.record("Expected unsupported warning for serviceTier")
         }
     }
 
@@ -2448,11 +2452,12 @@ struct OpenAIChatLanguageModelTests {
 
         #expect(body["service_tier"] == nil)
         #expect(result.warnings.count == 1)
-        if case .unsupportedSetting(let setting, let details) = result.warnings.first {
-            #expect(setting == "serviceTier")
+        if let warning = result.warnings.first,
+           case .unsupported(let feature, let details) = warning {
+            #expect(feature == "serviceTier")
             #expect(details == "priority processing is only available for supported models (gpt-4, gpt-5, gpt-5-mini, o3, o4-mini) and requires Enterprise access. gpt-5-nano is not supported")
         } else {
-            Issue.record("Expected unsupported-setting warning for serviceTier")
+            Issue.record("Expected unsupported warning for serviceTier")
         }
     }
 

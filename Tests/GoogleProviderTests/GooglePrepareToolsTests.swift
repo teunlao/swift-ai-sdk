@@ -152,12 +152,11 @@ struct GooglePrepareToolsTests {
         #expect(prepared.toolConfig == nil)
         #expect(prepared.toolWarnings.count == 1)
 
-        if case let .unsupportedTool(unsupportedTool, _) = prepared.toolWarnings[0],
-           case let .providerDefined(providerTool) = unsupportedTool {
-            #expect(providerTool.id == "unsupported.tool")
-            #expect(providerTool.name == "unsupported_tool")
+        if case let .unsupported(feature, details) = prepared.toolWarnings[0] {
+            #expect(feature == "provider-defined tool unsupported.tool")
+            #expect(details == nil)
         } else {
-            Issue.record("Expected unsupported-tool warning")
+            Issue.record("Expected unsupported warning")
         }
     }
 
@@ -322,11 +321,11 @@ struct GooglePrepareToolsTests {
 
         // Should have warning about mixed tool types
         #expect(prepared.toolWarnings.count == 1)
-        if case let .unsupportedTool(unsupportedTool, details) = prepared.toolWarnings[0],
-           case .function = unsupportedTool {
-            #expect(details == "Cannot mix function tools with provider-defined tools in the same request. Please use either function tools or provider-defined tools, but not both.")
+        if case let .unsupported(feature, details) = prepared.toolWarnings[0] {
+            #expect(feature == "combination of function and provider-defined tools")
+            #expect(details == nil)
         } else {
-            Issue.record("Expected unsupported-tool warning for function tool")
+            Issue.record("Expected unsupported warning for mixed tool types")
         }
     }
 
@@ -391,10 +390,12 @@ struct GooglePrepareToolsTests {
             modelId: GoogleGenerativeAIModelId(rawValue: "gemini-pro")
         )
 
-        #expect(prepared.toolWarnings.contains { warning in
-            if case .unsupportedTool = warning { return true }
+        #expect(prepared.toolWarnings.contains(where: { warning in
+            if case let .unsupported(feature, _) = warning {
+                return feature == "combination of function and provider-defined tools"
+            }
             return false
-        })
+        }))
     }
 
     @Test("maps provider-defined google search with dynamic retrieval")

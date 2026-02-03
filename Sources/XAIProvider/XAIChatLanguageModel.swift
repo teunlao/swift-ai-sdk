@@ -15,7 +15,7 @@ public final class XAIChatLanguageModel: LanguageModelV3 {
 
     private struct PreparedRequest {
         let body: [String: JSONValue]
-        let warnings: [LanguageModelV3CallWarning]
+        let warnings: [SharedV3Warning]
         let messages: XAIChatPrompt
     }
 
@@ -261,7 +261,7 @@ public final class XAIChatLanguageModel: LanguageModelV3 {
     // MARK: - Preparation
 
     private func prepareRequest(options: LanguageModelV3CallOptions) async throws -> PreparedRequest {
-        var warnings: [LanguageModelV3CallWarning] = []
+        var warnings: [SharedV3Warning] = []
 
         let providerOptions = try await parseProviderOptions(
             provider: "xai",
@@ -270,20 +270,16 @@ public final class XAIChatLanguageModel: LanguageModelV3 {
         )
 
         if options.topK != nil {
-            warnings.append(.unsupportedSetting(setting: "topK", details: nil))
+            warnings.append(.unsupported(feature: "topK", details: nil))
         }
         if options.frequencyPenalty != nil {
-            warnings.append(.unsupportedSetting(setting: "frequencyPenalty", details: nil))
+            warnings.append(.unsupported(feature: "frequencyPenalty", details: nil))
         }
         if options.presencePenalty != nil {
-            warnings.append(.unsupportedSetting(setting: "presencePenalty", details: nil))
+            warnings.append(.unsupported(feature: "presencePenalty", details: nil))
         }
         if options.stopSequences != nil {
-            warnings.append(.unsupportedSetting(setting: "stopSequences", details: nil))
-        }
-
-        if case let .json(schema, _, _) = options.responseFormat, schema != nil {
-            warnings.append(.unsupportedSetting(setting: "responseFormat", details: "JSON response format schema is not supported"))
+            warnings.append(.unsupported(feature: "stopSequences", details: nil))
         }
 
         let conversion = try convertToXAIChatMessages(options.prompt)

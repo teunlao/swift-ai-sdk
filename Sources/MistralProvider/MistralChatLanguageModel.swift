@@ -20,7 +20,7 @@ public final class MistralChatLanguageModel: LanguageModelV3 {
 
     private struct PreparedRequest {
         let body: [String: JSONValue]
-        let warnings: [LanguageModelV3CallWarning]
+        let warnings: [SharedV3Warning]
     }
 
     private let modelIdentifier: MistralChatModelId
@@ -264,7 +264,7 @@ public final class MistralChatLanguageModel: LanguageModelV3 {
     // MARK: - Request Preparation
 
     private func prepareRequest(options: LanguageModelV3CallOptions, stream: Bool) async throws -> PreparedRequest {
-        var warnings: [LanguageModelV3CallWarning] = []
+        var warnings: [SharedV3Warning] = []
 
         let mistralOptions = try await parseProviderOptions(
             provider: "mistral",
@@ -279,16 +279,16 @@ public final class MistralChatLanguageModel: LanguageModelV3 {
         }
 
         if options.topK != nil {
-            warnings.append(.unsupportedSetting(setting: "topK", details: nil))
+            warnings.append(.unsupported(feature: "topK", details: nil))
         }
         if options.frequencyPenalty != nil {
-            warnings.append(.unsupportedSetting(setting: "frequencyPenalty", details: nil))
+            warnings.append(.unsupported(feature: "frequencyPenalty", details: nil))
         }
         if options.presencePenalty != nil {
-            warnings.append(.unsupportedSetting(setting: "presencePenalty", details: nil))
+            warnings.append(.unsupported(feature: "presencePenalty", details: nil))
         }
         if options.stopSequences != nil {
-            warnings.append(.unsupportedSetting(setting: "stopSequences", details: nil))
+            warnings.append(.unsupported(feature: "stopSequences", details: nil))
         }
 
         let preparedTools = prepareMistralTools(

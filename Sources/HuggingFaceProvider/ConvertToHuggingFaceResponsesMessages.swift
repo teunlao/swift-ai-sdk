@@ -10,14 +10,14 @@ import AISDKProvider
 
 struct HuggingFaceConvertedMessages {
     let input: JSONValue
-    let warnings: [LanguageModelV3CallWarning]
+    let warnings: [SharedV3Warning]
 }
 
 func convertToHuggingFaceResponsesMessages(
     prompt: LanguageModelV3Prompt
 ) throws -> HuggingFaceConvertedMessages {
     var messages: [JSONValue] = []
-    var warnings: [LanguageModelV3CallWarning] = []
+    var warnings: [SharedV3Warning] = []
 
     for message in prompt {
         switch message {
@@ -99,7 +99,7 @@ func convertToHuggingFaceResponsesMessages(
             }
 
         case .tool:
-            warnings.append(.unsupportedSetting(setting: "tool messages", details: nil))
+            warnings.append(.unsupported(feature: "tool messages", details: nil))
         }
     }
 

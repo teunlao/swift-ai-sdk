@@ -162,7 +162,7 @@ public final class GatewayLanguageModel: LanguageModelV3 {
         ]
     }
 
-    private func prepareArguments(options: LanguageModelV3CallOptions) async throws -> (body: JSONValue, warnings: [LanguageModelV3CallWarning]) {
+    private func prepareArguments(options: LanguageModelV3CallOptions) async throws -> (body: JSONValue, warnings: [SharedV3Warning]) {
         let encodedOptions = encodeFileParts(in: options)
         let requestBody = GatewayLanguageModelRequestBody(options: encodedOptions)
         let encoder = JSONEncoder()
