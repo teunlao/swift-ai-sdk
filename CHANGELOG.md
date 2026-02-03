@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-02-03
+
+### Changed
+- BREAKING: rename LanguageModel V3 "provider-defined tools" to "provider tools" (upstream parity).
+  - `LanguageModelV3ProviderDefinedTool` → `LanguageModelV3ProviderTool`
+  - `LanguageModelV3Tool.providerDefined(...)` → `.provider(...)`
+  - `ToolType.providerDefined` → `ToolType.provider`
+  - `createProviderDefinedToolFactory*` → `createProviderToolFactory*`
+
+### Added
+- Tools: support `inputExamples` (tool input examples) and add middleware to inject examples into tool definitions.
+- Anthropic: enable `input_examples` and the `advanced-tool-use-2025-11-20` beta automatically when tool input examples are provided.
+
+### Fixed
+- streamText: apply `prepareStep` on multi-step streaming.
+- Middleware: stabilize JSON formatting for tool input examples to avoid nondeterministic output.
+
 ## [0.8.4] - 2026-02-02
 
 ### Added
