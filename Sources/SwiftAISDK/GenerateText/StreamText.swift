@@ -70,6 +70,8 @@ struct StreamTextStepPreparation {
     let messages: [ModelMessage]
     let toolChoice: ToolChoice?
     let activeTools: [String]?
+    let providerOptions: ProviderOptions?
+    let experimentalContext: JSONValue?
 }
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
@@ -79,7 +81,9 @@ private func makeStreamTextStepPreparation(
     defaultResolvedModel: any LanguageModelV3,
     steps: [StepResult],
     stepNumber: Int,
-    inputMessages: [ModelMessage]
+    inputMessages: [ModelMessage],
+    providerOptions: ProviderOptions?,
+    experimentalContext: JSONValue?
 ) async throws -> StreamTextStepPreparation {
     var modelArg = baseModel
     var resolvedModel: any LanguageModelV3 = defaultResolvedModel
@@ -87,16 +91,20 @@ private func makeStreamTextStepPreparation(
     var messages = inputMessages
     var toolChoice: ToolChoice? = nil
     var activeTools: [String]? = nil
+    var stepProviderOptions = providerOptions
+    var stepExperimentalContext = experimentalContext
 
     if let prepareStep {
         let options = PrepareStepOptions(
             steps: steps,
             stepNumber: stepNumber,
             model: baseModel,
-            messages: inputMessages
+            messages: inputMessages,
+            experimentalContext: experimentalContext
         )
 
         if let result = try await prepareStep(options) {
+            stepExperimentalContext = result.experimentalContext ?? stepExperimentalContext
             if let newModel = result.model {
                 modelArg = newModel
                 resolvedModel = try resolveLanguageModel(newModel)
@@ -113,6 +121,7 @@ private func makeStreamTextStepPreparation(
             if let overrideActiveTools = result.activeTools {
                 activeTools = overrideActiveTools
             }
+            stepProviderOptions = mergeProviderOptions(stepProviderOptions, result.providerOptions)
         }
     }
 
@@ -122,7 +131,9 @@ private func makeStreamTextStepPreparation(
         system: systemOverride,
         messages: messages,
         toolChoice: toolChoice,
-        activeTools: activeTools
+        activeTools: activeTools,
+        providerOptions: stepProviderOptions,
+        experimentalContext: stepExperimentalContext
     )
 }
 
@@ -845,6 +856,10 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
 
     func _setProviderCancel(_ cancel: @escaping @Sendable () -> Void) async {
         await actor.setOnTerminate(cancel)
+    }
+
+    func _setExperimentalContext(_ value: JSONValue?) async {
+        await actor.setExperimentalContext(value)
     }
 
     func _appendInitialResponseMessages(_ messages: [ResponseMessage]) async {
@@ -1599,8 +1614,12 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
                     defaultResolvedModel: defaultResolvedModel,
                     steps: [],
                     stepNumber: 0,
-                    inputMessages: conversationMessages
+                    inputMessages: conversationMessages,
+                    providerOptions: providerOptions,
+                    experimentalContext: experimentalContext
                 )
+
+                await result._setExperimentalContext(stepPreparation.experimentalContext)
 
                 let promptForProvider = StandardizedPrompt(
                     system: stepPreparation.system ?? standardizedPrompt.system,
@@ -1638,7 +1657,7 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
                     includeRawChunks: actorConfig.includeRawChunks ? true : nil,
                     abortSignal: actorConfig.abortSignal,
                     headers: actorConfig.headers,
-                    providerOptions: actorConfig.providerOptions
+                    providerOptions: stepPreparation.providerOptions
                 )
 
                 let doStreamAttributeInputs = buildStreamTextDoStreamTelemetryAttributes(

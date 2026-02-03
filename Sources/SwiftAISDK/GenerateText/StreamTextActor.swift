@@ -5,7 +5,7 @@ import Foundation
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 actor StreamTextActor {
     private let source: AsyncThrowingStream<LanguageModelV3StreamPart, Error>
-    private let model: any LanguageModelV3
+    private var model: any LanguageModelV3
     private var initialMessages: [ModelMessage]
     private let initialSystem: String?
     private let stopConditions: [StopCondition]
@@ -46,7 +46,7 @@ actor StreamTextActor {
     private var activeToolNames: [String: String] = [:]     // toolCallId -> tool name
 
     private let approvalResolver: (@Sendable (ToolApprovalRequestOutput) async -> ApprovalAction)?
-    private let approvalContext: JSONValue?
+    private var experimentalContext: JSONValue?
 
     private struct PendingApproval: Sendable {
         let toolCallId: String
@@ -85,10 +85,14 @@ actor StreamTextActor {
         self.tools = tools
         self.configuration = configuration
         self.approvalResolver = approvalResolver
-        self.approvalContext = experimentalApprovalContext
+        self.experimentalContext = experimentalApprovalContext
         self.totalUsagePromise = totalUsagePromise
         self.finishReasonPromise = finishReasonPromise
         self.stepsPromise = stepsPromise
+    }
+
+    func setExperimentalContext(_ value: JSONValue?) {
+        experimentalContext = value
     }
 
     func textStream() async -> AsyncThrowingStream<String, Error> {
@@ -130,17 +134,48 @@ actor StreamTextActor {
                 if externalStopRequested { break }
                 let continueStreaming = await shouldStartAnotherStep()
                 if !continueStreaming { break }
-                let nextMessages = makeConversationMessagesForContinuation()
-                let lmPrompt = try await buildLanguageModelPrompt(messages: nextMessages)
+                let stepInputMessages = makeConversationMessagesForContinuation()
+                let stepNumber = recordedSteps.count
+
+                var stepModelArg: LanguageModel = configuration.baseModel
+                var stepSystem = initialSystem
+                var stepMessages = stepInputMessages
+                var stepToolChoice = configuration.toolChoice
+                var stepActiveTools = configuration.activeTools
+                var stepProviderOptions = configuration.providerOptions
+
+                if let prepareStep = configuration.prepareStep {
+                    let options = PrepareStepOptions(
+                        steps: recordedSteps,
+                        stepNumber: stepNumber,
+                        model: configuration.baseModel,
+                        messages: stepInputMessages,
+                        experimentalContext: experimentalContext
+                    )
+
+                    if let result = try await prepareStep(options) {
+                        experimentalContext = result.experimentalContext ?? experimentalContext
+                        stepModelArg = result.model ?? stepModelArg
+                        stepSystem = result.system ?? stepSystem
+                        stepMessages = result.messages ?? stepMessages
+                        stepToolChoice = result.toolChoice ?? stepToolChoice
+                        stepActiveTools = result.activeTools ?? stepActiveTools
+                        stepProviderOptions = mergeProviderOptions(stepProviderOptions, result.providerOptions)
+                    }
+                }
+
+                self.model = try resolveLanguageModel(stepModelArg)
+                let lmPrompt = try await buildLanguageModelPrompt(system: stepSystem, messages: stepMessages)
                 let toolPreparation = try await prepareToolsAndToolChoice(
                     tools: tools,
-                    toolChoice: configuration.toolChoice,
-                    activeTools: configuration.activeTools
+                    toolChoice: stepToolChoice,
+                    activeTools: stepActiveTools
                 )
                 let options = try await makeCallOptions(
                     prompt: lmPrompt,
                     tools: toolPreparation.tools,
-                    toolChoice: toolPreparation.toolChoice
+                    toolChoice: toolPreparation.toolChoice,
+                    providerOptions: stepProviderOptions
                 )
                 let result = try await configuration.preparedRetries.retry.call { [self] in
                     try await self.model.doStream(options: options)
@@ -200,7 +235,7 @@ actor StreamTextActor {
                     ToolCallApprovalOptions(
                         toolCallId: callId,
                         messages: currentMessagesForApproval(),
-                        experimentalContext: approvalContext
+                        experimentalContext: experimentalContext
                     )
                 )
             } catch {
@@ -417,7 +452,7 @@ actor StreamTextActor {
             toolCallId: pending.toolCallId,
             messages: currentMessagesForApproval(),
             abortSignal: nil,
-            experimentalContext: approvalContext
+            experimentalContext: experimentalContext
         )
         do {
             let result = try await execute(pending.input, options)
@@ -442,8 +477,8 @@ actor StreamTextActor {
     /// - Respects provider `supportedUrls` (URLs left as references when supported)
     /// - Parameter messages: Conversation messages to include (system is injected automatically)
     /// - Returns: A LanguageModelV3Prompt ready for `doStream`
-    private func buildLanguageModelPrompt(messages: [ModelMessage]) async throws -> LanguageModelV3Prompt {
-        let standardized = StandardizedPrompt(system: initialSystem, messages: messages)
+    private func buildLanguageModelPrompt(system: String?, messages: [ModelMessage]) async throws -> LanguageModelV3Prompt {
+        let standardized = StandardizedPrompt(system: system, messages: messages)
         let supported = try await model.supportedUrls
         let prompt = try await convertToLanguageModelPrompt(
             prompt: standardized,
@@ -747,7 +782,7 @@ case let .toolInputStart(id, toolName, providerMetadata, providerExecuted, dynam
                         toolCallId: id,
                         messages: messagesForInput,
                         abortSignal: configuration.abortSignal,
-                        experimentalContext: approvalContext
+                        experimentalContext: experimentalContext
                     )
                     try await onInputStart(options)
                 }
@@ -787,7 +822,7 @@ case let .toolInputStart(id, toolName, providerMetadata, providerExecuted, dynam
                         toolCallId: id,
                         messages: currentMessagesForApproval(),
                         abortSignal: configuration.abortSignal,
-                        experimentalContext: approvalContext
+                        experimentalContext: experimentalContext
                     )
                     try await onInputDelta(options)
                 }
@@ -849,7 +884,7 @@ case let .toolInputStart(id, toolName, providerMetadata, providerExecuted, dynam
                         toolCallId: typed.toolCallId,
                         messages: approvalMessages,
                         abortSignal: configuration.abortSignal,
-                        experimentalContext: approvalContext
+                        experimentalContext: experimentalContext
                     )
                     do {
                         try await onInputAvailable(options)
@@ -1193,7 +1228,8 @@ case let .toolInputStart(id, toolName, providerMetadata, providerExecuted, dynam
     private func makeCallOptions(
         prompt: LanguageModelV3Prompt,
         tools: [LanguageModelV3Tool]?,
-        toolChoice: LanguageModelV3ToolChoice?
+        toolChoice: LanguageModelV3ToolChoice?,
+        providerOptions: ProviderOptions?
     ) async throws -> LanguageModelV3CallOptions {
         let responseFormat = try await configuration.responseFormatProvider?()
         return LanguageModelV3CallOptions(
@@ -1212,7 +1248,7 @@ case let .toolInputStart(id, toolName, providerMetadata, providerExecuted, dynam
             includeRawChunks: configuration.includeRawChunks ? true : nil,
             abortSignal: configuration.abortSignal,
             headers: configuration.headers,
-            providerOptions: configuration.providerOptions
+            providerOptions: providerOptions ?? configuration.providerOptions
         )
     }
 }
