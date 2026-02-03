@@ -54,7 +54,8 @@ private func boolValue(_ value: JSONValue?) -> Bool? {
 public func prepareAnthropicTools(
     tools: [LanguageModelV3Tool]?,
     toolChoice: LanguageModelV3ToolChoice?,
-    disableParallelToolUse: Bool?
+    disableParallelToolUse: Bool?,
+    cacheControlValidator: CacheControlValidator? = nil
 ) async throws -> AnthropicPreparedTools {
     guard let tools, !tools.isEmpty else {
         return AnthropicPreparedTools(tools: nil, toolChoice: nil, warnings: [], betas: [])
@@ -63,6 +64,7 @@ public func prepareAnthropicTools(
     var anthropicTools: [JSONValue] = []
     var toolWarnings: [SharedV3Warning] = []
     var betas: Set<String> = []
+    let validator = cacheControlValidator ?? CacheControlValidator()
 
     for tool in tools {
         switch tool {
@@ -74,8 +76,11 @@ public func prepareAnthropicTools(
             if let description = functionTool.description {
                 payload["description"] = .string(description)
             }
-            if let cacheControl = getAnthropicCacheControl(from: functionTool.providerOptions),
-               let cacheJSON = cacheControlJSON(from: cacheControl) {
+            let cacheControl = validator.getCacheControl(
+                functionTool.providerOptions,
+                context: CacheControlContext(type: "tool definition", canCache: true)
+            )
+            if let cacheJSON = cacheControlJSON(from: cacheControl) {
                 payload["cache_control"] = cacheJSON
             }
             if let anthropicOptions = functionTool.providerOptions?["anthropic"] {

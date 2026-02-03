@@ -467,6 +467,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
         let usesJsonResponseTool = jsonResponseTool != nil
         let contextManagement = anthropicOptions?.contextManagement
         let toolStreaming = anthropicOptions?.toolStreaming ?? true
+        let cacheControlValidator = CacheControlValidator()
 
         let toolNameMapping = AnthropicToolNameMapping.create(
             tools: options.tools,
@@ -495,7 +496,8 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
             prompt: options.prompt,
             sendReasoning: anthropicOptions?.sendReasoning ?? true,
             toolNameMapping: toolNameMapping,
-            warnings: &conversionWarnings
+            warnings: &conversionWarnings,
+            cacheControlValidator: cacheControlValidator
         )
         warnings = conversionWarnings
 
@@ -756,10 +758,12 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                 ? (options.tools ?? []) + [.function(jsonResponseTool!)]
                 : options.tools,
             toolChoice: jsonResponseTool != nil ? .required : options.toolChoice,
-            disableParallelToolUse: jsonResponseTool != nil ? true : anthropicOptions?.disableParallelToolUse
+            disableParallelToolUse: jsonResponseTool != nil ? true : anthropicOptions?.disableParallelToolUse,
+            cacheControlValidator: cacheControlValidator
         )
 
         warnings.append(contentsOf: preparedTools.warnings)
+        warnings.append(contentsOf: cacheControlValidator.getWarnings())
         betas.formUnion(preparedTools.betas)
 
         if let tools = preparedTools.tools {

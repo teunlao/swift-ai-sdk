@@ -86,6 +86,58 @@ struct AnthropicPrepareToolsBasicTests {
         #expect(result.tools == [expected])
     }
 
+    @Test("limits cache breakpoints to 4")
+    func limitsCacheBreakpointsTo4() async throws {
+        let cacheOptions: SharedV3ProviderOptions = [
+            "anthropic": [
+                "cacheControl": .object(["type": .string("ephemeral")])
+            ]
+        ]
+
+        let cacheControlValidator = CacheControlValidator()
+
+        let tools: [LanguageModelV3Tool] = [
+            makeFunctionTool(name: "tool1", description: "Test 1", schema: .object([:]), providerOptions: cacheOptions),
+            makeFunctionTool(name: "tool2", description: "Test 2", schema: .object([:]), providerOptions: cacheOptions),
+            makeFunctionTool(name: "tool3", description: "Test 3", schema: .object([:]), providerOptions: cacheOptions),
+            makeFunctionTool(name: "tool4", description: "Test 4", schema: .object([:]), providerOptions: cacheOptions),
+            makeFunctionTool(name: "tool5", description: "Test 5 (should be rejected)", schema: .object([:]), providerOptions: cacheOptions),
+        ]
+
+        let result = try await prepareAnthropicTools(
+            tools: tools,
+            toolChoice: nil,
+            disableParallelToolUse: nil,
+            cacheControlValidator: cacheControlValidator
+        )
+
+        guard let prepared = result.tools, prepared.count == 5 else {
+            Issue.record("Expected 5 prepared tools")
+            return
+        }
+
+        for i in 0..<4 {
+            if case let .object(tool) = prepared[i] {
+                #expect(tool["cache_control"] == .object(["type": .string("ephemeral")]))
+            } else {
+                Issue.record("Expected tool \(i) to be an object")
+            }
+        }
+
+        if case let .object(tool5) = prepared[4] {
+            #expect(tool5["cache_control"] == nil)
+        } else {
+            Issue.record("Expected 5th tool to be an object")
+        }
+
+        #expect(cacheControlValidator.getWarnings() == [
+            .unsupported(
+                feature: "cacheControl breakpoint limit",
+                details: "Maximum 4 cache breakpoints exceeded (found 5). This breakpoint will be ignored."
+            )
+        ])
+    }
+
     @Test("supports defer_loading for function tools")
     func supportsDeferLoading() async throws {
         let options: SharedV3ProviderOptions = [

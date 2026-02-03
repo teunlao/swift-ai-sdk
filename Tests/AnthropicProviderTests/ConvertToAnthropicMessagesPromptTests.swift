@@ -734,6 +734,151 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
             Issue.record("Expected web fetch tool result object")
         }
     }
+
+    @Test("rejects cache_control on thinking blocks")
+    func rejectsCacheControlOnThinkingBlocks() async throws {
+        var warnings: [SharedV3Warning] = []
+        let cacheControlValidator = CacheControlValidator()
+
+        let reasoningPart = LanguageModelV3MessagePart.reasoning(
+            .init(
+                text: "thinking content",
+                providerOptions: anthropicOptions([
+                    "signature": .string("test-sig"),
+                    "cacheControl": .object(["type": .string("ephemeral")]),
+                ])
+            )
+        )
+
+        let result = try await convertToAnthropicMessagesPrompt(
+            prompt: [
+                .assistant(content: [reasoningPart], providerOptions: nil)
+            ],
+            sendReasoning: true,
+            warnings: &warnings,
+            cacheControlValidator: cacheControlValidator
+        )
+
+        #expect(warnings.isEmpty)
+
+        if case let .object(first)? = result.prompt.messages.first?.content.first {
+            #expect(first["cache_control"] == nil)
+        } else {
+            Issue.record("Expected first assistant content object")
+        }
+
+        #expect(cacheControlValidator.getWarnings() == [
+            .unsupported(
+                feature: "cache_control on non-cacheable context",
+                details: "cache_control cannot be set on thinking block. It will be ignored."
+            )
+        ])
+    }
+
+    @Test("rejects cache_control on redacted thinking blocks")
+    func rejectsCacheControlOnRedactedThinkingBlocks() async throws {
+        var warnings: [SharedV3Warning] = []
+        let cacheControlValidator = CacheControlValidator()
+
+        let reasoningPart = LanguageModelV3MessagePart.reasoning(
+            .init(
+                text: "redacted",
+                providerOptions: anthropicOptions([
+                    "redactedData": .string("abc123"),
+                    "cacheControl": .object(["type": .string("ephemeral")]),
+                ])
+            )
+        )
+
+        let result = try await convertToAnthropicMessagesPrompt(
+            prompt: [
+                .assistant(content: [reasoningPart], providerOptions: nil)
+            ],
+            sendReasoning: true,
+            warnings: &warnings,
+            cacheControlValidator: cacheControlValidator
+        )
+
+        #expect(warnings.isEmpty)
+
+        if case let .object(first)? = result.prompt.messages.first?.content.first {
+            #expect(first["cache_control"] == nil)
+        } else {
+            Issue.record("Expected first assistant content object")
+        }
+
+        #expect(cacheControlValidator.getWarnings() == [
+            .unsupported(
+                feature: "cache_control on non-cacheable context",
+                details: "cache_control cannot be set on redacted thinking block. It will be ignored."
+            )
+        ])
+    }
+}
+
+@Suite("convertToAnthropicMessagesPrompt cache control breakpoint limit")
+struct ConvertToAnthropicMessagesPromptCacheControlBreakpointTests {
+    @Test("limits cache breakpoints to 4")
+    func limitsCacheBreakpointsTo4() async throws {
+        var warnings: [SharedV3Warning] = []
+        let cacheControlValidator = CacheControlValidator()
+        let cacheOptions = anthropicOptions([
+            "cacheControl": .object(["type": .string("ephemeral")])
+        ])
+
+        let result = try await convertToAnthropicMessagesPrompt(
+            prompt: [
+                .system(content: "system 1", providerOptions: cacheOptions),
+                .system(content: "system 2", providerOptions: cacheOptions),
+                .user(content: [.text(.init(text: "user 1", providerOptions: cacheOptions))], providerOptions: nil),
+                .assistant(content: [.text(.init(text: "assistant 1", providerOptions: cacheOptions))], providerOptions: nil),
+                .user(content: [.text(.init(text: "user 2 (should be rejected)", providerOptions: cacheOptions))], providerOptions: nil),
+            ],
+            sendReasoning: true,
+            warnings: &warnings,
+            cacheControlValidator: cacheControlValidator
+        )
+
+        #expect(warnings.isEmpty)
+
+        if let system = result.prompt.system, system.count == 2 {
+            if case let .object(first) = system[0] {
+                #expect(first["cache_control"] == .object(["type": .string("ephemeral")]))
+            }
+            if case let .object(second) = system[1] {
+                #expect(second["cache_control"] == .object(["type": .string("ephemeral")]))
+            }
+        } else {
+            Issue.record("Expected 2 system blocks")
+        }
+
+        #expect(result.prompt.messages.count == 3)
+
+        if case let .object(user1)? = result.prompt.messages.first?.content.first {
+            #expect(user1["cache_control"] == .object(["type": .string("ephemeral")]))
+        } else {
+            Issue.record("Expected first user content object")
+        }
+
+        if case let .object(assistant1)? = result.prompt.messages.dropFirst().first?.content.first {
+            #expect(assistant1["cache_control"] == .object(["type": .string("ephemeral")]))
+        } else {
+            Issue.record("Expected first assistant content object")
+        }
+
+        if case let .object(user2)? = result.prompt.messages.dropFirst(2).first?.content.first {
+            #expect(user2["cache_control"] == nil)
+        } else {
+            Issue.record("Expected second user content object")
+        }
+
+        #expect(cacheControlValidator.getWarnings() == [
+            .unsupported(
+                feature: "cacheControl breakpoint limit",
+                details: "Maximum 4 cache breakpoints exceeded (found 5). This breakpoint will be ignored."
+            )
+        ])
+    }
 }
 
 // MARK: - Miscellaneous Cases

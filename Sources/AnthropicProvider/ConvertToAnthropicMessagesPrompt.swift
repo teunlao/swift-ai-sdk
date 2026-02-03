@@ -11,7 +11,8 @@ func convertToAnthropicMessagesPrompt(
     prompt: LanguageModelV3Prompt,
     sendReasoning: Bool,
     toolNameMapping: AnthropicToolNameMapping = .init(),
-    warnings: inout [SharedV3Warning]
+    warnings: inout [SharedV3Warning],
+    cacheControlValidator: CacheControlValidator? = nil
 ) async throws -> AnthropicPromptConversionResult {
     let blocks = groupIntoAnthropicBlocks(prompt)
 
@@ -19,6 +20,7 @@ func convertToAnthropicMessagesPrompt(
     var messages: [AnthropicMessage] = []
     var betas = Set<String>()
     var mcpToolUseIds = Set<String>()
+    let validator = cacheControlValidator ?? CacheControlValidator()
 
     for (blockIndex, block) in blocks.enumerated() {
         let isLastBlock = blockIndex == blocks.count - 1
@@ -38,8 +40,12 @@ func convertToAnthropicMessagesPrompt(
                     "type": .string("text"),
                     "text": .string(text)
                 ]
-                if let cacheControl = cacheControlJSON(from: getAnthropicCacheControl(from: providerOptions)) {
-                    payload["cache_control"] = cacheControl
+                let cacheControl = validator.getCacheControl(
+                    providerOptions,
+                    context: CacheControlContext(type: "system message", canCache: true)
+                )
+                if let cacheControlJSON = cacheControlJSON(from: cacheControl) {
+                    payload["cache_control"] = cacheControlJSON
                 }
                 aggregated.append(.object(payload))
             }
@@ -56,7 +62,8 @@ func convertToAnthropicMessagesPrompt(
                         parts,
                         messageProviderOptions: providerOptions,
                         anthropicContent: &content,
-                        betas: &betas
+                        betas: &betas,
+                        cacheControlValidator: validator
                     )
                 case let .tool(parts, providerOptions):
                     try await appendToolMessageParts(
@@ -64,6 +71,7 @@ func convertToAnthropicMessagesPrompt(
                         messageProviderOptions: providerOptions,
                         anthropicContent: &content,
                         betas: &betas,
+                        cacheControlValidator: validator,
                         warnings: &warnings
                     )
                 default:
@@ -90,6 +98,7 @@ func convertToAnthropicMessagesPrompt(
                     mcpToolUseIds: &mcpToolUseIds,
                     sendReasoning: sendReasoning,
                     toolNameMapping: toolNameMapping,
+                    cacheControlValidator: validator,
                     warnings: &warnings
                 )
             }
@@ -146,14 +155,25 @@ private func appendUserMessageParts(
     _ parts: [LanguageModelV3UserMessagePart],
     messageProviderOptions: SharedV3ProviderOptions?,
     anthropicContent: inout [JSONValue],
-    betas: inout Set<String>
+    betas: inout Set<String>,
+    cacheControlValidator: CacheControlValidator
 ) async throws {
     for (index, part) in parts.enumerated() {
         let isLastPart = index == parts.count - 1
 
         switch part {
         case .text(let textPart):
-            let cacheControl = getAnthropicCacheControl(from: textPart.providerOptions) ?? (isLastPart ? getAnthropicCacheControl(from: messageProviderOptions) : nil)
+            let cacheControl =
+                cacheControlValidator.getCacheControl(
+                    textPart.providerOptions,
+                    context: CacheControlContext(type: "user message part", canCache: true)
+                )
+                ?? (isLastPart
+                    ? cacheControlValidator.getCacheControl(
+                        messageProviderOptions,
+                        context: CacheControlContext(type: "user message", canCache: true)
+                    )
+                    : nil)
             let cacheControlJSON = cacheControlJSON(from: cacheControl)
 
             var payload: [String: JSONValue] = [
@@ -164,7 +184,17 @@ private func appendUserMessageParts(
             anthropicContent.append(.object(payload))
 
         case .file(let filePart):
-            let cacheControl = getAnthropicCacheControl(from: filePart.providerOptions) ?? (isLastPart ? getAnthropicCacheControl(from: messageProviderOptions) : nil)
+            let cacheControl =
+                cacheControlValidator.getCacheControl(
+                    filePart.providerOptions,
+                    context: CacheControlContext(type: "user message part", canCache: true)
+                )
+                ?? (isLastPart
+                    ? cacheControlValidator.getCacheControl(
+                        messageProviderOptions,
+                        context: CacheControlContext(type: "user message", canCache: true)
+                    )
+                    : nil)
             let cacheControlJSON = cacheControlJSON(from: cacheControl)
             try await appendUserFile(
                 filePart,
@@ -307,6 +337,7 @@ private func appendToolMessageParts(
     messageProviderOptions: SharedV3ProviderOptions?,
     anthropicContent: inout [JSONValue],
     betas: inout Set<String>,
+    cacheControlValidator: CacheControlValidator,
     warnings: inout [SharedV3Warning]
 ) async throws {
     let toolResultParts: [LanguageModelV3ToolResultPart] = parts.compactMap { part in
@@ -316,7 +347,17 @@ private func appendToolMessageParts(
 
     for (index, part) in toolResultParts.enumerated() {
         let isLastPart = index == toolResultParts.count - 1
-        let cacheControl = getAnthropicCacheControl(from: part.providerOptions) ?? (isLastPart ? getAnthropicCacheControl(from: messageProviderOptions) : nil)
+        let cacheControl =
+            cacheControlValidator.getCacheControl(
+                part.providerOptions,
+                context: CacheControlContext(type: "tool result part", canCache: true)
+            )
+            ?? (isLastPart
+                ? cacheControlValidator.getCacheControl(
+                    messageProviderOptions,
+                    context: CacheControlContext(type: "tool result message", canCache: true)
+                )
+                : nil)
         let cacheControlJSON = cacheControlJSON(from: cacheControl)
 
         var payload: [String: JSONValue] = [
@@ -378,16 +419,26 @@ private func appendAssistantMessageParts(
     mcpToolUseIds: inout Set<String>,
     sendReasoning: Bool,
     toolNameMapping: AnthropicToolNameMapping,
+    cacheControlValidator: CacheControlValidator,
     warnings: inout [SharedV3Warning]
 ) async throws {
     for (index, part) in parts.enumerated() {
         let isLastPart = index == parts.count - 1
+        let cacheControl =
+            cacheControlValidator.getCacheControl(
+                part.providerOptions,
+                context: CacheControlContext(type: "assistant message part", canCache: true)
+            )
+            ?? (isLastPart
+                ? cacheControlValidator.getCacheControl(
+                    messageProviderOptions,
+                    context: CacheControlContext(type: "assistant message", canCache: true)
+                )
+                : nil)
+        let cacheControlJSON = cacheControlJSON(from: cacheControl)
 
         switch part {
         case .text(let textPart):
-            let cacheControl = getAnthropicCacheControl(from: textPart.providerOptions) ?? (isLastPart ? getAnthropicCacheControl(from: messageProviderOptions) : nil)
-            let cacheControlJSON = cacheControlJSON(from: cacheControl)
-
             var text = textPart.text
             if isLastBlock && isLastMessage && isLastPart {
                 text = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -401,9 +452,6 @@ private func appendAssistantMessageParts(
             anthropicContent.append(.object(payload))
 
         case .reasoning(let reasoningPart):
-            let cacheControl = getAnthropicCacheControl(from: reasoningPart.providerOptions) ?? (isLastPart ? getAnthropicCacheControl(from: messageProviderOptions) : nil)
-            let cacheControlJSON = cacheControlJSON(from: cacheControl)
-
             if sendReasoning {
                 let metadata = try await parseProviderOptions(
                     provider: "anthropic",
@@ -412,19 +460,27 @@ private func appendAssistantMessageParts(
                 )
 
                 if let metadata, let signature = metadata.signature {
+                    // Note: thinking blocks cannot have cache_control directly.
+                    _ = cacheControlValidator.getCacheControl(
+                        reasoningPart.providerOptions,
+                        context: CacheControlContext(type: "thinking block", canCache: false)
+                    )
                     var payload: [String: JSONValue] = [
                         "type": .string("thinking"),
                         "thinking": .string(reasoningPart.text),
                         "signature": .string(signature)
                     ]
-                    if let cacheControlJSON { payload["cache_control"] = cacheControlJSON }
                     anthropicContent.append(.object(payload))
                 } else if let metadata, let redacted = metadata.redactedData {
+                    // Note: redacted thinking blocks cannot have cache_control directly.
+                    _ = cacheControlValidator.getCacheControl(
+                        reasoningPart.providerOptions,
+                        context: CacheControlContext(type: "redacted thinking block", canCache: false)
+                    )
                     var payload: [String: JSONValue] = [
                         "type": .string("redacted_thinking"),
                         "data": .string(redacted)
                     ]
-                    if let cacheControlJSON { payload["cache_control"] = cacheControlJSON }
                     anthropicContent.append(.object(payload))
                 } else {
                     warnings.append(.other(message: "unsupported reasoning metadata"))
@@ -434,9 +490,6 @@ private func appendAssistantMessageParts(
             }
 
         case .toolCall(let toolCallPart):
-            let cacheControl = getAnthropicCacheControl(from: toolCallPart.providerOptions) ?? (isLastPart ? getAnthropicCacheControl(from: messageProviderOptions) : nil)
-            let cacheControlJSON = cacheControlJSON(from: cacheControl)
-
             var payload: [String: JSONValue]
             if toolCallPart.providerExecuted == true {
                 if let anthropicProviderOptions = toolCallPart.providerOptions?["anthropic"],
@@ -533,12 +586,10 @@ private func appendAssistantMessageParts(
                     }
                 }
             }
-            if let cacheControlJSON { payload["cache_control"] = cacheControlJSON }
-            anthropicContent.append(.object(payload))
+                if let cacheControlJSON { payload["cache_control"] = cacheControlJSON }
+                anthropicContent.append(.object(payload))
 
         case .toolResult(let toolResultPart):
-            let cacheControl = getAnthropicCacheControl(from: toolResultPart.providerOptions) ?? (isLastPart ? getAnthropicCacheControl(from: messageProviderOptions) : nil)
-            let cacheControlJSON = cacheControlJSON(from: cacheControl)
             try await appendAssistantToolResult(
                 toolResultPart,
                 cacheControlJSON: cacheControlJSON,
@@ -951,6 +1002,23 @@ private extension LanguageModelV3Message {
             return .assistant
         case .tool:
             return .tool
+        }
+    }
+}
+
+private extension LanguageModelV3MessagePart {
+    var providerOptions: SharedV3ProviderOptions? {
+        switch self {
+        case .text(let value):
+            return value.providerOptions
+        case .file(let value):
+            return value.providerOptions
+        case .reasoning(let value):
+            return value.providerOptions
+        case .toolCall(let value):
+            return value.providerOptions
+        case .toolResult(let value):
+            return value.providerOptions
         }
     }
 }
