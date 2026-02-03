@@ -172,7 +172,7 @@ Here are some example inputs:
 Search for items
 
 Input Examples:
-{\"query\":\"test\",\"limit\":10}
+{\"limit\":10,\"query\":\"test\"}
 """)
             } else {
                 Issue.record("Expected function tool")
@@ -311,22 +311,22 @@ Input Examples:
         @Test("passes through provider tools unchanged")
         func providerToolsUnchanged() async throws {
             let middleware = addToolInputExamplesMiddleware()
-            let providerTool = LanguageModelV3ProviderDefinedTool(
+            let providerTool = LanguageModelV3ProviderTool(
                 id: "anthropic.web_search_20250305",
                 name: "web_search",
                 args: ["maxUses": .number(5)]
             )
             let result = try await transform(
                 middleware,
-                makeBaseOptions(tools: [.providerDefined(providerTool)])
+                makeBaseOptions(tools: [.provider(providerTool)])
             )
 
-            if case .providerDefined(let tool) = result.tools?.first {
+            if case .provider(let tool) = result.tools?.first {
                 #expect(tool.id == "anthropic.web_search_20250305")
                 #expect(tool.name == "web_search")
                 #expect(tool.args["maxUses"] == .number(5))
             } else {
-                Issue.record("Expected providerDefined tool")
+                Issue.record("Expected provider tool")
             }
         }
 

@@ -35,11 +35,7 @@ public struct AddToolInputExamplesOptions: Sendable {
 }
 
 private func defaultFormatExample(_ example: LanguageModelV3ToolInputExample, index: Int) -> String {
-    let encoder = JSONEncoder()
-    guard let data = try? encoder.encode(JSONValue.object(example.input)) else {
-        return "{}"
-    }
-    return String(decoding: data, as: UTF8.self)
+    (try? JSONValue.object(example.input).toJSONString(prettyPrinted: false, sortedKeys: true)) ?? "{}"
 }
 
 /**
@@ -117,4 +113,3 @@ public func addToolInputExamplesMiddleware(
         }
     )
 }
-
