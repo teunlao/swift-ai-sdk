@@ -8,9 +8,12 @@ private let providerOptionsTestPrompt: LanguageModelV3Prompt = [
     .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
 ]
 
-private func makeProviderOptionsTestConfig(fetch: @escaping FetchFunction) -> AnthropicMessagesConfig {
+private func makeProviderOptionsTestConfig(
+    provider: String = "anthropic.messages",
+    fetch: @escaping FetchFunction
+) -> AnthropicMessagesConfig {
     AnthropicMessagesConfig(
-        provider: "anthropic.messages",
+        provider: provider,
         baseURL: "https://api.anthropic.com/v1",
         headers: { [
             "x-api-key": "test-key",
@@ -155,6 +158,125 @@ struct AnthropicMessagesLanguageModelProviderOptionsRequestTests {
         }
 
         #expect(anthropicBetaSet(await capture.current()) == Set(["effort-2025-11-24"]))
+    }
+
+    @Test("reads provider options from custom provider key")
+    func readsProviderOptionsFromCustomKey() async throws {
+        let capture = RequestCapture()
+        let responseData = try makeProviderOptionsTestResponseData(model: "claude-3-haiku-20240307")
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: makeProviderOptionsTestHTTPResponse())
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: makeProviderOptionsTestConfig(
+                provider: "custom-anthropic",
+                fetch: fetch
+            )
+        )
+
+        _ = try await model.doGenerate(options: .init(
+            prompt: providerOptionsTestPrompt,
+            providerOptions: [
+                "custom-anthropic": [
+                    "effort": .string("medium")
+                ]
+            ]
+        ))
+
+        let json = decodeRequestJSON(await capture.current())
+        if let outputConfig = json?["output_config"] as? [String: Any] {
+            #expect(outputConfig["effort"] as? String == "medium")
+        } else {
+            Issue.record("Expected output_config payload")
+        }
+
+        #expect(anthropicBetaSet(await capture.current()) == Set(["effort-2025-11-24"]))
+    }
+
+    @Test("custom provider key: passes disableParallelToolUse via tool_choice")
+    func customProviderKeyPassesDisableParallelToolUse() async throws {
+        let capture = RequestCapture()
+        let responseData = try makeProviderOptionsTestResponseData(model: "claude-3-haiku-20240307")
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: makeProviderOptionsTestHTTPResponse())
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: makeProviderOptionsTestConfig(provider: "custom-anthropic", fetch: fetch)
+        )
+
+        let toolSchema: JSONValue = .object([
+            "type": .string("object"),
+            "properties": .object([:]),
+            "additionalProperties": .bool(false),
+            "$schema": .string("http://json-schema.org/draft-07/schema#")
+        ])
+
+        _ = try await model.doGenerate(options: .init(
+            prompt: providerOptionsTestPrompt,
+            tools: [.function(.init(name: "testTool", inputSchema: toolSchema))],
+            providerOptions: [
+                "custom-anthropic": [
+                    "disableParallelToolUse": .bool(true)
+                ]
+            ]
+        ))
+
+        let json = decodeRequestJSON(await capture.current())
+        if let toolChoice = json?["tool_choice"] as? [String: Any] {
+            #expect(toolChoice["type"] as? String == "auto")
+            #expect(toolChoice["disable_parallel_tool_use"] as? Bool == true)
+        } else {
+            Issue.record("Expected tool_choice payload")
+        }
+    }
+
+    @Test("canonical provider key: passes disableParallelToolUse for custom provider name")
+    func canonicalProviderKeyPassesDisableParallelToolUseForCustomProviderName() async throws {
+        let capture = RequestCapture()
+        let responseData = try makeProviderOptionsTestResponseData(model: "claude-3-haiku-20240307")
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: makeProviderOptionsTestHTTPResponse())
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: makeProviderOptionsTestConfig(provider: "custom-anthropic", fetch: fetch)
+        )
+
+        let toolSchema: JSONValue = .object([
+            "type": .string("object"),
+            "properties": .object([:]),
+            "additionalProperties": .bool(false),
+            "$schema": .string("http://json-schema.org/draft-07/schema#")
+        ])
+
+        _ = try await model.doGenerate(options: .init(
+            prompt: providerOptionsTestPrompt,
+            tools: [.function(.init(name: "testTool", inputSchema: toolSchema))],
+            providerOptions: [
+                "anthropic": [
+                    "disableParallelToolUse": .bool(true)
+                ]
+            ]
+        ))
+
+        let json = decodeRequestJSON(await capture.current())
+        if let toolChoice = json?["tool_choice"] as? [String: Any] {
+            #expect(toolChoice["type"] as? String == "auto")
+            #expect(toolChoice["disable_parallel_tool_use"] as? Bool == true)
+        } else {
+            Issue.record("Expected tool_choice payload")
+        }
     }
 
     @Test("uses native output_format for structured outputs when supported")
@@ -362,4 +484,3 @@ struct AnthropicMessagesLanguageModelProviderOptionsRequestTests {
         )
     }
 }
-

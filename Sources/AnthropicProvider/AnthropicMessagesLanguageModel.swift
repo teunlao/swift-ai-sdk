@@ -53,6 +53,8 @@ private struct AnthropicRequestArguments {
     let usesJsonResponseTool: Bool
     let toolNameMapping: AnthropicToolNameMapping
     let toolStreaming: Bool
+    let providerOptionsName: String
+    let usedCustomProviderKey: Bool
 }
 
 public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
@@ -75,6 +77,14 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
     }
 
     public var provider: String { config.provider }
+
+    private var providerOptionsName: String {
+        let provider = config.provider
+        if let dotIndex = provider.firstIndex(of: ".") {
+            return String(provider[..<dotIndex])
+        }
+        return provider
+    }
 
     public var supportedUrls: [String: [NSRegularExpression]] {
         get async throws { config.supportedUrls() }
@@ -107,7 +117,11 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
             toolNameMapping: prepared.toolNameMapping
         )
 
-        let providerMetadata = makeProviderMetadata(response: response.value)
+        let providerMetadata = makeProviderMetadata(
+            response: response.value,
+            providerOptionsName: prepared.providerOptionsName,
+            usedCustomProviderKey: prepared.usedCustomProviderKey
+        )
 
         return LanguageModelV3GenerateResult(
             content: usageAndContent.content,
@@ -356,7 +370,11 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                                     .finish(
                                         finishReason: finishReason,
                                         usage: usage,
-                                        providerMetadata: ["anthropic": metadata]
+                                        providerMetadata: mergeProviderMetadata(
+                                            metadata,
+                                            providerOptionsName: prepared.providerOptionsName,
+                                            usedCustomProviderKey: prepared.usedCustomProviderKey
+                                        )
                                     )
                                 )
 
@@ -392,6 +410,49 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
     }
 
     // MARK: - Helpers
+
+    private func mergeProviderOptions(
+        canonical: AnthropicProviderOptions?,
+        custom: AnthropicProviderOptions?
+    ) -> AnthropicProviderOptions? {
+        guard canonical != nil || custom != nil else { return nil }
+
+        var merged = canonical ?? AnthropicProviderOptions()
+        guard let custom else { return merged }
+
+        if let sendReasoning = custom.sendReasoning {
+            merged.sendReasoning = sendReasoning
+        }
+        if let structuredOutputMode = custom.structuredOutputMode {
+            merged.structuredOutputMode = structuredOutputMode
+        }
+        if let thinking = custom.thinking {
+            merged.thinking = thinking
+        }
+        if let disableParallelToolUse = custom.disableParallelToolUse {
+            merged.disableParallelToolUse = disableParallelToolUse
+        }
+        if let cacheControl = custom.cacheControl {
+            merged.cacheControl = cacheControl
+        }
+        if let mcpServers = custom.mcpServers {
+            merged.mcpServers = mcpServers
+        }
+        if let container = custom.container {
+            merged.container = container
+        }
+        if let toolStreaming = custom.toolStreaming {
+            merged.toolStreaming = toolStreaming
+        }
+        if let effort = custom.effort {
+            merged.effort = effort
+        }
+        if let contextManagement = custom.contextManagement {
+            merged.contextManagement = contextManagement
+        }
+
+        return merged
+    }
 
     private func prepareRequest(options: LanguageModelV3CallOptions) async throws
         -> AnthropicRequestArguments
@@ -434,10 +495,28 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
             )
         }
 
-        let anthropicOptions = try await parseProviderOptions(
+        let providerOptionsName = self.providerOptionsName
+
+        let canonicalOptions = try await parseProviderOptions(
             provider: "anthropic",
             providerOptions: options.providerOptions,
             schema: anthropicProviderOptionsSchema
+        )
+
+        let customOptions: AnthropicProviderOptions? =
+            providerOptionsName != "anthropic"
+            ? try await parseProviderOptions(
+                provider: providerOptionsName,
+                providerOptions: options.providerOptions,
+                schema: anthropicProviderOptionsSchema
+            )
+            : nil
+
+        let usedCustomProviderKey = customOptions != nil
+
+        let anthropicOptions = mergeProviderOptions(
+            canonical: canonicalOptions,
+            custom: customOptions
         )
 
         let capabilities = getModelCapabilities(modelId: modelIdentifier.rawValue)
@@ -780,7 +859,9 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
             betas: betas,
             usesJsonResponseTool: usesJsonResponseTool,
             toolNameMapping: toolNameMapping,
-            toolStreaming: toolStreaming
+            toolStreaming: toolStreaming,
+            providerOptionsName: providerOptionsName,
+            usedCustomProviderKey: usedCustomProviderKey
         )
     }
 
@@ -2100,8 +2181,26 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
         return .object(["appliedEdits": .array(appliedEdits)])
     }
 
+    private func mergeProviderMetadata(
+        _ anthropicMetadata: [String: JSONValue],
+        providerOptionsName: String,
+        usedCustomProviderKey: Bool
+    ) -> SharedV3ProviderMetadata {
+        var providerMetadata: SharedV3ProviderMetadata = [
+            "anthropic": anthropicMetadata
+        ]
+
+        if usedCustomProviderKey, providerOptionsName != "anthropic" {
+            providerMetadata[providerOptionsName] = anthropicMetadata
+        }
+
+        return providerMetadata
+    }
+
     private func makeProviderMetadata(
-        response: AnthropicMessagesResponse
+        response: AnthropicMessagesResponse,
+        providerOptionsName: String,
+        usedCustomProviderKey: Bool
     ) -> SharedV3ProviderMetadata? {
         guard let usageJSON = encodeToJSONValue(response.usage) else {
             return nil
@@ -2117,7 +2216,11 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
             "contextManagement": anthropicContextManagementMetadata(response.contextManagement),
         ]
 
-        return ["anthropic": anthropicMetadata]
+        return mergeProviderMetadata(
+            anthropicMetadata,
+            providerOptionsName: providerOptionsName,
+            usedCustomProviderKey: usedCustomProviderKey
+        )
     }
 }
 

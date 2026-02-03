@@ -14,22 +14,28 @@ private let anthropicHTTPSRegex: NSRegularExpression = {
 public struct AnthropicProviderSettings: Sendable {
     public var baseURL: String?
     public var apiKey: String?
+    public var authToken: String?
     public var headers: [String: String]?
     public var fetch: FetchFunction?
     public var generateId: @Sendable () -> String
+    public var name: String?
 
     public init(
         baseURL: String? = nil,
         apiKey: String? = nil,
+        authToken: String? = nil,
         headers: [String: String]? = nil,
         fetch: FetchFunction? = nil,
-        generateId: @escaping @Sendable () -> String = defaultAnthropicId
+        generateId: @escaping @Sendable () -> String = defaultAnthropicId,
+        name: String? = nil
     ) {
         self.baseURL = baseURL
         self.apiKey = apiKey
+        self.authToken = authToken
         self.headers = headers
         self.fetch = fetch
         self.generateId = generateId
+        self.name = name
     }
 }
 
@@ -71,24 +77,38 @@ public final class AnthropicProvider: ProviderV3 {
 }
 
 public func createAnthropicProvider(settings: AnthropicProviderSettings = .init()) -> AnthropicProvider {
-    let baseURL = withoutTrailingSlash(settings.baseURL) ?? "https://api.anthropic.com/v1"
+    let baseURL = withoutTrailingSlash(
+        loadOptionalSetting(settingValue: settings.baseURL, environmentVariableName: "ANTHROPIC_BASE_URL")
+    ) ?? "https://api.anthropic.com/v1"
+
+    if settings.apiKey != nil, settings.authToken != nil {
+        fatalError("Both apiKey and authToken were provided. Please use only one authentication method.")
+    }
+
+    let providerName = settings.name ?? "anthropic.messages"
 
     let headersClosure: @Sendable () -> [String: String?] = {
-        let apiKey: String
-        do {
-            apiKey = try loadAPIKey(
-                apiKey: settings.apiKey,
-                environmentVariableName: "ANTHROPIC_API_KEY",
-                description: "Anthropic"
-            )
-        } catch {
-            fatalError("Anthropic API key is missing: \(error)")
-        }
+        let authToken = settings.authToken
 
         var baseHeaders: [String: String?] = [
-            "anthropic-version": "2023-06-01",
-            "x-api-key": apiKey
+            "anthropic-version": "2023-06-01"
         ]
+
+        if let authToken {
+            baseHeaders["Authorization"] = "Bearer \(authToken)"
+        } else {
+            let apiKey: String
+            do {
+                apiKey = try loadAPIKey(
+                    apiKey: settings.apiKey,
+                    environmentVariableName: "ANTHROPIC_API_KEY",
+                    description: "Anthropic"
+                )
+            } catch {
+                fatalError("Anthropic API key is missing: \(error)")
+            }
+            baseHeaders["x-api-key"] = apiKey
+        }
 
         if let custom = settings.headers {
             for (key, value) in custom {
@@ -102,12 +122,13 @@ public func createAnthropicProvider(settings: AnthropicProviderSettings = .init(
 
     let supportedURLs: @Sendable () -> [String: [NSRegularExpression]] = {
         [
-            "image/*": [anthropicHTTPSRegex]
+            "image/*": [anthropicHTTPSRegex],
+            "application/pdf": [anthropicHTTPSRegex],
         ]
     }
 
     let config = AnthropicMessagesConfig(
-        provider: "anthropic.messages",
+        provider: providerName,
         baseURL: baseURL,
         headers: headersClosure,
         fetch: settings.fetch,
