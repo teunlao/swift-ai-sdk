@@ -687,14 +687,14 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
                 output: .json(value: .object([
                     "type": .string("web_fetch_result"),
                     "url": .string("https://example.com"),
-                    "retrieved_at": .string("2024-01-01T00:00:00Z"),
+                    "retrievedAt": .string("2024-01-01T00:00:00Z"),
                     "content": .object([
                         "type": .string("document"),
                         "title": .string("Example"),
                         "source": .object([
-                            "type": .string("base64"),
-                            "media_type": .string("text/plain"),
-                            "data": .string("ZGF0YQ==")
+                            "type": .string("text"),
+                            "mediaType": .string("text/plain"),
+                            "data": .string("Example content")
                         ])
                     ])
                 ]))
@@ -732,6 +732,107 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
             #expect(fourth["type"] == .string("web_fetch_tool_result"))
         } else {
             Issue.record("Expected web fetch tool result object")
+        }
+    }
+
+    @Test("provider executed web search supports null title/pageAge")
+    func providerExecutedWebSearchNulls() async throws {
+        let webSearchCall = LanguageModelV3MessagePart.toolCall(
+            .init(
+                toolCallId: "tool-1",
+                toolName: "web_search",
+                input: .object([:]),
+                providerExecuted: true
+            )
+        )
+        let webSearchResult = LanguageModelV3MessagePart.toolResult(
+            .init(
+                toolCallId: "tool-1",
+                toolName: "web_search",
+                output: .json(value: .array([
+                    .object([
+                        "url": .string("https://example.com"),
+                        "title": .null,
+                        "pageAge": .null,
+                        "encryptedContent": .string("encrypted"),
+                        "type": .string("web_search_result"),
+                    ])
+                ]))
+            )
+        )
+
+        let prompt: LanguageModelV3Prompt = [
+            .assistant(content: [webSearchCall, webSearchResult], providerOptions: nil)
+        ]
+
+        let (result, warnings) = try await convert(prompt)
+        #expect(warnings.isEmpty)
+
+        guard let content = result.prompt.messages.first?.content else {
+            Issue.record("Expected assistant content")
+            return
+        }
+
+        #expect(content.count == 2)
+        guard case let .object(webSearchToolResult) = content[1] else {
+            Issue.record("Expected web_search_tool_result content object")
+            return
+        }
+
+        #expect(webSearchToolResult["type"] == .string("web_search_tool_result"))
+        #expect(webSearchToolResult["tool_use_id"] == .string("tool-1"))
+        guard case let .array(items)? = webSearchToolResult["content"] else {
+            Issue.record("Expected web_search_tool_result content array")
+            return
+        }
+        #expect(items.count == 1)
+        guard case let .object(item) = items[0] else {
+            Issue.record("Expected web_search_result object")
+            return
+        }
+        #expect(item["url"] == .string("https://example.com"))
+        #expect(item["title"] == .null)
+        #expect(item["page_age"] == .null)
+        #expect(item["encrypted_content"] == .string("encrypted"))
+        #expect(item["type"] == .string("web_search_result"))
+    }
+
+    @Test("provider executed web fetch rejects missing retrievedAt/title keys")
+    func providerExecutedWebFetchRejectsMissingRequiredFields() async throws {
+        let webFetchCall = LanguageModelV3MessagePart.toolCall(
+            .init(
+                toolCallId: "tool-1",
+                toolName: "web_fetch",
+                input: .object([:]),
+                providerExecuted: true
+            )
+        )
+        let webFetchResult = LanguageModelV3MessagePart.toolResult(
+            .init(
+                toolCallId: "tool-1",
+                toolName: "web_fetch",
+                output: .json(value: .object([
+                    "type": .string("web_fetch_result"),
+                    "url": .string("https://example.com"),
+                    // Missing retrievedAt and content.title (both required, nullable)
+                    "content": .object([
+                        "type": .string("document"),
+                        "source": .object([
+                            "type": .string("text"),
+                            "mediaType": .string("text/plain"),
+                            "data": .string("Example content")
+                        ])
+                    ])
+                ]))
+            )
+        )
+
+        let prompt: LanguageModelV3Prompt = [
+            .assistant(content: [webFetchCall, webFetchResult], providerOptions: nil)
+        ]
+
+        await #expect(throws: TypeValidationError.self) {
+            _ = try await convert(prompt)
         }
     }
 

@@ -4081,6 +4081,113 @@ struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
         }
     }
 
+    @Test("should handle server-side web search results without title")
+    func handlesServerSideWebSearchResultsWithoutTitle() async throws {
+        let httpResponse = HTTPURLResponse(url: URL(string: "https://api.anthropic.com/v1/messages")!,
+                                          statusCode: 200,
+                                          httpVersion: nil,
+                                          headerFields: nil)!
+
+        let responseBody = """
+        {
+            "type": "message",
+            "id": "msg_test",
+            "content": [
+                {
+                    "type": "server_tool_use",
+                    "id": "tool_1",
+                    "name": "web_search",
+                    "input": {"query": "latest AI news"}
+                },
+                {
+                    "type": "web_search_tool_result",
+                    "tool_use_id": "tool_1",
+                    "content": [
+                        {
+                            "type": "web_search_result",
+                            "url": "https://example.com/ai-news",
+                            "title": null,
+                            "encrypted_content": "encrypted_content_123",
+                            "page_age": null
+                        }
+                    ]
+                },
+                {
+                    "type": "text",
+                    "text": "Based on recent articles, AI continues to advance rapidly."
+                }
+            ],
+            "stop_reason": "end_turn",
+            "usage": {
+                "input_tokens": 10,
+                "output_tokens": 20,
+                "server_tool_use": {"web_search_requests": 1}
+            }
+        }
+        """
+
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .data(Data(responseBody.utf8)), urlResponse: httpResponse)
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-5-sonnet-latest"),
+            config: makeConfig(fetch: fetch)
+        )
+
+        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(
+            prompt: [.user(content: [.text(.init(text: "What is the latest news?"))], providerOptions: nil)],
+            tools: [.provider(LanguageModelV3ProviderTool(
+                id: "anthropic.web_search_20250305",
+                name: "web_search",
+                args: ["maxUses": .number(5)]
+            ))]
+        ))
+
+        // Verify tool result with array (index 1)
+        if case .toolResult(let toolResult) = result.content[1] {
+            #expect(toolResult.toolCallId == "tool_1")
+            #expect(toolResult.toolName == "web_search")
+            #expect(toolResult.providerExecuted == true)
+
+            if case .array(let resultsArray) = toolResult.result {
+                #expect(resultsArray.count == 1)
+
+                if case .object(let searchResult) = resultsArray[0] {
+                    #expect(searchResult["type"] == .string("web_search_result"))
+                    #expect(searchResult["url"] == .string("https://example.com/ai-news"))
+                    #expect(searchResult["title"] == .null)
+                    #expect(searchResult["encryptedContent"] == .string("encrypted_content_123"))
+                    #expect(searchResult["pageAge"] == .null)
+                } else {
+                    Issue.record("Expected object in results array")
+                }
+            } else {
+                Issue.record("Expected array result")
+            }
+        } else {
+            Issue.record("Expected tool-result at index 1")
+        }
+
+        // Verify source citation content (index 2)
+        if case .source(let source) = result.content[2] {
+            if case .url(_, let url, let title, let providerMetadata) = source {
+                #expect(url == "https://example.com/ai-news")
+                #expect(title == nil)
+
+                if let anthropicMeta = providerMetadata?["anthropic"] {
+                    #expect(anthropicMeta["pageAge"] == .null)
+                } else {
+                    Issue.record("Expected anthropic provider metadata")
+                }
+            } else {
+                Issue.record("Expected url source")
+            }
+        } else {
+            Issue.record("Expected source at index 2")
+        }
+    }
+
     @Test("should handle server-side web search errors")
     func handlesServerSideWebSearchErrors() async throws {
         let httpResponse = HTTPURLResponse(url: URL(string: "https://api.anthropic.com/v1/messages")!,

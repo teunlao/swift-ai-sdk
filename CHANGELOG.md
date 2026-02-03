@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-02-03
+
+### Changed
+- BREAKING (Anthropic): align provider-executed `web_fetch` / `web_search` tool result output schemas with upstream (camelCase + nullable fields).
+  - `AnthropicWebFetchToolResult.Content.title` is now `String?`.
+  - `AnthropicWebSearchToolResult.title` is now `String?`.
+  - Provider-executed outputs are now validated as camelCase: `retrievedAt`, `mediaType`, `pageAge`, `encryptedContent`.
+
+### Fixed
+- Anthropic: correctly map nullable tool result fields when converting to/from Anthropic message payloads.
+
 ## [0.9.0] - 2026-02-03
 
 ### Changed

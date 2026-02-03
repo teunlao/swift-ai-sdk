@@ -14,17 +14,87 @@ public struct AnthropicWebFetchToolResult: Codable, Equatable, Sendable {
             public let mediaType: String
             public let data: String
 
-            enum CodingKeys: String, CodingKey {
+            private enum CodingKeys: String, CodingKey {
                 case type
-                case mediaType = "media_type"
+                case mediaType
                 case data
+            }
+
+            public init(from decoder: Decoder) throws {
+                let container = try decoder.container(keyedBy: CodingKeys.self)
+                type = try container.decode(String.self, forKey: .type)
+                mediaType = try container.decode(String.self, forKey: .mediaType)
+                data = try container.decode(String.self, forKey: .data)
+
+                switch type {
+                case "base64":
+                    if mediaType != "application/pdf" {
+                        throw DecodingError.dataCorruptedError(
+                            forKey: .mediaType,
+                            in: container,
+                            debugDescription: "Expected mediaType 'application/pdf' for base64 source"
+                        )
+                    }
+                case "text":
+                    if mediaType != "text/plain" {
+                        throw DecodingError.dataCorruptedError(
+                            forKey: .mediaType,
+                            in: container,
+                            debugDescription: "Expected mediaType 'text/plain' for text source"
+                        )
+                    }
+                default:
+                    throw DecodingError.dataCorruptedError(
+                        forKey: .type,
+                        in: container,
+                        debugDescription: "Unexpected source type: \(type)"
+                    )
+                }
             }
         }
 
         public let type: String
-        public let title: String
+        public let title: String?
         public let citations: Citations?
         public let source: Source
+
+        private enum CodingKeys: String, CodingKey {
+            case type
+            case title
+            case citations
+            case source
+        }
+
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            type = try container.decode(String.self, forKey: .type)
+            if type != "document" {
+                throw DecodingError.dataCorruptedError(
+                    forKey: .type,
+                    in: container,
+                    debugDescription: "Unexpected content type: \(type)"
+                )
+            }
+
+            guard container.contains(.title) else {
+                throw DecodingError.keyNotFound(
+                    CodingKeys.title,
+                    DecodingError.Context(codingPath: decoder.codingPath, debugDescription: "Missing required field: title")
+                )
+            }
+            title = try container.decodeIfPresent(String.self, forKey: .title)
+
+            if container.contains(.citations), (try container.decodeNil(forKey: .citations)) {
+                throw DecodingError.dataCorruptedError(
+                    forKey: .citations,
+                    in: container,
+                    debugDescription: "citations must be an object when present"
+                )
+            }
+            citations = try container.decodeIfPresent(Citations.self, forKey: .citations)
+
+            source = try container.decode(Source.self, forKey: .source)
+        }
     }
 
     public let type: String
@@ -32,27 +102,83 @@ public struct AnthropicWebFetchToolResult: Codable, Equatable, Sendable {
     public let content: Content
     public let retrievedAt: String?
 
-    enum CodingKeys: String, CodingKey {
+    private enum CodingKeys: String, CodingKey {
         case type
         case url
         case content
-        case retrievedAt = "retrieved_at"
+        case retrievedAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        type = try container.decode(String.self, forKey: .type)
+        if type != "web_fetch_result" {
+            throw DecodingError.dataCorruptedError(
+                forKey: .type,
+                in: container,
+                debugDescription: "Unexpected result type: \(type)"
+            )
+        }
+
+        url = try container.decode(String.self, forKey: .url)
+        content = try container.decode(Content.self, forKey: .content)
+
+        guard container.contains(.retrievedAt) else {
+            throw DecodingError.keyNotFound(
+                CodingKeys.retrievedAt,
+                DecodingError.Context(codingPath: decoder.codingPath, debugDescription: "Missing required field: retrievedAt")
+            )
+        }
+        retrievedAt = try container.decodeIfPresent(String.self, forKey: .retrievedAt)
     }
 }
 
 public struct AnthropicWebSearchToolResult: Codable, Equatable, Sendable {
     public let url: String
-    public let title: String
+    public let title: String?
     public let pageAge: String?
     public let encryptedContent: String
     public let type: String
 
-    enum CodingKeys: String, CodingKey {
+    private enum CodingKeys: String, CodingKey {
         case url
         case title
-        case pageAge = "page_age"
-        case encryptedContent = "encrypted_content"
+        case pageAge
+        case encryptedContent
         case type
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        url = try container.decode(String.self, forKey: .url)
+
+        guard container.contains(.title) else {
+            throw DecodingError.keyNotFound(
+                CodingKeys.title,
+                DecodingError.Context(codingPath: decoder.codingPath, debugDescription: "Missing required field: title")
+            )
+        }
+        title = try container.decodeIfPresent(String.self, forKey: .title)
+
+        guard container.contains(.pageAge) else {
+            throw DecodingError.keyNotFound(
+                CodingKeys.pageAge,
+                DecodingError.Context(codingPath: decoder.codingPath, debugDescription: "Missing required field: pageAge")
+            )
+        }
+        pageAge = try container.decodeIfPresent(String.self, forKey: .pageAge)
+
+        encryptedContent = try container.decode(String.self, forKey: .encryptedContent)
+        type = try container.decode(String.self, forKey: .type)
+
+        if type != "web_search_result" {
+            throw DecodingError.dataCorruptedError(
+                forKey: .type,
+                in: container,
+                debugDescription: "Unexpected result type: \(type)"
+            )
+        }
     }
 }
 
@@ -104,7 +230,59 @@ public let anthropicWebFetch20250910OutputSchema = FlexibleSchema(
 )
 
 private let anthropicWebFetch20250910ToolOutputSchema = FlexibleSchema(
-    jsonSchema(.object(["type": .string("object")]))
+    jsonSchema(
+        .object([
+            "type": .string("object"),
+            "required": .array([.string("type"), .string("url"), .string("content"), .string("retrievedAt")]),
+            "additionalProperties": .bool(false),
+            "properties": .object([
+                "type": .object(["const": .string("web_fetch_result")]),
+                "url": .object(["type": .string("string")]),
+                "content": .object([
+                    "type": .string("object"),
+                    "required": .array([.string("type"), .string("title"), .string("source")]),
+                    "additionalProperties": .bool(false),
+                    "properties": .object([
+                        "type": .object(["const": .string("document")]),
+                        "title": .object(["type": .array([.string("string"), .string("null")])]),
+                        "citations": .object([
+                            "type": .string("object"),
+                            "required": .array([.string("enabled")]),
+                            "additionalProperties": .bool(false),
+                            "properties": .object([
+                                "enabled": .object(["type": .string("boolean")])
+                            ]),
+                        ]),
+                        "source": .object([
+                            "oneOf": .array([
+                                .object([
+                                    "type": .string("object"),
+                                    "required": .array([.string("type"), .string("mediaType"), .string("data")]),
+                                    "additionalProperties": .bool(false),
+                                    "properties": .object([
+                                        "type": .object(["const": .string("base64")]),
+                                        "mediaType": .object(["const": .string("application/pdf")]),
+                                        "data": .object(["type": .string("string")]),
+                                    ]),
+                                ]),
+                                .object([
+                                    "type": .string("object"),
+                                    "required": .array([.string("type"), .string("mediaType"), .string("data")]),
+                                    "additionalProperties": .bool(false),
+                                    "properties": .object([
+                                        "type": .object(["const": .string("text")]),
+                                        "mediaType": .object(["const": .string("text/plain")]),
+                                        "data": .object(["type": .string("string")]),
+                                    ]),
+                                ]),
+                            ])
+                        ]),
+                    ]),
+                ]),
+                "retrievedAt": .object(["type": .array([.string("string"), .string("null")])]),
+            ]),
+        ])
+    )
 )
 
 public struct AnthropicWebSearchToolArgs: Codable, Sendable, Equatable {
@@ -174,7 +352,29 @@ public let anthropicWebSearch20250305OutputSchema = FlexibleSchema(
 )
 
 private let anthropicWebSearch20250305ToolOutputSchema = FlexibleSchema(
-    jsonSchema(.object(["type": .string("array")]))
+    jsonSchema(
+        .object([
+            "type": .string("array"),
+            "items": .object([
+                "type": .string("object"),
+                "required": .array([
+                    .string("url"),
+                    .string("title"),
+                    .string("pageAge"),
+                    .string("encryptedContent"),
+                    .string("type"),
+                ]),
+                "additionalProperties": .bool(false),
+                "properties": .object([
+                    "url": .object(["type": .string("string")]),
+                    "title": .object(["type": .array([.string("string"), .string("null")])]),
+                    "pageAge": .object(["type": .array([.string("string"), .string("null")])]),
+                    "encryptedContent": .object(["type": .string("string")]),
+                    "type": .object(["const": .string("web_search_result")]),
+                ]),
+            ]),
+        ])
+    )
 )
 
 public struct AnthropicWebFetchOptions: Sendable, Equatable {

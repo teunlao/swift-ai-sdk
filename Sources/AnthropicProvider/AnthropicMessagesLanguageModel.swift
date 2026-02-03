@@ -1189,22 +1189,21 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
 
                         var contentObject: [String: JSONValue] = [
                             "type": resultContent["type"] ?? .string("document"),
-                            "title": resultContent["title"] ?? .string(""),
+                            "title": resultContent["title"] ?? .null,
                             "source": .object([
                                 "type": .string(sourceType),
                                 "mediaType": .string(mediaType),
                                 "data": .string(data),
                             ]),
                         ]
-                        if let citations = resultContent["citations"] {
+                        if let citations = resultContent["citations"], citations != .null {
                             contentObject["citations"] = citations
                         }
                         resultObject["content"] = .object(contentObject)
 
                         let documentTitle: String
                         if let titleValue = resultContent["title"],
-                           case .string(let title) = titleValue,
-                           title.isEmpty == false {
+                           case .string(let title) = titleValue {
                             documentTitle = title
                         } else {
                             documentTitle = url
@@ -1250,16 +1249,22 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                         guard case .object(let object) = item else { continue }
                         guard
                             let urlValue = object["url"], case .string(let url) = urlValue,
-                            let titleValue = object["title"], case .string(let title) = titleValue,
                             let encryptedValue = object["encrypted_content"],
                             case .string(let encrypted) = encryptedValue
                         else { continue }
 
                         let pageAge = object["page_age"]
+                        let titleValue = object["title"] ?? .null
+                        let title: String?
+                        if case .string(let titleString) = titleValue {
+                            title = titleString
+                        } else {
+                            title = nil
+                        }
                         array.append(
                             .object([
                                 "url": .string(url),
-                                "title": .string(title),
+                                "title": titleValue,
                                 "pageAge": pageAge ?? .null,
                                 "encryptedContent": .string(encrypted),
                                 "type": object["type"] ?? .string("web_search_result"),

@@ -815,7 +815,7 @@ private func appendAssistantToolResult(
 
             var contentPayload: [String: JSONValue] = [
                 "type": .string("document"),
-                "title": .string(parsed.content.title),
+                "title": parsed.content.title.map(JSONValue.string) ?? .null,
                 "source": .object([
                     "type": .string(parsed.content.source.type),
                     "media_type": .string(parsed.content.source.mediaType),
@@ -866,10 +866,10 @@ private func appendAssistantToolResult(
             let mapped = results.map { result in
                 JSONValue.object([
                     "url": .string(result.url),
-                    "title": .string(result.title),
+                    "title": result.title.map(JSONValue.string) ?? .null,
                     "page_age": result.pageAge.map(JSONValue.string) ?? .null,
                     "encrypted_content": .string(result.encryptedContent),
-                    "type": .string("web_search_result")
+                    "type": .string(result.type)
                 ])
             }
 
