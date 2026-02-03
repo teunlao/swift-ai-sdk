@@ -2,7 +2,7 @@
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="logos/logo-white.png" />
     <source media="(prefers-color-scheme: light)" srcset="logos/logo-black.png" />
-    <img alt="Swift AI SDK" src="logos/logo-black.png" width="460" />
+    <img alt="Swift AI SDK" src="logos/logo-black.png" width="320" />
   </picture>
 </p>
 
@@ -16,95 +16,17 @@
 [![](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2Fteunlao%2Fswift-ai-sdk%2Fbadge%3Ftype%3Dswift-versions)](https://swiftpackageindex.com/teunlao/swift-ai-sdk)
 [![](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2Fteunlao%2Fswift-ai-sdk%2Fbadge%3Ftype%3Dplatforms)](https://swiftpackageindex.com/teunlao/swift-ai-sdk)
 
-A unified AI SDK for Swift: streaming chat/completions, structured outputs, tool/function/MCP calling, middleware, and telemetry — with 28+ providers via one API (OpenAI, Anthropic, Google, Groq, xAI). Based on the [Vercel AI SDK](https://github.com/vercel/ai) with a focus on full API parity.
+A unified AI SDK for Swift: streaming chat/completions, structured outputs, tool/function/MCP calling, and middleware — with 28+ providers via one API (OpenAI, Anthropic, Google, Groq, xAI). Based on the [Vercel AI SDK](https://github.com/vercel/ai) with a focus on full API parity.
 
 **[Documentation](https://swift-ai-sdk-docs.vercel.app)** | **[Getting Started](https://swift-ai-sdk-docs.vercel.app/getting-started/ios-macos-quickstart)** | **[Examples](examples/)** | **[Discussions](https://github.com/teunlao/swift-ai-sdk/discussions)**
 
-## Table of Contents
-
-- [Features](#features)
-- [Packages](#packages)
-- [Implementation Status](#implementation-status)
-- [Installation (SwiftPM)](#installation-swiftpm)
-- [Quickstart](#quickstart)
-- [Unified Provider Architecture](#unified-provider-architecture)
-- [Usage: Structured Data](#usage-structured-data-generateobject)
-- [Usage: Tools](#usage-agents--tools)
-- [Templates & Examples](#templates--examples)
-- [Upstream & Parity](#upstream--parity)
-- [Contributing](#contributing)
-- [License](#license)
-
 ## Features
 
-- **Text Generation** - Streaming and non-streaming
-- **Structured Outputs** - Type-safe object generation with schemas
-- **Tool Calling** - Function calling and MCP tools
-- **Multi-Provider** - OpenAI, Anthropic, Google (Gemini), Groq, xAI, and [28+ providers](https://swift-ai-sdk-docs.vercel.app/providers/overview)
-- **Middleware System** - Extensible request/response processing
-- **Telemetry** - Built-in observability
-
-## Packages
-
-- `SwiftAISDK` - Main SDK with text generation, streaming, tools
-- `AISDKProvider` - Foundation types and interfaces
-- `AISDKProviderUtils` - Provider utilities
-- `*Provider` - 28+ provider packages ([see full list](https://swift-ai-sdk-docs.vercel.app/providers/overview))
-
----
-
-## Implementation Status
-
-**Updated**: 2026-02-01
-**Upstream:** Based on Vercel AI SDK 6.0.66 (commit `f5b2b5e`)
-
-| Category | Tests | Coverage |
-|----------|-------|----------|
-| **Core SDK** | 1598 | 100% |
-| **Providers** | 645 | 69.2% |
-| **Overall** | 2243 | 79.5% |
-
-<details>
-<summary>Provider Details</summary>
-
-| Provider | Impl | Tests | Upstream | Swift | Coverage |
-|----------|:----:|:-----:|----------|-------|----------|
-| **openai** | ✅ | ✅ | 290 | 290 | 100% |
-| **anthropic** | ✅ | ✅ | 114 | 114 | 100% |
-| **google** | ✅ | ✅ | 155 | 155 | 100% |
-| **groq** | ✅ | ✅ | 58 | 58 | 100% |
-| **xai** | ✅ | ✅ | 50 | 50 | 100% |
-| **mistral** | ✅ | ✅ | 44 | 44 | 100% |
-| **azure** | ✅ | ✅ | 26 | 26 | 100% |
-| **baseten** | ✅ | ✅ | 25 | 25 | 100% |
-| **openai-compatible** | ✅ | ✅ | 128 | 128 | 100% |
-| **deepseek** | ✅ | ✅ | 13 | 13 | 100% |
-| **replicate** | ✅ | ✅ | 11 | 11 | 100% |
-| **lmnt** | ✅ | ✅ | 9 | 9 | 100% |
-| **cerebras** | ✅ | ✅ | 7 | 7 | 100% |
-| **perplexity** | ✅ | ❌ | 19 | 0 | 0% |
-| **cohere** | ✅ | ❌ | 48 | 0 | 0% |
-| **deepinfra** | ✅ | ❌ | 18 | 0 | 0% |
-| **elevenlabs** | ✅ | ❌ | 15 | 0 | 0% |
-| **deepgram** | ✅ | ❌ | 6 | 0 | 0% |
-| **assemblyai** | ✅ | ❌ | 6 | 0 | 0% |
-| **fal** | ✅ | ❌ | 26 | 0 | 0% |
-| **fireworks** | ✅ | ❌ | 23 | 0 | 0% |
-| **gladia** | ✅ | ❌ | 6 | 0 | 0% |
-| **huggingface** | ✅ | ❌ | 32 | 0 | 0% |
-| **google-vertex** | ✅ | ❌ | 78 | 0 | 0% |
-| **amazon-bedrock** | ✅ | ❌ | 152 | 0 | 0% |
-| **gateway** | ✅ | ❌ | 9 | 0 | 0% |
-| **togetherai** | ❌ | ❌ | 17 | 0 | 0% |
-| **luma** | ✅ | ❌ | 16 | 0 | 0% |
-| **hume** | ✅ | ❌ | 9 | 0 | 0% |
-| **revai** | ❌ | ❌ | 6 | 0 | 0% |
-| **vercel** | ❌ | ❌ | 4 | 0 | 0% |
-| **TOTAL** | **28/32** | **13/32** | **1520** | **930** | **61.2%** |
-
-</details>
-
----
+- Streaming and non-streaming text generation
+- Structured outputs (typed `Codable` + JSON Schema)
+- Tool/function calling + MCP tools
+- Provider-agnostic API (swap providers without changing call sites)
+- Middleware hooks
 
 ## Installation (SwiftPM)
 
@@ -115,7 +37,8 @@ Add the package to your `Package.swift`:
 ```swift
 // Package.swift
 dependencies: [
-  .package(url: "https://github.com/teunlao/swift-ai-sdk.git", from: "0.8.4")
+  // Use the latest release tag (e.g. "0.8.5").
+  .package(url: "https://github.com/teunlao/swift-ai-sdk.git", from: "0.8.5")
 ],
 targets: [
   .target(
@@ -128,7 +51,7 @@ targets: [
 ]
 ```
 
-## Quickstart
+## Quickstart (Streaming)
 
 Minimal text generation and streaming with OpenAI:
 
@@ -153,7 +76,7 @@ struct Demo {
 }
 ```
 
-More examples (tools, structured output, telemetry, middleware) are available in the documentation.
+More examples (tools, structured output, middleware) are in the docs and `examples/`.
 
 ## Unified Provider Architecture
 
@@ -180,7 +103,7 @@ for model in models {
 }
 ```
 
-## Usage: Structured Data (generateObject)
+## Structured Outputs (Typed `Codable`)
 
 Generate structured data validated by JSON Schema or `Codable`.
 
@@ -209,7 +132,7 @@ summary.changes.forEach { print("- \($0)") }
 
 Notes: use `generateObjectNoSchema(...)` for raw `JSONValue`; arrays/enums via `generateObjectArray` / `generateObjectEnum`.
 
-## Usage: Agents & Tools
+## Tools (Typed)
 
 Models can call tools. Typed weather example:
 
@@ -252,13 +175,16 @@ if let toolResult = result.toolResults.first {
 
 Notes: `tool(...)` auto-generates schemas from `Codable` types. For streaming, use `streamText(..., tools: ...)` and consume `textStream`/`toolResults`.
 
-## Templates & Examples
+## Providers
 
-See `examples/` in this repo and the docs site under `apps/docs`.
+- Provider overview: https://swift-ai-sdk-docs.vercel.app/providers/overview
+- Each provider lives in its own SwiftPM product (e.g. `OpenAIProvider`, `AnthropicProvider`, `GoogleProvider`).
 
 ## Upstream & Parity
 
-Based on Vercel AI SDK 6.0.66 (commit `f5b2b5e`).
+This project ports the Vercel AI SDK with a focus on behavior/API parity.
+
+- Upstream reference (pinned commit): `upstream/UPSTREAM.md`
 
 ## Contributing
 
