@@ -837,6 +837,7 @@ public func generateText<OutputValue: Sendable>(
             var clientToolOutputs: [ToolOutput] = []
             var currentModelResult: GenerateStepIntermediate?
             var continueLoop = false
+            var currentExperimentalContext = experimentalContext
 
             repeat {
                 let currentResponseMessages = await responseMessageStore.all()
@@ -846,9 +847,12 @@ public func generateText<OutputValue: Sendable>(
                     steps: steps,
                     stepNumber: steps.count,
                     model: defaultLanguageModel,
-                    messages: stepInputMessages
+                    messages: stepInputMessages,
+                    experimentalContext: currentExperimentalContext
                 )
                 let prepareStepResult = try await effectivePrepareStep?(prepareOptions)
+
+                currentExperimentalContext = prepareStepResult?.experimentalContext ?? currentExperimentalContext
 
                 let stepModelSource = prepareStepResult?.model ?? defaultLanguageModel
                 let stepModel = try resolveLanguageModel(stepModelSource)
@@ -869,6 +873,10 @@ public func generateText<OutputValue: Sendable>(
                 )
 
                 let responseFormat = try await output?.responseFormat()
+                let stepProviderOptions = mergeProviderOptions(
+                    providerOptions,
+                    prepareStepResult?.providerOptions
+                )
 
                 let innerAttributes = try await selectTelemetryAttributes(
                     telemetry: telemetry,
@@ -907,7 +915,7 @@ public func generateText<OutputValue: Sendable>(
                                 includeRawChunks: nil,
                                 abortSignal: settings.abortSignal,
                                 headers: headersWithUserAgent,
-                                providerOptions: providerOptions
+                                providerOptions: stepProviderOptions
                             )
                         )
 
@@ -977,7 +985,7 @@ public func generateText<OutputValue: Sendable>(
                                 toolCallId: toolCall.toolCallId,
                                 messages: stepInputMessages,
                                 abortSignal: settings.abortSignal,
-                                experimentalContext: experimentalContext
+                                experimentalContext: currentExperimentalContext
                             )
                         )
                     }
@@ -986,7 +994,7 @@ public func generateText<OutputValue: Sendable>(
                         tool: tool,
                         toolCall: toolCall,
                         messages: stepInputMessages,
-                        experimentalContext: experimentalContext
+                        experimentalContext: currentExperimentalContext
                     ) {
                         let approval = ToolApprovalRequestOutput(
                             approvalId: _internal.generateId(),
@@ -1013,7 +1021,7 @@ public func generateText<OutputValue: Sendable>(
                         telemetry: telemetry,
                         messages: stepInputMessages,
                         abortSignal: settings.abortSignal,
-                        experimentalContext: experimentalContext
+                        experimentalContext: currentExperimentalContext
                     )
 
                     clientToolOutputs.append(contentsOf: executedOutputs)
