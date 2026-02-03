@@ -106,7 +106,7 @@ public let anthropicTextEditor20250728: @Sendable (AnthropicTextEditor20250728Ar
     ) { options in
         var args: [String: JSONValue] = [:]
         if let maxCharacters = options.maxCharacters {
-            args["max_characters"] = .number(Double(maxCharacters))
+            args["maxCharacters"] = .number(Double(maxCharacters))
         }
         return ProviderToolFactoryOptions(args: args)
     }

@@ -71,11 +71,11 @@ private let computer20241022InputSchema = FlexibleSchema(
 
 private func computer20241022Args(for options: AnthropicComputerOptions) -> [String: JSONValue] {
     var args: [String: JSONValue] = [
-        "display_width_px": .number(Double(options.displayWidthPx)),
-        "display_height_px": .number(Double(options.displayHeightPx))
+        "displayWidthPx": .number(Double(options.displayWidthPx)),
+        "displayHeightPx": .number(Double(options.displayHeightPx))
     ]
     if let displayNumber = options.displayNumber {
-        args["display_number"] = .number(Double(displayNumber))
+        args["displayNumber"] = .number(Double(displayNumber))
     }
     return args
 }
@@ -183,11 +183,11 @@ private let computer20250124InputSchema = FlexibleSchema(
 
 private func computer20250124Args(for options: AnthropicComputerOptions) -> [String: JSONValue] {
     var args: [String: JSONValue] = [
-        "display_width_px": .number(Double(options.displayWidthPx)),
-        "display_height_px": .number(Double(options.displayHeightPx))
+        "displayWidthPx": .number(Double(options.displayWidthPx)),
+        "displayHeightPx": .number(Double(options.displayHeightPx))
     ]
     if let displayNumber = options.displayNumber {
-        args["display_number"] = .number(Double(displayNumber))
+        args["displayNumber"] = .number(Double(displayNumber))
     }
     return args
 }
@@ -312,14 +312,14 @@ private let computer20251124InputSchema = FlexibleSchema(
 
 private func computer20251124Args(for options: AnthropicComputerOptions) -> [String: JSONValue] {
     var args: [String: JSONValue] = [
-        "display_width_px": .number(Double(options.displayWidthPx)),
-        "display_height_px": .number(Double(options.displayHeightPx))
+        "displayWidthPx": .number(Double(options.displayWidthPx)),
+        "displayHeightPx": .number(Double(options.displayHeightPx))
     ]
     if let displayNumber = options.displayNumber {
-        args["display_number"] = .number(Double(displayNumber))
+        args["displayNumber"] = .number(Double(displayNumber))
     }
     if let enableZoom = options.enableZoom {
-        args["enable_zoom"] = .bool(enableZoom)
+        args["enableZoom"] = .bool(enableZoom)
     }
     return args
 }

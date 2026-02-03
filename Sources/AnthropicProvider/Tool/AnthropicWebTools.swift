@@ -256,19 +256,19 @@ private let anthropicWebFetchFactory = createProviderToolFactoryWithOutputSchema
 public func anthropicWebFetch20250910(_ options: AnthropicWebFetchOptions = .init()) -> Tool {
     var args: [String: JSONValue] = [:]
     if let maxUses = options.maxUses {
-        args["max_uses"] = .number(Double(maxUses))
+        args["maxUses"] = .number(Double(maxUses))
     }
     if let allowed = options.allowedDomains {
-        args["allowed_domains"] = .array(allowed.map(JSONValue.string))
+        args["allowedDomains"] = .array(allowed.map(JSONValue.string))
     }
     if let blocked = options.blockedDomains {
-        args["blocked_domains"] = .array(blocked.map(JSONValue.string))
+        args["blockedDomains"] = .array(blocked.map(JSONValue.string))
     }
     if let citations = options.citationsEnabled {
         args["citations"] = .object(["enabled": .bool(citations)])
     }
     if let maxTokens = options.maxContentTokens {
-        args["max_content_tokens"] = .number(Double(maxTokens))
+        args["maxContentTokens"] = .number(Double(maxTokens))
     }
     return anthropicWebFetchFactory(ProviderToolFactoryWithOutputSchemaOptions(args: args))
 }
@@ -297,13 +297,13 @@ private let anthropicWebSearchFactory = createProviderToolFactoryWithOutputSchem
 public func anthropicWebSearch20250305(_ options: AnthropicWebSearchOptions = .init()) -> Tool {
     var args: [String: JSONValue] = [:]
     if let maxUses = options.maxUses {
-        args["max_uses"] = .number(Double(maxUses))
+        args["maxUses"] = .number(Double(maxUses))
     }
     if let allowed = options.allowedDomains {
-        args["allowed_domains"] = .array(allowed.map(JSONValue.string))
+        args["allowedDomains"] = .array(allowed.map(JSONValue.string))
     }
     if let blocked = options.blockedDomains {
-        args["blocked_domains"] = .array(blocked.map(JSONValue.string))
+        args["blockedDomains"] = .array(blocked.map(JSONValue.string))
     }
     if let location = options.userLocation {
         var locationObject: [String: JSONValue] = ["type": .string("approximate")]
@@ -311,7 +311,7 @@ public func anthropicWebSearch20250305(_ options: AnthropicWebSearchOptions = .i
         if let region = location.region { locationObject["region"] = .string(region) }
         if let country = location.country { locationObject["country"] = .string(country) }
         if let timezone = location.timezone { locationObject["timezone"] = .string(timezone) }
-        args["user_location"] = .object(locationObject)
+        args["userLocation"] = .object(locationObject)
     }
     return anthropicWebSearchFactory(ProviderToolFactoryWithOutputSchemaOptions(args: args))
 }

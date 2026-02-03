@@ -2,6 +2,7 @@ import Foundation
 import Testing
 @testable import AnthropicProvider
 import AISDKProvider
+import AISDKProviderUtils
 
 private func makeFunctionTool(
     name: String = "testFunction",
@@ -196,6 +197,94 @@ struct AnthropicPrepareToolsBasicTests {
             Issue.record("Expected tool object")
         }
     }
+
+    @Test("supports defer_loading false for function tools")
+    func supportsDeferLoadingFalse() async throws {
+        let options: SharedV3ProviderOptions = [
+            "anthropic": [
+                "deferLoading": .bool(false)
+            ]
+        ]
+        let result = try await prepareAnthropicTools(
+            tools: [makeFunctionTool(name: "testFunction", description: "A test function", schema: .object(["type": .string("object"), "properties": .object([:])]), providerOptions: options)],
+            toolChoice: nil,
+            disableParallelToolUse: nil,
+            supportsStructuredOutput: true
+        )
+
+        #expect(result.betas == Set(["structured-outputs-2025-11-13"]))
+        if case let .object(tool) = result.tools?.first {
+            #expect(tool["defer_loading"] == .bool(false))
+        } else {
+            Issue.record("Expected tool object")
+        }
+    }
+
+    @Test("supports allowed_callers and advanced-tool-use beta for function tools")
+    func supportsAllowedCallers() async throws {
+        let options: SharedV3ProviderOptions = [
+            "anthropic": [
+                "allowedCallers": .array([.string("code_execution_20250825")])
+            ]
+        ]
+        let result = try await prepareAnthropicTools(
+            tools: [makeFunctionTool(
+                name: "query_database",
+                description: "Query a database",
+                schema: .object([
+                    "type": .string("object"),
+                    "properties": .object([
+                        "sql": .object(["type": .string("string")])
+                    ])
+                ]),
+                providerOptions: options
+            )],
+            toolChoice: nil,
+            disableParallelToolUse: nil,
+            supportsStructuredOutput: true
+        )
+
+        #expect(result.betas == Set(["structured-outputs-2025-11-13", "advanced-tool-use-2025-11-20"]))
+        if case let .object(tool) = result.tools?.first {
+            #expect(tool["allowed_callers"] == .array([.string("code_execution_20250825")]))
+        } else {
+            Issue.record("Expected tool object")
+        }
+    }
+
+    @Test("supports defer_loading + allowed_callers together")
+    func supportsDeferLoadingAndAllowedCallers() async throws {
+        let options: SharedV3ProviderOptions = [
+            "anthropic": [
+                "deferLoading": .bool(true),
+                "allowedCallers": .array([.string("code_execution_20250825")])
+            ]
+        ]
+        let result = try await prepareAnthropicTools(
+            tools: [makeFunctionTool(
+                name: "query_database",
+                description: "Query a database",
+                schema: .object([
+                    "type": .string("object"),
+                    "properties": .object([
+                        "sql": .object(["type": .string("string")])
+                    ])
+                ]),
+                providerOptions: options
+            )],
+            toolChoice: nil,
+            disableParallelToolUse: nil,
+            supportsStructuredOutput: true
+        )
+
+        #expect(result.betas == Set(["structured-outputs-2025-11-13", "advanced-tool-use-2025-11-20"]))
+        if case let .object(tool) = result.tools?.first {
+            #expect(tool["defer_loading"] == .bool(true))
+            #expect(tool["allowed_callers"] == .array([.string("code_execution_20250825")]))
+        } else {
+            Issue.record("Expected tool object")
+        }
+    }
 }
 
 @Suite("prepareAnthropicTools strict mode")
@@ -289,13 +378,13 @@ struct AnthropicPrepareToolsStrictModeTests {
 }
 
 	@Suite("prepareAnthropicTools provider defined")
-	struct AnthropicPrepareToolsProviderDefinedTests {
+struct AnthropicPrepareToolsProviderDefinedTests {
     @Test("computer_20241022 adds beta and payload")
     func computer20241022() async throws {
         let args: [String: JSONValue] = [
-            "display_width_px": .number(800),
-            "display_height_px": .number(600),
-            "display_number": .number(1)
+            "displayWidthPx": .number(800),
+            "displayHeightPx": .number(600),
+            "displayNumber": .number(1)
         ]
         let result = try await prepareAnthropicTools(
             tools: [makeProviderTool(id: "anthropic.computer_20241022", name: "computer", args: args)],
@@ -318,10 +407,10 @@ struct AnthropicPrepareToolsStrictModeTests {
     @Test("computer_20251124 adds beta and payload")
     func computer20251124() async throws {
         let args: [String: JSONValue] = [
-            "display_width_px": .number(1024),
-            "display_height_px": .number(768),
-            "display_number": .number(1),
-            "enable_zoom": .bool(true),
+            "displayWidthPx": .number(1024),
+            "displayHeightPx": .number(768),
+            "displayNumber": .number(1),
+            "enableZoom": .bool(true),
         ]
         let result = try await prepareAnthropicTools(
             tools: [makeProviderTool(id: "anthropic.computer_20251124", name: "computer", args: args)],
@@ -345,9 +434,9 @@ struct AnthropicPrepareToolsStrictModeTests {
     @Test("computer_20251124 omits enable_zoom when not provided")
     func computer20251124WithoutEnableZoom() async throws {
         let args: [String: JSONValue] = [
-            "display_width_px": .number(1024),
-            "display_height_px": .number(768),
-            "display_number": .number(1),
+            "displayWidthPx": .number(1024),
+            "displayHeightPx": .number(768),
+            "displayNumber": .number(1),
         ]
         let result = try await prepareAnthropicTools(
             tools: [makeProviderTool(id: "anthropic.computer_20251124", name: "computer", args: args)],
@@ -370,10 +459,10 @@ struct AnthropicPrepareToolsStrictModeTests {
     @Test("computer_20251124 supports enable_zoom false")
     func computer20251124EnableZoomFalse() async throws {
         let args: [String: JSONValue] = [
-            "display_width_px": .number(1024),
-            "display_height_px": .number(768),
-            "display_number": .number(1),
-            "enable_zoom": .bool(false),
+            "displayWidthPx": .number(1024),
+            "displayHeightPx": .number(768),
+            "displayNumber": .number(1),
+            "enableZoom": .bool(false),
         ]
         let result = try await prepareAnthropicTools(
             tools: [makeProviderTool(id: "anthropic.computer_20251124", name: "computer", args: args)],
@@ -397,9 +486,9 @@ struct AnthropicPrepareToolsStrictModeTests {
     @Test("computer_20250124 adds beta and payload")
     func computer20250124() async throws {
         let args: [String: JSONValue] = [
-            "display_width_px": .number(1024),
-            "display_height_px": .number(768),
-            "display_number": .number(1),
+            "displayWidthPx": .number(1024),
+            "displayHeightPx": .number(768),
+            "displayNumber": .number(1),
         ]
         let result = try await prepareAnthropicTools(
             tools: [makeProviderTool(id: "anthropic.computer_20250124", name: "computer", args: args)],
@@ -489,7 +578,7 @@ struct AnthropicPrepareToolsStrictModeTests {
     }
 
 	    @Test("web_fetch_20250910 parses args and betas")
-	    func webFetch20250910() async throws {
+    func webFetch20250910() async throws {
 	        let args: [String: JSONValue] = [
 	            "maxUses": .number(10),
 	            "allowedDomains": .array([.string("https://www.google.com")]),
@@ -557,9 +646,201 @@ struct AnthropicPrepareToolsStrictModeTests {
 	            disableParallelToolUse: nil
 	        )
 
-        #expect(result.tools == nil)
+        #expect(result.tools == [])
         #expect(result.toolChoice == nil)
         #expect(result.warnings == [.unsupported(feature: "provider-defined tool unsupported.tool", details: nil)])
+    }
+
+    @Test("Anthropic tool wrappers: web_search_20250305 forwards options")
+    func wrapperWebSearch20250305() async throws {
+        let tool = anthropicWebSearch20250305(
+            .init(
+                maxUses: 10,
+                allowedDomains: ["https://www.google.com"],
+                userLocation: .init(city: "New York")
+            )
+        )
+
+        guard let id = tool.id, let name = tool.name else {
+            Issue.record("Expected provider tool id/name")
+            return
+        }
+
+        let providerTool = LanguageModelV3ProviderTool(id: id, name: name, args: tool.args ?? [:])
+
+        let prepared = try await prepareAnthropicTools(
+            tools: [.provider(providerTool)],
+            toolChoice: nil,
+            disableParallelToolUse: nil
+        )
+
+        #expect(prepared.betas.isEmpty)
+        if case let .object(payload)? = prepared.tools?.first {
+            #expect(payload["type"] == .string("web_search_20250305"))
+            #expect(payload["name"] == .string("web_search"))
+            #expect(payload["max_uses"] == .number(10))
+            #expect(payload["allowed_domains"] == .array([.string("https://www.google.com")]))
+            if case let .object(location)? = payload["user_location"] {
+                #expect(location["type"] == .string("approximate"))
+                #expect(location["city"] == .string("New York"))
+            } else {
+                Issue.record("Expected user_location")
+            }
+        } else {
+            Issue.record("Expected prepared tool payload")
+        }
+    }
+
+    @Test("Anthropic tool wrappers: computer_20241022 forwards display settings")
+    func wrapperComputer20241022() async throws {
+        let tool = anthropicComputer20241022(.init(displayWidthPx: 800, displayHeightPx: 600, displayNumber: 1))
+
+        guard let id = tool.id, let name = tool.name else {
+            Issue.record("Expected provider tool id/name")
+            return
+        }
+
+        let providerTool = LanguageModelV3ProviderTool(id: id, name: name, args: tool.args ?? [:])
+
+        let prepared = try await prepareAnthropicTools(
+            tools: [.provider(providerTool)],
+            toolChoice: nil,
+            disableParallelToolUse: nil
+        )
+
+        #expect(prepared.betas == Set(["computer-use-2024-10-22"]))
+        if case let .object(payload)? = prepared.tools?.first {
+            #expect(payload["type"] == .string("computer_20241022"))
+            #expect(payload["name"] == .string("computer"))
+            #expect(payload["display_width_px"] == .number(800))
+            #expect(payload["display_height_px"] == .number(600))
+            #expect(payload["display_number"] == .number(1))
+        } else {
+            Issue.record("Expected prepared tool payload")
+        }
+    }
+
+    @Test("Anthropic tool wrappers: computer_20250124 forwards display settings")
+    func wrapperComputer20250124() async throws {
+        let tool = anthropicComputer20250124(.init(displayWidthPx: 1024, displayHeightPx: 768, displayNumber: 1))
+
+        guard let id = tool.id, let name = tool.name else {
+            Issue.record("Expected provider tool id/name")
+            return
+        }
+
+        let providerTool = LanguageModelV3ProviderTool(id: id, name: name, args: tool.args ?? [:])
+
+        let prepared = try await prepareAnthropicTools(
+            tools: [.provider(providerTool)],
+            toolChoice: nil,
+            disableParallelToolUse: nil
+        )
+
+        #expect(prepared.betas == Set(["computer-use-2025-01-24"]))
+        if case let .object(payload)? = prepared.tools?.first {
+            #expect(payload["type"] == .string("computer_20250124"))
+            #expect(payload["name"] == .string("computer"))
+            #expect(payload["display_width_px"] == .number(1024))
+            #expect(payload["display_height_px"] == .number(768))
+            #expect(payload["display_number"] == .number(1))
+        } else {
+            Issue.record("Expected prepared tool payload")
+        }
+    }
+
+    @Test("Anthropic tool wrappers: computer_20251124 forwards enableZoom")
+    func wrapperComputer20251124() async throws {
+        let tool = anthropicComputer20251124(.init(displayWidthPx: 1024, displayHeightPx: 768, displayNumber: 1, enableZoom: true))
+
+        guard let id = tool.id, let name = tool.name else {
+            Issue.record("Expected provider tool id/name")
+            return
+        }
+
+        let providerTool = LanguageModelV3ProviderTool(id: id, name: name, args: tool.args ?? [:])
+
+        let prepared = try await prepareAnthropicTools(
+            tools: [.provider(providerTool)],
+            toolChoice: nil,
+            disableParallelToolUse: nil
+        )
+
+        #expect(prepared.betas == Set(["computer-use-2025-11-24"]))
+        if case let .object(payload)? = prepared.tools?.first {
+            #expect(payload["type"] == .string("computer_20251124"))
+            #expect(payload["name"] == .string("computer"))
+            #expect(payload["display_width_px"] == .number(1024))
+            #expect(payload["display_height_px"] == .number(768))
+            #expect(payload["display_number"] == .number(1))
+            #expect(payload["enable_zoom"] == .bool(true))
+        } else {
+            Issue.record("Expected prepared tool payload")
+        }
+    }
+
+    @Test("Anthropic tool wrappers: web_fetch_20250910 forwards options")
+    func wrapperWebFetch20250910() async throws {
+        let tool = anthropicWebFetch20250910(
+            .init(
+                maxUses: 10,
+                allowedDomains: ["https://www.google.com"],
+                citationsEnabled: true,
+                maxContentTokens: 1_000
+            )
+        )
+
+        guard let id = tool.id, let name = tool.name else {
+            Issue.record("Expected provider tool id/name")
+            return
+        }
+
+        let providerTool = LanguageModelV3ProviderTool(id: id, name: name, args: tool.args ?? [:])
+
+        let prepared = try await prepareAnthropicTools(
+            tools: [.provider(providerTool)],
+            toolChoice: nil,
+            disableParallelToolUse: nil
+        )
+
+        #expect(prepared.betas == Set(["web-fetch-2025-09-10"]))
+        if case let .object(payload)? = prepared.tools?.first {
+            #expect(payload["type"] == .string("web_fetch_20250910"))
+            #expect(payload["name"] == .string("web_fetch"))
+            #expect(payload["max_uses"] == .number(10))
+            #expect(payload["allowed_domains"] == .array([.string("https://www.google.com")]))
+            #expect(payload["citations"] == .object(["enabled": .bool(true)]))
+            #expect(payload["max_content_tokens"] == .number(1_000))
+        } else {
+            Issue.record("Expected prepared tool payload")
+        }
+    }
+
+    @Test("Anthropic tool wrappers: text_editor_20250728 forwards maxCharacters")
+    func wrapperTextEditor20250728() async throws {
+        let tool = anthropicTextEditor20250728(.init(maxCharacters: 10_000))
+
+        guard let id = tool.id, let name = tool.name else {
+            Issue.record("Expected provider tool id/name")
+            return
+        }
+
+        let providerTool = LanguageModelV3ProviderTool(id: id, name: name, args: tool.args ?? [:])
+
+        let prepared = try await prepareAnthropicTools(
+            tools: [.provider(providerTool)],
+            toolChoice: nil,
+            disableParallelToolUse: nil
+        )
+
+        #expect(prepared.betas.isEmpty)
+        if case let .object(payload)? = prepared.tools?.first {
+            #expect(payload["type"] == .string("text_editor_20250728"))
+            #expect(payload["name"] == .string("str_replace_based_edit_tool"))
+            #expect(payload["max_characters"] == .number(10_000))
+        } else {
+            Issue.record("Expected prepared tool payload")
+        }
     }
 }
 

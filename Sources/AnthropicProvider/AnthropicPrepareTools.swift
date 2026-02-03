@@ -135,48 +135,48 @@ public func prepareAnthropicTools(
 
             case "anthropic.computer_20250124":
                 betas.insert("computer-use-2025-01-24")
-                let width = numberValue(providerTool.args["display_width_px"]) ?? 0
-                let height = numberValue(providerTool.args["display_height_px"]) ?? 0
+                let width = numberValue(providerTool.args["displayWidthPx"]) ?? numberValue(providerTool.args["display_width_px"])
+                let height = numberValue(providerTool.args["displayHeightPx"]) ?? numberValue(providerTool.args["display_height_px"])
                 var payload: [String: JSONValue] = [
                     "name": .string("computer"),
-                    "type": .string("computer_20250124"),
-                    "display_width_px": .number(width),
-                    "display_height_px": .number(height)
+                    "type": .string("computer_20250124")
                 ]
-                if let displayNumber = numberValue(providerTool.args["display_number"]) {
+                if let width { payload["display_width_px"] = .number(width) }
+                if let height { payload["display_height_px"] = .number(height) }
+                if let displayNumber = numberValue(providerTool.args["displayNumber"]) ?? numberValue(providerTool.args["display_number"]) {
                     payload["display_number"] = .number(displayNumber)
                 }
                 anthropicTools.append(.object(payload))
 
             case "anthropic.computer_20251124":
                 betas.insert("computer-use-2025-11-24")
-                let width = numberValue(providerTool.args["display_width_px"]) ?? 0
-                let height = numberValue(providerTool.args["display_height_px"]) ?? 0
+                let width = numberValue(providerTool.args["displayWidthPx"]) ?? numberValue(providerTool.args["display_width_px"])
+                let height = numberValue(providerTool.args["displayHeightPx"]) ?? numberValue(providerTool.args["display_height_px"])
                 var payload: [String: JSONValue] = [
                     "name": .string("computer"),
-                    "type": .string("computer_20251124"),
-                    "display_width_px": .number(width),
-                    "display_height_px": .number(height)
+                    "type": .string("computer_20251124")
                 ]
-                if let displayNumber = numberValue(providerTool.args["display_number"]) {
+                if let width { payload["display_width_px"] = .number(width) }
+                if let height { payload["display_height_px"] = .number(height) }
+                if let displayNumber = numberValue(providerTool.args["displayNumber"]) ?? numberValue(providerTool.args["display_number"]) {
                     payload["display_number"] = .number(displayNumber)
                 }
-                if let enableZoom = boolValue(providerTool.args["enable_zoom"]) {
+                if let enableZoom = boolValue(providerTool.args["enableZoom"]) ?? boolValue(providerTool.args["enable_zoom"]) {
                     payload["enable_zoom"] = .bool(enableZoom)
                 }
                 anthropicTools.append(.object(payload))
 
             case "anthropic.computer_20241022":
                 betas.insert("computer-use-2024-10-22")
-                let width = numberValue(providerTool.args["display_width_px"]) ?? 0
-                let height = numberValue(providerTool.args["display_height_px"]) ?? 0
+                let width = numberValue(providerTool.args["displayWidthPx"]) ?? numberValue(providerTool.args["display_width_px"])
+                let height = numberValue(providerTool.args["displayHeightPx"]) ?? numberValue(providerTool.args["display_height_px"])
                 var payload: [String: JSONValue] = [
                     "name": .string("computer"),
-                    "type": .string("computer_20241022"),
-                    "display_width_px": .number(width),
-                    "display_height_px": .number(height)
+                    "type": .string("computer_20241022")
                 ]
-                if let displayNumber = numberValue(providerTool.args["display_number"]) {
+                if let width { payload["display_width_px"] = .number(width) }
+                if let height { payload["display_height_px"] = .number(height) }
+                if let displayNumber = numberValue(providerTool.args["displayNumber"]) ?? numberValue(providerTool.args["display_number"]) {
                     payload["display_number"] = .number(displayNumber)
                 }
                 anthropicTools.append(.object(payload))
@@ -322,8 +322,7 @@ public func prepareAnthropicTools(
         }
     }
 
-    // Normalize empty array to nil to mirror upstream behavior
-    let normalizedTools = anthropicTools.isEmpty ? nil : anthropicTools
+    let preparedTools = anthropicTools
 
     guard let toolChoice else {
         let choiceJSON: JSONValue? = disableParallelToolUse == true ? .object([
@@ -331,7 +330,7 @@ public func prepareAnthropicTools(
             "disable_parallel_tool_use": .bool(true)
         ]) : nil
         return AnthropicPreparedTools(
-            tools: normalizedTools,
+            tools: preparedTools,
             toolChoice: choiceJSON,
             warnings: toolWarnings,
             betas: betas
@@ -352,7 +351,7 @@ public func prepareAnthropicTools(
     switch toolChoice {
     case .auto:
         return AnthropicPreparedTools(
-            tools: normalizedTools,
+            tools: preparedTools,
             toolChoice: makeChoicePayload(type: "auto"),
             warnings: toolWarnings,
             betas: betas
@@ -360,7 +359,7 @@ public func prepareAnthropicTools(
 
     case .required:
         return AnthropicPreparedTools(
-            tools: normalizedTools,
+            tools: preparedTools,
             toolChoice: makeChoicePayload(type: "any"),
             warnings: toolWarnings,
             betas: betas
@@ -376,7 +375,7 @@ public func prepareAnthropicTools(
 
     case .tool(let toolName):
         return AnthropicPreparedTools(
-            tools: normalizedTools,
+            tools: preparedTools,
             toolChoice: makeChoicePayload(type: "tool", extra: ["name": .string(toolName)]),
             warnings: toolWarnings,
             betas: betas
