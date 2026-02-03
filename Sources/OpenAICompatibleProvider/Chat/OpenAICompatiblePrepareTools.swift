@@ -39,7 +39,7 @@ enum OpenAICompatibleToolPreparer {
                     "function": .object(functionObject)
                 ]))
 
-            case .providerDefined(let providerTool):
+            case .provider(let providerTool):
                 warnings.append(.unsupported(feature: "provider-defined tool \(providerTool.id)", details: nil))
             }
         }

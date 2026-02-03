@@ -593,7 +593,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
     private func containsLocalShellTool(_ tools: [LanguageModelV3Tool]?) -> Bool {
         guard let tools else { return false }
         return tools.contains { tool in
-            if case .providerDefined(let providerTool) = tool {
+            if case .provider(let providerTool) = tool {
                 return providerTool.id == "openai.local_shell"
             }
             return false
@@ -603,7 +603,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
     private func containsProviderTool(_ tools: [LanguageModelV3Tool]?, id: String) -> Bool {
         guard let tools else { return false }
         return tools.contains { tool in
-            if case .providerDefined(let providerTool) = tool {
+            if case .provider(let providerTool) = tool {
                 return providerTool.id == id
             }
             return false
@@ -613,7 +613,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
     private func findWebSearchToolName(_ tools: [LanguageModelV3Tool]?) -> String? {
         guard let tools else { return nil }
         for tool in tools {
-            if case .providerDefined(let providerTool) = tool,
+            if case .provider(let providerTool) = tool,
                providerTool.id == "openai.web_search" || providerTool.id == "openai.web_search_preview" {
                 return providerTool.name
             }

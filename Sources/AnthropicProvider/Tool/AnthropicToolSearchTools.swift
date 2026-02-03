@@ -46,14 +46,14 @@ private let anthropicToolSearchToolOutputSchema = FlexibleSchema(
     jsonSchema(.object(["type": .string("array")]))
 )
 
-private let anthropicToolSearchRegex20251119Factory = createProviderDefinedToolFactoryWithOutputSchema(
+private let anthropicToolSearchRegex20251119Factory = createProviderToolFactoryWithOutputSchema(
     id: "anthropic.tool_search_regex_20251119",
     name: "tool_search_tool_regex",
     inputSchema: anthropicToolSearchRegex20251119InputSchema,
     outputSchema: anthropicToolSearchToolOutputSchema
 )
 
-private let anthropicToolSearchBm2520251119Factory = createProviderDefinedToolFactoryWithOutputSchema(
+private let anthropicToolSearchBm2520251119Factory = createProviderToolFactoryWithOutputSchema(
     id: "anthropic.tool_search_bm25_20251119",
     name: "tool_search_tool_bm25",
     inputSchema: anthropicToolSearchBm2520251119InputSchema,
@@ -62,11 +62,10 @@ private let anthropicToolSearchBm2520251119Factory = createProviderDefinedToolFa
 
 @discardableResult
 public func anthropicToolSearchRegex20251119() -> Tool {
-    anthropicToolSearchRegex20251119Factory(ProviderDefinedToolFactoryWithOutputSchemaOptions(args: [:]))
+    anthropicToolSearchRegex20251119Factory(ProviderToolFactoryWithOutputSchemaOptions(args: [:]))
 }
 
 @discardableResult
 public func anthropicToolSearchBm2520251119() -> Tool {
-    anthropicToolSearchBm2520251119Factory(ProviderDefinedToolFactoryWithOutputSchemaOptions(args: [:]))
+    anthropicToolSearchBm2520251119Factory(ProviderToolFactoryWithOutputSchemaOptions(args: [:]))
 }
-

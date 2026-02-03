@@ -241,13 +241,13 @@ private let fileSearchOutputJSONSchema: JSONValue = .object([
     ])
 ])
 
-public let openaiFileSearchToolFactory = createProviderDefinedToolFactoryWithOutputSchema(
+public let openaiFileSearchToolFactory = createProviderToolFactoryWithOutputSchema(
     id: "openai.file_search",
     name: "file_search",
     inputSchema: FlexibleSchema(jsonSchema(fileSearchInputJSONSchema)),
     outputSchema: FlexibleSchema(jsonSchema(fileSearchOutputJSONSchema))
 ) { (args: OpenAIFileSearchArgs) in
-    var options = ProviderDefinedToolFactoryWithOutputSchemaOptions()
+    var options = ProviderToolFactoryWithOutputSchemaOptions()
     options.args = encodeOpenAIFileSearchArgs(args)
     return options
 }

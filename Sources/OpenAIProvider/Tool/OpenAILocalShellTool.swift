@@ -83,7 +83,7 @@ public let openaiLocalShellOutputSchema = FlexibleSchema(
     Schema.codable(OpenAILocalShellOutput.self, jsonSchema: localShellOutputJSONSchema)
 )
 
-public let openaiLocalShellTool = createProviderDefinedToolFactoryWithOutputSchema(
+public let openaiLocalShellTool = createProviderToolFactoryWithOutputSchema(
     id: "openai.local_shell",
     name: "local_shell",
     inputSchema: FlexibleSchema(jsonSchema(localShellInputJSONSchema)),

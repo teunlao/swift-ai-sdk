@@ -672,7 +672,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                 betas.insert("files-api-2025-04-14")
 
                 if options.tools?.contains(where: { tool in
-                    guard case .providerDefined(let providerTool) = tool else { return false }
+                    guard case .provider(let providerTool) = tool else { return false }
                     return providerTool.id == "anthropic.code_execution_20250825"
                 }) != true {
                     warnings.append(.other(message: "code execution tool is required when using skills"))

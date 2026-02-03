@@ -689,8 +689,8 @@ struct AnthropicMessagesLanguageModelStreamAdvancedTests {
         let result = try await model.doStream(options: .init(
             prompt: advancedTestPrompt,
             tools: [
-                .providerDefined(
-                    LanguageModelV3ProviderDefinedTool(
+                .provider(
+                    LanguageModelV3ProviderTool(
                         id: "anthropic.web_fetch_20250910",
                         name: "web_fetch",
                         args: ["maxUses": .number(1)]
@@ -738,8 +738,8 @@ struct AnthropicMessagesLanguageModelStreamAdvancedTests {
         let result = try await model.doStream(options: .init(
             prompt: advancedTestPrompt,
             tools: [
-                .providerDefined(
-                    LanguageModelV3ProviderDefinedTool(
+                .provider(
+                    LanguageModelV3ProviderTool(
                         id: "anthropic.web_search_20250305",
                         name: "web_search",
                         args: [

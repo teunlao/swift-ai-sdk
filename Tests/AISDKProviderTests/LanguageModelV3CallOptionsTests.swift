@@ -51,7 +51,7 @@ struct LanguageModelV3CallOptionsTests {
         ]
 
         let functionTool = LanguageModelV3Tool.function(.init(name: "search", inputSchema: ["type": .string("object")], description: "find"))
-        let providerTool = LanguageModelV3Tool.providerDefined(.init(id: "code-exec", name: "Code Execution", args: [:]))
+        let providerTool = LanguageModelV3Tool.provider(.init(id: "code-exec", name: "Code Execution", args: [:]))
 
         let schema: JSONValue = ["type": .string("object")]
         let opts = LanguageModelV3CallOptions(

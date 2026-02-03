@@ -44,7 +44,7 @@ func prepareMistralTools(
                 "function": .object(functionPayload)
             ])))
 
-        case .providerDefined(let providerTool):
+        case .provider(let providerTool):
             warnings.append(.unsupported(feature: "provider-defined tool \(providerTool.id)", details: nil))
         }
     }

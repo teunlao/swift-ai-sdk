@@ -1958,7 +1958,7 @@ struct GenerateTextAdvancedTests {
             inputSchema: toolInputSchema(),
             execute: nil,
             outputSchema: toolInputSchema(),
-            type: .providerDefined,
+            type: .provider,
             id: "test.web_search",
             name: "web_search",
             args: [:]

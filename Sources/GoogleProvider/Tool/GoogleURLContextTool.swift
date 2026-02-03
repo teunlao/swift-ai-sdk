@@ -11,7 +11,7 @@ private let googleURLContextInputSchema = FlexibleSchema(
     )
 )
 
-public let googleURLContextToolFactory = createProviderDefinedToolFactory(
+public let googleURLContextToolFactory = createProviderToolFactory(
     id: "google.url_context",
     name: "url_context",
     inputSchema: googleURLContextInputSchema
@@ -19,5 +19,5 @@ public let googleURLContextToolFactory = createProviderDefinedToolFactory(
 
 @discardableResult
 public func googleURLContextTool() -> Tool {
-    googleURLContextToolFactory(ProviderDefinedToolFactoryOptions(args: [:]))
+    googleURLContextToolFactory(ProviderToolFactoryOptions(args: [:]))
 }

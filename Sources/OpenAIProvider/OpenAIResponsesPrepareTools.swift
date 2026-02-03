@@ -35,7 +35,7 @@ func prepareOpenAIResponsesTools(
             }
             openAITools.append(.object(payload))
 
-        case .providerDefined(let providerTool):
+        case .provider(let providerTool):
             switch providerTool.id {
             case "openai.file_search":
                 let parsed = try await validateTypes(

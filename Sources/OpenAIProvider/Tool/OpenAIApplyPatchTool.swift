@@ -116,10 +116,9 @@ public let openaiApplyPatchOutputSchema = FlexibleSchema(
     Schema.codable(OpenAIApplyPatchOutput.self, jsonSchema: applyPatchOutputJSONSchema)
 )
 
-public let openaiApplyPatchTool = createProviderDefinedToolFactoryWithOutputSchema(
+public let openaiApplyPatchTool = createProviderToolFactoryWithOutputSchema(
     id: "openai.apply_patch",
     name: "apply_patch",
     inputSchema: FlexibleSchema(jsonSchema(applyPatchInputJSONSchema)),
     outputSchema: FlexibleSchema(jsonSchema(applyPatchOutputJSONSchema))
 )
-

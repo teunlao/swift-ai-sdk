@@ -3276,7 +3276,7 @@ struct AnthropicMessagesLanguageModelWebSearchTests {
         _ = try await model.doGenerate(options: LanguageModelV3CallOptions(
             prompt: [.user(content: [.text(.init(text: "What is the latest news?"))], providerOptions: nil)],
             tools: [
-                .providerDefined(LanguageModelV3ProviderDefinedTool(
+                .provider(LanguageModelV3ProviderTool(
                     id: "anthropic.web_search_20250305",
                     name: "web_search",
                     args: [
@@ -3356,7 +3356,7 @@ struct AnthropicMessagesLanguageModelWebSearchTests {
         _ = try await model.doGenerate(options: LanguageModelV3CallOptions(
             prompt: [.user(content: [.text(.init(text: "What is the latest news?"))], providerOptions: nil)],
             tools: [
-                .providerDefined(LanguageModelV3ProviderDefinedTool(
+                .provider(LanguageModelV3ProviderTool(
                     id: "anthropic.web_search_20250305",
                     name: "web_search",
                     args: [
@@ -3436,7 +3436,7 @@ struct AnthropicMessagesLanguageModelWebSearchTests {
         _ = try await model.doGenerate(options: LanguageModelV3CallOptions(
             prompt: [.user(content: [.text(.init(text: "What is the latest news?"))], providerOptions: nil)],
             tools: [
-                .providerDefined(LanguageModelV3ProviderDefinedTool(
+                .provider(LanguageModelV3ProviderTool(
                     id: "anthropic.web_search_20250305",
                     name: "web_search",
                     args: [
@@ -3526,7 +3526,7 @@ struct AnthropicMessagesLanguageModelWebSearchTests {
         _ = try await model.doGenerate(options: LanguageModelV3CallOptions(
             prompt: [.user(content: [.text(.init(text: "What is the latest news?"))], providerOptions: nil)],
             tools: [
-                .providerDefined(LanguageModelV3ProviderDefinedTool(
+                .provider(LanguageModelV3ProviderTool(
                     id: "anthropic.web_search_20250305",
                     name: "web_search",
                     args: [
@@ -3615,7 +3615,7 @@ struct AnthropicMessagesLanguageModelWebSearchTests {
         _ = try await model.doGenerate(options: LanguageModelV3CallOptions(
             prompt: [.user(content: [.text(.init(text: "What is the latest news?"))], providerOptions: nil)],
             tools: [
-                .providerDefined(LanguageModelV3ProviderDefinedTool(
+                .provider(LanguageModelV3ProviderTool(
                     id: "anthropic.web_search_20250305",
                     name: "web_search",
                     args: [
@@ -3709,7 +3709,7 @@ struct AnthropicMessagesLanguageModelWebFetchTests {
         _ = try await model.doGenerate(options: LanguageModelV3CallOptions(
             prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
             tools: [
-                .providerDefined(LanguageModelV3ProviderDefinedTool(
+                .provider(LanguageModelV3ProviderTool(
                     id: "anthropic.web_fetch_20250910",
                     name: "web_fetch",
                     args: ["maxUses": .number(1)]
@@ -3789,7 +3789,7 @@ struct AnthropicMessagesLanguageModelCodeExecutionTests {
         _ = try await model.doGenerate(options: LanguageModelV3CallOptions(
             prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
             tools: [
-                .providerDefined(LanguageModelV3ProviderDefinedTool(
+                .provider(LanguageModelV3ProviderTool(
                     id: "anthropic.code_execution_20250522",
                     name: "code_execution",
                     args: [:]
@@ -3885,7 +3885,7 @@ struct AnthropicMessagesLanguageModelCodeExecutionTests {
         let result = try await model.doGenerate(options: LanguageModelV3CallOptions(
             prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
             tools: [
-                .providerDefined(LanguageModelV3ProviderDefinedTool(
+                .provider(LanguageModelV3ProviderTool(
                     id: "anthropic.code_execution_20250522",
                     name: "code_execution",
                     args: [:]
@@ -4009,7 +4009,7 @@ struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
 
         let result = try await model.doGenerate(options: LanguageModelV3CallOptions(
             prompt: [.user(content: [.text(.init(text: "What is the latest news?"))], providerOptions: nil)],
-            tools: [.providerDefined(LanguageModelV3ProviderDefinedTool(
+            tools: [.provider(LanguageModelV3ProviderTool(
                 id: "anthropic.web_search_20250305",
                 name: "web_search",
                 args: ["maxUses": .number(5)]
@@ -4122,7 +4122,7 @@ struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
 
         let result = try await model.doGenerate(options: LanguageModelV3CallOptions(
             prompt: [.user(content: [.text(.init(text: "What is the latest news?"))], providerOptions: nil)],
-            tools: [.providerDefined(LanguageModelV3ProviderDefinedTool(
+            tools: [.provider(LanguageModelV3ProviderTool(
                 id: "anthropic.web_search_20250305",
                 name: "web_search",
                 args: ["maxUses": .number(1)]
@@ -4212,7 +4212,7 @@ struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
 
         let result = try await model.doGenerate(options: LanguageModelV3CallOptions(
             prompt: [.user(content: [.text(.init(text: "Fetch the page"))], providerOptions: nil)],
-            tools: [.providerDefined(LanguageModelV3ProviderDefinedTool(
+            tools: [.provider(LanguageModelV3ProviderTool(
                 id: "anthropic.web_fetch_20250910",
                 name: "web_fetch",
                 args: ["maxUses": .number(1)]
@@ -4317,7 +4317,7 @@ struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
 
         let result = try await model.doGenerate(options: LanguageModelV3CallOptions(
             prompt: [.user(content: [.text(.init(text: "Fetch the PDF"))], providerOptions: nil)],
-            tools: [.providerDefined(LanguageModelV3ProviderDefinedTool(
+            tools: [.provider(LanguageModelV3ProviderTool(
                 id: "anthropic.web_fetch_20250910",
                 name: "web_fetch",
                 args: [:]
@@ -4388,7 +4388,7 @@ struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
 
         let result = try await model.doGenerate(options: LanguageModelV3CallOptions(
             prompt: [.user(content: [.text(.init(text: "Fetch page"))], providerOptions: nil)],
-            tools: [.providerDefined(LanguageModelV3ProviderDefinedTool(
+            tools: [.provider(LanguageModelV3ProviderTool(
                 id: "anthropic.web_fetch_20250910",
                 name: "web_fetch",
                 args: [:]
@@ -4455,7 +4455,7 @@ struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
 
         let result = try await model.doGenerate(options: LanguageModelV3CallOptions(
             prompt: [.user(content: [.text(.init(text: "Run code"))], providerOptions: nil)],
-            tools: [.providerDefined(LanguageModelV3ProviderDefinedTool(
+            tools: [.provider(LanguageModelV3ProviderTool(
                 id: "anthropic.code_execution_20250522",
                 name: "code_execution",
                 args: [:]
@@ -4718,7 +4718,7 @@ struct AnthropicMessagesLanguageModelBatch17Tests {
                     description: "Calculate math",
                     providerOptions: nil
                 )),
-                .providerDefined(LanguageModelV3ProviderDefinedTool(
+                .provider(LanguageModelV3ProviderTool(
                     id: "anthropic.web_search_20250305",
                     name: "web_search",
                     args: ["maxUses": .number(1)]
@@ -4784,7 +4784,7 @@ struct AnthropicMessagesLanguageModelBatch17Tests {
                     description: "Calculate math expressions",
                     providerOptions: nil
                 )),
-                .providerDefined(LanguageModelV3ProviderDefinedTool(
+                .provider(LanguageModelV3ProviderTool(
                     id: "anthropic.code_execution_20250522",
                     name: "code_execution",
                     args: [:]

@@ -62,12 +62,12 @@ struct GooglePrepareToolsTests {
 
     @Test("should correctly prepare provider-defined tools as array")
     func prepareProviderDefinedToolsAsArray() throws {
-        let tool1 = LanguageModelV3Tool.providerDefined(LanguageModelV3ProviderDefinedTool(
+        let tool1 = LanguageModelV3Tool.provider(LanguageModelV3ProviderTool(
             id: "google.google_search",
             name: "google_search",
             args: [:]
         ))
-        let tool2 = LanguageModelV3Tool.providerDefined(LanguageModelV3ProviderDefinedTool(
+        let tool2 = LanguageModelV3Tool.provider(LanguageModelV3ProviderTool(
             id: "google.url_context",
             name: "url_context",
             args: [:]
@@ -104,7 +104,7 @@ struct GooglePrepareToolsTests {
 
     @Test("should correctly prepare single provider-defined tool")
     func prepareSingleProviderDefinedTool() throws {
-        let tool = LanguageModelV3Tool.providerDefined(LanguageModelV3ProviderDefinedTool(
+        let tool = LanguageModelV3Tool.provider(LanguageModelV3ProviderTool(
             id: "google.google_search",
             name: "google_search",
             args: [:]
@@ -135,7 +135,7 @@ struct GooglePrepareToolsTests {
 
     @Test("should add warnings for unsupported tools")
     func addWarningsForUnsupportedTools() throws {
-        let tool = LanguageModelV3Tool.providerDefined(LanguageModelV3ProviderDefinedTool(
+        let tool = LanguageModelV3Tool.provider(LanguageModelV3ProviderTool(
             id: "unsupported.tool",
             name: "unsupported_tool",
             args: [:]
@@ -291,7 +291,7 @@ struct GooglePrepareToolsTests {
             inputSchema: .object(["type": .string("object"), "properties": .object([:])]),
             description: "A test function"
         ))
-        let providerTool = LanguageModelV3Tool.providerDefined(LanguageModelV3ProviderDefinedTool(
+        let providerTool = LanguageModelV3Tool.provider(LanguageModelV3ProviderTool(
             id: "google.google_search",
             name: "google_search",
             args: [:]
@@ -331,7 +331,7 @@ struct GooglePrepareToolsTests {
 
     @Test("should handle latest modelId for provider-defined tools correctly")
     func handleLatestModelIdForProviderDefinedTools() throws {
-        let tool = LanguageModelV3Tool.providerDefined(LanguageModelV3ProviderDefinedTool(
+        let tool = LanguageModelV3Tool.provider(LanguageModelV3ProviderTool(
             id: "google.google_search",
             name: "google_search",
             args: [:]
@@ -378,7 +378,7 @@ struct GooglePrepareToolsTests {
             inputSchema: .object(["type": .string("object")]),
             description: "Weather"
         ))
-        let providerTool = LanguageModelV3Tool.providerDefined(LanguageModelV3ProviderDefinedTool(
+        let providerTool = LanguageModelV3Tool.provider(LanguageModelV3ProviderTool(
             id: "google.google_search",
             name: "google_search",
             args: [:]
@@ -399,8 +399,8 @@ struct GooglePrepareToolsTests {
     }
 
     @Test("maps provider-defined google search with dynamic retrieval")
-    func providerDefinedGoogleSearch() throws {
-        let tool = LanguageModelV3Tool.providerDefined(LanguageModelV3ProviderDefinedTool(
+    func providerGoogleSearch() throws {
+        let tool = LanguageModelV3Tool.provider(LanguageModelV3ProviderTool(
             id: "google.google_search",
             name: "google_search",
             args: [

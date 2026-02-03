@@ -35,7 +35,7 @@ func prepareCohereTools(
 
     for tool in normalizedTools {
         switch tool {
-        case .providerDefined(let providerTool):
+        case .provider(let providerTool):
             toolWarnings.append(.unsupported(feature: "provider-defined tool \(providerTool.id)", details: nil))
 
         case .function(let functionTool):

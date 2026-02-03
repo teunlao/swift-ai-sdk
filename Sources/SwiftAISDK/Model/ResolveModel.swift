@@ -185,7 +185,7 @@ private func _convertLanguageModelV3ToolToV2(_ value: LanguageModelV3Tool) -> La
                 providerOptions: tool.providerOptions
             )
         )
-    case .providerDefined(let tool):
+    case .provider(let tool):
         return .providerDefined(
             LanguageModelV2ProviderDefinedTool(
                 id: tool.id,

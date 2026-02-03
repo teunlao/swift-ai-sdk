@@ -40,19 +40,19 @@ private let anthropicTextEditorInputSchema = FlexibleSchema(
     )
 )
 
-private let anthropicTextEditor20241022Factory = createProviderDefinedToolFactory(
+private let anthropicTextEditor20241022Factory = createProviderToolFactory(
     id: "anthropic.text_editor_20241022",
     name: "str_replace_editor",
     inputSchema: anthropicTextEditorInputSchemaWithUndo
 )
 
-private let anthropicTextEditor20250124Factory = createProviderDefinedToolFactory(
+private let anthropicTextEditor20250124Factory = createProviderToolFactory(
     id: "anthropic.text_editor_20250124",
     name: "str_replace_editor",
     inputSchema: anthropicTextEditorInputSchemaWithUndo
 )
 
-private let anthropicTextEditor20250429Factory = createProviderDefinedToolFactory(
+private let anthropicTextEditor20250429Factory = createProviderToolFactory(
     id: "anthropic.text_editor_20250429",
     name: "str_replace_based_edit_tool",
     inputSchema: anthropicTextEditorInputSchema

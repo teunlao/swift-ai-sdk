@@ -17,8 +17,8 @@ struct OpenAIChatPrepareToolsTests {
     }
 
     private func makeProviderTool(id: String, name: String) -> LanguageModelV3Tool {
-        .providerDefined(
-            LanguageModelV3ProviderDefinedTool(
+        .provider(
+            LanguageModelV3ProviderTool(
                 id: id,
                 name: name,
                 args: [:]

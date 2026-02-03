@@ -1683,8 +1683,8 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let webSearchTool = LanguageModelV3Tool.providerDefined(.init(id: "openai.web_search", name: "web_search", args: [:]))
-        let codeInterpreterTool = LanguageModelV3Tool.providerDefined(.init(id: "openai.code_interpreter", name: "code_interpreter", args: [:]))
+        let webSearchTool = LanguageModelV3Tool.provider(.init(id: "openai.web_search", name: "web_search", args: [:]))
+        let codeInterpreterTool = LanguageModelV3Tool.provider(.init(id: "openai.code_interpreter", name: "code_interpreter", args: [:]))
 
         _ = try await model.doGenerate(
             options: LanguageModelV3CallOptions(
@@ -1789,7 +1789,7 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let webSearchTool = LanguageModelV3Tool.providerDefined(.init(id: "openai.web_search", name: "web_search", args: [:]))
+        let webSearchTool = LanguageModelV3Tool.provider(.init(id: "openai.web_search", name: "web_search", args: [:]))
 
         let streamResult = try await model.doStream(
             options: LanguageModelV3CallOptions(
@@ -2531,7 +2531,7 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let tool = LanguageModelV3Tool.providerDefined(.init(id: "openai.code_interpreter", name: "code_interpreter", args: [:]))
+        let tool = LanguageModelV3Tool.provider(.init(id: "openai.code_interpreter", name: "code_interpreter", args: [:]))
 
         let streamResult = try await model.doStream(
             options: LanguageModelV3CallOptions(
@@ -2663,7 +2663,7 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let tool = LanguageModelV3Tool.providerDefined(.init(id: "openai.image_generation", name: "image_generation", args: [:]))
+        let tool = LanguageModelV3Tool.provider(.init(id: "openai.image_generation", name: "image_generation", args: [:]))
 
         let streamResult = try await model.doStream(
             options: LanguageModelV3CallOptions(
@@ -2763,7 +2763,7 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let tool = LanguageModelV3Tool.providerDefined(.init(id: "openai.file_search", name: "file_search", args: ["vectorStoreIds": .array([.string("vs_1")])]))
+        let tool = LanguageModelV3Tool.provider(.init(id: "openai.file_search", name: "file_search", args: ["vectorStoreIds": .array([.string("vs_1")])]))
 
         let streamResult = try await model.doStream(
             options: LanguageModelV3CallOptions(
@@ -2943,7 +2943,7 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let tool = LanguageModelV3Tool.providerDefined(.init(id: "openai.computer_use", name: "computer_use", args: [:]))
+        let tool = LanguageModelV3Tool.provider(.init(id: "openai.computer_use", name: "computer_use", args: [:]))
 
         let streamResult = try await model.doStream(
             options: LanguageModelV3CallOptions(
@@ -3063,7 +3063,7 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let tool = LanguageModelV3Tool.providerDefined(.init(id: "openai.local_shell", name: "local_shell", args: [:]))
+        let tool = LanguageModelV3Tool.provider(.init(id: "openai.local_shell", name: "local_shell", args: [:]))
 
         let streamResult = try await model.doStream(
             options: LanguageModelV3CallOptions(
@@ -3142,7 +3142,7 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let tool = LanguageModelV3Tool.providerDefined(.init(id: "openai.apply_patch", name: "apply_patch", args: [:]))
+        let tool = LanguageModelV3Tool.provider(.init(id: "openai.apply_patch", name: "apply_patch", args: [:]))
 
         let result = try await model.doGenerate(
             options: LanguageModelV3CallOptions(
@@ -3241,7 +3241,7 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let tool = LanguageModelV3Tool.providerDefined(.init(id: "openai.apply_patch", name: "my_apply_patch", args: [:]))
+        let tool = LanguageModelV3Tool.provider(.init(id: "openai.apply_patch", name: "my_apply_patch", args: [:]))
 
         let result = try await model.doGenerate(
             options: LanguageModelV3CallOptions(
@@ -3355,7 +3355,7 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let tool = LanguageModelV3Tool.providerDefined(.init(id: "openai.apply_patch", name: "apply_patch", args: [:]))
+        let tool = LanguageModelV3Tool.provider(.init(id: "openai.apply_patch", name: "apply_patch", args: [:]))
 
         let streamResult = try await model.doStream(
             options: LanguageModelV3CallOptions(
@@ -7084,7 +7084,7 @@ struct OpenAIResponsesLanguageModelTests {
         ]
 
         let tools: [LanguageModelV3Tool] = [
-            .providerDefined(LanguageModelV3ProviderDefinedTool(
+            .provider(LanguageModelV3ProviderTool(
                 id: "openai.computer_use",
                 name: "computer_use",
                 args: [:]

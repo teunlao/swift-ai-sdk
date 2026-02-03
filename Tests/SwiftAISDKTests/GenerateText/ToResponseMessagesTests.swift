@@ -485,7 +485,7 @@ struct ToResponseMessagesTests {
             execute: nil,
             outputSchema: nil,
             toModelOutput: nil,
-            type: .providerDefined,
+            type: .provider,
             id: "test.web_search",
             name: "web_search",
             args: [:]

@@ -169,7 +169,7 @@ struct PrepareToolsAndToolChoiceTests {
 
         // Verify provider-defined tool (find by type, not index, since sorting may differ)
         let providerDefinedTool = result.tools?.first { tool in
-            if case .providerDefined = tool {
+            if case .provider = tool {
                 return true
             }
             return false
@@ -180,7 +180,7 @@ struct PrepareToolsAndToolChoiceTests {
             return
         }
 
-        if case .providerDefined(let providerTool) = providerDefinedTool {
+        if case .provider(let providerTool) = providerDefinedTool {
             // Verify that dictionary key is used, not tool.name field
             #expect(providerTool.name == "providerTool", "Provider-defined tool should use dictionary key, not tool.name field")
             #expect(providerTool.id == "provider.tool-id")
@@ -317,7 +317,7 @@ struct PrepareToolsAndToolChoiceTests {
             inputSchema: FlexibleSchema(jsonSchema(.object([
                 "type": .string("object")
             ]))),
-            type: .providerDefined,
+            type: .provider,
             id: "provider.tool-id",
             name: "different-name",  // Different from dictionary key to test correct mapping
             args: ["key": .string("value")]

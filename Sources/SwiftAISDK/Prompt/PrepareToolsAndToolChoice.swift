@@ -64,23 +64,23 @@ public func prepareToolsAndToolChoice(
             )
             languageModelTools.append(.function(functionTool))
 
-        case .providerDefined:
-            // Provider-defined tool
+        case .provider:
+            // Provider tool
             // Use dictionary key 'name' as tool name, matching TypeScript behavior (line 61 in upstream)
             guard let id = tool.id else {
                 throw InvalidArgumentError(
                     parameter: "tools[\(name)]",
                     value: JSONValue.string(String(describing: tool)),
-                    message: "Provider-defined tool must have 'id' field"
+                    message: "Provider tool must have 'id' field"
                 )
             }
 
-            let providerTool = LanguageModelV3ProviderDefinedTool(
+            let providerTool = LanguageModelV3ProviderTool(
                 id: id,
                 name: name,  // Use dictionary key, not tool.name field
                 args: tool.args ?? [:]
             )
-            languageModelTools.append(.providerDefined(providerTool))
+            languageModelTools.append(.provider(providerTool))
         }
     }
 

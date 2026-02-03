@@ -152,11 +152,11 @@ struct LanguageModelV3ToolTests {
         #expect(decoded.description == nil)
     }
 
-    // MARK: - ProviderDefinedTool
+    // MARK: - ProviderTool
 
-    @Test("ProviderDefinedTool: encode/decode")
-    func v3_providerDefinedTool_roundTrip() throws {
-        let tool = LanguageModelV3ProviderDefinedTool(
+    @Test("ProviderTool: encode/decode")
+    func v3_providerTool_roundTrip() throws {
+        let tool = LanguageModelV3ProviderTool(
             id: "openai.search",
             name: "webSearch",
             args: [
@@ -166,7 +166,7 @@ struct LanguageModelV3ToolTests {
         )
 
         let encoded = try JSONEncoder().encode(tool)
-        let decoded = try JSONDecoder().decode(LanguageModelV3ProviderDefinedTool.self, from: encoded)
+        let decoded = try JSONDecoder().decode(LanguageModelV3ProviderTool.self, from: encoded)
 
         #expect(decoded.id == "openai.search")
         #expect(decoded.name == "webSearch")
@@ -174,16 +174,16 @@ struct LanguageModelV3ToolTests {
         #expect(decoded.args["includeImages"] == .bool(true))
     }
 
-    @Test("ProviderDefinedTool: encode with empty args")
-    func v3_providerDefinedTool_emptyArgs() throws {
-        let tool = LanguageModelV3ProviderDefinedTool(
+    @Test("ProviderTool: encode with empty args")
+    func v3_providerTool_emptyArgs() throws {
+        let tool = LanguageModelV3ProviderTool(
             id: "provider.simple",
             name: "simpleTool",
             args: [:]
         )
 
         let encoded = try JSONEncoder().encode(tool)
-        let decoded = try JSONDecoder().decode(LanguageModelV3ProviderDefinedTool.self, from: encoded)
+        let decoded = try JSONDecoder().decode(LanguageModelV3ProviderTool.self, from: encoded)
 
         #expect(decoded.id == "provider.simple")
         #expect(decoded.name == "simpleTool")

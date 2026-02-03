@@ -25,13 +25,13 @@ private let anthropicBashInputSchema = FlexibleSchema(
     )
 )
 
-private let anthropicBash20241022Factory = createProviderDefinedToolFactory(
+private let anthropicBash20241022Factory = createProviderToolFactory(
     id: "anthropic.bash_20241022",
     name: "bash",
     inputSchema: anthropicBashInputSchema
 )
 
-private let anthropicBash20250124Factory = createProviderDefinedToolFactory(
+private let anthropicBash20250124Factory = createProviderToolFactory(
     id: "anthropic.bash_20250124",
     name: "bash",
     inputSchema: anthropicBashInputSchema

@@ -117,7 +117,7 @@ public func prepareAnthropicTools(
             }
             anthropicTools.append(.object(payload))
 
-        case .providerDefined(let providerTool):
+        case .provider(let providerTool):
             switch providerTool.id {
             case "anthropic.code_execution_20250522":
                 betas.insert("code-execution-2025-05-22")

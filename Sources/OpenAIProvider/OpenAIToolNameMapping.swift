@@ -24,7 +24,7 @@ struct OpenAIToolNameMapping: Sendable {
         var providerToCustom: [String: String] = [:]
 
         for tool in tools ?? [] {
-            guard case .providerDefined(let providerTool) = tool else { continue }
+            guard case .provider(let providerTool) = tool else { continue }
             guard let providerToolName = providerToolNames[providerTool.id] else { continue }
 
             customToProvider[providerTool.name] = providerToolName
@@ -45,4 +45,3 @@ struct OpenAIToolNameMapping: Sendable {
         providerToolNameToCustomToolName[providerToolName] ?? providerToolName
     }
 }
-

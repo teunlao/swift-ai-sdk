@@ -80,7 +80,7 @@ private func computer20241022Args(for options: AnthropicComputerOptions) -> [Str
     return args
 }
 
-private let computer20241022Factory = createProviderDefinedToolFactory(
+private let computer20241022Factory = createProviderToolFactory(
     id: "anthropic.computer_20241022",
     name: "computer",
     inputSchema: computer20241022InputSchema
@@ -192,7 +192,7 @@ private func computer20250124Args(for options: AnthropicComputerOptions) -> [Str
     return args
 }
 
-private let computer20250124Factory = createProviderDefinedToolFactory(
+private let computer20250124Factory = createProviderToolFactory(
     id: "anthropic.computer_20250124",
     name: "computer",
     inputSchema: computer20250124InputSchema
@@ -324,7 +324,7 @@ private func computer20251124Args(for options: AnthropicComputerOptions) -> [Str
     return args
 }
 
-private let computer20251124Factory = createProviderDefinedToolFactory(
+private let computer20251124Factory = createProviderToolFactory(
     id: "anthropic.computer_20251124",
     name: "computer",
     inputSchema: computer20251124InputSchema

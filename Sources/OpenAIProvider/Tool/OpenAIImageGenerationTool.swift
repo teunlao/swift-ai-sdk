@@ -202,13 +202,13 @@ private let imageGenerationOutputJSONSchema: JSONValue = .object([
     ])
 ])
 
-public let openaiImageGenerationToolFactory = createProviderDefinedToolFactoryWithOutputSchema(
+public let openaiImageGenerationToolFactory = createProviderToolFactoryWithOutputSchema(
     id: "openai.image_generation",
     name: "image_generation",
     inputSchema: FlexibleSchema(jsonSchema(imageGenerationInputJSONSchema)),
     outputSchema: FlexibleSchema(jsonSchema(imageGenerationOutputJSONSchema))
 ) { (args: OpenAIImageGenerationArgs) in
-    var options = ProviderDefinedToolFactoryWithOutputSchemaOptions()
+    var options = ProviderToolFactoryWithOutputSchemaOptions()
     options.args = encodeOpenAIImageGenerationArgs(args)
     return options
 }

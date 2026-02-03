@@ -252,7 +252,7 @@ struct ToolTests {
     func toolTypeValues() throws {
         #expect(ToolType.function.rawValue == "function")
         #expect(ToolType.dynamic.rawValue == "dynamic")
-        #expect(ToolType.providerDefined.rawValue == "provider-defined")
+        #expect(ToolType.provider.rawValue == "provider")
     }
 
     @Test("NeedsApproval enum cases")

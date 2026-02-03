@@ -1721,8 +1721,8 @@ struct AzureProviderTests {
             fetch: fetch
         ))
 
-        let fileSearchTool: LanguageModelV3Tool = .providerDefined(
-            LanguageModelV3ProviderDefinedTool(
+        let fileSearchTool: LanguageModelV3Tool = .provider(
+            LanguageModelV3ProviderTool(
                 id: "openai.file_search",
                 name: "file_search",
                 args: [

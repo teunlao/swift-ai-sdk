@@ -65,7 +65,7 @@ private let anthropicCodeExecution20250522ToolOutputSchema = FlexibleSchema(
     jsonSchema(.object(["type": .string("object")]))
 )
 
-private let anthropicCodeExecutionFactory = createProviderDefinedToolFactoryWithOutputSchema(
+private let anthropicCodeExecutionFactory = createProviderToolFactoryWithOutputSchema(
     id: "anthropic.code_execution_20250522",
     name: "code_execution",
     inputSchema: anthropicCodeExecutionInputSchema,
@@ -74,5 +74,5 @@ private let anthropicCodeExecutionFactory = createProviderDefinedToolFactoryWith
 
 @discardableResult
 public func anthropicCodeExecution20250522() -> Tool {
-    anthropicCodeExecutionFactory(ProviderDefinedToolFactoryWithOutputSchemaOptions(args: [:]))
+    anthropicCodeExecutionFactory(ProviderToolFactoryWithOutputSchemaOptions(args: [:]))
 }

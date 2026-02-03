@@ -2,7 +2,7 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-public let groqBrowserSearchToolFactory = createProviderDefinedToolFactory(
+public let groqBrowserSearchToolFactory = createProviderToolFactory(
     id: "groq.browser_search",
     name: "browser_search",
     inputSchema: FlexibleSchema(jsonSchema(.object([
@@ -13,5 +13,5 @@ public let groqBrowserSearchToolFactory = createProviderDefinedToolFactory(
 
 @discardableResult
 public func groqBrowserSearchTool() -> Tool {
-    groqBrowserSearchToolFactory(ProviderDefinedToolFactoryOptions(args: [:]))
+    groqBrowserSearchToolFactory(ProviderToolFactoryOptions(args: [:]))
 }

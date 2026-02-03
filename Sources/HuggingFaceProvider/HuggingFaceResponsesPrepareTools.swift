@@ -40,7 +40,7 @@ func prepareHuggingFaceResponsesTools(
             }
             huggingfaceTools.append(.object(object))
 
-        case .providerDefined(let providerTool):
+        case .provider(let providerTool):
             warnings.append(.unsupported(feature: "provider-defined tool \(providerTool.id)", details: nil))
             continue
         }

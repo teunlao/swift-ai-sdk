@@ -55,7 +55,7 @@ struct GroqPrepareToolsTests {
 
     @Test("should add warnings for unsupported provider-defined tools")
     func unsupportedProviderTools() throws {
-        let tool = LanguageModelV3Tool.providerDefined(LanguageModelV3ProviderDefinedTool(
+        let tool = LanguageModelV3Tool.provider(LanguageModelV3ProviderTool(
             id: "some.unsupported_tool",
             name: "unsupported_tool",
             args: [:]
@@ -162,7 +162,7 @@ struct GroqPrepareToolsTests {
             inputSchema: .object(["type": .string("object")]),
             description: "Weather"
         ))
-        let providerTool = LanguageModelV3Tool.providerDefined(LanguageModelV3ProviderDefinedTool(
+        let providerTool = LanguageModelV3Tool.provider(LanguageModelV3ProviderTool(
             id: "groq.browser_search",
             name: "browser_search",
             args: [:]
@@ -184,7 +184,7 @@ struct GroqPrepareToolsTests {
 
     @Test("browser search supported models map to provider tool")
     func browserSearchSupported() throws {
-        let tool = LanguageModelV3Tool.providerDefined(LanguageModelV3ProviderDefinedTool(
+        let tool = LanguageModelV3Tool.provider(LanguageModelV3ProviderTool(
             id: "groq.browser_search",
             name: "browser_search",
             args: [:]
@@ -245,7 +245,7 @@ struct GroqPrepareToolsTests {
             inputSchema: .object(["type": .string("object"), "properties": .object([:])]),
             description: "A test tool"
         ))
-        let browserTool = LanguageModelV3Tool.providerDefined(LanguageModelV3ProviderDefinedTool(
+        let browserTool = LanguageModelV3Tool.provider(LanguageModelV3ProviderTool(
             id: "groq.browser_search",
             name: "browser_search",
             args: [:]
@@ -286,7 +286,7 @@ struct GroqPrepareToolsTests {
         let supportedModels = ["openai/gpt-oss-20b", "openai/gpt-oss-120b"]
 
         for modelId in supportedModels {
-            let tool = LanguageModelV3Tool.providerDefined(LanguageModelV3ProviderDefinedTool(
+            let tool = LanguageModelV3Tool.provider(LanguageModelV3ProviderTool(
                 id: "groq.browser_search",
                 name: "browser_search",
                 args: [:]
@@ -311,7 +311,7 @@ struct GroqPrepareToolsTests {
 
     @Test("should handle browser search with tool choice")
     func browserSearchWithToolChoice() throws {
-        let tool = LanguageModelV3Tool.providerDefined(LanguageModelV3ProviderDefinedTool(
+        let tool = LanguageModelV3Tool.provider(LanguageModelV3ProviderTool(
             id: "groq.browser_search",
             name: "browser_search",
             args: [:]

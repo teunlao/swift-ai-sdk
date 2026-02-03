@@ -35,7 +35,7 @@ func prepareGroqTools(
                 }())
             ]))
 
-        case .providerDefined(let providerTool):
+        case .provider(let providerTool):
             if providerTool.id == "groq.browser_search" {
                 if GroqBrowserSearchSupportedModels.isSupported(modelId: modelId.rawValue) {
                     groqTools.append(.object([

@@ -99,7 +99,7 @@ private let anthropicTextEditor20250728InputSchema = FlexibleSchema(
 ///
 /// Port of `@ai-sdk/anthropic/src/tool/text-editor_20250728.ts`.
 public let anthropicTextEditor20250728: @Sendable (AnthropicTextEditor20250728Args) -> Tool =
-    createProviderDefinedToolFactory(
+    createProviderToolFactory(
         id: "anthropic.text_editor_20250728",
         name: "str_replace_based_edit_tool",
         inputSchema: anthropicTextEditor20250728InputSchema
@@ -108,5 +108,5 @@ public let anthropicTextEditor20250728: @Sendable (AnthropicTextEditor20250728Ar
         if let maxCharacters = options.maxCharacters {
             args["max_characters"] = .number(Double(maxCharacters))
         }
-        return ProviderDefinedToolFactoryOptions(args: args)
+        return ProviderToolFactoryOptions(args: args)
     }

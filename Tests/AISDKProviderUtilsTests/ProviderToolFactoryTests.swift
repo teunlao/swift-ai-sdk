@@ -1,7 +1,7 @@
 /**
- Tests for provider-defined tool factory helpers.
+ Tests for provider tool factory helpers.
 
- Port of `@ai-sdk/provider-utils/src/provider-defined-tool-factory.ts`.
+ Port of `@ai-sdk/provider-utils/src/provider-tool-factory.ts`.
  */
 
 import Testing
@@ -30,7 +30,7 @@ private struct CustomProviderOptions: Sendable {
 
 private func mapCustomOptions(
     _ options: CustomProviderOptions
-) -> ProviderDefinedToolFactoryOptions {
+) -> ProviderToolFactoryOptions {
     var args: [String: JSONValue] = [:]
     if let maxUses = options.maxUses {
         args["maxUses"] = JSONValue.number(Double(maxUses))
@@ -39,7 +39,7 @@ private func mapCustomOptions(
         args["allowedDomains"] = JSONValue.array(domains.map { JSONValue.string($0) })
     }
 
-    return ProviderDefinedToolFactoryOptions(
+    return ProviderToolFactoryOptions(
         execute: options.execute,
         outputSchema: options.outputSchema,
         needsApproval: options.needsApproval,
@@ -47,9 +47,9 @@ private func mapCustomOptions(
     )
 }
 
-@Suite("Provider-defined tool factory")
-struct ProviderDefinedToolFactoryTests {
-    @Test("createProviderDefinedToolFactory builds provider-defined Tool")
+@Suite("Provider tool factory")
+struct ProviderToolFactoryTests {
+    @Test("createProviderToolFactory builds provider Tool")
     func createFactoryProducesTool() async throws {
         let inputSchema = FlexibleSchema(
             jsonSchema(
@@ -73,7 +73,7 @@ struct ProviderDefinedToolFactoryTests {
             )
         )
 
-        let factory = createProviderDefinedToolFactory(
+        let factory = createProviderToolFactory(
             id: "provider.tool",
             name: "provider-tool",
             inputSchema: inputSchema
@@ -89,7 +89,7 @@ struct ProviderDefinedToolFactoryTests {
         }
 
         let tool = factory(
-            ProviderDefinedToolFactoryOptions(
+            ProviderToolFactoryOptions(
                 execute: execute,
                 outputSchema: outputSchema,
                 needsApproval: .always,
@@ -107,7 +107,7 @@ struct ProviderDefinedToolFactoryTests {
             )
         )
 
-        #expect(tool.type == ToolType.providerDefined)
+        #expect(tool.type == ToolType.provider)
         #expect(tool.id == "provider.tool")
         #expect(tool.name == "provider-tool")
         #expect(tool.args?["mode"] == JSONValue.string("debug"))
@@ -161,15 +161,15 @@ struct ProviderDefinedToolFactoryTests {
     func factoryDefaults() throws {
         let inputSchema = FlexibleSchema(jsonSchema(JSONValue.object(["type": .string("string")])))
 
-        let factory = createProviderDefinedToolFactory(
+        let factory = createProviderToolFactory(
             id: "provider.simple",
             name: "simple",
             inputSchema: inputSchema
         )
 
-        let tool = factory(ProviderDefinedToolFactoryOptions())
+        let tool = factory(ProviderToolFactoryOptions())
 
-        #expect(tool.type == ToolType.providerDefined)
+        #expect(tool.type == ToolType.provider)
         #expect(tool.id == "provider.simple")
         #expect(tool.name == "simple")
         #expect(tool.execute == nil)
@@ -186,7 +186,7 @@ struct ProviderDefinedToolFactoryTests {
         let inputSchema = FlexibleSchema(jsonSchema(JSONValue.object(["type": .string("string")])))
         let outputSchema = FlexibleSchema(jsonSchema(JSONValue.object(["type": .string("string")])))
 
-        let factory = createProviderDefinedToolFactory(
+        let factory = createProviderToolFactory(
             id: "provider.custom",
             name: "custom-tool",
             inputSchema: inputSchema,
@@ -223,7 +223,7 @@ struct ProviderDefinedToolFactoryTests {
         let inputSchema = FlexibleSchema(jsonSchema(JSONValue.object(["type": .string("string")])))
         let outputSchema = FlexibleSchema(jsonSchema(JSONValue.object(["type": .string("string")])))
 
-        let factory = createProviderDefinedToolFactoryWithOutputSchema(
+        let factory = createProviderToolFactoryWithOutputSchema(
             id: "provider.output",
             name: "output-tool",
             inputSchema: inputSchema,
@@ -231,7 +231,7 @@ struct ProviderDefinedToolFactoryTests {
         )
 
         let tool = factory(
-            ProviderDefinedToolFactoryWithOutputSchemaOptions(
+            ProviderToolFactoryWithOutputSchemaOptions(
                 args: ["mode": JSONValue.string("strict")]
             )
         )
@@ -254,13 +254,13 @@ struct ProviderDefinedToolFactoryTests {
         let inputSchema = FlexibleSchema(jsonSchema(JSONValue.object(["type": .string("string")])))
         let outputSchema = FlexibleSchema(jsonSchema(JSONValue.object(["type": .string("string")])))
 
-        let factory = createProviderDefinedToolFactoryWithOutputSchema(
+        let factory = createProviderToolFactoryWithOutputSchema(
             id: "provider.custom-output",
             name: "custom-output-tool",
             inputSchema: inputSchema,
             outputSchema: outputSchema,
             mapOptions: { (options: CustomOutputOptions) in
-                ProviderDefinedToolFactoryWithOutputSchemaOptions(
+                ProviderToolFactoryWithOutputSchemaOptions(
                     execute: options.execute,
                     args: options.args
                 )
@@ -277,7 +277,7 @@ struct ProviderDefinedToolFactoryTests {
             )
         )
 
-        #expect(tool.type == ToolType.providerDefined)
+        #expect(tool.type == ToolType.provider)
         #expect(tool.id == "provider.custom-output")
         #expect(tool.args?["mode"] == JSONValue.string("test"))
         let resolved = try await tool.outputSchema?.resolve().jsonSchema()

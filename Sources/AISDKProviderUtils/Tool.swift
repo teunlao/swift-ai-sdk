@@ -230,7 +230,7 @@ public enum ToolType: String, Sendable {
     case dynamic = "dynamic"
 
     /// Tool with provider-defined input and output schemas.
-    case providerDefined = "provider-defined"
+    case provider = "provider"
 }
 
 /**

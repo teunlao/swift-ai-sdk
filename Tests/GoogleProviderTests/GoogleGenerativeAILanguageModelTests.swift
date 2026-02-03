@@ -1583,7 +1583,7 @@ struct GoogleGenerativeAILanguageModelTests {
         let result = try await model.doGenerate(options: .init(
             prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
             tools: [
-                .providerDefined(LanguageModelV3ProviderDefinedTool(
+                .provider(LanguageModelV3ProviderTool(
                     id: "google.code_execution",
                     name: "code_execution",
                     args: [:]
@@ -1660,7 +1660,7 @@ struct GoogleGenerativeAILanguageModelTests {
         _ = try await model.doGenerate(options: .init(
             prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
             tools: [
-                .providerDefined(LanguageModelV3ProviderDefinedTool(
+                .provider(LanguageModelV3ProviderTool(
                     id: "google.google_search",
                     name: "google_search",
                     args: [:]
@@ -1723,7 +1723,7 @@ struct GoogleGenerativeAILanguageModelTests {
         _ = try await model.doGenerate(options: .init(
             prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
             tools: [
-                .providerDefined(LanguageModelV3ProviderDefinedTool(
+                .provider(LanguageModelV3ProviderTool(
                     id: "google.google_search",
                     name: "google_search",
                     args: [:]
@@ -2052,7 +2052,7 @@ struct GoogleGenerativeAILanguageModelTests {
         _ = try await model.doGenerate(options: .init(
             prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
             tools: [
-                .providerDefined(LanguageModelV3ProviderDefinedTool(
+                .provider(LanguageModelV3ProviderTool(
                     id: "google.google_search",
                     name: "google_search",
                     args: [
@@ -2122,7 +2122,7 @@ struct GoogleGenerativeAILanguageModelTests {
         _ = try await model.doGenerate(options: .init(
             prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
             tools: [
-                .providerDefined(LanguageModelV3ProviderDefinedTool(
+                .provider(LanguageModelV3ProviderTool(
                     id: "google.url_context",
                     name: "url_context",
                     args: [:]
@@ -2692,7 +2692,7 @@ struct GoogleGenerativeAILanguageModelTests {
         _ = try await model.doGenerate(options: .init(
             prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
             tools: [
-                .providerDefined(LanguageModelV3ProviderDefinedTool(
+                .provider(LanguageModelV3ProviderTool(
                     id: "google.google_search",
                     name: "google_search",
                     args: [:]
@@ -3264,7 +3264,7 @@ struct GoogleGenerativeAILanguageModelTests {
 
         _ = try await model.doStream(options: .init(
             prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
-            tools: [.providerDefined(LanguageModelV3ProviderDefinedTool(
+            tools: [.provider(LanguageModelV3ProviderTool(
                 id: "google.google_search",
                 name: "google_search",
                 args: [:]
@@ -3320,7 +3320,7 @@ struct GoogleGenerativeAILanguageModelTests {
 
         _ = try await model.doStream(options: .init(
             prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
-            tools: [.providerDefined(LanguageModelV3ProviderDefinedTool(
+            tools: [.provider(LanguageModelV3ProviderTool(
                 id: "google.google_search",
                 name: "google_search",
                 args: [:]
@@ -3376,7 +3376,7 @@ struct GoogleGenerativeAILanguageModelTests {
 
         _ = try await model.doStream(options: .init(
             prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
-            tools: [.providerDefined(LanguageModelV3ProviderDefinedTool(
+            tools: [.provider(LanguageModelV3ProviderTool(
                 id: "google.google_search",
                 name: "google_search",
                 args: [:]
@@ -3432,7 +3432,7 @@ struct GoogleGenerativeAILanguageModelTests {
 
         _ = try await model.doStream(options: .init(
             prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
-            tools: [.providerDefined(LanguageModelV3ProviderDefinedTool(
+            tools: [.provider(LanguageModelV3ProviderTool(
                 id: "google.google_search",
                 name: "google_search",
                 args: [
@@ -4299,7 +4299,7 @@ struct GoogleGenerativeAILanguageModelTests {
 
         let result = try await model.doStream(options: .init(
             prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
-            tools: [.providerDefined(LanguageModelV3ProviderDefinedTool(
+            tools: [.provider(LanguageModelV3ProviderTool(
                 id: "code_execution",
                 name: "code_execution",
                 args: [:]

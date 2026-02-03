@@ -26,7 +26,7 @@ private func makeProviderTool(
     name: String,
     args: [String: JSONValue] = [:]
 ) -> LanguageModelV3Tool {
-    .providerDefined(LanguageModelV3ProviderDefinedTool(id: id, name: name, args: args))
+    .provider(LanguageModelV3ProviderTool(id: id, name: name, args: args))
 }
 
 @Suite("prepareAnthropicTools basics")

@@ -298,13 +298,13 @@ private let mcpOutputJSONSchema: JSONValue = .object([
     ])
 ])
 
-public let openaiMcpToolFactory = createProviderDefinedToolFactoryWithOutputSchema(
+public let openaiMcpToolFactory = createProviderToolFactoryWithOutputSchema(
     id: "openai.mcp",
     name: "mcp",
     inputSchema: FlexibleSchema(jsonSchema(mcpInputJSONSchema)),
     outputSchema: FlexibleSchema(jsonSchema(mcpOutputJSONSchema))
 ) { (args: OpenAIMCPArgs) in
-    var options = ProviderDefinedToolFactoryWithOutputSchemaOptions()
+    var options = ProviderToolFactoryWithOutputSchemaOptions()
     options.args = encodeOpenAIMCPArgs(args)
     return options
 }
@@ -371,4 +371,3 @@ private func encodeRequireApproval(_ value: OpenAIMCPRequireApproval) -> JSONVal
         ])
     }
 }
-

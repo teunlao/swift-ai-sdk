@@ -34,17 +34,17 @@ func prepareGoogleTools(
     let supportsDynamicRetrieval = modelIdString.contains("gemini-1.5-flash") && !modelIdString.contains("-8b")
 
     let hasFunctionTools = tools.contains { if case .function = $0 { return true } else { return false } }
-    let hasProviderDefinedTools = tools.contains { if case .providerDefined = $0 { return true } else { return false } }
+    let hasProviderTools = tools.contains { if case .provider = $0 { return true } else { return false } }
 
-    if hasFunctionTools && hasProviderDefinedTools {
+    if hasFunctionTools && hasProviderTools {
         warnings.append(.unsupported(feature: "combination of function and provider-defined tools", details: nil))
     }
 
-    if hasProviderDefinedTools {
+    if hasProviderTools {
         var googleToolsEntries: [JSONValue] = []
 
         for tool in tools {
-            guard case .providerDefined(let providerTool) = tool else { continue }
+            guard case .provider(let providerTool) = tool else { continue }
 
             switch providerTool.id {
             case "google.google_search":
@@ -178,7 +178,7 @@ func prepareGoogleTools(
 
     for tool in tools {
         guard case .function(let functionTool) = tool else {
-            if case .providerDefined(let providerTool) = tool {
+            if case .provider(let providerTool) = tool {
                 warnings.append(.unsupported(feature: "provider-defined tool \(providerTool.id)", details: nil))
             }
             continue

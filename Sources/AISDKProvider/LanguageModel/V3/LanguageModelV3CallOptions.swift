@@ -16,7 +16,7 @@ import Foundation
    frequencyPenalty?: number;
    responseFormat?: { type: 'text' } | { type: 'json'; schema?: JSONSchema7; name?: string; description?: string };
    seed?: number;
-   tools?: Array<LanguageModelV3FunctionTool | LanguageModelV3ProviderDefinedTool>;
+   tools?: Array<LanguageModelV3FunctionTool | LanguageModelV3ProviderTool>;
    toolChoice?: LanguageModelV3ToolChoice;
    includeRawChunks?: boolean;
    abortSignal?: AbortSignal;

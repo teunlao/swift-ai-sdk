@@ -7,8 +7,8 @@ import Testing
 @Suite("OpenAIResponsesPrepareTools")
 struct OpenAIResponsesPrepareToolsTests {
     private func providerTool(id: String, name: String? = nil, args: [String: JSONValue] = [:]) -> LanguageModelV3Tool {
-        .providerDefined(
-            LanguageModelV3ProviderDefinedTool(
+        .provider(
+            LanguageModelV3ProviderTool(
                 id: id,
                 name: name ?? id,
                 args: args

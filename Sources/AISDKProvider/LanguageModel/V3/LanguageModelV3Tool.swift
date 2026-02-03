@@ -1,14 +1,14 @@
 import Foundation
 
 /**
- Union type for tools (FunctionTool or ProviderDefinedTool).
+ Union type for tools (FunctionTool or ProviderTool).
 
  Port of `LanguageModelV3CallOptions['tools']` union:
  `LanguageModelV3FunctionTool | LanguageModelV3ProviderTool`.
  */
 public enum LanguageModelV3Tool: Sendable, Equatable, Codable {
     case function(LanguageModelV3FunctionTool)
-    case providerDefined(LanguageModelV3ProviderDefinedTool)
+    case provider(LanguageModelV3ProviderTool)
 
     private enum TypeKey: String, CodingKey {
         case type
@@ -21,8 +21,8 @@ public enum LanguageModelV3Tool: Sendable, Equatable, Codable {
         switch type {
         case "function":
             self = .function(try LanguageModelV3FunctionTool(from: decoder))
-        case "provider-defined":
-            self = .providerDefined(try LanguageModelV3ProviderDefinedTool(from: decoder))
+        case "provider":
+            self = .provider(try LanguageModelV3ProviderTool(from: decoder))
         default:
             throw DecodingError.dataCorruptedError(
                 forKey: .type,
@@ -36,9 +36,8 @@ public enum LanguageModelV3Tool: Sendable, Equatable, Codable {
         switch self {
         case .function(let tool):
             try tool.encode(to: encoder)
-        case .providerDefined(let tool):
+        case .provider(let tool):
             try tool.encode(to: encoder)
         }
     }
 }
-

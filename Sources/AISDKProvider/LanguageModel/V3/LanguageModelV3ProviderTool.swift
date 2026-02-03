@@ -1,21 +1,25 @@
 import Foundation
 
 /**
- The configuration of a tool that is defined by the provider.
+ The configuration of a provider tool.
+
+ Provider tools are tools that are specific to a certain provider.
+ The input and output schemas are defined by the provider, and
+ some of the tools are also executed on the provider systems.
 
  TypeScript equivalent:
  ```typescript
- export type LanguageModelV3ProviderDefinedTool = {
-   type: 'provider-defined';
+ export type LanguageModelV3ProviderTool = {
+   type: 'provider';
    id: `${string}.${string}`;
    name: string;
    args: Record<string, unknown>;
  };
  ```
  */
-public struct LanguageModelV3ProviderDefinedTool: Sendable, Equatable, Codable {
-    /// The type of the tool (always 'provider-defined').
-    public let type: String = "provider-defined"
+public struct LanguageModelV3ProviderTool: Sendable, Equatable, Codable {
+    /// The type of the tool (always 'provider').
+    public let type: String = "provider"
 
     /// The ID of the tool. Should follow the format `<provider-name>.<unique-tool-name>`.
     public let id: String
