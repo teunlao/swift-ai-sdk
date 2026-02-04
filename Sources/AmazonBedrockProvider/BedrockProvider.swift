@@ -65,6 +65,7 @@ public final class AmazonBedrockProvider: ProviderV3 {
     private let chatFactory: @Sendable (BedrockChatModelId) -> BedrockChatLanguageModel
     private let embeddingFactory: @Sendable (BedrockEmbeddingModelId) -> BedrockEmbeddingModel
     private let imageFactory: @Sendable (BedrockImageModelId) -> BedrockImageModel
+    private let rerankingFactory: @Sendable (BedrockRerankingModelId) -> BedrockRerankingModel
 
     public let tools: AnthropicTools
 
@@ -72,11 +73,13 @@ public final class AmazonBedrockProvider: ProviderV3 {
         chatFactory: @escaping @Sendable (BedrockChatModelId) -> BedrockChatLanguageModel,
         embeddingFactory: @escaping @Sendable (BedrockEmbeddingModelId) -> BedrockEmbeddingModel,
         imageFactory: @escaping @Sendable (BedrockImageModelId) -> BedrockImageModel,
+        rerankingFactory: @escaping @Sendable (BedrockRerankingModelId) -> BedrockRerankingModel,
         tools: AnthropicTools
     ) {
         self.chatFactory = chatFactory
         self.embeddingFactory = embeddingFactory
         self.imageFactory = imageFactory
+        self.rerankingFactory = rerankingFactory
         self.tools = tools
     }
 
@@ -90,6 +93,10 @@ public final class AmazonBedrockProvider: ProviderV3 {
 
     public func imageModel(modelId: String) throws -> any ImageModelV3 {
         imageFactory(BedrockImageModelId(rawValue: modelId))
+    }
+
+    public func rerankingModel(modelId: String) throws -> (any RerankingModelV3)? {
+        rerankingFactory(BedrockRerankingModelId(rawValue: modelId))
     }
 
     public func callAsFunction(_ modelId: String) throws -> any LanguageModelV3 {
@@ -109,6 +116,10 @@ public final class AmazonBedrockProvider: ProviderV3 {
     public func image(modelId: BedrockImageModelId) -> BedrockImageModel {
         imageFactory(modelId)
     }
+
+    public func reranking(modelId: BedrockRerankingModelId) -> BedrockRerankingModel {
+        rerankingFactory(modelId)
+    }
 }
 
 public func createAmazonBedrock(
@@ -116,17 +127,19 @@ public func createAmazonBedrock(
 ) -> AmazonBedrockProvider {
     let fetch = makeFetchFunction(settings: settings)
 
-    let baseURLResolver: @Sendable () -> String = {
-        if let custom = withoutTrailingSlash(settings.baseURL) {
-            return custom
-        }
-
-        let region = (try? loadSetting(
+    let region: String = {
+        (try? loadSetting(
             settingValue: settings.region,
             environmentVariableName: "AWS_REGION",
             settingName: "region",
             description: "AWS region"
         )) ?? "us-east-1"
+    }()
+
+    let baseURLResolver: @Sendable () -> String = {
+        if let custom = withoutTrailingSlash(settings.baseURL) {
+            return custom
+        }
 
         return "https://bedrock-runtime.\(region).amazonaws.com"
     }
@@ -177,10 +190,23 @@ public func createAmazonBedrock(
         )
     }
 
+    let rerankingFactory: @Sendable (BedrockRerankingModelId) -> BedrockRerankingModel = { modelId in
+        BedrockRerankingModel(
+            modelId: modelId,
+            config: BedrockRerankingModel.Config(
+                baseURL: baseURLResolver,
+                region: region,
+                headers: headersResolver,
+                fetch: fetch
+            )
+        )
+    }
+
     return AmazonBedrockProvider(
         chatFactory: chatFactory,
         embeddingFactory: embeddingFactory,
         imageFactory: imageFactory,
+        rerankingFactory: rerankingFactory,
         tools: anthropicTools
     )
 }
