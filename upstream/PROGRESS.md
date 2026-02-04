@@ -27,6 +27,12 @@ Rules:
 This is a lightweight “memory log” of what we shipped while chasing upstream parity.
 For source-of-truth code, always follow the commits and tests.
 
+### Unreleased (main)
+
+- 2026-02-04
+  - Anthropic: tool results no longer set `providerExecuted` (upstream parity); MCP tool-call/result are `dynamic: true` (tests updated).
+  - UI: align UI message stream chunks with upstream (`finishReason`, abort `reason`, tool `title`/`providerMetadata`, dynamic tool states) + tests.
+
 ### v0.7.x
 
 - `v0.7.0` (2026-01-26)
@@ -97,3 +103,11 @@ For source-of-truth code, always follow the commits and tests.
   - Tests: port programmatic tool calling multi-step dice game fixture to validate provider-deferred results + client tool execution:
     - `Tests/SwiftAISDKTests/GenerateText/GenerateTextProgrammaticToolCallingTests.swift`
     - `Tests/SwiftAISDKTests/GenerateText/StreamTextProgrammaticToolCallingTests.swift`
+
+### v0.12.x
+
+- `v0.12.0` (pending)
+  - UI message stream parity: add `finishReason` to `finish` chunks + `onFinish` event, add `abort.reason`, and support `title`/`providerMetadata` on `tool-input-*` chunks.
+  - UI processing: track `finishReason` in `processUIMessageStream`, propagate tool `title` into `UIToolUIPart`/`UIDynamicToolUIPart`, and handle dynamic-tool approval/denied states.
+  - Encoding: SSE JSON includes `finishReason` (when available) and `abort.reason`.
+  - Validation/tests: update `ValidateUIMessages` and add/update tests under `Tests/SwiftAISDKTests/UIMessageStream/*` and `Tests/SwiftAISDKTests/UI/*`.
