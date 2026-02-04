@@ -427,7 +427,7 @@ struct StreamTextBasicTests {
                 preliminary: false,
                 providerMetadata: nil
             )),
-            .finish(finishReason: .stop, usage: usage, providerMetadata: nil),
+            .finish(finishReason: LanguageModelV3FinishReason(unified: .stop), usage: usage, providerMetadata: nil),
         ]
 
         let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
@@ -1172,7 +1172,7 @@ struct StreamTextBasicTests {
 	                providerExecuted: false,
 	                providerMetadata: nil
 	            )),
-	            .finish(finishReason: .toolCalls, usage: usage, providerMetadata: nil)
+            .finish(finishReason: LanguageModelV3FinishReason(unified: .toolCalls), usage: usage, providerMetadata: nil)
 	        ]
 
         let stepTwoParts: [LanguageModelV3StreamPart] = [
@@ -1181,7 +1181,7 @@ struct StreamTextBasicTests {
             .textStart(id: "t-1", providerMetadata: nil),
             .textDelta(id: "t-1", delta: "Done", providerMetadata: nil),
             .textEnd(id: "t-1", providerMetadata: nil),
-            .finish(finishReason: .stop, usage: usage, providerMetadata: nil)
+            .finish(finishReason: LanguageModelV3FinishReason(unified: .stop), usage: usage, providerMetadata: nil)
         ]
 
         let stream1 = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
@@ -1246,7 +1246,7 @@ struct StreamTextBasicTests {
             .textStart(id: "t-err", providerMetadata: nil),
             .textDelta(id: "t-err", delta: "partial", providerMetadata: nil),
             .textEnd(id: "t-err", providerMetadata: nil),
-            .finish(finishReason: .stop, usage: usage, providerMetadata: nil)
+            .finish(finishReason: LanguageModelV3FinishReason(unified: .stop), usage: usage, providerMetadata: nil)
         ]
 
         let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
@@ -1581,7 +1581,7 @@ struct StreamTextBasicTests {
             .textStart(id: "t", providerMetadata: nil),
             .textDelta(id: "t", delta: "x", providerMetadata: nil),
             .textEnd(id: "t", providerMetadata: nil),
-            .finish(finishReason: .stop, usage: defaultUsage, providerMetadata: nil)
+            .finish(finishReason: LanguageModelV3FinishReason(unified: .stop), usage: defaultUsage, providerMetadata: nil)
         ]
 
         let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
@@ -1699,7 +1699,7 @@ struct StreamTextBasicTests {
             Task {
                 try? await delay(30)
                 c.yield(.textEnd(id: "t", providerMetadata: nil))
-                c.yield(.finish(finishReason: .stop, usage: usage, providerMetadata: nil))
+                c.yield(.finish(finishReason: LanguageModelV3FinishReason(unified: .stop), usage: usage, providerMetadata: nil))
                 c.finish()
             }
         }
@@ -1753,7 +1753,7 @@ struct StreamTextBasicTests {
             .textDelta(id: "t", delta: "A", providerMetadata: nil),
             .textDelta(id: "t", delta: "B", providerMetadata: nil),
             .textEnd(id: "t", providerMetadata: nil),
-            .finish(finishReason: .stop, usage: LanguageModelV3Usage(), providerMetadata: nil)
+            .finish(finishReason: LanguageModelV3FinishReason(unified: .stop), usage: LanguageModelV3Usage(), providerMetadata: nil)
         ]
         let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
             parts.forEach { c.yield($0) }
@@ -1786,7 +1786,7 @@ struct StreamTextBasicTests {
             .textStart(id: "t", providerMetadata: nil),
             .textDelta(id: "t", delta: "A", providerMetadata: nil),
             .textEnd(id: "t", providerMetadata: nil),
-            .finish(finishReason: .stop, usage: LanguageModelV3Usage(), providerMetadata: nil)
+            .finish(finishReason: LanguageModelV3FinishReason(unified: .stop), usage: LanguageModelV3Usage(), providerMetadata: nil)
         ]
         let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
             parts.forEach { c.yield($0) }
@@ -1824,7 +1824,7 @@ struct StreamTextBasicTests {
             .textStart(id: "t", providerMetadata: nil),
             .textDelta(id: "t", delta: "A", providerMetadata: nil),
             .textEnd(id: "t", providerMetadata: nil),
-            .finish(finishReason: .stop, usage: LanguageModelV3Usage(), providerMetadata: nil)
+            .finish(finishReason: LanguageModelV3FinishReason(unified: .stop), usage: LanguageModelV3Usage(), providerMetadata: nil)
         ]
         let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
             parts.forEach { c.yield($0) }
@@ -1870,7 +1870,7 @@ struct StreamTextBasicTests {
             .source(
                 .url(id: "s-url", url: "https://example.com", title: "Example", providerMetadata: nil)
             ),
-            .finish(finishReason: .stop, usage: defaultUsage, providerMetadata: nil)
+            .finish(finishReason: LanguageModelV3FinishReason(unified: .stop), usage: defaultUsage, providerMetadata: nil)
         ]
 
         let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
@@ -1906,7 +1906,7 @@ struct StreamTextBasicTests {
             .textStart(id: "t", providerMetadata: nil),
             .textDelta(id: "t", delta: "X", providerMetadata: nil),
             .textEnd(id: "t", providerMetadata: nil),
-            .finish(finishReason: .stop, usage: defaultUsage, providerMetadata: nil)
+            .finish(finishReason: LanguageModelV3FinishReason(unified: .stop), usage: defaultUsage, providerMetadata: nil)
         ]
 
         let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
@@ -1952,7 +1952,7 @@ struct StreamTextBasicTests {
                 preliminary: false,
                 providerMetadata: nil
             )),
-            .finish(finishReason: .stop, usage: defaultUsage, providerMetadata: nil)
+            .finish(finishReason: LanguageModelV3FinishReason(unified: .stop), usage: defaultUsage, providerMetadata: nil)
         ]
 
         let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
@@ -1993,7 +1993,7 @@ struct StreamTextBasicTests {
                 preliminary: false,
                 providerMetadata: nil
             )),
-            .finish(finishReason: .stop, usage: defaultUsage, providerMetadata: nil)
+            .finish(finishReason: LanguageModelV3FinishReason(unified: .stop), usage: defaultUsage, providerMetadata: nil)
         ]
 
         let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
@@ -2026,7 +2026,7 @@ struct StreamTextBasicTests {
             .textStart(id: "t", providerMetadata: nil),
             .textDelta(id: "t", delta: "A", providerMetadata: nil),
             .textEnd(id: "t", providerMetadata: nil),
-            .finish(finishReason: .stop, usage: LanguageModelV3Usage(), providerMetadata: nil)
+            .finish(finishReason: LanguageModelV3FinishReason(unified: .stop), usage: LanguageModelV3Usage(), providerMetadata: nil)
         ]
         let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
             parts.forEach { c.yield($0) }
@@ -2064,7 +2064,7 @@ struct StreamTextBasicTests {
             .textStart(id: "t", providerMetadata: nil),
             .textDelta(id: "t", delta: "ok", providerMetadata: nil),
             .textEnd(id: "t", providerMetadata: nil),
-            .finish(finishReason: .stop, usage: usage, providerMetadata: nil)
+            .finish(finishReason: LanguageModelV3FinishReason(unified: .stop), usage: usage, providerMetadata: nil)
         ]
 
         let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in

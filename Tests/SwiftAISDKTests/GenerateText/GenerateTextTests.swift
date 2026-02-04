@@ -26,7 +26,7 @@ struct GenerateTextTests {
 
     private func makeGenerateResult(
         content: [LanguageModelV3Content],
-        finishReason: LanguageModelV3FinishReason = .stop,
+        finishReason: LanguageModelV3FinishReason = .init(unified: .stop),
         usage: LanguageModelV3Usage? = nil,
         warnings: [SharedV3Warning] = [],
         providerMetadata: ProviderMetadata? = nil,

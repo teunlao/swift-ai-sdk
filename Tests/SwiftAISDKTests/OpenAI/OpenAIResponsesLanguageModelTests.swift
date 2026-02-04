@@ -449,7 +449,8 @@ struct OpenAIResponsesLanguageModelTests {
         )
 
         let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: samplePrompt))
-        #expect(result.finishReason == .other)
+        #expect(result.finishReason.unified == .other)
+        #expect(result.finishReason.raw == "some_new_reason")
     }
 
     @Test("doGenerate maps mcp_approval_request to toolCall and tool-approval-request")
@@ -2374,7 +2375,8 @@ struct OpenAIResponsesLanguageModelTests {
         )
 
         let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: samplePrompt))
-        #expect(result.finishReason == .length)
+        #expect(result.finishReason.unified == .length)
+        #expect(result.finishReason.raw == "max_output_tokens")
     }
 
     @Test("doStream maps incomplete finish reason")
@@ -2441,7 +2443,8 @@ struct OpenAIResponsesLanguageModelTests {
         }
 
         if case .finish(let reason, let usage, _) = finishPart {
-            #expect(reason == .length)
+            #expect(reason.unified == .length)
+            #expect(reason.raw == "max_output_tokens")
             #expect((usage.inputTokens.total ?? 0) + (usage.outputTokens.total ?? 0) == 6)
         } else {
             Issue.record("Expected finish part for incomplete stream")

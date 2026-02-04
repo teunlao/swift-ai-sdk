@@ -349,7 +349,8 @@ struct OpenAICompletionLanguageModelTests {
             options: LanguageModelV3CallOptions(prompt: completionPrompt)
         )
 
-        #expect(result.finishReason == .stop)
+        #expect(result.finishReason.unified == .stop)
+        #expect(result.finishReason.raw == "stop")
     }
 
     @Test("should support unknown finish reason")
@@ -392,7 +393,8 @@ struct OpenAICompletionLanguageModelTests {
             options: LanguageModelV3CallOptions(prompt: completionPrompt)
         )
 
-        #expect(result.finishReason == .unknown)
+        #expect(result.finishReason.unified == .other)
+        #expect(result.finishReason.raw == "eos")
     }
 
     @Test("should expose the raw response headers")
@@ -662,7 +664,8 @@ struct OpenAICompletionLanguageModelTests {
             Issue.record("Expected text content")
         }
 
-        #expect(result.finishReason == .stop)
+        #expect(result.finishReason.unified == .stop)
+        #expect(result.finishReason.raw == "stop")
         #expect(result.usage.inputTokens.total == 4)
         #expect(result.usage.outputTokens.total == 6)
         #expect((result.usage.inputTokens.total ?? 0) + (result.usage.outputTokens.total ?? 0) == 10)
@@ -846,7 +849,8 @@ struct OpenAICompletionLanguageModelTests {
         // finish with usage and metadata
         if let last = parts.last {
             if case .finish(let finishReason, let usage, let metadata) = last {
-                #expect(finishReason == .stop)
+                #expect(finishReason.unified == .stop)
+                #expect(finishReason.raw == "stop")
                 #expect(usage.inputTokens.total == 10)
                 #expect(usage.outputTokens.total == 362)
                 #expect((usage.inputTokens.total ?? 0) + (usage.outputTokens.total ?? 0) == 372)
@@ -1282,7 +1286,8 @@ struct OpenAICompletionLanguageModelTests {
 
         if let last = parts.last {
             if case .finish(let finishReason, let usage, let metadata) = last {
-                #expect(finishReason == .stop)
+                #expect(finishReason.unified == .stop)
+                #expect(finishReason.raw == "stop")
                 #expect(usage.inputTokens.total == 5)
                 #expect(usage.outputTokens.total == 7)
                 #expect((usage.inputTokens.total ?? 0) + (usage.outputTokens.total ?? 0) == 12)

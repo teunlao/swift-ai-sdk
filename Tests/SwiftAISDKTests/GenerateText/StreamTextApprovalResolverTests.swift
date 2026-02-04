@@ -21,7 +21,7 @@ struct StreamTextApprovalResolverTests {
             .responseMetadata(id: "id-0", modelId: "mock", timestamp: Date(timeIntervalSince1970: 0)),
             .toolCall(call),
             .finish(
-                finishReason: .toolCalls,
+                finishReason: LanguageModelV3FinishReason(unified: .toolCalls),
                 usage: LanguageModelV3Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 1)),
                 providerMetadata: nil
             )
@@ -70,7 +70,7 @@ struct StreamTextApprovalResolverTests {
             .responseMetadata(id: "id-0", modelId: "mock", timestamp: Date(timeIntervalSince1970: 0)),
             .toolCall(call),
             .finish(
-                finishReason: .toolCalls,
+                finishReason: LanguageModelV3FinishReason(unified: .toolCalls),
                 usage: LanguageModelV3Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 1)),
                 providerMetadata: nil
             )
@@ -137,7 +137,7 @@ struct StreamTextApprovalResolverTests {
             .responseMetadata(id: "id-0", modelId: "mock", timestamp: Date(timeIntervalSince1970: 0)),
             .toolCall(call),
             .finish(
-                finishReason: .toolCalls,
+                finishReason: LanguageModelV3FinishReason(unified: .toolCalls),
                 usage: LanguageModelV3Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 1)),
                 providerMetadata: nil
             )
@@ -189,7 +189,7 @@ struct StreamTextApprovalResolverTests {
             .toolCall(call1),
             .toolCall(call2),
             .finish(
-                finishReason: .toolCalls,
+                finishReason: LanguageModelV3FinishReason(unified: .toolCalls),
                 usage: LanguageModelV3Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 2)),
                 providerMetadata: nil
             )
@@ -262,7 +262,7 @@ struct StreamTextApprovalResolverTests {
             .responseMetadata(id: "id-0", modelId: "mock", timestamp: Date(timeIntervalSince1970: 0)),
             .toolCall(call),
             .finish(
-                finishReason: .toolCalls,
+                finishReason: LanguageModelV3FinishReason(unified: .toolCalls),
                 usage: LanguageModelV3Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 1)),
                 providerMetadata: nil
             )
@@ -345,7 +345,7 @@ struct StreamTextApprovalResolverTests {
             .toolCall(call),
             .toolResult(toolResult),
             .finish(
-                finishReason: .toolCalls,
+                finishReason: LanguageModelV3FinishReason(unified: .toolCalls),
                 usage: LanguageModelV3Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 1)),
                 providerMetadata: nil
             )
@@ -412,7 +412,7 @@ struct StreamTextApprovalResolverTests {
             .responseMetadata(id: "id-0", modelId: "mock", timestamp: Date(timeIntervalSince1970: 0)),
             .toolCall(call),
             .finish(
-                finishReason: .toolCalls,
+                finishReason: LanguageModelV3FinishReason(unified: .toolCalls),
                 usage: LanguageModelV3Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 1)),
                 providerMetadata: nil
             )
@@ -484,7 +484,7 @@ struct StreamTextApprovalResolverTests {
             .responseMetadata(id: "id-0", modelId: "mock", timestamp: Date(timeIntervalSince1970: 0)),
             .toolCall(call),
             .finish(
-                finishReason: .toolCalls,
+                finishReason: LanguageModelV3FinishReason(unified: .toolCalls),
                 usage: LanguageModelV3Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 1)),
                 providerMetadata: nil
             )

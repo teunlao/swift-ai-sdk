@@ -63,7 +63,7 @@ struct StreamTextConcurrencyTests {
         let yielded = Flag()
         // Build a slow stream to allow stop() to interleave
         let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
-            Task {
+            _ = Task {
                 c.yield(.streamStart(warnings: []))
                 c.yield(.responseMetadata(id: "id-0", modelId: "mock-model", timestamp: Date(timeIntervalSince1970: 0)))
                 c.yield(.textStart(id: "A", providerMetadata: nil))

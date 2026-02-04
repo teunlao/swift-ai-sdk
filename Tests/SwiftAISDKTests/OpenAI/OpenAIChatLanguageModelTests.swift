@@ -139,7 +139,8 @@ struct OpenAIChatLanguageModelTests {
         }
         #expect(sourceElements.count == 1)
 
-        #expect(result.finishReason == .stop)
+        #expect(result.finishReason.unified == .stop)
+        #expect(result.finishReason.raw == "stop")
         #expect(result.usage.inputTokens.total == 4)
         #expect(result.usage.outputTokens.total == 6)
         #expect(totalTokens(result.usage) == 10)
@@ -419,7 +420,8 @@ struct OpenAIChatLanguageModelTests {
             )
         )
 
-        #expect(result.finishReason == .stop)
+        #expect(result.finishReason.unified == .stop)
+        #expect(result.finishReason.raw == "stop")
     }
 
     @Test("Parse tool results")
@@ -2587,7 +2589,8 @@ struct OpenAIChatLanguageModelTests {
             )
         )
 
-        #expect(result.finishReason == .unknown)
+        #expect(result.finishReason.unified == .other)
+        #expect(result.finishReason.raw == "eos")
     }
 
     @Test("Pass tools and toolChoice")
@@ -3108,7 +3111,8 @@ struct OpenAIChatLanguageModelTests {
             return
         }
 
-        #expect(finishReason == .stop)
+        #expect(finishReason.unified == .stop)
+        #expect(finishReason.raw == "stop")
         #expect(usage.inputTokens.total == 17)
         #expect(usage.outputTokens.total == 227)
         #expect(totalTokens(usage) == 244)
@@ -3350,7 +3354,8 @@ struct OpenAIChatLanguageModelTests {
             return
         }
 
-        #expect(finishReason == .stop)
+        #expect(finishReason.unified == .stop)
+        #expect(finishReason.raw == "stop")
         #expect(usage.inputTokens.total == 15)
         #expect(usage.outputTokens.total == 20)
         #expect(totalTokens(usage) == 35)
@@ -3403,7 +3408,8 @@ struct OpenAIChatLanguageModelTests {
             return
         }
 
-        #expect(finishReason == .stop)
+        #expect(finishReason.unified == .stop)
+        #expect(finishReason.raw == "stop")
         #expect(usage.inputTokens.total == 15)
         #expect(usage.outputTokens.total == 20)
         #expect(totalTokens(usage) == 35)
@@ -3791,7 +3797,8 @@ struct OpenAIChatLanguageModelTests {
             return
         }
 
-        #expect(finishReason == .stop)
+        #expect(finishReason.unified == .stop)
+        #expect(finishReason.raw == "stop")
         #expect(usage.inputTokens.total == 17)
         #expect(usage.outputTokens.total == 227)
         #expect(totalTokens(usage) == 244)
@@ -3844,7 +3851,8 @@ struct OpenAIChatLanguageModelTests {
             return
         }
 
-        #expect(finishReason == .stop)
+        #expect(finishReason.unified == .stop)
+        #expect(finishReason.raw == "stop")
         #expect(usage.inputTokens.total == 15)
         #expect(usage.outputTokens.total == 20)
         #expect(totalTokens(usage) == 35)

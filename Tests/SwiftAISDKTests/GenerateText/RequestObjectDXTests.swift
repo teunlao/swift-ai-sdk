@@ -23,7 +23,7 @@ struct RequestObjectDXTests {
 
                 return LanguageModelV3GenerateResult(
                     content: [.text(LanguageModelV3Text(text: userText))],
-                    finishReason: .stop,
+                    finishReason: LanguageModelV3FinishReason(unified: .stop),
                     usage: self.usage,
                     providerMetadata: nil,
                     request: nil,
@@ -65,7 +65,7 @@ struct RequestObjectDXTests {
             doGenerate: .singleValue(
                 LanguageModelV3GenerateResult(
                     content: [.text(LanguageModelV3Text(text: "{\"value\":\"ok\"}"))],
-                    finishReason: .stop,
+                    finishReason: LanguageModelV3FinishReason(unified: .stop),
                     usage: usage,
                     providerMetadata: nil,
                     request: nil,
@@ -95,7 +95,7 @@ struct RequestObjectDXTests {
             .textDelta(id: "1", delta: " ", providerMetadata: nil),
             .textDelta(id: "1", delta: "World", providerMetadata: nil),
             .textEnd(id: "1", providerMetadata: nil),
-            .finish(finishReason: .stop, usage: usage, providerMetadata: nil)
+            .finish(finishReason: LanguageModelV3FinishReason(unified: .stop), usage: usage, providerMetadata: nil)
         ]
 
         let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in

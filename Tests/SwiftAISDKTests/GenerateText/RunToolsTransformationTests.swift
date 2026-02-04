@@ -113,7 +113,7 @@ struct RunToolsTransformationTests {
             Issue.record("Expected text-end as third part")
         }
 
-        if case .finish(let finishReason, let totalUsage, _) = parts[3] {
+        if case .finish(let finishReason, _, let totalUsage, _) = parts[3] {
             #expect(finishReason == .stop)
             #expect(totalUsage == asLanguageModelUsage(usage))
         } else {
@@ -184,7 +184,7 @@ struct RunToolsTransformationTests {
             Issue.record("Expected static tool result")
         }
 
-        if case .finish(let finishReason, _, _) = parts[2] {
+        if case .finish(let finishReason, _, _, _) = parts[2] {
             #expect(finishReason == .stop)
         } else {
             Issue.record("Expected finish part at end")

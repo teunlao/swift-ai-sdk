@@ -24,7 +24,7 @@ struct GenerateObjectTests {
 
     private func makeGenerateResult(
         content: [LanguageModelV3Content],
-        finishReason: FinishReason = .stop,
+        finishReason: LanguageModelV3FinishReason = .stop,
         usage: LanguageModelV3Usage? = nil,
         warnings: [SharedV3Warning] = [],
         request: LanguageModelV3RequestInfo? = nil,

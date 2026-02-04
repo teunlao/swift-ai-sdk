@@ -72,12 +72,12 @@ struct OpenAIChatStreamingTests {
         #expect(hasSource)
 
         // Verify finish
-        let hasFinish = parts.contains(where: { part in
-            if case .finish(finishReason: .stop, usage: _, providerMetadata: _) = part {
-                return true
+        let hasFinish = parts.contains { part in
+            guard case .finish(finishReason: let finishReason, usage: _, providerMetadata: _) = part else {
+                return false
             }
-            return false
-        })
+            return finishReason.unified == .stop && finishReason.raw == "stop"
+        }
         #expect(hasFinish)
     }
 
@@ -155,12 +155,12 @@ struct OpenAIChatStreamingTests {
         #expect(hasToolCall)
 
         // Verify finish
-        let hasFinish = parts.contains(where: { part in
-            if case .finish(finishReason: .toolCalls, usage: _, providerMetadata: _) = part {
-                return true
+        let hasFinish = parts.contains { part in
+            guard case .finish(finishReason: let finishReason, usage: _, providerMetadata: _) = part else {
+                return false
             }
-            return false
-        })
+            return finishReason.unified == .toolCalls && finishReason.raw == "tool_calls"
+        }
         #expect(hasFinish)
     }
 
@@ -312,12 +312,12 @@ struct OpenAIChatStreamingTests {
         #expect(toolCalls[0].input == "{\"query\": \"latest news on ai\"}")
 
         // Verify finish
-        let hasFinish = parts.contains(where: { part in
-            if case .finish(finishReason: .toolCalls, usage: _, providerMetadata: _) = part {
-                return true
+        let hasFinish = parts.contains { part in
+            guard case .finish(finishReason: let finishReason, usage: _, providerMetadata: _) = part else {
+                return false
             }
-            return false
-        })
+            return finishReason.unified == .toolCalls && finishReason.raw == "tool_calls"
+        }
         #expect(hasFinish)
     }
 
@@ -380,12 +380,12 @@ struct OpenAIChatStreamingTests {
         #expect(hasToolCall)
 
         // Verify finish
-        let hasFinish = parts.contains(where: { part in
-            if case .finish(finishReason: .toolCalls, usage: _, providerMetadata: _) = part {
-                return true
+        let hasFinish = parts.contains { part in
+            guard case .finish(finishReason: let finishReason, usage: _, providerMetadata: _) = part else {
+                return false
             }
-            return false
-        })
+            return finishReason.unified == .toolCalls && finishReason.raw == "tool_calls"
+        }
         #expect(hasFinish)
     }
 
