@@ -48,6 +48,7 @@ let package = Package(
         .library(name: "TogetherAIProvider", targets: ["TogetherAIProvider"]),
         .library(name: "ProdiaProvider", targets: ["ProdiaProvider"]),
         .library(name: "RevAIProvider", targets: ["RevAIProvider"]),
+        .library(name: "VercelProvider", targets: ["VercelProvider"]),
         .library(name: "AISDKJSONSchema", targets: ["AISDKJSONSchema"]),
         .library(name: "EventSourceParser", targets: ["EventSourceParser"]), // internal lib for SSE
         .library(name: "AISDKZodAdapter", targets: ["AISDKZodAdapter"]),
@@ -112,6 +113,7 @@ let package = Package(
         .target(name: "TogetherAIProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "OpenAICompatibleProvider"]),
         .target(name: "ProdiaProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils"]),
         .target(name: "RevAIProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils"]),
+        .target(name: "VercelProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "OpenAICompatibleProvider"]),
         // JSON Schema generator (optional product)
         .target(
             name: "AISDKJSONSchema",
@@ -178,6 +180,7 @@ let package = Package(
                 "XAIProvider",
                 "ProdiaProvider",
                 "RevAIProvider",
+                "VercelProvider",
                 .product(name: "ArgumentParser", package: "swift-argument-parser")
             ],
             exclude: ["README.md"]
