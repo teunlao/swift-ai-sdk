@@ -8,13 +8,13 @@ import AISDKProvider
 //===----------------------------------------------------------------------===//
 
 @Sendable
-func mapPerplexityFinishReason(_ value: String?) -> LanguageModelV3FinishReason {
+func mapPerplexityFinishReason(_ value: String?) -> LanguageModelV3FinishReason.Unified {
     switch value {
     case "stop":
         return .stop
     case "length":
         return .length
     default:
-        return .unknown
+        return .other
     }
 }

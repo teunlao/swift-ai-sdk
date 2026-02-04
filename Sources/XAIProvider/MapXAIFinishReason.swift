@@ -2,7 +2,7 @@ import AISDKProvider
 
 /// Maps xAI finish reasons to LanguageModelV3 finish reasons.
 /// Mirrors `packages/xai/src/map-xai-finish-reason.ts`.
-public func mapXaiFinishReason(_ finishReason: String?) -> LanguageModelV3FinishReason {
+public func mapXaiFinishReason(_ finishReason: String?) -> LanguageModelV3FinishReason.Unified {
     switch finishReason {
     case "stop":
         return .stop
@@ -12,9 +12,7 @@ public func mapXaiFinishReason(_ finishReason: String?) -> LanguageModelV3Finish
         return .toolCalls
     case "content_filter":
         return .contentFilter
-    case .some:
-        return .unknown
-    case .none:
-        return .unknown
+    default:
+        return .other
     }
 }

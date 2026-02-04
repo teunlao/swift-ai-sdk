@@ -114,7 +114,10 @@ public final class CohereChatLanguageModel: LanguageModelV3 {
 
         return LanguageModelV3GenerateResult(
             content: content,
-            finishReason: mapCohereFinishReason(response.value.finishReason),
+            finishReason: LanguageModelV3FinishReason(
+                unified: mapCohereFinishReason(response.value.finishReason),
+                raw: response.value.finishReason
+            ),
             usage: usage,
             providerMetadata: nil,
             request: LanguageModelV3RequestInfo(body: prepared.body),
@@ -140,7 +143,7 @@ public final class CohereChatLanguageModel: LanguageModelV3 {
             continuation.yield(.streamStart(warnings: prepared.warnings))
 
             Task {
-                var finishReason: LanguageModelV3FinishReason = .unknown
+                var finishReason = LanguageModelV3FinishReason(unified: .other, raw: nil)
                 var usage = LanguageModelV3Usage()
 
                 var pendingToolCall: PendingToolCall?
@@ -154,7 +157,7 @@ public final class CohereChatLanguageModel: LanguageModelV3 {
 
                         switch parseResult {
                         case .failure(let error, _):
-                            finishReason = .error
+                            finishReason = LanguageModelV3FinishReason(unified: .error, raw: nil)
                             continuation.yield(.error(error: .string(String(describing: error))))
 
                         case .success(let event, _):
@@ -230,7 +233,10 @@ public final class CohereChatLanguageModel: LanguageModelV3 {
                                 continuation.yield(.responseMetadata(id: event.id, modelId: nil, timestamp: nil))
 
                             case .messageEnd:
-                                finishReason = mapCohereFinishReason(event.delta?.finishReason)
+                                finishReason = LanguageModelV3FinishReason(
+                                    unified: mapCohereFinishReason(event.delta?.finishReason),
+                                    raw: event.delta?.finishReason
+                                )
                                 if let tokens = event.delta?.usage?.tokens {
                                     usage = convertCohereUsage(tokens)
                                 }

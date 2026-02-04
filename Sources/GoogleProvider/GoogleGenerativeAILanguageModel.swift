@@ -132,7 +132,7 @@ public final class GoogleGenerativeAILanguageModel: LanguageModelV3 {
             continuation.yield(.streamStart(warnings: prepared.warnings))
 
             Task {
-                var finishReason: LanguageModelV3FinishReason = .unknown
+                var finishReason: LanguageModelV3FinishReason = .init(unified: .other, raw: nil)
                 var usage = LanguageModelV3Usage()
                 var providerMetadata: SharedV3ProviderMetadata? = nil
                 var hasToolCalls = false
@@ -150,7 +150,6 @@ public final class GoogleGenerativeAILanguageModel: LanguageModelV3 {
 
                         switch parseResult {
                         case .failure(let error, _):
-                            finishReason = .error
                             continuation.yield(.error(error: .string(String(describing: error))))
                         case .success(let chunk, _):
                             if let usageMetadata = chunk.usageMetadata {
@@ -209,9 +208,12 @@ public final class GoogleGenerativeAILanguageModel: LanguageModelV3 {
                             }
 
                             if let finish = candidate.finishReason {
-                                finishReason = mapGoogleGenerativeAIFinishReason(
-                                    finishReason: finish,
-                                    hasToolCalls: hasToolCalls
+                                finishReason = LanguageModelV3FinishReason(
+                                    unified: mapGoogleGenerativeAIFinishReason(
+                                        finishReason: finish,
+                                        hasToolCalls: hasToolCalls
+                                    ),
+                                    raw: finish
                                 )
 
                                 providerMetadata = makeProviderMetadata(
@@ -487,7 +489,7 @@ private func mapGenerateResponse(
     guard let candidate = response.candidates.first else {
         return (
             content: [],
-            finishReason: .unknown,
+            finishReason: .init(unified: .other, raw: nil),
             usage: convertGoogleGenerativeAIUsage(usageMetadata),
             providerMetadata: nil
         )
@@ -510,22 +512,21 @@ private func mapGenerateResponse(
                 }
                 let argsObject: JSONValue = .object(argsDict)
 
-                content.append(
-                    .toolCall(
-                        LanguageModelV3ToolCall(
-                            toolCallId: toolCallId,
-                            toolName: "code_execution",
-                            input: stringifyJSONValue(argsObject),
-                            providerExecuted: true,
-                            providerMetadata: metadataFromThoughtSignature(part.thoughtSignature)
-                        )
-                    )
-                )
-                hasToolCalls = true
-            } else if let result = part.codeExecutionResult, let toolCallId = lastCodeExecutionToolCallId {
-                // Use actual values without defaults - omit keys if nil
-                var resultDict: [String: JSONValue] = [:]
-                if let outcome = result.outcome {
+	                content.append(
+	                    .toolCall(
+	                        LanguageModelV3ToolCall(
+	                            toolCallId: toolCallId,
+	                            toolName: "code_execution",
+	                            input: stringifyJSONValue(argsObject),
+	                            providerExecuted: true,
+	                            providerMetadata: metadataFromThoughtSignature(part.thoughtSignature)
+	                        )
+	                    )
+	                )
+	            } else if let result = part.codeExecutionResult, let toolCallId = lastCodeExecutionToolCallId {
+	                // Use actual values without defaults - omit keys if nil
+	                var resultDict: [String: JSONValue] = [:]
+	                if let outcome = result.outcome {
                     resultDict["outcome"] = .string(outcome)
                 }
                 if let output = result.output {
@@ -593,9 +594,13 @@ private func mapGenerateResponse(
 
     let usage = convertGoogleGenerativeAIUsage(usageMetadata)
 
-    let finishReason = mapGoogleGenerativeAIFinishReason(
-        finishReason: candidate.finishReason,
-        hasToolCalls: hasToolCalls
+    let rawFinishReason = candidate.finishReason
+    let finishReason = LanguageModelV3FinishReason(
+        unified: mapGoogleGenerativeAIFinishReason(
+            finishReason: rawFinishReason,
+            hasToolCalls: hasToolCalls
+        ),
+        raw: rawFinishReason
     )
 
     let providerMetadata = makeProviderMetadata(
@@ -845,22 +850,21 @@ private func handleStreamingParts(
             }
             let argsObject: JSONValue = .object(argsDict)
 
-            continuation.yield(
-                .toolCall(
-                    LanguageModelV3ToolCall(
-                        toolCallId: toolCallId,
-                        toolName: "code_execution",
-                        input: stringifyJSONValue(argsObject),
-                        providerExecuted: true,
-                        providerMetadata: metadataFromThoughtSignature(part.thoughtSignature)
-                    )
-                )
-            )
-            hasToolCalls = true
-        } else if let result = part.codeExecutionResult, let toolCallId = lastCodeExecutionToolCallId {
-            // Use actual values without defaults - omit keys if nil
-            var resultDict: [String: JSONValue] = [:]
-            if let outcome = result.outcome {
+	            continuation.yield(
+	                .toolCall(
+	                    LanguageModelV3ToolCall(
+	                        toolCallId: toolCallId,
+	                        toolName: "code_execution",
+	                        input: stringifyJSONValue(argsObject),
+	                        providerExecuted: true,
+	                        providerMetadata: metadataFromThoughtSignature(part.thoughtSignature)
+	                    )
+	                )
+	            )
+	        } else if let result = part.codeExecutionResult, let toolCallId = lastCodeExecutionToolCallId {
+	            // Use actual values without defaults - omit keys if nil
+	            var resultDict: [String: JSONValue] = [:]
+	            if let outcome = result.outcome {
                 resultDict["outcome"] = .string(outcome)
             }
             if let output = result.output {

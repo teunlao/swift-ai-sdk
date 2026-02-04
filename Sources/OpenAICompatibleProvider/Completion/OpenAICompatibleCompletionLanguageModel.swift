@@ -75,7 +75,11 @@ public final class OpenAICompatibleCompletionLanguageModel: LanguageModelV3 {
         }
 
         let usage = mapUsage(response.value.usage)
-        let finishReason = mapOpenAICompatibleFinishReason(choice.finishReason)
+        let rawFinishReason = choice.finishReason
+        let finishReason = LanguageModelV3FinishReason(
+            unified: mapOpenAICompatibleFinishReason(rawFinishReason),
+            raw: rawFinishReason
+        )
         let metadata = responseMetadata(id: response.value.id, model: response.value.model, created: response.value.created)
 
         let providerMetadata = makeProviderMetadata(usage: response.value.usage)
@@ -123,7 +127,7 @@ public final class OpenAICompatibleCompletionLanguageModel: LanguageModelV3 {
             continuation.yield(.streamStart(warnings: prepared.warnings))
 
             Task {
-                var finishReason: LanguageModelV3FinishReason = .unknown
+                var finishReason: LanguageModelV3FinishReason = .init(unified: .other, raw: nil)
                 var usage = LanguageModelV3Usage()
                 var latestUsage: OpenAICompatibleCompletionUsage? = nil
                 var isFirstChunk = true
@@ -137,12 +141,12 @@ public final class OpenAICompatibleCompletionLanguageModel: LanguageModelV3 {
 
                         switch parseResult {
                         case .failure(let error, _):
-                            finishReason = .error
+                            finishReason = .init(unified: .error, raw: nil)
                             continuation.yield(.error(error: .string(String(describing: error))))
                         case .success(let chunk, _):
                             switch chunk {
                             case .error(let errorData):
-                                finishReason = .error
+                                finishReason = .init(unified: .error, raw: nil)
                                 if let encoded = try? JSONEncoder().encodeToJSONValue(errorData) {
                                     continuation.yield(.error(error: encoded))
                                 } else {
@@ -163,7 +167,10 @@ public final class OpenAICompatibleCompletionLanguageModel: LanguageModelV3 {
                                 guard let choice = data.choices.first else { continue }
 
                                 if let finish = choice.finishReason {
-                                    finishReason = mapOpenAICompatibleFinishReason(finish)
+                                    finishReason = LanguageModelV3FinishReason(
+                                        unified: mapOpenAICompatibleFinishReason(finish),
+                                        raw: finish
+                                    )
                                 }
 
                                 if let textDelta = choice.textDelta, !textDelta.isEmpty {

@@ -104,7 +104,10 @@ public final class GroqChatLanguageModel: LanguageModelV3 {
 
         return LanguageModelV3GenerateResult(
             content: content,
-            finishReason: mapGroqFinishReason(choice?.finishReason),
+            finishReason: LanguageModelV3FinishReason(
+                unified: mapGroqFinishReason(choice?.finishReason),
+                raw: choice?.finishReason
+            ),
             usage: usage,
             providerMetadata: nil,
             request: LanguageModelV3RequestInfo(body: prepared.body),
@@ -137,7 +140,7 @@ public final class GroqChatLanguageModel: LanguageModelV3 {
 
             Task {
                 var toolCalls: [GroqStreamingToolCall] = []
-                var finishReason: LanguageModelV3FinishReason = .unknown
+                var finishReason = LanguageModelV3FinishReason(unified: .other, raw: nil)
                 var usage = LanguageModelV3Usage()
                 var isFirstChunk = true
                 var isActiveText = false
@@ -151,13 +154,13 @@ public final class GroqChatLanguageModel: LanguageModelV3 {
 
                         switch parseResult {
                         case .failure(let error, _):
-                            finishReason = .error
+                            finishReason = LanguageModelV3FinishReason(unified: .error, raw: nil)
                             continuation.yield(.error(error: .string(String(describing: error))))
                             continue
                         case .success(let event, _):
                             switch event {
                             case .error(let errorData):
-                                finishReason = .error
+                                finishReason = LanguageModelV3FinishReason(unified: .error, raw: nil)
                                 if let json = try? JSONEncoder().encodeToJSONValue(errorData) {
                                     continuation.yield(.error(error: json))
                                 } else {
@@ -186,7 +189,10 @@ public final class GroqChatLanguageModel: LanguageModelV3 {
                                 guard let choice = chunk.choices.first else { continue }
 
                                 if let finish = choice.finishReason {
-                                    finishReason = mapGroqFinishReason(finish)
+                                    finishReason = LanguageModelV3FinishReason(
+                                        unified: mapGroqFinishReason(finish),
+                                        raw: finish
+                                    )
                                 }
 
                                 guard let delta = choice.delta else { continue }

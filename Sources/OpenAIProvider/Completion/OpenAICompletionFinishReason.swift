@@ -1,7 +1,7 @@
 import AISDKProvider
 
 enum OpenAICompletionFinishReasonMapper {
-    static func map(_ value: String?) -> LanguageModelV3FinishReason {
+    static func map(_ value: String?) -> LanguageModelV3FinishReason.Unified {
         switch value {
         case "stop":
             return .stop
@@ -12,9 +12,9 @@ enum OpenAICompletionFinishReasonMapper {
         case "function_call", "tool_calls":
             return .toolCalls
         case .none:
-            return .unknown
+            return .other
         default:
-            return .unknown
+            return .other
         }
     }
 }

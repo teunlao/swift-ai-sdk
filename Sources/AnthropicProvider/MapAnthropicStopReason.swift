@@ -3,7 +3,7 @@ import AISDKProvider
 public func mapAnthropicStopReason(
     finishReason: String?,
     isJsonResponseFromTool: Bool = false
-) -> LanguageModelV3FinishReason {
+) -> LanguageModelV3FinishReason.Unified {
     switch finishReason {
     case "pause_turn", "end_turn", "stop_sequence":
         return .stop

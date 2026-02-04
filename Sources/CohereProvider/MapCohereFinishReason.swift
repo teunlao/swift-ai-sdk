@@ -8,7 +8,7 @@ import AISDKProvider
 //===----------------------------------------------------------------------===//
 
 @Sendable
-func mapCohereFinishReason(_ value: String?) -> LanguageModelV3FinishReason {
+func mapCohereFinishReason(_ value: String?) -> LanguageModelV3FinishReason.Unified {
     switch value {
     case "COMPLETE", "STOP_SEQUENCE":
         return .stop
@@ -19,6 +19,6 @@ func mapCohereFinishReason(_ value: String?) -> LanguageModelV3FinishReason {
     case "TOOL_CALL":
         return .toolCalls
     default:
-        return .unknown
+        return .other
     }
 }

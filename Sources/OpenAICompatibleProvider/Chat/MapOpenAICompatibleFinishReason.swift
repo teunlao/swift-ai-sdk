@@ -1,6 +1,6 @@
 import AISDKProvider
 
-public func mapOpenAICompatibleFinishReason(_ finishReason: String?) -> LanguageModelV3FinishReason {
+public func mapOpenAICompatibleFinishReason(_ finishReason: String?) -> LanguageModelV3FinishReason.Unified {
     switch finishReason {
     case "stop":
         return .stop
@@ -11,6 +11,6 @@ public func mapOpenAICompatibleFinishReason(_ finishReason: String?) -> Language
     case "function_call", "tool_calls":
         return .toolCalls
     default:
-        return .unknown
+        return .other
     }
 }

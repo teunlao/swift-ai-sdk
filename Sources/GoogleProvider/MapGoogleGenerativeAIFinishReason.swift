@@ -4,7 +4,7 @@ import AISDKProvider
 func mapGoogleGenerativeAIFinishReason(
     finishReason: String?,
     hasToolCalls: Bool
-) -> LanguageModelV3FinishReason {
+) -> LanguageModelV3FinishReason.Unified {
     switch finishReason {
     case "STOP":
         return hasToolCalls ? .toolCalls : .stop
@@ -12,13 +12,11 @@ func mapGoogleGenerativeAIFinishReason(
         return .length
     case "IMAGE_SAFETY", "RECITATION", "SAFETY", "BLOCKLIST", "PROHIBITED_CONTENT", "SPII":
         return .contentFilter
-    case "FINISH_REASON_UNSPECIFIED", "OTHER":
-        return .other
     case "MALFORMED_FUNCTION_CALL":
         return .error
-    case nil:
-        return .unknown
+    case "FINISH_REASON_UNSPECIFIED", "OTHER", nil:
+        return .other
     default:
-        return .unknown
+        return .other
     }
 }

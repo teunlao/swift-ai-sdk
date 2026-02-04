@@ -4,7 +4,7 @@ import AISDKProvider
 func mapOpenAIResponsesFinishReason(
     finishReason: String?,
     hasFunctionCall: Bool
-) -> LanguageModelV3FinishReason {
+) -> LanguageModelV3FinishReason.Unified {
     switch finishReason {
     case nil:
         return hasFunctionCall ? .toolCalls : .stop

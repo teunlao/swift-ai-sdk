@@ -114,7 +114,10 @@ public final class MistralChatLanguageModel: LanguageModelV3 {
 
         return LanguageModelV3GenerateResult(
             content: content,
-            finishReason: mapMistralFinishReason(choice.finishReason),
+            finishReason: LanguageModelV3FinishReason(
+                unified: mapMistralFinishReason(choice.finishReason),
+                raw: choice.finishReason
+            ),
             usage: usage,
             request: LanguageModelV3RequestInfo(body: prepared.body),
             response: LanguageModelV3ResponseInfo(
@@ -145,7 +148,7 @@ public final class MistralChatLanguageModel: LanguageModelV3 {
             continuation.yield(.streamStart(warnings: prepared.warnings))
 
             Task {
-                var finishReason: LanguageModelV3FinishReason = .unknown
+                var finishReason = LanguageModelV3FinishReason(unified: .other, raw: nil)
                 var usage = LanguageModelV3Usage()
                 var isFirstChunk = true
                 var activeText = false
@@ -160,7 +163,6 @@ public final class MistralChatLanguageModel: LanguageModelV3 {
 
                         switch parseResult {
                         case .failure(let error, _):
-                            finishReason = .error
                             continuation.yield(.error(error: .string(String(describing: error))))
                             continue
 
@@ -185,7 +187,10 @@ public final class MistralChatLanguageModel: LanguageModelV3 {
                             guard let choice = chunk.choices.first else { continue }
 
                             if let finish = choice.finishReason {
-                                finishReason = mapMistralFinishReason(finish)
+                                finishReason = LanguageModelV3FinishReason(
+                                    unified: mapMistralFinishReason(finish),
+                                    raw: finish
+                                )
                             }
 
                             if let delta = choice.delta {

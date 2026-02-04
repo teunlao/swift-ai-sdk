@@ -7,7 +7,7 @@ import AISDKProvider
 // Upstream commit: 77db222ee
 //===----------------------------------------------------------------------===//
 
-func mapBedrockFinishReason(_ reason: String?) -> LanguageModelV3FinishReason {
+func mapBedrockFinishReason(_ reason: String?) -> LanguageModelV3FinishReason.Unified {
     switch reason {
     case "stop_sequence", "end_turn":
         return .stop
@@ -18,6 +18,6 @@ func mapBedrockFinishReason(_ reason: String?) -> LanguageModelV3FinishReason {
     case "tool_use":
         return .toolCalls
     default:
-        return .unknown
+        return .other
     }
 }

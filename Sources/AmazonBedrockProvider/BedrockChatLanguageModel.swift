@@ -68,7 +68,10 @@ public final class BedrockChatLanguageModel: LanguageModelV3 {
 
         let result = LanguageModelV3GenerateResult(
             content: content,
-            finishReason: mapBedrockFinishReason(response.value.stopReason),
+            finishReason: LanguageModelV3FinishReason(
+                unified: mapBedrockFinishReason(response.value.stopReason),
+                raw: response.value.stopReason
+            ),
             usage: usage,
             providerMetadata: providerMetadata,
             request: LanguageModelV3RequestInfo(body: prepared.command),
@@ -99,7 +102,7 @@ public final class BedrockChatLanguageModel: LanguageModelV3 {
             continuation.yield(.streamStart(warnings: prepared.warnings))
 
             Task {
-                var finishReason: LanguageModelV3FinishReason = .unknown
+                var finishReason = LanguageModelV3FinishReason(unified: .other, raw: nil)
                 var usageMetrics: BedrockStreamEnvelope.Metadata.Usage?
                 var providerMetadataPayload: [String: JSONValue] = [:]
                 var contentBlocks: [Int: ContentBlockState] = [:]
@@ -114,13 +117,13 @@ public final class BedrockChatLanguageModel: LanguageModelV3 {
                         case .failure(let error, let raw):
                             let errorJSON = raw.flatMap { try? jsonValue(from: $0) } ?? .string(String(describing: error))
                             continuation.yield(.error(error: errorJSON))
-                            finishReason = .error
+                            finishReason = LanguageModelV3FinishReason(unified: .error, raw: nil)
                             continue
 
                         case .success(let chunk, _):
                             if let errorPayload = chunk.firstError {
                                 continuation.yield(.error(error: .object(errorPayload)))
-                                finishReason = .error
+                                finishReason = LanguageModelV3FinishReason(unified: .error, raw: nil)
                                 continue
                             }
 
@@ -141,7 +144,10 @@ public final class BedrockChatLanguageModel: LanguageModelV3 {
                             }
 
                             if let messageStop = chunk.messageStop {
-                                finishReason = mapBedrockFinishReason(messageStop.stopReason)
+                                finishReason = LanguageModelV3FinishReason(
+                                    unified: mapBedrockFinishReason(messageStop.stopReason),
+                                    raw: messageStop.stopReason
+                                )
                                 if let additional = messageStop.additionalModelResponseFields, !additional.isEmpty {
                                     providerMetadataPayload["additionalModelResponseFields"] = .object(additional)
                                 }

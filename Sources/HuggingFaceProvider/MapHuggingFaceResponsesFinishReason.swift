@@ -7,7 +7,7 @@ import AISDKProvider
 // Upstream commit: 77db222ee
 //===----------------------------------------------------------------------===//
 
-func mapHuggingFaceResponsesFinishReason(_ reason: String?) -> LanguageModelV3FinishReason {
+func mapHuggingFaceResponsesFinishReason(_ reason: String?) -> LanguageModelV3FinishReason.Unified {
     switch reason {
     case "stop":
         return .stop
@@ -20,6 +20,6 @@ func mapHuggingFaceResponsesFinishReason(_ reason: String?) -> LanguageModelV3Fi
     case "error":
         return .error
     default:
-        return .unknown
+        return .other
     }
 }

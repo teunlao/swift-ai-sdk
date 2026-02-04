@@ -82,7 +82,10 @@ public final class PerplexityLanguageModel: LanguageModelV3 {
 
         return LanguageModelV3GenerateResult(
             content: content,
-            finishReason: mapPerplexityFinishReason(choice.finishReason),
+            finishReason: LanguageModelV3FinishReason(
+                unified: mapPerplexityFinishReason(choice.finishReason),
+                raw: choice.finishReason
+            ),
             usage: usage,
             providerMetadata: providerMetadata,
             request: LanguageModelV3RequestInfo(body: prepared.body),
@@ -114,7 +117,7 @@ public final class PerplexityLanguageModel: LanguageModelV3 {
             continuation.yield(.streamStart(warnings: prepared.warnings))
 
             Task {
-                var finishReason: LanguageModelV3FinishReason = .unknown
+                var finishReason = LanguageModelV3FinishReason(unified: .other, raw: nil)
                 var usage = LanguageModelV3Usage()
                 var metadataAccumulator = PerplexityStreamingMetadata()
                 var isFirstChunk = true
@@ -128,7 +131,6 @@ public final class PerplexityLanguageModel: LanguageModelV3 {
 
                         switch parseResult {
                         case .failure(let error, _):
-                            finishReason = .error
                             continuation.yield(.error(error: .string(String(describing: error))))
                             continue
 
@@ -159,7 +161,10 @@ public final class PerplexityLanguageModel: LanguageModelV3 {
 
                             if let choice = chunk.choices.first {
                                 if let finish = choice.finishReason {
-                                    finishReason = mapPerplexityFinishReason(finish)
+                                    finishReason = LanguageModelV3FinishReason(
+                                        unified: mapPerplexityFinishReason(finish),
+                                        raw: finish
+                                    )
                                 }
 
                                 if let delta = choice.delta, let text = delta.content, !text.isEmpty {

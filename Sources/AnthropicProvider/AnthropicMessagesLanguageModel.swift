@@ -125,9 +125,12 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
 
         return LanguageModelV3GenerateResult(
             content: usageAndContent.content,
-            finishReason: mapAnthropicStopReason(
-                finishReason: response.value.stopReason,
-                isJsonResponseFromTool: prepared.usesJsonResponseTool
+            finishReason: LanguageModelV3FinishReason(
+                unified: mapAnthropicStopReason(
+                    finishReason: response.value.stopReason,
+                    isJsonResponseFromTool: prepared.usesJsonResponseTool
+                ),
+                raw: response.value.stopReason
             ),
             usage: usageAndContent.usage,
             providerMetadata: providerMetadata,
@@ -179,7 +182,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                 var blockType: String?
                 var serverToolCalls: [String: String] = [:]
                 var mcpToolCalls: [String: (toolName: String, providerMetadata: SharedV3ProviderMetadata)] = [:]
-                var finishReason: LanguageModelV3FinishReason = .unknown
+                var finishReason: LanguageModelV3FinishReason = .init(unified: .other, raw: nil)
                 var usage = LanguageModelV3Usage()
                 var rawUsage: [String: JSONValue]? = nil
                 var cacheCreationInputTokens: Int? = nil
@@ -269,9 +272,12 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                                 container = anthropicContainerMetadata(value.message.container)
 
                                 if let stopReason = value.message.stopReason {
-                                    finishReason = mapAnthropicStopReason(
-                                        finishReason: stopReason,
-                                        isJsonResponseFromTool: prepared.usesJsonResponseTool
+                                    finishReason = LanguageModelV3FinishReason(
+                                        unified: mapAnthropicStopReason(
+                                            finishReason: stopReason,
+                                            isJsonResponseFromTool: prepared.usesJsonResponseTool
+                                        ),
+                                        raw: stopReason
                                     )
                                 }
                                 continuation.yield(
@@ -377,9 +383,13 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                                     )
                                 }
 
-                                finishReason = mapAnthropicStopReason(
-                                    finishReason: value.delta.stopReason,
-                                    isJsonResponseFromTool: prepared.usesJsonResponseTool
+                                let rawFinishReason = value.delta.stopReason
+                                finishReason = LanguageModelV3FinishReason(
+                                    unified: mapAnthropicStopReason(
+                                        finishReason: rawFinishReason,
+                                        isJsonResponseFromTool: prepared.usesJsonResponseTool
+                                    ),
+                                    raw: rawFinishReason
                                 )
                                 stopSequence = value.delta.stopSequence
                                 container = anthropicContainerMetadata(value.delta.container)

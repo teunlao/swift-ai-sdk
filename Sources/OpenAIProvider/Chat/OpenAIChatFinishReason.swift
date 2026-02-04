@@ -2,8 +2,8 @@ import Foundation
 import AISDKProvider
 
 enum OpenAIChatFinishReasonMapper {
-    static func map(_ value: String?) -> LanguageModelV3FinishReason {
-        guard let value else { return .unknown }
+    static func map(_ value: String?) -> LanguageModelV3FinishReason.Unified {
+        guard let value else { return .other }
         switch value {
         case "stop":
             return .stop
@@ -14,7 +14,7 @@ enum OpenAIChatFinishReasonMapper {
         case "function_call", "tool_calls":
             return .toolCalls
         default:
-            return .unknown
+            return .other
         }
     }
 }

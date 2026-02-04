@@ -97,7 +97,11 @@ public final class OpenAIChatLanguageModel: LanguageModelV3 {
         let providerMetadata: SharedV3ProviderMetadata? = openaiMetadata.isEmpty ? nil : ["openai": openaiMetadata]
 
         let usage = mapUsage(response.value.usage)
-        let finishReason = OpenAIChatFinishReasonMapper.map(choice.finishReason)
+        let rawFinishReason = choice.finishReason
+        let finishReason = LanguageModelV3FinishReason(
+            unified: OpenAIChatFinishReasonMapper.map(rawFinishReason),
+            raw: rawFinishReason
+        )
         let metadata = responseMetadata(from: response.value)
 
         let generateResult = LanguageModelV3GenerateResult(
@@ -141,7 +145,7 @@ public final class OpenAIChatLanguageModel: LanguageModelV3 {
             continuation.yield(.streamStart(warnings: prepared.warnings))
 
             Task {
-                var finishReason: LanguageModelV3FinishReason = .unknown
+                var finishReason: LanguageModelV3FinishReason = .init(unified: .other, raw: nil)
                 var usage = LanguageModelV3Usage()
                 var isFirstChunk = true
                 var isActiveText = false
@@ -165,12 +169,12 @@ public final class OpenAIChatLanguageModel: LanguageModelV3 {
 
                         switch parseResult {
                         case .failure(let error, _):
-                            finishReason = .error
+                            finishReason = .init(unified: .error, raw: nil)
                             continuation.yield(.error(error: .string(String(describing: error))))
                         case .success(let chunk, _):
                             switch chunk {
                             case .error(let errorData):
-                                finishReason = .error
+                                finishReason = .init(unified: .error, raw: nil)
                                 if let errorValue = try? JSONEncoder().encodeToJSONValue(errorData) {
                                     continuation.yield(.error(error: errorValue))
                                 } else {
@@ -196,7 +200,10 @@ public final class OpenAIChatLanguageModel: LanguageModelV3 {
                                 guard let choice = data.choices.first else { continue }
 
                                 if let finish = choice.finishReason {
-                                    finishReason = OpenAIChatFinishReasonMapper.map(finish)
+                                    finishReason = LanguageModelV3FinishReason(
+                                        unified: OpenAIChatFinishReasonMapper.map(finish),
+                                        raw: finish
+                                    )
                                 }
 
                                 if let logprobs = choice.logprobs, let encoded = try? JSONEncoder().encodeToJSONValue(logprobs) {

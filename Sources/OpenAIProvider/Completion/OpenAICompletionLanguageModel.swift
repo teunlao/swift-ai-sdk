@@ -46,12 +46,16 @@ public final class OpenAICompletionLanguageModel: LanguageModelV3 {
         let usage = convertOpenAICompletionUsage(value.usage)
 
         var providerMetadata: SharedV3ProviderMetadata? = nil
-        if let logprobs = choice.logprobs, let logprobsJSON = try? JSONEncoder().encodeToJSONValue(logprobs) {
-            providerMetadata = ["openai": ["logprobs": logprobsJSON]]
-        }
+	        if let logprobs = choice.logprobs, let logprobsJSON = try? JSONEncoder().encodeToJSONValue(logprobs) {
+	            providerMetadata = ["openai": ["logprobs": logprobsJSON]]
+	        }
 
-        let finishReason = OpenAICompletionFinishReasonMapper.map(choice.finishReason)
-        let metadata = OpenAICompletionResponseMetadata(id: value.id, model: value.model, created: value.created)
+	        let rawFinishReason = choice.finishReason
+	        let finishReason = LanguageModelV3FinishReason(
+	            unified: OpenAICompletionFinishReasonMapper.map(rawFinishReason),
+	            raw: rawFinishReason
+	        )
+	        let metadata = OpenAICompletionResponseMetadata(id: value.id, model: value.model, created: value.created)
 
         let content: [LanguageModelV3Content] = [
             .text(LanguageModelV3Text(text: choice.text))
@@ -92,14 +96,14 @@ public final class OpenAICompletionLanguageModel: LanguageModelV3 {
             fetch: config.fetch
         )
 
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error>(bufferingPolicy: .unbounded) { continuation in
-            continuation.yield(.streamStart(warnings: prepared.warnings))
+	        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error>(bufferingPolicy: .unbounded) { continuation in
+	            continuation.yield(.streamStart(warnings: prepared.warnings))
 
-            Task {
-                var finishReason: LanguageModelV3FinishReason = .unknown
-                var usage = LanguageModelV3Usage()
-                var logprobsJSON: JSONValue? = nil
-                var isFirstChunk = true
+	            Task {
+	                var finishReason: LanguageModelV3FinishReason = .init(unified: .other, raw: nil)
+	                var usage = LanguageModelV3Usage()
+	                var logprobsJSON: JSONValue? = nil
+	                var isFirstChunk = true
 
                 do {
                     for try await parseResult in eventStream.value {
@@ -116,20 +120,20 @@ public final class OpenAICompletionLanguageModel: LanguageModelV3 {
                             }
                         }
 
-                        switch parseResult {
-                        case .failure(let error, _):
-                            finishReason = .error
-                            continuation.yield(.error(error: .string(String(describing: error))))
-                        case .success(let chunk, _):
-                            switch chunk {
-                            case .error(let errorData):
-                                finishReason = .error
-                                if let errorValue = try? JSONEncoder().encodeToJSONValue(errorData) {
-                                    continuation.yield(.error(error: errorValue))
-                                } else {
-                                    continuation.yield(.error(error: .string(errorData.error.message)))
-                                }
-                            case .data(let data):
+	                        switch parseResult {
+	                        case .failure(let error, _):
+	                            finishReason = .init(unified: .error, raw: nil)
+	                            continuation.yield(.error(error: .string(String(describing: error))))
+	                        case .success(let chunk, _):
+	                            switch chunk {
+	                            case .error(let errorData):
+	                                finishReason = .init(unified: .error, raw: nil)
+	                                if let errorValue = try? JSONEncoder().encodeToJSONValue(errorData) {
+	                                    continuation.yield(.error(error: errorValue))
+	                                } else {
+	                                    continuation.yield(.error(error: .string(errorData.error.message)))
+	                                }
+	                            case .data(let data):
                                 if isFirstChunk {
                                     isFirstChunk = false
                                     let metadata = OpenAICompletionResponseMetadata(id: data.id, model: data.model, created: data.created)
@@ -141,11 +145,14 @@ public final class OpenAICompletionLanguageModel: LanguageModelV3 {
                                     usage = convertOpenAICompletionUsage(usageValue)
                                 }
 
-                                guard let choice = data.choices.first else { continue }
+	                                guard let choice = data.choices.first else { continue }
 
-                                if let finish = choice.finishReason {
-                                    finishReason = OpenAICompletionFinishReasonMapper.map(finish)
-                                }
+	                                if let finish = choice.finishReason {
+	                                    finishReason = LanguageModelV3FinishReason(
+	                                        unified: OpenAICompletionFinishReasonMapper.map(finish),
+	                                        raw: finish
+	                                    )
+	                                }
 
                                 if let logprobs = choice.logprobs {
                                     logprobsJSON = try? JSONEncoder().encodeToJSONValue(logprobs)

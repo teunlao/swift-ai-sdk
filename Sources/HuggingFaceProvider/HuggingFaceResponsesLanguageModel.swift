@@ -103,7 +103,7 @@ public final class HuggingFaceResponsesLanguageModel: LanguageModelV3 {
             continuation.yield(.streamStart(warnings: prepared.warnings))
 
             Task {
-                var finishReason: LanguageModelV3FinishReason = .unknown
+                var finishReason: LanguageModelV3FinishReason = .init(unified: .other, raw: nil)
                 var usage = LanguageModelV3Usage()
                 var responseId: String? = nil
 
@@ -115,7 +115,7 @@ public final class HuggingFaceResponsesLanguageModel: LanguageModelV3 {
 
                         switch parseResult {
                         case .failure(let error, _):
-                            finishReason = .error
+                            finishReason = .init(unified: .error, raw: nil)
                             continuation.yield(.error(error: .string(String(describing: error))))
 
                         case .success(let chunk, _):
@@ -360,7 +360,11 @@ public final class HuggingFaceResponsesLanguageModel: LanguageModelV3 {
             )
         }()
 
-        let finishReason = mapHuggingFaceResponsesFinishReason(response.incompleteDetails?.reason ?? "stop")
+        let rawFinishReason = response.incompleteDetails?.reason
+        let finishReason = LanguageModelV3FinishReason(
+            unified: mapHuggingFaceResponsesFinishReason(rawFinishReason ?? "stop"),
+            raw: rawFinishReason
+        )
         let providerMetadata = responseProviderMetadata(responseId: response.id)
 
         return (content, finishReason, usage, providerMetadata)
@@ -488,7 +492,11 @@ public final class HuggingFaceResponsesLanguageModel: LanguageModelV3 {
 
         case .responseCompleted(let completed):
             responseId = completed.response.id
-            finishReason = mapHuggingFaceResponsesFinishReason(completed.response.incompleteDetails?.reason ?? "stop")
+            let rawFinishReason = completed.response.incompleteDetails?.reason
+            finishReason = LanguageModelV3FinishReason(
+                unified: mapHuggingFaceResponsesFinishReason(rawFinishReason ?? "stop"),
+                raw: rawFinishReason
+            )
             if let usagePayload = completed.response.usage {
                 let inputTokens = usagePayload.inputTokens
                 let outputTokens = usagePayload.outputTokens

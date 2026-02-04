@@ -90,6 +90,11 @@ public final class XAIChatLanguageModel: LanguageModelV3 {
         }
 
         let usage = convertXaiChatUsage(response.value.usage)
+        let rawFinishReason = response.value.choices.first?.finishReason
+        let finishReason = LanguageModelV3FinishReason(
+            unified: mapXaiFinishReason(rawFinishReason),
+            raw: rawFinishReason
+        )
 
         let metadata = xaiResponseMetadata(
             id: response.value.id,
@@ -99,7 +104,7 @@ public final class XAIChatLanguageModel: LanguageModelV3 {
 
         return LanguageModelV3GenerateResult(
             content: contents,
-            finishReason: mapXaiFinishReason(response.value.choices.first?.finishReason),
+            finishReason: finishReason,
             usage: usage,
             providerMetadata: nil,
             request: LanguageModelV3RequestInfo(body: prepared.body),
@@ -139,7 +144,7 @@ public final class XAIChatLanguageModel: LanguageModelV3 {
             continuation.yield(.streamStart(warnings: prepared.warnings))
 
             Task {
-                var finishReason: LanguageModelV3FinishReason = .unknown
+                var finishReason: LanguageModelV3FinishReason = .init(unified: .other, raw: nil)
                 var usage = LanguageModelV3Usage()
                 var isFirstChunk = true
                 var contentBlocks: [String: ContentBlockType] = [:]
@@ -153,7 +158,6 @@ public final class XAIChatLanguageModel: LanguageModelV3 {
 
                         switch parseResult {
                         case .failure(let error, _):
-                            finishReason = .error
                             continuation.yield(.error(error: .string(String(describing: error))))
                             continue
                         case .success(let chunk, _):
@@ -175,7 +179,10 @@ public final class XAIChatLanguageModel: LanguageModelV3 {
 
                             guard let choice = chunk.choices.first else { continue }
                             if let finish = choice.finishReason {
-                                finishReason = mapXaiFinishReason(finish)
+                                finishReason = LanguageModelV3FinishReason(
+                                    unified: mapXaiFinishReason(finish),
+                                    raw: finish
+                                )
                             }
 
                             guard let delta = choice.delta else { continue }

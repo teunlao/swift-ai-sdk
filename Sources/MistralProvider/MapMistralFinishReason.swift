@@ -7,7 +7,7 @@ import AISDKProvider
 // Upstream commit: 77db222ee
 //===----------------------------------------------------------------------===//
 
-public func mapMistralFinishReason(_ finishReason: String?) -> LanguageModelV3FinishReason {
+public func mapMistralFinishReason(_ finishReason: String?) -> LanguageModelV3FinishReason.Unified {
     switch finishReason {
     case "stop":
         return .stop
@@ -15,9 +15,7 @@ public func mapMistralFinishReason(_ finishReason: String?) -> LanguageModelV3Fi
         return .length
     case "tool_calls":
         return .toolCalls
-    case .some:
-        return .unknown
-    case .none:
-        return .unknown
+    default:
+        return .other
     }
 }

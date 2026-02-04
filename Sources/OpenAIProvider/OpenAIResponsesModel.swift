@@ -103,9 +103,13 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
         let usage = convertOpenAIResponsesUsage(value.usage)
 
         let outputWarnings = value.warnings?.map { $0.toWarning() } ?? []
-        let finishReason = mapOpenAIResponsesFinishReason(
-            finishReason: value.incompleteDetails?.reason,
-            hasFunctionCall: mapped.hasFunctionCall
+        let rawFinishReason = value.incompleteDetails?.reason
+        let finishReason = LanguageModelV3FinishReason(
+            unified: mapOpenAIResponsesFinishReason(
+                finishReason: rawFinishReason,
+                hasFunctionCall: mapped.hasFunctionCall
+            ),
+            raw: rawFinishReason
         )
 
         return LanguageModelV3GenerateResult(
@@ -163,7 +167,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             continuation.yield(.streamStart(warnings: prepared.warnings))
 
             Task {
-                var finishReason: LanguageModelV3FinishReason = .unknown
+                var finishReason: LanguageModelV3FinishReason = .init(unified: .other, raw: nil)
                 var usage = LanguageModelV3Usage()
                 var logprobs: [JSONValue] = []
                 var responseId: String?
@@ -292,9 +296,13 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                                 }
                             case "response.completed", "response.incomplete":
                                 if let metadata = chunkObject["response"], let responseObject = metadata.objectValue {
-                                    finishReason = mapOpenAIResponsesFinishReason(
-                                        finishReason: responseObject["incomplete_details"]?.objectValue?["reason"]?.stringValue,
-                                        hasFunctionCall: hasFunctionCall
+                                    let rawFinishReason = responseObject["incomplete_details"]?.objectValue?["reason"]?.stringValue
+                                    finishReason = LanguageModelV3FinishReason(
+                                        unified: mapOpenAIResponsesFinishReason(
+                                            finishReason: rawFinishReason,
+                                            hasFunctionCall: hasFunctionCall
+                                        ),
+                                        raw: rawFinishReason
                                     )
 
                                     if let usageValue = responseObject["usage"], let usageObject = usageValue.objectValue {
@@ -310,13 +318,13 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                                     }
                                 }
                             case "error":
-                                finishReason = .error
+                                finishReason = .init(unified: .error, raw: nil)
                                 continuation.yield(.error(error: chunk.rawValue))
                             default:
                                 break
                             }
                         case .failure(let error, _):
-                            finishReason = .error
+                            finishReason = .init(unified: .error, raw: nil)
                             continuation.yield(.error(error: .string(String(describing: error))))
                         }
                     }
