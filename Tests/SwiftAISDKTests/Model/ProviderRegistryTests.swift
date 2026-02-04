@@ -79,6 +79,34 @@ struct ProviderRegistryTests {
         #expect(resolved.provider == "base")
         #expect(resolved.modelId == "model")
     }
+
+    @Test("returns base reranking model when configured")
+    func returnsBaseRerankingModel() throws {
+        let baseModel = TestRerankingModel(provider: "base", modelId: "model")
+        let provider = customProvider(rerankingModels: ["model": baseModel])
+
+        let registry = createProviderRegistry(providers: ["p": provider])
+        let resolved = registry.rerankingModel(id: "p:model")
+
+        #expect(resolved.provider == "base")
+        #expect(resolved.modelId == "model")
+    }
+
+    @Test("supports custom separators when resolving reranking models")
+    func supportsCustomSeparatorsForRerankingModels() throws {
+        let baseModel = TestRerankingModel(provider: "base", modelId: "model")
+        let provider = customProvider(rerankingModels: ["model": baseModel])
+
+        let registry = createProviderRegistry(
+            providers: ["p": provider],
+            options: ProviderRegistryOptions(separator: " > ")
+        )
+
+        let resolved = registry.rerankingModel(id: "p > model")
+
+        #expect(resolved.provider == "base")
+        #expect(resolved.modelId == "model")
+    }
 }
 
 private final class TestLanguageModel: LanguageModelV3, @unchecked Sendable {
@@ -114,5 +142,27 @@ private final class TestLanguageModel: LanguageModelV3, @unchecked Sendable {
 
     func doStream(options: LanguageModelV3CallOptions) async throws -> LanguageModelV3StreamResult {
         LanguageModelV3StreamResult(stream: AsyncThrowingStream { $0.finish() })
+    }
+}
+
+private final class TestRerankingModel: RerankingModelV3, @unchecked Sendable {
+    let providerValue: String
+    let modelIdentifier: String
+
+    init(provider: String, modelId: String) {
+        self.providerValue = provider
+        self.modelIdentifier = modelId
+    }
+
+    var provider: String {
+        providerValue
+    }
+
+    var modelId: String {
+        modelIdentifier
+    }
+
+    func doRerank(options: RerankingModelV3CallOptions) async throws -> RerankingModelV3DoRerankResult {
+        RerankingModelV3DoRerankResult(ranking: [])
     }
 }
