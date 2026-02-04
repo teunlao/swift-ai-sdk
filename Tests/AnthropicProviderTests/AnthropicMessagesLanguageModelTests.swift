@@ -3897,6 +3897,159 @@ struct AnthropicMessagesLanguageModelMemory20250818Tests {
     }
 }
 
+@Suite("AnthropicMessagesLanguageModel programmatic tool calling")
+struct AnthropicMessagesLanguageModelProgrammaticToolCallingTests {
+    @Test("should parse server_tool_use + tool_use caller metadata")
+    func parsesProgrammaticToolCalling() async throws {
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.anthropic.com/v1/messages")!,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: nil
+        )!
+
+        let responseBody = """
+        {
+            "id": "msg_test",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5-20250929",
+            "content": [
+                { "type": "text", "text": "I'll run the game." },
+                {
+                    "type": "server_tool_use",
+                    "id": "srvtoolu_1",
+                    "name": "code_execution",
+                    "input": { "code": "print('hi')" },
+                    "caller": { "type": "direct" }
+                },
+                {
+                    "type": "tool_use",
+                    "id": "toolu_1",
+                    "name": "rollDie",
+                    "input": { "player": "player1" },
+                    "caller": { "type": "code_execution_20250825", "tool_id": "srvtoolu_1" }
+                },
+                {
+                    "type": "code_execution_tool_result",
+                    "tool_use_id": "srvtoolu_1",
+                    "content": {
+                        "type": "code_execution_result",
+                        "stdout": "ok",
+                        "stderr": "",
+                        "return_code": 0,
+                        "content": []
+                    }
+                },
+                { "type": "text", "text": "done" }
+            ],
+            "stop_reason": "end_turn",
+            "stop_sequence": null,
+            "usage": { "input_tokens": 1, "output_tokens": 2, "server_tool_use": { "web_search_requests": 0 } }
+        }
+        """
+
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .data(Data(responseBody.utf8)), urlResponse: httpResponse)
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-sonnet-4-5-20250929"),
+            config: makeConfig(fetch: fetch)
+        )
+
+        let rollDieTool = LanguageModelV3FunctionTool(
+            name: "rollDie",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "player": .object(["type": .string("string")])
+                ]),
+                "required": .array([.string("player")]),
+                "additionalProperties": .bool(false),
+                "$schema": .string("http://json-schema.org/draft-07/schema#")
+            ])
+        )
+
+        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
+            tools: [
+                .provider(LanguageModelV3ProviderTool(
+                    id: "anthropic.code_execution_20250825",
+                    name: "code_execution",
+                    args: [:]
+                )),
+                .function(rollDieTool),
+            ]
+        ))
+
+        func decodeJSONValue(_ string: String) -> JSONValue? {
+            guard let data = string.data(using: .utf8) else { return nil }
+            return try? JSONDecoder().decode(JSONValue.self, from: data)
+        }
+
+        #expect(result.content.count == 5)
+
+        if case .text(let text) = result.content[0] {
+            #expect(text.text == "I'll run the game.")
+        } else {
+            Issue.record("Expected text at index 0")
+        }
+
+        if case .toolCall(let toolCall) = result.content[1] {
+            #expect(toolCall.toolCallId == "srvtoolu_1")
+            #expect(toolCall.toolName == "code_execution")
+            #expect(toolCall.providerExecuted == true)
+            #expect(decodeJSONValue(toolCall.input) == .object([
+                "code": .string("print('hi')"),
+                "type": .string("programmatic-tool-call"),
+            ]))
+        } else {
+            Issue.record("Expected tool-call at index 1")
+        }
+
+        if case .toolCall(let toolCall) = result.content[2] {
+            #expect(toolCall.toolCallId == "toolu_1")
+            #expect(toolCall.toolName == "rollDie")
+            #expect(toolCall.providerExecuted == nil)
+            #expect(decodeJSONValue(toolCall.input) == .object([
+                "player": .string("player1")
+            ]))
+            #expect(toolCall.providerMetadata == [
+                "anthropic": [
+                    "caller": .object([
+                        "type": .string("code_execution_20250825"),
+                        "toolId": .string("srvtoolu_1"),
+                    ])
+                ]
+            ])
+        } else {
+            Issue.record("Expected tool-call at index 2")
+        }
+
+        if case .toolResult(let toolResult) = result.content[3] {
+            #expect(toolResult.toolCallId == "srvtoolu_1")
+            #expect(toolResult.toolName == "code_execution")
+            #expect(toolResult.providerExecuted == true)
+            #expect(toolResult.result == .object([
+                "type": .string("code_execution_result"),
+                "stdout": .string("ok"),
+                "stderr": .string(""),
+                "return_code": .number(0),
+                "content": .array([]),
+            ]))
+        } else {
+            Issue.record("Expected tool-result at index 3")
+        }
+
+        if case .text(let text) = result.content[4] {
+            #expect(text.text == "done")
+        } else {
+            Issue.record("Expected text at index 4")
+        }
+    }
+}
+
 @Suite("AnthropicMessagesLanguageModel code execution")
 struct AnthropicMessagesLanguageModelCodeExecutionTests {
 

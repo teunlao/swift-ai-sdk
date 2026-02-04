@@ -17,6 +17,7 @@
 - [x] Settings/provider options parity (custom provider option keys).
 - [x] Web tools output shape aligned to upstream (breaking in `v0.10.0`).
 - [x] Memory tool: `memory_20250818` prepare-tools payload + `context-management-2025-06-27` beta; parses `tool_use` into V3 tool-call content.
+- [x] Programmatic tool calling: parse `caller` metadata for client `tool_use` blocks and inject `type=programmatic-tool-call` for server-side `code_execution` tool calls (upstream parity).
 
 Tests live under:
 - `Tests/AnthropicProviderTests/ConvertToAnthropicMessagesPromptTests.swift`
