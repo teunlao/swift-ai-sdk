@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-02-04
+
+### Changed
+- BREAKING: align finish reasons with upstream `LanguageModelV3FinishReason { unified, raw }` and surface `rawFinishReason` through `generateText` / `streamText`.
+- BREAKING: `FinishReason` is now the unified finish reason (`LanguageModelV3FinishReason.Unified`).
+- BREAKING: `LanguageModelV3ToolResult` no longer includes `providerExecuted` (upstream parity).
+- UI: align UI message stream chunks with upstream (`finishReason`, abort `reason`, tool `title`/`providerMetadata`, dynamic tool states) + tests.
+
+### Added
+- `generateText`/`streamText`: support deferred results for provider-executed tools (`supportsDeferredResults`) in multi-step loops (upstream parity).
+
+### Fixed
+- Anthropic: match upstream tool-result flags.
+
+## [0.11.0] - 2026-02-04
+
+### Changed
+- BREAKING: align `LanguageModelV3Usage` to upstream token detail shape (`inputTokens` / `outputTokens`) and update provider usage mapping accordingly.
+- SwiftAISDK: add AI-level `LanguageModelUsage` helpers + adapter from provider usage for parity with upstream `@ai-sdk/ai`.
+
 ## [0.10.0] - 2026-02-03
 
 ### Changed
