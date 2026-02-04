@@ -255,7 +255,7 @@ public func runToolsTransformation(
                                 output: toolResultChunk.result,
                                 providerExecuted: toolResultChunk.providerExecuted,
                                 preliminary: toolResultChunk.preliminary,
-                                providerMetadata: toolResultChunk.providerMetadata
+                                providerMetadata: nil
                             )
                             emit(.toolResult(typedResult))
                         }

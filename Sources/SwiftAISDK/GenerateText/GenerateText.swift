@@ -423,12 +423,21 @@ private func makeRequestMetadata(
     return LanguageModelRequestMetadata(body: body)
 }
 
+private struct ToolCallNotFoundError: LocalizedError, Sendable {
+    let toolCallId: String
+
+    var errorDescription: String? {
+        "Tool call \(toolCallId) not found."
+    }
+}
+
 private func asContent(
     content languageModelContent: [LanguageModelV3Content],
     toolCalls: [TypedToolCall],
     toolOutputs: [ToolOutput],
-    toolApprovalRequests: [ToolApprovalRequestOutput]
-) -> [ContentPart] {
+    toolApprovalRequests: [ToolApprovalRequestOutput],
+    tools: ToolSet?
+) throws -> [ContentPart] {
     var contentParts: [ContentPart] = []
 
     var toolCallsById: [String: TypedToolCall] = [:]
@@ -496,7 +505,43 @@ private func asContent(
 
         case .toolResult(let toolResultPart):
             guard let toolCall = toolCallsById[toolResultPart.toolCallId] else {
-                continue
+                let tool = tools?[toolResultPart.toolName]
+                let supportsDeferredResults = tool?.type == .provider && tool?.supportsDeferredResults == true
+                if !supportsDeferredResults {
+                    throw ToolCallNotFoundError(toolCallId: toolResultPart.toolCallId)
+                }
+
+                let input: JSONValue = .null
+
+                if toolResultPart.isError == true {
+                    let errorValue = ProviderToolExecutionError(value: toolResultPart.result)
+                    let typedError = TypedToolError.static(
+                        StaticToolError(
+                            toolCallId: toolResultPart.toolCallId,
+                            toolName: toolResultPart.toolName,
+                            input: input,
+                            error: errorValue,
+                            providerExecuted: true
+                        )
+                    )
+
+                    contentParts.append(.toolError(typedError, providerMetadata: nil))
+                } else {
+                    let typedResult = TypedToolResult.static(
+                        StaticToolResult(
+                            toolCallId: toolResultPart.toolCallId,
+                            toolName: toolResultPart.toolName,
+                            input: input,
+                            output: toolResultPart.result,
+                            providerExecuted: true,
+                            preliminary: toolResultPart.preliminary
+                        )
+                    )
+
+                    contentParts.append(.toolResult(typedResult, providerMetadata: nil))
+                }
+
+                break
             }
 
             if toolResultPart.isError == true {
@@ -524,7 +569,7 @@ private func asContent(
                         )
                     )
                 }
-                contentParts.append(.toolError(typedError, providerMetadata: toolResultPart.providerMetadata))
+                contentParts.append(.toolError(typedError, providerMetadata: nil))
             } else {
                 let typedResult: TypedToolResult
                 switch toolCall {
@@ -551,7 +596,7 @@ private func asContent(
                         )
                     )
                 }
-                contentParts.append(.toolResult(typedResult, providerMetadata: toolResultPart.providerMetadata))
+                contentParts.append(.toolResult(typedResult, providerMetadata: nil))
             }
         }
     }
@@ -570,9 +615,9 @@ private func asContent(
 private func toolOutputToContentPart(_ output: ToolOutput) -> ContentPart {
     switch output {
     case .result(let result):
-        return .toolResult(result, providerMetadata: nil)
+        return .toolResult(result, providerMetadata: result.providerMetadata)
     case .error(let error):
-        return .toolError(error, providerMetadata: nil)
+        return .toolError(error, providerMetadata: error.providerMetadata)
     }
 }
 
@@ -835,6 +880,7 @@ public func generateText<OutputValue: Sendable>(
             var steps: [StepResult] = []
             var clientToolCalls: [TypedToolCall] = []
             var clientToolOutputs: [ToolOutput] = []
+            var pendingDeferredToolCalls: [String: String] = [:]
             var currentModelResult: GenerateStepIntermediate?
             var continueLoop = false
             var currentExperimentalContext = experimentalContext
@@ -1028,11 +1074,37 @@ public func generateText<OutputValue: Sendable>(
                     clientToolOutputs.append(contentsOf: executedOutputs)
                 }
 
-                let stepContent = asContent(
+                // Track provider-executed tool calls that support deferred results.
+                // In programmatic tool calling, a server tool (e.g., code_execution) may
+                // trigger a client tool, and the server tool's result is deferred until
+                // the client tool's result is sent back.
+                for toolCall in stepToolCalls {
+                    guard toolCall.providerExecuted == true else { continue }
+                    guard let tool = tools?[toolCall.toolName] else { continue }
+                    guard tool.type == .provider, tool.supportsDeferredResults == true else { continue }
+
+                    let hasResultInResponse = stepResult.content.contains { part in
+                        guard case .toolResult(let toolResultPart) = part else { return false }
+                        return toolResultPart.toolCallId == toolCall.toolCallId
+                    }
+
+                    if !hasResultInResponse {
+                        pendingDeferredToolCalls[toolCall.toolCallId] = toolCall.toolName
+                    }
+                }
+
+                // Mark deferred tool calls as resolved when we receive their results.
+                for part in stepResult.content {
+                    guard case .toolResult(let toolResultPart) = part else { continue }
+                    pendingDeferredToolCalls.removeValue(forKey: toolResultPart.toolCallId)
+                }
+
+                let stepContent = try asContent(
                     content: stepResult.content,
                     toolCalls: stepToolCalls,
                     toolOutputs: clientToolOutputs,
-                    toolApprovalRequests: Array(toolApprovalRequests.values)
+                    toolApprovalRequests: Array(toolApprovalRequests.values),
+                    tools: tools
                 )
 
                 let newMessages = convertModelMessagesToResponseMessages(
@@ -1074,7 +1146,9 @@ public func generateText<OutputValue: Sendable>(
                 let hasPendingToolCalls = !clientToolCalls.isEmpty
                 let allToolCallsHaveOutputs = clientToolOutputs.count == clientToolCalls.count
                 let stopConditionMet = await isStopConditionMet(stopConditions: stopWhen, steps: steps)
-                continueLoop = hasPendingToolCalls && allToolCallsHaveOutputs && !stopConditionMet
+                continueLoop =
+                    ((hasPendingToolCalls && allToolCallsHaveOutputs) || !pendingDeferredToolCalls.isEmpty) &&
+                    !stopConditionMet
             } while continueLoop
 
             if let finalResult = currentModelResult {

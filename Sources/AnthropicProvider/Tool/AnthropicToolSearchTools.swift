@@ -80,14 +80,16 @@ private let anthropicToolSearchRegex20251119Factory = createProviderToolFactoryW
     id: "anthropic.tool_search_regex_20251119",
     name: "tool_search_tool_regex",
     inputSchema: anthropicToolSearchRegex20251119InputSchema,
-    outputSchema: anthropicToolSearchToolOutputSchema
+    outputSchema: anthropicToolSearchToolOutputSchema,
+    supportsDeferredResults: true
 )
 
 private let anthropicToolSearchBm2520251119Factory = createProviderToolFactoryWithOutputSchema(
     id: "anthropic.tool_search_bm25_20251119",
     name: "tool_search_tool_bm25",
     inputSchema: anthropicToolSearchBm2520251119InputSchema,
-    outputSchema: anthropicToolSearchToolOutputSchema
+    outputSchema: anthropicToolSearchToolOutputSchema,
+    supportsDeferredResults: true
 )
 
 @discardableResult

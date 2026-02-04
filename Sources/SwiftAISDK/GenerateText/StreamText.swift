@@ -1026,7 +1026,7 @@ private actor StreamTextPipelineAggregator {
         case .toolResult(let result):
             await handleToolResult(result)
         case .toolError(let error):
-            recordedContent.append(.toolError(error, providerMetadata: nil))
+            recordedContent.append(.toolError(error, providerMetadata: error.providerMetadata))
         case .toolApprovalRequest(let approval):
             recordedContent.append(.toolApprovalRequest(approval))
         case .toolOutputDenied:
@@ -1453,7 +1453,7 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
     )
 
     let errorHandler: StreamTextOnError = onError ?? { error in
-        fputs("streamText error: \\(error)\n", stderr)
+        fputs("streamText error: \(error)\n", stderr)
     }
 
     let result = DefaultStreamTextResult<OutputValue, PartialOutputValue>(

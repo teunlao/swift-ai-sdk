@@ -508,6 +508,23 @@ struct AnthropicPrepareToolsProviderDefinedTests {
         #expect(result.betas == Set(["computer-use-2025-01-24"]))
     }
 
+    @Test("memory_20250818 adds beta and payload")
+    func memory20250818() async throws {
+        let result = try await prepareAnthropicTools(
+            tools: [makeProviderTool(id: "anthropic.memory_20250818", name: "memory")],
+            toolChoice: nil,
+            disableParallelToolUse: nil
+        )
+
+        #expect(result.betas == Set(["context-management-2025-06-27"]))
+        #expect(result.tools == [
+            .object([
+                "name": .string("memory"),
+                "type": .string("memory_20250818"),
+            ])
+        ])
+    }
+
     @Test("text_editor_20250728 handles max characters")
     func textEditor20250728WithMax() async throws {
         let args: [String: JSONValue] = ["maxCharacters": .number(10_000)]
@@ -718,6 +735,32 @@ struct AnthropicPrepareToolsProviderDefinedTests {
         } else {
             Issue.record("Expected prepared tool payload")
         }
+    }
+
+    @Test("Anthropic tool wrappers: memory_20250818 enables context management beta")
+    func wrapperMemory20250818() async throws {
+        let tool = anthropicMemory20250818()
+
+        guard let id = tool.id, let name = tool.name else {
+            Issue.record("Expected provider tool id/name")
+            return
+        }
+
+        let providerTool = LanguageModelV3ProviderTool(id: id, name: name, args: tool.args ?? [:])
+
+        let prepared = try await prepareAnthropicTools(
+            tools: [.provider(providerTool)],
+            toolChoice: nil,
+            disableParallelToolUse: nil
+        )
+
+        #expect(prepared.betas == Set(["context-management-2025-06-27"]))
+        #expect(prepared.tools == [
+            .object([
+                "name": .string("memory"),
+                "type": .string("memory_20250818"),
+            ])
+        ])
     }
 
     @Test("Anthropic tool wrappers: computer_20250124 forwards display settings")

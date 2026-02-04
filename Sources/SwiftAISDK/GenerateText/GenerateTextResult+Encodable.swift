@@ -237,6 +237,7 @@ private enum GenerateTextResultJSONEncoder {
                 toolName: staticError.toolName,
                 input: staticError.input,
                 providerExecuted: staticError.providerExecuted,
+                providerMetadata: staticError.providerMetadata,
                 description: String(describing: staticError.error)
             )
         case .dynamic(let dynamicError):
@@ -245,6 +246,7 @@ private enum GenerateTextResultJSONEncoder {
                 toolName: dynamicError.toolName,
                 input: dynamicError.input,
                 providerExecuted: dynamicError.providerExecuted,
+                providerMetadata: dynamicError.providerMetadata,
                 description: String(describing: dynamicError.error)
             )
         }
@@ -255,6 +257,7 @@ private enum GenerateTextResultJSONEncoder {
         toolName: String,
         input: JSONValue,
         providerExecuted: Bool?,
+        providerMetadata: ProviderMetadata?,
         description: String
     ) -> JSONValue {
         var map: [String: JSONValue] = [
@@ -266,6 +269,9 @@ private enum GenerateTextResultJSONEncoder {
         ]
         if let providerExecuted = providerExecuted {
             map["providerExecuted"] = .bool(providerExecuted)
+        }
+        if let metadata = encodedProviderMetadata(providerMetadata) {
+            map["providerMetadata"] = metadata
         }
         return .object(map)
     }

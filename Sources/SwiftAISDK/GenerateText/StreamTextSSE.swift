@@ -164,6 +164,7 @@ private final class StreamTextSSEEncoder {
             // Serialize error as string description to keep payload lightweight
             payload["error"] = String(describing: error.error)
             if let executed = error.providerExecuted { payload["providerExecuted"] = executed }
+            if let metadata = providerMetadataDictionary(error.providerMetadata) { payload["providerMetadata"] = metadata }
             payload["input"] = toJSONAny(error.input)
             if error.isDynamic { payload["dynamic"] = true }
             return [encode(event: payload)]

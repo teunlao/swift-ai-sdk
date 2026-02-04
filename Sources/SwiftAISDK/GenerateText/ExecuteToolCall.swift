@@ -143,7 +143,8 @@ private func makeToolResult(
                 input: call.input,
                 output: output,
                 providerExecuted: providerExecuted,
-                preliminary: preliminary
+                preliminary: preliminary,
+                providerMetadata: call.providerMetadata
             )
         )
     case .dynamic(let call):
@@ -155,7 +156,8 @@ private func makeToolResult(
                 input: call.input,
                 output: output,
                 providerExecuted: providerExecuted,
-                preliminary: preliminary
+                preliminary: preliminary,
+                providerMetadata: call.providerMetadata
             )
         )
     }
@@ -175,7 +177,8 @@ private func makeToolError(
                 title: call.title,
                 input: call.input,
                 error: error,
-                providerExecuted: providerExecuted
+                providerExecuted: providerExecuted,
+                providerMetadata: call.providerMetadata
             )
         )
     case .dynamic(let call):
@@ -186,7 +189,8 @@ private func makeToolError(
                 title: call.title,
                 input: call.input,
                 error: error,
-                providerExecuted: providerExecuted
+                providerExecuted: providerExecuted,
+                providerMetadata: call.providerMetadata
             )
         )
     }

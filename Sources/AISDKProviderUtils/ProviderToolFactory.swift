@@ -107,13 +107,15 @@ public func createProviderToolFactoryWithOutputSchema(
     id: String,
     name: String,
     inputSchema: FlexibleSchema<JSONValue>,
-    outputSchema: FlexibleSchema<JSONValue>
+    outputSchema: FlexibleSchema<JSONValue>,
+    supportsDeferredResults: Bool? = nil
 ) -> ProviderToolFactoryWithOutputSchema {
     createProviderToolFactoryWithOutputSchema(
         id: id,
         name: name,
         inputSchema: inputSchema,
         outputSchema: outputSchema,
+        supportsDeferredResults: supportsDeferredResults,
         mapOptions: { $0 }
     )
 }
@@ -166,6 +168,7 @@ public func createProviderToolFactoryWithOutputSchema<Options>(
     name: String,
     inputSchema: FlexibleSchema<JSONValue>,
     outputSchema: FlexibleSchema<JSONValue>,
+    supportsDeferredResults: Bool? = nil,
     mapOptions: @escaping @Sendable (Options) -> ProviderToolFactoryWithOutputSchemaOptions
 ) -> @Sendable (Options) -> Tool {
     {
@@ -182,7 +185,8 @@ public func createProviderToolFactoryWithOutputSchema<Options>(
             type: .provider,
             id: id,
             name: name,
-            args: options.args
+            args: options.args,
+            supportsDeferredResults: supportsDeferredResults
         )
     }
 }

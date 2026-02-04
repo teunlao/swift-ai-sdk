@@ -564,7 +564,8 @@ private let anthropicWebFetchFactory = createProviderToolFactoryWithOutputSchema
     id: "anthropic.web_fetch_20250910",
     name: "web_fetch",
     inputSchema: anthropicWebFetchInputSchema,
-    outputSchema: anthropicWebFetch20250910ToolOutputSchema
+    outputSchema: anthropicWebFetch20250910ToolOutputSchema,
+    supportsDeferredResults: true
 )
 
 @discardableResult
@@ -605,7 +606,8 @@ private let anthropicWebSearchFactory = createProviderToolFactoryWithOutputSchem
     id: "anthropic.web_search_20250305",
     name: "web_search",
     inputSchema: anthropicWebSearchInputSchema,
-    outputSchema: anthropicWebSearch20250305ToolOutputSchema
+    outputSchema: anthropicWebSearch20250305ToolOutputSchema,
+    supportsDeferredResults: true
 )
 
 @discardableResult

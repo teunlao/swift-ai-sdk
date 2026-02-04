@@ -3745,6 +3745,158 @@ struct AnthropicMessagesLanguageModelWebFetchTests {
 
 // MARK: - Batch 14: Code Execution Tool Tests
 
+@Suite("AnthropicMessagesLanguageModel memory 20250818")
+struct AnthropicMessagesLanguageModelMemory20250818Tests {
+    @Test("should send request body with tool and context-management beta")
+    func sendsRequestBodyWithMemoryToolAndBeta() async throws {
+        actor RequestCapture {
+            var request: URLRequest?
+            func store(_ request: URLRequest) { self.request = request }
+            func get() -> URLRequest? { request }
+        }
+
+        let capture = RequestCapture()
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.anthropic.com/v1/messages")!,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: nil
+        )!
+
+        let responseBody = """
+        {
+            "id": "msg_test",
+            "type": "message",
+            "role": "assistant",
+            "content": [{"type": "text", "text": "OK"}],
+            "model": "claude-3-haiku-20240307",
+            "stop_reason": "end_turn",
+            "usage": {"input_tokens": 10, "output_tokens": 20}
+        }
+        """
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(Data(responseBody.utf8)), urlResponse: httpResponse)
+        }
+
+        let config = AnthropicMessagesConfig(
+            provider: "anthropic.messages",
+            baseURL: "https://api.anthropic.com/v1",
+            headers: { ["x-api-key": "test-api-key", "anthropic-version": "2023-06-01"] },
+            fetch: fetch
+        )
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: config
+        )
+
+        _ = try await model.doGenerate(options: LanguageModelV3CallOptions(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
+            tools: [
+                .provider(LanguageModelV3ProviderTool(
+                    id: "anthropic.memory_20250818",
+                    name: "memory",
+                    args: [:]
+                ))
+            ]
+        ))
+
+        guard let request = await capture.get(), let body = request.httpBody else {
+            Issue.record("No request captured")
+            return
+        }
+
+        let json = try JSONSerialization.jsonObject(with: body) as? [String: Any]
+        guard let tools = json?["tools"] as? [[String: Any]], tools.count == 1 else {
+            Issue.record("Expected 1 tool in request")
+            return
+        }
+
+        let tool = tools[0]
+        #expect(tool["type"] as? String == "memory_20250818")
+        #expect(tool["name"] as? String == "memory")
+        #expect(tool.count == 2)
+
+        if let headers = request.allHTTPHeaderFields {
+            #expect(headers["anthropic-beta"] == "context-management-2025-06-27")
+        } else {
+            Issue.record("No headers found")
+        }
+    }
+
+    @Test("should parse memory tool call from tool_use")
+    func parsesMemoryToolCall() async throws {
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.anthropic.com/v1/messages")!,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: nil
+        )!
+
+        let responseBody = """
+        {
+            "id": "msg_test",
+            "type": "message",
+            "role": "assistant",
+            "content": [
+                {
+                    "type": "tool_use",
+                    "id": "toolu_01TvNvpwszD4hKeudmbfyWiV",
+                    "name": "memory",
+                    "input": {"command": "view", "path": "/memories"}
+                }
+            ],
+            "model": "claude-3-haiku-20240307",
+            "stop_reason": "tool_use",
+            "usage": {"input_tokens": 10, "output_tokens": 20}
+        }
+        """
+
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .data(Data(responseBody.utf8)), urlResponse: httpResponse)
+        }
+
+        let config = AnthropicMessagesConfig(
+            provider: "anthropic.messages",
+            baseURL: "https://api.anthropic.com/v1",
+            headers: { ["x-api-key": "test-api-key", "anthropic-version": "2023-06-01"] },
+            fetch: fetch
+        )
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: config
+        )
+
+        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
+            tools: [
+                .provider(LanguageModelV3ProviderTool(
+                    id: "anthropic.memory_20250818",
+                    name: "memory",
+                    args: [:]
+                ))
+            ]
+        ))
+
+        #expect(result.content.count == 1)
+
+        if case .toolCall(let toolCall) = result.content[0] {
+            #expect(toolCall.toolCallId == "toolu_01TvNvpwszD4hKeudmbfyWiV")
+            #expect(toolCall.toolName == "memory")
+            #expect(toolCall.providerExecuted == nil)
+            #expect(toolCall.input.contains("\"command\""))
+            #expect(toolCall.input.contains("\"view\""))
+            #expect(toolCall.input.contains("\"path\""))
+            #expect(toolCall.input.contains("/memories"))
+        } else {
+            Issue.record("Expected tool-call at index 0")
+        }
+    }
+}
+
 @Suite("AnthropicMessagesLanguageModel code execution")
 struct AnthropicMessagesLanguageModelCodeExecutionTests {
 

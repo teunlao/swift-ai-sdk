@@ -35,6 +35,9 @@ public struct StaticToolError: Sendable {
     /// Whether the tool was executed by the provider.
     public let providerExecuted: Bool?
 
+    /// Provider-specific metadata for the tool error.
+    public let providerMetadata: ProviderMetadata?
+
     /// Whether this is a dynamic tool error.
     /// For StaticToolError, this is always false or nil.
     public let dynamic: Bool?
@@ -45,7 +48,8 @@ public struct StaticToolError: Sendable {
         title: String? = nil,
         input: JSONValue,
         error: any Error,
-        providerExecuted: Bool? = nil
+        providerExecuted: Bool? = nil,
+        providerMetadata: ProviderMetadata? = nil
     ) {
         self.toolCallId = toolCallId
         self.toolName = toolName
@@ -53,6 +57,7 @@ public struct StaticToolError: Sendable {
         self.input = input
         self.error = error
         self.providerExecuted = providerExecuted
+        self.providerMetadata = providerMetadata
         self.dynamic = false
     }
 }
@@ -85,13 +90,17 @@ public struct DynamicToolError: Sendable {
     /// Whether the tool was executed by the provider.
     public let providerExecuted: Bool?
 
+    /// Provider-specific metadata for the tool error.
+    public let providerMetadata: ProviderMetadata?
+
     public init(
         toolCallId: String,
         toolName: String,
         title: String? = nil,
         input: JSONValue,
         error: any Error,
-        providerExecuted: Bool? = nil
+        providerExecuted: Bool? = nil,
+        providerMetadata: ProviderMetadata? = nil
     ) {
         self.toolCallId = toolCallId
         self.toolName = toolName
@@ -99,6 +108,7 @@ public struct DynamicToolError: Sendable {
         self.input = input
         self.error = error
         self.providerExecuted = providerExecuted
+        self.providerMetadata = providerMetadata
     }
 }
 
@@ -155,6 +165,14 @@ public enum TypedToolError: Sendable {
         switch self {
         case .static(let error): return error.providerExecuted
         case .dynamic(let error): return error.providerExecuted
+        }
+    }
+
+    /// Provider-specific metadata for the tool error.
+    public var providerMetadata: ProviderMetadata? {
+        switch self {
+        case .static(let error): return error.providerMetadata
+        case .dynamic(let error): return error.providerMetadata
         }
     }
 

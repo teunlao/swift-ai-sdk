@@ -460,7 +460,8 @@ private let anthropicCodeExecution20250825Factory = createProviderToolFactoryWit
     id: "anthropic.code_execution_20250825",
     name: "code_execution",
     inputSchema: anthropicCodeExecution20250825InputSchema,
-    outputSchema: anthropicCodeExecution20250825ToolOutputSchema
+    outputSchema: anthropicCodeExecution20250825ToolOutputSchema,
+    supportsDeferredResults: true
 )
 
 @discardableResult

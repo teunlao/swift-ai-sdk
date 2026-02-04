@@ -182,6 +182,20 @@ public struct Tool: Sendable {
     /// For provider-defined tools: the arguments
     public let args: [String: JSONValue]?
 
+    /// For provider-defined tools: whether this provider-executed tool supports
+    /// deferred results.
+    ///
+    /// When true, the tool result may not be returned in the same turn as the
+    /// tool call (e.g., when using programmatic tool calling where a server tool
+    /// triggers a client-executed tool, and the server tool's result is deferred
+    /// until the client tool is resolved).
+    ///
+    /// This flag allows the AI SDK to handle tool results that arrive without a
+    /// matching tool call in the current response.
+    ///
+    /// Upstream reference: `@ai-sdk/provider-utils/src/types/tool.ts`.
+    public let supportsDeferredResults: Bool?
+
     public init(
         description: String? = nil,
         title: String? = nil,
@@ -199,7 +213,8 @@ public struct Tool: Sendable {
         type: ToolType? = nil,
         id: String? = nil,
         name: String? = nil,
-        args: [String: JSONValue]? = nil
+        args: [String: JSONValue]? = nil,
+        supportsDeferredResults: Bool? = nil
     ) {
         self.description = description
         self.title = title
@@ -218,6 +233,7 @@ public struct Tool: Sendable {
         self.id = id
         self.name = name
         self.args = args
+        self.supportsDeferredResults = supportsDeferredResults
     }
 }
 

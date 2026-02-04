@@ -412,6 +412,7 @@ extension TextStreamPart: Codable {
             let title = try container.decodeIfPresent(String.self, forKey: .title)
             let input = (try? container.decode(JSONValue.self, forKey: .input)) ?? .null
             let providerExecuted = try container.decodeIfPresent(Bool.self, forKey: .providerExecuted)
+            let providerMetadata = try container.decodeIfPresent(ProviderMetadata.self, forKey: .providerMetadata)
             let dynamic = try container.decodeIfPresent(Bool.self, forKey: .dynamic) ?? false
             // Error may be string or structured; capture description
             let errJson = (try? container.decode(JSONValue.self, forKey: .error)) ?? .string("tool error")
@@ -424,7 +425,8 @@ extension TextStreamPart: Codable {
                     title: title,
                     input: input,
                     error: err,
-                    providerExecuted: providerExecuted
+                    providerExecuted: providerExecuted,
+                    providerMetadata: providerMetadata
                 )
                 self = .toolError(.dynamic(value))
             } else {
@@ -434,7 +436,8 @@ extension TextStreamPart: Codable {
                     title: title,
                     input: input,
                     error: err,
-                    providerExecuted: providerExecuted
+                    providerExecuted: providerExecuted,
+                    providerMetadata: providerMetadata
                 )
                 self = .toolError(.static(value))
             }
@@ -702,6 +705,7 @@ extension TextStreamPart: Codable {
                 try container.encode(String(describing: v.error), forKey: .error)
                 try container.encode(v.input, forKey: .input)
                 try container.encodeIfPresent(v.providerExecuted, forKey: .providerExecuted)
+                try container.encodeIfPresent(v.providerMetadata, forKey: .providerMetadata)
             case .dynamic(let v):
                 try container.encode(v.toolCallId, forKey: .toolCallId)
                 try container.encode(v.toolName, forKey: .toolName)
@@ -710,6 +714,7 @@ extension TextStreamPart: Codable {
                 try container.encode(v.input, forKey: .input)
                 try container.encode(true, forKey: .dynamic)
                 try container.encodeIfPresent(v.providerExecuted, forKey: .providerExecuted)
+                try container.encodeIfPresent(v.providerMetadata, forKey: .providerMetadata)
             }
 
         case .toolOutputDenied(let denied):

@@ -39,6 +39,7 @@ actor StreamTextActor {
     private var accumulatedUsage: LanguageModelUsage = LanguageModelUsage()
     private var recordedFinishReason: FinishReason? = nil
     private var recordedRawFinishReason: String? = nil
+    private var pendingDeferredToolCalls: [String: String] = [:] // toolCallId -> tool name
     private var externalStopRequested = false
     private var abortEmitted = false
     // Tool tracking for the current step
@@ -196,11 +197,10 @@ actor StreamTextActor {
         guard let lastStep = recordedSteps.last else { return false }
         guard lastStep.finishReason == .toolCalls else { return false }
         let clientToolCalls = clientToolCalls(in: lastStep)
-        if clientToolCalls.isEmpty { return false }
         let clientToolOutputs = clientToolOutputs(in: lastStep)
-        if clientToolOutputs.count != clientToolCalls.count { return false }
+        let clientToolCallsComplete = !clientToolCalls.isEmpty && clientToolOutputs.count == clientToolCalls.count
         let stopMet = await isStopConditionMet(stopConditions: stopConditions, steps: recordedSteps)
-        return !stopMet
+        return (clientToolCallsComplete || !pendingDeferredToolCalls.isEmpty) && !stopMet
     }
 
     private func makeConversationMessagesForContinuation() -> [ModelMessage] {
@@ -289,7 +289,8 @@ actor StreamTextActor {
         callId: String,
         toolName: String,
         input: JSONValue,
-        error: Error
+        error: Error,
+        providerMetadata: ProviderMetadata?
     ) -> TypedToolError {
         if tool.type == nil || tool.type == .function {
             return .static(
@@ -298,7 +299,8 @@ actor StreamTextActor {
                     toolName: toolName,
                     input: input,
                     error: error,
-                    providerExecuted: false
+                    providerExecuted: false,
+                    providerMetadata: providerMetadata
                 )
             )
         } else {
@@ -308,7 +310,8 @@ actor StreamTextActor {
                     toolName: toolName,
                     input: input,
                     error: error,
-                    providerExecuted: false
+                    providerExecuted: false,
+                    providerMetadata: providerMetadata
                 )
             )
         }
@@ -317,7 +320,7 @@ actor StreamTextActor {
     private func emitToolResult(_ result: TypedToolResult, preliminary: Bool) async {
         await fullBroadcaster.send(.toolResult(result))
         if !preliminary {
-            recordedContent.append(.toolResult(result, providerMetadata: nil))
+            recordedContent.append(.toolResult(result, providerMetadata: result.providerMetadata))
             currentToolOutputs.append(.result(result))
             activeToolInputs.removeValue(forKey: result.toolCallId)
             activeToolNames.removeValue(forKey: result.toolCallId)
@@ -327,7 +330,7 @@ actor StreamTextActor {
 
     private func emitToolError(_ error: TypedToolError) async {
         await fullBroadcaster.send(.toolError(error))
-        recordedContent.append(.toolError(error, providerMetadata: nil))
+        recordedContent.append(.toolError(error, providerMetadata: error.providerMetadata))
         currentToolOutputs.append(.error(error))
         activeToolInputs.removeValue(forKey: error.toolCallId)
         activeToolNames.removeValue(forKey: error.toolCallId)
@@ -373,7 +376,8 @@ actor StreamTextActor {
                     callId: pending.toolCallId,
                     toolName: pending.toolName,
                     input: pending.input,
-                    error: error
+                    error: error,
+                    providerMetadata: pending.providerMetadata
                 )
                 await emitToolError(typedError)
             }
@@ -400,7 +404,8 @@ actor StreamTextActor {
                     callId: pending.toolCallId,
                     toolName: pending.toolName,
                     input: pending.input,
-                    error: error
+                    error: error,
+                    providerMetadata: pending.providerMetadata
                 )
                 await emitToolError(typedError)
                 return
@@ -463,7 +468,8 @@ actor StreamTextActor {
                 callId: pending.toolCallId,
                 toolName: pending.toolName,
                 input: pending.input,
-                error: error
+                error: error,
+                providerMetadata: pending.providerMetadata
             )
             await emitToolError(typedError)
         }
@@ -894,7 +900,8 @@ case let .toolInputStart(id, toolName, providerMetadata, providerExecuted, dynam
                             callId: typed.toolCallId,
                             toolName: typed.toolName,
                             input: typed.input,
-                            error: error
+                            error: error,
+                            providerMetadata: typed.providerMetadata
                         )
                         await emitToolError(typedError)
                         continue
@@ -953,38 +960,75 @@ case let .toolInputStart(id, toolName, providerMetadata, providerExecuted, dynam
 
             case .toolResult(let result):
                 let input = activeToolInputs[result.toolCallId] ?? .null
-                let typed: TypedToolResult
-                if tools?[result.toolName] != nil {
-                    let staticResult = StaticToolResult(
-                        toolCallId: result.toolCallId,
-                        toolName: result.toolName,
-                        input: input,
-                        output: result.result,
-                        providerExecuted: result.providerExecuted,
-                        preliminary: result.preliminary,
-                        providerMetadata: result.providerMetadata
-                    )
-                    typed = .static(staticResult)
-                } else {
-                    let dynamicResult = DynamicToolResult(
-                        toolCallId: result.toolCallId,
-                        toolName: result.toolName,
-                        input: input,
-                        output: result.result,
-                        providerExecuted: result.providerExecuted,
-                        preliminary: result.preliminary,
-                        providerMetadata: result.providerMetadata
-                    )
-                    typed = .dynamic(dynamicResult)
-                }
                 let isPreliminary = result.preliminary == true
-                await fullBroadcaster.send(.toolResult(typed))
-                if !isPreliminary {
-                    recordedContent.append(.toolResult(typed, providerMetadata: result.providerMetadata))
-                    currentToolOutputs.append(.result(typed))
-                    activeToolInputs.removeValue(forKey: result.toolCallId)
-                    activeToolNames.removeValue(forKey: result.toolCallId)
-                    removePendingApproval(toolCallId: result.toolCallId)
+                if result.isError == true {
+                    let errorValue = ProviderToolExecutionError(value: result.result)
+                    let typedError: TypedToolError
+
+                    if tools?[result.toolName] != nil {
+                        typedError = .static(
+                            StaticToolError(
+                                toolCallId: result.toolCallId,
+                                toolName: result.toolName,
+                                input: input,
+                                error: errorValue,
+                                providerExecuted: result.providerExecuted
+                            )
+                        )
+                    } else {
+                        typedError = .dynamic(
+                            DynamicToolError(
+                                toolCallId: result.toolCallId,
+                                toolName: result.toolName,
+                                input: input,
+                                error: errorValue,
+                                providerExecuted: result.providerExecuted
+                            )
+                        )
+                    }
+
+                    await fullBroadcaster.send(.toolError(typedError))
+                    if !isPreliminary {
+                        recordedContent.append(.toolError(typedError, providerMetadata: nil))
+                        currentToolOutputs.append(.error(typedError))
+                        pendingDeferredToolCalls.removeValue(forKey: result.toolCallId)
+                        activeToolInputs.removeValue(forKey: result.toolCallId)
+                        activeToolNames.removeValue(forKey: result.toolCallId)
+                        removePendingApproval(toolCallId: result.toolCallId)
+                    }
+                } else {
+                    let typed: TypedToolResult
+                    if tools?[result.toolName] != nil {
+                        let staticResult = StaticToolResult(
+                            toolCallId: result.toolCallId,
+                            toolName: result.toolName,
+                            input: input,
+                            output: result.result,
+                            providerExecuted: result.providerExecuted,
+                            preliminary: result.preliminary
+                        )
+                        typed = .static(staticResult)
+                    } else {
+                        let dynamicResult = DynamicToolResult(
+                            toolCallId: result.toolCallId,
+                            toolName: result.toolName,
+                            input: input,
+                            output: result.result,
+                            providerExecuted: result.providerExecuted,
+                            preliminary: result.preliminary
+                        )
+                        typed = .dynamic(dynamicResult)
+                    }
+
+                    await fullBroadcaster.send(.toolResult(typed))
+                    if !isPreliminary {
+                        recordedContent.append(.toolResult(typed, providerMetadata: nil))
+                        currentToolOutputs.append(.result(typed))
+                        pendingDeferredToolCalls.removeValue(forKey: result.toolCallId)
+                        activeToolInputs.removeValue(forKey: result.toolCallId)
+                        activeToolNames.removeValue(forKey: result.toolCallId)
+                        removePendingApproval(toolCallId: result.toolCallId)
+                    }
                 }
             case let .finish(finishReason, usage, providerMetadata):
                 let stepUsage = asLanguageModelUsage(usage)
@@ -1041,6 +1085,30 @@ case let .toolInputStart(id, toolName, providerMetadata, providerExecuted, dynam
                     response: StepResultResponse(
                         from: response, messages: mergedMessages, body: nil),
                     providerMetadata: providerMetadata)
+
+                // Track provider-executed tool calls that support deferred results.
+                // In programmatic tool calling, a server tool (e.g., code_execution) may
+                // trigger a client tool, and the server tool's result is deferred until
+                // the client tool's result is sent back.
+                for toolCall in currentToolCalls {
+                    guard toolCall.providerExecuted == true else { continue }
+                    guard let tool = tools?[toolCall.toolName] else { continue }
+                    guard tool.type == .provider, tool.supportsDeferredResults == true else { continue }
+
+                    let hasResultInStep = currentToolOutputs.contains { output in
+                        output.toolCallId == toolCall.toolCallId
+                    }
+
+                    if !hasResultInStep {
+                        pendingDeferredToolCalls[toolCall.toolCallId] = toolCall.toolName
+                    }
+                }
+
+                // Mark deferred tool calls as resolved when we receive their results.
+                for output in currentToolOutputs {
+                    pendingDeferredToolCalls.removeValue(forKey: output.toolCallId)
+                }
+
                 recordedSteps.append(stepResult)
                 recordedResponseMessages.append(contentsOf: responseMessages)
                 accumulatedUsage = addLanguageModelUsage(accumulatedUsage, stepUsage)
@@ -1271,6 +1339,30 @@ private struct StreamTextInvariantError: LocalizedError, CustomStringConvertible
 
     var errorDescription: String? { message }
     var description: String { message }
+}
+
+private struct ProviderToolExecutionError: LocalizedError, CustomStringConvertible, Sendable {
+    let value: JSONValue
+
+    var errorDescription: String? {
+        "Provider tool execution error."
+    }
+
+    var description: String {
+        if let json = jsonString(from: value) {
+            return json
+        }
+        return String(describing: value)
+    }
+}
+
+private func jsonString(from jsonValue: JSONValue) -> String? {
+    let encoder = JSONEncoder()
+    encoder.dateEncodingStrategy = .iso8601
+    guard let data = try? encoder.encode(jsonValue) else {
+        return nil
+    }
+    return String(data: data, encoding: .utf8)
 }
 
 enum StreamTextError: Error { case providerError(JSONValue) }
