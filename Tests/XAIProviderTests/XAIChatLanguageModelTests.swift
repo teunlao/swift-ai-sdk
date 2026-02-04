@@ -1145,7 +1145,7 @@ struct XAIChatLanguageModelTests {
         #expect(textDeltas.contains("world!"))
 
         // Verify finish
-        #expect(parts.contains { if case .finish(let reason, _, _) = $0, reason == .stop { return true } else { return false } })
+        #expect(parts.contains { if case .finish(let reason, _, _) = $0, reason.unified == .stop { return true } else { return false } })
     }
 
     @Test("should stream tool deltas")
@@ -1268,7 +1268,7 @@ struct XAIChatLanguageModelTests {
         #expect(parts.contains { if case .toolCall(let call) = $0 { return call.toolName == "test-tool" && call.toolCallId == "call_yfBEybNYi" } else { return false } })
 
         // Verify finish
-        #expect(parts.contains { if case .finish(let reason, _, _) = $0, reason == .toolCalls { return true } else { return false } })
+        #expect(parts.contains { if case .finish(let reason, _, _) = $0, reason.unified == .toolCalls { return true } else { return false } })
     }
 
     @Test("should avoid duplication when there is a trailing assistant message")
@@ -1388,7 +1388,7 @@ struct XAIChatLanguageModelTests {
         #expect(textDeltas == ["prefix", " and", " more content"])
 
         // Verify finish
-        #expect(parts.contains { if case .finish(let reason, _, _) = $0, reason == .stop { return true } else { return false } })
+        #expect(parts.contains { if case .finish(let reason, _, _) = $0, reason.unified == .stop { return true } else { return false } })
     }
 
     @Test("should expose the raw response headers")

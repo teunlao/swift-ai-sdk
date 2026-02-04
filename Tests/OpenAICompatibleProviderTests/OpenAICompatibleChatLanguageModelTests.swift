@@ -376,7 +376,8 @@ struct OpenAICompatibleChatLanguageModelTests {
         let model = try provider.chatModel(modelId: "grok-beta")
         let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: testPrompt))
 
-        #expect(result.finishReason == .stop)
+        #expect(result.finishReason.unified == .stop)
+        #expect(result.finishReason.raw == "stop")
     }
 
     @Test("should support unknown finish reason")
@@ -400,7 +401,8 @@ struct OpenAICompatibleChatLanguageModelTests {
         let model = try provider.chatModel(modelId: "grok-beta")
         let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: testPrompt))
 
-        #expect(result.finishReason == .unknown)
+        #expect(result.finishReason.unified == .other)
+        #expect(result.finishReason.raw == "eos")
     }
 
     @Test("should expose the raw response headers")
@@ -1676,7 +1678,8 @@ struct OpenAICompatibleChatLanguageModelTests {
 
         #expect(finishChunk != nil)
         if case let .finish(finishReason, usage, _) = finishChunk {
-            #expect(finishReason == .stop)
+            #expect(finishReason.unified == .stop)
+            #expect(finishReason.raw == "stop")
             #expect(usage.inputTokens.total == 18)
             #expect(usage.outputTokens.total == 439)
             #expect((usage.inputTokens.total ?? 0) + (usage.outputTokens.total ?? 0) == 457)
@@ -2137,7 +2140,7 @@ struct OpenAICompatibleChatLanguageModelTests {
 
         // Check finish with error reason
         if case let .finish(finishReason, _, _) = parts.last {
-            #expect(finishReason == .error)
+            #expect(finishReason.unified == .error)
         } else {
             Issue.record("Expected finish part")
         }
@@ -2188,7 +2191,8 @@ struct OpenAICompatibleChatLanguageModelTests {
 
         #expect(finishPart != nil)
         if case let .finish(finishReason, usage, providerMetadata) = finishPart {
-            #expect(finishReason == .stop)
+            #expect(finishReason.unified == .stop)
+            #expect(finishReason.raw == "stop")
             #expect(usage.inputTokens.total == 20)
             #expect(usage.outputTokens.total == 30)
             #expect(usage.inputTokens.cacheRead == 5)
@@ -2283,7 +2287,8 @@ struct OpenAICompatibleChatLanguageModelTests {
 
         // Find the finish part
         if case let .finish(finishReason, usage, providerMetadata) = parts.last {
-            #expect(finishReason == .stop)
+            #expect(finishReason.unified == .stop)
+            #expect(finishReason.raw == "stop")
             #expect(usage.inputTokens.total == 20)
             #expect(usage.outputTokens.total == 30)
             #expect((usage.inputTokens.total ?? 0) + (usage.outputTokens.total ?? 0) == 50)
@@ -2828,7 +2833,7 @@ struct OpenAICompatibleChatLanguageModelTests {
             Issue.record("Expected finish, got \(parts.last!)")
             return
         }
-        #expect(finishReason == .error)
+        #expect(finishReason.unified == .error)
         #expect(usage.inputTokens.total == nil)
         #expect(usage.outputTokens.total == nil)
         // Provider metadata may be present with empty object or nil when error occurs

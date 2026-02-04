@@ -67,7 +67,8 @@ private func makeConfig(fetch: @escaping FetchFunction) -> AnthropicMessagesConf
 
         let result = try await model.doGenerate(options: .init(prompt: testPrompt))
 
-        #expect(result.finishReason == .stop)
+        #expect(result.finishReason.unified == .stop)
+        #expect(result.finishReason.raw == "end_turn")
         #expect(result.usage.inputTokens.total == 4)
         #expect(result.usage.outputTokens.total == 10)
         #expect(result.content.count == 1)
@@ -704,7 +705,8 @@ private func makeConfig(fetch: @escaping FetchFunction) -> AnthropicMessagesConf
         ))
 
         #expect(result.content.count == 2)
-        #expect(result.finishReason == .toolCalls)
+        #expect(result.finishReason.unified == .toolCalls)
+        #expect(result.finishReason.raw == "tool_use")
 
         // First element: text
         if case .text(let textContent) = result.content[0] {
@@ -1725,7 +1727,7 @@ struct AnthropicMessagesLanguageModelStreamTests {
         }))
         #expect(parts.contains(where: { part in
             if case .finish(let finishReason, let usage, _) = part {
-                return finishReason == .stop && usage.outputTokens.total == 5
+                return finishReason.unified == .stop && usage.outputTokens.total == 5
             }
             return false
         }))
@@ -1914,7 +1916,7 @@ struct AnthropicMessagesLanguageModelStreamTests {
         // Verify finish
         #expect(parts.contains(where: { part in
             if case .finish(let finishReason, let usage, _) = part {
-                return finishReason == .stop && usage.inputTokens.total == 17 && usage.outputTokens.total == 227
+                return finishReason.unified == .stop && usage.inputTokens.total == 17 && usage.outputTokens.total == 227
             }
             return false
         }))
@@ -2026,7 +2028,8 @@ struct AnthropicMessagesLanguageModelStreamTests {
         #expect(finishParts.count == 1)
 
         if case .finish(let finishReason, let usage, let providerMetadata) = finishParts[0] {
-            #expect(finishReason == .stop)
+            #expect(finishReason.unified == .stop)
+            #expect(finishReason.raw == "pause_turn")
             #expect(usage.inputTokens.total == 17)
             #expect(usage.outputTokens.total == 227)
             #expect((usage.inputTokens.total ?? 0) + (usage.outputTokens.total ?? 0) == 244)
@@ -2089,7 +2092,8 @@ struct AnthropicMessagesLanguageModelStreamTests {
         #expect(finishParts.count == 1)
 
         if case .finish(let finishReason, let usage, let providerMetadata) = finishParts[0] {
-            #expect(finishReason == .stop)
+            #expect(finishReason.unified == .stop)
+            #expect(finishReason.raw == "stop_sequence")
             #expect(usage.inputTokens.total == 17)
             #expect(usage.outputTokens.total == 227)
             #expect((usage.inputTokens.total ?? 0) + (usage.outputTokens.total ?? 0) == 244)
@@ -2152,7 +2156,7 @@ struct AnthropicMessagesLanguageModelStreamTests {
         #expect(finishParts.count == 1)
 
         if case .finish(let finishReason, let usage, let providerMetadata) = finishParts[0] {
-            #expect(finishReason == .stop)
+            #expect(finishReason.unified == .stop)
             #expect(usage.inputTokens.noCache == 17)
             #expect(usage.inputTokens.cacheRead == 5)
             #expect(usage.inputTokens.cacheWrite == 10)
@@ -2220,7 +2224,7 @@ struct AnthropicMessagesLanguageModelStreamTests {
         #expect(finishParts.count == 1)
 
         if case .finish(let finishReason, let usage, let providerMetadata) = finishParts[0] {
-            #expect(finishReason == .stop)
+            #expect(finishReason.unified == .stop)
             #expect(usage.inputTokens.noCache == 17)
             #expect(usage.inputTokens.cacheRead == 5)
             #expect(usage.inputTokens.cacheWrite == 10)
@@ -2334,7 +2338,7 @@ struct AnthropicMessagesLanguageModelStreamTests {
         // Verify finish
         #expect(parts.contains(where: { part in
             if case .finish(let finishReason, _, _) = part {
-                return finishReason == .stop
+                return finishReason.unified == .stop
             }
             return false
         }))
@@ -2511,7 +2515,7 @@ struct AnthropicMessagesLanguageModelStreamAdvancedBatch2Tests {
         // Verify finish reason is stop (tool_use is converted to stop for json format)
         #expect(parts.contains(where: { part in
             if case .finish(let finishReason, _, _) = part {
-                return finishReason == .stop
+                return finishReason.unified == .stop
             }
             return false
         }))
@@ -2584,7 +2588,7 @@ struct AnthropicMessagesLanguageModelStreamAdvancedBatch2Tests {
         // Verify finish
         #expect(parts.contains(where: { part in
             if case .finish(let finishReason, let usage, _) = part {
-                return finishReason == .stop && usage.inputTokens.total == 17 && usage.outputTokens.total == 227
+                return finishReason.unified == .stop && usage.inputTokens.total == 17 && usage.outputTokens.total == 227
             }
             return false
         }))
@@ -2708,7 +2712,7 @@ struct AnthropicMessagesLanguageModelStreamAdvancedBatch2Tests {
         // Verify finish
         #expect(parts.contains(where: { part in
             if case .finish(let finishReason, _, _) = part {
-                return finishReason == .stop
+                return finishReason.unified == .stop
             }
             return false
         }))
@@ -2803,7 +2807,7 @@ struct AnthropicMessagesLanguageModelStreamAdvancedBatch2Tests {
         // Verify finish reason is tool-calls
         #expect(parts.contains(where: { part in
             if case .finish(let finishReason, _, _) = part {
-                return finishReason == .toolCalls
+                return finishReason.unified == .toolCalls
             }
             return false
         }))

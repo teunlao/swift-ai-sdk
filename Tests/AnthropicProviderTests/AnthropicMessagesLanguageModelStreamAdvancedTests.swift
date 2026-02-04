@@ -149,7 +149,7 @@ struct AnthropicMessagesLanguageModelStreamAdvancedTests {
 
         if let finishPart = parts.last(where: { if case .finish = $0 { return true } else { return false } }),
            case .finish(let finishReason, let usage, let metadata) = finishPart {
-            #expect(finishReason == .stop)
+            #expect(finishReason.unified == .stop)
             #expect(usage.inputTokens.total == 441)
             #expect(usage.outputTokens.total == 65)
             let anthropicUsage = metadata?["anthropic"]?["usage"]
@@ -250,7 +250,7 @@ struct AnthropicMessagesLanguageModelStreamAdvancedTests {
 
         if let finishPart = parts.last(where: { if case .finish = $0 { return true } else { return false } }),
            case .finish(let finishReason, _, _) = finishPart {
-            #expect(finishReason == .toolCalls)
+            #expect(finishReason.unified == .toolCalls)
         } else {
             Issue.record("Missing finish part")
         }

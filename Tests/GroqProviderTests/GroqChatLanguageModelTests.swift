@@ -93,7 +93,7 @@ struct GroqChatLanguageModelTests {
         #expect(result.content.contains { if case .text(let text) = $0 { return text.text == "Answer" } else { return false } })
         #expect(result.content.contains { if case .reasoning(let reasoning) = $0 { return reasoning.text == "Thought" } else { return false } })
         #expect(result.content.contains { if case .toolCall(let call) = $0 { return call.toolName == "lookup" && call.input == "{\"q\":\"rain\"}" } else { return false } })
-        #expect(result.finishReason == .toolCalls)
+        #expect(result.finishReason.unified == .toolCalls)
         #expect(result.usage.inputTokens.total == 12)
         #expect(result.usage.inputTokens.cacheRead == nil)
 
@@ -443,7 +443,7 @@ struct GroqChatLanguageModelTests {
         #expect(parts.contains { if case .toolCall(let call) = $0, call.toolName == "lookup" { return true } else { return false } })
         if let finish = parts.last(where: { if case .finish = $0 { return true } else { return false } }) {
             if case let .finish(finishReason, usage, _) = finish {
-                #expect(finishReason == .stop)
+                #expect(finishReason.unified == .stop)
                 #expect(usage.inputTokens.total == 5)
                 #expect(usage.outputTokens.total == 7)
             }
@@ -751,7 +751,7 @@ struct GroqChatLanguageModelTests {
 
         let result = try await model.doGenerate(options: .init(prompt: prompt))
 
-        #expect(result.finishReason == .stop)
+        #expect(result.finishReason.unified == .stop)
     }
 
     @Test("should support unknown finish reason")
@@ -789,7 +789,8 @@ struct GroqChatLanguageModelTests {
 
         let result = try await model.doGenerate(options: .init(prompt: prompt))
 
-        #expect(result.finishReason == .unknown)
+        #expect(result.finishReason.unified == .other)
+        #expect(result.finishReason.raw == "eos")
     }
 
     @Test("should expose the raw response headers")
@@ -1723,7 +1724,7 @@ struct GroqChatLanguageModelTests {
         // Verify finish with error reason
         let hasErrorFinish = parts.contains {
             if case .finish(let reason, _, _) = $0,
-               case .error = reason {
+               reason.unified == .error {
                 return true
             }
             return false

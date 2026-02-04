@@ -257,7 +257,8 @@ struct OpenAICompatibleCompletionLanguageModelTests {
         let model = try provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
         let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: testPrompt))
 
-        #expect(result.finishReason == .stop)
+        #expect(result.finishReason.unified == .stop)
+        #expect(result.finishReason.raw == "stop")
     }
 
     @Test("should support unknown finish reason")
@@ -281,7 +282,8 @@ struct OpenAICompatibleCompletionLanguageModelTests {
         let model = try provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
         let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: testPrompt))
 
-        #expect(result.finishReason == .unknown)
+        #expect(result.finishReason.unified == .other)
+        #expect(result.finishReason.raw == "eos")
     }
 
     @Test("should expose the raw response headers")
@@ -527,7 +529,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
 
         // Verify finish
         if case let .finish(finishReason: finishReason, usage: usage, providerMetadata: _) = parts.last {
-            #expect(finishReason == .stop)
+            #expect(finishReason.unified == .stop)
             #expect((usage.inputTokens.total ?? 0) + (usage.outputTokens.total ?? 0) == 372)
         } else {
             Issue.record("Missing finish part")

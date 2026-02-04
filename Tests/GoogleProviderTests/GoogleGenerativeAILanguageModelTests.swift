@@ -271,7 +271,8 @@ struct GoogleGenerativeAILanguageModelTests {
         ]
 
         let result = try await model.doGenerate(options: .init(prompt: prompt))
-        #expect(result.finishReason == .toolCalls)
+        #expect(result.finishReason.unified == .toolCalls)
+        #expect(result.finishReason.raw == "STOP")
         #expect(result.usage.inputTokens.total == 12)
         #expect(result.providerMetadata?["google"] != nil)
 
@@ -507,7 +508,8 @@ struct GoogleGenerativeAILanguageModelTests {
         ))
 
         #expect(result.content.isEmpty)
-        #expect(result.finishReason == .error)
+        #expect(result.finishReason.unified == .error)
+        #expect(result.finishReason.raw == "MALFORMED_FUNCTION_CALL")
     }
 
     @Test("should extract tool calls")
@@ -581,7 +583,8 @@ struct GoogleGenerativeAILanguageModelTests {
         } else {
             Issue.record("Expected tool call content")
         }
-        #expect(result.finishReason == .toolCalls)
+        #expect(result.finishReason.unified == .toolCalls)
+        #expect(result.finishReason.raw == "STOP")
     }
 
     @Test("should expose the raw response headers")
@@ -647,7 +650,7 @@ struct GoogleGenerativeAILanguageModelTests {
 
         let payloads = [
             #"{"candidates":[{"content":{"parts":[{"text":"Hel"}]}}],"usageMetadata":{}}"#,
-            #"{"candidates":[{"content":{"parts":[{"text":"lo"}]}},{"content":{"parts":[{"functionCall":{"name":"lookup","args":{"city":"Paris"}}}]} }],"usageMetadata":{}}"#,
+            #"{"candidates":[{"content":{"parts":[{"text":"lo"},{"functionCall":{"name":"lookup","args":{"city":"Paris"}}}]}}],"usageMetadata":{}}"#,
             #"{"candidates":[{"content":{"parts":[{"text":" reason","thought":true,"thoughtSignature":"sig"}]}}],"usageMetadata":{}}"#,
             #"{"candidates":[{"content":{"parts":[{"executableCode":{"language":"python","code":"print(1)"}}]}},{"content":{"parts":[{"codeExecutionResult":{"outcome":"OK","output":"1"}}]} }],"usageMetadata":{}}"#,
             #"{"candidates":[{"finishReason":"STOP","groundingMetadata":{"groundingChunks":[{"web":{"uri":"https://example.com"}}]} }],"usageMetadata":{"promptTokenCount":5,"candidatesTokenCount":7}}"#
@@ -698,7 +701,8 @@ struct GoogleGenerativeAILanguageModelTests {
             return
         }
         if case let .finish(finishReason, usage, _) = finish {
-            #expect(finishReason == .toolCalls)
+            #expect(finishReason.unified == .toolCalls)
+            #expect(finishReason.raw == "STOP")
             #expect(usage.inputTokens.total == 5)
             #expect(usage.outputTokens.total == 7)
         }
@@ -2994,7 +2998,8 @@ struct GoogleGenerativeAILanguageModelTests {
         }
 
         if case let .finish(finishReason, usage, _) = finish {
-            #expect(finishReason == .stop)
+            #expect(finishReason.unified == .stop)
+            #expect(finishReason.raw == "STOP")
             #expect(usage.inputTokens.total == 294)
             #expect(usage.outputTokens.total == 233)
             #expect((usage.inputTokens.total ?? 0) + (usage.outputTokens.total ?? 0) == 527)
@@ -3226,7 +3231,8 @@ struct GoogleGenerativeAILanguageModelTests {
         }
 
         if case let .finish(finishReason, _, _) = finish {
-            #expect(finishReason == .toolCalls)
+            #expect(finishReason.unified == .toolCalls)
+            #expect(finishReason.raw == "STOP")
         }
     }
 

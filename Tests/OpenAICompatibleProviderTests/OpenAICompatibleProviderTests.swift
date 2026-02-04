@@ -102,7 +102,8 @@ struct OpenAICompatibleProviderTests {
         )
 
         let result = try await model.doGenerate(options: options)
-        #expect(result.finishReason == LanguageModelV3FinishReason.stop)
+        #expect(result.finishReason.unified == .stop)
+        #expect(result.finishReason.raw == "stop")
         #expect((result.usage.inputTokens.total ?? 0) + (result.usage.outputTokens.total ?? 0) == 10)
         if let metadata = result.providerMetadata?["example"],
            case .number(let accepted) = metadata["acceptedPredictionTokens"],
@@ -194,7 +195,8 @@ struct OpenAICompatibleProviderTests {
         }
 
         if case let .finish(finishReason: finishReason, usage: finishUsage, providerMetadata: providerMetadata) = parts.last {
-            #expect(finishReason == LanguageModelV3FinishReason.stop)
+            #expect(finishReason.unified == .stop)
+            #expect(finishReason.raw == "stop")
             #expect((finishUsage.inputTokens.total ?? 0) + (finishUsage.outputTokens.total ?? 0) == 2)
             if let metadata = providerMetadata?["example"], case .number(let value) = metadata["acceptedPredictionTokens"] {
                 #expect(value == 1)
@@ -253,7 +255,8 @@ struct OpenAICompatibleProviderTests {
         )
 
         let result = try await model.doGenerate(options: options)
-        #expect(result.finishReason == LanguageModelV3FinishReason.stop)
+        #expect(result.finishReason.unified == .stop)
+        #expect(result.finishReason.raw == "stop")
         if case .text(let text) = result.content.first {
             #expect(text.text == "Result")
         } else {

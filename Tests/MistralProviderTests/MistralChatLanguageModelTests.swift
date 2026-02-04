@@ -82,7 +82,7 @@ struct MistralChatLanguageModelGenerateTests {
 
         let result = try await model.doGenerate(options: .init(prompt: defaultPrompt()))
         #expect(result.content == [.text(LanguageModelV3Text(text: "Hello, World!"))])
-        #expect(result.finishReason == .stop)
+        #expect(result.finishReason.unified == .stop)
     }
 
     @Test("avoids duplication with trailing assistant message")
@@ -138,7 +138,7 @@ struct MistralChatLanguageModelGenerateTests {
         #expect(result.content == [
             .toolCall(LanguageModelV3ToolCall(toolCallId: "gSIMJiOkT", toolName: "weatherTool", input: "{\"location\": \"paris\"}"))
         ])
-        #expect(result.finishReason == .toolCalls)
+        #expect(result.finishReason.unified == .toolCalls)
     }
 
     @Test("extracts reasoning content")
@@ -661,7 +661,8 @@ struct MistralChatLanguageModelStreamTests {
         #expect(parts.contains { if case .textDelta(_, let delta, _) = $0 { return delta == "Hello" } else { return false } })
         #expect(parts.contains { if case .textDelta(_, let delta, _) = $0 { return delta == " world" } else { return false } })
         if let finish = parts.last, case let .finish(reason, usage, _) = finish {
-            #expect(reason == .stop)
+            #expect(reason.unified == .stop)
+            #expect(reason.raw == "stop")
             #expect(usage.inputTokens.total == 4)
             #expect(usage.outputTokens.total == 32)
             #expect((usage.inputTokens.total ?? 0) + (usage.outputTokens.total ?? 0) == 36)
@@ -1061,6 +1062,6 @@ struct MistralToolResultFormatTests {
 
         let result = try await model.doGenerate(options: .init(prompt: prompt))
         #expect(result.content == [.text(.init(text: "Here is the result"))])
-        #expect(result.finishReason == .stop)
+        #expect(result.finishReason.unified == .stop)
     }
 }
