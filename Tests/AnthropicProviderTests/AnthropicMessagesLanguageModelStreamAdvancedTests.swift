@@ -292,14 +292,13 @@ struct AnthropicMessagesLanguageModelStreamAdvancedTests {
         }
         #expect(toolCall != nil)
 
-	        let toolResult = parts.first { part in
-	            if case .toolResult(let result) = part {
-	                return result.toolCallId == "srvtoolu_01SACvPAnp6ucMJsstB5qb3f"
-	                    && result.toolName == "tool_search_tool_regex"
-	                    && result.providerExecuted == nil
-	                    && result.result == .array([
-	                        .object([
-	                            "type": .string("tool_reference"),
+		        let toolResult = parts.first { part in
+		            if case .toolResult(let result) = part {
+		                return result.toolCallId == "srvtoolu_01SACvPAnp6ucMJsstB5qb3f"
+		                    && result.toolName == "tool_search_tool_regex"
+		                    && result.result == .array([
+		                        .object([
+		                            "type": .string("tool_reference"),
 	                            "toolName": .string("get_weather"),
                         ])
                     ])
@@ -352,14 +351,13 @@ struct AnthropicMessagesLanguageModelStreamAdvancedTests {
         }
         #expect(toolCall != nil)
 
-	        let toolResult = parts.first { part in
-	            if case .toolResult(let result) = part {
-	                return result.toolCallId == "mcptoolu_01HXPYHs79HH36fBbKHysCrp"
-	                    && result.toolName == "echo"
-	                    && result.providerExecuted == nil
-	                    && result.isError == false
-	                    && result.dynamic == true
-	                    && result.providerMetadata == [
+		        let toolResult = parts.first { part in
+		            if case .toolResult(let result) = part {
+		                return result.toolCallId == "mcptoolu_01HXPYHs79HH36fBbKHysCrp"
+		                    && result.toolName == "echo"
+		                    && result.isError == false
+		                    && result.dynamic == true
+		                    && result.providerMetadata == [
 	                        "anthropic": [
 	                            "type": .string("mcp-tool-use"),
 	                            "serverName": .string("echo"),
@@ -712,12 +710,12 @@ struct AnthropicMessagesLanguageModelStreamAdvancedTests {
         }
         #expect(toolInputStart != nil)
 
-	        let toolResult = parts.first { part in
-	            if case .toolResult(let result) = part {
-	                return result.toolName == "web_fetch" && result.providerExecuted == nil
-	            }
-	            return false
-	        }
+		        let toolResult = parts.first { part in
+		            if case .toolResult(let result) = part {
+		                return result.toolName == "web_fetch"
+		            }
+		            return false
+		        }
         #expect(toolResult != nil)
         if case .toolResult(let result) = toolResult,
            case .object(let payload) = result.result {
@@ -758,13 +756,13 @@ struct AnthropicMessagesLanguageModelStreamAdvancedTests {
             ]
         ))
 
-        let parts = try await collectParts(from: result.stream)
-	        let toolResult = parts.first { part in
-	            if case .toolResult(let result) = part {
-	                return result.toolName == "web_search" && result.providerExecuted == nil
-	            }
-	            return false
-	        }
+	        let parts = try await collectParts(from: result.stream)
+		        let toolResult = parts.first { part in
+		            if case .toolResult(let result) = part {
+		                return result.toolName == "web_search"
+		            }
+		            return false
+		        }
         #expect(toolResult != nil)
         if case .toolResult(let result) = toolResult {
             switch result.result {
@@ -854,14 +852,13 @@ struct AnthropicMessagesLanguageModelStreamAdvancedTests {
             ]
         ])
 
-	        let toolResult = parts.first { part in
-	            if case .toolResult(let result) = part {
-	                return result.toolCallId == "srvtoolu_01MzSrFWsmzBdcoQkGWLyRjK"
-	                    && result.toolName == "code_execution"
-	                    && result.providerExecuted == nil
-	            }
-	            return false
-	        }
+		        let toolResult = parts.first { part in
+		            if case .toolResult(let result) = part {
+		                return result.toolCallId == "srvtoolu_01MzSrFWsmzBdcoQkGWLyRjK"
+		                    && result.toolName == "code_execution"
+		            }
+		            return false
+		        }
         #expect(toolResult != nil)
         if case .toolResult(let result) = toolResult,
            case .object(let payload) = result.result {

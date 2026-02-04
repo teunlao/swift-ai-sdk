@@ -49,7 +49,6 @@ func v3_streamPart_toolInput_and_callResult_roundTrip() throws {
         toolName: "search",
         result: ["hits": .array([.number(1), .number(2)])],
         isError: nil,
-        providerExecuted: true,
         providerMetadata: pm
     )
 

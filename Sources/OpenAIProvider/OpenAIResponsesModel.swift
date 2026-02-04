@@ -832,7 +832,6 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                     toolName: toolName,
                     result: resultValue,
                     isError: nil,
-                    providerExecuted: true,
                     preliminary: nil,
                     providerMetadata: nil
                 )))
@@ -877,7 +876,6 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                     toolName: toolName,
                     result: .object(resultPayload),
                     isError: nil,
-                    providerExecuted: true,
                     preliminary: nil,
                     providerMetadata: metadata
                 )))
@@ -934,7 +932,6 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                     toolName: toolNameMapping.toCustomToolName("computer_use"),
                     result: resultValue,
                     isError: nil,
-                    providerExecuted: true,
                     preliminary: nil,
                     providerMetadata: nil
                 )))
@@ -978,7 +975,6 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                     toolName: toolNameMapping.toCustomToolName("file_search"),
                     result: resultValue,
                     isError: nil,
-                    providerExecuted: true,
                     preliminary: nil,
                     providerMetadata: nil
                 )))
@@ -1011,7 +1007,6 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                     toolName: toolNameMapping.toCustomToolName("code_interpreter"),
                     result: resultValue,
                     isError: nil,
-                    providerExecuted: true,
                     preliminary: nil,
                     providerMetadata: nil
                 )))
@@ -1036,7 +1031,6 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                     toolName: toolNameMapping.toCustomToolName("image_generation"),
                     result: resultValue,
                     isError: nil,
-                    providerExecuted: true,
                     preliminary: nil,
                     providerMetadata: nil
                 )))
@@ -1524,7 +1518,6 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 toolName: webSearchToolName,
                 result: resultValue,
                 isError: nil,
-                providerExecuted: true,
                 preliminary: nil,
                 providerMetadata: nil
             )))
@@ -1574,7 +1567,6 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 toolName: toolName,
                 result: .object(resultPayload),
                 isError: nil,
-                providerExecuted: true,
                 preliminary: nil,
                 providerMetadata: metadata
             )))
@@ -1628,7 +1620,6 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 toolName: toolName,
                 result: resultValue,
                 isError: nil,
-                providerExecuted: true,
                 preliminary: nil,
                 providerMetadata: nil
             )))
@@ -1662,7 +1653,6 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 toolName: toolNameMapping.toCustomToolName("file_search"),
                 result: resultValue,
                 isError: nil,
-                providerExecuted: true,
                 preliminary: nil,
                 providerMetadata: nil
             )))
@@ -1677,7 +1667,6 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 toolName: toolNameMapping.toCustomToolName("code_interpreter"),
                 result: resultValue,
                 isError: nil,
-                providerExecuted: true,
                 preliminary: nil,
                 providerMetadata: nil
             )))
@@ -1690,7 +1679,6 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 toolName: toolNameMapping.toCustomToolName("image_generation"),
                 result: resultValue,
                 isError: nil,
-                providerExecuted: true,
                 preliminary: nil,
                 providerMetadata: nil
             )))
@@ -1868,7 +1856,6 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             toolName: toolNameMapping.toCustomToolName("image_generation"),
             result: resultValue,
             isError: nil,
-            providerExecuted: true,
             preliminary: true,
             providerMetadata: nil
         )))

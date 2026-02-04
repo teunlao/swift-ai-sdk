@@ -226,8 +226,7 @@ struct StreamTextProgrammaticToolCallingTests {
             .toolResult(LanguageModelV3ToolResult(
                 toolCallId: codeExecutionToolCallId,
                 toolName: "code_execution",
-                result: codeExecutionResult,
-                providerExecuted: true
+                result: codeExecutionResult
             )),
             .textStart(id: "t2", providerMetadata: nil),
             .textDelta(id: "t2", delta: "**Game Over!**", providerMetadata: nil),

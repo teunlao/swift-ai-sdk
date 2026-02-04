@@ -424,7 +424,6 @@ struct StreamTextBasicTests {
                 toolName: "search",
                 result: .object(["items": .array([.string("result")])]),
                 isError: nil,
-                providerExecuted: false,
                 preliminary: false,
                 providerMetadata: nil
             )),
@@ -1159,31 +1158,22 @@ struct StreamTextBasicTests {
         #expect(await counter.get() > 0)
         #expect(await finished.get())
     }
-    @Test("tool-calls finish triggers continuation when client outputs provided")
-    func toolCallsFinishTriggersContinuation() async throws {
-        let usage = LanguageModelV3Usage(inputTokens: .init(total: 2), outputTokens: .init(total: 2))
+	    @Test("tool-calls finish triggers continuation when client outputs provided")
+	    func toolCallsFinishTriggersContinuation() async throws {
+	        let usage = LanguageModelV3Usage(inputTokens: .init(total: 2), outputTokens: .init(total: 2))
 
-        let stepOneParts: [LanguageModelV3StreamPart] = [
-            .streamStart(warnings: []),
-            .responseMetadata(id: "step-1", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
-            .toolCall(LanguageModelV3ToolCall(
-                toolCallId: "call-1",
-                toolName: "search",
-                input: "{\"q\":\"swift\"}",
-                providerExecuted: false,
-                providerMetadata: nil
-            )),
-            .toolResult(LanguageModelV3ToolResult(
-                toolCallId: "call-1",
-                toolName: "search",
-                result: [.string("result")],
-                isError: nil,
-                providerExecuted: false,
-                preliminary: false,
-                providerMetadata: nil
-            )),
-            .finish(finishReason: .toolCalls, usage: usage, providerMetadata: nil)
-        ]
+	        let stepOneParts: [LanguageModelV3StreamPart] = [
+	            .streamStart(warnings: []),
+	            .responseMetadata(id: "step-1", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
+	            .toolCall(LanguageModelV3ToolCall(
+	                toolCallId: "call-1",
+	                toolName: "search",
+	                input: "{\"q\":\"swift\"}",
+	                providerExecuted: false,
+	                providerMetadata: nil
+	            )),
+	            .finish(finishReason: .toolCalls, usage: usage, providerMetadata: nil)
+	        ]
 
         let stepTwoParts: [LanguageModelV3StreamPart] = [
             .streamStart(warnings: []),
@@ -1203,18 +1193,31 @@ struct StreamTextBasicTests {
             continuation.finish()
         }
 
-        let model = MockLanguageModelV3(
-            doStream: .array([
-                LanguageModelV3StreamResult(stream: stream1),
-                LanguageModelV3StreamResult(stream: stream2)
-            ])
-        )
+	        let model = MockLanguageModelV3(
+	            doStream: .array([
+	                LanguageModelV3StreamResult(stream: stream1),
+	                LanguageModelV3StreamResult(stream: stream2)
+	            ])
+	        )
 
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
-            model: .v3(model),
-            prompt: "hello",
-            stopWhen: [stepCountIs(3)]
-        )
+	        let tools: ToolSet = [
+	            "search": tool(
+	                inputSchema: FlexibleSchema(jsonSchema(.object([
+	                    "type": .string("object"),
+	                    "additionalProperties": .bool(true),
+	                ]))),
+	                execute: { _, _ in
+	                    .value([.string("result")])
+	                }
+	            )
+	        ]
+
+	        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+	            model: .v3(model),
+	            prompt: "hello",
+	            tools: tools,
+	            stopWhen: [stepCountIs(3)]
+	        )
 
         let deltas = try await convertReadableStreamToArray(result.textStream)
         #expect(deltas == ["Done"])
@@ -1946,7 +1949,6 @@ struct StreamTextBasicTests {
                 toolName: "demo",
                 result: .object(["ok": .bool(true)]),
                 isError: false,
-                providerExecuted: false,
                 preliminary: false,
                 providerMetadata: nil
             )),
@@ -1988,7 +1990,6 @@ struct StreamTextBasicTests {
                 toolName: "fail",
                 result: .string("boom"),
                 isError: true,
-                providerExecuted: true,
                 preliminary: false,
                 providerMetadata: nil
             )),

@@ -501,7 +501,6 @@ private func _convertLanguageModelV2ToolResultToV3(_ value: LanguageModelV2ToolR
         toolName: value.toolName,
         result: value.result,
         isError: value.isError,
-        providerExecuted: value.providerExecuted,
         preliminary: nil,
         dynamic: nil,
         providerMetadata: value.providerMetadata

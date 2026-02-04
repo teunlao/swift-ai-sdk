@@ -288,8 +288,7 @@ public final class HuggingFaceResponsesLanguageModel: LanguageModelV3 {
                     content.append(.toolResult(LanguageModelV3ToolResult(
                         toolCallId: call.id,
                         toolName: call.name,
-                        result: resultValue,
-                        providerExecuted: true
+                        result: resultValue
                     )))
                 }
 
@@ -309,8 +308,7 @@ public final class HuggingFaceResponsesLanguageModel: LanguageModelV3 {
                 content.append(.toolResult(LanguageModelV3ToolResult(
                     toolCallId: tools.id,
                     toolName: "list_tools",
-                    result: resultValue,
-                    providerExecuted: true
+                    result: resultValue
                 )))
 
             case .functionCall:
@@ -327,8 +325,7 @@ public final class HuggingFaceResponsesLanguageModel: LanguageModelV3 {
                     content.append(.toolResult(LanguageModelV3ToolResult(
                         toolCallId: function.callId,
                         toolName: function.name,
-                        result: resultValue,
-                        providerExecuted: nil
+                        result: resultValue
                     )))
                 }
 
@@ -420,8 +417,7 @@ public final class HuggingFaceResponsesLanguageModel: LanguageModelV3 {
                     continuation.yield(.toolResult(LanguageModelV3ToolResult(
                         toolCallId: call.id,
                         toolName: call.name,
-                        result: resultValue,
-                        providerExecuted: true
+                        result: resultValue
                     )))
                 }
 
@@ -441,8 +437,7 @@ public final class HuggingFaceResponsesLanguageModel: LanguageModelV3 {
                 continuation.yield(.toolResult(LanguageModelV3ToolResult(
                     toolCallId: tools.id,
                     toolName: "list_tools",
-                    result: resultValue,
-                    providerExecuted: true
+                    result: resultValue
                 )))
 
             case .functionCall:
@@ -481,8 +476,7 @@ public final class HuggingFaceResponsesLanguageModel: LanguageModelV3 {
                     continuation.yield(.toolResult(LanguageModelV3ToolResult(
                         toolCallId: function.callId,
                         toolName: function.name,
-                        result: resultValue,
-                        providerExecuted: nil
+                        result: resultValue
                     )))
                 }
             case .mcpCall, .mcpListTools, .unknown:

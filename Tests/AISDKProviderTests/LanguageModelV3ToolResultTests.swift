@@ -5,8 +5,8 @@ import Testing
 /**
  * Tests for LanguageModelV3ToolResult - focusing on V3-specific features
  *
- * V3 adds `preliminary?: Bool?` field for incremental tool result updates.
- * This is the ONLY functional difference from V2.
+ * V3 adds `preliminary?: Bool?` field for incremental tool result updates and `dynamic?: Bool?`.
+ * Upstream parity: V3 does not include `providerExecuted` on tool results.
  */
 
 @Suite("LanguageModelV3 ToolResult (V3-specific)")
@@ -21,7 +21,6 @@ struct LanguageModelV3ToolResultTests {
             toolName: "generateImage",
             result: ["status": .string("generating")],
             isError: false,
-            providerExecuted: true,
             preliminary: true,  // NEW in V3
             providerMetadata: nil
         )
@@ -124,7 +123,6 @@ struct LanguageModelV3ToolResultTests {
             toolName: "searchWeb",
             result: ["results": .array([.string("result1"), .string("result2")])],
             isError: false,
-            providerExecuted: true,
             providerMetadata: ["provider": ["cached": .bool(true)]]
         )
 
@@ -135,7 +133,6 @@ struct LanguageModelV3ToolResultTests {
         #expect(decoded.toolCallId == "call_v2")
         #expect(decoded.toolName == "searchWeb")
         #expect(decoded.isError == false)
-        #expect(decoded.providerExecuted == true)
         #expect(decoded.providerMetadata != nil)
 
         // preliminary defaults to nil when not specified

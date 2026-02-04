@@ -401,8 +401,7 @@ struct RunToolsTransformationTests {
                     toolCallId: "call-1",
                     toolName: "providerTool",
                     result: .object(["example": .string("example")]),
-                    isError: nil,
-                    providerExecuted: true
+                    isError: nil
                 )
             ),
             .finish(finishReason: .stop, usage: usage, providerMetadata: nil),

@@ -111,7 +111,6 @@ struct GenerateTextTests {
                 toolName: toolName,
                 result: result,
                 isError: isError,
-                providerExecuted: providerExecuted,
                 preliminary: preliminary,
                 providerMetadata: providerMetadata
             )

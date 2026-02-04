@@ -288,7 +288,6 @@ struct OpenAIResponsesLanguageModelTests {
         }
         #expect(toolResult.toolCallId == "mcp_item_1")
         #expect(toolResult.toolName == "mcp.list_files")
-        #expect(toolResult.providerExecuted == true)
 
         if let openaiMetadata = toolResult.providerMetadata?["openai"] {
             #expect(openaiMetadata["itemId"] == .string("mcp_item_1"))
@@ -1826,7 +1825,7 @@ struct OpenAIResponsesLanguageModelTests {
 
         #expect(parts.contains { part in
             if case .toolResult(let result) = part {
-                return result.toolCallId == "web_call" && result.toolName == "web_search" && result.providerExecuted == true
+                return result.toolCallId == "web_call" && result.toolName == "web_search"
             }
             return false
         })
@@ -1936,8 +1935,7 @@ struct OpenAIResponsesLanguageModelTests {
         #expect(parts.contains { part in
             if case .toolResult(let result) = part {
                 guard result.toolCallId == "generated-0",
-                      result.toolName == "mcp.list_files",
-                      result.providerExecuted == true else {
+                      result.toolName == "mcp.list_files" else {
                     return false
                 }
                 return result.providerMetadata?["openai"]?["itemId"] == .string("mcp_item_2")
@@ -2573,7 +2571,7 @@ struct OpenAIResponsesLanguageModelTests {
 
         #expect(parts.contains { part in
             if case .toolResult(let result) = part {
-                if result.toolCallId == "code_call" && result.toolName == "code_interpreter" && result.providerExecuted == true {
+                if result.toolCallId == "code_call" && result.toolName == "code_interpreter" {
                     if case .object(let payload) = result.result,
                        let outputs = payload["outputs"], case .array(let array) = outputs {
                         return !array.isEmpty
@@ -2779,7 +2777,7 @@ struct OpenAIResponsesLanguageModelTests {
 
         #expect(parts.contains { part in
             if case .toolResult(let result) = part {
-                if result.toolCallId == "file_call" && result.toolName == "file_search" && result.providerExecuted == true {
+                if result.toolCallId == "file_call" && result.toolName == "file_search" {
                     if case .object(let payload) = result.result,
                        let res = payload["results"], case .array(let array) = res {
                         return array.count == 1
@@ -2978,7 +2976,7 @@ struct OpenAIResponsesLanguageModelTests {
 
         #expect(parts.contains { part in
             if case .toolResult(let result) = part {
-                if result.toolCallId == "computer_call" && result.toolName == "computer_use" && result.providerExecuted == true {
+                if result.toolCallId == "computer_call" && result.toolName == "computer_use" {
                     if case .object(let payload) = result.result {
                         return payload["type"] == .string("computer_use_tool_result")
                     }
@@ -7115,7 +7113,6 @@ struct OpenAIResponsesLanguageModelTests {
         }
         #expect(toolResult.toolCallId == "computer_67cf2b3051e88190b006770db6fdb13d")
         #expect(toolResult.toolName == "computer_use")
-        #expect(toolResult.providerExecuted == true)
 
         // Verify result structure
         if case .object(let resultObj) = toolResult.result {

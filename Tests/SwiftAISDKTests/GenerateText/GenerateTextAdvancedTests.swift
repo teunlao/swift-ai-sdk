@@ -1725,27 +1725,26 @@ struct GenerateTextAdvancedTests {
         )
     }
 
-    private func makeToolResultContent(
-        toolCallId: String,
-        toolName: String,
-        result: JSONValue,
-        isError: Bool? = nil,
-        providerExecuted: Bool? = nil,
-        preliminary: Bool? = nil,
-        providerMetadata: ProviderMetadata? = nil
-    ) -> LanguageModelV3Content {
-        .toolResult(
-            LanguageModelV3ToolResult(
-                toolCallId: toolCallId,
-                toolName: toolName,
-                result: result,
-                isError: isError,
-                providerExecuted: providerExecuted,
-                preliminary: preliminary,
-                providerMetadata: providerMetadata
-            )
-        )
-    }
+	    private func makeToolResultContent(
+	        toolCallId: String,
+	        toolName: String,
+	        result: JSONValue,
+	        isError: Bool? = nil,
+	        providerExecuted: Bool? = nil,
+	        preliminary: Bool? = nil,
+	        providerMetadata: ProviderMetadata? = nil
+	    ) -> LanguageModelV3Content {
+	        .toolResult(
+	            LanguageModelV3ToolResult(
+	                toolCallId: toolCallId,
+	                toolName: toolName,
+	                result: result,
+	                isError: isError,
+	                preliminary: preliminary,
+	                providerMetadata: providerMetadata
+	            )
+	        )
+	    }
 
     private func textContent(_ text: String) -> LanguageModelV3Content {
         .text(LanguageModelV3Text(text: text, providerMetadata: nil))
@@ -1945,8 +1944,7 @@ struct GenerateTextAdvancedTests {
                                 toolCallId: "call-2",
                                 toolName: "web_search",
                                 result: JSONValue.string("ERROR"),
-                                isError: true,
-                                providerExecuted: true
+                                isError: true
                             )
                         )
                     ],

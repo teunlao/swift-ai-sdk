@@ -1606,7 +1606,6 @@ struct GoogleGenerativeAILanguageModelTests {
         if case let .toolResult(toolResult) = result.content[1] {
             #expect(toolResult.toolCallId == "test-id")
             #expect(toolResult.toolName == "code_execution")
-            #expect(toolResult.providerExecuted == true)
 
             guard case .object(let resultObj) = toolResult.result else {
                 Issue.record("Expected object result")
@@ -4325,12 +4324,12 @@ struct GoogleGenerativeAILanguageModelTests {
         #expect(toolCalls[0].3 == true)
 
         // Check for tool-result event - result.result is JSONValue!
-        let toolResults = parts.compactMap { part -> (String, String, Bool)? in
+        let toolResults = parts.compactMap { part -> (String, String)? in
             if case .toolResult(let result) = part {
                 if case .object(let dict) = result.result,
                    case .string(let outcome) = dict["outcome"],
                    case .string(let output) = dict["output"] {
-                    return (outcome, output, result.providerExecuted ?? false)
+                    return (outcome, output)
                 }
             }
             return nil
@@ -4339,7 +4338,6 @@ struct GoogleGenerativeAILanguageModelTests {
         #expect(toolResults.count == 1)
         #expect(toolResults[0].0 == "OUTCOME_OK")
         #expect(toolResults[0].1 == "hello\n")
-        #expect(toolResults[0].2 == true)
     }
 
     // MARK: - includeThoughts Warning Tests

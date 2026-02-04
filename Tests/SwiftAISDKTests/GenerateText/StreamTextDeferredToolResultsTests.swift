@@ -84,7 +84,6 @@ struct StreamTextDeferredToolResultsTests {
                 toolName: "deferred_tool",
                 result: .string("ERROR"),
                 isError: true,
-                providerExecuted: true,
                 providerMetadata: meta
             )),
             .textStart(id: "1", providerMetadata: nil),
@@ -172,7 +171,6 @@ struct StreamTextDeferredToolResultsTests {
                 toolName: "deferred_tool",
                 result: .string("ERROR"),
                 isError: true,
-                providerExecuted: true,
                 providerMetadata: meta
             )),
             .textStart(id: "1", providerMetadata: nil),

@@ -242,7 +242,7 @@ public func runToolsTransformation(
                                 fallbackToolName: toolResultChunk.toolName,
                                 toolCallId: toolCallId,
                                 input: input,
-                                providerExecuted: toolResultChunk.providerExecuted,
+                                providerExecuted: true,
                                 error: errorPayload
                             )
                             emit(.toolError(typedError))
@@ -253,7 +253,7 @@ public func runToolsTransformation(
                                 toolCallId: toolCallId,
                                 input: input,
                                 output: toolResultChunk.result,
-                                providerExecuted: toolResultChunk.providerExecuted,
+                                providerExecuted: true,
                                 preliminary: toolResultChunk.preliminary,
                                 providerMetadata: nil
                             )

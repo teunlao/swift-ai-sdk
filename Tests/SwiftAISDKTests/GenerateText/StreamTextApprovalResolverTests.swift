@@ -336,7 +336,6 @@ struct StreamTextApprovalResolverTests {
             toolCallId: "p1",
             toolName: "providerTool",
             result: .string("done"),
-            providerExecuted: true,
             preliminary: false,
             providerMetadata: nil
         )

@@ -244,7 +244,6 @@ struct LanguageModelV3ContentTests {
             toolName: "calculator",
             result: ["answer": .number(42)],
             isError: false,
-            providerExecuted: false,
             providerMetadata: nil
         )
         let content = LanguageModelV3Content.toolResult(toolResult)

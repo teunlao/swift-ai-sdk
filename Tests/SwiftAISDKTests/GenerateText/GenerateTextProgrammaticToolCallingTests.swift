@@ -201,8 +201,7 @@ struct GenerateTextProgrammaticToolCallingTests {
                 .toolResult(.init(
                     toolCallId: codeExecutionToolCallId,
                     toolName: "code_execution",
-                    result: codeExecutionResult,
-                    providerExecuted: true
+                    result: codeExecutionResult
                 )),
                 .text(.init(text: "**Game Over!**")),
             ],

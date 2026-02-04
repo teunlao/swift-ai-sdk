@@ -972,7 +972,7 @@ case let .toolInputStart(id, toolName, providerMetadata, providerExecuted, dynam
                                 toolName: result.toolName,
                                 input: input,
                                 error: errorValue,
-                                providerExecuted: result.providerExecuted
+                                providerExecuted: true
                             )
                         )
                     } else {
@@ -982,7 +982,7 @@ case let .toolInputStart(id, toolName, providerMetadata, providerExecuted, dynam
                                 toolName: result.toolName,
                                 input: input,
                                 error: errorValue,
-                                providerExecuted: result.providerExecuted
+                                providerExecuted: true
                             )
                         )
                     }
@@ -1004,7 +1004,7 @@ case let .toolInputStart(id, toolName, providerMetadata, providerExecuted, dynam
                             toolName: result.toolName,
                             input: input,
                             output: result.result,
-                            providerExecuted: result.providerExecuted,
+                            providerExecuted: true,
                             preliminary: result.preliminary
                         )
                         typed = .static(staticResult)
@@ -1014,7 +1014,7 @@ case let .toolInputStart(id, toolName, providerMetadata, providerExecuted, dynam
                             toolName: result.toolName,
                             input: input,
                             output: result.result,
-                            providerExecuted: result.providerExecuted,
+                            providerExecuted: true,
                             preliminary: result.preliminary
                         )
                         typed = .dynamic(dynamicResult)

@@ -538,7 +538,6 @@ private func mapGenerateResponse(
                             toolCallId: toolCallId,
                             toolName: "code_execution",
                             result: resultObject,
-                            providerExecuted: true,
                             providerMetadata: metadataFromThoughtSignature(part.thoughtSignature)
                         )
                     )
@@ -874,7 +873,6 @@ private func handleStreamingParts(
                         toolCallId: toolCallId,
                         toolName: "code_execution",
                         result: resultObject,
-                        providerExecuted: true,
                         providerMetadata: metadataFromThoughtSignature(part.thoughtSignature)
                     )
                 )

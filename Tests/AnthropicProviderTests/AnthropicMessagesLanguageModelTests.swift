@@ -222,7 +222,6 @@ private func makeConfig(fetch: @escaping FetchFunction) -> AnthropicMessagesConf
 
         let toolSearchResult = toolResults.first { $0.toolCallId == "srvtoolu_01SACvPAnp6ucMJsstB5qb3f" }
         #expect(toolSearchResult?.toolName == "tool_search_tool_regex")
-        #expect(toolSearchResult?.providerExecuted == nil)
         #expect(toolSearchResult?.result == .array([
             .object([
                 "type": .string("tool_reference"),
@@ -232,7 +231,6 @@ private func makeConfig(fetch: @escaping FetchFunction) -> AnthropicMessagesConf
 
         let mcpResult = toolResults.first { $0.toolCallId == "mcptoolu_01HXPYHs79HH36fBbKHysCrp" }
         #expect(mcpResult?.toolName == "echo")
-        #expect(mcpResult?.providerExecuted == nil)
         #expect(mcpResult?.isError == false)
         #expect(mcpResult?.dynamic == true)
         #expect(mcpResult?.providerMetadata == [
@@ -4032,7 +4030,6 @@ struct AnthropicMessagesLanguageModelProgrammaticToolCallingTests {
 	        if case .toolResult(let toolResult) = result.content[3] {
 	            #expect(toolResult.toolCallId == "srvtoolu_1")
 	            #expect(toolResult.toolName == "code_execution")
-	            #expect(toolResult.providerExecuted == nil)
 	            #expect(toolResult.result == .object([
 	                "type": .string("code_execution_result"),
 	                "stdout": .string("ok"),
@@ -4224,7 +4221,6 @@ struct AnthropicMessagesLanguageModelCodeExecutionTests {
 	        if case .toolResult(let toolResult) = result.content[1] {
 	            #expect(toolResult.toolCallId == "tool_1")
 	            #expect(toolResult.toolName == "code_execution")
-	            #expect(toolResult.providerExecuted == nil)
 
 	            // Verify result is JSONValue with code execution result
 	            if case .object(let resultObj) = toolResult.result {
@@ -4344,7 +4340,6 @@ struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
 	        if case .toolResult(let toolResult) = result.content[1] {
 	            #expect(toolResult.toolCallId == "tool_1")
 	            #expect(toolResult.toolName == "web_search")
-	            #expect(toolResult.providerExecuted == nil)
 
 	            // Verify result is an array of web search results
 	            if case .array(let resultsArray) = toolResult.result {
@@ -4460,7 +4455,6 @@ struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
 	        if case .toolResult(let toolResult) = result.content[1] {
 	            #expect(toolResult.toolCallId == "tool_1")
 	            #expect(toolResult.toolName == "web_search")
-	            #expect(toolResult.providerExecuted == nil)
 
 	            if case .array(let resultsArray) = toolResult.result {
 	                #expect(resultsArray.count == 1)
@@ -4552,7 +4546,6 @@ struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
 	        if case .toolResult(let toolResult) = result.content[0] {
 	            #expect(toolResult.toolCallId == "tool_1")
 	            #expect(toolResult.toolName == "web_search")
-	            #expect(toolResult.providerExecuted == nil)
 	            #expect(toolResult.isError == true)
 
 	            // Verify error object
@@ -4651,7 +4644,6 @@ struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
 	        if case .toolResult(let toolResult) = result.content[2] {
 	            #expect(toolResult.toolCallId == "tool_1")
 	            #expect(toolResult.toolName == "web_fetch")
-	            #expect(toolResult.providerExecuted == nil)
 
 	            // Verify web_fetch_result structure
 	            if case .object(let resultObj) = toolResult.result {
@@ -4818,7 +4810,6 @@ struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
 	        if case .toolResult(let toolResult) = result.content[1] {
 	            #expect(toolResult.toolCallId == "tool_1")
 	            #expect(toolResult.toolName == "web_fetch")
-	            #expect(toolResult.providerExecuted == nil)
 	            #expect(toolResult.isError == true)
 
 	            // Verify error object
@@ -4885,7 +4876,6 @@ struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
 	        if case .toolResult(let toolResult) = result.content[0] {
 	            #expect(toolResult.toolCallId == "tool_1")
 	            #expect(toolResult.toolName == "code_execution")
-	            #expect(toolResult.providerExecuted == nil)
 	            #expect(toolResult.isError == true)
 
 	            // Verify error object

@@ -72,7 +72,6 @@ struct GenerateTextDeferredToolResultsTests {
                     toolName: "deferred_tool",
                     result: .string("ERROR"),
                     isError: true,
-                    providerExecuted: true,
                     providerMetadata: meta
                 )),
                 .text(LanguageModelV3Text(text: "Final response")),
