@@ -145,6 +145,7 @@ let package = Package(
         .testTarget(name: "TogetherAIProviderTests", dependencies: ["TogetherAIProvider", "AISDKProvider", "AISDKProviderUtils"]),
         .testTarget(name: "ProdiaProviderTests", dependencies: ["ProdiaProvider", "AISDKProvider", "AISDKProviderUtils"]),
         .testTarget(name: "RevAIProviderTests", dependencies: ["RevAIProvider", "AISDKProvider", "AISDKProviderUtils"]),
+        .testTarget(name: "VercelProviderTests", dependencies: ["VercelProvider", "AISDKProvider", "AISDKProviderUtils", "OpenAICompatibleProvider"]),
 
         // SwiftAISDKPlayground - CLI executable for manual testing (Playground)
         .executableTarget(
