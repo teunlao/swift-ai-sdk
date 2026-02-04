@@ -303,10 +303,10 @@ struct XAIChatLanguageModelTests {
 
         let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: prompt))
 
-        #expect(result.usage.inputTokens == 20)
-        #expect(result.usage.outputTokens == 5)
-        #expect(result.usage.totalTokens == 25)
-        #expect(result.usage.reasoningTokens == nil)
+        #expect(result.usage.inputTokens.total == 20)
+        #expect(result.usage.outputTokens.total == 5)
+        #expect((result.usage.inputTokens.total ?? 0) + (result.usage.outputTokens.total ?? 0) == 25)
+        #expect(result.usage.outputTokens.reasoning == 0)
     }
 
     @Test("should send additional response information")
@@ -1987,7 +1987,7 @@ struct XAIChatLanguageModelTests {
             "choices": [["index": 0, "message": ["role": "assistant", "content": "Test"], "finish_reason": "stop"]],
             "usage": [
                 "prompt_tokens": 10,
-                "total_tokens": 50,
+                "total_tokens": 30,
                 "completion_tokens": 20,
                 "completion_tokens_details": ["reasoning_tokens": 15]
             ]
@@ -2011,10 +2011,10 @@ struct XAIChatLanguageModelTests {
 
         let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: prompt))
 
-        #expect(result.usage.inputTokens == 10)
-        #expect(result.usage.outputTokens == 20)
-        #expect(result.usage.reasoningTokens == 15)
-        #expect(result.usage.totalTokens == 50)
+        #expect(result.usage.inputTokens.total == 10)
+        #expect(result.usage.outputTokens.total == 20)
+        #expect(result.usage.outputTokens.reasoning == 15)
+        #expect((result.usage.inputTokens.total ?? 0) + (result.usage.outputTokens.total ?? 0) == 30)
     }
 
     @Test("should handle reasoning streaming")

@@ -24,10 +24,10 @@ public let anthropicTextEditor20250728ArgsSchema = FlexibleSchema(
             "type": .string("object"),
             "properties": .object([
                 "maxCharacters": .object([
-                    "type": .array([.string("number"), .string("null")])
+                    "type": .string("number")
                 ])
             ]),
-            "additionalProperties": .bool(true)
+            "additionalProperties": .bool(false)
         ])
     )
 )
@@ -50,24 +50,27 @@ private let anthropicTextEditor20250728InputSchema = FlexibleSchema(
                     "type": .string("string")
                 ]),
                 "file_text": .object([
-                    "type": .array([.string("string"), .string("null")])
+                    "type": .string("string")
                 ]),
                 "insert_line": .object([
-                    "type": .array([.string("integer"), .string("null")])
+                    "type": .string("integer")
                 ]),
                 "new_str": .object([
-                    "type": .array([.string("string"), .string("null")])
+                    "type": .string("string")
+                ]),
+                "insert_text": .object([
+                    "type": .string("string")
                 ]),
                 "old_str": .object([
-                    "type": .array([.string("string"), .string("null")])
+                    "type": .string("string")
                 ]),
                 "view_range": .object([
-                    "type": .array([.string("array"), .string("null")]),
+                    "type": .string("array"),
                     "items": .object(["type": .string("integer")])
                 ])
             ]),
             "required": .array([.string("command"), .string("path")]),
-            "additionalProperties": .bool(true)
+            "additionalProperties": .bool(false)
         ])
     )
 )

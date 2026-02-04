@@ -22,3 +22,71 @@ Rules:
    - audited commit hash from `upstream/UPSTREAM.md`
 3) Update the checklist as you verify behaviors (tests preferred).
 
+## Release recap (Swift tags)
+
+This is a lightweight “memory log” of what we shipped while chasing upstream parity.
+For source-of-truth code, always follow the commits and tests.
+
+### v0.7.x
+
+- `v0.7.0` (2026-01-26)
+  - Core: tool approval requests + dynamic tools.
+  - SwiftAISDK: handle approvals in `generate/stream`.
+  - OpenAI: Responses MCP tool support + docs/tests for approvals.
+- `v0.7.1` (2026-01-31)
+  - OpenAI: fallback `itemId` from `providerMetadata`.
+- `v0.7.2` (2026-01-31)
+  - Provider: add `providerMetadata` to V3 tool parts.
+  - OpenAI: Responses tool name mapping parity.
+- `v0.7.3` (2026-01-31)
+  - OpenAI Responses: citations/annotations `providerMetadata` parity + tests.
+- `v0.7.4` (2026-02-01)
+  - Release housekeeping.
+- `v0.7.5` (2026-02-01)
+  - Docs: README update for `0.7.4`.
+- `v0.7.6` (2026-02-01)
+  - OpenAI Chat: validate `logitBias` keys.
+- `v0.7.77` (2026-02-01)
+  - OpenAI tools: add output schemas for `web_search` tools.
+
+### v0.8.x
+
+- `v0.8.0` (2026-02-01)
+  - Provider utils: strengthen JSON schema validation.
+- `v0.8.2` (2026-02-02)
+  - SSE streaming: make tool events JSON-serializable.
+  - Tools: propagate tool titles through calls/results/errors and stream parts.
+  - Docs/site: add branding logos + favicon.
+- `v0.8.3` (2026-02-02)
+  - Google: send tools as array for `functionDeclarations` (Gemini/GCP compatibility).
+  - OpenAI Responses: reasoning summary streaming parity; truncation/finishReason parity.
+  - Image: edits support; response_format prefix parity; remove compat init.
+  - `streamText`: raw finish reason + abort reason parity.
+- `v0.8.4` (2026-02-02)
+  - Anthropic: code_execution/memory betas + `toolNameMapping` parity.
+  - OpenAI Responses: truncation + finishReason parity.
+- `v0.8.5` (2026-02-02)
+  - Anthropic: tool streaming + structured outputs + metadata alignment.
+
+### v0.9.x
+
+- `v0.9.0` (2026-02-03)
+  - Breaking: rename “provider-defined tools” → “provider tools” (upstream parity).
+  - Tools: support `inputExamples` + middleware injection; stabilize JSON formatting.
+  - `streamText`: apply `prepareStep` for multi-step streaming.
+  - Core: unify V3 warnings under `SharedV3Warning`; `prepareStep` supports providerOptions/experimentalContext.
+  - Anthropic: validate `cache_control`; forward container id between steps.
+  - Docs: simplify README marketing copy.
+- `v0.9.1` (2026-02-03)
+  - Anthropic: align settings + custom provider option keys; align provider tool args + prepareTools.
+
+### v0.10.x
+
+- `v0.10.0` (2026-02-03)
+  - Breaking (Anthropic): align web tool outputs with upstream.
+
+### v0.11.x
+
+- `v0.11.0` (2026-02-04)
+  - Breaking: align `LanguageModelV3Usage` to upstream token detail shape (`inputTokens` / `outputTokens`) and update provider usage mapping accordingly.
+  - SwiftAISDK: add AI-level `LanguageModelUsage` helpers + adapter from provider usage for parity with upstream `@ai-sdk/ai`.

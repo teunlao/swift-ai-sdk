@@ -36,7 +36,7 @@ public func transformTextToUIMessageStream(
     stream: AsyncThrowingStream<String, Error>,
     options: UIMessageTransformOptions = UIMessageTransformOptions()
 ) -> AsyncThrowingStream<AnyUIMessageChunk, Error> {
-    AsyncThrowingStream { continuation in
+    AsyncThrowingStream(bufferingPolicy: .unbounded) { continuation in
         let task = Task {
             do {
                 if options.sendStart {
@@ -56,7 +56,7 @@ public func transformTextToUIMessageStream(
                 continuation.yield(.finishStep)
                 if options.sendFinish {
                     if let mapper = options.messageMetadata,
-                       let meta = mapper(.finish(finishReason: .unknown, rawFinishReason: nil, totalUsage: LanguageModelV3Usage()))
+                       let meta = mapper(.finish(finishReason: .unknown, rawFinishReason: nil, totalUsage: createNullLanguageModelUsage()))
                     {
                         continuation.yield(.messageMetadata(meta))
                     }

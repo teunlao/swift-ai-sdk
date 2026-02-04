@@ -43,11 +43,7 @@ public final class OpenAICompletionLanguageModel: LanguageModelV3 {
             throw UnsupportedFunctionalityError(functionality: "No completion choices returned")
         }
 
-        let usage = LanguageModelV3Usage(
-            inputTokens: value.usage?.promptTokens,
-            outputTokens: value.usage?.completionTokens,
-            totalTokens: value.usage?.totalTokens
-        )
+        let usage = convertOpenAICompletionUsage(value.usage)
 
         var providerMetadata: SharedV3ProviderMetadata? = nil
         if let logprobs = choice.logprobs, let logprobsJSON = try? JSONEncoder().encodeToJSONValue(logprobs) {
@@ -142,11 +138,7 @@ public final class OpenAICompletionLanguageModel: LanguageModelV3 {
                                 }
 
                                 if let usageValue = data.usage {
-                                    usage = LanguageModelV3Usage(
-                                        inputTokens: usageValue.promptTokens,
-                                        outputTokens: usageValue.completionTokens,
-                                        totalTokens: usageValue.totalTokens
-                                    )
+                                    usage = convertOpenAICompletionUsage(usageValue)
                                 }
 
                                 guard let choice = data.choices.first else { continue }
@@ -299,6 +291,31 @@ public final class OpenAICompletionLanguageModel: LanguageModelV3 {
 
         return result
     }
+}
+
+private func convertOpenAICompletionUsage(_ usage: OpenAICompletionUsage?) -> LanguageModelV3Usage {
+    // Port of `packages/openai/src/completion/convert-openai-completion-usage.ts`
+    guard let usage else {
+        return LanguageModelV3Usage()
+    }
+
+    let promptTokens = usage.promptTokens
+    let completionTokens = usage.completionTokens
+
+    return LanguageModelV3Usage(
+        inputTokens: .init(
+            total: promptTokens,
+            noCache: promptTokens,
+            cacheRead: nil,
+            cacheWrite: nil
+        ),
+        outputTokens: .init(
+            total: completionTokens,
+            text: completionTokens,
+            reasoning: nil
+        ),
+        raw: try? JSONEncoder().encodeToJSONValue(usage)
+    )
 }
 
 private extension JSONEncoder {

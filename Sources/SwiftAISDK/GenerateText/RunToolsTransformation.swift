@@ -112,7 +112,7 @@ public func runToolsTransformation(
                     case .finish(let finishReason, let usage, let providerMetadata):
                         let finishPart: SingleRequestTextStreamPart = .finish(
                             finishReason: finishReason,
-                            usage: usage,
+                            usage: asLanguageModelUsage(usage),
                             providerMetadata: providerMetadata
                         )
                         state.storeFinishChunk(finishPart)

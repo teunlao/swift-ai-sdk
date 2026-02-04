@@ -14,9 +14,8 @@ import Testing
 @Suite("RunToolsTransformation Tests", .serialized)
 struct RunToolsTransformationTests {
     private let usage = LanguageModelV3Usage(
-        inputTokens: 3,
-        outputTokens: 10,
-        totalTokens: 13
+        inputTokens: .init(total: 3),
+        outputTokens: .init(total: 10)
     )
 
     private enum TestError: Error {
@@ -116,7 +115,7 @@ struct RunToolsTransformationTests {
 
         if case .finish(let finishReason, let totalUsage, _) = parts[3] {
             #expect(finishReason == .stop)
-            #expect(totalUsage == usage)
+            #expect(totalUsage == asLanguageModelUsage(usage))
         } else {
             Issue.record("Expected finish as final part")
         }

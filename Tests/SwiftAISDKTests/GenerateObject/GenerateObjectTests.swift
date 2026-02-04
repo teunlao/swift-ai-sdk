@@ -6,13 +6,7 @@ import AISDKProvider
 
 @Suite("generateObject", .serialized)
 struct GenerateObjectTests {
-    private let dummyUsageV3 = LanguageModelV3Usage(
-        inputTokens: 10,
-        outputTokens: 20,
-        totalTokens: 30,
-        reasoningTokens: nil,
-        cachedInputTokens: nil
-    )
+    private let dummyUsageV3 = LanguageModelV3Usage(inputTokens: .init(total: 10), outputTokens: .init(total: 20))
 
     private let expectedUsage = LanguageModelUsage(
         inputTokens: 10,

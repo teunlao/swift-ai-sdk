@@ -425,12 +425,24 @@ public final class OpenAICompatibleChatLanguageModel: LanguageModelV3 {
     private func mapUsage(_ usage: OpenAICompatibleUsage?) -> LanguageModelV3Usage {
         guard let usage else { return LanguageModelV3Usage() }
 
+        let promptTokens = usage.promptTokens ?? 0
+        let completionTokens = usage.completionTokens ?? 0
+        let cacheReadTokens = usage.promptTokensDetails?.cachedTokens ?? 0
+        let reasoningTokens = usage.completionTokensDetails?.reasoningTokens ?? 0
+
         return LanguageModelV3Usage(
-            inputTokens: usage.promptTokens,
-            outputTokens: usage.completionTokens,
-            totalTokens: usage.totalTokens,
-            reasoningTokens: usage.completionTokensDetails?.reasoningTokens,
-            cachedInputTokens: usage.promptTokensDetails?.cachedTokens
+            inputTokens: .init(
+                total: promptTokens,
+                noCache: promptTokens - cacheReadTokens,
+                cacheRead: cacheReadTokens,
+                cacheWrite: nil
+            ),
+            outputTokens: .init(
+                total: completionTokens,
+                text: completionTokens - reasoningTokens,
+                reasoning: reasoningTokens
+            ),
+            raw: try? jsonValue(from: usage)
         )
     }
 

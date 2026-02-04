@@ -68,8 +68,8 @@ private func makeConfig(fetch: @escaping FetchFunction) -> AnthropicMessagesConf
         let result = try await model.doGenerate(options: .init(prompt: testPrompt))
 
         #expect(result.finishReason == .stop)
-        #expect(result.usage.inputTokens == 4)
-        #expect(result.usage.outputTokens == 10)
+        #expect(result.usage.inputTokens.total == 4)
+        #expect(result.usage.outputTokens.total == 10)
         #expect(result.content.count == 1)
         if case .text(let text) = result.content.first {
             #expect(text.text == "Hello, World!")
@@ -756,10 +756,10 @@ private func makeConfig(fetch: @escaping FetchFunction) -> AnthropicMessagesConf
 
         let result = try await model.doGenerate(options: .init(prompt: testPrompt))
 
-        #expect(result.usage.inputTokens == 20)
-        #expect(result.usage.outputTokens == 5)
-        #expect(result.usage.totalTokens == 25)
-        #expect(result.usage.cachedInputTokens == nil)
+        #expect(result.usage.inputTokens.total == 20)
+        #expect(result.usage.outputTokens.total == 5)
+        #expect((result.usage.inputTokens.total ?? 0) + (result.usage.outputTokens.total ?? 0) == 25)
+        #expect(result.usage.inputTokens.cacheRead == 0)
     }
 
     @Test("should send additional response information")
@@ -1725,7 +1725,7 @@ struct AnthropicMessagesLanguageModelStreamTests {
         }))
         #expect(parts.contains(where: { part in
             if case .finish(let finishReason, let usage, _) = part {
-                return finishReason == .stop && usage.outputTokens == 5
+                return finishReason == .stop && usage.outputTokens.total == 5
             }
             return false
         }))
@@ -1914,7 +1914,7 @@ struct AnthropicMessagesLanguageModelStreamTests {
         // Verify finish
         #expect(parts.contains(where: { part in
             if case .finish(let finishReason, let usage, _) = part {
-                return finishReason == .stop && usage.inputTokens == 17 && usage.outputTokens == 227
+                return finishReason == .stop && usage.inputTokens.total == 17 && usage.outputTokens.total == 227
             }
             return false
         }))
@@ -2027,9 +2027,9 @@ struct AnthropicMessagesLanguageModelStreamTests {
 
         if case .finish(let finishReason, let usage, let providerMetadata) = finishParts[0] {
             #expect(finishReason == .stop)
-            #expect(usage.inputTokens == 17)
-            #expect(usage.outputTokens == 227)
-            #expect(usage.totalTokens == 244)
+            #expect(usage.inputTokens.total == 17)
+            #expect(usage.outputTokens.total == 227)
+            #expect((usage.inputTokens.total ?? 0) + (usage.outputTokens.total ?? 0) == 244)
 
             // Verify provider metadata
             if let providerMetadata = providerMetadata,
@@ -2090,9 +2090,9 @@ struct AnthropicMessagesLanguageModelStreamTests {
 
         if case .finish(let finishReason, let usage, let providerMetadata) = finishParts[0] {
             #expect(finishReason == .stop)
-            #expect(usage.inputTokens == 17)
-            #expect(usage.outputTokens == 227)
-            #expect(usage.totalTokens == 244)
+            #expect(usage.inputTokens.total == 17)
+            #expect(usage.outputTokens.total == 227)
+            #expect((usage.inputTokens.total ?? 0) + (usage.outputTokens.total ?? 0) == 244)
 
             // Verify provider metadata includes stopSequence
             if let providerMetadata = providerMetadata,
@@ -2153,10 +2153,12 @@ struct AnthropicMessagesLanguageModelStreamTests {
 
         if case .finish(let finishReason, let usage, let providerMetadata) = finishParts[0] {
             #expect(finishReason == .stop)
-            #expect(usage.inputTokens == 17)
-            #expect(usage.outputTokens == 227)
-            #expect(usage.totalTokens == 244)
-            #expect(usage.cachedInputTokens == 5)
+            #expect(usage.inputTokens.noCache == 17)
+            #expect(usage.inputTokens.cacheRead == 5)
+            #expect(usage.inputTokens.cacheWrite == 10)
+            #expect(usage.inputTokens.total == 32)
+            #expect(usage.outputTokens.total == 227)
+            #expect((usage.inputTokens.total ?? 0) + (usage.outputTokens.total ?? 0) == 259)
 
             // Verify provider metadata includes cache tokens
             if let providerMetadata = providerMetadata,
@@ -2219,9 +2221,12 @@ struct AnthropicMessagesLanguageModelStreamTests {
 
         if case .finish(let finishReason, let usage, let providerMetadata) = finishParts[0] {
             #expect(finishReason == .stop)
-            #expect(usage.inputTokens == 17)
-            #expect(usage.outputTokens == 227)
-            #expect(usage.cachedInputTokens == 5)
+            #expect(usage.inputTokens.noCache == 17)
+            #expect(usage.inputTokens.cacheRead == 5)
+            #expect(usage.inputTokens.cacheWrite == 10)
+            #expect(usage.inputTokens.total == 32)
+            #expect(usage.outputTokens.total == 227)
+            #expect((usage.inputTokens.total ?? 0) + (usage.outputTokens.total ?? 0) == 259)
 
             // Verify provider metadata includes cache_creation
             if let providerMetadata = providerMetadata,
@@ -2579,7 +2584,7 @@ struct AnthropicMessagesLanguageModelStreamAdvancedBatch2Tests {
         // Verify finish
         #expect(parts.contains(where: { part in
             if case .finish(let finishReason, let usage, _) = part {
-                return finishReason == .stop && usage.inputTokens == 17 && usage.outputTokens == 227
+                return finishReason == .stop && usage.inputTokens.total == 17 && usage.outputTokens.total == 227
             }
             return false
         }))

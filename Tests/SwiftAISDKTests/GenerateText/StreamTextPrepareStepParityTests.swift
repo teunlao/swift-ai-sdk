@@ -83,7 +83,7 @@ struct StreamTextPrepareStepParityTests {
             )
         ]
 
-        let usage = LanguageModelV3Usage(inputTokens: 1, outputTokens: 1, totalTokens: 2)
+        let usage = LanguageModelV3Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 1))
 
         let step0Parts: [LanguageModelV3StreamPart] = [
             .streamStart(warnings: []),
@@ -160,4 +160,3 @@ struct StreamTextPrepareStepParityTests {
         #expect(snapshots.map(\.step) == [0, 1])
     }
 }
-

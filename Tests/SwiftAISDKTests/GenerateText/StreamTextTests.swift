@@ -22,13 +22,7 @@ import AISDKProviderUtils
 
 @Suite("StreamText – basic textStream")
 struct StreamTextBasicTests {
-    private let defaultUsage = LanguageModelV3Usage(
-        inputTokens: 1,
-        outputTokens: 4,
-        totalTokens: 5,
-        reasoningTokens: nil,
-        cachedInputTokens: nil
-    )
+    private let defaultUsage = LanguageModelV3Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 4))
     private struct SummaryOutput: Codable, Equatable, Sendable {
         let value: String
     }
@@ -302,7 +296,7 @@ struct StreamTextBasicTests {
             .textEnd(id: "1", providerMetadata: nil),
             .finish(
                 finishReason: .stop,
-                usage: LanguageModelV3Usage(inputTokens: 1, outputTokens: 4, totalTokens: 5, reasoningTokens: nil, cachedInputTokens: nil),
+                usage: LanguageModelV3Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 4)),
                 providerMetadata: nil
             )
         ]
@@ -398,7 +392,7 @@ struct StreamTextBasicTests {
         let outerSpan = try #require(tracer.spanRecords.first { $0.name == "ai.streamText" })
         #expect(outerSpan.attributes["ai.response.finishReason"] == .string("stop"))
         #expect(outerSpan.attributes["ai.response.text"] == .string("Hello!"))
-        let totalTokens = try #require(defaultUsage.totalTokens)
+        let totalTokens = try #require(asLanguageModelUsage(defaultUsage).totalTokens)
         #expect(outerSpan.attributes["ai.usage.totalTokens"] == .int(totalTokens))
         #expect(outerSpan.attributes["ai.telemetry.metadata.test-key"] == .string("value"))
         #expect(outerSpan.attributes["ai.operationId"] == .string("ai.streamText"))
@@ -407,15 +401,13 @@ struct StreamTextBasicTests {
         #expect(innerSpan.attributes["ai.model.provider"] == .string("mock-provider"))
         #expect(innerSpan.attributes["ai.model.id"] == .string("mock-model-id"))
 
-        #expect(finish.totalUsage.totalTokens == defaultUsage.totalTokens)
+        #expect(finish.totalUsage.totalTokens == asLanguageModelUsage(defaultUsage).totalTokens)
     }
 
     @Test("tools convert client tool calls to static variants")
     func toolsConvertClientToolCallsToStatic() async throws {
         // Arrange a simple client-executed tool call with valid JSON input and result.
-        let usage = LanguageModelV3Usage(
-            inputTokens: 1, outputTokens: 1, totalTokens: 2, reasoningTokens: nil, cachedInputTokens: nil
-        )
+        let usage = LanguageModelV3Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 1))
 
         let parts: [LanguageModelV3StreamPart] = [
             .streamStart(warnings: []),
@@ -779,20 +771,8 @@ struct StreamTextBasicTests {
 
     @Test("transform uppercases tool results and inputs across steps")
     func transformUppercasesToolResultsAcrossSteps() async throws {
-        let usageStepOne = LanguageModelV3Usage(
-            inputTokens: 3,
-            outputTokens: 10,
-            totalTokens: 13,
-            reasoningTokens: nil,
-            cachedInputTokens: nil
-        )
-        let usageStepTwo = LanguageModelV3Usage(
-            inputTokens: 1,
-            outputTokens: 4,
-            totalTokens: 5,
-            reasoningTokens: nil,
-            cachedInputTokens: nil
-        )
+        let usageStepOne = LanguageModelV3Usage(inputTokens: .init(total: 3), outputTokens: .init(total: 10))
+        let usageStepTwo = LanguageModelV3Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 4))
 
         let stepOneParts: [LanguageModelV3StreamPart] = [
             .streamStart(warnings: []),
@@ -1086,7 +1066,7 @@ struct StreamTextBasicTests {
         let finish = try await result.finishReason
 
         #expect(text == "Hi")
-        #expect(usage.totalTokens == defaultUsage.totalTokens)
+        #expect(usage.totalTokens == asLanguageModelUsage(defaultUsage).totalTokens)
         #expect(finish == .stop)
     }
 
@@ -1181,7 +1161,7 @@ struct StreamTextBasicTests {
     }
     @Test("tool-calls finish triggers continuation when client outputs provided")
     func toolCallsFinishTriggersContinuation() async throws {
-        let usage = LanguageModelV3Usage(inputTokens: 2, outputTokens: 2, totalTokens: 4, reasoningTokens: nil, cachedInputTokens: nil)
+        let usage = LanguageModelV3Usage(inputTokens: .init(total: 2), outputTokens: .init(total: 2))
 
         let stepOneParts: [LanguageModelV3StreamPart] = [
             .streamStart(warnings: []),
@@ -1249,7 +1229,7 @@ struct StreamTextBasicTests {
 
     @Test("invalid tool-call JSON marks dynamic call as invalid")
     func invalidToolCallJsonMarksDynamic() async throws {
-        let usage = LanguageModelV3Usage(inputTokens: 1, outputTokens: 1, totalTokens: 2, reasoningTokens: nil, cachedInputTokens: nil)
+        let usage = LanguageModelV3Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 1))
         let parts: [LanguageModelV3StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(id: "id-invalid", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
@@ -1377,7 +1357,7 @@ struct StreamTextBasicTests {
 
     @Test("experimentalOutput throws when finish reason is tool-calls")
     func experimentalOutputThrowsOnToolCalls() async throws {
-        let usage = LanguageModelV3Usage(inputTokens: 1, outputTokens: 1, totalTokens: 2, reasoningTokens: nil, cachedInputTokens: nil)
+        let usage = LanguageModelV3Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 1))
         let parts: [LanguageModelV3StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(id: "toolcalls", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
@@ -1411,7 +1391,7 @@ struct StreamTextBasicTests {
 
     @Test("experimentalOutputIfSpecified returns nil when finish reason is tool-calls")
     func experimentalOutputIfSpecifiedNilOnToolCalls() async throws {
-        let usage = LanguageModelV3Usage(inputTokens: 1, outputTokens: 1, totalTokens: 2, reasoningTokens: nil, cachedInputTokens: nil)
+        let usage = LanguageModelV3Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 1))
         let parts: [LanguageModelV3StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(id: "toolcalls-optional", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
@@ -1663,7 +1643,7 @@ struct StreamTextBasicTests {
 
     @Test("onStepFinish provides correct finishReason and usage")
     func onStepFinishProvidesDetails() async throws {
-        let usage = LanguageModelV3Usage(inputTokens: 2, outputTokens: 3, totalTokens: 5, reasoningTokens: nil, cachedInputTokens: nil)
+        let usage = LanguageModelV3Usage(inputTokens: .init(total: 2), outputTokens: .init(total: 3))
         let parts: [LanguageModelV3StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(id: "rf-1", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
@@ -1707,7 +1687,7 @@ struct StreamTextBasicTests {
 
     @Test("stop() emits abort before final finish")
     func stopEmitsAbortBeforeFinish() async throws {
-        let usage = LanguageModelV3Usage(inputTokens: 1, outputTokens: 1, totalTokens: 2)
+        let usage = LanguageModelV3Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 1))
         let providerStream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
             c.yield(.streamStart(warnings: []))
             c.yield(.responseMetadata(id: "s", modelId: "m", timestamp: Date(timeIntervalSince1970: 0)))
@@ -2076,7 +2056,7 @@ struct StreamTextBasicTests {
 
     @Test("onFinish is invoked exactly once")
     func onFinishInvokedExactlyOnce() async throws {
-        let usage = LanguageModelV3Usage(inputTokens: 1, outputTokens: 1, totalTokens: 2, reasoningTokens: nil, cachedInputTokens: nil)
+        let usage = LanguageModelV3Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 1))
         let parts: [LanguageModelV3StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(id: "fin-1", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),

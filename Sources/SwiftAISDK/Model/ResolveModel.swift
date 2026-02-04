@@ -340,13 +340,7 @@ private func _convertLanguageModelV2GenerateResultToV3(_ result: LanguageModelV2
     LanguageModelV3GenerateResult(
         content: result.content.map(_convertLanguageModelV2ContentToV3),
         finishReason: LanguageModelV3FinishReason(rawValue: result.finishReason.rawValue) ?? .unknown,
-        usage: LanguageModelV3Usage(
-            inputTokens: result.usage.inputTokens,
-            outputTokens: result.usage.outputTokens,
-            totalTokens: result.usage.totalTokens,
-            reasoningTokens: result.usage.reasoningTokens,
-            cachedInputTokens: result.usage.cachedInputTokens
-        ),
+        usage: _convertLanguageModelV2UsageToV3(result.usage),
         providerMetadata: result.providerMetadata,
         request: result.request.map { LanguageModelV3RequestInfo(body: $0.body) },
         response: result.response.map {
@@ -364,7 +358,7 @@ private func _convertLanguageModelV2GenerateResultToV3(_ result: LanguageModelV2
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 private func _convertLanguageModelV2StreamResultToV3(_ result: LanguageModelV2StreamResult) -> LanguageModelV3StreamResult {
-    let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+    let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error>(bufferingPolicy: .unbounded) { continuation in
         let task = Task {
             do {
                 for try await part in result.stream {
@@ -438,13 +432,7 @@ private func _convertLanguageModelV2StreamPartToV3(_ part: LanguageModelV2Stream
     case let .finish(finishReason, usage, providerMetadata):
         return .finish(
             finishReason: LanguageModelV3FinishReason(rawValue: finishReason.rawValue) ?? .unknown,
-            usage: LanguageModelV3Usage(
-                inputTokens: usage.inputTokens,
-                outputTokens: usage.outputTokens,
-                totalTokens: usage.totalTokens,
-                reasoningTokens: usage.reasoningTokens,
-                cachedInputTokens: usage.cachedInputTokens
-            ),
+            usage: _convertLanguageModelV2UsageToV3(usage),
             providerMetadata: providerMetadata
         )
 
@@ -453,6 +441,27 @@ private func _convertLanguageModelV2StreamPartToV3(_ part: LanguageModelV2Stream
     case let .error(error):
         return .error(error: error)
     }
+}
+
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+private func _convertLanguageModelV2UsageToV3(_ usage: LanguageModelV2Usage) -> LanguageModelV3Usage {
+    let cachedInputTokens = usage.cachedInputTokens ?? 0
+    let reasoningTokens = usage.reasoningTokens ?? 0
+
+    return LanguageModelV3Usage(
+        inputTokens: .init(
+            total: usage.inputTokens,
+            noCache: usage.inputTokens.map { $0 - cachedInputTokens },
+            cacheRead: usage.cachedInputTokens,
+            cacheWrite: nil
+        ),
+        outputTokens: .init(
+            total: usage.outputTokens,
+            text: usage.outputTokens.map { $0 - reasoningTokens },
+            reasoning: usage.reasoningTokens
+        ),
+        raw: nil
+    )
 }
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)

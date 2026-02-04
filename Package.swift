@@ -121,6 +121,7 @@ let package = Package(
         .testTarget(name: "OpenAICompatibleProviderTests", dependencies: ["OpenAICompatibleProvider", "AISDKProvider", "AISDKProviderUtils"]),
         .testTarget(name: "AnthropicProviderTests", dependencies: ["AnthropicProvider", "AISDKProvider", "AISDKProviderUtils"], resources: [.copy("Fixtures")]),
         .testTarget(name: "GoogleProviderTests", dependencies: ["GoogleProvider", "AISDKProvider", "AISDKProviderUtils"]),
+        .testTarget(name: "GoogleVertexProviderTests", dependencies: ["GoogleVertexProvider", "AISDKProvider", "AISDKProviderUtils"]),
         .testTarget(name: "GroqProviderTests", dependencies: ["GroqProvider", "AISDKProvider", "AISDKProviderUtils"]),
         .testTarget(name: "MistralProviderTests", dependencies: ["MistralProvider", "AISDKProvider", "AISDKProviderUtils"]),
         .testTarget(name: "XAIProviderTests", dependencies: ["XAIProvider", "AISDKProvider", "AISDKProviderUtils"]),

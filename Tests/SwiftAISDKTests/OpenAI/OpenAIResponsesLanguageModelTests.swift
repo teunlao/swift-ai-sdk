@@ -175,11 +175,11 @@ struct OpenAIResponsesLanguageModelTests {
         #expect(toolCalls.first?.input == "{\"city\":\"Berlin\"}")
 
         #expect(result.finishReason == .toolCalls)
-        #expect(result.usage.inputTokens == 12)
-        #expect(result.usage.outputTokens == 7)
-        #expect(result.usage.totalTokens == 19)
-        #expect(result.usage.reasoningTokens == 2)
-        #expect(result.usage.cachedInputTokens == 3)
+        #expect(result.usage.inputTokens.total == 12)
+        #expect(result.usage.outputTokens.total == 7)
+        #expect((result.usage.inputTokens.total ?? 0) + (result.usage.outputTokens.total ?? 0) == 19)
+        #expect(result.usage.outputTokens.reasoning == 2)
+        #expect(result.usage.inputTokens.cacheRead == 3)
 
         if let metadata = result.providerMetadata?["openai"] {
             #expect(metadata["responseId"] == .string("resp_123"))
@@ -831,10 +831,10 @@ struct OpenAIResponsesLanguageModelTests {
         if let finishPart = parts.last {
             if case .finish(let finishReason, let usage, let providerMetadata) = finishPart {
                 #expect(finishReason == .stop)
-                #expect(usage.inputTokens == 543)
-                #expect(usage.outputTokens == 478)
-                #expect(usage.cachedInputTokens == 234)
-                #expect(usage.reasoningTokens == 123)
+                #expect(usage.inputTokens.total == 543)
+                #expect(usage.outputTokens.total == 478)
+                #expect(usage.inputTokens.cacheRead == 234)
+                #expect(usage.outputTokens.reasoning == 123)
                 if let openaiMetadata = providerMetadata?["openai"] {
                     #expect(openaiMetadata["responseId"] == .string("resp_stream"))
                     if let logprobs = openaiMetadata["logprobs"], case .array(let array) = logprobs {
@@ -1153,7 +1153,7 @@ struct OpenAIResponsesLanguageModelTests {
         if let finish = parts.last {
             if case .finish(let reason, let usage, _) = finish {
                 #expect(reason == .toolCalls)
-                #expect(usage.totalTokens == 16)
+                #expect((usage.inputTokens.total ?? 0) + (usage.outputTokens.total ?? 0) == 16)
             } else {
                 Issue.record("Expected finish part for tool stream")
             }
@@ -2444,7 +2444,7 @@ struct OpenAIResponsesLanguageModelTests {
 
         if case .finish(let reason, let usage, _) = finishPart {
             #expect(reason == .length)
-            #expect(usage.totalTokens == 6)
+            #expect((usage.inputTokens.total ?? 0) + (usage.outputTokens.total ?? 0) == 6)
         } else {
             Issue.record("Expected finish part for incomplete stream")
         }
@@ -2585,7 +2585,7 @@ struct OpenAIResponsesLanguageModelTests {
 
         if let finish = parts.last, case .finish(let reason, let usage, _) = finish {
             #expect(reason == .stop)
-            #expect(usage.totalTokens == 4)
+            #expect((usage.inputTokens.total ?? 0) + (usage.outputTokens.total ?? 0) == 4)
         } else {
             Issue.record("Expected finish part for code interpreter stream")
         }
@@ -3692,11 +3692,11 @@ struct OpenAIResponsesLanguageModelTests {
 
         let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: samplePrompt))
 
-        #expect(result.usage.inputTokens == 345)
-        #expect(result.usage.outputTokens == 538)
-        #expect(result.usage.totalTokens == 883)
-        #expect(result.usage.cachedInputTokens == 234)
-        #expect(result.usage.reasoningTokens == 123)
+        #expect(result.usage.inputTokens.total == 345)
+        #expect(result.usage.outputTokens.total == 538)
+        #expect((result.usage.inputTokens.total ?? 0) + (result.usage.outputTokens.total ?? 0) == 883)
+        #expect(result.usage.inputTokens.cacheRead == 234)
+        #expect(result.usage.outputTokens.reasoning == 123)
     }
 
     @Test("should extract response id metadata")

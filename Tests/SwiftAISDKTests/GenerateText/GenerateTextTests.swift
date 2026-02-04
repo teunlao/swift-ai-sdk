@@ -14,7 +14,11 @@ import AISDKProviderUtils
 struct GenerateTextTests {
     // MARK: - Shared Fixtures
 
-    private let testUsage = LanguageModelUsage(
+    private let testUsage = LanguageModelV3Usage(
+        inputTokens: .init(total: 3),
+        outputTokens: .init(total: 10)
+    )
+    private let expectedUsage = LanguageModelUsage(
         inputTokens: 3,
         outputTokens: 10,
         totalTokens: 13
@@ -23,7 +27,7 @@ struct GenerateTextTests {
     private func makeGenerateResult(
         content: [LanguageModelV3Content],
         finishReason: LanguageModelV3FinishReason = .stop,
-        usage: LanguageModelUsage? = nil,
+        usage: LanguageModelV3Usage? = nil,
         warnings: [SharedV3Warning] = [],
         providerMetadata: ProviderMetadata? = nil,
         request: LanguageModelV3RequestInfo? = nil,
@@ -1403,7 +1407,7 @@ struct GenerateTextTests {
         }
 
         #expect(event.finishReason == .stop)
-        #expect(event.usage == testUsage)
+        #expect(event.usage == expectedUsage)
         #expect(event.text == "Hello, World!")
         #expect(event.reasoning.isEmpty)
         #expect(event.reasoningText == nil)
@@ -1439,7 +1443,7 @@ struct GenerateTextTests {
         #expect(event.providerMetadata == nil)
         #expect(event.warnings?.isEmpty ?? true)
 
-        #expect(event.totalUsage == testUsage)
+        #expect(event.totalUsage == expectedUsage)
 
         let responseMessages = event.response.messages
         #expect(responseMessages.count == 2)
@@ -1959,9 +1963,8 @@ private extension GenerateTextTests {
                         ],
                         finishReason: .toolCalls,
                         usage: LanguageModelV3Usage(
-                            inputTokens: 10,
-                            outputTokens: 5,
-                            totalTokens: 15
+                            inputTokens: .init(total: 10),
+                            outputTokens: .init(total: 5)
                         ),
                         response: LanguageModelV3ResponseInfo(
                             id: "test-id-1-from-model",
@@ -2066,9 +2069,8 @@ private extension GenerateTextTests {
                         ],
                         finishReason: .toolCalls,
                         usage: LanguageModelV3Usage(
-                            inputTokens: 10,
-                            outputTokens: 5,
-                            totalTokens: 15
+                            inputTokens: .init(total: 10),
+                            outputTokens: .init(total: 5)
                         ),
                         response: LanguageModelV3ResponseInfo(
                             id: "test-id-1-from-model",
@@ -2212,9 +2214,8 @@ private extension GenerateTextTests {
                     ],
                     finishReason: .toolCalls,
                     usage: LanguageModelV3Usage(
-                        inputTokens: 10,
-                        outputTokens: 5,
-                        totalTokens: 15
+                        inputTokens: .init(total: 10),
+                        outputTokens: .init(total: 5)
                     ),
                     response: LanguageModelV3ResponseInfo(
                         id: "test-id-1-from-model",

@@ -102,13 +102,7 @@ public final class CohereChatLanguageModel: LanguageModelV3 {
         }
 
         let usageTokens = response.value.usage.tokens
-        let usage = LanguageModelV3Usage(
-            inputTokens: usageTokens.inputTokens,
-            outputTokens: usageTokens.outputTokens,
-            totalTokens: usageTokens.inputTokens + usageTokens.outputTokens,
-            reasoningTokens: nil,
-            cachedInputTokens: nil
-        )
+        let usage = convertCohereUsage(usageTokens)
 
         let responseInfo = LanguageModelV3ResponseInfo(
             id: response.value.generationId,
@@ -142,7 +136,7 @@ public final class CohereChatLanguageModel: LanguageModelV3 {
             fetch: config.fetch
         )
 
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error>(bufferingPolicy: .unbounded) { continuation in
             continuation.yield(.streamStart(warnings: prepared.warnings))
 
             Task {
@@ -238,13 +232,7 @@ public final class CohereChatLanguageModel: LanguageModelV3 {
                             case .messageEnd:
                                 finishReason = mapCohereFinishReason(event.delta?.finishReason)
                                 if let tokens = event.delta?.usage?.tokens {
-                                    usage = LanguageModelV3Usage(
-                                        inputTokens: tokens.inputTokens,
-                                        outputTokens: tokens.outputTokens,
-                                        totalTokens: tokens.inputTokens + tokens.outputTokens,
-                                        reasoningTokens: nil,
-                                        cachedInputTokens: nil
-                                    )
+                                    usage = convertCohereUsage(tokens)
                                 }
 
                             case .toolPlanDelta, .citationStart, .citationEnd:
@@ -401,6 +389,42 @@ public final class CohereChatLanguageModel: LanguageModelV3 {
         var name: String
         var arguments: String
     }
+}
+
+private protocol CohereUsageTokensProtocol {
+    var inputTokens: Int { get }
+    var outputTokens: Int { get }
+}
+
+extension CohereChatResponse.Usage.Tokens: CohereUsageTokensProtocol {}
+extension CohereChatStreamEvent.Delta.Usage.Tokens: CohereUsageTokensProtocol {}
+
+private func convertCohereUsage<T: CohereUsageTokensProtocol>(_ tokens: T?) -> LanguageModelV3Usage {
+    // Port of `packages/cohere/src/convert-cohere-usage.ts`
+    guard let tokens else {
+        return LanguageModelV3Usage()
+    }
+
+    let inputTokens = tokens.inputTokens
+    let outputTokens = tokens.outputTokens
+
+    return LanguageModelV3Usage(
+        inputTokens: .init(
+            total: inputTokens,
+            noCache: inputTokens,
+            cacheRead: nil,
+            cacheWrite: nil
+        ),
+        outputTokens: .init(
+            total: outputTokens,
+            text: outputTokens,
+            reasoning: nil
+        ),
+        raw: .object([
+            "input_tokens": .number(Double(inputTokens)),
+            "output_tokens": .number(Double(outputTokens))
+        ])
+    )
 }
 
 private let genericJSONObjectSchema: JSONValue = .object(["type": .string("object")])
@@ -636,12 +660,6 @@ private struct CohereChatStreamEvent: Codable {
         case index
         case id
         case delta
-    }
-}
-
-private extension LanguageModelV3Usage {
-    init() {
-        self.init(inputTokens: nil, outputTokens: nil, totalTokens: nil, reasoningTokens: nil, cachedInputTokens: nil)
     }
 }
 

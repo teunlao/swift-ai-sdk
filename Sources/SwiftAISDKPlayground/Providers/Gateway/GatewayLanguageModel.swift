@@ -323,12 +323,33 @@ private struct UsagePayload: Decodable {
     }
 
     func toUsage() -> LanguageModelV3Usage {
-        LanguageModelV3Usage(
-            inputTokens: inputTokens,
-            outputTokens: outputTokens,
-            totalTokens: totalTokens,
-            reasoningTokens: reasoningTokens,
-            cachedInputTokens: cachedInputTokens
+        let noCacheTokens = inputTokens
+        let cacheReadTokens = cachedInputTokens
+        let totalInputTokens: Int? = {
+            if noCacheTokens == nil, cacheReadTokens == nil {
+                return nil
+            }
+            return (noCacheTokens ?? 0) + (cacheReadTokens ?? 0)
+        }()
+
+        let totalOutputTokens = outputTokens
+        let textTokens = totalOutputTokens.map { total in
+            reasoningTokens.map { total - $0 } ?? total
+        }
+
+        return LanguageModelV3Usage(
+            inputTokens: .init(
+                total: totalInputTokens,
+                noCache: noCacheTokens,
+                cacheRead: cacheReadTokens,
+                cacheWrite: nil
+            ),
+            outputTokens: .init(
+                total: totalOutputTokens,
+                text: textTokens,
+                reasoning: reasoningTokens
+            ),
+            raw: nil
         )
     }
 }

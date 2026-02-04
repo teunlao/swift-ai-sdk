@@ -6,13 +6,7 @@ import AISDKProviderUtils
 
 @Suite("GenerateText/StreamText – request object DX")
 struct RequestObjectDXTests {
-    private let usage = LanguageModelV3Usage(
-        inputTokens: 1,
-        outputTokens: 1,
-        totalTokens: 2,
-        reasoningTokens: nil,
-        cachedInputTokens: nil
-    )
+    private let usage = LanguageModelV3Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 1))
 
     private func makeEchoModel() -> MockLanguageModelV3 {
         MockLanguageModelV3(
@@ -81,7 +75,7 @@ struct RequestObjectDXTests {
             )
         )
 
-        var req = GenerateTextRequest(
+        var req: GenerateTextRequest<Summary> = GenerateTextRequest(
             model: .v3(model),
             experimentalOutput: Output.object(Summary.self)
         )

@@ -6,7 +6,7 @@ import AISDKProviderUtils
 
 @Suite("StreamText – event stream")
 struct StreamTextEventsTests {
-    private let usage = LanguageModelV3Usage(inputTokens: 2, outputTokens: 5, totalTokens: 7)
+    private let usage = LanguageModelUsage(inputTokens: 2, outputTokens: 5, totalTokens: 7)
 
     private func makeSampleParts() -> [TextStreamPart] {
         [

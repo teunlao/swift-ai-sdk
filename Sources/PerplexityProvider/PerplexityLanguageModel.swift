@@ -67,9 +67,14 @@ public final class PerplexityLanguageModel: LanguageModelV3 {
         }
 
         let usage = LanguageModelV3Usage(
-            inputTokens: response.value.usage?.promptTokens,
-            outputTokens: response.value.usage?.completionTokens,
-            totalTokens: response.value.usage?.totalTokens
+            inputTokens: .init(
+                total: response.value.usage?.promptTokens,
+                noCache: response.value.usage?.promptTokens
+            ),
+            outputTokens: .init(
+                total: response.value.usage?.completionTokens
+            ),
+            raw: response.value.usage.flatMap { try? jsonValue(from: $0) }
         )
 
         let metadata = perplexityResponseMetadata(id: response.value.id, model: response.value.model, created: response.value.created)
@@ -140,9 +145,9 @@ public final class PerplexityLanguageModel: LanguageModelV3 {
 
                             if let usageData = chunk.usage {
                                 usage = LanguageModelV3Usage(
-                                    inputTokens: usageData.promptTokens,
-                                    outputTokens: usageData.completionTokens,
-                                    totalTokens: usageData.totalTokens
+                                    inputTokens: .init(total: usageData.promptTokens, noCache: usageData.promptTokens),
+                                    outputTokens: .init(total: usageData.completionTokens),
+                                    raw: try? jsonValue(from: usageData)
                                 )
                                 metadataAccumulator.citationTokens = usageData.citationTokens
                                 metadataAccumulator.numSearchQueries = usageData.numSearchQueries

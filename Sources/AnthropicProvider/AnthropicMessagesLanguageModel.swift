@@ -170,7 +170,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
 
         let initialCitationDocuments = extractCitationDocuments(from: options.prompt)
 
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error>(bufferingPolicy: .unbounded) { continuation in
             continuation.yield(.streamStart(warnings: prepared.warnings))
 
             Task {
@@ -235,15 +235,35 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
 
                             case .messageStart(let value):
                                 if let usageInfo = value.message.usage {
+                                    let usageMetadata = anthropicUsageMetadata(usageInfo)
+
+                                    let inputTokens = usageInfo.inputTokens ?? usage.inputTokens.noCache ?? 0
+                                    let cacheCreationTokens = usageInfo.cacheCreationInputTokens ?? usage.inputTokens.cacheWrite ?? 0
+                                    let cacheReadTokens = usageInfo.cacheReadInputTokens ?? usage.inputTokens.cacheRead ?? 0
+                                    let outputTokensTotal: Int? = {
+                                        if let output = usageInfo.outputTokens {
+                                            return output
+                                        }
+                                        return usage.outputTokens.total
+                                    }()
+
                                     usage = LanguageModelV3Usage(
-                                        inputTokens: usageInfo.inputTokens,
-                                        outputTokens: usage.outputTokens,
-                                        totalTokens: usage.totalTokens,
-                                        reasoningTokens: usage.reasoningTokens,
-                                        cachedInputTokens: usageInfo.cacheReadInputTokens
+                                        inputTokens: .init(
+                                            total: inputTokens + cacheCreationTokens + cacheReadTokens,
+                                            noCache: inputTokens,
+                                            cacheRead: cacheReadTokens,
+                                            cacheWrite: cacheCreationTokens
+                                        ),
+                                        outputTokens: .init(
+                                            total: outputTokensTotal,
+                                            text: nil,
+                                            reasoning: nil
+                                        ),
+                                        raw: .object(usageMetadata)
                                     )
+
                                     cacheCreationInputTokens = usageInfo.cacheCreationInputTokens
-                                    rawUsage = anthropicUsageMetadata(usageInfo)
+                                    rawUsage = usageMetadata
                                 }
 
                                 container = anthropicContainerMetadata(value.message.container)
@@ -322,18 +342,6 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
 
                             case .messageDelta(let value):
                                 if let usageInfo = value.usage {
-                                    let currentInput = usage.inputTokens ?? usageInfo.inputTokens ?? 0
-                                    let currentOutput = usageInfo.outputTokens ?? 0
-                                    let cachedInput =
-                                        usageInfo.cacheReadInputTokens ?? usage.cachedInputTokens
-                                    usage = LanguageModelV3Usage(
-                                        inputTokens: currentInput,
-                                        outputTokens: currentOutput,
-                                        totalTokens: currentInput + currentOutput,
-                                        reasoningTokens: usage.reasoningTokens,
-                                        cachedInputTokens: cachedInput
-                                    )
-
                                     let metadata = anthropicUsageMetadata(usageInfo)
                                     if var existing = rawUsage {
                                         for (key, value) in metadata {
@@ -343,6 +351,30 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                                     } else {
                                         rawUsage = metadata
                                     }
+
+                                    if let cacheCreation = usageInfo.cacheCreationInputTokens {
+                                        cacheCreationInputTokens = cacheCreation
+                                    }
+
+                                    let inputTokens = usageInfo.inputTokens ?? usage.inputTokens.noCache ?? 0
+                                    let cacheCreationTokens = cacheCreationInputTokens ?? usage.inputTokens.cacheWrite ?? 0
+                                    let cacheReadTokens = usageInfo.cacheReadInputTokens ?? usage.inputTokens.cacheRead ?? 0
+                                    let outputTokens = usageInfo.outputTokens ?? usage.outputTokens.total ?? 0
+
+                                    usage = LanguageModelV3Usage(
+                                        inputTokens: .init(
+                                            total: inputTokens + cacheCreationTokens + cacheReadTokens,
+                                            noCache: inputTokens,
+                                            cacheRead: cacheReadTokens,
+                                            cacheWrite: cacheCreationTokens
+                                        ),
+                                        outputTokens: .init(
+                                            total: outputTokens,
+                                            text: nil,
+                                            reasoning: nil
+                                        ),
+                                        raw: rawUsage.map { .object($0) }
+                                    )
                                 }
 
                                 finishReason = mapAnthropicStopReason(
@@ -1368,19 +1400,24 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
             }
         }
 
-        let totalTokens: Int?
-        if let input = response.usage.inputTokens, let output = response.usage.outputTokens {
-            totalTokens = input + output
-        } else {
-            totalTokens = nil
-        }
+        let inputTokens = response.usage.inputTokens ?? 0
+        let outputTokens = response.usage.outputTokens ?? 0
+        let cacheCreationTokens = response.usage.cacheCreationInputTokens ?? 0
+        let cacheReadTokens = response.usage.cacheReadInputTokens ?? 0
 
         let usage = LanguageModelV3Usage(
-            inputTokens: response.usage.inputTokens,
-            outputTokens: response.usage.outputTokens,
-            totalTokens: totalTokens,
-            reasoningTokens: nil,
-            cachedInputTokens: response.usage.cacheReadInputTokens
+            inputTokens: .init(
+                total: inputTokens + cacheCreationTokens + cacheReadTokens,
+                noCache: inputTokens,
+                cacheRead: cacheReadTokens,
+                cacheWrite: cacheCreationTokens
+            ),
+            outputTokens: .init(
+                total: outputTokens,
+                text: nil,
+                reasoning: nil
+            ),
+            raw: .object(anthropicUsageMetadata(response.usage))
         )
 
         return (content, usage)

@@ -366,46 +366,75 @@ public enum LanguageModelV3FinishReason: String, Sendable, Codable, Equatable {
 /**
  Usage information.
 
- TypeScript equivalent:
- ```typescript
- export type LanguageModelV3Usage = {
-   inputTokens: number | undefined;
-   outputTokens: number | undefined;
-   totalTokens: number | undefined;
-   reasoningTokens?: number | undefined;
-   cachedInputTokens?: number | undefined;
- };
- ```
+ Port of `@ai-sdk/provider/src/language-model/v3/language-model-v3-usage.ts`.
  */
 public struct LanguageModelV3Usage: Sendable, Codable, Equatable {
-    /// The number of input (prompt) tokens used.
-    public let inputTokens: Int?
+    public struct InputTokens: Sendable, Codable, Equatable {
+        /// The total number of input (prompt) tokens used.
+        public let total: Int?
 
-    /// The number of output (completion) tokens used.
-    public let outputTokens: Int?
+        /// The number of non-cached input (prompt) tokens used.
+        public let noCache: Int?
 
-    /// The total number of tokens as reported by the provider.
-    /// This number might be different from the sum of `inputTokens` and `outputTokens`
-    /// and e.g. include reasoning tokens or other overhead.
-    public let totalTokens: Int?
+        /// The number of cached input (prompt) tokens read.
+        public let cacheRead: Int?
 
-    /// The number of reasoning tokens used.
-    public let reasoningTokens: Int?
+        /// The number of cached input (prompt) tokens written.
+        public let cacheWrite: Int?
 
-    /// The number of cached input tokens.
-    public let cachedInputTokens: Int?
+        public init(
+            total: Int? = nil,
+            noCache: Int? = nil,
+            cacheRead: Int? = nil,
+            cacheWrite: Int? = nil
+        ) {
+            self.total = total
+            self.noCache = noCache
+            self.cacheRead = cacheRead
+            self.cacheWrite = cacheWrite
+        }
+    }
+
+    public struct OutputTokens: Sendable, Codable, Equatable {
+        /// The total number of output (completion) tokens used.
+        public let total: Int?
+
+        /// The number of text tokens used.
+        public let text: Int?
+
+        /// The number of reasoning tokens used.
+        public let reasoning: Int?
+
+        public init(
+            total: Int? = nil,
+            text: Int? = nil,
+            reasoning: Int? = nil
+        ) {
+            self.total = total
+            self.text = text
+            self.reasoning = reasoning
+        }
+    }
+
+    /// Information about the input tokens.
+    public let inputTokens: InputTokens
+
+    /// Information about the output tokens.
+    public let outputTokens: OutputTokens
+
+    /// Raw usage information from the provider.
+    ///
+    /// This is the usage information in the shape that the provider returns.
+    /// It can include additional information that is not part of the standard usage information.
+    public let raw: JSONValue?
 
     public init(
-        inputTokens: Int? = nil,
-        outputTokens: Int? = nil,
-        totalTokens: Int? = nil,
-        reasoningTokens: Int? = nil,
-        cachedInputTokens: Int? = nil
+        inputTokens: InputTokens = .init(),
+        outputTokens: OutputTokens = .init(),
+        raw: JSONValue? = nil
     ) {
         self.inputTokens = inputTokens
         self.outputTokens = outputTokens
-        self.totalTokens = totalTokens
-        self.reasoningTokens = reasoningTokens
-        self.cachedInputTokens = cachedInputTokens
+        self.raw = raw
     }
 }

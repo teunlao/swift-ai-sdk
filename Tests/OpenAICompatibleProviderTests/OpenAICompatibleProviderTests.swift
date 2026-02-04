@@ -103,7 +103,7 @@ struct OpenAICompatibleProviderTests {
 
         let result = try await model.doGenerate(options: options)
         #expect(result.finishReason == LanguageModelV3FinishReason.stop)
-        #expect(result.usage.totalTokens == 10)
+        #expect((result.usage.inputTokens.total ?? 0) + (result.usage.outputTokens.total ?? 0) == 10)
         if let metadata = result.providerMetadata?["example"],
            case .number(let accepted) = metadata["acceptedPredictionTokens"],
            case .number(let rejected) = metadata["rejectedPredictionTokens"] {
@@ -195,7 +195,7 @@ struct OpenAICompatibleProviderTests {
 
         if case let .finish(finishReason: finishReason, usage: finishUsage, providerMetadata: providerMetadata) = parts.last {
             #expect(finishReason == LanguageModelV3FinishReason.stop)
-            #expect(finishUsage.totalTokens == 2)
+            #expect((finishUsage.inputTokens.total ?? 0) + (finishUsage.outputTokens.total ?? 0) == 2)
             if let metadata = providerMetadata?["example"], case .number(let value) = metadata["acceptedPredictionTokens"] {
                 #expect(value == 1)
             } else {

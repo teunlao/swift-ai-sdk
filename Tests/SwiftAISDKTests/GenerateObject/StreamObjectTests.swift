@@ -17,6 +17,7 @@ struct StreamObjectTests {
         reasoningTokens: nil,
         cachedInputTokens: nil
     )
+    private let defaultUsageV3 = LanguageModelV3Usage(inputTokens: .init(total: 3), outputTokens: .init(total: 10))
 
     private func defaultObjectSchema() -> FlexibleSchema<JSONValue> {
         FlexibleSchema(
@@ -272,7 +273,7 @@ struct StreamObjectTests {
             .textEnd(id: "1", providerMetadata: nil),
             .finish(
                 finishReason: .stop,
-                usage: defaultUsage,
+                usage: defaultUsageV3,
                 providerMetadata: ["testProvider": ["testKey": .string("testValue")]]
             )
         ]
@@ -289,7 +290,7 @@ struct StreamObjectTests {
             .textDelta(id: "1", delta: ",", providerMetadata: nil),
             .textDelta(id: "1", delta: "{\"value\":\"3\"}", providerMetadata: nil),
             .textDelta(id: "1", delta: "]}", providerMetadata: nil),
-            .finish(finishReason: .stop, usage: defaultUsage, providerMetadata: nil)
+            .finish(finishReason: .stop, usage: defaultUsageV3, providerMetadata: nil)
         ]
     }
 }

@@ -79,13 +79,22 @@ public final class GroqChatLanguageModel: LanguageModelV3 {
             }
         }
 
-        let usage = LanguageModelV3Usage(
-            inputTokens: response.value.usage?.promptTokens,
-            outputTokens: response.value.usage?.completionTokens,
-            totalTokens: response.value.usage?.totalTokens,
-            reasoningTokens: nil,
-            cachedInputTokens: response.value.usage?.promptTokensDetails?.cachedTokens
-        )
+        let usage: LanguageModelV3Usage = {
+            guard let usage = response.value.usage else {
+                return LanguageModelV3Usage()
+            }
+
+            let promptTokens = usage.promptTokens ?? 0
+            let completionTokens = usage.completionTokens ?? 0
+            let reasoningTokens = usage.completionTokensDetails?.reasoningTokens
+            let textTokens = reasoningTokens.map { completionTokens - $0 } ?? completionTokens
+
+            return LanguageModelV3Usage(
+                inputTokens: .init(total: promptTokens, noCache: promptTokens),
+                outputTokens: .init(total: completionTokens, text: textTokens, reasoning: reasoningTokens),
+                raw: try? JSONEncoder().encodeToJSONValue(usage)
+            )
+        }()
 
         let metadata = groqResponseMetadata(
             id: response.value.id,
@@ -162,12 +171,15 @@ public final class GroqChatLanguageModel: LanguageModelV3 {
                                 }
 
                                 if let usageMetadata = chunk.xGroq?.usage {
+                                    let promptTokens = usageMetadata.promptTokens ?? 0
+                                    let completionTokens = usageMetadata.completionTokens ?? 0
+                                    let reasoningTokens = usageMetadata.completionTokensDetails?.reasoningTokens
+                                    let textTokens = reasoningTokens.map { completionTokens - $0 } ?? completionTokens
+
                                     usage = LanguageModelV3Usage(
-                                        inputTokens: usageMetadata.promptTokens,
-                                        outputTokens: usageMetadata.completionTokens,
-                                        totalTokens: usageMetadata.totalTokens,
-                                        reasoningTokens: nil,
-                                        cachedInputTokens: usageMetadata.promptTokensDetails?.cachedTokens
+                                        inputTokens: .init(total: promptTokens, noCache: promptTokens),
+                                        outputTokens: .init(total: completionTokens, text: textTokens, reasoning: reasoningTokens),
+                                        raw: try? JSONEncoder().encodeToJSONValue(usageMetadata)
                                     )
                                 }
 
@@ -477,16 +489,26 @@ private struct GroqChatResponse: Codable {
             }
         }
 
+        struct CompletionTokensDetails: Codable {
+            let reasoningTokens: Int?
+
+            enum CodingKeys: String, CodingKey {
+                case reasoningTokens = "reasoning_tokens"
+            }
+        }
+
         let promptTokens: Int?
         let completionTokens: Int?
         let totalTokens: Int?
         let promptTokensDetails: PromptTokensDetails?
+        let completionTokensDetails: CompletionTokensDetails?
 
         enum CodingKeys: String, CodingKey {
             case promptTokens = "prompt_tokens"
             case completionTokens = "completion_tokens"
             case totalTokens = "total_tokens"
             case promptTokensDetails = "prompt_tokens_details"
+            case completionTokensDetails = "completion_tokens_details"
         }
     }
 
@@ -548,16 +570,26 @@ private struct GroqChatChunk: Codable {
             }
         }
 
+        struct CompletionTokensDetails: Codable {
+            let reasoningTokens: Int?
+
+            enum CodingKeys: String, CodingKey {
+                case reasoningTokens = "reasoning_tokens"
+            }
+        }
+
         let promptTokens: Int?
         let completionTokens: Int?
         let totalTokens: Int?
         let promptTokensDetails: PromptTokensDetails?
+        let completionTokensDetails: CompletionTokensDetails?
 
         enum CodingKeys: String, CodingKey {
             case promptTokens = "prompt_tokens"
             case completionTokens = "completion_tokens"
             case totalTokens = "total_tokens"
             case promptTokensDetails = "prompt_tokens_details"
+            case completionTokensDetails = "completion_tokens_details"
         }
     }
 

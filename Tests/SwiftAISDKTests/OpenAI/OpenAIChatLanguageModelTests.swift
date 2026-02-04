@@ -9,6 +9,13 @@ private let samplePrompt: LanguageModelV3Prompt = [
     .user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)
 ]
 
+private func totalTokens(_ usage: LanguageModelV3Usage) -> Int? {
+    if usage.inputTokens.total == nil && usage.outputTokens.total == nil {
+        return nil
+    }
+    return (usage.inputTokens.total ?? 0) + (usage.outputTokens.total ?? 0)
+}
+
 @Suite("OpenAIChatLanguageModel")
 struct OpenAIChatLanguageModelTests {
     @Test("doGenerate sends expected payload and maps response")
@@ -133,11 +140,11 @@ struct OpenAIChatLanguageModelTests {
         #expect(sourceElements.count == 1)
 
         #expect(result.finishReason == .stop)
-        #expect(result.usage.inputTokens == 4)
-        #expect(result.usage.outputTokens == 6)
-        #expect(result.usage.totalTokens == 10)
-        #expect(result.usage.reasoningTokens == 1)
-        #expect(result.usage.cachedInputTokens == 2)
+        #expect(result.usage.inputTokens.total == 4)
+        #expect(result.usage.outputTokens.total == 6)
+        #expect(totalTokens(result.usage) == 10)
+        #expect(result.usage.outputTokens.reasoning == 1)
+        #expect(result.usage.inputTokens.cacheRead == 2)
 
         if let metadata = result.providerMetadata?["openai"] {
             #expect(metadata["acceptedPredictionTokens"] == .number(2))
@@ -276,11 +283,11 @@ struct OpenAIChatLanguageModelTests {
             )
         )
 
-        #expect(result.usage.inputTokens == 20)
-        #expect(result.usage.outputTokens == 5)
-        #expect(result.usage.totalTokens == 25)
-        #expect(result.usage.cachedInputTokens == nil)
-        #expect(result.usage.reasoningTokens == nil)
+        #expect(result.usage.inputTokens.total == 20)
+        #expect(result.usage.outputTokens.total == 5)
+        #expect(totalTokens(result.usage) == 25)
+        #expect(result.usage.inputTokens.cacheRead == 0)
+        #expect(result.usage.outputTokens.reasoning == 0)
     }
 
     @Test("Extract logprobs")
@@ -1695,10 +1702,10 @@ struct OpenAIChatLanguageModelTests {
             )
         )
 
-        #expect(result.usage.inputTokens == 15)
-        #expect(result.usage.outputTokens == 20)
-        #expect(result.usage.totalTokens == 35)
-        #expect(result.usage.reasoningTokens == 10)
+        #expect(result.usage.inputTokens.total == 15)
+        #expect(result.usage.outputTokens.total == 20)
+        #expect(totalTokens(result.usage) == 35)
+        #expect(result.usage.outputTokens.reasoning == 10)
     }
 
     // MARK: - Batch 4: Extension Settings
@@ -2544,9 +2551,9 @@ struct OpenAIChatLanguageModelTests {
             )
         )
 
-        #expect(result.usage.inputTokens == 20)
-        #expect(result.usage.outputTokens == nil)
-        #expect(result.usage.totalTokens == 20)
+        #expect(result.usage.inputTokens.total == 20)
+        #expect(result.usage.outputTokens.total == 0)
+        #expect(totalTokens(result.usage) == 20)
     }
 
     @Test("Support unknown finish reason")
@@ -2836,10 +2843,10 @@ struct OpenAIChatLanguageModelTests {
             )
         )
 
-        #expect(result.usage.inputTokens == 15)
-        #expect(result.usage.outputTokens == 20)
-        #expect(result.usage.totalTokens == 35)
-        #expect(result.usage.cachedInputTokens == 1152)
+        #expect(result.usage.inputTokens.total == 15)
+        #expect(result.usage.outputTokens.total == 20)
+        #expect(totalTokens(result.usage) == 35)
+        #expect(result.usage.inputTokens.cacheRead == 1152)
     }
 
     @Test("Return accepted and rejected prediction tokens in completion details")
@@ -3102,9 +3109,9 @@ struct OpenAIChatLanguageModelTests {
         }
 
         #expect(finishReason == .stop)
-        #expect(usage.inputTokens == 17)
-        #expect(usage.outputTokens == 227)
-        #expect(usage.totalTokens == 244)
+        #expect(usage.inputTokens.total == 17)
+        #expect(usage.outputTokens.total == 227)
+        #expect(totalTokens(usage) == 244)
     }
 
     @Test("Expose raw response headers for streaming")
@@ -3344,10 +3351,10 @@ struct OpenAIChatLanguageModelTests {
         }
 
         #expect(finishReason == .stop)
-        #expect(usage.inputTokens == 15)
-        #expect(usage.outputTokens == 20)
-        #expect(usage.totalTokens == 35)
-        #expect(usage.cachedInputTokens == 1152)
+        #expect(usage.inputTokens.total == 15)
+        #expect(usage.outputTokens.total == 20)
+        #expect(totalTokens(usage) == 35)
+        #expect(usage.inputTokens.cacheRead == 1152)
     }
 
     @Test("Return prediction tokens in providerMetadata for streaming")
@@ -3397,9 +3404,9 @@ struct OpenAIChatLanguageModelTests {
         }
 
         #expect(finishReason == .stop)
-        #expect(usage.inputTokens == 15)
-        #expect(usage.outputTokens == 20)
-        #expect(usage.totalTokens == 35)
+        #expect(usage.inputTokens.total == 15)
+        #expect(usage.outputTokens.total == 20)
+        #expect(totalTokens(usage) == 35)
 
         // Verify provider metadata
         guard let metadata = providerMetadata else {
@@ -3785,9 +3792,9 @@ struct OpenAIChatLanguageModelTests {
         }
 
         #expect(finishReason == .stop)
-        #expect(usage.inputTokens == 17)
-        #expect(usage.outputTokens == 227)
-        #expect(usage.totalTokens == 244)
+        #expect(usage.inputTokens.total == 17)
+        #expect(usage.outputTokens.total == 227)
+        #expect(totalTokens(usage) == 244)
     }
 
     @Test("O1 model send reasoning tokens")
@@ -3838,10 +3845,10 @@ struct OpenAIChatLanguageModelTests {
         }
 
         #expect(finishReason == .stop)
-        #expect(usage.inputTokens == 15)
-        #expect(usage.outputTokens == 20)
-        #expect(usage.totalTokens == 35)
-        #expect(usage.reasoningTokens == 10)
+        #expect(usage.inputTokens.total == 15)
+        #expect(usage.outputTokens.total == 20)
+        #expect(totalTokens(usage) == 35)
+        #expect(usage.outputTokens.reasoning == 10)
     }
 
     // MARK: - Batch 14: Streaming - includeRawChunks (2 tests)

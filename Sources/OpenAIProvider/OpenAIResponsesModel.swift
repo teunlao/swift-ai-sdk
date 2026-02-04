@@ -100,13 +100,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             serviceTier: value.serviceTier
         )
 
-        let usage = LanguageModelV3Usage(
-            inputTokens: value.usage.inputTokens,
-            outputTokens: value.usage.outputTokens,
-            totalTokens: value.usage.inputTokens + value.usage.outputTokens,
-            reasoningTokens: value.usage.outputTokensDetails?.reasoningTokens,
-            cachedInputTokens: value.usage.inputTokensDetails?.cachedTokens
-        )
+        let usage = convertOpenAIResponsesUsage(value.usage)
 
         let outputWarnings = value.warnings?.map { $0.toWarning() } ?? []
         let finishReason = mapOpenAIResponsesFinishReason(
@@ -1153,22 +1147,27 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
     private func makeUsage(from object: [String: JSONValue]) -> LanguageModelV3Usage {
         let inputTokens = object["input_tokens"]?.intValue
         let outputTokens = object["output_tokens"]?.intValue
-        let totalTokens: Int?
-        if let inputTokens, let outputTokens {
-            totalTokens = inputTokens + outputTokens
-        } else {
-            totalTokens = nil
+
+        guard let inputTokens, let outputTokens else {
+            return LanguageModelV3Usage(raw: .object(object))
         }
 
-        let reasoningTokens = object["output_tokens_details"]?.objectValue?["reasoning_tokens"]?.intValue
-        let cachedTokens = object["input_tokens_details"]?.objectValue?["cached_tokens"]?.intValue
+        let cachedTokens = object["input_tokens_details"]?.objectValue?["cached_tokens"]?.intValue ?? 0
+        let reasoningTokens = object["output_tokens_details"]?.objectValue?["reasoning_tokens"]?.intValue ?? 0
 
         return LanguageModelV3Usage(
-            inputTokens: inputTokens,
-            outputTokens: outputTokens,
-            totalTokens: totalTokens,
-            reasoningTokens: reasoningTokens,
-            cachedInputTokens: cachedTokens
+            inputTokens: .init(
+                total: inputTokens,
+                noCache: inputTokens - cachedTokens,
+                cacheRead: cachedTokens,
+                cacheWrite: nil
+            ),
+            outputTokens: .init(
+                total: outputTokens,
+                text: outputTokens - reasoningTokens,
+                reasoning: reasoningTokens
+            ),
+            raw: .object(object)
         )
     }
 
@@ -2126,6 +2125,41 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             return string
         }
         return value
+    }
+}
+
+private func convertOpenAIResponsesUsage(_ usage: OpenAIResponsesResponse.Usage?) -> LanguageModelV3Usage {
+    // Port of `packages/openai/src/responses/convert-openai-responses-usage.ts`
+    guard let usage else {
+        return LanguageModelV3Usage()
+    }
+
+    let inputTokens = usage.inputTokens
+    let outputTokens = usage.outputTokens
+    let cachedTokens = usage.inputTokensDetails?.cachedTokens ?? 0
+    let reasoningTokens = usage.outputTokensDetails?.reasoningTokens ?? 0
+
+    return LanguageModelV3Usage(
+        inputTokens: .init(
+            total: inputTokens,
+            noCache: inputTokens - cachedTokens,
+            cacheRead: cachedTokens,
+            cacheWrite: nil
+        ),
+        outputTokens: .init(
+            total: outputTokens,
+            text: outputTokens - reasoningTokens,
+            reasoning: reasoningTokens
+        ),
+        raw: try? JSONEncoder().encodeToJSONValue(usage)
+    )
+}
+
+private extension JSONEncoder {
+    func encodeToJSONValue<T: Encodable>(_ value: T) throws -> JSONValue {
+        let data = try encode(value)
+        let raw = try JSONSerialization.jsonObject(with: data, options: [])
+        return try jsonValue(from: raw)
     }
 }
 

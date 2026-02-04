@@ -272,7 +272,7 @@ struct GoogleGenerativeAILanguageModelTests {
 
         let result = try await model.doGenerate(options: .init(prompt: prompt))
         #expect(result.finishReason == .toolCalls)
-        #expect(result.usage.inputTokens == 12)
+        #expect(result.usage.inputTokens.total == 12)
         #expect(result.providerMetadata?["google"] != nil)
 
         let contents = result.content
@@ -398,9 +398,9 @@ struct GoogleGenerativeAILanguageModelTests {
             prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)]
         ))
 
-        #expect(result.usage.inputTokens == 20)
-        #expect(result.usage.outputTokens == 5)
-        #expect(result.usage.totalTokens == 25)
+        #expect(result.usage.inputTokens.total == 20)
+        #expect(result.usage.outputTokens.total == 5)
+        #expect((result.usage.inputTokens.total ?? 0) + (result.usage.outputTokens.total ?? 0) == 25)
     }
 
     @Test("includes imageConfig provider option in generation config")
@@ -699,8 +699,8 @@ struct GoogleGenerativeAILanguageModelTests {
         }
         if case let .finish(finishReason, usage, _) = finish {
             #expect(finishReason == .toolCalls)
-            #expect(usage.inputTokens == 5)
-            #expect(usage.outputTokens == 7)
+            #expect(usage.inputTokens.total == 5)
+            #expect(usage.outputTokens.total == 7)
         }
     }
 
@@ -2996,9 +2996,9 @@ struct GoogleGenerativeAILanguageModelTests {
 
         if case let .finish(finishReason, usage, _) = finish {
             #expect(finishReason == .stop)
-            #expect(usage.inputTokens == 294)
-            #expect(usage.outputTokens == 233)
-            #expect(usage.totalTokens == 527)
+            #expect(usage.inputTokens.total == 294)
+            #expect(usage.outputTokens.total == 233)
+            #expect((usage.inputTokens.total ?? 0) + (usage.outputTokens.total ?? 0) == 527)
         }
     }
 

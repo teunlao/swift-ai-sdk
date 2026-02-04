@@ -98,11 +98,17 @@ public final class MistralChatLanguageModel: LanguageModelV3 {
             }
         }
 
-        let usage = LanguageModelV3Usage(
-            inputTokens: response.value.usage?.promptTokens,
-            outputTokens: response.value.usage?.completionTokens,
-            totalTokens: response.value.usage?.totalTokens
-        )
+        let usage: LanguageModelV3Usage = {
+            guard let usage = response.value.usage else {
+                return LanguageModelV3Usage()
+            }
+
+            return LanguageModelV3Usage(
+                inputTokens: .init(total: usage.promptTokens, noCache: usage.promptTokens),
+                outputTokens: .init(total: usage.completionTokens, text: usage.completionTokens, reasoning: nil),
+                raw: try? jsonValue(from: usage)
+            )
+        }()
 
         let metadata = mistralResponseMetadata(id: response.value.id, model: response.value.model, created: response.value.created)
 
@@ -165,13 +171,16 @@ public final class MistralChatLanguageModel: LanguageModelV3 {
                                 continuation.yield(.responseMetadata(id: metadata.id, modelId: metadata.modelId, timestamp: metadata.timestamp))
                             }
 
-                            if let usageMeta = chunk.usage {
-                                usage = LanguageModelV3Usage(
-                                    inputTokens: usageMeta.promptTokens,
-                                    outputTokens: usageMeta.completionTokens,
-                                    totalTokens: usageMeta.totalTokens
-                                )
-                            }
+                                if let usageMeta = chunk.usage {
+                                    let promptTokens = usageMeta.promptTokens ?? 0
+                                    let completionTokens = usageMeta.completionTokens ?? 0
+
+                                    usage = LanguageModelV3Usage(
+                                        inputTokens: .init(total: promptTokens, noCache: promptTokens),
+                                        outputTokens: .init(total: completionTokens, text: completionTokens, reasoning: nil),
+                                        raw: try? jsonValue(from: usageMeta)
+                                    )
+                                }
 
                             guard let choice = chunk.choices.first else { continue }
 

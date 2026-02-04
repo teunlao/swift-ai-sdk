@@ -144,6 +144,7 @@ public func generateObject<ResultValue, PartialValue, ElementStream>(
                     let responseModelId = generateResult.response?.modelId ?? resolvedModel.modelId
                     let responseHeaders = generateResult.response?.headers
                     let responseBody = convertGenerateObjectResponseBody(generateResult.response?.body)
+                    let usage = asLanguageModelUsage(generateResult.usage)
 
                     guard let text = extractTextContent(content: generateResult.content) else {
                         throw NoObjectGeneratedError(
@@ -154,7 +155,7 @@ public func generateObject<ResultValue, PartialValue, ElementStream>(
                                 modelId: responseModelId,
                                 headers: responseHeaders
                             ),
-                            usage: generateResult.usage,
+                            usage: usage,
                             finishReason: generateResult.finishReason
                         )
                     }
@@ -179,7 +180,7 @@ public func generateObject<ResultValue, PartialValue, ElementStream>(
                             responseModelId: responseModelId,
                             responseTimestamp: responseTimestamp,
                             providerMetadata: generateResult.providerMetadata,
-                            usage: generateResult.usage
+                            usage: usage
                         )
                     )
                     span.setAttributes(responseAttributes)
@@ -188,7 +189,7 @@ public func generateObject<ResultValue, PartialValue, ElementStream>(
                         text: text,
                         reasoning: reasoning,
                         finishReason: generateResult.finishReason,
-                        usage: generateResult.usage,
+                        usage: usage,
                         warnings: generateResult.warnings,
                         providerMetadata: generateResult.providerMetadata,
                         request: convertGenerateObjectRequestMetadata(generateResult.request),

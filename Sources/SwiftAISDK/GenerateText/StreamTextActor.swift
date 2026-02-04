@@ -987,6 +987,7 @@ case let .toolInputStart(id, toolName, providerMetadata, providerExecuted, dynam
                     removePendingApproval(toolCallId: result.toolCallId)
                 }
             case let .finish(finishReason, usage, providerMetadata):
+                let stepUsage = asLanguageModelUsage(usage)
                 for id in openTextIds {
                     await fullBroadcaster.send(.textEnd(id: id, providerMetadata: nil))
                     if let active = activeTextContent[id] {
@@ -1021,7 +1022,7 @@ case let .toolInputStart(id, toolName, providerMetadata, providerExecuted, dynam
                 await fullBroadcaster.send(
                     .finishStep(
                         response: response,
-                        usage: usage,
+                        usage: stepUsage,
                         finishReason: finishReason,
                         rawFinishReason: finishReason.rawValue,
                         providerMetadata: providerMetadata
@@ -1035,14 +1036,14 @@ case let .toolInputStart(id, toolName, providerMetadata, providerExecuted, dynam
                     content: contentSnapshot,
                     finishReason: finishReason,
                     rawFinishReason: finishReason.rawValue,
-                    usage: usage,
+                    usage: stepUsage,
                     warnings: capturedWarnings, request: recordedRequest,
                     response: StepResultResponse(
                         from: response, messages: mergedMessages, body: nil),
                     providerMetadata: providerMetadata)
                 recordedSteps.append(stepResult)
                 recordedResponseMessages.append(contentsOf: responseMessages)
-                accumulatedUsage = addLanguageModelUsage(accumulatedUsage, usage)
+                accumulatedUsage = addLanguageModelUsage(accumulatedUsage, stepUsage)
                 currentToolCalls.removeAll()
                 currentToolCallsById.removeAll()
                 currentToolOutputs.removeAll()

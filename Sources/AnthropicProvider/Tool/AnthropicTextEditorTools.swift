@@ -7,16 +7,29 @@ private let anthropicTextEditorInputSchemaWithUndo = FlexibleSchema(
         .object([
             "type": .string("object"),
             "properties": .object([
-                "command": .object(["type": .string("string")]),
+                "command": .object([
+                    "type": .string("string"),
+                    "enum": .array([
+                        .string("view"),
+                        .string("create"),
+                        .string("str_replace"),
+                        .string("insert"),
+                        .string("undo_edit")
+                    ])
+                ]),
                 "path": .object(["type": .string("string")]),
-                "file_text": .object(["type": .array([.string("string"), .string("null")])]),
-                "insert_line": .object(["type": .array([.string("number"), .string("null")])]),
-                "new_str": .object(["type": .array([.string("string"), .string("null")])]),
-                "old_str": .object(["type": .array([.string("string"), .string("null")])]),
-                "view_range": .object(["type": .array([.string("array"), .string("null")])])
+                "file_text": .object(["type": .string("string")]),
+                "insert_line": .object(["type": .string("integer")]),
+                "new_str": .object(["type": .string("string")]),
+                "insert_text": .object(["type": .string("string")]),
+                "old_str": .object(["type": .string("string")]),
+                "view_range": .object([
+                    "type": .string("array"),
+                    "items": .object(["type": .string("integer")])
+                ])
             ]),
             "required": .array([.string("command"), .string("path")]),
-            "additionalProperties": .bool(true)
+            "additionalProperties": .bool(false)
         ])
     )
 )
@@ -26,16 +39,28 @@ private let anthropicTextEditorInputSchema = FlexibleSchema(
         .object([
             "type": .string("object"),
             "properties": .object([
-                "command": .object(["type": .string("string")]),
+                "command": .object([
+                    "type": .string("string"),
+                    "enum": .array([
+                        .string("view"),
+                        .string("create"),
+                        .string("str_replace"),
+                        .string("insert")
+                    ])
+                ]),
                 "path": .object(["type": .string("string")]),
-                "file_text": .object(["type": .array([.string("string"), .string("null")])]),
-                "insert_line": .object(["type": .array([.string("number"), .string("null")])]),
-                "new_str": .object(["type": .array([.string("string"), .string("null")])]),
-                "old_str": .object(["type": .array([.string("string"), .string("null")])]),
-                "view_range": .object(["type": .array([.string("array"), .string("null")])])
+                "file_text": .object(["type": .string("string")]),
+                "insert_line": .object(["type": .string("integer")]),
+                "new_str": .object(["type": .string("string")]),
+                "insert_text": .object(["type": .string("string")]),
+                "old_str": .object(["type": .string("string")]),
+                "view_range": .object([
+                    "type": .string("array"),
+                    "items": .object(["type": .string("integer")])
+                ])
             ]),
             "required": .array([.string("command"), .string("path")]),
-            "additionalProperties": .bool(true)
+            "additionalProperties": .bool(false)
         ])
     )
 )

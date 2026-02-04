@@ -6,13 +6,7 @@ import AISDKProviderUtils
 
 @Suite("StreamText – concurrency & control")
 struct StreamTextConcurrencyTests {
-    private let defaultUsage = LanguageModelV3Usage(
-        inputTokens: 1,
-        outputTokens: 2,
-        totalTokens: 3,
-        reasoningTokens: nil,
-        cachedInputTokens: nil
-    )
+    private let defaultUsage = LanguageModelV3Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 2))
 
     actor Flag { private var v = false; func set() { v = true }; func get() -> Bool { v } }
     actor StringCollector {

@@ -78,7 +78,7 @@ struct PrepareStepProviderOptionsTests {
             )
         ]
 
-        let usage = LanguageModelV3Usage(inputTokens: 1, outputTokens: 1, totalTokens: 2)
+        let usage = LanguageModelV3Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 1))
         let model = MockLanguageModelV3(
             doGenerate: .array([
                 LanguageModelV3GenerateResult(
@@ -136,4 +136,3 @@ struct PrepareStepProviderOptionsTests {
         #expect(snapshots.map(\.step) == [0, 1])
     }
 }
-

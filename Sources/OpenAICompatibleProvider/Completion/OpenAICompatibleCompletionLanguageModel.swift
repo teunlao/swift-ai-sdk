@@ -303,12 +303,14 @@ public final class OpenAICompatibleCompletionLanguageModel: LanguageModelV3 {
 
     private func mapUsage(_ usage: OpenAICompatibleCompletionUsage?) -> LanguageModelV3Usage {
         guard let usage else { return LanguageModelV3Usage() }
+
+        let promptTokens = usage.promptTokens ?? 0
+        let completionTokens = usage.completionTokens ?? 0
+
         return LanguageModelV3Usage(
-            inputTokens: usage.promptTokens,
-            outputTokens: usage.completionTokens,
-            totalTokens: usage.totalTokens,
-            reasoningTokens: nil,
-            cachedInputTokens: usage.promptTokensDetails?.cachedTokens
+            inputTokens: .init(total: promptTokens, noCache: promptTokens),
+            outputTokens: .init(total: completionTokens, text: completionTokens, reasoning: nil),
+            raw: try? jsonValue(from: usage)
         )
     }
 

@@ -149,7 +149,7 @@ struct ChatCommand: AsyncParsableCommand {
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             let payload = PlaygroundJSONResult(
                 text: text,
-                usage: response.usage,
+                usage: asLanguageModelUsage(response.usage),
                 finishReason: response.finishReason,
                 warnings: response.warnings
             )

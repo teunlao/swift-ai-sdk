@@ -89,13 +89,7 @@ public final class XAIChatLanguageModel: LanguageModelV3 {
             }
         }
 
-        let usage = LanguageModelV3Usage(
-            inputTokens: response.value.usage.promptTokens,
-            outputTokens: response.value.usage.completionTokens,
-            totalTokens: response.value.usage.totalTokens,
-            reasoningTokens: response.value.usage.completionTokensDetails?.reasoningTokens,
-            cachedInputTokens: nil
-        )
+        let usage = convertXaiChatUsage(response.value.usage)
 
         let metadata = xaiResponseMetadata(
             id: response.value.id,
@@ -141,7 +135,7 @@ public final class XAIChatLanguageModel: LanguageModelV3 {
 
         let messages = prepared.messages
 
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error>(bufferingPolicy: .unbounded) { continuation in
             continuation.yield(.streamStart(warnings: prepared.warnings))
 
             Task {
@@ -176,13 +170,7 @@ public final class XAIChatLanguageModel: LanguageModelV3 {
                             }
 
                             if let usageInfo = chunk.usage {
-                                usage = LanguageModelV3Usage(
-                                    inputTokens: usageInfo.promptTokens,
-                                    outputTokens: usageInfo.completionTokens,
-                                    totalTokens: usageInfo.totalTokens,
-                                    reasoningTokens: usageInfo.completionTokensDetails?.reasoningTokens,
-                                    cachedInputTokens: nil
-                                )
+                                usage = convertXaiChatUsage(usageInfo)
                             }
 
                             guard let choice = chunk.choices.first else { continue }
@@ -351,6 +339,58 @@ private enum ContentBlockType {
     case reasoning
 }
 
+private func convertXaiChatUsage(_ usage: XAIChatResponse.Usage) -> LanguageModelV3Usage {
+    // Port of `packages/xai/src/convert-xai-chat-usage.ts`
+    let cacheReadTokens = usage.promptTokensDetails?.cachedTokens ?? 0
+    let reasoningTokens = usage.completionTokensDetails?.reasoningTokens ?? 0
+
+    return LanguageModelV3Usage(
+        inputTokens: .init(
+            total: usage.promptTokens,
+            noCache: usage.promptTokens - cacheReadTokens,
+            cacheRead: cacheReadTokens,
+            cacheWrite: nil
+        ),
+        outputTokens: .init(
+            total: usage.completionTokens,
+            text: usage.completionTokens - reasoningTokens,
+            reasoning: reasoningTokens
+        ),
+        raw: try? JSONEncoder().encodeToJSONValue(usage)
+    )
+}
+
+private func convertXaiChatUsage(_ usage: XAIChatChunk.Usage) -> LanguageModelV3Usage {
+    // Port of `packages/xai/src/convert-xai-chat-usage.ts`
+    let promptTokens = usage.promptTokens
+    let completionTokens = usage.completionTokens
+    let cacheReadTokens = usage.promptTokensDetails?.cachedTokens ?? 0
+    let reasoningTokens = usage.completionTokensDetails?.reasoningTokens ?? 0
+
+    return LanguageModelV3Usage(
+        inputTokens: .init(
+            total: promptTokens,
+            noCache: promptTokens.map { $0 - cacheReadTokens },
+            cacheRead: cacheReadTokens,
+            cacheWrite: nil
+        ),
+        outputTokens: .init(
+            total: completionTokens,
+            text: completionTokens.map { $0 - reasoningTokens },
+            reasoning: reasoningTokens
+        ),
+        raw: try? JSONEncoder().encodeToJSONValue(usage)
+    )
+}
+
+private extension JSONEncoder {
+    func encodeToJSONValue<T: Encodable>(_ value: T) throws -> JSONValue {
+        let data = try encode(value)
+        let raw = try JSONSerialization.jsonObject(with: data, options: [])
+        return try jsonValue(from: raw)
+    }
+}
+
 // MARK: - Response Models
 
 private struct XAIChatResponse: Codable {
@@ -399,23 +439,45 @@ private struct XAIChatResponse: Codable {
     }
 
     struct Usage: Codable {
+        struct PromptDetails: Codable {
+            let textTokens: Int?
+            let audioTokens: Int?
+            let imageTokens: Int?
+            let cachedTokens: Int?
+
+            private enum CodingKeys: String, CodingKey {
+                case textTokens = "text_tokens"
+                case audioTokens = "audio_tokens"
+                case imageTokens = "image_tokens"
+                case cachedTokens = "cached_tokens"
+            }
+        }
+
         struct CompletionDetails: Codable {
             let reasoningTokens: Int?
+            let audioTokens: Int?
+            let acceptedPredictionTokens: Int?
+            let rejectedPredictionTokens: Int?
 
             private enum CodingKeys: String, CodingKey {
                 case reasoningTokens = "reasoning_tokens"
+                case audioTokens = "audio_tokens"
+                case acceptedPredictionTokens = "accepted_prediction_tokens"
+                case rejectedPredictionTokens = "rejected_prediction_tokens"
             }
         }
 
         let promptTokens: Int
         let completionTokens: Int
         let totalTokens: Int
+        let promptTokensDetails: PromptDetails?
         let completionTokensDetails: CompletionDetails?
 
         private enum CodingKeys: String, CodingKey {
             case promptTokens = "prompt_tokens"
             case completionTokens = "completion_tokens"
             case totalTokens = "total_tokens"
+            case promptTokensDetails = "prompt_tokens_details"
             case completionTokensDetails = "completion_tokens_details"
         }
     }
@@ -487,23 +549,45 @@ private struct XAIChatChunk: Codable {
     }
 
     struct Usage: Codable {
+        struct PromptDetails: Codable {
+            let textTokens: Int?
+            let audioTokens: Int?
+            let imageTokens: Int?
+            let cachedTokens: Int?
+
+            private enum CodingKeys: String, CodingKey {
+                case textTokens = "text_tokens"
+                case audioTokens = "audio_tokens"
+                case imageTokens = "image_tokens"
+                case cachedTokens = "cached_tokens"
+            }
+        }
+
         struct CompletionDetails: Codable {
             let reasoningTokens: Int?
+            let audioTokens: Int?
+            let acceptedPredictionTokens: Int?
+            let rejectedPredictionTokens: Int?
 
             private enum CodingKeys: String, CodingKey {
                 case reasoningTokens = "reasoning_tokens"
+                case audioTokens = "audio_tokens"
+                case acceptedPredictionTokens = "accepted_prediction_tokens"
+                case rejectedPredictionTokens = "rejected_prediction_tokens"
             }
         }
 
         let promptTokens: Int?
         let completionTokens: Int?
         let totalTokens: Int?
+        let promptTokensDetails: PromptDetails?
         let completionTokensDetails: CompletionDetails?
 
         private enum CodingKeys: String, CodingKey {
             case promptTokens = "prompt_tokens"
             case completionTokens = "completion_tokens"
             case totalTokens = "total_tokens"
+            case promptTokensDetails = "prompt_tokens_details"
             case completionTokensDetails = "completion_tokens_details"
         }
     }

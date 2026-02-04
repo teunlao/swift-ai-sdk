@@ -135,9 +135,9 @@ struct OpenAICompletionLanguageModelTests {
             options: LanguageModelV3CallOptions(prompt: completionPrompt)
         )
 
-        #expect(result.usage.inputTokens == 20)
-        #expect(result.usage.outputTokens == 5)
-        #expect(result.usage.totalTokens == 25)
+        #expect(result.usage.inputTokens.total == 20)
+        #expect(result.usage.outputTokens.total == 5)
+        #expect((result.usage.inputTokens.total ?? 0) + (result.usage.outputTokens.total ?? 0) == 25)
     }
 
     @Test("should send request body")
@@ -663,9 +663,9 @@ struct OpenAICompletionLanguageModelTests {
         }
 
         #expect(result.finishReason == .stop)
-        #expect(result.usage.inputTokens == 4)
-        #expect(result.usage.outputTokens == 6)
-        #expect(result.usage.totalTokens == 10)
+        #expect(result.usage.inputTokens.total == 4)
+        #expect(result.usage.outputTokens.total == 6)
+        #expect((result.usage.inputTokens.total ?? 0) + (result.usage.outputTokens.total ?? 0) == 10)
 
         if let metadata = result.providerMetadata?["openai"] {
             #expect(metadata["logprobs"] == logprobsValue)
@@ -847,9 +847,9 @@ struct OpenAICompletionLanguageModelTests {
         if let last = parts.last {
             if case .finish(let finishReason, let usage, let metadata) = last {
                 #expect(finishReason == .stop)
-                #expect(usage.inputTokens == 10)
-                #expect(usage.outputTokens == 362)
-                #expect(usage.totalTokens == 372)
+                #expect(usage.inputTokens.total == 10)
+                #expect(usage.outputTokens.total == 362)
+                #expect((usage.inputTokens.total ?? 0) + (usage.outputTokens.total ?? 0) == 372)
                 if let openaiMetadata = metadata?["openai"] {
                     #expect(openaiMetadata["logprobs"] == logprobsValue)
                 }
@@ -1283,9 +1283,9 @@ struct OpenAICompletionLanguageModelTests {
         if let last = parts.last {
             if case .finish(let finishReason, let usage, let metadata) = last {
                 #expect(finishReason == .stop)
-                #expect(usage.inputTokens == 5)
-                #expect(usage.outputTokens == 7)
-                #expect(usage.totalTokens == 12)
+                #expect(usage.inputTokens.total == 5)
+                #expect(usage.outputTokens.total == 7)
+                #expect((usage.inputTokens.total ?? 0) + (usage.outputTokens.total ?? 0) == 12)
                 if let openaiMetadata = metadata?["openai"] {
                     #expect(openaiMetadata["logprobs"] == logprobsValue)
                 } else {

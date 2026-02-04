@@ -350,9 +350,9 @@ struct OpenAICompatibleChatLanguageModelTests {
         let model = try provider.chatModel(modelId: "grok-beta")
         let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: testPrompt))
 
-        #expect(result.usage.inputTokens == 20)
-        #expect(result.usage.outputTokens == 5)
-        #expect(result.usage.totalTokens == 25)
+        #expect(result.usage.inputTokens.total == 20)
+        #expect(result.usage.outputTokens.total == 5)
+        #expect((result.usage.inputTokens.total ?? 0) + (result.usage.outputTokens.total ?? 0) == 25)
     }
 
     @Test("should extract finish reason")
@@ -680,9 +680,9 @@ struct OpenAICompatibleChatLanguageModelTests {
         let model = try provider.chatModel(modelId: "grok-beta")
         let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: testPrompt))
 
-        #expect(result.usage.inputTokens == 20)
-        #expect(result.usage.outputTokens == nil)
-        #expect(result.usage.totalTokens == 20)
+        #expect(result.usage.inputTokens.total == 20)
+        #expect(result.usage.outputTokens.total == 0)
+        #expect((result.usage.inputTokens.total ?? 0) + (result.usage.outputTokens.total ?? 0) == 20)
     }
 
     @Test("should pass settings")
@@ -1438,11 +1438,11 @@ struct OpenAICompatibleChatLanguageModelTests {
         let model = try provider.chatModel(modelId: "grok-beta")
         let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: testPrompt))
 
-        #expect(result.usage.inputTokens == 20)
-        #expect(result.usage.outputTokens == 30)
-        #expect(result.usage.totalTokens == 50)
-        #expect(result.usage.cachedInputTokens == 5)
-        #expect(result.usage.reasoningTokens == 10)
+        #expect(result.usage.inputTokens.total == 20)
+        #expect(result.usage.outputTokens.total == 30)
+        #expect((result.usage.inputTokens.total ?? 0) + (result.usage.outputTokens.total ?? 0) == 50)
+        #expect(result.usage.inputTokens.cacheRead == 5)
+        #expect(result.usage.outputTokens.reasoning == 10)
 
         // Check provider metadata
         guard let providerMetadata = result.providerMetadata,
@@ -1524,11 +1524,11 @@ struct OpenAICompatibleChatLanguageModelTests {
         let model = try provider.chatModel(modelId: "grok-beta")
         let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: testPrompt))
 
-        #expect(result.usage.inputTokens == 20)
-        #expect(result.usage.outputTokens == 30)
-        #expect(result.usage.totalTokens == 50)
-        #expect(result.usage.cachedInputTokens == 5)
-        #expect(result.usage.reasoningTokens == 10)
+        #expect(result.usage.inputTokens.total == 20)
+        #expect(result.usage.outputTokens.total == 30)
+        #expect((result.usage.inputTokens.total ?? 0) + (result.usage.outputTokens.total ?? 0) == 50)
+        #expect(result.usage.inputTokens.cacheRead == 5)
+        #expect(result.usage.outputTokens.reasoning == 10)
     }
 
     // MARK: - doStream Tests
@@ -1677,9 +1677,9 @@ struct OpenAICompatibleChatLanguageModelTests {
         #expect(finishChunk != nil)
         if case let .finish(finishReason, usage, _) = finishChunk {
             #expect(finishReason == .stop)
-            #expect(usage.inputTokens == 18)
-            #expect(usage.outputTokens == 439)
-            #expect(usage.totalTokens == 457)
+            #expect(usage.inputTokens.total == 18)
+            #expect(usage.outputTokens.total == 439)
+            #expect((usage.inputTokens.total ?? 0) + (usage.outputTokens.total ?? 0) == 457)
         }
     }
 
@@ -2189,10 +2189,10 @@ struct OpenAICompatibleChatLanguageModelTests {
         #expect(finishPart != nil)
         if case let .finish(finishReason, usage, providerMetadata) = finishPart {
             #expect(finishReason == .stop)
-            #expect(usage.inputTokens == 20)
-            #expect(usage.outputTokens == 30)
-            #expect(usage.cachedInputTokens == 5)
-            #expect(usage.reasoningTokens == 10)
+            #expect(usage.inputTokens.total == 20)
+            #expect(usage.outputTokens.total == 30)
+            #expect(usage.inputTokens.cacheRead == 5)
+            #expect(usage.outputTokens.reasoning == 10)
 
             // Check provider metadata for prediction tokens
             #expect(providerMetadata != nil)
@@ -2284,11 +2284,11 @@ struct OpenAICompatibleChatLanguageModelTests {
         // Find the finish part
         if case let .finish(finishReason, usage, providerMetadata) = parts.last {
             #expect(finishReason == .stop)
-            #expect(usage.inputTokens == 20)
-            #expect(usage.outputTokens == 30)
-            #expect(usage.totalTokens == 50)
-            #expect(usage.cachedInputTokens == 5)
-            #expect(usage.reasoningTokens == 10)
+            #expect(usage.inputTokens.total == 20)
+            #expect(usage.outputTokens.total == 30)
+            #expect((usage.inputTokens.total ?? 0) + (usage.outputTokens.total ?? 0) == 50)
+            #expect(usage.inputTokens.cacheRead == 5)
+            #expect(usage.outputTokens.reasoning == 10)
 
             // Provider metadata should be empty (no prediction tokens)
             if let metadata = providerMetadata,
@@ -2829,8 +2829,8 @@ struct OpenAICompatibleChatLanguageModelTests {
             return
         }
         #expect(finishReason == .error)
-        #expect(usage.inputTokens == nil)
-        #expect(usage.outputTokens == nil)
+        #expect(usage.inputTokens.total == nil)
+        #expect(usage.outputTokens.total == nil)
         // Provider metadata may be present with empty object or nil when error occurs
         if let metadata = providerMetadata {
             #expect(metadata["test-provider"] != nil)

@@ -249,9 +249,9 @@ struct MistralChatLanguageModelGenerateTests {
         )
 
         let result = try await model.doGenerate(options: .init(prompt: defaultPrompt()))
-        #expect(result.usage.inputTokens == 20)
-        #expect(result.usage.outputTokens == 5)
-        #expect(result.usage.totalTokens == 25)
+        #expect(result.usage.inputTokens.total == 20)
+        #expect(result.usage.outputTokens.total == 5)
+        #expect((result.usage.inputTokens.total ?? 0) + (result.usage.outputTokens.total ?? 0) == 25)
     }
 
     @Test("includes response metadata")
@@ -662,7 +662,9 @@ struct MistralChatLanguageModelStreamTests {
         #expect(parts.contains { if case .textDelta(_, let delta, _) = $0 { return delta == " world" } else { return false } })
         if let finish = parts.last, case let .finish(reason, usage, _) = finish {
             #expect(reason == .stop)
-            #expect(usage.totalTokens == 36)
+            #expect(usage.inputTokens.total == 4)
+            #expect(usage.outputTokens.total == 32)
+            #expect((usage.inputTokens.total ?? 0) + (usage.outputTokens.total ?? 0) == 36)
         } else {
             Issue.record("Missing finish part")
         }

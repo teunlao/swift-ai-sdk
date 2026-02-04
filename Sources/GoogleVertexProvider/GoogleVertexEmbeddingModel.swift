@@ -78,11 +78,22 @@ public final class GoogleVertexEmbeddingModel: EmbeddingModelV3 {
             )
         }
 
-        let googleOptions = try await parseProviderOptions(
-            provider: "google",
+        let vertexOptions = try await parseProviderOptions(
+            provider: "vertex",
             providerOptions: options.providerOptions,
             schema: googleVertexEmbeddingProviderOptionsSchema
         )
+
+        let googleOptions: GoogleVertexEmbeddingProviderOptions?
+        if let vertexOptions {
+            googleOptions = vertexOptions
+        } else {
+            googleOptions = try await parseProviderOptions(
+                provider: "google",
+                providerOptions: options.providerOptions,
+                schema: googleVertexEmbeddingProviderOptionsSchema
+            )
+        }
 
         let instances: [JSONValue] = values.map { value in
             var instance: [String: JSONValue] = [

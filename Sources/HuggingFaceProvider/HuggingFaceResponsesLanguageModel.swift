@@ -337,15 +337,31 @@ public final class HuggingFaceResponsesLanguageModel: LanguageModelV3 {
             }
         }
 
-        let usage = response.usage.map { usage in
-            LanguageModelV3Usage(
-                inputTokens: usage.inputTokens,
-                outputTokens: usage.outputTokens,
-                totalTokens: usage.totalTokens,
-                reasoningTokens: usage.outputTokensDetails?.reasoningTokens,
-                cachedInputTokens: usage.inputTokensDetails?.cachedTokens
+        let usage: LanguageModelV3Usage = {
+            guard let usage = response.usage else {
+                return LanguageModelV3Usage()
+            }
+
+            let inputTokens = usage.inputTokens
+            let outputTokens = usage.outputTokens
+            let cachedTokens = usage.inputTokensDetails?.cachedTokens ?? 0
+            let reasoningTokens = usage.outputTokensDetails?.reasoningTokens ?? 0
+
+            return LanguageModelV3Usage(
+                inputTokens: .init(
+                    total: inputTokens,
+                    noCache: inputTokens.map { $0 - cachedTokens },
+                    cacheRead: cachedTokens,
+                    cacheWrite: nil
+                ),
+                outputTokens: .init(
+                    total: outputTokens,
+                    text: outputTokens.map { $0 - reasoningTokens },
+                    reasoning: reasoningTokens
+                ),
+                raw: try? jsonValue(from: usage)
             )
-        } ?? LanguageModelV3Usage()
+        }()
 
         let finishReason = mapHuggingFaceResponsesFinishReason(response.incompleteDetails?.reason ?? "stop")
         let providerMetadata = responseProviderMetadata(responseId: response.id)
@@ -480,12 +496,24 @@ public final class HuggingFaceResponsesLanguageModel: LanguageModelV3 {
             responseId = completed.response.id
             finishReason = mapHuggingFaceResponsesFinishReason(completed.response.incompleteDetails?.reason ?? "stop")
             if let usagePayload = completed.response.usage {
+                let inputTokens = usagePayload.inputTokens
+                let outputTokens = usagePayload.outputTokens
+                let cachedTokens = usagePayload.inputTokensDetails?.cachedTokens ?? 0
+                let reasoningTokens = usagePayload.outputTokensDetails?.reasoningTokens ?? 0
+
                 usage = LanguageModelV3Usage(
-                    inputTokens: usagePayload.inputTokens,
-                    outputTokens: usagePayload.outputTokens,
-                    totalTokens: usagePayload.totalTokens,
-                    reasoningTokens: usagePayload.outputTokensDetails?.reasoningTokens,
-                    cachedInputTokens: usagePayload.inputTokensDetails?.cachedTokens
+                    inputTokens: .init(
+                        total: inputTokens,
+                        noCache: inputTokens.map { $0 - cachedTokens },
+                        cacheRead: cachedTokens,
+                        cacheWrite: nil
+                    ),
+                    outputTokens: .init(
+                        total: outputTokens,
+                        text: outputTokens.map { $0 - reasoningTokens },
+                        reasoning: reasoningTokens
+                    ),
+                    raw: try? jsonValue(from: usagePayload)
                 )
             }
 

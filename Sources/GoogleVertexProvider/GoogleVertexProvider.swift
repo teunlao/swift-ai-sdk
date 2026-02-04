@@ -7,8 +7,10 @@ import GoogleProvider
 //=== Upstream Reference ====================================================//
 //===----------------------------------------------------------------------===//
 // Ported from packages/google-vertex/src/google-vertex-provider.ts
-// Upstream commit: 77db222ee
+// Upstream commit: f5b2b5ef4
 //===----------------------------------------------------------------------===//
+
+private let GOOGLE_VERTEX_EXPRESS_MODE_BASE_URL = "https://aiplatform.googleapis.com/v1/publishers/google"
 
 private let googleVertexHTTPRegex: NSRegularExpression = {
     try! NSRegularExpression(
@@ -24,7 +26,69 @@ private let googleVertexGCSRegex: NSRegularExpression = {
     )
 }()
 
+private func defaultGoogleVertexFetchFunction() -> FetchFunction {
+    { request in
+        let session = URLSession.shared
+
+        if #available(macOS 12.0, iOS 15.0, tvOS 15.0, watchOS 8.0, *) {
+            let (bytes, response) = try await session.bytes(for: request)
+            let stream = AsyncThrowingStream<Data, Error> { continuation in
+                Task {
+                    var buffer = Data()
+                    buffer.reserveCapacity(16_384)
+
+                    do {
+                        for try await byte in bytes {
+                            buffer.append(byte)
+
+                            if buffer.count >= 16_384 {
+                                continuation.yield(buffer)
+                                buffer.removeAll(keepingCapacity: true)
+                            }
+                        }
+
+                        if !buffer.isEmpty {
+                            continuation.yield(buffer)
+                        }
+
+                        continuation.finish()
+                    } catch {
+                        continuation.finish(throwing: error)
+                    }
+                }
+            }
+
+            return FetchResponse(body: .stream(stream), urlResponse: response)
+        } else {
+            let (data, response) = try await session.data(for: request)
+            return FetchResponse(body: .data(data), urlResponse: response)
+        }
+    }
+}
+
+private func createExpressModeFetch(
+    apiKey: String,
+    customFetch: FetchFunction?
+) -> FetchFunction {
+    let baseFetch = customFetch ?? defaultGoogleVertexFetchFunction()
+
+    return { request in
+        var modified = request
+        var headers = modified.allHTTPHeaderFields ?? [:]
+        for key in headers.keys where key.lowercased() == "x-goog-api-key" {
+            headers.removeValue(forKey: key)
+        }
+        headers["x-goog-api-key"] = apiKey
+        modified.allHTTPHeaderFields = headers
+        return try await baseFetch(modified)
+    }
+}
+
 public struct GoogleVertexProviderSettings: Sendable {
+    /// Optional. The API key for the Google Cloud project. If provided, the provider will use express mode with API key authentication.
+    /// Defaults to the value of the `GOOGLE_VERTEX_API_KEY` environment variable.
+    public var apiKey: String?
+
     public var location: String?
     public var project: String?
     public var headers: [String: String]?
@@ -33,6 +97,7 @@ public struct GoogleVertexProviderSettings: Sendable {
     public var baseURL: String?
 
     public init(
+        apiKey: String? = nil,
         location: String? = nil,
         project: String? = nil,
         headers: [String: String]? = nil,
@@ -40,6 +105,7 @@ public struct GoogleVertexProviderSettings: Sendable {
         generateId: @escaping @Sendable () -> String = generateID,
         baseURL: String? = nil
     ) {
+        self.apiKey = apiKey
         self.location = location
         self.project = project
         self.headers = headers
@@ -100,6 +166,11 @@ public final class GoogleVertexProvider: ProviderV3 {
 }
 
 public func createGoogleVertex(settings: GoogleVertexProviderSettings = .init()) -> GoogleVertexProvider {
+    let apiKey = loadOptionalSetting(
+        settingValue: settings.apiKey,
+        environmentVariableName: "GOOGLE_VERTEX_API_KEY"
+    )
+
     let loadProject: () throws -> String = {
         try loadSetting(
             settingValue: settings.project,
@@ -119,8 +190,8 @@ public func createGoogleVertex(settings: GoogleVertexProviderSettings = .init())
     }
 
     let resolvedBaseURL: String = {
-        if let custom = withoutTrailingSlash(settings.baseURL) {
-            return custom
+        if apiKey != nil {
+            return withoutTrailingSlash(settings.baseURL) ?? GOOGLE_VERTEX_EXPRESS_MODE_BASE_URL
         }
 
         do {
@@ -128,7 +199,8 @@ public func createGoogleVertex(settings: GoogleVertexProviderSettings = .init())
             let project = try loadProject()
             let hostPrefix = location == "global" ? "" : "\(location)-"
             let baseHost = "\(hostPrefix)aiplatform.googleapis.com"
-            return "https://\(baseHost)/v1beta1/projects/\(project)/locations/\(location)/publishers/google"
+            return withoutTrailingSlash(settings.baseURL)
+                ?? "https://\(baseHost)/v1beta1/projects/\(project)/locations/\(location)/publishers/google"
         } catch {
             fatalError("Google Vertex configuration is missing: \(error)")
         }
@@ -154,7 +226,11 @@ public func createGoogleVertex(settings: GoogleVertexProviderSettings = .init())
         ["*": [googleVertexHTTPRegex, googleVertexGCSRegex]]
     }
 
-    let fetch = settings.fetch
+    let fetch: FetchFunction? = {
+        guard let apiKey else { return settings.fetch }
+        return createExpressModeFetch(apiKey: apiKey, customFetch: settings.fetch)
+    }()
+
     let generateId = settings.generateId
 
     let languageFactory: @Sendable (GoogleVertexModelId) -> GoogleGenerativeAILanguageModel = { modelId in

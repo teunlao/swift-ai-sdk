@@ -152,7 +152,7 @@ struct MockLanguageModelTests {
             doGenerate: .singleValue(LanguageModelV3GenerateResult(
                 content: [.text(LanguageModelV3Text(text: "test"))],
                 finishReason: .stop,
-                usage: LanguageModelV3Usage(inputTokens: 10, outputTokens: 20)
+                usage: LanguageModelV3Usage(inputTokens: .init(total: 10), outputTokens: .init(total: 20))
             ))
         )
 
@@ -174,13 +174,13 @@ struct MockLanguageModelTests {
         let result1 = LanguageModelV3GenerateResult(
             content: [.text(LanguageModelV3Text(text: "first"))],
             finishReason: .stop,
-            usage: LanguageModelV3Usage(inputTokens: 10, outputTokens: 20)
+            usage: LanguageModelV3Usage(inputTokens: .init(total: 10), outputTokens: .init(total: 20))
         )
 
         let result2 = LanguageModelV3GenerateResult(
             content: [.text(LanguageModelV3Text(text: "second"))],
             finishReason: .length,
-            usage: LanguageModelV3Usage(inputTokens: 15, outputTokens: 25)
+            usage: LanguageModelV3Usage(inputTokens: .init(total: 15), outputTokens: .init(total: 25))
         )
 
         let mock = MockLanguageModelV3(

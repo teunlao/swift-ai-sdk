@@ -24,7 +24,7 @@ struct StreamTextSSEIntegrationTests {
             .textDelta(id: "a", delta: "Hi", providerMetadata: nil),
             .finish(
                 finishReason: .stop,
-                usage: LanguageModelV3Usage(inputTokens: 1, outputTokens: 1, totalTokens: 2),
+                usage: LanguageModelV3Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 1)),
                 providerMetadata: nil
             )
         ]
@@ -53,7 +53,7 @@ struct StreamTextSSEIntegrationTests {
             .textDelta(id: "t", delta: "Hi", providerMetadata: nil),
             .finish(
                 finishReason: .stop,
-                usage: LanguageModelV3Usage(inputTokens: 10, outputTokens: 5, totalTokens: 15),
+                usage: LanguageModelV3Usage(inputTokens: .init(total: 10), outputTokens: .init(total: 5)),
                 providerMetadata: nil
             )
         ]

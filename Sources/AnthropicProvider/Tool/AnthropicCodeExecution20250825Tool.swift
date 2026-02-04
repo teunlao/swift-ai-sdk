@@ -81,6 +81,36 @@ public struct AnthropicCodeExecution20250825TextEditorViewResult: Codable, Equat
         case startLine = "start_line"
         case totalLines = "total_lines"
     }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        type = try container.decode(String.self, forKey: .type)
+        content = try container.decode(String.self, forKey: .content)
+        fileType = try container.decode(String.self, forKey: .fileType)
+
+        guard container.contains(.numLines) else {
+            throw DecodingError.keyNotFound(
+                CodingKeys.numLines,
+                DecodingError.Context(codingPath: container.codingPath, debugDescription: "Missing required key: num_lines")
+            )
+        }
+        guard container.contains(.startLine) else {
+            throw DecodingError.keyNotFound(
+                CodingKeys.startLine,
+                DecodingError.Context(codingPath: container.codingPath, debugDescription: "Missing required key: start_line")
+            )
+        }
+        guard container.contains(.totalLines) else {
+            throw DecodingError.keyNotFound(
+                CodingKeys.totalLines,
+                DecodingError.Context(codingPath: container.codingPath, debugDescription: "Missing required key: total_lines")
+            )
+        }
+
+        numLines = try container.decodeIfPresent(Int.self, forKey: .numLines)
+        startLine = try container.decodeIfPresent(Int.self, forKey: .startLine)
+        totalLines = try container.decodeIfPresent(Int.self, forKey: .totalLines)
+    }
 }
 
 public struct AnthropicCodeExecution20250825TextEditorCreateResult: Codable, Equatable, Sendable {
@@ -108,6 +138,48 @@ public struct AnthropicCodeExecution20250825TextEditorStrReplaceResult: Codable,
         case newStart = "new_start"
         case oldLines = "old_lines"
         case oldStart = "old_start"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        type = try container.decode(String.self, forKey: .type)
+
+        guard container.contains(.lines) else {
+            throw DecodingError.keyNotFound(
+                CodingKeys.lines,
+                DecodingError.Context(codingPath: container.codingPath, debugDescription: "Missing required key: lines")
+            )
+        }
+        guard container.contains(.newLines) else {
+            throw DecodingError.keyNotFound(
+                CodingKeys.newLines,
+                DecodingError.Context(codingPath: container.codingPath, debugDescription: "Missing required key: new_lines")
+            )
+        }
+        guard container.contains(.newStart) else {
+            throw DecodingError.keyNotFound(
+                CodingKeys.newStart,
+                DecodingError.Context(codingPath: container.codingPath, debugDescription: "Missing required key: new_start")
+            )
+        }
+        guard container.contains(.oldLines) else {
+            throw DecodingError.keyNotFound(
+                CodingKeys.oldLines,
+                DecodingError.Context(codingPath: container.codingPath, debugDescription: "Missing required key: old_lines")
+            )
+        }
+        guard container.contains(.oldStart) else {
+            throw DecodingError.keyNotFound(
+                CodingKeys.oldStart,
+                DecodingError.Context(codingPath: container.codingPath, debugDescription: "Missing required key: old_start")
+            )
+        }
+
+        lines = try container.decodeIfPresent([String].self, forKey: .lines)
+        newLines = try container.decodeIfPresent(Int.self, forKey: .newLines)
+        newStart = try container.decodeIfPresent(Int.self, forKey: .newStart)
+        oldLines = try container.decodeIfPresent(Int.self, forKey: .oldLines)
+        oldStart = try container.decodeIfPresent(Int.self, forKey: .oldStart)
     }
 }
 
@@ -172,9 +244,144 @@ public enum AnthropicCodeExecution20250825ToolResult: Codable, Equatable, Sendab
 public let anthropicCodeExecution20250825OutputSchema = FlexibleSchema(
     Schema<AnthropicCodeExecution20250825ToolResult>.codable(
         AnthropicCodeExecution20250825ToolResult.self,
-        jsonSchema: .object(["type": .string("object")])
+        jsonSchema: anthropicCodeExecution20250825OutputJSONSchema
     )
 )
+
+private let anthropicCodeExecution20250825OutputJSONSchema: JSONValue = .object([
+    "type": .string("object"),
+    "oneOf": .array([
+        // code_execution_result
+        .object([
+            "type": .string("object"),
+            "properties": .object([
+                "type": .object(["const": .string("code_execution_result")]),
+                "stdout": .object(["type": .string("string")]),
+                "stderr": .object(["type": .string("string")]),
+                "return_code": .object(["type": .string("number")]),
+                "content": .object([
+                    "type": .string("array"),
+                    "items": .object([
+                        "type": .string("object"),
+                        "properties": .object([
+                            "type": .object(["const": .string("code_execution_output")]),
+                            "file_id": .object(["type": .string("string")]),
+                        ]),
+                        "required": .array([.string("type"), .string("file_id")]),
+                        "additionalProperties": .bool(false),
+                    ]),
+                ]),
+            ]),
+            "required": .array([.string("type"), .string("stdout"), .string("stderr"), .string("return_code")]),
+            "additionalProperties": .bool(false),
+        ]),
+        // bash_code_execution_result
+        .object([
+            "type": .string("object"),
+            "properties": .object([
+                "type": .object(["const": .string("bash_code_execution_result")]),
+                "content": .object([
+                    "type": .string("array"),
+                    "items": .object([
+                        "type": .string("object"),
+                        "properties": .object([
+                            "type": .object(["const": .string("bash_code_execution_output")]),
+                            "file_id": .object(["type": .string("string")]),
+                        ]),
+                        "required": .array([.string("type"), .string("file_id")]),
+                        "additionalProperties": .bool(false),
+                    ]),
+                ]),
+                "stdout": .object(["type": .string("string")]),
+                "stderr": .object(["type": .string("string")]),
+                "return_code": .object(["type": .string("number")]),
+            ]),
+            "required": .array([
+                .string("type"),
+                .string("content"),
+                .string("stdout"),
+                .string("stderr"),
+                .string("return_code"),
+            ]),
+            "additionalProperties": .bool(false),
+        ]),
+        // bash_code_execution_tool_result_error
+        .object([
+            "type": .string("object"),
+            "properties": .object([
+                "type": .object(["const": .string("bash_code_execution_tool_result_error")]),
+                "error_code": .object(["type": .string("string")]),
+            ]),
+            "required": .array([.string("type"), .string("error_code")]),
+            "additionalProperties": .bool(false),
+        ]),
+        // text_editor_code_execution_tool_result_error
+        .object([
+            "type": .string("object"),
+            "properties": .object([
+                "type": .object(["const": .string("text_editor_code_execution_tool_result_error")]),
+                "error_code": .object(["type": .string("string")]),
+            ]),
+            "required": .array([.string("type"), .string("error_code")]),
+            "additionalProperties": .bool(false),
+        ]),
+        // text_editor_code_execution_view_result
+        .object([
+            "type": .string("object"),
+            "properties": .object([
+                "type": .object(["const": .string("text_editor_code_execution_view_result")]),
+                "content": .object(["type": .string("string")]),
+                "file_type": .object(["type": .string("string")]),
+                "num_lines": .object(["type": .array([.string("number"), .string("null")])]),
+                "start_line": .object(["type": .array([.string("number"), .string("null")])]),
+                "total_lines": .object(["type": .array([.string("number"), .string("null")])]),
+            ]),
+            "required": .array([
+                .string("type"),
+                .string("content"),
+                .string("file_type"),
+                .string("num_lines"),
+                .string("start_line"),
+                .string("total_lines"),
+            ]),
+            "additionalProperties": .bool(false),
+        ]),
+        // text_editor_code_execution_create_result
+        .object([
+            "type": .string("object"),
+            "properties": .object([
+                "type": .object(["const": .string("text_editor_code_execution_create_result")]),
+                "is_file_update": .object(["type": .string("boolean")]),
+            ]),
+            "required": .array([.string("type"), .string("is_file_update")]),
+            "additionalProperties": .bool(false),
+        ]),
+        // text_editor_code_execution_str_replace_result
+        .object([
+            "type": .string("object"),
+            "properties": .object([
+                "type": .object(["const": .string("text_editor_code_execution_str_replace_result")]),
+                "lines": .object([
+                    "type": .array([.string("array"), .string("null")]),
+                    "items": .object(["type": .string("string")]),
+                ]),
+                "new_lines": .object(["type": .array([.string("number"), .string("null")])]),
+                "new_start": .object(["type": .array([.string("number"), .string("null")])]),
+                "old_lines": .object(["type": .array([.string("number"), .string("null")])]),
+                "old_start": .object(["type": .array([.string("number"), .string("null")])]),
+            ]),
+            "required": .array([
+                .string("type"),
+                .string("lines"),
+                .string("new_lines"),
+                .string("new_start"),
+                .string("old_lines"),
+                .string("old_start"),
+            ]),
+            "additionalProperties": .bool(false),
+        ]),
+    ]),
+])
 
 // MARK: - Tool definition
 
@@ -246,7 +453,7 @@ private let anthropicCodeExecution20250825InputSchema = FlexibleSchema(
 )
 
 private let anthropicCodeExecution20250825ToolOutputSchema = FlexibleSchema(
-    jsonSchema(.object(["type": .string("object")]))
+    jsonSchema(anthropicCodeExecution20250825OutputJSONSchema)
 )
 
 private let anthropicCodeExecution20250825Factory = createProviderToolFactoryWithOutputSchema(

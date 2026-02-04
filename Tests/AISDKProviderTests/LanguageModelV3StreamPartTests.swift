@@ -91,11 +91,18 @@ func v3_streamPart_responseMetadata_iso8601_decode() throws {
 @Test("StreamPart round-trip: finish with usage (optional fields)")
 func v3_streamPart_finish_usage_roundTrip() throws {
     let usage = LanguageModelV3Usage(
-        inputTokens: 10,
-        outputTokens: 5,
-        totalTokens: 16,
-        reasoningTokens: 1,
-        cachedInputTokens: nil
+        inputTokens: .init(
+            total: 10,
+            noCache: 9,
+            cacheRead: 1,
+            cacheWrite: nil
+        ),
+        outputTokens: .init(
+            total: 6,
+            text: 5,
+            reasoning: 1
+        ),
+        raw: nil
     )
     let part: LanguageModelV3StreamPart = .finish(
         finishReason: .stop,

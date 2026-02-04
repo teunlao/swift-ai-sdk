@@ -480,4 +480,207 @@ struct GooglePrepareToolsTests {
         }
         #expect(allowed == [.string("lookup")])
     }
+
+    @Test("maps provider-defined enterprise web search (Gemini 2+ only)")
+    func providerEnterpriseWebSearch() throws {
+        let tool = LanguageModelV3Tool.provider(LanguageModelV3ProviderTool(
+            id: "google.enterprise_web_search",
+            name: "enterprise_web_search",
+            args: [:]
+        ))
+
+        // Unsupported on non-Gemini-2 models
+        do {
+            let prepared = prepareGoogleTools(
+                tools: [tool],
+                toolChoice: nil,
+                modelId: GoogleGenerativeAIModelId(rawValue: "gemini-pro")
+            )
+            #expect(prepared.tools == nil || prepared.tools == JSONValue.null)
+            #expect(prepared.toolConfig == nil)
+            #expect(prepared.toolWarnings.count == 1)
+        }
+
+        // Supported on Gemini-2+
+        do {
+            let prepared = prepareGoogleTools(
+                tools: [tool],
+                toolChoice: nil,
+                modelId: GoogleGenerativeAIModelId(rawValue: "gemini-2.5-flash")
+            )
+            guard case let .array(toolsArray)? = prepared.tools else {
+                Issue.record("Expected tools array")
+                return
+            }
+            #expect(toolsArray.count == 1)
+            guard case let .object(obj) = toolsArray[0] else {
+                Issue.record("Expected tool object")
+                return
+            }
+            #expect(obj["enterpriseWebSearch"] != nil)
+            #expect(prepared.toolWarnings.isEmpty)
+        }
+    }
+
+    @Test("maps provider-defined file search (Gemini 2.5+/3 only)")
+    func providerFileSearch() throws {
+        let tool = LanguageModelV3Tool.provider(LanguageModelV3ProviderTool(
+            id: "google.file_search",
+            name: "file_search",
+            args: [
+                "fileSearchStoreNames": .array([.string("fileSearchStores/my-store")]),
+                "topK": .number(10),
+                "metadataFilter": .string("source = 'docs'")
+            ]
+        ))
+
+        // Unsupported on non-2.5/non-3 models
+        do {
+            let prepared = prepareGoogleTools(
+                tools: [tool],
+                toolChoice: nil,
+                modelId: GoogleGenerativeAIModelId(rawValue: "gemini-pro")
+            )
+            #expect(prepared.tools == nil || prepared.tools == JSONValue.null)
+            #expect(prepared.toolWarnings.count == 1)
+        }
+
+        // Supported on Gemini-2.5+
+        do {
+            let prepared = prepareGoogleTools(
+                tools: [tool],
+                toolChoice: nil,
+                modelId: GoogleGenerativeAIModelId(rawValue: "gemini-2.5-flash")
+            )
+            guard case let .array(toolsArray)? = prepared.tools else {
+                Issue.record("Expected tools array")
+                return
+            }
+            #expect(toolsArray.count == 1)
+            guard case let .object(obj) = toolsArray[0] else {
+                Issue.record("Expected tool object")
+                return
+            }
+            guard case let .object(fileSearch)? = obj["fileSearch"] else {
+                Issue.record("Expected fileSearch object")
+                return
+            }
+            #expect(fileSearch["fileSearchStoreNames"] != nil)
+            #expect(prepared.toolWarnings.isEmpty)
+        }
+    }
+
+    @Test("maps provider-defined vertex rag store (Gemini 2+ only)")
+    func providerVertexRAGStore() throws {
+        let toolWithoutTopK = LanguageModelV3Tool.provider(LanguageModelV3ProviderTool(
+            id: "google.vertex_rag_store",
+            name: "vertex_rag_store",
+            args: [
+                "ragCorpus": .string("projects/p/locations/l/ragCorpora/corpus")
+            ]
+        ))
+
+        let toolWithTopK = LanguageModelV3Tool.provider(LanguageModelV3ProviderTool(
+            id: "google.vertex_rag_store",
+            name: "vertex_rag_store",
+            args: [
+                "ragCorpus": .string("projects/p/locations/l/ragCorpora/corpus"),
+                "topK": .number(5)
+            ]
+        ))
+
+        // Unsupported on non-Gemini-2 models
+        do {
+            let prepared = prepareGoogleTools(
+                tools: [toolWithoutTopK],
+                toolChoice: nil,
+                modelId: GoogleGenerativeAIModelId(rawValue: "gemini-pro")
+            )
+            #expect(prepared.tools == nil || prepared.tools == JSONValue.null)
+            #expect(prepared.toolWarnings.count == 1)
+        }
+
+        // Supported on Gemini-2+
+        do {
+            let prepared = prepareGoogleTools(
+                tools: [toolWithoutTopK],
+                toolChoice: nil,
+                modelId: GoogleGenerativeAIModelId(rawValue: "gemini-2.5-flash")
+            )
+            guard case let .array(toolsArray)? = prepared.tools else {
+                Issue.record("Expected tools array")
+                return
+            }
+            #expect(toolsArray.count == 1)
+            guard case let .object(obj) = toolsArray[0],
+                  case let .object(retrieval)? = obj["retrieval"],
+                  case let .object(vertex)? = retrieval["vertex_rag_store"],
+                  case let .object(ragResources)? = vertex["rag_resources"] else {
+                Issue.record("Expected vertex rag store payload")
+                return
+            }
+            #expect(ragResources["rag_corpus"] == .string("projects/p/locations/l/ragCorpora/corpus"))
+            #expect(vertex["similarity_top_k"] == nil)
+        }
+
+        do {
+            let prepared = prepareGoogleTools(
+                tools: [toolWithTopK],
+                toolChoice: nil,
+                modelId: GoogleGenerativeAIModelId(rawValue: "gemini-2.5-flash")
+            )
+            guard case let .array(toolsArray)? = prepared.tools else {
+                Issue.record("Expected tools array")
+                return
+            }
+            #expect(toolsArray.count == 1)
+            guard case let .object(obj) = toolsArray[0],
+                  case let .object(retrieval)? = obj["retrieval"],
+                  case let .object(vertex)? = retrieval["vertex_rag_store"] else {
+                Issue.record("Expected vertex rag store payload")
+                return
+            }
+            #expect(vertex["similarity_top_k"] == .number(5))
+        }
+    }
+
+    @Test("maps provider-defined google maps (Gemini 2+ only)")
+    func providerGoogleMaps() throws {
+        let tool = LanguageModelV3Tool.provider(LanguageModelV3ProviderTool(
+            id: "google.google_maps",
+            name: "google_maps",
+            args: [:]
+        ))
+
+        // Unsupported on non-Gemini-2 models
+        do {
+            let prepared = prepareGoogleTools(
+                tools: [tool],
+                toolChoice: nil,
+                modelId: GoogleGenerativeAIModelId(rawValue: "gemini-pro")
+            )
+            #expect(prepared.tools == nil || prepared.tools == JSONValue.null)
+            #expect(prepared.toolWarnings.count == 1)
+        }
+
+        // Supported on Gemini-2+
+        do {
+            let prepared = prepareGoogleTools(
+                tools: [tool],
+                toolChoice: nil,
+                modelId: GoogleGenerativeAIModelId(rawValue: "gemini-2.5-flash")
+            )
+            guard case let .array(toolsArray)? = prepared.tools else {
+                Issue.record("Expected tools array")
+                return
+            }
+            #expect(toolsArray.count == 1)
+            guard case let .object(obj) = toolsArray[0] else {
+                Issue.record("Expected tool object")
+                return
+            }
+            #expect(obj["googleMaps"] != nil)
+            #expect(prepared.toolWarnings.isEmpty)
+        }
+    }
 }

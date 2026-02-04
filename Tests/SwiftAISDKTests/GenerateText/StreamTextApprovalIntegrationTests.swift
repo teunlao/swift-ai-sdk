@@ -20,7 +20,11 @@ struct StreamTextApprovalIntegrationTests {
             .streamStart(warnings: []),
             .responseMetadata(id: "id-0", modelId: "mock", timestamp: Date(timeIntervalSince1970: 0)),
             .toolCall(call),
-            .finish(finishReason: .toolCalls, usage: LanguageModelV3Usage(inputTokens: 1, outputTokens: 1, totalTokens: 2), providerMetadata: nil)
+            .finish(
+                finishReason: .toolCalls,
+                usage: LanguageModelV3Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 1)),
+                providerMetadata: nil
+            )
         ]
         let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
             parts.forEach { c.yield($0) }
@@ -74,7 +78,7 @@ struct StreamTextApprovalIntegrationTests {
             .toolCall(call),
             .finish(
                 finishReason: .toolCalls,
-                usage: LanguageModelV3Usage(inputTokens: 1, outputTokens: 1, totalTokens: 2),
+                usage: LanguageModelV3Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 1)),
                 providerMetadata: nil
             )
         ]
@@ -131,7 +135,7 @@ struct StreamTextApprovalIntegrationTests {
             .toolCall(call),
             .finish(
                 finishReason: .toolCalls,
-                usage: LanguageModelV3Usage(inputTokens: 1, outputTokens: 1, totalTokens: 2),
+                usage: LanguageModelV3Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 1)),
                 providerMetadata: nil
             )
         ]
@@ -211,7 +215,7 @@ struct StreamTextApprovalIntegrationTests {
             .toolCall(call),
             .finish(
                 finishReason: .toolCalls,
-                usage: LanguageModelV3Usage(inputTokens: 1, outputTokens: 1, totalTokens: 2),
+                usage: LanguageModelV3Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 1)),
                 providerMetadata: nil
             )
         ]

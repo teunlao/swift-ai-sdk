@@ -94,8 +94,8 @@ struct GroqChatLanguageModelTests {
         #expect(result.content.contains { if case .reasoning(let reasoning) = $0 { return reasoning.text == "Thought" } else { return false } })
         #expect(result.content.contains { if case .toolCall(let call) = $0 { return call.toolName == "lookup" && call.input == "{\"q\":\"rain\"}" } else { return false } })
         #expect(result.finishReason == .toolCalls)
-        #expect(result.usage.inputTokens == 12)
-        #expect(result.usage.cachedInputTokens == 3)
+        #expect(result.usage.inputTokens.total == 12)
+        #expect(result.usage.inputTokens.cacheRead == nil)
 
         if let request = await capture.value() {
             let json = try decodeRequestBody(request)
@@ -444,8 +444,8 @@ struct GroqChatLanguageModelTests {
         if let finish = parts.last(where: { if case .finish = $0 { return true } else { return false } }) {
             if case let .finish(finishReason, usage, _) = finish {
                 #expect(finishReason == .stop)
-                #expect(usage.inputTokens == 5)
-                #expect(usage.outputTokens == 7)
+                #expect(usage.inputTokens.total == 5)
+                #expect(usage.outputTokens.total == 7)
             }
         } else {
         }
@@ -572,10 +572,10 @@ struct GroqChatLanguageModelTests {
 
         let result = try await model.doGenerate(options: .init(prompt: prompt))
 
-        #expect(result.usage.inputTokens == 20)
-        #expect(result.usage.outputTokens == 5)
-        #expect(result.usage.totalTokens == 25)
-        #expect(result.usage.cachedInputTokens == nil)
+        #expect(result.usage.inputTokens.total == 20)
+        #expect(result.usage.outputTokens.total == 5)
+        #expect((result.usage.inputTokens.total ?? 0) + (result.usage.outputTokens.total ?? 0) == 25)
+        #expect(result.usage.inputTokens.cacheRead == nil)
     }
 
     @Test("should send additional response information")
@@ -657,10 +657,10 @@ struct GroqChatLanguageModelTests {
 
         let result = try await model.doGenerate(options: .init(prompt: prompt))
 
-        #expect(result.usage.inputTokens == 20)
-        #expect(result.usage.outputTokens == nil)
-        #expect(result.usage.totalTokens == 20)
-        #expect(result.usage.cachedInputTokens == nil)
+        #expect(result.usage.inputTokens.total == 20)
+        #expect(result.usage.outputTokens.total == 0)
+        #expect((result.usage.inputTokens.total ?? 0) + (result.usage.outputTokens.total ?? 0) == 20)
+        #expect(result.usage.inputTokens.cacheRead == nil)
     }
 
     @Test("should extract cached input tokens")
@@ -703,10 +703,17 @@ struct GroqChatLanguageModelTests {
 
         let result = try await model.doGenerate(options: .init(prompt: prompt))
 
-        #expect(result.usage.inputTokens == 20)
-        #expect(result.usage.outputTokens == 5)
-        #expect(result.usage.totalTokens == 25)
-        #expect(result.usage.cachedInputTokens == 15)
+        #expect(result.usage.inputTokens.total == 20)
+        #expect(result.usage.outputTokens.total == 5)
+        #expect((result.usage.inputTokens.total ?? 0) + (result.usage.outputTokens.total ?? 0) == 25)
+        #expect(result.usage.inputTokens.cacheRead == nil)
+        if case let .object(raw)? = result.usage.raw,
+           case let .object(promptTokensDetails)? = raw["prompt_tokens_details"],
+           case let .number(cachedTokens)? = promptTokensDetails["cached_tokens"] {
+            #expect(cachedTokens == 15)
+        } else {
+            Issue.record("Missing raw usage cached token data")
+        }
     }
 
     @Test("should extract finish reason")

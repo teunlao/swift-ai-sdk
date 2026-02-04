@@ -164,9 +164,9 @@ struct OpenAICompatibleCompletionLanguageModelTests {
         let model = try provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
         let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: testPrompt))
 
-        #expect(result.usage.inputTokens == 20)
-        #expect(result.usage.outputTokens == 5)
-        #expect(result.usage.totalTokens == 25)
+        #expect(result.usage.inputTokens.total == 20)
+        #expect(result.usage.outputTokens.total == 5)
+        #expect((result.usage.inputTokens.total ?? 0) + (result.usage.outputTokens.total ?? 0) == 25)
     }
 
     @Test("should send request body")
@@ -528,7 +528,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
         // Verify finish
         if case let .finish(finishReason: finishReason, usage: usage, providerMetadata: _) = parts.last {
             #expect(finishReason == .stop)
-            #expect(usage.totalTokens == 372)
+            #expect((usage.inputTokens.total ?? 0) + (usage.outputTokens.total ?? 0) == 372)
         } else {
             Issue.record("Missing finish part")
         }

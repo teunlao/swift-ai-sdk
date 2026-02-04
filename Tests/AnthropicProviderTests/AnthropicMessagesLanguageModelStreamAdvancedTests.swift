@@ -150,8 +150,8 @@ struct AnthropicMessagesLanguageModelStreamAdvancedTests {
         if let finishPart = parts.last(where: { if case .finish = $0 { return true } else { return false } }),
            case .finish(let finishReason, let usage, let metadata) = finishPart {
             #expect(finishReason == .stop)
-            #expect(usage.inputTokens == 441)
-            #expect(usage.outputTokens == 65)
+            #expect(usage.inputTokens.total == 441)
+            #expect(usage.outputTokens.total == 65)
             let anthropicUsage = metadata?["anthropic"]?["usage"]
             #expect(anthropicUsage == .object([
                 "input_tokens": .number(441),
@@ -611,7 +611,9 @@ struct AnthropicMessagesLanguageModelStreamAdvancedTests {
             return
         }
 
-        #expect(usage.cachedInputTokens == 5)
+        #expect(usage.inputTokens.cacheRead == 5)
+        #expect(usage.inputTokens.cacheWrite == 10)
+        #expect(usage.inputTokens.total == 32)
         #expect(metadata?["anthropic"]?["cacheCreationInputTokens"] == .number(10))
         if case .object(let usageMetadata) = metadata?["anthropic"]?["usage"] {
             #expect(usageMetadata["cache_creation_input_tokens"] == .number(10))

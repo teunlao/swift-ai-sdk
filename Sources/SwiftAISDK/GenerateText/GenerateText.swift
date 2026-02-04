@@ -924,6 +924,7 @@ public func generateText<OutputValue: Sendable>(
                         let responseModelId = result.response?.modelId ?? stepModel.modelId
                         let responseHeaders = result.response?.headers
                         let responseBody = convertResponseBody(result.response?.body)
+                        let usage = asLanguageModelUsage(result.usage)
 
                         span.setAttributes(
                             try await selectTelemetryAttributes(
@@ -933,7 +934,7 @@ public func generateText<OutputValue: Sendable>(
                                     finishReason: result.finishReason,
                                     content: result.content,
                                     providerMetadata: result.providerMetadata,
-                                    usage: result.usage,
+                                    usage: usage,
                                     responseId: responseId,
                                     responseModelId: responseModelId,
                                     responseTimestamp: responseTimestamp
@@ -944,7 +945,7 @@ public func generateText<OutputValue: Sendable>(
                         return GenerateStepIntermediate(
                             content: result.content,
                             finishReason: result.finishReason,
-                            usage: result.usage,
+                            usage: usage,
                             warnings: result.warnings,
                             providerMetadata: result.providerMetadata,
                             requestInfo: result.request,

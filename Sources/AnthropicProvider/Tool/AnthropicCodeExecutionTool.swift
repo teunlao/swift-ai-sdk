@@ -54,15 +54,39 @@ public struct AnthropicCodeExecutionToolResult: Codable, Equatable, Sendable {
     }
 }
 
+private let anthropicCodeExecution20250522OutputJSONSchema: JSONValue = .object([
+    "type": .string("object"),
+    "properties": .object([
+        "type": .object(["const": .string("code_execution_result")]),
+        "stdout": .object(["type": .string("string")]),
+        "stderr": .object(["type": .string("string")]),
+        "return_code": .object(["type": .string("number")]),
+        "content": .object([
+            "type": .string("array"),
+            "items": .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "type": .object(["const": .string("code_execution_output")]),
+                    "file_id": .object(["type": .string("string")]),
+                ]),
+                "required": .array([.string("type"), .string("file_id")]),
+                "additionalProperties": .bool(false),
+            ]),
+        ]),
+    ]),
+    "required": .array([.string("type"), .string("stdout"), .string("stderr"), .string("return_code")]),
+    "additionalProperties": .bool(false),
+])
+
 public let anthropicCodeExecution20250522OutputSchema = FlexibleSchema(
     Schema<AnthropicCodeExecutionToolResult>.codable(
         AnthropicCodeExecutionToolResult.self,
-        jsonSchema: .object(["type": .string("object")])
+        jsonSchema: anthropicCodeExecution20250522OutputJSONSchema
     )
 )
 
 private let anthropicCodeExecution20250522ToolOutputSchema = FlexibleSchema(
-    jsonSchema(.object(["type": .string("object")]))
+    jsonSchema(anthropicCodeExecution20250522OutputJSONSchema)
 )
 
 private let anthropicCodeExecutionFactory = createProviderToolFactoryWithOutputSchema(

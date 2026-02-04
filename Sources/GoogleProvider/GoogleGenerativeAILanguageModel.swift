@@ -154,13 +154,7 @@ public final class GoogleGenerativeAILanguageModel: LanguageModelV3 {
                             continuation.yield(.error(error: .string(String(describing: error))))
                         case .success(let chunk, _):
                             if let usageMetadata = chunk.usageMetadata {
-                                usage = LanguageModelV3Usage(
-                                    inputTokens: usageMetadata.promptTokenCount,
-                                    outputTokens: usageMetadata.candidatesTokenCount,
-                                    totalTokens: usageMetadata.totalTokenCount,
-                                    reasoningTokens: usageMetadata.thoughtsTokenCount,
-                                    cachedInputTokens: usageMetadata.cachedContentTokenCount
-                                )
+                                usage = convertGoogleGenerativeAIUsage(usageMetadata)
                             }
 
                             guard let candidate = chunk.candidates.first else { continue }
@@ -494,13 +488,7 @@ private func mapGenerateResponse(
         return (
             content: [],
             finishReason: .unknown,
-            usage: LanguageModelV3Usage(
-                inputTokens: usageMetadata?.promptTokenCount,
-                outputTokens: usageMetadata?.candidatesTokenCount,
-                totalTokens: usageMetadata?.totalTokenCount,
-                reasoningTokens: usageMetadata?.thoughtsTokenCount,
-                cachedInputTokens: usageMetadata?.cachedContentTokenCount
-            ),
+            usage: convertGoogleGenerativeAIUsage(usageMetadata),
             providerMetadata: nil
         )
     }
@@ -604,13 +592,7 @@ private func mapGenerateResponse(
         content.append(contentsOf: sources.map(LanguageModelV3Content.source))
     }
 
-    let usage = LanguageModelV3Usage(
-        inputTokens: usageMetadata?.promptTokenCount,
-        outputTokens: usageMetadata?.candidatesTokenCount,
-        totalTokens: usageMetadata?.totalTokenCount,
-        reasoningTokens: usageMetadata?.thoughtsTokenCount,
-        cachedInputTokens: usageMetadata?.cachedContentTokenCount
-    )
+    let usage = convertGoogleGenerativeAIUsage(usageMetadata)
 
     let finishReason = mapGoogleGenerativeAIFinishReason(
         finishReason: candidate.finishReason,
@@ -630,6 +612,33 @@ private func mapGenerateResponse(
         finishReason: finishReason,
         usage: usage,
         providerMetadata: providerMetadata
+    )
+}
+
+private func convertGoogleGenerativeAIUsage(_ usage: GoogleGenerativeAIResponse.UsageMetadata?) -> LanguageModelV3Usage {
+    // Port of `packages/google/src/convert-google-generative-ai-usage.ts`
+    guard let usage else {
+        return LanguageModelV3Usage()
+    }
+
+    let promptTokens = usage.promptTokenCount ?? 0
+    let candidatesTokens = usage.candidatesTokenCount ?? 0
+    let cachedContentTokens = usage.cachedContentTokenCount ?? 0
+    let thoughtsTokens = usage.thoughtsTokenCount ?? 0
+
+    return LanguageModelV3Usage(
+        inputTokens: .init(
+            total: promptTokens,
+            noCache: promptTokens - cachedContentTokens,
+            cacheRead: cachedContentTokens,
+            cacheWrite: nil
+        ),
+        outputTokens: .init(
+            total: candidatesTokens + thoughtsTokens,
+            text: candidatesTokens,
+            reasoning: thoughtsTokens
+        ),
+        raw: try? JSONEncoder().encodeToJSONValue(usage)
     )
 }
 

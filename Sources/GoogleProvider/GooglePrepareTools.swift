@@ -131,15 +131,18 @@ func prepareGoogleTools(
             case "google.vertex_rag_store":
                 if isGemini2OrNewer {
                     let ragCorpus = providerTool.args["ragCorpus"] ?? .null
-                    let topK = providerTool.args["topK"] ?? .null
+
+                    var vertexRagStore: [String: JSONValue] = [
+                        "rag_resources": .object([
+                            "rag_corpus": ragCorpus
+                        ])
+                    ]
+                    if let topK = providerTool.args["topK"], topK != .null {
+                        vertexRagStore["similarity_top_k"] = topK
+                    }
                     googleToolsEntries.append(.object([
                         "retrieval": .object([
-                            "vertex_rag_store": .object([
-                                "rag_resources": .object([
-                                    "rag_corpus": ragCorpus
-                                ]),
-                                "similarity_top_k": topK
-                            ])
+                            "vertex_rag_store": .object(vertexRagStore)
                         ])
                     ]))
                 } else {

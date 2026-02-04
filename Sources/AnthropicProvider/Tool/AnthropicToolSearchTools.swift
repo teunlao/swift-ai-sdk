@@ -10,7 +10,21 @@ public struct AnthropicToolSearchToolReference: Codable, Sendable, Equatable {
 public let anthropicToolSearchRegex20251119OutputSchema = FlexibleSchema(
     Schema<[AnthropicToolSearchToolReference]>.codable(
         [AnthropicToolSearchToolReference].self,
-        jsonSchema: .object(["type": .string("array")])
+        jsonSchema: .object([
+            "type": .string("array"),
+            "items": .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "type": .object([
+                        "type": .string("string"),
+                        "enum": .array([.string("tool_reference")]),
+                    ]),
+                    "toolName": .object(["type": .string("string")]),
+                ]),
+                "required": .array([.string("type"), .string("toolName")]),
+                "additionalProperties": .bool(false),
+            ]),
+        ])
     )
 )
 
@@ -43,7 +57,23 @@ private let anthropicToolSearchBm2520251119InputSchema = FlexibleSchema(
 )
 
 private let anthropicToolSearchToolOutputSchema = FlexibleSchema(
-    jsonSchema(.object(["type": .string("array")]))
+    jsonSchema(
+        .object([
+            "type": .string("array"),
+            "items": .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "type": .object([
+                        "type": .string("string"),
+                        "enum": .array([.string("tool_reference")]),
+                    ]),
+                    "toolName": .object(["type": .string("string")]),
+                ]),
+                "required": .array([.string("type"), .string("toolName")]),
+                "additionalProperties": .bool(false),
+            ]),
+        ])
+    )
 )
 
 private let anthropicToolSearchRegex20251119Factory = createProviderToolFactoryWithOutputSchema(

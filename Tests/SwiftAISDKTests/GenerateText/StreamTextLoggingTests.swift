@@ -8,7 +8,7 @@ import Testing
 @Suite("StreamText – logging", .serialized)
 struct StreamTextLoggingTests {
     private func sampleStream() -> AsyncThrowingStream<TextStreamPart, Error> {
-        let usage = LanguageModelV3Usage(inputTokens: 1, outputTokens: 3, totalTokens: 4)
+        let usage = LanguageModelUsage(inputTokens: 1, outputTokens: 3, totalTokens: 4)
         let parts: [TextStreamPart] = [
             .start,
             .startStep(request: LanguageModelRequestMetadata(body: nil), warnings: []),

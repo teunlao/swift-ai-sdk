@@ -24,7 +24,7 @@ private let googleSearchInputSchema = FlexibleSchema(
             "additionalProperties": .bool(false),
             "properties": .object([
                 "mode": .object([
-                    "type": .array([.string("string"), .string("null")]),
+                    "type": .string("string"),
                     "enum": .array([
                         .string(GoogleSearchArgs.Mode.modeDynamic.rawValue),
                         .string(GoogleSearchArgs.Mode.modeUnspecified.rawValue)
@@ -32,7 +32,7 @@ private let googleSearchInputSchema = FlexibleSchema(
                     "default": .string(GoogleSearchArgs.Mode.modeUnspecified.rawValue)
                 ]),
                 "dynamicThreshold": .object([
-                    "type": .array([.string("number"), .string("null")]),
+                    "type": .string("number"),
                     "default": .number(1)
                 ])
             ])

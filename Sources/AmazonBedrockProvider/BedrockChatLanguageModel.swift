@@ -58,13 +58,7 @@ public final class BedrockChatLanguageModel: LanguageModelV3 {
             usesJsonResponseTool: prepared.usesJsonResponseTool
         )
 
-        let usage = LanguageModelV3Usage(
-            inputTokens: response.value.usage?.inputTokens,
-            outputTokens: response.value.usage?.outputTokens,
-            totalTokens: response.value.usage?.totalTokens,
-            reasoningTokens: nil,
-            cachedInputTokens: response.value.usage?.cacheReadInputTokens
-        )
+        let usage = convertBedrockUsage(response.value.usage)
 
         let providerMetadata = buildProviderMetadata(
             trace: response.value.trace,
@@ -106,7 +100,7 @@ public final class BedrockChatLanguageModel: LanguageModelV3 {
 
             Task {
                 var finishReason: LanguageModelV3FinishReason = .unknown
-                var usage = LanguageModelV3Usage()
+                var usageMetrics: BedrockStreamEnvelope.Metadata.Usage?
                 var providerMetadataPayload: [String: JSONValue] = [:]
                 var contentBlocks: [Int: ContentBlockState] = [:]
 
@@ -131,31 +125,10 @@ public final class BedrockChatLanguageModel: LanguageModelV3 {
                             }
 
                             if let metadata = chunk.metadata {
-                                if let usageMetrics = metadata.usage {
-                                    let inputTokens = usageMetrics.inputTokens ?? usage.inputTokens
-                                    let outputTokens = usageMetrics.outputTokens ?? usage.outputTokens
-                                    let cachedInputTokens = usageMetrics.cacheReadInputTokens ?? usage.cachedInputTokens
+                                if let metrics = metadata.usage {
+                                    usageMetrics = metrics
 
-                                    let totalTokens: Int?
-                                    if let inputTokens, let outputTokens {
-                                        totalTokens = inputTokens + outputTokens
-                                    } else if let inputTokens {
-                                        totalTokens = inputTokens
-                                    } else if let outputTokens {
-                                        totalTokens = outputTokens
-                                    } else {
-                                        totalTokens = usage.totalTokens
-                                    }
-
-                                    usage = LanguageModelV3Usage(
-                                        inputTokens: inputTokens,
-                                        outputTokens: outputTokens,
-                                        totalTokens: totalTokens,
-                                        reasoningTokens: usage.reasoningTokens,
-                                        cachedInputTokens: cachedInputTokens
-                                    )
-
-                                    if let cacheWrite = usageMetrics.cacheWriteInputTokens {
+                                    if let cacheWrite = metrics.cacheWriteInputTokens {
                                         providerMetadataPayload["usage"] = .object([
                                             "cacheWriteInputTokens": .number(Double(cacheWrite))
                                         ])
@@ -302,7 +275,7 @@ public final class BedrockChatLanguageModel: LanguageModelV3 {
 
                     continuation.yield(.finish(
                         finishReason: finishReason,
-                        usage: usage,
+                        usage: convertBedrockUsage(usageMetrics),
                         providerMetadata: providerMetadata
                     ))
                     continuation.finish()
@@ -594,6 +567,64 @@ public final class BedrockChatLanguageModel: LanguageModelV3 {
             throw EncodingError.invalidValue(anyValue, EncodingError.Context(codingPath: [], debugDescription: "Unable to encode JSON value to string."))
         }
         return string
+    }
+}
+
+private func convertBedrockUsage(_ usage: BedrockGenerateResponse.Usage?) -> LanguageModelV3Usage {
+    // Port of `packages/amazon-bedrock/src/convert-bedrock-usage.ts`
+    guard let usage else { return LanguageModelV3Usage() }
+
+    let noCacheTokens = usage.inputTokens ?? 0
+    let cacheReadTokens = usage.cacheReadInputTokens ?? 0
+    let cacheWriteTokens = usage.cacheWriteInputTokens ?? 0
+    let outputTokens = usage.outputTokens ?? 0
+
+    return LanguageModelV3Usage(
+        inputTokens: .init(
+            total: noCacheTokens + cacheReadTokens + cacheWriteTokens,
+            noCache: noCacheTokens,
+            cacheRead: cacheReadTokens,
+            cacheWrite: cacheWriteTokens
+        ),
+        outputTokens: .init(
+            total: outputTokens,
+            text: outputTokens,
+            reasoning: nil
+        ),
+        raw: try? JSONEncoder().encodeToJSONValue(usage)
+    )
+}
+
+private func convertBedrockUsage(_ usage: BedrockStreamEnvelope.Metadata.Usage?) -> LanguageModelV3Usage {
+    // Port of `packages/amazon-bedrock/src/convert-bedrock-usage.ts`
+    guard let usage else { return LanguageModelV3Usage() }
+
+    let noCacheTokens = usage.inputTokens ?? 0
+    let cacheReadTokens = usage.cacheReadInputTokens ?? 0
+    let cacheWriteTokens = usage.cacheWriteInputTokens ?? 0
+    let outputTokens = usage.outputTokens ?? 0
+
+    return LanguageModelV3Usage(
+        inputTokens: .init(
+            total: noCacheTokens + cacheReadTokens + cacheWriteTokens,
+            noCache: noCacheTokens,
+            cacheRead: cacheReadTokens,
+            cacheWrite: cacheWriteTokens
+        ),
+        outputTokens: .init(
+            total: outputTokens,
+            text: outputTokens,
+            reasoning: nil
+        ),
+        raw: try? JSONEncoder().encodeToJSONValue(usage)
+    )
+}
+
+private extension JSONEncoder {
+    func encodeToJSONValue<T: Encodable>(_ value: T) throws -> JSONValue {
+        let data = try encode(value)
+        let raw = try JSONSerialization.jsonObject(with: data, options: [])
+        return try jsonValue(from: raw)
     }
 }
 

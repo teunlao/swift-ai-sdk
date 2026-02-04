@@ -6,13 +6,7 @@ import AISDKProviderUtils
 
 @Suite("StreamText – error & replay")
 struct StreamTextErrorAndReplayTests {
-    private let defaultUsage = LanguageModelV3Usage(
-        inputTokens: 1,
-        outputTokens: 2,
-        totalTokens: 3,
-        reasoningTokens: nil,
-        cachedInputTokens: nil
-    )
+    private let defaultUsage = LanguageModelV3Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 2))
 
     @Test("provider error terminates with error and no finish")
     func providerErrorTerminates() async throws {
@@ -138,13 +132,7 @@ struct StreamTextErrorAndReplayTests {
 
 @Suite("StreamText – SSE encoding")
 struct StreamTextSSEEncodingTests {
-    private let defaultUsage = LanguageModelV3Usage(
-        inputTokens: 1,
-        outputTokens: 2,
-        totalTokens: 3,
-        reasoningTokens: nil,
-        cachedInputTokens: nil
-    )
+    private let defaultUsage = LanguageModelUsage(inputTokens: 1, outputTokens: 2, totalTokens: 3)
 
     @Test("SSE encoder emits text and finish events")
     func sseEncoderEmitsTextAndFinish() async throws {

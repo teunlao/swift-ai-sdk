@@ -44,12 +44,43 @@ private enum GoogleVertexSafetySetting: String, Sendable {
     case blockNone = "block_none"
 }
 
+private enum GoogleVertexSampleImageSize: String, Sendable {
+    case k1 = "1K"
+    case k2 = "2K"
+}
+
+private enum GoogleVertexImageEditMode: String, Sendable {
+    case inpaintInsertion = "EDIT_MODE_INPAINT_INSERTION"
+    case inpaintRemoval = "EDIT_MODE_INPAINT_REMOVAL"
+    case outpaint = "EDIT_MODE_OUTPAINT"
+    case controlledEditing = "EDIT_MODE_CONTROLLED_EDITING"
+    case productImage = "EDIT_MODE_PRODUCT_IMAGE"
+    case backgroundSwap = "EDIT_MODE_BGSWAP"
+}
+
+private enum GoogleVertexImageMaskMode: String, Sendable {
+    case `default` = "MASK_MODE_DEFAULT"
+    case userProvided = "MASK_MODE_USER_PROVIDED"
+    case detectionBox = "MASK_MODE_DETECTION_BOX"
+    case clothingArea = "MASK_MODE_CLOTHING_AREA"
+    case parsedPerson = "MASK_MODE_PARSED_PERSON"
+}
+
+private struct GoogleVertexImageEditProviderOptions: Sendable, Equatable {
+    var baseSteps: Double?
+    var mode: GoogleVertexImageEditMode?
+    var maskMode: GoogleVertexImageMaskMode?
+    var maskDilation: Double?
+}
+
 private struct GoogleVertexImageProviderOptions: Sendable, Equatable {
     var negativePrompt: String?
     var personGeneration: GoogleVertexPersonGeneration?
     var safetySetting: GoogleVertexSafetySetting?
     var addWatermark: Bool?
     var storageUri: String?
+    var sampleImageSize: GoogleVertexSampleImageSize?
+    var edit: GoogleVertexImageEditProviderOptions?
 }
 
 private let googleVertexImageProviderOptionsSchema = FlexibleSchema(
@@ -130,6 +161,78 @@ private let googleVertexImageProviderOptionsSchema = FlexibleSchema(
                     options.storageUri = stringValue
                 }
 
+                if let sampleImageSize = dict["sampleImageSize"], sampleImageSize != .null {
+                    guard case .string(let rawValue) = sampleImageSize,
+                          let parsed = GoogleVertexSampleImageSize(rawValue: rawValue) else {
+                        let error = SchemaValidationIssuesError(
+                            vendor: "vertex",
+                            issues: "sampleImageSize must be one of '1K', '2K'"
+                        )
+                        return .failure(error: TypeValidationError.wrap(value: sampleImageSize, cause: error))
+                    }
+                    options.sampleImageSize = parsed
+                }
+
+                if let editValue = dict["edit"], editValue != .null {
+                    guard case .object(let editDict) = editValue else {
+                        let error = SchemaValidationIssuesError(
+                            vendor: "vertex",
+                            issues: "edit must be an object"
+                        )
+                        return .failure(error: TypeValidationError.wrap(value: editValue, cause: error))
+                    }
+
+                    var editOptions = GoogleVertexImageEditProviderOptions()
+
+                    if let baseStepsValue = editDict["baseSteps"], baseStepsValue != .null {
+                        guard case .number(let number) = baseStepsValue else {
+                            let error = SchemaValidationIssuesError(
+                                vendor: "vertex",
+                                issues: "edit.baseSteps must be a number"
+                            )
+                            return .failure(error: TypeValidationError.wrap(value: baseStepsValue, cause: error))
+                        }
+                        editOptions.baseSteps = number
+                    }
+
+                    if let modeValue = editDict["mode"], modeValue != .null {
+                        guard case .string(let rawValue) = modeValue,
+                              let parsed = GoogleVertexImageEditMode(rawValue: rawValue) else {
+                            let error = SchemaValidationIssuesError(
+                                vendor: "vertex",
+                                issues: "edit.mode must be a valid enum value"
+                            )
+                            return .failure(error: TypeValidationError.wrap(value: modeValue, cause: error))
+                        }
+                        editOptions.mode = parsed
+                    }
+
+                    if let maskModeValue = editDict["maskMode"], maskModeValue != .null {
+                        guard case .string(let rawValue) = maskModeValue,
+                              let parsed = GoogleVertexImageMaskMode(rawValue: rawValue) else {
+                            let error = SchemaValidationIssuesError(
+                                vendor: "vertex",
+                                issues: "edit.maskMode must be a valid enum value"
+                            )
+                            return .failure(error: TypeValidationError.wrap(value: maskModeValue, cause: error))
+                        }
+                        editOptions.maskMode = parsed
+                    }
+
+                    if let maskDilationValue = editDict["maskDilation"], maskDilationValue != .null {
+                        guard case .number(let number) = maskDilationValue else {
+                            let error = SchemaValidationIssuesError(
+                                vendor: "vertex",
+                                issues: "edit.maskDilation must be a number"
+                            )
+                            return .failure(error: TypeValidationError.wrap(value: maskDilationValue, cause: error))
+                        }
+                        editOptions.maskDilation = number
+                    }
+
+                    options.edit = editOptions
+                }
+
                 return .success(value: options)
             } catch {
                 return .failure(error: TypeValidationError.wrap(value: value, cause: error))
@@ -142,6 +245,23 @@ private struct GoogleVertexImagePrediction: Codable, Sendable {
     let bytesBase64Encoded: String
     let mimeType: String?
     let prompt: String?
+}
+
+private func base64Data(from file: ImageModelV3File) throws -> String {
+    switch file {
+    case .url:
+        throw InvalidArgumentError(
+            argument: "files",
+            message: "URL-based images are not supported for Google Vertex image editing. Please provide the image data directly."
+        )
+    case let .file(_, data, _):
+        switch data {
+        case .base64(let base64):
+            return base64
+        case .binary(let data):
+            return convertDataToBase64(data)
+        }
+    }
 }
 
 private struct GoogleVertexImageResponse: Codable, Sendable {
@@ -176,7 +296,7 @@ public final class GoogleVertexImageModel: ImageModelV3 {
                 .unsupported(
                     feature: "size",
                     details: "This model does not support the `size` option. Use `aspectRatio` instead."
-                )
+                    )
             )
         }
 
@@ -186,38 +306,79 @@ public final class GoogleVertexImageModel: ImageModelV3 {
             schema: googleVertexImageProviderOptionsSchema
         )
 
-        var parameters: [String: JSONValue] = [
-            "sampleCount": .number(Double(options.n))
-        ]
+        let editOptions = vertexOptions?.edit
+        let isEditMode = options.files?.isEmpty == false
+        let files = options.files ?? []
 
-        if let aspectRatio = options.aspectRatio {
-            parameters["aspectRatio"] = .string(aspectRatio)
-        }
-
-        if let seed = options.seed {
-            parameters["seed"] = .number(Double(seed))
-        }
+        var parameters: [String: JSONValue] = ["sampleCount": .number(Double(options.n))]
+        if let aspectRatio = options.aspectRatio { parameters["aspectRatio"] = .string(aspectRatio) }
+        if let seed = options.seed { parameters["seed"] = .number(Double(seed)) }
 
         if let vertexOptions {
-            if let negativePrompt = vertexOptions.negativePrompt {
-                parameters["negativePrompt"] = .string(negativePrompt)
+            if let negativePrompt = vertexOptions.negativePrompt { parameters["negativePrompt"] = .string(negativePrompt) }
+            if let personGeneration = vertexOptions.personGeneration { parameters["personGeneration"] = .string(personGeneration.rawValue) }
+            if let safetySetting = vertexOptions.safetySetting { parameters["safetySetting"] = .string(safetySetting.rawValue) }
+            if let addWatermark = vertexOptions.addWatermark { parameters["addWatermark"] = .bool(addWatermark) }
+            if let storageUri = vertexOptions.storageUri { parameters["storageUri"] = .string(storageUri) }
+            if let sampleImageSize = vertexOptions.sampleImageSize { parameters["sampleImageSize"] = .string(sampleImageSize.rawValue) }
+        }
+
+        if isEditMode {
+            parameters["editMode"] = .string(editOptions?.mode?.rawValue ?? GoogleVertexImageEditMode.inpaintInsertion.rawValue)
+            if let baseSteps = editOptions?.baseSteps {
+                parameters["editConfig"] = .object(["baseSteps": .number(baseSteps)])
+            }
+        }
+
+        var instances: [JSONValue] = []
+        if isEditMode {
+            var referenceImages: [JSONValue] = []
+
+            for (index, file) in files.enumerated() {
+                referenceImages.append(
+                    .object([
+                        "referenceType": .string("REFERENCE_TYPE_RAW"),
+                        "referenceId": .number(Double(index + 1)),
+                        "referenceImage": .object([
+                            "bytesBase64Encoded": .string(try base64Data(from: file))
+                        ])
+                    ])
+                )
             }
 
-            if let personGeneration = vertexOptions.personGeneration {
-                parameters["personGeneration"] = .string(personGeneration.rawValue)
+            if let mask = options.mask {
+                var maskConfig: [String: JSONValue] = [
+                    "maskMode": .string(editOptions?.maskMode?.rawValue ?? GoogleVertexImageMaskMode.userProvided.rawValue)
+                ]
+                if let dilation = editOptions?.maskDilation {
+                    maskConfig["dilation"] = .number(dilation)
+                }
+
+                referenceImages.append(
+                    .object([
+                        "referenceType": .string("REFERENCE_TYPE_MASK"),
+                        "referenceId": .number(Double(files.count + 1)),
+                        "referenceImage": .object([
+                            "bytesBase64Encoded": .string(try base64Data(from: mask))
+                        ]),
+                        "maskImageConfig": .object(maskConfig)
+                    ])
+                )
             }
 
-            if let safetySetting = vertexOptions.safetySetting {
-                parameters["safetySetting"] = .string(safetySetting.rawValue)
+            var instance: [String: JSONValue] = [
+                "referenceImages": .array(referenceImages)
+            ]
+            if let prompt = options.prompt {
+                instance["prompt"] = .string(prompt)
             }
-
-            if let addWatermark = vertexOptions.addWatermark {
-                parameters["addWatermark"] = .bool(addWatermark)
+            instances = [.object(instance)]
+        } else {
+            var instance: [String: JSONValue] = [:]
+            if let prompt = options.prompt {
+                instance["prompt"] = .string(prompt)
             }
-
-            if let storageUri = vertexOptions.storageUri {
-                parameters["storageUri"] = .string(storageUri)
-            }
+            instances = [.object(instance)]
         }
 
         let headers = combineHeaders(config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 }
@@ -225,10 +386,7 @@ public final class GoogleVertexImageModel: ImageModelV3 {
         let response = try await postJsonToAPI(
             url: "\(config.baseURL)/models/\(modelIdentifier.rawValue):predict",
             headers: headers,
-            body: JSONValue.object([
-                "instances": .array([.object(["prompt": .string(options.prompt ?? "")])]),
-                "parameters": .object(parameters)
-            ]),
+            body: JSONValue.object(["instances": .array(instances), "parameters": .object(parameters)]),
             failedResponseHandler: googleVertexFailedResponseHandler,
             successfulResponseHandler: createJsonResponseHandler(responseSchema: googleVertexImageResponseSchema),
             isAborted: options.abortSignal,

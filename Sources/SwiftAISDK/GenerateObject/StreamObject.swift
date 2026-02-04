@@ -574,7 +574,7 @@ private func consumeStream<ResultValue, PartialValue, ElementStream>(
             }
 
             finishReason = reason
-            usage = usageValue
+            usage = asLanguageModelUsage(usageValue)
             providerMetadata = metadata
 
        case .error(let errorJSON):

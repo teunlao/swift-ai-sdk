@@ -18,13 +18,33 @@ public struct GoogleVertexTools: Sendable {
     }
 
     @discardableResult
+    public func enterpriseWebSearch() -> Tool {
+        googleTools.enterpriseWebSearch()
+    }
+
+    @discardableResult
+    public func googleMaps() -> Tool {
+        googleTools.googleMaps()
+    }
+
+    @discardableResult
     public func urlContext() -> Tool {
         googleTools.urlContext()
     }
 
     @discardableResult
+    public func fileSearch(_ args: GoogleFileSearchArgs) -> Tool {
+        googleTools.fileSearch(args)
+    }
+
+    @discardableResult
     public func codeExecution() -> Tool {
         googleTools.codeExecution()
+    }
+
+    @discardableResult
+    public func vertexRagStore(_ args: GoogleVertexRAGStoreArgs) -> Tool {
+        googleTools.vertexRagStore(args)
     }
 }
 

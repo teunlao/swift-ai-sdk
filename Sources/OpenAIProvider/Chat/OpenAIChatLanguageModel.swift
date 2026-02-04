@@ -522,16 +522,26 @@ public final class OpenAIChatLanguageModel: LanguageModelV3 {
     }
 
     private func mapUsage(_ usage: OpenAIChatUsage?) -> LanguageModelV3Usage {
-        guard let usage else {
-            return LanguageModelV3Usage()
-        }
+        guard let usage else { return LanguageModelV3Usage() }
+
+        let promptTokens = usage.promptTokens ?? 0
+        let completionTokens = usage.completionTokens ?? 0
+        let cachedTokens = usage.promptTokensDetails?.cachedTokens ?? 0
+        let reasoningTokens = usage.completionTokensDetails?.reasoningTokens ?? 0
 
         return LanguageModelV3Usage(
-            inputTokens: usage.promptTokens,
-            outputTokens: usage.completionTokens,
-            totalTokens: usage.totalTokens,
-            reasoningTokens: usage.completionTokensDetails?.reasoningTokens,
-            cachedInputTokens: usage.promptTokensDetails?.cachedTokens
+            inputTokens: .init(
+                total: promptTokens,
+                noCache: promptTokens - cachedTokens,
+                cacheRead: cachedTokens,
+                cacheWrite: nil
+            ),
+            outputTokens: .init(
+                total: completionTokens,
+                text: completionTokens - reasoningTokens,
+                reasoning: reasoningTokens
+            ),
+            raw: try? jsonValue(from: usage)
         )
     }
 

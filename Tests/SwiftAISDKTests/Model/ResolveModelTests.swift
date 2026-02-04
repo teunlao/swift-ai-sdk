@@ -184,7 +184,7 @@ private final class MockLanguageModelV3: LanguageModelV3, @unchecked Sendable {
         return LanguageModelV3GenerateResult(
             content: [],
             finishReason: .stop,
-            usage: LanguageModelV3Usage(inputTokens: 0, outputTokens: 0, totalTokens: 0),
+            usage: LanguageModelV3Usage(inputTokens: .init(total: 0), outputTokens: .init(total: 0)),
             warnings: []
         )
     }

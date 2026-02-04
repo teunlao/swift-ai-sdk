@@ -56,15 +56,15 @@ private let computer20241022InputSchema = FlexibleSchema(
                     ])
                 ]),
                 "coordinate": .object([
-                    "type": .array([.string("array"), .string("null")]),
+                    "type": .string("array"),
                     "items": .object(["type": .string("integer")])
                 ]),
                 "text": .object([
-                    "type": .array([.string("string"), .string("null")])
+                    "type": .string("string")
                 ])
             ]),
             "required": .array([.string("action")]),
-            "additionalProperties": .bool(true)
+            "additionalProperties": .bool(false)
         ])
     )
 )
@@ -150,33 +150,33 @@ private let computer20250124InputSchema = FlexibleSchema(
                     ])
                 ]),
                 "coordinate": .object([
-                    "type": .array([.string("array"), .string("null")]),
+                    "type": .string("array"),
                     "items": .object(["type": .string("integer")]),
                     "minItems": .number(2),
                     "maxItems": .number(2)
                 ]),
                 "duration": .object([
-                    "type": .array([.string("number"), .string("null")])
+                    "type": .string("number")
                 ]),
                 "scroll_amount": .object([
-                    "type": .array([.string("number"), .string("null")])
+                    "type": .string("number")
                 ]),
                 "scroll_direction": .object([
-                    "type": .array([.string("string"), .string("null")]),
+                    "type": .string("string"),
                     "enum": .array([.string("up"), .string("down"), .string("left"), .string("right")])
                 ]),
                 "start_coordinate": .object([
-                    "type": .array([.string("array"), .string("null")]),
+                    "type": .string("array"),
                     "items": .object(["type": .string("integer")]),
                     "minItems": .number(2),
                     "maxItems": .number(2)
                 ]),
                 "text": .object([
-                    "type": .array([.string("string"), .string("null")])
+                    "type": .string("string")
                 ])
             ]),
             "required": .array([.string("action")]),
-            "additionalProperties": .bool(true)
+            "additionalProperties": .bool(false)
         ])
     )
 )
@@ -273,39 +273,39 @@ private let computer20251124InputSchema = FlexibleSchema(
                     ])
                 ]),
                 "coordinate": .object([
-                    "type": .array([.string("array"), .string("null")]),
+                    "type": .string("array"),
                     "items": .object(["type": .string("integer")]),
                     "minItems": .number(2),
                     "maxItems": .number(2)
                 ]),
                 "duration": .object([
-                    "type": .array([.string("number"), .string("null")])
+                    "type": .string("number")
                 ]),
                 "region": .object([
-                    "type": .array([.string("array"), .string("null")]),
+                    "type": .string("array"),
                     "items": .object(["type": .string("integer")]),
                     "minItems": .number(4),
                     "maxItems": .number(4)
                 ]),
                 "scroll_amount": .object([
-                    "type": .array([.string("number"), .string("null")])
+                    "type": .string("number")
                 ]),
                 "scroll_direction": .object([
-                    "type": .array([.string("string"), .string("null")]),
+                    "type": .string("string"),
                     "enum": .array([.string("up"), .string("down"), .string("left"), .string("right")])
                 ]),
                 "start_coordinate": .object([
-                    "type": .array([.string("array"), .string("null")]),
+                    "type": .string("array"),
                     "items": .object(["type": .string("integer")]),
                     "minItems": .number(2),
                     "maxItems": .number(2)
                 ]),
                 "text": .object([
-                    "type": .array([.string("string"), .string("null")])
+                    "type": .string("string")
                 ])
             ]),
             "required": .array([.string("action")]),
-            "additionalProperties": .bool(true)
+            "additionalProperties": .bool(false)
         ])
     )
 )

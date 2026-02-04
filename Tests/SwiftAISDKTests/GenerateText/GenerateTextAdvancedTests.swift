@@ -12,10 +12,9 @@ import AISDKProviderUtils
 
 @Suite("GenerateText Advanced Tests", .serialized)
 struct GenerateTextAdvancedTests {
-    private let testUsage = LanguageModelUsage(
-        inputTokens: 3,
-        outputTokens: 10,
-        totalTokens: 13
+    private let testUsage = LanguageModelV3Usage(
+        inputTokens: .init(total: 3),
+        outputTokens: .init(total: 10)
     )
 
     // MARK: - Telemetry
@@ -1879,7 +1878,10 @@ struct GenerateTextAdvancedTests {
                         )
                     ],
                     finishReason: .toolCalls,
-                    usage: LanguageModelUsage(inputTokens: 10, outputTokens: 20, totalTokens: 30),
+                    usage: LanguageModelV3Usage(
+                        inputTokens: .init(total: 10),
+                        outputTokens: .init(total: 20)
+                    ),
                     providerMetadata: nil,
                     request: nil,
                     response: LanguageModelV3ResponseInfo(

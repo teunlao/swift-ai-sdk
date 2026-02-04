@@ -16,11 +16,12 @@ private let anthropicBashInputSchema = FlexibleSchema(
     jsonSchema(
         .object([
             "type": .string("object"),
+            "required": .array([.string("command")]),
             "properties": .object([
-                "command": .object(["type": .array([.string("string"), .string("null")])]),
-                "restart": .object(["type": .array([.string("boolean"), .string("null")])])
+                "command": .object(["type": .string("string")]),
+                "restart": .object(["type": .string("boolean")])
             ]),
-            "additionalProperties": .bool(true)
+            "additionalProperties": .bool(false)
         ])
     )
 )

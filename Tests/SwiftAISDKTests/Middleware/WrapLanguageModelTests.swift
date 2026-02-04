@@ -184,7 +184,7 @@ struct WrapLanguageModelTests {
                 LanguageModelV3GenerateResult(
                     content: [],
                     finishReason: .stop,
-                    usage: LanguageModelV3Usage(inputTokens: 10, outputTokens: 5)
+                    usage: LanguageModelV3Usage(inputTokens: .init(total: 10), outputTokens: .init(total: 5))
                 )
             ])
         )
@@ -295,7 +295,7 @@ struct WrapLanguageModelTests {
                 return LanguageModelV3GenerateResult(
                     content: [],
                     finishReason: .stop,
-                    usage: LanguageModelV3Usage(inputTokens: 10, outputTokens: 5)
+                    usage: LanguageModelV3Usage(inputTokens: .init(total: 10), outputTokens: .init(total: 5))
                 )
             }
         )
@@ -407,7 +407,7 @@ struct WrapLanguageModelTests {
                     LanguageModelV3GenerateResult(
                         content: [],
                         finishReason: .stop,
-                        usage: LanguageModelV3Usage(inputTokens: 10, outputTokens: 5)
+                        usage: LanguageModelV3Usage(inputTokens: .init(total: 10), outputTokens: .init(total: 5))
                     )
                 ])
             )
@@ -515,7 +515,7 @@ struct WrapLanguageModelTests {
                     LanguageModelV3GenerateResult(
                         content: [.text(.init(text: "final generate result"))],
                         finishReason: .stop,
-                        usage: LanguageModelV3Usage(inputTokens: 10, outputTokens: 5)
+                        usage: LanguageModelV3Usage(inputTokens: .init(total: 10), outputTokens: .init(total: 5))
                     )
                 }
             )
