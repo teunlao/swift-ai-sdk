@@ -17,7 +17,7 @@ import Foundation
    | { type: 'reasoning-end'; id: string; providerMetadata?: SharedV3ProviderMetadata; }
 
    // Tool calls and results:
-   | { type: 'tool-input-start'; id: string; toolName: string; providerMetadata?: SharedV3ProviderMetadata; providerExecuted?: boolean; }
+   | { type: 'tool-input-start'; id: string; toolName: string; providerMetadata?: SharedV3ProviderMetadata; providerExecuted?: boolean; dynamic?: boolean; title?: string; }
    | { type: 'tool-input-delta'; id: string; delta: string; providerMetadata?: SharedV3ProviderMetadata; }
    | { type: 'tool-input-end'; id: string; providerMetadata?: SharedV3ProviderMetadata; }
    | LanguageModelV3ToolCall
@@ -343,24 +343,6 @@ public enum LanguageModelV3StreamPart: Sendable, Equatable, Codable {
             try container.encode(error, forKey: .error)
         }
     }
-}
-
-/**
- Finish reason enum.
-
- TypeScript equivalent:
- ```typescript
- export type LanguageModelV3FinishReason = 'stop' | 'length' | 'content-filter' | 'tool-calls' | 'error' | 'other' | 'unknown';
- ```
- */
-public enum LanguageModelV3FinishReason: String, Sendable, Codable, Equatable {
-    case stop
-    case length
-    case contentFilter = "content-filter"
-    case toolCalls = "tool-calls"
-    case error
-    case other
-    case unknown
 }
 
 /**

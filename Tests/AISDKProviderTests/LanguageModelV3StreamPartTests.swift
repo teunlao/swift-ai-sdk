@@ -104,7 +104,7 @@ func v3_streamPart_finish_usage_roundTrip() throws {
         raw: nil
     )
     let part: LanguageModelV3StreamPart = .finish(
-        finishReason: .stop,
+        finishReason: LanguageModelV3FinishReason(unified: .stop),
         usage: usage,
         providerMetadata: ["provider": ["note": .string("ok")]]
     )
