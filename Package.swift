@@ -40,10 +40,14 @@ let package = Package(
         .library(name: "CerebrasProvider", targets: ["CerebrasProvider"]),
         .library(name: "DeepSeekProvider", targets: ["DeepSeekProvider"]),
         .library(name: "BasetenProvider", targets: ["BasetenProvider"]),
+        .library(name: "BlackForestLabsProvider", targets: ["BlackForestLabsProvider"]),
         .library(name: "ReplicateProvider", targets: ["ReplicateProvider"]),
         .library(name: "XAIProvider", targets: ["XAIProvider"]),
         .library(name: "LMNTProvider", targets: ["LMNTProvider"]),
         .library(name: "LumaProvider", targets: ["LumaProvider"]),
+        .library(name: "TogetherAIProvider", targets: ["TogetherAIProvider"]),
+        .library(name: "ProdiaProvider", targets: ["ProdiaProvider"]),
+        .library(name: "RevAIProvider", targets: ["RevAIProvider"]),
         .library(name: "AISDKJSONSchema", targets: ["AISDKJSONSchema"]),
         .library(name: "EventSourceParser", targets: ["EventSourceParser"]), // internal lib for SSE
         .library(name: "AISDKZodAdapter", targets: ["AISDKZodAdapter"]),
@@ -100,10 +104,14 @@ let package = Package(
         .target(name: "CerebrasProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "OpenAICompatibleProvider"]),
         .target(name: "DeepSeekProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "OpenAICompatibleProvider"]),
         .target(name: "BasetenProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "OpenAICompatibleProvider"]),
+        .target(name: "BlackForestLabsProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils"]),
         .target(name: "ReplicateProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils"]),
         .target(name: "XAIProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "OpenAICompatibleProvider"]),
         .target(name: "LMNTProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils"]),
         .target(name: "LumaProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils"]),
+        .target(name: "TogetherAIProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "OpenAICompatibleProvider"]),
+        .target(name: "ProdiaProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils"]),
+        .target(name: "RevAIProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils"]),
         // JSON Schema generator (optional product)
         .target(
             name: "AISDKJSONSchema",
@@ -129,8 +137,12 @@ let package = Package(
         .testTarget(name: "CerebrasProviderTests", dependencies: ["CerebrasProvider", "AISDKProvider", "AISDKProviderUtils", "OpenAICompatibleProvider"]),
         .testTarget(name: "DeepSeekProviderTests", dependencies: ["DeepSeekProvider", "AISDKProvider", "AISDKProviderUtils", "OpenAICompatibleProvider"]),
         .testTarget(name: "BasetenProviderTests", dependencies: ["BasetenProvider", "AISDKProvider", "AISDKProviderUtils", "OpenAICompatibleProvider"]),
+        .testTarget(name: "BlackForestLabsProviderTests", dependencies: ["BlackForestLabsProvider", "AISDKProvider", "AISDKProviderUtils"]),
         .testTarget(name: "LMNTProviderTests", dependencies: ["LMNTProvider", "AISDKProvider", "AISDKProviderUtils"]),
         .testTarget(name: "ReplicateProviderTests", dependencies: ["ReplicateProvider", "AISDKProvider", "AISDKProviderUtils"]),
+        .testTarget(name: "TogetherAIProviderTests", dependencies: ["TogetherAIProvider", "AISDKProvider", "AISDKProviderUtils"]),
+        .testTarget(name: "ProdiaProviderTests", dependencies: ["ProdiaProvider", "AISDKProvider", "AISDKProviderUtils"]),
+        .testTarget(name: "RevAIProviderTests", dependencies: ["RevAIProvider", "AISDKProvider", "AISDKProviderUtils"]),
 
         // SwiftAISDKPlayground - CLI executable for manual testing (Playground)
         .executableTarget(
@@ -158,10 +170,14 @@ let package = Package(
                 "AssemblyAIProvider",
                 "CerebrasProvider",
                 "DeepSeekProvider",
+                "BlackForestLabsProvider",
                 "ReplicateProvider",
                 "LMNTProvider",
                 "LumaProvider",
+                "TogetherAIProvider",
                 "XAIProvider",
+                "ProdiaProvider",
+                "RevAIProvider",
                 .product(name: "ArgumentParser", package: "swift-argument-parser")
             ],
             exclude: ["README.md"]
