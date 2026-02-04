@@ -205,6 +205,7 @@ private func makeConfig(fetch: @escaping FetchFunction) -> AnthropicMessagesConf
         let mcpCall = toolCalls.first { $0.toolCallId == "mcptoolu_01HXPYHs79HH36fBbKHysCrp" }
         #expect(mcpCall?.toolName == "echo")
         #expect(mcpCall?.providerExecuted == true)
+        #expect(mcpCall?.dynamic == true)
         #expect(decodeJSONValue(mcpCall?.input ?? "") == .object([:]))
         #expect(mcpCall?.providerMetadata == [
             "anthropic": [
@@ -221,7 +222,7 @@ private func makeConfig(fetch: @escaping FetchFunction) -> AnthropicMessagesConf
 
         let toolSearchResult = toolResults.first { $0.toolCallId == "srvtoolu_01SACvPAnp6ucMJsstB5qb3f" }
         #expect(toolSearchResult?.toolName == "tool_search_tool_regex")
-        #expect(toolSearchResult?.providerExecuted == true)
+        #expect(toolSearchResult?.providerExecuted == nil)
         #expect(toolSearchResult?.result == .array([
             .object([
                 "type": .string("tool_reference"),
@@ -231,8 +232,9 @@ private func makeConfig(fetch: @escaping FetchFunction) -> AnthropicMessagesConf
 
         let mcpResult = toolResults.first { $0.toolCallId == "mcptoolu_01HXPYHs79HH36fBbKHysCrp" }
         #expect(mcpResult?.toolName == "echo")
-        #expect(mcpResult?.providerExecuted == true)
+        #expect(mcpResult?.providerExecuted == nil)
         #expect(mcpResult?.isError == false)
+        #expect(mcpResult?.dynamic == true)
         #expect(mcpResult?.providerMetadata == [
             "anthropic": [
                 "type": .string("mcp-tool-use"),
@@ -4027,14 +4029,14 @@ struct AnthropicMessagesLanguageModelProgrammaticToolCallingTests {
             Issue.record("Expected tool-call at index 2")
         }
 
-        if case .toolResult(let toolResult) = result.content[3] {
-            #expect(toolResult.toolCallId == "srvtoolu_1")
-            #expect(toolResult.toolName == "code_execution")
-            #expect(toolResult.providerExecuted == true)
-            #expect(toolResult.result == .object([
-                "type": .string("code_execution_result"),
-                "stdout": .string("ok"),
-                "stderr": .string(""),
+	        if case .toolResult(let toolResult) = result.content[3] {
+	            #expect(toolResult.toolCallId == "srvtoolu_1")
+	            #expect(toolResult.toolName == "code_execution")
+	            #expect(toolResult.providerExecuted == nil)
+	            #expect(toolResult.result == .object([
+	                "type": .string("code_execution_result"),
+	                "stdout": .string("ok"),
+	                "stderr": .string(""),
                 "return_code": .number(0),
                 "content": .array([]),
             ]))
@@ -4218,15 +4220,15 @@ struct AnthropicMessagesLanguageModelCodeExecutionTests {
             Issue.record("Expected tool-call at index 0")
         }
 
-        // Verify tool result with providerExecuted=true
-        if case .toolResult(let toolResult) = result.content[1] {
-            #expect(toolResult.toolCallId == "tool_1")
-            #expect(toolResult.toolName == "code_execution")
-            #expect(toolResult.providerExecuted == true)
+	        // Verify tool result with providerExecuted=true
+	        if case .toolResult(let toolResult) = result.content[1] {
+	            #expect(toolResult.toolCallId == "tool_1")
+	            #expect(toolResult.toolName == "code_execution")
+	            #expect(toolResult.providerExecuted == nil)
 
-            // Verify result is JSONValue with code execution result
-            if case .object(let resultObj) = toolResult.result {
-                #expect(resultObj["type"] == .string("code_execution_result"))
+	            // Verify result is JSONValue with code execution result
+	            if case .object(let resultObj) = toolResult.result {
+	                #expect(resultObj["type"] == .string("code_execution_result"))
                 #expect(resultObj["stdout"] == .string("Hello, World!\n"))
                 #expect(resultObj["stderr"] == .string(""))
                 #expect(resultObj["return_code"] == .number(0))
@@ -4338,15 +4340,15 @@ struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
             Issue.record("Expected tool-call at index 0")
         }
 
-        // Verify tool result with array (index 1)
-        if case .toolResult(let toolResult) = result.content[1] {
-            #expect(toolResult.toolCallId == "tool_1")
-            #expect(toolResult.toolName == "web_search")
-            #expect(toolResult.providerExecuted == true)
+	        // Verify tool result with array (index 1)
+	        if case .toolResult(let toolResult) = result.content[1] {
+	            #expect(toolResult.toolCallId == "tool_1")
+	            #expect(toolResult.toolName == "web_search")
+	            #expect(toolResult.providerExecuted == nil)
 
-            // Verify result is an array of web search results
-            if case .array(let resultsArray) = toolResult.result {
-                #expect(resultsArray.count == 1)
+	            // Verify result is an array of web search results
+	            if case .array(let resultsArray) = toolResult.result {
+	                #expect(resultsArray.count == 1)
 
                 if case .object(let searchResult) = resultsArray[0] {
                     #expect(searchResult["type"] == .string("web_search_result"))
@@ -4454,14 +4456,14 @@ struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
             ))]
         ))
 
-        // Verify tool result with array (index 1)
-        if case .toolResult(let toolResult) = result.content[1] {
-            #expect(toolResult.toolCallId == "tool_1")
-            #expect(toolResult.toolName == "web_search")
-            #expect(toolResult.providerExecuted == true)
+	        // Verify tool result with array (index 1)
+	        if case .toolResult(let toolResult) = result.content[1] {
+	            #expect(toolResult.toolCallId == "tool_1")
+	            #expect(toolResult.toolName == "web_search")
+	            #expect(toolResult.providerExecuted == nil)
 
-            if case .array(let resultsArray) = toolResult.result {
-                #expect(resultsArray.count == 1)
+	            if case .array(let resultsArray) = toolResult.result {
+	                #expect(resultsArray.count == 1)
 
                 if case .object(let searchResult) = resultsArray[0] {
                     #expect(searchResult["type"] == .string("web_search_result"))
@@ -4546,15 +4548,15 @@ struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
             ))]
         ))
 
-        // Verify error tool result
-        if case .toolResult(let toolResult) = result.content[0] {
-            #expect(toolResult.toolCallId == "tool_1")
-            #expect(toolResult.toolName == "web_search")
-            #expect(toolResult.providerExecuted == true)
-            #expect(toolResult.isError == true)
+	        // Verify error tool result
+	        if case .toolResult(let toolResult) = result.content[0] {
+	            #expect(toolResult.toolCallId == "tool_1")
+	            #expect(toolResult.toolName == "web_search")
+	            #expect(toolResult.providerExecuted == nil)
+	            #expect(toolResult.isError == true)
 
-            // Verify error object
-            if case .object(let errorObj) = toolResult.result {
+	            // Verify error object
+	            if case .object(let errorObj) = toolResult.result {
                 #expect(errorObj["type"] == .string("web_search_tool_result_error"))
                 #expect(errorObj["errorCode"] == .string("max_uses_exceeded"))
             } else {
@@ -4645,15 +4647,15 @@ struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
             Issue.record("Expected tool-call at index 1")
         }
 
-        // Verify tool result
-        if case .toolResult(let toolResult) = result.content[2] {
-            #expect(toolResult.toolCallId == "tool_1")
-            #expect(toolResult.toolName == "web_fetch")
-            #expect(toolResult.providerExecuted == true)
+	        // Verify tool result
+	        if case .toolResult(let toolResult) = result.content[2] {
+	            #expect(toolResult.toolCallId == "tool_1")
+	            #expect(toolResult.toolName == "web_fetch")
+	            #expect(toolResult.providerExecuted == nil)
 
-            // Verify web_fetch_result structure
-            if case .object(let resultObj) = toolResult.result {
-                #expect(resultObj["type"] == .string("web_fetch_result"))
+	            // Verify web_fetch_result structure
+	            if case .object(let resultObj) = toolResult.result {
+	                #expect(resultObj["type"] == .string("web_fetch_result"))
                 #expect(resultObj["url"] == .string("https://en.wikipedia.org/wiki/Test"))
                 #expect(resultObj["retrievedAt"] == .string("2025-07-17T21:38:38.606000+00:00"))
 
@@ -4812,15 +4814,15 @@ struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
             ))]
         ))
 
-        // Verify error tool result
-        if case .toolResult(let toolResult) = result.content[1] {
-            #expect(toolResult.toolCallId == "tool_1")
-            #expect(toolResult.toolName == "web_fetch")
-            #expect(toolResult.providerExecuted == true)
-            #expect(toolResult.isError == true)
+	        // Verify error tool result
+	        if case .toolResult(let toolResult) = result.content[1] {
+	            #expect(toolResult.toolCallId == "tool_1")
+	            #expect(toolResult.toolName == "web_fetch")
+	            #expect(toolResult.providerExecuted == nil)
+	            #expect(toolResult.isError == true)
 
-            // Verify error object
-            if case .object(let errorObj) = toolResult.result {
+	            // Verify error object
+	            if case .object(let errorObj) = toolResult.result {
                 #expect(errorObj["type"] == .string("web_fetch_tool_result_error"))
                 #expect(errorObj["errorCode"] == .string("unavailable"))
             } else {
@@ -4879,15 +4881,15 @@ struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
             ))]
         ))
 
-        // Verify error tool result
-        if case .toolResult(let toolResult) = result.content[0] {
-            #expect(toolResult.toolCallId == "tool_1")
-            #expect(toolResult.toolName == "code_execution")
-            #expect(toolResult.providerExecuted == true)
-            #expect(toolResult.isError == true)
+	        // Verify error tool result
+	        if case .toolResult(let toolResult) = result.content[0] {
+	            #expect(toolResult.toolCallId == "tool_1")
+	            #expect(toolResult.toolName == "code_execution")
+	            #expect(toolResult.providerExecuted == nil)
+	            #expect(toolResult.isError == true)
 
-            // Verify error object
-            if case .object(let errorObj) = toolResult.result {
+	            // Verify error object
+	            if case .object(let errorObj) = toolResult.result {
                 #expect(errorObj["type"] == .string("code_execution_tool_result_error"))
                 #expect(errorObj["errorCode"] == .string("unavailable"))
             } else {

@@ -1113,6 +1113,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                     toolName: value.name,
                     input: stringifyJSON(value.input),
                     providerExecuted: true,
+                    dynamic: true,
                     providerMetadata: providerMetadata
                 )
                 content.append(.toolCall(toolCall))
@@ -1126,7 +1127,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                     toolName: toolInfo.toolName,
                     result: value.content,
                     isError: value.isError,
-                    providerExecuted: true,
+                    dynamic: true,
                     providerMetadata: toolInfo.providerMetadata
                 )
                 content.append(.toolResult(toolResult))
@@ -1171,8 +1172,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                     let toolResult = LanguageModelV3ToolResult(
                         toolCallId: value.toolUseId,
                         toolName: customToolName,
-                        result: .array(mapped),
-                        providerExecuted: true
+                        result: .array(mapped)
                     )
                     content.append(.toolResult(toolResult))
                 } else if type == "tool_search_tool_result_error" {
@@ -1184,8 +1184,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                             "type": .string("tool_search_tool_result_error"),
                             "errorCode": errorCode,
                         ]),
-                        isError: true,
-                        providerExecuted: true
+                        isError: true
                     )
                     content.append(.toolResult(toolResult))
                 }
@@ -1246,8 +1245,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                         let toolResult = LanguageModelV3ToolResult(
                             toolCallId: value.toolUseId,
                             toolName: toolName,
-                            result: .object(resultObject),
-                            providerExecuted: true
+                            result: .object(resultObject)
                         )
                         content.append(.toolResult(toolResult))
 
@@ -1260,8 +1258,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                                 "type": .string("web_fetch_tool_result_error"),
                                 "errorCode": errorCode,
                             ]),
-                            isError: true,
-                            providerExecuted: true
+                            isError: true
                         )
                         content.append(.toolResult(toolResult))
 
@@ -1317,8 +1314,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                     let toolResult = LanguageModelV3ToolResult(
                         toolCallId: value.toolUseId,
                         toolName: toolName,
-                        result: .array(array),
-                        providerExecuted: true
+                        result: .array(array)
                     )
                     content.append(.toolResult(toolResult))
 
@@ -1335,8 +1331,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                             "type": .string("web_search_tool_result_error"),
                             "errorCode": errorCode,
                         ]),
-                        isError: true,
-                        providerExecuted: true
+                        isError: true
                     )
                     content.append(.toolResult(toolResult))
 
@@ -1364,8 +1359,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                                 "stderr": stderr,
                                 "return_code": returnCode,
                                 "content": contentList,
-                            ]),
-                            providerExecuted: true
+                            ])
                         )
                         content.append(.toolResult(toolResult))
 
@@ -1378,8 +1372,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                                 "type": .string("code_execution_tool_result_error"),
                                 "errorCode": errorCode,
                             ]),
-                            isError: true,
-                            providerExecuted: true
+                            isError: true
                         )
                         content.append(.toolResult(toolResult))
 
@@ -1393,8 +1386,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                 let toolResult = LanguageModelV3ToolResult(
                     toolCallId: value.toolUseId,
                     toolName: toolNameMapping.toCustomToolName("code_execution"),
-                    result: value.content,
-                    providerExecuted: true
+                    result: value.content
                 )
                 content.append(.toolResult(toolResult))
             }
@@ -1434,6 +1426,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
         var toolName: String
         var input: String
         var providerExecuted: Bool
+        var dynamic: Bool?
         var providerMetadata: SharedV3ProviderMetadata?
         var firstDelta: Bool
         var providerToolName: String?
@@ -1594,6 +1587,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                     toolName: tool.name,
                     input: initialInput,
                     providerExecuted: false,
+                    dynamic: nil,
                     providerMetadata: nil,
                     firstDelta: initialInput.isEmpty,
                     providerToolName: nil,
@@ -1628,6 +1622,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                     toolName: customToolName,
                     input: "",
                     providerExecuted: true,
+                    dynamic: nil,
                     providerMetadata: nil,
                     firstDelta: true,
                     providerToolName: tool.name,
@@ -1653,6 +1648,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                     toolName: customToolName,
                     input: "",
                     providerExecuted: true,
+                    dynamic: nil,
                     providerMetadata: nil,
                     firstDelta: true,
                     providerToolName: tool.name,
@@ -1684,6 +1680,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                 toolName: tool.name,
                 input: "",
                 providerExecuted: true,
+                dynamic: true,
                 providerMetadata: providerMetadata,
                 firstDelta: true,
                 providerToolName: nil,
@@ -1708,7 +1705,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                 toolName: toolInfo.toolName,
                 result: result.content,
                 isError: result.isError,
-                providerExecuted: true,
+                dynamic: true,
                 providerMetadata: toolInfo.providerMetadata
             )
             continuation.yield(.toolResult(toolResult))
@@ -1764,8 +1761,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
             let toolResult = LanguageModelV3ToolResult(
                 toolCallId: result.toolUseId,
                 toolName: toolNameMapping.toCustomToolName("code_execution"),
-                result: result.content,
-                providerExecuted: true
+                result: result.content
             )
             continuation.yield(.toolResult(toolResult))
         }
@@ -1891,6 +1887,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                     toolName: toolState.toolName,
                     input: finalInput,
                     providerExecuted: toolState.providerExecuted,
+                    dynamic: toolState.dynamic,
                     providerMetadata: providerMetadata
                 )
                 continuation.yield(.toolCall(toolCall))
@@ -1986,8 +1983,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
             return (LanguageModelV3ToolResult(
                 toolCallId: content.toolUseId,
                 toolName: toolName,
-                result: .object(resultObject),
-                providerExecuted: true
+                result: .object(resultObject)
             ), document)
         }
 
@@ -1999,8 +1995,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                     "type": .string("web_fetch_tool_result_error"),
                     "errorCode": payload["error_code"] ?? .null,
                 ]),
-                isError: true,
-                providerExecuted: true
+                isError: true
             ), nil)
         }
 
@@ -2047,8 +2042,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
             let toolResult = LanguageModelV3ToolResult(
                 toolCallId: content.toolUseId,
                 toolName: toolName,
-                result: .array(resultsJSON),
-                providerExecuted: true
+                result: .array(resultsJSON)
             )
             return (toolResult, sources)
 
@@ -2060,8 +2054,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                     "type": .string("web_search_tool_result_error"),
                     "errorCode": object["error_code"] ?? .null,
                 ]),
-                isError: true,
-                providerExecuted: true
+                isError: true
             )
             return (toolResult, [])
 
@@ -2091,8 +2084,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                     "stderr": payload["stderr"] ?? .string(""),
                     "return_code": payload["return_code"] ?? .number(0),
                     "content": payload["content"] ?? .array([]),
-                ]),
-                providerExecuted: true
+                ])
             )
         }
 
@@ -2104,8 +2096,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                     "type": .string("code_execution_tool_result_error"),
                     "errorCode": payload["error_code"] ?? .null,
                 ]),
-                isError: true,
-                providerExecuted: true
+                isError: true
             )
         }
 
@@ -2142,8 +2133,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
             return LanguageModelV3ToolResult(
                 toolCallId: content.toolUseId,
                 toolName: toolName,
-                result: .array(mapped),
-                providerExecuted: true
+                result: .array(mapped)
             )
         }
 
@@ -2155,8 +2145,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                     "type": .string("tool_search_tool_result_error"),
                     "errorCode": payload["error_code"] ?? .null,
                 ]),
-                isError: true,
-                providerExecuted: true
+                isError: true
             )
         }
 
