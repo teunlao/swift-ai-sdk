@@ -780,4 +780,95 @@ struct AnthropicMessagesLanguageModelStreamAdvancedTests {
         }
         #expect(sourcesCount > 0)
     }
+
+    @Test("streams programmatic tool calling fixture (caller metadata + code execution result)")
+    func streamProgrammaticToolCallingFixture() async throws {
+        let events = try loadFixtureEvents("anthropic-programmatic-tool-calling.1")
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .stream(makeStream(from: events)), urlResponse: makeHTTPResponse())
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-sonnet-4-5-20250929"),
+            config: makeAdvancedConfig(fetch: fetch)
+        )
+
+        let rollDieSchema: JSONValue = .object([
+            "type": .string("object"),
+            "properties": .object([
+                "player": .object(["type": .string("string")])
+            ]),
+            "required": .array([.string("player")]),
+            "additionalProperties": .bool(false),
+            "$schema": .string("http://json-schema.org/draft-07/schema#")
+        ])
+
+        let result = try await model.doStream(options: .init(
+            prompt: advancedTestPrompt,
+            tools: [
+                .provider(
+                    LanguageModelV3ProviderTool(
+                        id: "anthropic.code_execution_20250825",
+                        name: "code_execution",
+                        args: [:]
+                    )
+                ),
+                .function(LanguageModelV3FunctionTool(name: "rollDie", inputSchema: rollDieSchema)),
+            ]
+        ))
+
+        func decodeJSONValue(_ string: String) -> JSONValue? {
+            guard let data = string.data(using: .utf8) else { return nil }
+            return try? JSONDecoder().decode(JSONValue.self, from: data)
+        }
+
+        let parts = try await collectParts(from: result.stream)
+        let toolCalls = parts.compactMap { part -> LanguageModelV3ToolCall? in
+            if case .toolCall(let call) = part { return call }
+            return nil
+        }
+
+        let codeExecutionCall = toolCalls.first { $0.toolCallId == "srvtoolu_01MzSrFWsmzBdcoQkGWLyRjK" }
+        #expect(codeExecutionCall?.toolName == "code_execution")
+        #expect(codeExecutionCall?.providerExecuted == true)
+        if let input = codeExecutionCall?.input,
+           case .object(let object) = decodeJSONValue(input),
+           case .string(let type) = object["type"],
+           case .string(let code) = object["code"] {
+            #expect(type == "programmatic-tool-call")
+            #expect(code.contains("async def main"))
+        } else {
+            Issue.record("Expected programmatic code_execution input")
+        }
+
+        let rollDieCall = toolCalls.first { $0.toolName == "rollDie" }
+        #expect(rollDieCall?.providerExecuted == false)
+        #expect(rollDieCall?.providerMetadata == [
+            "anthropic": [
+                "caller": .object([
+                    "type": .string("code_execution_20250825"),
+                    "toolId": .string("srvtoolu_01MzSrFWsmzBdcoQkGWLyRjK"),
+                ])
+            ]
+        ])
+
+        let toolResult = parts.first { part in
+            if case .toolResult(let result) = part {
+                return result.toolCallId == "srvtoolu_01MzSrFWsmzBdcoQkGWLyRjK"
+                    && result.toolName == "code_execution"
+                    && result.providerExecuted == true
+            }
+            return false
+        }
+        #expect(toolResult != nil)
+        if case .toolResult(let result) = toolResult,
+           case .object(let payload) = result.result {
+            #expect(payload["type"] == .string("code_execution_result"))
+        } else {
+            Issue.record("Unexpected code execution payload")
+        }
+
+        let finishPart = parts.last { if case .finish = $0 { return true } else { return false } }
+        #expect(finishPart != nil)
+    }
 }
