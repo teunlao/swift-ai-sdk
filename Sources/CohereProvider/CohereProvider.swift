@@ -34,13 +34,16 @@ public struct CohereProviderSettings: Sendable {
 public final class CohereProvider: ProviderV3 {
     private let chatFactory: @Sendable (CohereChatModelId) -> CohereChatLanguageModel
     private let embeddingFactory: @Sendable (CohereEmbeddingModelId) -> CohereEmbeddingModel
+    private let rerankingFactory: @Sendable (CohereRerankingModelId) -> CohereRerankingModel
 
     init(
         chatFactory: @escaping @Sendable (CohereChatModelId) -> CohereChatLanguageModel,
-        embeddingFactory: @escaping @Sendable (CohereEmbeddingModelId) -> CohereEmbeddingModel
+        embeddingFactory: @escaping @Sendable (CohereEmbeddingModelId) -> CohereEmbeddingModel,
+        rerankingFactory: @escaping @Sendable (CohereRerankingModelId) -> CohereRerankingModel
     ) {
         self.chatFactory = chatFactory
         self.embeddingFactory = embeddingFactory
+        self.rerankingFactory = rerankingFactory
     }
 
     public func languageModel(modelId: String) throws -> any LanguageModelV3 {
@@ -61,6 +64,14 @@ public final class CohereProvider: ProviderV3 {
 
     public func embedding(modelId: CohereEmbeddingModelId) -> CohereEmbeddingModel {
         embeddingFactory(modelId)
+    }
+
+    public func rerankingModel(modelId: String) throws -> (any RerankingModelV3)? {
+        rerankingFactory(CohereRerankingModelId(rawValue: modelId))
+    }
+
+    public func reranking(modelId: CohereRerankingModelId) -> CohereRerankingModel {
+        rerankingFactory(modelId)
     }
 
     public func imageModel(modelId: String) throws -> any ImageModelV3 {
@@ -124,7 +135,23 @@ public func createCohereProvider(settings: CohereProviderSettings = .init()) -> 
         )
     }
 
-    return CohereProvider(chatFactory: chatFactory, embeddingFactory: embeddingFactory)
+    let rerankingFactory: @Sendable (CohereRerankingModelId) -> CohereRerankingModel = { modelId in
+        CohereRerankingModel(
+            modelId: modelId,
+            config: CohereRerankingModel.Config(
+                provider: "cohere.reranking",
+                baseURL: baseURL,
+                headers: headersClosure,
+                fetch: settings.fetch
+            )
+        )
+    }
+
+    return CohereProvider(
+        chatFactory: chatFactory,
+        embeddingFactory: embeddingFactory,
+        rerankingFactory: rerankingFactory
+    )
 }
 
 public let cohere = createCohereProvider()
