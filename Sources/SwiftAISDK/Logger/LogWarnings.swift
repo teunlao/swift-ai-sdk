@@ -60,6 +60,7 @@ public enum Warning: Sendable, Equatable {
     case imageModel(SharedV3Warning)
     case speechModel(SharedV3Warning)
     case transcriptionModel(SharedV3Warning)
+    case rerankingModel(SharedV3Warning)
 }
 
 /// Custom logger function type
@@ -124,6 +125,8 @@ private func formatWarning(_ warning: Warning) -> String {
     case .speechModel(let w):
         return formatSharedV3Warning(w, prefix: prefix)
     case .transcriptionModel(let w):
+        return formatSharedV3Warning(w, prefix: prefix)
+    case .rerankingModel(let w):
         return formatSharedV3Warning(w, prefix: prefix)
     }
 }

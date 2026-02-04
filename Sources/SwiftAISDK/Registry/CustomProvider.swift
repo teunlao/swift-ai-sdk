@@ -33,6 +33,7 @@ public func customProvider(
     languageModels: [String: any LanguageModelV3]? = nil,
     textEmbeddingModels: [String: any EmbeddingModelV3<String>]? = nil,
     imageModels: [String: any ImageModelV3]? = nil,
+    rerankingModels: [String: any RerankingModelV3]? = nil,
     transcriptionModels: [String: any TranscriptionModelV3]? = nil,
     speechModels: [String: any SpeechModelV3]? = nil,
     fallbackProvider: (any ProviderV3)? = nil
@@ -41,6 +42,7 @@ public func customProvider(
         languageModels: languageModels,
         textEmbeddingModels: textEmbeddingModels,
         imageModels: imageModels,
+        rerankingModels: rerankingModels,
         transcriptionModels: transcriptionModels,
         speechModels: speechModels,
         fallbackProvider: fallbackProvider
@@ -53,6 +55,7 @@ private final class CustomProviderImpl: ProviderV3 {
     private let languageModels: [String: any LanguageModelV3]?
     private let textEmbeddingModels: [String: any EmbeddingModelV3<String>]?
     private let imageModels: [String: any ImageModelV3]?
+    private let rerankingModels: [String: any RerankingModelV3]?
     private let transcriptionModels: [String: any TranscriptionModelV3]?
     private let speechModels: [String: any SpeechModelV3]?
     private let fallbackProvider: (any ProviderV3)?
@@ -61,6 +64,7 @@ private final class CustomProviderImpl: ProviderV3 {
         languageModels: [String: any LanguageModelV3]?,
         textEmbeddingModels: [String: any EmbeddingModelV3<String>]?,
         imageModels: [String: any ImageModelV3]?,
+        rerankingModels: [String: any RerankingModelV3]?,
         transcriptionModels: [String: any TranscriptionModelV3]?,
         speechModels: [String: any SpeechModelV3]?,
         fallbackProvider: (any ProviderV3)?
@@ -68,6 +72,7 @@ private final class CustomProviderImpl: ProviderV3 {
         self.languageModels = languageModels
         self.textEmbeddingModels = textEmbeddingModels
         self.imageModels = imageModels
+        self.rerankingModels = rerankingModels
         self.transcriptionModels = transcriptionModels
         self.speechModels = speechModels
         self.fallbackProvider = fallbackProvider
@@ -107,6 +112,20 @@ private final class CustomProviderImpl: ProviderV3 {
         }
 
         throw NoSuchModelError(modelId: modelId, modelType: .imageModel)
+    }
+
+    public func rerankingModel(modelId: String) throws -> (any RerankingModelV3)? {
+        if let models = rerankingModels, let model = models[modelId] {
+            return model
+        }
+
+        if let fallback = fallbackProvider {
+            if let model = try fallback.rerankingModel(modelId: modelId) {
+                return model
+            }
+        }
+
+        throw NoSuchModelError(modelId: modelId, modelType: .rerankingModel)
     }
 
     public func transcriptionModel(modelId: String) throws -> (any TranscriptionModelV3)? {

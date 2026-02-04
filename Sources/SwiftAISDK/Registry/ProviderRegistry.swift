@@ -22,6 +22,9 @@ public protocol ProviderRegistryProvider: Sendable {
     /// Returns the image model with the given combined ID
     func imageModel(id: String) -> any ImageModelV3
 
+    /// Returns the reranking model with the given combined ID
+    func rerankingModel(id: String) -> any RerankingModelV3
+
     /// Returns the transcription model with the given combined ID
     func transcriptionModel(id: String) -> any TranscriptionModelV3
 
@@ -199,6 +202,22 @@ final class DefaultProviderRegistry: ProviderRegistryProvider {
             return model
         } catch {
             fatalError("Error accessing image model: \(error)")
+        }
+    }
+
+    public func rerankingModel(id: String) -> any RerankingModelV3 {
+        do {
+            let (providerId, modelId) = try splitId(id: id, modelType: .rerankingModel)
+            let provider = try getProvider(id: providerId, modelType: .rerankingModel)
+
+            let maybeModel = try provider.rerankingModel(modelId: modelId)
+            guard let model = maybeModel else {
+                throw NoSuchModelError(modelId: id, modelType: .rerankingModel)
+            }
+
+            return model
+        } catch {
+            fatalError("Error accessing reranking model: \(error)")
         }
     }
 
