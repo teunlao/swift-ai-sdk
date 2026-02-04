@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-02-04
+
+### Added
+- Rerank: add core `rerank` API + `RerankingModelV3` protocol parity.
+- Providers: Cohere + Amazon Bedrock reranking models (request/response mapping, warnings, telemetry) + tests.
+
 ## [0.12.0] - 2026-02-04
 
 ### Changed
