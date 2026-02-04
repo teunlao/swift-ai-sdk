@@ -213,7 +213,7 @@ func encodeUIMessageChunkToJSON(_ chunk: AnyUIMessageChunk) -> JSONValue {
     case .finish(let finishReason, let messageMetadata):
         return .object(baseObject([
             "type": .string("finish"),
-            "finishReason": finishReason.flatMap { $0 == .unknown ? nil : JSONValue.string($0.rawValue) },
+            "finishReason": finishReason.map { JSONValue.string($0.rawValue) },
             "messageMetadata": messageMetadata
         ]))
 

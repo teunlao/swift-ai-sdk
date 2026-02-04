@@ -54,6 +54,7 @@ public enum SingleRequestTextStreamPart: Sendable {
     case responseMetadata(id: String?, timestamp: Date?, modelId: String?)
     case finish(
         finishReason: FinishReason,
+        rawFinishReason: String?,
         usage: LanguageModelUsage,
         providerMetadata: ProviderMetadata?
     )

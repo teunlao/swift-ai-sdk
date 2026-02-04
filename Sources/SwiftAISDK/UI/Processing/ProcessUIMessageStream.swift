@@ -535,7 +535,7 @@ private func handleChunk<Message: UIMessageConvertible>(
         }
 
     case .finish(let finishReason, let messageMetadata):
-        if let finishReason, finishReason != .unknown {
+        if let finishReason {
             context.state.finishReason = finishReason
         }
         if let metadata = messageMetadata {

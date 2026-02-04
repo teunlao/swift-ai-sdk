@@ -111,7 +111,8 @@ public func runToolsTransformation(
 
                     case .finish(let finishReason, let usage, let providerMetadata):
                         let finishPart: SingleRequestTextStreamPart = .finish(
-                            finishReason: finishReason,
+                            finishReason: finishReason.unified,
+                            rawFinishReason: finishReason.raw,
                             usage: asLanguageModelUsage(usage),
                             providerMetadata: providerMetadata
                         )

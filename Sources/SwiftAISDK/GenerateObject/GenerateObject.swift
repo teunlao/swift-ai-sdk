@@ -156,7 +156,7 @@ public func generateObject<ResultValue, PartialValue, ElementStream>(
                                 headers: responseHeaders
                             ),
                             usage: usage,
-                            finishReason: generateResult.finishReason
+                            finishReason: generateResult.finishReason.unified
                         )
                     }
 
@@ -174,7 +174,7 @@ public func generateObject<ResultValue, PartialValue, ElementStream>(
                         telemetry: telemetry,
                         attributes: makeGenerateObjectResponseTelemetryAttributes(
                             telemetry: telemetry,
-                            finishReason: generateResult.finishReason,
+                            finishReason: generateResult.finishReason.unified,
                             objectOutput: { text },
                             responseId: responseId,
                             responseModelId: responseModelId,
@@ -188,7 +188,7 @@ public func generateObject<ResultValue, PartialValue, ElementStream>(
                     return GenerateObjectIntermediateResult(
                         text: text,
                         reasoning: reasoning,
-                        finishReason: generateResult.finishReason,
+                        finishReason: generateResult.finishReason.unified,
                         usage: usage,
                         warnings: generateResult.warnings,
                         providerMetadata: generateResult.providerMetadata,

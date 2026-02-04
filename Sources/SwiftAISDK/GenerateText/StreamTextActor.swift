@@ -1031,6 +1031,7 @@ case let .toolInputStart(id, toolName, providerMetadata, providerExecuted, dynam
                     }
                 }
             case let .finish(finishReason, usage, providerMetadata):
+                let unifiedFinishReason = finishReason.unified
                 let stepUsage = asLanguageModelUsage(usage)
                 for id in openTextIds {
                     await fullBroadcaster.send(.textEnd(id: id, providerMetadata: nil))
@@ -1067,8 +1068,8 @@ case let .toolInputStart(id, toolName, providerMetadata, providerExecuted, dynam
                     .finishStep(
                         response: response,
                         usage: stepUsage,
-                        finishReason: finishReason,
-                        rawFinishReason: finishReason.rawValue,
+                        finishReason: unifiedFinishReason,
+                        rawFinishReason: finishReason.raw,
                         providerMetadata: providerMetadata
                     )
                 )
@@ -1078,8 +1079,8 @@ case let .toolInputStart(id, toolName, providerMetadata, providerExecuted, dynam
                 let mergedMessages = recordedResponseMessages + responseMessages
                 let stepResult = DefaultStepResult(
                     content: contentSnapshot,
-                    finishReason: finishReason,
-                    rawFinishReason: finishReason.rawValue,
+                    finishReason: unifiedFinishReason,
+                    rawFinishReason: finishReason.raw,
                     usage: stepUsage,
                     warnings: capturedWarnings, request: recordedRequest,
                     response: StepResultResponse(
@@ -1118,8 +1119,8 @@ case let .toolInputStart(id, toolName, providerMetadata, providerExecuted, dynam
                 // Do not resolve `finishReasonPromise` here; session-level finish
                 // will resolve it with the last step's reason to mirror upstream.
                 // Keep the last seen reason in `recordedFinishReason`.
-                recordedFinishReason = finishReason
-                recordedRawFinishReason = finishReason.rawValue
+                recordedFinishReason = unifiedFinishReason
+                recordedRawFinishReason = finishReason.raw
             case .file(let file):
                 let genFile = toGeneratedFile(file)
                 recordedContent.append(.file(file: genFile, providerMetadata: nil))
@@ -1202,8 +1203,8 @@ case let .toolInputStart(id, toolName, providerMetadata, providerExecuted, dynam
         // can read stable values without timing races.
         totalUsagePromise.resolve(accumulatedUsage)
         stepsPromise.resolve(recordedSteps)
-        // Resolve finish reason with the last recorded one (or unknown if none).
-        finishReasonPromise.resolve(recordedFinishReason ?? .unknown)
+        // Resolve finish reason with the last recorded one (or other if none).
+        finishReasonPromise.resolve(recordedFinishReason ?? .other)
 
         if let error {
             // Error path: emit a .error part for downstream observers,
@@ -1218,11 +1219,11 @@ case let .toolInputStart(id, toolName, providerMetadata, providerExecuted, dynam
                 abortEmitted = true
                 await fullBroadcaster.send(.abort(reason: nil))
             }
-            let finalReason = recordedFinishReason ?? .unknown
+            let finalReason = recordedFinishReason ?? .other
             await fullBroadcaster.send(
                 .finish(
                     finishReason: finalReason,
-                    rawFinishReason: recordedRawFinishReason ?? finalReason.rawValue,
+                    rawFinishReason: recordedRawFinishReason,
                     totalUsage: accumulatedUsage
                 )
             )

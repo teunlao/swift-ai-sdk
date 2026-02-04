@@ -337,12 +337,16 @@ private func _convertLanguageModelV3DataContentToV2(_ data: LanguageModelV3DataC
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 private func _convertLanguageModelV2GenerateResultToV3(_ result: LanguageModelV2GenerateResult) -> LanguageModelV3GenerateResult {
-    LanguageModelV3GenerateResult(
-        content: result.content.map(_convertLanguageModelV2ContentToV3),
-        finishReason: LanguageModelV3FinishReason(rawValue: result.finishReason.rawValue) ?? .unknown,
-        usage: _convertLanguageModelV2UsageToV3(result.usage),
-        providerMetadata: result.providerMetadata,
-        request: result.request.map { LanguageModelV3RequestInfo(body: $0.body) },
+	    let finishReason = LanguageModelV3FinishReason(
+	        unified: LanguageModelV3FinishReason.Unified(rawValue: result.finishReason.rawValue) ?? .other,
+	        raw: nil
+	    )
+	    return LanguageModelV3GenerateResult(
+	        content: result.content.map(_convertLanguageModelV2ContentToV3),
+	        finishReason: finishReason,
+	        usage: _convertLanguageModelV2UsageToV3(result.usage),
+	        providerMetadata: result.providerMetadata,
+	        request: result.request.map { LanguageModelV3RequestInfo(body: $0.body) },
         response: result.response.map {
             LanguageModelV3ResponseInfo(
                 id: $0.id,
@@ -431,7 +435,10 @@ private func _convertLanguageModelV2StreamPartToV3(_ part: LanguageModelV2Stream
 
     case let .finish(finishReason, usage, providerMetadata):
         return .finish(
-            finishReason: LanguageModelV3FinishReason(rawValue: finishReason.rawValue) ?? .unknown,
+            finishReason: LanguageModelV3FinishReason(
+                unified: LanguageModelV3FinishReason.Unified(rawValue: finishReason.rawValue) ?? .other,
+                raw: nil
+            ),
             usage: _convertLanguageModelV2UsageToV3(usage),
             providerMetadata: providerMetadata
         )

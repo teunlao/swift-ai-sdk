@@ -197,6 +197,6 @@ private final class StreamTextEventEncoder {
     }
 
     func finalize() -> [StreamTextEvent] {
-        finishedEmitted ? [] : [.finish(reason: .unknown, rawFinishReason: nil, usage: LanguageModelUsage())]
+        finishedEmitted ? [] : [.finish(reason: .other, rawFinishReason: nil, usage: LanguageModelUsage())]
     }
 }

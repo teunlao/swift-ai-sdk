@@ -150,7 +150,7 @@ struct ChatCommand: AsyncParsableCommand {
             let payload = PlaygroundJSONResult(
                 text: text,
                 usage: asLanguageModelUsage(response.usage),
-                finishReason: response.finishReason,
+                finishReason: response.finishReason.unified,
                 warnings: response.warnings
             )
             let data = try encoder.encode(payload)
@@ -188,7 +188,7 @@ struct ChatCommand: AsyncParsableCommand {
             case .textStart, .textEnd:
                 break
             case .finish(let reason, _, _):
-                finishReason = reason
+                finishReason = reason.unified
             default:
                 await logger.verbose("Skipped stream chunk: \(part)")
             }

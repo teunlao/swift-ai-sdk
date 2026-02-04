@@ -56,7 +56,7 @@ public func transformTextToUIMessageStream(
                 continuation.yield(.finishStep)
                 if options.sendFinish {
                     if let mapper = options.messageMetadata,
-                       let meta = mapper(.finish(finishReason: .unknown, rawFinishReason: nil, totalUsage: createNullLanguageModelUsage()))
+                       let meta = mapper(.finish(finishReason: .other, rawFinishReason: nil, totalUsage: createNullLanguageModelUsage()))
                     {
                         continuation.yield(.messageMetadata(meta))
                     }

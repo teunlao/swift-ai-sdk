@@ -233,6 +233,7 @@ public final class Agent<OutputValue: Sendable, PartialOutputValue: Sendable>: @
             Task {
                 let event = GenerateTextFinishEvent(
                     finishReason: finishReason,
+                    rawFinishReason: finalStep.rawFinishReason,
                     usage: finalStep.usage,
                     content: finalStep.content,
                     text: finalStep.text,

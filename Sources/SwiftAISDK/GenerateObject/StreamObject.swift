@@ -486,7 +486,7 @@ private func consumeStream<ResultValue, PartialValue, ElementStream>(
     var warnings: [CallWarning]?
     var usage = LanguageModelUsage()
     var providerMetadata: ProviderMetadata?
-    var finishReason: FinishReason = .unknown
+    var finishReason: FinishReason = .other
     var currentError: Error?
 
     var responseId = internalOptions.generateId()
@@ -573,7 +573,7 @@ private func consumeStream<ResultValue, PartialValue, ElementStream>(
                 pendingDelta = ""
             }
 
-            finishReason = reason
+            finishReason = reason.unified
             usage = asLanguageModelUsage(usageValue)
             providerMetadata = metadata
 

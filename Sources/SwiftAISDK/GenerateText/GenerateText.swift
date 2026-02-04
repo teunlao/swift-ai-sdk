@@ -55,6 +55,7 @@ private actor ResponseMessageStore {
 private struct GenerateStepIntermediate {
     let content: [LanguageModelV3Content]
     let finishReason: FinishReason
+    let rawFinishReason: String?
     let usage: LanguageModelUsage
     let warnings: [CallWarning]
     let providerMetadata: ProviderMetadata?
@@ -663,6 +664,7 @@ public typealias GenerateTextOnFinishCallback = @Sendable (_ event: GenerateText
  */
 public struct GenerateTextFinishEvent: Sendable {
     public let finishReason: FinishReason
+    public let rawFinishReason: String?
     public let usage: LanguageModelUsage
     public let content: [ContentPart]
     public let text: String
@@ -977,7 +979,7 @@ public func generateText<OutputValue: Sendable>(
                                 telemetry: telemetry,
                                 attributes: buildResponseTelemetryAttributes(
                                     telemetry: telemetry,
-                                    finishReason: result.finishReason,
+                                    finishReason: result.finishReason.unified,
                                     content: result.content,
                                     providerMetadata: result.providerMetadata,
                                     usage: usage,
@@ -990,7 +992,8 @@ public func generateText<OutputValue: Sendable>(
 
                         return GenerateStepIntermediate(
                             content: result.content,
-                            finishReason: result.finishReason,
+                            finishReason: result.finishReason.unified,
+                            rawFinishReason: result.finishReason.raw,
                             usage: usage,
                             warnings: result.warnings,
                             providerMetadata: result.providerMetadata,
@@ -1127,6 +1130,7 @@ public func generateText<OutputValue: Sendable>(
                 let currentStepResult = DefaultStepResult(
                     content: stepContent,
                     finishReason: stepResult.finishReason,
+                    rawFinishReason: stepResult.rawFinishReason,
                     usage: stepResult.usage,
                     warnings: stepResult.warnings,
                     request: requestMetadata,
@@ -1185,6 +1189,7 @@ public func generateText<OutputValue: Sendable>(
             if let onFinish {
                 let finishEvent = GenerateTextFinishEvent(
                     finishReason: lastStep.finishReason,
+                    rawFinishReason: lastStep.rawFinishReason,
                     usage: lastStep.usage,
                     content: lastStep.content,
                     text: lastStep.text,

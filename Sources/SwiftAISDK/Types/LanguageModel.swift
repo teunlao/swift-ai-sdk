@@ -43,9 +43,9 @@ public enum LanguageModel: Sendable {
  - `error`: model stopped because of an error
  - `other`: model stopped for other reasons
 
- Type alias for `LanguageModelV3FinishReason` from the Provider package.
+ Type alias for the unified finish reason from the Provider package.
  */
-public typealias FinishReason = LanguageModelV3FinishReason
+public typealias FinishReason = LanguageModelV3FinishReason.Unified
 
 /**
  Warning from the model provider for this call.

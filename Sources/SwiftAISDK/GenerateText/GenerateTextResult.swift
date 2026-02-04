@@ -54,6 +54,9 @@ public protocol GenerateTextResult: Sendable {
     /// Finish reason reported for the final step.
     var finishReason: FinishReason { get }
 
+    /// Raw finish reason reported by the provider for the final step (if available).
+    var rawFinishReason: String? { get }
+
     /// Token usage of the final step.
     var usage: LanguageModelUsage { get }
 
@@ -197,6 +200,10 @@ public final class DefaultGenerateTextResult<OutputValue: Sendable>: GenerateTex
 
     public var finishReason: FinishReason {
         finalStep.finishReason
+    }
+
+    public var rawFinishReason: String? {
+        finalStep.rawFinishReason
     }
 
     public var usage: LanguageModelUsage {

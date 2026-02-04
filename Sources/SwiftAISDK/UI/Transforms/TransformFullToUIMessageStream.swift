@@ -153,7 +153,7 @@ public func transformFullToUIMessageStream(
                                 continuation.yield(AnyUIMessageChunk.messageMetadata(meta))
                             }
                             continuation.yield(.finish(
-                                finishReason: finishReason == .unknown ? nil : finishReason,
+                                finishReason: finishReason,
                                 messageMetadata: nil
                             ))
                         }
