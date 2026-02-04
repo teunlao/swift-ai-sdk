@@ -253,6 +253,8 @@ private func parseParts(
         case "dynamic-tool":
             let toolName = try requireString(object, key: "toolName", context: context)
             let toolCallId = try requireString(object, key: "toolCallId", context: context)
+            let title = try optionalString(object, key: "title")
+            let providerExecuted = try optionalBool(object, key: "providerExecuted")
             let state = try parseRequiredEnum(
                 object,
                 key: "state",
@@ -262,29 +264,60 @@ private func parseParts(
             let input = try optionalJSONValue(object, key: "input")
             let output = try optionalJSONValue(object, key: "output")
             let errorText = try optionalString(object, key: "errorText")
-            var callProviderMetadata: ProviderMetadata?
+            let approval = try parseToolApprovalIfPresent(object, context: context)
+            let callProviderMetadata = try parseProviderMetadataIfPresent(object, key: "callProviderMetadata", context: context)
             var preliminary: Bool?
 
             switch state {
             case .inputStreaming:
                 try ensure(output == nil, context: context, message: "dynamic-tool output must be omitted when state is \"input-streaming\"")
                 try ensure(errorText == nil, context: context, message: "dynamic-tool errorText must be omitted when state is \"input-streaming\"")
+                try ensure(preliminary == nil, context: context, message: "dynamic-tool preliminary must be omitted when state is \"input-streaming\"")
+                try ensure(approval == nil, context: context, message: "dynamic-tool approval must be omitted when state is \"input-streaming\"")
             case .inputAvailable:
                 try ensure(input != nil, context: context, message: "dynamic-tool input must be provided when state is \"input-available\"")
                 try ensure(output == nil, context: context, message: "dynamic-tool output must be omitted when state is \"input-available\"")
                 try ensure(errorText == nil, context: context, message: "dynamic-tool errorText must be omitted when state is \"input-available\"")
-                callProviderMetadata = try parseProviderMetadataIfPresent(object, key: "callProviderMetadata", context: context)
+                try ensure(preliminary == nil, context: context, message: "dynamic-tool preliminary must be omitted when state is \"input-available\"")
+                try ensure(approval == nil, context: context, message: "dynamic-tool approval must be omitted when state is \"input-available\"")
+            case .approvalRequested:
+                try ensure(input != nil, context: context, message: "dynamic-tool input must be provided when state is \"approval-requested\"")
+                let approvalValue = try requireApproval(approval, context: context, message: "dynamic-tool approval must be provided when state is \"approval-requested\"")
+                try ensure(approvalValue.approved == nil, context: context, message: "dynamic-tool approval.approved must be omitted when state is \"approval-requested\"")
+                try ensure(approvalValue.reason == nil, context: context, message: "dynamic-tool approval.reason must be omitted when state is \"approval-requested\"")
+                try ensure(output == nil, context: context, message: "dynamic-tool output must be omitted when state is \"approval-requested\"")
+                try ensure(errorText == nil, context: context, message: "dynamic-tool errorText must be omitted when state is \"approval-requested\"")
+                try ensure(preliminary == nil, context: context, message: "dynamic-tool preliminary must be omitted when state is \"approval-requested\"")
+            case .approvalResponded:
+                try ensure(input != nil, context: context, message: "dynamic-tool input must be provided when state is \"approval-responded\"")
+                let approvalValue = try requireApproval(approval, context: context, message: "dynamic-tool approval must be provided when state is \"approval-responded\"")
+                try ensure(approvalValue.approved != nil, context: context, message: "dynamic-tool approval.approved must be provided when state is \"approval-responded\"")
+                try ensure(output == nil, context: context, message: "dynamic-tool output must be omitted when state is \"approval-responded\"")
+                try ensure(errorText == nil, context: context, message: "dynamic-tool errorText must be omitted when state is \"approval-responded\"")
+                try ensure(preliminary == nil, context: context, message: "dynamic-tool preliminary must be omitted when state is \"approval-responded\"")
             case .outputAvailable:
                 try ensure(input != nil, context: context, message: "dynamic-tool input must be provided when state is \"output-available\"")
                 try ensure(output != nil, context: context, message: "dynamic-tool output must be provided when state is \"output-available\"")
                 try ensure(errorText == nil, context: context, message: "dynamic-tool errorText must be omitted when state is \"output-available\"")
-                callProviderMetadata = try parseProviderMetadataIfPresent(object, key: "callProviderMetadata", context: context)
                 preliminary = try optionalBool(object, key: "preliminary")
+                if let approvalValue = approval {
+                    try ensure(approvalValue.approved == true, context: context, message: "dynamic-tool approval.approved must be true when provided in \"output-available\" state")
+                }
             case .outputError:
                 try ensure(input != nil, context: context, message: "dynamic-tool input must be provided when state is \"output-error\"")
                 try ensure(output == nil, context: context, message: "dynamic-tool output must be omitted when state is \"output-error\"")
                 try ensure(errorText != nil, context: context, message: "dynamic-tool errorText must be provided when state is \"output-error\"")
-                callProviderMetadata = try parseProviderMetadataIfPresent(object, key: "callProviderMetadata", context: context)
+                try ensure(preliminary == nil, context: context, message: "dynamic-tool preliminary must be omitted when state is \"output-error\"")
+                if let approvalValue = approval {
+                    try ensure(approvalValue.approved == true, context: context, message: "dynamic-tool approval.approved must be true when provided in \"output-error\" state")
+                }
+            case .outputDenied:
+                try ensure(input != nil, context: context, message: "dynamic-tool input must be provided when state is \"output-denied\"")
+                try ensure(output == nil, context: context, message: "dynamic-tool output must be omitted when state is \"output-denied\"")
+                try ensure(errorText == nil, context: context, message: "dynamic-tool errorText must be omitted when state is \"output-denied\"")
+                let approvalValue = try requireApproval(approval, context: context, message: "dynamic-tool approval must be provided when state is \"output-denied\"")
+                try ensure(approvalValue.approved == false, context: context, message: "dynamic-tool approval.approved must be false when state is \"output-denied\"")
+                try ensure(preliminary == nil, context: context, message: "dynamic-tool preliminary must be omitted when state is \"output-denied\"")
             }
 
             let part = UIDynamicToolUIPart(
@@ -294,8 +327,11 @@ private func parseParts(
                 input: input,
                 output: output,
                 errorText: errorText,
+                providerExecuted: providerExecuted,
                 callProviderMetadata: callProviderMetadata,
-                preliminary: preliminary
+                preliminary: preliminary,
+                approval: approval,
+                title: title
             )
             parts.append(.dynamicTool(part))
 
@@ -314,6 +350,7 @@ private func parseParts(
             } else if type.hasPrefix("tool-") {
                 let toolName = String(type.dropFirst("tool-".count))
                 let toolCallId = try requireString(object, key: "toolCallId", context: context)
+                let title = try optionalString(object, key: "title")
                 let state = try parseRequiredEnum(
                     object,
                     key: "state",
@@ -325,7 +362,7 @@ private func parseParts(
                 let errorText = try optionalString(object, key: "errorText")
                 let providerExecuted = try optionalBool(object, key: "providerExecuted")
                 let approval = try parseToolApprovalIfPresent(object, context: context)
-                var callProviderMetadata: ProviderMetadata?
+                let callProviderMetadata = try parseProviderMetadataIfPresent(object, key: "callProviderMetadata", context: context)
                 var preliminary: Bool?
                 var rawInput: JSONValue?
 
@@ -340,7 +377,6 @@ private func parseParts(
                     try ensure(output == nil, context: context, message: "tool output must be omitted when state is \"input-available\"")
                     try ensure(errorText == nil, context: context, message: "tool errorText must be omitted when state is \"input-available\"")
                     try ensure(approval == nil, context: context, message: "tool approval must be omitted when state is \"input-available\"")
-                    callProviderMetadata = try parseProviderMetadataIfPresent(object, key: "callProviderMetadata", context: context)
                     rawInput = nil
                 case .approvalRequested:
                     try ensure(input != nil, context: context, message: "tool input must be provided when state is \"approval-requested\"")
@@ -349,7 +385,6 @@ private func parseParts(
                     try ensure(approvalValue.reason == nil, context: context, message: "tool approval.reason must be omitted when state is \"approval-requested\"")
                     try ensure(output == nil, context: context, message: "tool output must be omitted when state is \"approval-requested\"")
                     try ensure(errorText == nil, context: context, message: "tool errorText must be omitted when state is \"approval-requested\"")
-                    callProviderMetadata = try parseProviderMetadataIfPresent(object, key: "callProviderMetadata", context: context)
                     rawInput = nil
                 case .approvalResponded:
                     try ensure(input != nil, context: context, message: "tool input must be provided when state is \"approval-responded\"")
@@ -357,7 +392,6 @@ private func parseParts(
                     try ensure(approvalValue.approved != nil, context: context, message: "tool approval.approved must be provided when state is \"approval-responded\"")
                     try ensure(output == nil, context: context, message: "tool output must be omitted when state is \"approval-responded\"")
                     try ensure(errorText == nil, context: context, message: "tool errorText must be omitted when state is \"approval-responded\"")
-                    callProviderMetadata = try parseProviderMetadataIfPresent(object, key: "callProviderMetadata", context: context)
                     rawInput = nil
                 case .outputAvailable:
                     try ensure(input != nil, context: context, message: "tool input must be provided when state is \"output-available\"")
@@ -366,7 +400,6 @@ private func parseParts(
                 if let approvalValue = approval {
                     try ensure(approvalValue.approved == true, context: context, message: "tool approval.approved must be true when provided in \"output-available\" state")
                 }
-                    callProviderMetadata = try parseProviderMetadataIfPresent(object, key: "callProviderMetadata", context: context)
                     preliminary = try optionalBool(object, key: "preliminary")
                     rawInput = nil
                 case .outputError:
@@ -376,7 +409,6 @@ private func parseParts(
                     if let approvalValue = approval {
                         try ensure(approvalValue.approved == true, context: context, message: "tool approval.approved must be true when provided in \"output-error\" state")
                     }
-                    callProviderMetadata = try parseProviderMetadataIfPresent(object, key: "callProviderMetadata", context: context)
                     rawInput = try optionalJSONValue(object, key: "rawInput")
                 case .outputDenied:
                     try ensure(input != nil, context: context, message: "tool input must be provided when state is \"output-denied\"")
@@ -384,7 +416,6 @@ private func parseParts(
                     try ensure(errorText == nil, context: context, message: "tool errorText must be omitted when state is \"output-denied\"")
                     let approvalValue = try requireApproval(approval, context: context, message: "tool approval must be provided when state is \"output-denied\"")
                     try ensure(approvalValue.approved == false, context: context, message: "tool approval.approved must be false when state is \"output-denied\"")
-                    callProviderMetadata = try parseProviderMetadataIfPresent(object, key: "callProviderMetadata", context: context)
                     rawInput = nil
                 }
 
@@ -399,7 +430,8 @@ private func parseParts(
                     providerExecuted: providerExecuted,
                     callProviderMetadata: callProviderMetadata,
                     preliminary: preliminary,
-                    approval: approval
+                    approval: approval,
+                    title: title
                 )
                 parts.append(.tool(part))
             } else {

@@ -60,7 +60,7 @@ public func transformTextToUIMessageStream(
                     {
                         continuation.yield(.messageMetadata(meta))
                     }
-                    continuation.yield(.finish(messageMetadata: nil))
+                    continuation.yield(.finish(finishReason: nil, messageMetadata: nil))
                 }
                 continuation.finish()
             } catch is CancellationError {

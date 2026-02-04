@@ -20,7 +20,7 @@ struct TransformTextToUIMessageStreamTests {
             .textDelta(id: "text-1", delta: "World", providerMetadata: nil),
             .textEnd(id: "text-1", providerMetadata: nil),
             .finishStep,
-            .finish(messageMetadata: nil)
+            .finish(finishReason: nil, messageMetadata: nil)
         ]
 
         #expect(chunks == expected)
@@ -39,7 +39,7 @@ struct TransformTextToUIMessageStreamTests {
             .textStart(id: "text-1", providerMetadata: nil),
             .textEnd(id: "text-1", providerMetadata: nil),
             .finishStep,
-            .finish(messageMetadata: nil)
+            .finish(finishReason: nil, messageMetadata: nil)
         ]
 
         #expect(chunks == expected)
@@ -59,7 +59,7 @@ struct TransformTextToUIMessageStreamTests {
             .textDelta(id: "text-1", delta: "Complete message", providerMetadata: nil),
             .textEnd(id: "text-1", providerMetadata: nil),
             .finishStep,
-            .finish(messageMetadata: nil)
+            .finish(finishReason: nil, messageMetadata: nil)
         ]
 
         #expect(chunks == expected)

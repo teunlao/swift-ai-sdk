@@ -58,7 +58,8 @@ public enum UIMessageChunk<MessageMetadata: Sendable & Equatable>: Sendable, Equ
         input: JSONValue,
         providerExecuted: Bool?,
         providerMetadata: ProviderMetadata?,
-        dynamic: Bool?
+        dynamic: Bool?,
+        title: String?
     )
 
     case toolInputError(
@@ -68,7 +69,8 @@ public enum UIMessageChunk<MessageMetadata: Sendable & Equatable>: Sendable, Equ
         providerExecuted: Bool?,
         providerMetadata: ProviderMetadata?,
         dynamic: Bool?,
-        errorText: String
+        errorText: String,
+        title: String?
     )
 
     case toolApprovalRequest(approvalId: String, toolCallId: String)
@@ -94,7 +96,9 @@ public enum UIMessageChunk<MessageMetadata: Sendable & Equatable>: Sendable, Equ
         toolCallId: String,
         toolName: String,
         providerExecuted: Bool?,
-        dynamic: Bool?
+        providerMetadata: ProviderMetadata?,
+        dynamic: Bool?,
+        title: String?
     )
 
     case toolInputDelta(toolCallId: String, inputTextDelta: String)
@@ -126,8 +130,8 @@ public enum UIMessageChunk<MessageMetadata: Sendable & Equatable>: Sendable, Equ
     case finishStep
 
     case start(messageId: String?, messageMetadata: MessageMetadata?)
-    case finish(messageMetadata: MessageMetadata?)
-    case abort
+    case finish(finishReason: FinishReason?, messageMetadata: MessageMetadata?)
+    case abort(reason: String?)
     case messageMetadata(MessageMetadata)
 }
 

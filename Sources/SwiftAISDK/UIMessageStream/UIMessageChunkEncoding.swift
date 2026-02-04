@@ -65,7 +65,8 @@ func encodeUIMessageChunkToJSON(_ chunk: AnyUIMessageChunk) -> JSONValue {
         let input,
         let providerExecuted,
         let providerMetadata,
-        let dynamic
+        let dynamic,
+        let title
     ):
         return .object(baseObject([
             "type": .string("tool-input-available"),
@@ -74,7 +75,8 @@ func encodeUIMessageChunkToJSON(_ chunk: AnyUIMessageChunk) -> JSONValue {
             "input": input,
             "providerExecuted": providerExecuted.map(JSONValue.bool),
             "providerMetadata": providerMetadataJSON(providerMetadata),
-            "dynamic": dynamic.map(JSONValue.bool)
+            "dynamic": dynamic.map(JSONValue.bool),
+            "title": title.map(JSONValue.string)
         ]))
 
     case .toolInputError(
@@ -84,7 +86,8 @@ func encodeUIMessageChunkToJSON(_ chunk: AnyUIMessageChunk) -> JSONValue {
         let providerExecuted,
         let providerMetadata,
         let dynamic,
-        let errorText
+        let errorText,
+        let title
     ):
         return .object(baseObject([
             "type": .string("tool-input-error"),
@@ -94,7 +97,8 @@ func encodeUIMessageChunkToJSON(_ chunk: AnyUIMessageChunk) -> JSONValue {
             "providerExecuted": providerExecuted.map(JSONValue.bool),
             "providerMetadata": providerMetadataJSON(providerMetadata),
             "dynamic": dynamic.map(JSONValue.bool),
-            "errorText": .string(errorText)
+            "errorText": .string(errorText),
+            "title": title.map(JSONValue.string)
         ]))
 
     case .toolApprovalRequest(let approvalId, let toolCallId):
@@ -140,13 +144,15 @@ func encodeUIMessageChunkToJSON(_ chunk: AnyUIMessageChunk) -> JSONValue {
             "toolCallId": .string(toolCallId)
         ])
 
-    case .toolInputStart(let toolCallId, let toolName, let providerExecuted, let dynamic):
+    case .toolInputStart(let toolCallId, let toolName, let providerExecuted, let providerMetadata, let dynamic, let title):
         return .object(baseObject([
             "type": .string("tool-input-start"),
             "toolCallId": .string(toolCallId),
             "toolName": .string(toolName),
             "providerExecuted": providerExecuted.map(JSONValue.bool),
-            "dynamic": dynamic.map(JSONValue.bool)
+            "providerMetadata": providerMetadataJSON(providerMetadata),
+            "dynamic": dynamic.map(JSONValue.bool),
+            "title": title.map(JSONValue.string)
         ]))
 
     case .toolInputDelta(let toolCallId, let inputTextDelta):
@@ -204,14 +210,18 @@ func encodeUIMessageChunkToJSON(_ chunk: AnyUIMessageChunk) -> JSONValue {
             "messageMetadata": messageMetadata
         ]))
 
-    case .finish(let messageMetadata):
+    case .finish(let finishReason, let messageMetadata):
         return .object(baseObject([
             "type": .string("finish"),
+            "finishReason": finishReason.flatMap { $0 == .unknown ? nil : JSONValue.string($0.rawValue) },
             "messageMetadata": messageMetadata
         ]))
 
-    case .abort:
-        return .object(["type": .string("abort")])
+    case .abort(let reason):
+        return .object(baseObject([
+            "type": .string("abort"),
+            "reason": reason.map(JSONValue.string)
+        ]))
 
     case .messageMetadata(let metadata):
         return .object([

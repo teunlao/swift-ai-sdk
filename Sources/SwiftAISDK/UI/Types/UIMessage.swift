@@ -228,6 +228,7 @@ public enum UIToolInvocationState: String, Sendable, Equatable {
 public struct UIToolUIPart: Sendable, Equatable {
     public var toolName: String
     public var toolCallId: String
+    public var title: String?
     public var state: UIToolInvocationState
     public var input: JSONValue?
     public var output: JSONValue?
@@ -249,10 +250,12 @@ public struct UIToolUIPart: Sendable, Equatable {
         providerExecuted: Bool? = nil,
         callProviderMetadata: ProviderMetadata? = nil,
         preliminary: Bool? = nil,
-        approval: UIToolApproval? = nil
+        approval: UIToolApproval? = nil,
+        title: String? = nil
     ) {
         self.toolName = toolName
         self.toolCallId = toolCallId
+        self.title = title
         self.state = state
         self.input = input
         self.output = output
@@ -272,19 +275,25 @@ public struct UIToolUIPart: Sendable, Equatable {
 public enum UIDynamicToolInvocationState: String, Sendable, Equatable {
     case inputStreaming = "input-streaming"
     case inputAvailable = "input-available"
+    case approvalRequested = "approval-requested"
+    case approvalResponded = "approval-responded"
     case outputAvailable = "output-available"
     case outputError = "output-error"
+    case outputDenied = "output-denied"
 }
 
 public struct UIDynamicToolUIPart: Sendable, Equatable {
     public var toolName: String
     public var toolCallId: String
+    public var title: String?
+    public var providerExecuted: Bool?
     public var state: UIDynamicToolInvocationState
     public var input: JSONValue?
     public var output: JSONValue?
     public var errorText: String?
     public var callProviderMetadata: ProviderMetadata?
     public var preliminary: Bool?
+    public var approval: UIToolApproval?
 
     public init(
         toolName: String,
@@ -293,17 +302,23 @@ public struct UIDynamicToolUIPart: Sendable, Equatable {
         input: JSONValue? = nil,
         output: JSONValue? = nil,
         errorText: String? = nil,
+        providerExecuted: Bool? = nil,
         callProviderMetadata: ProviderMetadata? = nil,
-        preliminary: Bool? = nil
+        preliminary: Bool? = nil,
+        approval: UIToolApproval? = nil,
+        title: String? = nil
     ) {
         self.toolName = toolName
         self.toolCallId = toolCallId
+        self.title = title
+        self.providerExecuted = providerExecuted
         self.state = state
         self.input = input
         self.output = output
         self.errorText = errorText
         self.callProviderMetadata = callProviderMetadata
         self.preliminary = preliminary
+        self.approval = approval
     }
 }
 

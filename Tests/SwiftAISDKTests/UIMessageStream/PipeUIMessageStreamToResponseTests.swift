@@ -68,6 +68,31 @@ struct PipeUIMessageStreamToResponseTests {
             "data: [DONE]\n\n"
         ])
     }
+
+    @Test("encodes abort reason and finishReason fields")
+    func encodesAbortReasonAndFinishReason() async throws {
+        let response = MockStreamTextResponseWriter()
+        let stream = makeChunkStream([
+            .abort(reason: "manual abort"),
+            .finish(finishReason: .stop, messageMetadata: nil)
+        ])
+
+        pipeUIMessageStreamToResponse(
+            response: response,
+            stream: stream,
+            options: StreamTextUIResponseOptions<UIMessage>(
+                responseInit: UIMessageStreamResponseInit(status: 200)
+            )
+        )
+
+        await response.waitForEnd()
+
+        #expect(response.decodedChunks() == [
+            "data: {\"reason\":\"manual abort\",\"type\":\"abort\"}\n\n",
+            "data: {\"finishReason\":\"stop\",\"type\":\"finish\"}\n\n",
+            "data: [DONE]\n\n"
+        ])
+    }
 }
 
 // MARK: - Helpers

@@ -35,6 +35,7 @@ public final class StreamingUIMessageState<Message: UIMessageConvertible>: @unch
     var activeTextPartIndices: [String: Int]
     var activeReasoningPartIndices: [String: Int]
     var partialToolCalls: [String: PartialToolCall]
+    var finishReason: FinishReason? = nil
 
     init(
         message: Message,
@@ -59,11 +60,13 @@ public struct PartialToolCall: Sendable {
     public var text: String
     public var toolName: String
     public var dynamic: Bool
+    public var title: String?
 
-    public init(text: String, toolName: String, dynamic: Bool) {
+    public init(text: String, toolName: String, dynamic: Bool, title: String? = nil) {
         self.text = text
         self.toolName = toolName
         self.dynamic = dynamic
+        self.title = title
     }
 }
 
@@ -225,12 +228,13 @@ private func handleChunk<Message: UIMessageConvertible>(
         context.state.activeTextPartIndices.removeAll()
         context.state.activeReasoningPartIndices.removeAll()
 
-    case .toolInputStart(let toolCallId, let toolName, let providerExecuted, let dynamic):
+    case .toolInputStart(let toolCallId, let toolName, let providerExecuted, let providerMetadata, let dynamic, let title):
         let isDynamic = dynamic ?? false
         context.state.partialToolCalls[toolCallId] = PartialToolCall(
             text: "",
             toolName: toolName,
-            dynamic: isDynamic
+            dynamic: isDynamic,
+            title: title
         )
 
         if isDynamic {
@@ -239,9 +243,13 @@ private func handleChunk<Message: UIMessageConvertible>(
                 toolName: toolName,
                 state: .inputStreaming,
                 input: nil,
+                output: nil,
                 errorText: nil,
-                providerMetadata: nil,
-                preliminary: nil
+                providerExecuted: providerExecuted,
+                providerMetadata: providerMetadata,
+                preliminary: nil,
+                approval: nil,
+                title: title
             )
         } else {
             context.state.upsertToolPart(
@@ -253,9 +261,10 @@ private func handleChunk<Message: UIMessageConvertible>(
                 rawInput: nil,
                 errorText: nil,
                 providerExecuted: providerExecuted,
-                providerMetadata: nil,
+                providerMetadata: providerMetadata,
                 preliminary: nil,
-                approval: nil
+                approval: nil,
+                title: title
             )
         }
 
@@ -278,9 +287,13 @@ private func handleChunk<Message: UIMessageConvertible>(
                 toolName: partial.toolName,
                 state: .inputStreaming,
                 input: partialInput,
+                output: nil,
                 errorText: nil,
+                providerExecuted: nil,
                 providerMetadata: nil,
-                preliminary: nil
+                preliminary: nil,
+                approval: nil,
+                title: partial.title
             )
         } else {
             context.state.upsertToolPart(
@@ -294,7 +307,8 @@ private func handleChunk<Message: UIMessageConvertible>(
                 providerExecuted: nil,
                 providerMetadata: nil,
                 preliminary: nil,
-                approval: nil
+                approval: nil,
+                title: partial.title
             )
         }
 
@@ -306,7 +320,8 @@ private func handleChunk<Message: UIMessageConvertible>(
         let input,
         let providerExecuted,
         let providerMetadata,
-        let dynamic
+        let dynamic,
+        let title
     ):
         let isDynamic = dynamic ?? false
         if isDynamic {
@@ -315,9 +330,13 @@ private func handleChunk<Message: UIMessageConvertible>(
                 toolName: toolName,
                 state: .inputAvailable,
                 input: input,
+                output: nil,
                 errorText: nil,
+                providerExecuted: providerExecuted,
                 providerMetadata: providerMetadata,
-                preliminary: nil
+                preliminary: nil,
+                approval: nil,
+                title: title
             )
         } else {
             context.state.upsertToolPart(
@@ -331,7 +350,8 @@ private func handleChunk<Message: UIMessageConvertible>(
                 providerExecuted: providerExecuted,
                 providerMetadata: providerMetadata,
                 preliminary: nil,
-                approval: nil
+                approval: nil,
+                title: title
             )
         }
 
@@ -348,7 +368,8 @@ private func handleChunk<Message: UIMessageConvertible>(
         let providerExecuted,
         let providerMetadata,
         let dynamic,
-        let errorText
+        let errorText,
+        _
     ):
         let isDynamic = dynamic ?? false
         if isDynamic {
@@ -357,9 +378,13 @@ private func handleChunk<Message: UIMessageConvertible>(
                 toolName: toolName,
                 state: .outputError,
                 input: input,
+                output: nil,
                 errorText: errorText,
+                providerExecuted: providerExecuted,
                 providerMetadata: providerMetadata,
-                preliminary: nil
+                preliminary: nil,
+                approval: nil,
+                title: nil
             )
         } else {
             context.state.upsertToolPart(
@@ -373,7 +398,8 @@ private func handleChunk<Message: UIMessageConvertible>(
                 providerExecuted: providerExecuted,
                 providerMetadata: providerMetadata,
                 preliminary: nil,
-                approval: nil
+                approval: nil,
+                title: nil
             )
         }
 
@@ -381,6 +407,10 @@ private func handleChunk<Message: UIMessageConvertible>(
 
     case .toolApprovalRequest(let approvalId, let toolCallId):
         context.state.updateToolPart(with: toolCallId) { part in
+            part.state = .approvalRequested
+            part.approval = UIToolApproval(id: approvalId)
+        }
+        context.state.updateDynamicToolPart(with: toolCallId) { part in
             part.state = .approvalRequested
             part.approval = UIToolApproval(id: approvalId)
         }
@@ -403,9 +433,13 @@ private func handleChunk<Message: UIMessageConvertible>(
                 toolName: toolPart.toolName,
                 state: .outputAvailable,
                 input: toolPart.input,
+                output: output,
                 errorText: nil,
+                providerExecuted: providerExecuted,
                 providerMetadata: toolPart.callProviderMetadata,
-                preliminary: preliminary
+                preliminary: preliminary,
+                approval: toolPart.approval,
+                title: toolPart.title
             )
         } else {
             guard let toolPart = context.state.toolPart(for: toolCallId) else {
@@ -418,12 +452,13 @@ private func handleChunk<Message: UIMessageConvertible>(
                 state: .outputAvailable,
                 input: toolPart.input,
                 output: output,
-                rawInput: toolPart.rawInput,
+                rawInput: nil,
                 errorText: nil,
                 providerExecuted: providerExecuted ?? toolPart.providerExecuted,
                 providerMetadata: toolPart.callProviderMetadata,
                 preliminary: preliminary,
-                approval: toolPart.approval
+                approval: toolPart.approval,
+                title: toolPart.title
             )
         }
 
@@ -440,9 +475,13 @@ private func handleChunk<Message: UIMessageConvertible>(
                 toolName: toolPart.toolName,
                 state: .outputError,
                 input: toolPart.input,
+                output: nil,
                 errorText: errorText,
+                providerExecuted: providerExecuted,
                 providerMetadata: toolPart.callProviderMetadata,
-                preliminary: toolPart.preliminary
+                preliminary: toolPart.preliminary,
+                approval: toolPart.approval,
+                title: toolPart.title
             )
         } else {
             guard let toolPart = context.state.toolPart(for: toolCallId) else {
@@ -460,7 +499,8 @@ private func handleChunk<Message: UIMessageConvertible>(
                 providerExecuted: providerExecuted ?? toolPart.providerExecuted,
                 providerMetadata: toolPart.callProviderMetadata,
                 preliminary: toolPart.preliminary,
-                approval: toolPart.approval
+                approval: toolPart.approval,
+                title: toolPart.title
             )
         }
 
@@ -468,6 +508,9 @@ private func handleChunk<Message: UIMessageConvertible>(
 
     case .toolOutputDenied(let toolCallId):
         context.state.updateToolPart(with: toolCallId) { part in
+            part.state = .outputDenied
+        }
+        context.state.updateDynamicToolPart(with: toolCallId) { part in
             part.state = .outputDenied
         }
         context.write()
@@ -491,7 +534,10 @@ private func handleChunk<Message: UIMessageConvertible>(
             context.write()
         }
 
-    case .finish(let messageMetadata):
+    case .finish(let finishReason, let messageMetadata):
+        if let finishReason, finishReason != .unknown {
+            context.state.finishReason = finishReason
+        }
         if let metadata = messageMetadata {
             if let merged = try await mergeMetadata(
                 existing: context.state.message.metadata,
@@ -659,6 +705,15 @@ private extension StreamingUIMessageState {
         message.parts[index] = .tool(part)
     }
 
+    func updateDynamicToolPart(with toolCallId: String, mutate: (inout UIDynamicToolUIPart) -> Void) {
+        guard let index = dynamicToolPartIndex(for: toolCallId),
+              case .dynamicTool(var part) = message.parts[index] else {
+            return
+        }
+        mutate(&part)
+        message.parts[index] = .dynamicTool(part)
+    }
+
     func updateDataPart(at index: Int, mutate: (inout DataUIPart) -> Void) {
         guard case .data(var part) = message.parts[index] else {
             return
@@ -714,21 +769,23 @@ private extension StreamingUIMessageState {
         providerExecuted: Bool?,
         providerMetadata: ProviderMetadata?,
         preliminary: Bool?,
-        approval: UIToolApproval?
+        approval: UIToolApproval?,
+        title: String?
     ) {
         if let index = toolPartIndex(for: toolCallId),
            case .tool(var part) = message.parts[index] {
             part.state = state
-            if let input { part.input = input }
-            if let output { part.output = output }
-            if let rawInput { part.rawInput = rawInput }
-            if let errorText { part.errorText = errorText }
+            part.input = input
+            part.output = output
+            part.rawInput = rawInput
+            part.errorText = errorText
             if let providerExecuted { part.providerExecuted = providerExecuted }
             if let providerMetadata {
                 part.callProviderMetadata = providerMetadata
             }
-            if let preliminary { part.preliminary = preliminary }
+            part.preliminary = preliminary
             if let approval { part.approval = approval }
+            if let title { part.title = title }
             message.parts[index] = .tool(part)
         } else {
             let part = UIToolUIPart(
@@ -742,7 +799,8 @@ private extension StreamingUIMessageState {
                 providerExecuted: providerExecuted,
                 callProviderMetadata: providerMetadata,
                 preliminary: preliminary,
-                approval: approval
+                approval: approval,
+                title: title
             )
             appendPart(.tool(part))
         }
@@ -753,17 +811,25 @@ private extension StreamingUIMessageState {
         toolName: String,
         state: UIDynamicToolInvocationState,
         input: JSONValue?,
+        output: JSONValue?,
         errorText: String?,
+        providerExecuted: Bool?,
         providerMetadata: ProviderMetadata?,
-        preliminary: Bool?
+        preliminary: Bool?,
+        approval: UIToolApproval?,
+        title: String?
     ) {
         if let index = dynamicToolPartIndex(for: toolCallId),
            case .dynamicTool(var part) = message.parts[index] {
             part.state = state
-            if let input { part.input = input }
-            if let errorText { part.errorText = errorText }
+            part.input = input
+            part.output = output
+            part.errorText = errorText
+            if let providerExecuted { part.providerExecuted = providerExecuted }
             if let providerMetadata { part.callProviderMetadata = providerMetadata }
-            if let preliminary { part.preliminary = preliminary }
+            part.preliminary = preliminary
+            if let approval { part.approval = approval }
+            if let title { part.title = title }
             part.toolName = toolName
             message.parts[index] = .dynamicTool(part)
         } else {
@@ -772,10 +838,13 @@ private extension StreamingUIMessageState {
                 toolCallId: toolCallId,
                 state: state,
                 input: input,
-                output: nil,
+                output: output,
                 errorText: errorText,
+                providerExecuted: providerExecuted,
                 callProviderMetadata: providerMetadata,
-                preliminary: preliminary
+                preliminary: preliminary,
+                approval: approval,
+                title: title
             )
             appendPart(.dynamicTool(part))
         }

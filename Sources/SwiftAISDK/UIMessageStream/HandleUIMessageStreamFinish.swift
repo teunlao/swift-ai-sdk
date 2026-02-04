@@ -153,7 +153,8 @@ private actor FinishInvoker<Message: UIMessageConvertible> {
                 messages: messages,
                 isContinuation: isContinuation,
                 isAborted: await isAborted(),
-                responseMessage: responseMessage
+                responseMessage: responseMessage,
+                finishReason: state.finishReason
             )
         )
     }

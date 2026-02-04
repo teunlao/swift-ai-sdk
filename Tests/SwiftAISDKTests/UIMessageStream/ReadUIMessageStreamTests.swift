@@ -14,7 +14,7 @@ struct ReadUIMessageStreamTests {
             .textDelta(id: "text-1", delta: "world!", providerMetadata: nil),
             .textEnd(id: "text-1", providerMetadata: nil),
             .finishStep,
-            .finish(messageMetadata: nil)
+            .finish(finishReason: nil, messageMetadata: nil)
         ])
 
         let sequence: AsyncIterableStream<UIMessage> = readUIMessageStream(stream: stream)

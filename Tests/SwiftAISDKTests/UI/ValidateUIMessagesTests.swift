@@ -703,6 +703,10 @@ struct ValidateUIMessagesTests {
 
     @Test("strips unsupported dynamic tool fields")
     func stripsUnsupportedDynamicToolFields() async throws {
+        let expectedMetadata: ProviderMetadata = [
+            "provider": ["meta": .string("value")]
+        ]
+
         let messages: [UIMessage] = try await validateUIMessages(messages: [
             [
                 "id": "1",
@@ -737,7 +741,7 @@ struct ValidateUIMessagesTests {
                             input: .object(["foo": .string("bar")]),
                             output: nil,
                             errorText: nil,
-                            callProviderMetadata: nil,
+                            callProviderMetadata: expectedMetadata,
                             preliminary: nil
                         )
                     )
@@ -843,6 +847,10 @@ struct ValidateUIMessagesTests {
 
     @Test("strips unsupported tool fields in input-streaming")
     func stripsUnsupportedToolFieldsInInputStreaming() async throws {
+        let expectedMetadata: ProviderMetadata = [
+            "provider": ["meta": .string("value")]
+        ]
+
         let messages: [UIMessage] = try await validateUIMessages(messages: [
             [
                 "id": "1",
@@ -879,7 +887,7 @@ struct ValidateUIMessagesTests {
                             rawInput: nil,
                             errorText: nil,
                             providerExecuted: nil,
-                            callProviderMetadata: nil,
+                            callProviderMetadata: expectedMetadata,
                             preliminary: nil,
                             approval: nil
                         )

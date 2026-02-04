@@ -90,12 +90,14 @@ public func transformFullToUIMessageStream(
                         // Upstream UI stream surfaces files via dedicated pathways.
                         break
 
-                    case let .toolInputStart(toolCallId, toolName, _, providerExecuted, dynamic, _):
+                    case let .toolInputStart(toolCallId, toolName, providerMetadata, providerExecuted, dynamic, title):
                         continuation.yield(.toolInputStart(
                             toolCallId: toolCallId,
                             toolName: toolName,
                             providerExecuted: providerExecuted,
-                            dynamic: dynamic
+                            providerMetadata: providerMetadata,
+                            dynamic: dynamic,
+                            title: title
                         ))
 
                     case let .toolInputDelta(toolCallId, delta, _):
@@ -113,7 +115,8 @@ public func transformFullToUIMessageStream(
                             input: typedCall.input,
                             providerExecuted: typedCall.providerExecuted,
                             providerMetadata: typedCall.providerMetadata,
-                            dynamic: typedCall.isDynamic
+                            dynamic: typedCall.isDynamic,
+                            title: typedCall.title
                         ))
 
                     case let .toolResult(typedResult):
@@ -149,15 +152,18 @@ public func transformFullToUIMessageStream(
                             {
                                 continuation.yield(AnyUIMessageChunk.messageMetadata(meta))
                             }
-                            continuation.yield(.finish(messageMetadata: nil))
+                            continuation.yield(.finish(
+                                finishReason: finishReason == .unknown ? nil : finishReason,
+                                messageMetadata: nil
+                            ))
                         }
                         seenFinish = true
 
                     case .error(let error):
                         continuation.yield(.error(errorText: AISDKProvider.getErrorMessage(error)))
 
-                    case .abort:
-                        continuation.yield(.abort)
+                    case .abort(let reason):
+                        continuation.yield(.abort(reason: reason))
 
                     case .raw:
                         // Intentionally ignored for UI stream
@@ -170,7 +176,7 @@ public func transformFullToUIMessageStream(
 
                 // If upstream finished without explicit finish and flag is set, emit finish
                 if options.sendFinish && !seenFinish {
-                    continuation.yield(.finish(messageMetadata: nil))
+                    continuation.yield(.finish(finishReason: nil, messageMetadata: nil))
                 }
                 continuation.finish()
             } catch is CancellationError {

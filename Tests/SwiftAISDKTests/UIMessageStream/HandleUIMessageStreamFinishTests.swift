@@ -42,7 +42,7 @@ struct HandleUIMessageStreamFinishTests {
             textChunk(id: "text-1", delta: "Hello"),
             textChunk(id: "text-1", delta: " World"),
             .textEnd(id: "text-1", providerMetadata: nil),
-            .finish(messageMetadata: nil)
+            .finish(finishReason: nil, messageMetadata: nil)
         ]
 
         let capturedErrors = ThreadSafeArray<String>()
@@ -69,7 +69,7 @@ struct HandleUIMessageStreamFinishTests {
             .textStart(id: "text-1", providerMetadata: nil),
             textChunk(id: "text-1", delta: "Test"),
             .textEnd(id: "text-1", providerMetadata: nil),
-            .finish(messageMetadata: nil)
+            .finish(finishReason: nil, messageMetadata: nil)
         ]
 
         let stream = makeAsyncStream(from: inputChunks)
@@ -100,7 +100,7 @@ struct HandleUIMessageStreamFinishTests {
             textChunk(id: "text-1", delta: "Hello"),
             textChunk(id: "text-1", delta: " World"),
             .textEnd(id: "text-1", providerMetadata: nil),
-            .finish(messageMetadata: nil)
+            .finish(finishReason: nil, messageMetadata: nil)
         ]
 
         let originalMessages = [
@@ -130,6 +130,7 @@ struct HandleUIMessageStreamFinishTests {
         guard let event = events.first else { return }
         #expect(event.isContinuation == false)
         #expect(event.isAborted == false)
+        #expect(event.finishReason == nil)
         #expect(event.messages.count == 2)
         #expect(event.messages.first == originalMessages.first)
         #expect(event.responseMessage.id == "msg-456")
@@ -143,7 +144,7 @@ struct HandleUIMessageStreamFinishTests {
             .textStart(id: "text-1", providerMetadata: nil),
             textChunk(id: "text-1", delta: "Response"),
             .textEnd(id: "text-1", providerMetadata: nil),
-            .finish(messageMetadata: nil)
+            .finish(finishReason: nil, messageMetadata: nil)
         ]
 
         let finishEvents = ThreadSafeArray<UIMessageStreamFinishEvent<UIMessage>>()
@@ -176,7 +177,7 @@ struct HandleUIMessageStreamFinishTests {
             .textStart(id: "text-1", providerMetadata: nil),
             textChunk(id: "text-1", delta: " continued"),
             .textEnd(id: "text-1", providerMetadata: nil),
-            .finish(messageMetadata: nil)
+            .finish(finishReason: nil, messageMetadata: nil)
         ]
 
         let originalMessages = [
@@ -220,7 +221,7 @@ struct HandleUIMessageStreamFinishTests {
             .textStart(id: "text-1", providerMetadata: nil),
             textChunk(id: "text-1", delta: "New response"),
             .textEnd(id: "text-1", providerMetadata: nil),
-            .finish(messageMetadata: nil)
+            .finish(finishReason: nil, messageMetadata: nil)
         ]
 
         let originalMessages = [
@@ -262,8 +263,8 @@ struct HandleUIMessageStreamFinishTests {
             .start(messageId: "msg-abort-1", messageMetadata: nil),
             .textStart(id: "text-1", providerMetadata: nil),
             textChunk(id: "text-1", delta: "Starting text"),
-            .abort,
-            .finish(messageMetadata: nil)
+            .abort(reason: nil),
+            .finish(finishReason: nil, messageMetadata: nil)
         ]
 
         let stream = makeAsyncStream(from: inputChunks)
@@ -299,7 +300,7 @@ struct HandleUIMessageStreamFinishTests {
             .textStart(id: "text-1", providerMetadata: nil),
             textChunk(id: "text-1", delta: "Complete text"),
             .textEnd(id: "text-1", providerMetadata: nil),
-            .finish(messageMetadata: nil)
+            .finish(finishReason: nil, messageMetadata: nil)
         ]
 
         let events = ThreadSafeArray<UIMessageStreamFinishEvent<UIMessage>>()
@@ -331,10 +332,10 @@ struct HandleUIMessageStreamFinishTests {
         let inputChunks: [AnyUIMessageChunk] = [
             .start(messageId: "msg-multiple-abort", messageMetadata: nil),
             .textStart(id: "text-1", providerMetadata: nil),
-            .abort,
+            .abort(reason: nil),
             textChunk(id: "text-1", delta: "Some text"),
-            .abort,
-            .finish(messageMetadata: nil)
+            .abort(reason: nil),
+            .finish(finishReason: nil, messageMetadata: nil)
         ]
 
         let events = ThreadSafeArray<UIMessageStreamFinishEvent<UIMessage>>()
@@ -396,5 +397,61 @@ struct HandleUIMessageStreamFinishTests {
 
         #expect(event.isAborted == false)
         #expect(event.responseMessage.id == "msg-1")
+    }
+
+    @Test("passes abort reason through")
+    func abortReasonPassThrough() async throws {
+        let inputChunks: [AnyUIMessageChunk] = [
+            .start(messageId: "msg-abort-reason", messageMetadata: nil),
+            .textStart(id: "text-1", providerMetadata: nil),
+            textChunk(id: "text-1", delta: "Starting text"),
+            .abort(reason: "manual abort"),
+            .finish(finishReason: nil, messageMetadata: nil)
+        ]
+
+        let events = ThreadSafeArray<UIMessageStreamFinishEvent<UIMessage>>()
+
+        let stream = makeAsyncStream(from: inputChunks)
+        let result = try await collectStream(
+            handleUIMessageStreamFinish(
+                stream: stream,
+                messageId: "msg-abort-reason",
+                originalMessages: [UIMessage](),
+                onFinish: { events.append($0) },
+                onError: { _ in }
+            )
+        )
+
+        #expect(result == inputChunks)
+        guard let event = events.values().first else { return }
+        #expect(event.isAborted == true)
+    }
+
+    @Test("captures finishReason from finish chunk")
+    func finishReasonCaptured() async throws {
+        let inputChunks: [AnyUIMessageChunk] = [
+            .start(messageId: "msg-finish-reason", messageMetadata: nil),
+            .textStart(id: "text-1", providerMetadata: nil),
+            textChunk(id: "text-1", delta: "Done"),
+            .textEnd(id: "text-1", providerMetadata: nil),
+            .finish(finishReason: .stop, messageMetadata: nil)
+        ]
+
+        let events = ThreadSafeArray<UIMessageStreamFinishEvent<UIMessage>>()
+
+        let stream = makeAsyncStream(from: inputChunks)
+        let result = try await collectStream(
+            handleUIMessageStreamFinish(
+                stream: stream,
+                messageId: "msg-finish-reason",
+                originalMessages: [UIMessage](),
+                onFinish: { events.append($0) },
+                onError: { _ in }
+            )
+        )
+
+        #expect(result == inputChunks)
+        guard let event = events.values().first else { return }
+        #expect(event.finishReason == .stop)
     }
 }
