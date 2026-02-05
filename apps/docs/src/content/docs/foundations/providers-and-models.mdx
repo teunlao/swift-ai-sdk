@@ -24,21 +24,23 @@ The Swift AI SDK mirrors the AI SDK language-model specification (`AISDKProvider
 
 ## Swift AI SDK provider modules
 
-The Swift port currently ships with the following provider packages. Each module exports a lazily configured global shortcut plus a factory for advanced configuration, matching the TypeScript behavior.
+The Swift port currently ships with **33 provider modules** (one SwiftPM product per provider). Each module exports a lazily configured global shortcut plus a factory for advanced configuration, matching the TypeScript behavior. See [Providers](/providers/overview) for the full, up-to-date list.
+
+A few common examples:
 
 - [OpenAI Provider](/providers/openai) — `import OpenAIProvider`, then call `openai("gpt-4o")` or `createOpenAIProvider(settings:)`.
 - [Anthropic Provider](/providers/anthropic) — `import AnthropicProvider`, use `anthropic("claude-3-5-sonnet")` or `createAnthropicProvider(settings:)`.
 - [Google Generative AI Provider](/providers/google-generative-ai) — `import GoogleProvider`, use `google("gemini-1.5-pro")` or `createGoogleGenerativeAI(settings:)`.
-- Groq Provider — `import GroqProvider`, use `groq("llama-3.1-8b-instant")` or `createGroqProvider(settings:)`. _(Documentation coming soon)_
-- OpenAI Compatible Provider — `import OpenAICompatibleProvider`, call `createOpenAICompatibleProvider(settings:)` for any OpenAI-compatible gateway. _(Documentation coming soon)_
+- Vercel Provider — `import VercelProvider`, then call `vercel("v0-1.0-md")` or `createVercelProvider(settings:)`. _(Documentation coming soon)_
+- TogetherAI Provider — `import TogetherAIProvider`, then call `togetherai("meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo")` or `createTogetherAIProvider(settings:)`. _(Documentation coming soon)_
 
 Each shortcut performs lazy API-key loading (via environment variables such as `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, `GROQ_API_KEY`) and returns a ready-to-use `LanguageModelV3` instance for the higher-level Swift AI SDK APIs.
 
 ## Self-hosted and upstream-compatible APIs
 
-If you are integrating with a custom gateway that implements the OpenAI API surface (for example LM Studio or Together.ai), use the OpenAI Compatible provider. Override the base URL, API key, and optional headers in `OpenAICompatibleProviderSettings` and the rest of your Swift code stays identical.
+If you are integrating with a custom gateway that implements the OpenAI API surface (for example LM Studio), use the OpenAI Compatible provider. Override the base URL, API key, and optional headers in `OpenAICompatibleProviderSettings` and the rest of your Swift code stays identical.
 
-The TypeScript AI SDK community also maintains dozens of additional providers (Amazon Bedrock, Mistral, Cohere, DeepSeek, and more). These have not yet been ported to Swift; visit the upstream documentation for details and to track parity:
+The upstream TypeScript AI SDK also maintains a larger catalog of official and community providers. The Swift port already includes many upstream providers, but not every upstream/community provider is available in Swift yet. For the full upstream catalog:
 
 - [Community providers list](https://ai-sdk.dev/providers/community-providers)
 - [Custom provider guide](https://ai-sdk.dev/providers/community-providers/custom-providers)

@@ -12,7 +12,7 @@ The Swift AI SDK is a comprehensive toolkit for building AI applications in Swif
 The Swift AI SDK ports the **AI SDK Core** from the TypeScript AI SDK, providing:
 
 - **AI SDK Core (SwiftAISDK):** Unified API for generating text, structured objects, and tool calls with LLMs
-- **Provider System:** Pre-built integrations for OpenAI, Anthropic, Google, Groq, and OpenAI-compatible providers
+- **Provider System:** Pre-built integrations for 33+ providers (OpenAI, Anthropic, Google, Groq, Vercel, TogetherAI, and more). See [Providers](/providers/overview).
 - **Foundation Types (AISDKProvider):** Language model interfaces, provider protocols, and shared types
 - **Utilities (AISDKProviderUtils):** HTTP clients, JSON handling, schema validation, retry logic
 - **Zod Adapter (AISDKZodAdapter):** Zod-like schema DSL for structured data validation
@@ -42,6 +42,8 @@ The Swift AI SDK is organized into focused packages:
 | **OpenAICompatibleProvider**| OpenAI-compatible API integration                         | Provider, ProviderUtils|
 | **AISDKZodAdapter**        | Zod-like schema DSL for structured data                    | AISDKProvider          |
 | **EventSourceParser**      | Server-Sent Events (SSE) parsing (internal utility)        | None                   |
+
+The list above is a sample. The Swift AI SDK ships with 33 provider modules; see [Providers](/providers/overview) for the full list.
 
 ## Platform Compatibility
 

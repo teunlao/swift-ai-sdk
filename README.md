@@ -14,7 +14,7 @@
 [![](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2Fteunlao%2Fswift-ai-sdk%2Fbadge%3Ftype%3Dswift-versions)](https://swiftpackageindex.com/teunlao/swift-ai-sdk)
 [![](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2Fteunlao%2Fswift-ai-sdk%2Fbadge%3Ftype%3Dplatforms)](https://swiftpackageindex.com/teunlao/swift-ai-sdk)
 
-A unified AI SDK for Swift: streaming chat/completions, structured outputs, tool/function/MCP calling, and middleware — with 28+ providers via one API (OpenAI, Anthropic, Google, Groq, xAI). Based on the [Vercel AI SDK](https://github.com/vercel/ai) with a focus on full API parity.
+A unified AI SDK for Swift: streaming chat/completions, structured outputs, tool/function/MCP calling, and middleware — with 33+ providers via one API (OpenAI, Anthropic, Google, Groq, xAI, Vercel, TogetherAI, and more). Based on the [Vercel AI SDK](https://github.com/vercel/ai) with a focus on full API parity.
 
 **[Documentation](https://swift-ai-sdk-docs.vercel.app)** | **[Getting Started](https://swift-ai-sdk-docs.vercel.app/getting-started/ios-macos-quickstart)** | **[Examples](examples/)** | **[Discussions](https://github.com/teunlao/swift-ai-sdk/discussions)**
 
@@ -35,8 +35,8 @@ Add the package to your `Package.swift`:
 ```swift
 // Package.swift
 dependencies: [
-  // Use the latest release tag (e.g. "0.11.0").
-  .package(url: "https://github.com/teunlao/swift-ai-sdk.git", from: "0.11.0")
+  // Use the latest release tag (e.g. "0.13.0").
+  .package(url: "https://github.com/teunlao/swift-ai-sdk.git", from: "0.13.0")
 ],
 targets: [
   .target(
