@@ -6,6 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-02-05
+
+### Changed
+- BREAKING (images): `GenerateImageResult` now includes `usage: ImageModelUsage` (aggregated across provider calls). Custom conformances must add this property.
+
+### Added
+- Images: provider-level `ImageModelV3Usage` and `ImageModelV3GenerateResult.usage` support (when the provider reports usage).
+- Images: AI-level `ImageModelUsage` + `addImageModelUsage` helper and aggregation across multiple `generateImage` calls.
+- Images: `GenerateImagePrompt` (structured prompt) with `.imageEditing(images:text:mask:)` parity for upstream `GenerateImagePrompt` union.
+- Images: new overloads for `generateImage` and `experimental_generateImage` that accept `GenerateImagePrompt`.
+- Images: `generateImage` now forwards optional `files` and `mask` into `ImageModelV3CallOptions` for editing / inpainting workflows.
+- Providers: add upstream-style `create*` aliases (`createTogetherAI`, `createProdia`, `createBlackForestLabs`, `createRevai`).
+- TogetherAI: add unlabeled model factories (`chat(_:)`, `completion(_:)`, `embedding(_:)`, `image(_:)`, `reranking(_:)`).
+
+### Docs
+- Providers: add and wire new provider pages (Vercel, Together.ai, Black Forest Labs, Prodia, Rev.ai) + update sidebar and provider overview.
+- Providers: update image editing examples to use `prompt: .imageEditing(...)` (`GenerateImagePrompt`) for Swift parity.
+- Docs: refresh provider lists.
+
+### Fixed
+- MCP (HTTP transport): align `start()` scheduling so the initial inbound SSE open happens promptly (matches upstream call ordering when the server returns `405` before `202`).
+
 ## [0.13.0] - 2026-02-05
 
 ### Added
