@@ -100,6 +100,9 @@ public final class HttpMCPTransport: MCPTransport, @unchecked Sendable {
                 await self?.openInboundSse(triedAuth: false, resumeToken: nil)
             }
         }
+
+        // Match upstream async scheduling: allow the inbound SSE task to start before returning.
+        await Task.yield()
     }
 
     public func close() async throws {
