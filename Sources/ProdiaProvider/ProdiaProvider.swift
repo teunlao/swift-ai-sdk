@@ -57,6 +57,14 @@ public final class ProdiaProvider: ProviderV3 {
     public func image(modelId: ProdiaImageModelId) -> ProdiaImageModel {
         imageFactory(modelId)
     }
+
+    public func image(_ modelId: ProdiaImageModelId) -> ProdiaImageModel {
+        imageFactory(modelId)
+    }
+
+    public func imageModel(_ modelId: ProdiaImageModelId) -> ProdiaImageModel {
+        imageFactory(modelId)
+    }
 }
 
 private let defaultBaseURL = "https://inference.prodia.com/v2"
@@ -108,5 +116,9 @@ public func createProdiaProvider(settings: ProdiaProviderSettings = .init()) -> 
     return ProdiaProvider(imageFactory: imageFactory)
 }
 
-public let prodia = createProdiaProvider()
+/// Alias matching upstream naming (`createProdia`).
+public func createProdia(settings: ProdiaProviderSettings = .init()) -> ProdiaProvider {
+    createProdiaProvider(settings: settings)
+}
 
+public let prodia = createProdiaProvider()

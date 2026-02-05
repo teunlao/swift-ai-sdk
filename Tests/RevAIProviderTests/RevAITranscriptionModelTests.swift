@@ -152,8 +152,8 @@ struct RevAITranscriptionModelTests {
         let capture = RequestCapture()
         let fetch = makeFetch(capture: capture)
 
-        let provider = createRevAIProvider(settings: .init(apiKey: "test-api-key", fetch: fetch))
-        let model = provider.transcription(modelId: .machine)
+        let provider = createRevai(settings: .init(apiKey: "test-api-key", fetch: fetch))
+        let model = provider.transcription(.machine)
 
         _ = try await model.doGenerate(options: .init(audio: .binary(Data([0x01, 0x02])), mediaType: "audio/wav"))
 
@@ -229,7 +229,7 @@ struct RevAITranscriptionModelTests {
         let fetch = makeFetch(capture: capture)
 
         let provider = createRevAIProvider(settings: .init(apiKey: "test-api-key", fetch: fetch))
-        let model = provider.transcription(modelId: .machine)
+        let model = provider.transcription("machine")
 
         let result = try await model.doGenerate(options: .init(audio: .binary(Data([0x01])), mediaType: "audio/wav"))
 

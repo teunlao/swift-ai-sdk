@@ -73,6 +73,14 @@ public final class BlackForestLabsProvider: ProviderV3 {
     public func image(modelId: BlackForestLabsImageModelId) -> BlackForestLabsImageModel {
         imageFactory(modelId)
     }
+
+    public func image(_ modelId: BlackForestLabsImageModelId) -> BlackForestLabsImageModel {
+        imageFactory(modelId)
+    }
+
+    public func imageModel(_ modelId: BlackForestLabsImageModelId) -> BlackForestLabsImageModel {
+        imageFactory(modelId)
+    }
 }
 
 public func createBlackForestLabsProvider(settings: BlackForestLabsProviderSettings = .init()) -> BlackForestLabsProvider {
@@ -119,6 +127,11 @@ public func createBlackForestLabsProvider(settings: BlackForestLabsProviderSetti
     }
 
     return BlackForestLabsProvider(imageFactory: imageFactory)
+}
+
+/// Alias matching upstream naming (`createBlackForestLabs`).
+public func createBlackForestLabs(settings: BlackForestLabsProviderSettings = .init()) -> BlackForestLabsProvider {
+    createBlackForestLabsProvider(settings: settings)
 }
 
 public let blackForestLabs = createBlackForestLabsProvider()

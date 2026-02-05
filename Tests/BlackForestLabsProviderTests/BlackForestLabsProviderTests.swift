@@ -11,8 +11,10 @@ struct BlackForestLabsProviderTests {
         let provider = createBlackForestLabsProvider(settings: .init(apiKey: "test-key"))
 
         let model = provider.image(modelId: .fluxPro11)
+        let model2 = provider.image(.fluxPro11)
         #expect(model.provider == "black-forest-labs.image")
         #expect(model.modelId == "flux-pro-1.1")
+        #expect(model2.modelId == "flux-pro-1.1")
         #expect(model.specificationVersion == "v3")
     }
 
@@ -28,5 +30,11 @@ struct BlackForestLabsProviderTests {
             _ = try provider.textEmbeddingModel(modelId: "some-id")
         }
     }
-}
 
+    @Test("supports upstream naming createBlackForestLabs")
+    func supportsUpstreamNamingAlias() throws {
+        let provider = createBlackForestLabs(settings: .init(apiKey: "test-key"))
+        let model = provider.image(.fluxPro11)
+        #expect(model.provider == "black-forest-labs.image")
+    }
+}

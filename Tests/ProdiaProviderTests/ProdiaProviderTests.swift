@@ -48,10 +48,14 @@ struct ProdiaProviderTests {
         let provider = createProdiaProvider(settings: .init(apiKey: "test-api-key"))
 
         let imageModel = provider.image(modelId: .inferenceFluxFastSchnellTxt2imgV2)
+        let imageModelAlt = provider.image(.inferenceFluxFastSchnellTxt2imgV2)
+        let imageModelAlt2 = provider.image("inference.flux.schnell.txt2img.v2")
         let imageModel2 = try provider.imageModel(modelId: ProdiaImageModelId.inferenceFluxSchnellTxt2imgV2.rawValue)
 
         #expect(imageModel.provider == "prodia.image")
         #expect(imageModel.modelId == "inference.flux-fast.schnell.txt2img.v2")
+        #expect(imageModelAlt.modelId == "inference.flux-fast.schnell.txt2img.v2")
+        #expect(imageModelAlt2.modelId == "inference.flux.schnell.txt2img.v2")
         #expect(imageModel2.modelId == "inference.flux.schnell.txt2img.v2")
         #expect(imageModel.specificationVersion == "v3")
     }
@@ -156,5 +160,11 @@ struct ProdiaProviderTests {
             _ = try provider.textEmbeddingModel(modelId: "some-id")
         }
     }
-}
 
+    @Test("supports upstream naming createProdia")
+    func supportsUpstreamNamingAlias() throws {
+        let provider = createProdia(settings: .init(apiKey: "test-api-key"))
+        let model = provider.image(.inferenceFluxFastSchnellTxt2imgV2)
+        #expect(model.provider == "prodia.image")
+    }
+}

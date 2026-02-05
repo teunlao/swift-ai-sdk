@@ -26,5 +26,11 @@ struct TogetherAIProviderTests {
         #expect(reranking != nil)
         #expect(reranking?.provider == "togetherai.reranking")
     }
-}
 
+    @Test("supports upstream naming createTogetherAI")
+    func supportsUpstreamNamingAlias() throws {
+        let provider = createTogetherAI(settings: TogetherAIProviderSettings(apiKey: "test-key"))
+        let chat = try provider.languageModel(modelId: "meta-llama/Llama-3.3-70B-Instruct-Turbo")
+        #expect(chat.provider == "togetherai.chat")
+    }
+}

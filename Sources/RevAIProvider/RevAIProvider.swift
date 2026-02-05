@@ -77,6 +77,10 @@ public final class RevAIProvider: ProviderV3 {
         transcriptionFactory(modelId)
     }
 
+    public func transcription(_ modelId: RevAITranscriptionModelId = .machine) -> RevAITranscriptionModel {
+        transcription(modelId: modelId)
+    }
+
     public func callAsFunction(_ modelId: RevAITranscriptionModelId = .machine) -> Models {
         Models(transcription: transcription(modelId: modelId))
     }
@@ -127,5 +131,9 @@ public func createRevAIProvider(settings: RevAIProviderSettings = .init()) -> Re
     return RevAIProvider(transcriptionFactory: transcriptionFactory)
 }
 
-public let revai = createRevAIProvider()
+/// Alias matching upstream naming (`createRevai`).
+public func createRevai(settings: RevAIProviderSettings = .init()) -> RevAIProvider {
+    createRevAIProvider(settings: settings)
+}
 
+public let revai = createRevAIProvider()

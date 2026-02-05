@@ -212,5 +212,9 @@ public func createTogetherAIProvider(settings: TogetherAIProviderSettings = .ini
     )
 }
 
-public let togetherai = createTogetherAIProvider()
+/// Alias matching upstream naming (`createTogetherAI`).
+public func createTogetherAI(settings: TogetherAIProviderSettings = .init()) -> TogetherAIProvider {
+    createTogetherAIProvider(settings: settings)
+}
 
+public let togetherai = createTogetherAIProvider()
