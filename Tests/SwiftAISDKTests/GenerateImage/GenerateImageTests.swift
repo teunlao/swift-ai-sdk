@@ -93,16 +93,17 @@ struct GenerateImageTests {
     func sendsArgsToDoGenerate() async throws {
         let optionsBox = SingleValueBox<ImageModelV3CallOptions>()
         let abortSignal: @Sendable () -> Bool = { false }
-        let files: [ImageModelV3File] = [
-            .url(url: "https://example.com/image-1.png", providerOptions: nil),
-            .file(mediaType: "image/png", data: .binary(Data([0x01, 0x02])), providerOptions: nil),
-        ]
-        let mask: ImageModelV3File = .url(url: "https://example.com/mask.png", providerOptions: nil)
         let providerOptions: ProviderOptions = [
             "mock-provider": [
                 "style": .string("vivid")
             ]
         ]
+        let expectedImageData = try convertBase64ToData(pngBase64)
+        let expectedFile: ImageModelV3File = .file(
+            mediaType: "image/png",
+            data: .binary(expectedImageData),
+            providerOptions: nil
+        )
 
         _ = try await generateImage(
             model: MockImageModelV3(
@@ -113,12 +114,14 @@ struct GenerateImageTests {
                     )
                 }
             ),
-            prompt: prompt,
+            prompt: .imageEditing(
+                images: [.string(pngBase64)],
+                text: prompt,
+                mask: .string(pngBase64)
+            ),
             size: "1024x1024",
             aspectRatio: "16:9",
             seed: 12345,
-            files: files,
-            mask: mask,
             providerOptions: providerOptions,
             abortSignal: abortSignal,
             headers: [
@@ -134,8 +137,8 @@ struct GenerateImageTests {
         #expect(options.aspectRatio == "16:9")
         #expect(options.seed == 12345)
         #expect(options.abortSignal?() == false)
-        #expect(options.files == files)
-        #expect(options.mask == mask)
+        #expect(options.files == [expectedFile])
+        #expect(options.mask == expectedFile)
 
         let expectedProviderOptions = providerOptions["mock-provider"]?["style"]
         let actualProviderOptions = options.providerOptions?["mock-provider"]?["style"]

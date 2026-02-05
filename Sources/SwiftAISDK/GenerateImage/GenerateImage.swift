@@ -14,6 +14,38 @@ import AISDKProviderUtils
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 public func generateImage(
     model: ImageModel,
+    prompt: GenerateImagePrompt,
+    n: Int = 1,
+    maxImagesPerCall: Int? = nil,
+    size: String? = nil,
+    aspectRatio: String? = nil,
+    seed: Int? = nil,
+    providerOptions: ProviderOptions? = nil,
+    maxRetries: Int? = nil,
+    abortSignal: (@Sendable () -> Bool)? = nil,
+    headers: [String: String]? = nil
+) async throws -> DefaultGenerateImageResult {
+    let normalized = try prompt.normalize()
+    return try await generateImageInternal(
+        model: model,
+        prompt: normalized.prompt,
+        n: n,
+        maxImagesPerCall: maxImagesPerCall,
+        size: size,
+        aspectRatio: aspectRatio,
+        seed: seed,
+        files: normalized.files,
+        mask: normalized.mask,
+        providerOptions: providerOptions,
+        maxRetries: maxRetries,
+        abortSignal: abortSignal,
+        headers: headers
+    )
+}
+
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+public func generateImage(
+    model: ImageModel,
     prompt: String,
     n: Int = 1,
     maxImagesPerCall: Int? = nil,
@@ -26,6 +58,39 @@ public func generateImage(
     maxRetries: Int? = nil,
     abortSignal: (@Sendable () -> Bool)? = nil,
     headers: [String: String]? = nil
+) async throws -> DefaultGenerateImageResult {
+    try await generateImageInternal(
+        model: model,
+        prompt: prompt,
+        n: n,
+        maxImagesPerCall: maxImagesPerCall,
+        size: size,
+        aspectRatio: aspectRatio,
+        seed: seed,
+        files: files,
+        mask: mask,
+        providerOptions: providerOptions,
+        maxRetries: maxRetries,
+        abortSignal: abortSignal,
+        headers: headers
+    )
+}
+
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+private func generateImageInternal(
+    model: ImageModel,
+    prompt: String?,
+    n: Int,
+    maxImagesPerCall: Int?,
+    size: String?,
+    aspectRatio: String?,
+    seed: Int?,
+    files: [ImageModelV3File]?,
+    mask: ImageModelV3File?,
+    providerOptions: ProviderOptions?,
+    maxRetries: Int?,
+    abortSignal: (@Sendable () -> Bool)?,
+    headers: [String: String]?
 ) async throws -> DefaultGenerateImageResult {
     guard model.specificationVersion == "v3" else {
         throw UnsupportedModelVersionError(
