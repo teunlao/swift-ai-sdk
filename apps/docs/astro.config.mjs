@@ -86,7 +86,15 @@ export default defineConfig({
             { label: "OpenAI", link: "/providers/openai" },
             { label: "Anthropic", link: "/providers/anthropic" },
             { label: "Google Generative AI", link: "/providers/google-generative-ai" },
+            { label: "Vercel", link: "/providers/vercel" },
+            { label: "Together.ai", link: "/providers/togetherai" },
+            { label: "Mistral", link: "/providers/mistral" },
+            { label: "Cohere", link: "/providers/cohere" },
+            { label: "Perplexity", link: "/providers/perplexity" },
             { label: "Replicate", link: "/providers/replicate" },
+            { label: "Black Forest Labs", link: "/providers/black-forest-labs" },
+            { label: "Prodia", link: "/providers/prodia" },
+            { label: "Rev.ai", link: "/providers/revai" },
             { label: "LMNT", link: "/providers/lmnt" }
           ]
         }

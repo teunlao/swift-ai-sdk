@@ -1,0 +1,382 @@
+---
+title: Together.ai
+description: Learn how to use Together.ai's models with the AI SDK.
+---
+
+_This page adapts the original AI SDK documentation: [Together.ai](https://github.com/vercel/ai/blob/main/content/providers/01-ai-sdk-providers/24-togetherai.mdx)._
+
+The [Together.ai](https://together.ai) provider contains support for 200+ open-source models through the [Together.ai API](https://docs.together.ai/reference).
+
+## Setup
+
+The Together.ai provider is available in the `TogetherAIProvider` module. Add it to your Swift package:
+
+```swift
+// Package.swift (excerpt)
+dependencies: [
+  .package(url: "https://github.com/teunlao/swift-ai-sdk", from: "0.13.0")
+],
+targets: [
+  .target(
+    name: "YourTarget",
+    dependencies: [
+      .product(name: "SwiftAISDK", package: "swift-ai-sdk"),
+      .product(name: "TogetherAIProvider", package: "swift-ai-sdk")
+    ]
+  )
+]
+```
+
+## Provider Instance
+
+You can import the default provider instance `togetherai`:
+
+```swift
+import SwiftAISDK
+import TogetherAIProvider
+
+let model = togetherai("google/gemma-2-9b-it")
+```
+
+If you need a customized setup, use `createTogetherAI` and create a provider instance with your settings:
+
+```swift
+import TogetherAIProvider
+
+let togetherai = createTogetherAI(settings: TogetherAIProviderSettings(
+  apiKey: ProcessInfo.processInfo.environment["TOGETHER_AI_API_KEY"],
+  baseURL: "https://api.together.xyz/v1",
+  headers: ["X-Custom-Header": "value"]
+))
+```
+
+You can use the following optional settings to customize the Together.ai provider instance:
+
+- **baseURL** `String`
+
+  Use a different URL prefix for API calls, e.g. to use proxy servers.
+  The default prefix is `https://api.together.xyz/v1`.
+
+- **apiKey** `String`
+
+  API key that is being sent using the `Authorization` header. It defaults to
+  the `TOGETHER_AI_API_KEY` environment variable.
+
+- **headers** `[String: String]`
+
+  Custom headers to include in the requests.
+
+- **fetch** `FetchFunction`
+
+  Custom fetch implementation (middleware) for testing or request interception.
+
+## Language Models
+
+You can create [Together.ai models](https://docs.together.ai/docs/serverless-models) using a provider instance. The first argument is the model id, e.g. `google/gemma-2-9b-it`.
+
+```swift
+import TogetherAIProvider
+
+let model = togetherai("google/gemma-2-9b-it")
+```
+
+### Reasoning Models
+
+Together.ai exposes the thinking of `deepseek-ai/DeepSeek-R1` in the generated text using the `<think>` tag.
+You can use the `extractReasoningMiddleware` to extract this reasoning and expose it as a `reasoning` property on the result:
+
+```swift
+import SwiftAISDK
+import TogetherAIProvider
+
+let enhancedModel = wrapLanguageModel(
+  model: togetherai("deepseek-ai/DeepSeek-R1"),
+  middleware: .single(
+    extractReasoningMiddleware(
+      options: ExtractReasoningOptions(tagName: "think")
+    )
+  )
+)
+```
+
+You can then use that enhanced model in functions like `generateText` and `streamText`.
+
+### Example
+
+You can use Together.ai language models to generate text with the `generateText` function:
+
+```swift
+import SwiftAISDK
+import TogetherAIProvider
+
+let result = try await generateText(
+  model: togetherai("meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo"),
+  prompt: "Write a vegetarian lasagna recipe for 4 people."
+)
+
+print(result.text)
+```
+
+Together.ai language models can also be used in `streamText` (see [Generating & Streaming Text](/ai-sdk-core/generating-text)).
+
+The Together.ai provider also supports [completion models](https://docs.together.ai/docs/serverless-models#language-models) via `togetherai.completion(...)` and [embedding models](https://docs.together.ai/docs/serverless-models#embedding-models) via `togetherai.embedding(...)`.
+
+## Model Capabilities
+
+| Model                                         | Image Input         | Object Generation   | Tool Usage          | Tool Streaming      |
+| --------------------------------------------- | ------------------- | ------------------- | ------------------- | ------------------- |
+| `meta-llama/Llama-3.3-70B-Instruct-Turbo`     | ✗ | ✗ | ✗ | ✗ |
+| `meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo` | ✗ | ✗ | ✓ | ✓ |
+| `mistralai/Mixtral-8x22B-Instruct-v0.1`       | ✗ | ✓ | ✓ | ✓ |
+| `mistralai/Mistral-7B-Instruct-v0.3`          | ✗ | ✓ | ✓ | ✓ |
+| `deepseek-ai/DeepSeek-V3`                     | ✗ | ✗ | ✗ | ✗ |
+| `google/gemma-2b-it`                          | ✗ | ✗ | ✗ | ✗ |
+| `Qwen/Qwen2.5-72B-Instruct-Turbo`             | ✗ | ✗ | ✗ | ✗ |
+| `databricks/dbrx-instruct`                    | ✗ | ✗ | ✗ | ✗ |
+
+> Note: The table above lists popular models. Please see the Together.ai
+> models docs for a full list of available models. You can also pass any
+> available provider model ID as a string if needed.
+
+## Image Models
+
+You can create Together.ai image models using the `.image()` factory method.
+For more on image generation with the Swift AI SDK see [Image Generation](/ai-sdk-core/image-generation).
+
+```swift
+import SwiftAISDK
+import TogetherAIProvider
+
+let result = try await generateImage(
+  model: togetherai.image("black-forest-labs/FLUX.1-dev"),
+  prompt: "A delighted resplendent quetzal mid flight amidst raindrops"
+)
+
+try result.image.data.write(to: URL(fileURLWithPath: "image.png"))
+```
+
+You can pass optional provider-specific request parameters using the `providerOptions` argument.
+
+```swift
+let result = try await generateImage(
+  model: togetherai.image("black-forest-labs/FLUX.1-dev"),
+  prompt: "A delighted resplendent quetzal mid flight amidst raindrops",
+  size: "512x512",
+  providerOptions: [
+    "togetherai": [
+      "steps": 40
+    ]
+  ]
+)
+```
+
+The following provider options are available:
+
+- **steps** _number_
+
+  Number of generation steps. Higher values can improve quality.
+
+- **guidance** _number_
+
+  Guidance scale for image generation.
+
+- **negative_prompt** _string_
+
+  Negative prompt to guide what to avoid.
+
+- **disable_safety_checker** _boolean_
+
+  Disable the safety checker for image generation.
+  When true, the API will not reject images flagged as potentially NSFW.
+  Not available for Flux Schnell Free and Flux Pro models.
+
+### Image Editing
+
+Together AI supports image editing through FLUX Kontext models.
+
+> Note: In the upstream TypeScript SDK, input images are passed via
+> `prompt: { text, images, mask }`. In Swift, `generateImage` currently takes a
+> `prompt: String` and uses the `files:` / `mask:` parameters instead.
+
+> Note: Together AI does not support mask-based inpainting. Instead, use descriptive
+> prompts to specify what you want to change in the image.
+
+#### Basic Image Editing
+
+Transform an existing image using text prompts:
+
+```swift
+import SwiftAISDK
+import TogetherAIProvider
+
+let inputImage = try Data(contentsOf: URL(fileURLWithPath: "input-image.png"))
+
+let result = try await generateImage(
+  model: togetherai.image("black-forest-labs/FLUX.1-kontext-pro"),
+  prompt: "Turn the cat into a golden retriever dog",
+  size: "1024x1024",
+  files: [
+    .file(mediaType: "image/png", data: .binary(inputImage), providerOptions: nil)
+  ],
+  providerOptions: [
+    "togetherai": [
+      "steps": 28
+    ]
+  ]
+)
+```
+
+#### Editing with URL Reference
+
+You can also pass image URLs directly:
+
+```swift
+let result = try await generateImage(
+  model: togetherai.image("black-forest-labs/FLUX.1-kontext-pro"),
+  prompt: "Make the background a lush rainforest",
+  size: "1024x1024",
+  files: [
+    .url(url: "https://example.com/photo.png", providerOptions: nil)
+  ],
+  providerOptions: [
+    "togetherai": [
+      "steps": 28
+    ]
+  ]
+)
+```
+
+> Note: Together AI only supports a single input image per request. Additional
+> images in `files:` are ignored.
+
+#### Supported Image Editing Models
+
+| Model                                  | Description                        |
+| -------------------------------------- | ---------------------------------- |
+| `black-forest-labs/FLUX.1-kontext-pro` | Production quality, balanced speed |
+| `black-forest-labs/FLUX.1-kontext-max` | Maximum image fidelity             |
+| `black-forest-labs/FLUX.1-kontext-dev` | Development and experimentation    |
+
+### Model Capabilities
+
+Together.ai image models support various image dimensions that vary by model. Common sizes include 512x512, 768x768, and 1024x1024, with some models supporting up to 1792x1792. The default size is 1024x1024.
+
+| Available Models                           |
+| ------------------------------------------ |
+| `stabilityai/stable-diffusion-xl-base-1.0` |
+| `black-forest-labs/FLUX.1-dev`             |
+| `black-forest-labs/FLUX.1-dev-lora`        |
+| `black-forest-labs/FLUX.1-schnell`         |
+| `black-forest-labs/FLUX.1-canny`           |
+| `black-forest-labs/FLUX.1-depth`           |
+| `black-forest-labs/FLUX.1-redux`           |
+| `black-forest-labs/FLUX.1.1-pro`           |
+| `black-forest-labs/FLUX.1-pro`             |
+| `black-forest-labs/FLUX.1-schnell-Free`    |
+| `black-forest-labs/FLUX.1-kontext-pro`     |
+| `black-forest-labs/FLUX.1-kontext-max`     |
+| `black-forest-labs/FLUX.1-kontext-dev`     |
+
+> Note: Please see the Together.ai models page for a full list of available
+> image models and their capabilities.
+
+## Embedding Models
+
+You can create Together.ai embedding models using the `.embedding(...)` factory method.
+For more on embedding models with the Swift AI SDK see [Embeddings](/ai-sdk-core/embeddings).
+
+```swift
+import SwiftAISDK
+import TogetherAIProvider
+
+let result = try await embed(
+  model: togetherai.embedding("togethercomputer/m2-bert-80M-2k-retrieval"),
+  value: "sunny day at the beach"
+)
+
+print(result.embedding)
+```
+
+### Model Capabilities
+
+| Model                                            | Dimensions | Max Tokens |
+| ------------------------------------------------ | ---------- | ---------- |
+| `togethercomputer/m2-bert-80M-2k-retrieval`      | 768        | 2048       |
+| `togethercomputer/m2-bert-80M-8k-retrieval`      | 768        | 8192       |
+| `togethercomputer/m2-bert-80M-32k-retrieval`     | 768        | 32768      |
+| `WhereIsAI/UAE-Large-V1`                         | 1024       | 512        |
+| `BAAI/bge-large-en-v1.5`                         | 1024       | 512        |
+| `BAAI/bge-base-en-v1.5`                          | 768        | 512        |
+| `sentence-transformers/msmarco-bert-base-dot-v5` | 768        | 512        |
+| `bert-base-uncased`                              | 768        | 512        |
+
+> Note: For a complete list of available embedding models, see the Together.ai models page.
+
+## Reranking Models
+
+You can create Together.ai reranking models using the `.reranking()` factory method.
+For more on reranking with the Swift AI SDK, see `rerank`.
+
+```swift
+import SwiftAISDK
+import TogetherAIProvider
+
+let documents = [
+  "sunny day at the beach",
+  "rainy afternoon in the city",
+  "snowy night in the mountains",
+]
+
+let result = try await rerank(
+  model: togetherai.reranking("Salesforce/Llama-Rank-v1"),
+  documents: documents,
+  query: "talk about rain",
+  topN: 2
+)
+
+print(result.ranking)
+```
+
+Together.ai reranking models support additional provider options for object documents. You can specify which fields to use for ranking:
+
+```swift
+import SwiftAISDK
+import TogetherAIProvider
+
+let documents: [JSONObject] = [
+  [
+    "from": "Paul Doe",
+    "subject": "Follow-up",
+    "text": "We are happy to give you a discount of 20%.",
+  ],
+  [
+    "from": "John McGill",
+    "subject": "Missing Info",
+    "text": "Here is the pricing from Oracle: $5000/month",
+  ],
+]
+
+let result = try await rerank(
+  model: togetherai.reranking("Salesforce/Llama-Rank-v1"),
+  documents: documents,
+  query: "Which pricing did we get from Oracle?",
+  providerOptions: [
+    "togetherai": [
+      "rankFields": ["from", "subject", "text"]
+    ]
+  ]
+)
+```
+
+The following provider options are available:
+
+- **rankFields** _string[]_
+
+  Array of field names to use for ranking when documents are JSON objects. If not specified, all fields are used.
+
+### Model Capabilities
+
+| Model                                 |
+| ------------------------------------- |
+| `Salesforce/Llama-Rank-v1`            |
+| `mixedbread-ai/Mxbai-Rerank-Large-V2` |
