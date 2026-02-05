@@ -16,6 +16,7 @@ public struct NoSuchModelError: AISDKError, Sendable {
         case languageModel
         case textEmbeddingModel
         case imageModel
+        case videoModel
         case rerankingModel
         case transcriptionModel
         case speechModel

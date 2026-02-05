@@ -35,6 +35,15 @@ public protocol ProviderV3: Sendable {
     func imageModel(modelId: String) throws -> any ImageModelV3
 
     /**
+     Returns the video model with the given id.
+     The model id is then passed to the provider function to get the model.
+
+     - Parameter modelId: The id of the model to return.
+     - Returns: The video model associated with the id, or `nil` if not supported.
+     */
+    func videoModel(modelId: String) throws -> (any VideoModelV3)?
+
+    /**
      Returns the transcription model with the given id.
      The model id is then passed to the provider function to get the model.
 
@@ -63,6 +72,11 @@ public protocol ProviderV3: Sendable {
 }
 
 extension ProviderV3 {
+    /// Default implementation returns `nil` (video not supported)
+    public func videoModel(modelId: String) throws -> (any VideoModelV3)? {
+        return nil
+    }
+
     /// Default implementation returns `nil` (transcription not supported)
     public func transcriptionModel(modelId: String) throws -> (any TranscriptionModelV3)? {
         return nil

@@ -53,6 +53,10 @@ public final class FalProvider: ProviderV3 {
         image(modelId: FalImageModelId(rawValue: modelId))
     }
 
+    public func videoModel(modelId: String) throws -> (any VideoModelV3)? {
+        video(modelId: FalVideoModelId(rawValue: modelId))
+    }
+
     public func speechModel(modelId: String) throws -> (any SpeechModelV3)? {
         speech(modelId: FalSpeechModelId(rawValue: modelId))
     }

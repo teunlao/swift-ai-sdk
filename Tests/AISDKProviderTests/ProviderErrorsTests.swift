@@ -215,6 +215,17 @@ struct ProviderErrorsTests {
         #expect(error.message == "No such languageModel: gpt-4")
     }
 
+    @Test("NoSuchModelError default message for video models")
+    func testNoSuchModelErrorVideoModelDefault() throws {
+        let error = NoSuchModelError(
+            modelId: "veo-2.0-generate-001",
+            modelType: .videoModel
+        )
+        #expect(error.modelId == "veo-2.0-generate-001")
+        #expect(error.modelType == .videoModel)
+        #expect(error.message == "No such videoModel: veo-2.0-generate-001")
+    }
+
     @Test("NoSuchModelError custom message")
     func testNoSuchModelErrorCustom() throws {
         let error = NoSuchModelError(
