@@ -140,6 +140,7 @@ let package = Package(
         .testTarget(name: "DeepSeekProviderTests", dependencies: ["DeepSeekProvider", "AISDKProvider", "AISDKProviderUtils", "OpenAICompatibleProvider"]),
         .testTarget(name: "BasetenProviderTests", dependencies: ["BasetenProvider", "AISDKProvider", "AISDKProviderUtils", "OpenAICompatibleProvider"]),
         .testTarget(name: "BlackForestLabsProviderTests", dependencies: ["BlackForestLabsProvider", "AISDKProvider", "AISDKProviderUtils"]),
+        .testTarget(name: "FalProviderTests", dependencies: ["FalProvider", "AISDKProvider", "AISDKProviderUtils"]),
         .testTarget(name: "LMNTProviderTests", dependencies: ["LMNTProvider", "AISDKProvider", "AISDKProviderUtils"]),
         .testTarget(name: "ReplicateProviderTests", dependencies: ["ReplicateProvider", "AISDKProvider", "AISDKProviderUtils"]),
         .testTarget(name: "TogetherAIProviderTests", dependencies: ["TogetherAIProvider", "AISDKProvider", "AISDKProviderUtils"]),

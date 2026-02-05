@@ -6,7 +6,7 @@ import AISDKProviderUtils
 //=== Upstream Reference ====================================================//
 //===----------------------------------------------------------------------===//
 // Ported from packages/fal/src/fal-provider.ts
-// Upstream commit: 77db222ee
+// Upstream commit: f3a72bc2
 //===----------------------------------------------------------------------===//
 
 public struct FalProviderSettings: Sendable {
@@ -27,15 +27,18 @@ public final class FalProvider: ProviderV3 {
     private let imageFactory: @Sendable (FalImageModelId) -> FalImageModel
     private let transcriptionFactory: @Sendable (FalTranscriptionModelId) -> FalTranscriptionModel
     private let speechFactory: @Sendable (FalSpeechModelId) -> FalSpeechModel
+    private let videoFactory: @Sendable (FalVideoModelId) -> FalVideoModel
 
     init(
         imageFactory: @escaping @Sendable (FalImageModelId) -> FalImageModel,
         transcriptionFactory: @escaping @Sendable (FalTranscriptionModelId) -> FalTranscriptionModel,
-        speechFactory: @escaping @Sendable (FalSpeechModelId) -> FalSpeechModel
+        speechFactory: @escaping @Sendable (FalSpeechModelId) -> FalSpeechModel,
+        videoFactory: @escaping @Sendable (FalVideoModelId) -> FalVideoModel
     ) {
         self.imageFactory = imageFactory
         self.transcriptionFactory = transcriptionFactory
         self.speechFactory = speechFactory
+        self.videoFactory = videoFactory
     }
 
     public func languageModel(modelId: String) throws -> any LanguageModelV3 {
@@ -62,12 +65,32 @@ public final class FalProvider: ProviderV3 {
         imageFactory(modelId)
     }
 
+    public func image(_ modelId: FalImageModelId) -> FalImageModel {
+        imageFactory(modelId)
+    }
+
     public func speech(modelId: FalSpeechModelId) -> FalSpeechModel {
+        speechFactory(modelId)
+    }
+
+    public func speech(_ modelId: FalSpeechModelId) -> FalSpeechModel {
         speechFactory(modelId)
     }
 
     public func transcription(modelId: FalTranscriptionModelId) -> FalTranscriptionModel {
         transcriptionFactory(modelId)
+    }
+
+    public func transcription(_ modelId: FalTranscriptionModelId) -> FalTranscriptionModel {
+        transcriptionFactory(modelId)
+    }
+
+    public func video(modelId: FalVideoModelId) -> FalVideoModel {
+        videoFactory(modelId)
+    }
+
+    public func video(_ modelId: FalVideoModelId) -> FalVideoModel {
+        videoFactory(modelId)
     }
 }
 
@@ -132,11 +155,29 @@ public func createFalProvider(settings: FalProviderSettings = .init()) -> FalPro
         )
     }
 
+    let videoFactory: @Sendable (FalVideoModelId) -> FalVideoModel = { modelId in
+        FalVideoModel(
+            modelId: modelId,
+            config: FalConfig(
+                provider: "fal.video",
+                url: { options in options.path },
+                headers: headersClosure,
+                fetch: fetch
+            )
+        )
+    }
+
     return FalProvider(
         imageFactory: imageFactory,
         transcriptionFactory: transcriptionFactory,
-        speechFactory: speechFactory
+        speechFactory: speechFactory,
+        videoFactory: videoFactory
     )
+}
+
+/// Alias matching upstream naming (`createFal`).
+public func createFal(settings: FalProviderSettings = .init()) -> FalProvider {
+    createFalProvider(settings: settings)
 }
 
 public let fal = createFalProvider()
