@@ -25,6 +25,7 @@ A unified AI SDK for Swift: streaming chat/completions, structured outputs, tool
 - Tool/function calling + MCP tools
 - Provider-agnostic API (swap providers without changing call sites)
 - Middleware hooks
+- Experimental video generation
 
 ## Installation (SwiftPM)
 

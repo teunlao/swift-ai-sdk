@@ -1,0 +1,323 @@
+---
+title: Video Generation
+description: Learn how to generate videos with the AI SDK.
+---
+
+_This page adapts the original AI SDK documentation: [Video Generation](https://ai-sdk.dev/docs/ai-sdk-core/video-generation)._ 
+
+> Note
+> Video generation is an experimental feature. The API may change in future versions.
+
+The Swift AI SDK provides the `experimental_generateVideo` function to generate videos based on a given prompt using a video model.
+
+```swift
+import SwiftAISDK
+import FalProvider
+
+let result = try await experimental_generateVideo(
+  model: fal.video("luma-dream-machine/ray-2"),
+  prompt: "A cat walking on a treadmill"
+)
+
+let video = result.video
+```
+
+You can access the video data using the `base64` or `data` properties:
+
+```swift
+let base64 = video.base64         // Base64-encoded video data
+let bytes = video.data            // Swift `Data` (equivalent of Uint8Array)
+let mediaType = video.mediaType   // e.g. "video/mp4"
+```
+
+## Settings
+
+### Aspect Ratio
+
+The aspect ratio is specified as a string in the format `{width}:{height}`.
+Models only support a few aspect ratios, and the supported aspect ratios are different for each model and provider.
+
+```swift
+let result = try await experimental_generateVideo(
+  model: fal.video("luma-dream-machine/ray-2"),
+  prompt: "A cat walking on a treadmill",
+  aspectRatio: "16:9"
+)
+```
+
+### Resolution
+
+The resolution is specified as a string in the format `{width}x{height}`.
+Models only support specific resolutions, and the supported resolutions are different for each model and provider.
+
+> Note
+> Swift video generation currently ships with the Fal provider implementation. Fal uses `providerOptions.fal.resolution` (e.g. `"1080p"`) instead of the top-level `resolution` parameter.
+
+```swift
+let result = try await experimental_generateVideo(
+  model: fal.video("luma-ray-2"),
+  prompt: "A serene mountain landscape at sunset",
+  providerOptions: ["fal": [
+    "resolution": "1080p"
+  ]]
+)
+```
+
+### Duration
+
+Some video models support specifying the duration of the generated video in seconds.
+
+```swift
+let result = try await experimental_generateVideo(
+  model: fal.video("luma-dream-machine/ray-2"),
+  prompt: "A timelapse of clouds moving across the sky",
+  duration: 5
+)
+```
+
+### Frames Per Second (FPS)
+
+Some video models allow you to specify the frames per second for the generated video.
+
+```swift
+let result = try await experimental_generateVideo(
+  model: fal.video("luma-dream-machine/ray-2"),
+  prompt: "A hummingbird in slow motion",
+  fps: 24
+)
+```
+
+### Generating Multiple Videos
+
+`experimental_generateVideo` supports generating multiple videos at once:
+
+```swift
+let result = try await experimental_generateVideo(
+  model: fal.video("luma-dream-machine/ray-2"),
+  prompt: "A rocket launching into space",
+  n: 3 // number of videos to generate
+)
+
+let videos = result.videos
+```
+
+> Note
+> `experimental_generateVideo` automatically calls the model as often as needed to satisfy `n`. The TypeScript SDK batches calls in parallel; the Swift implementation currently batches sequentially (behavior is the same, but this can affect performance).
+
+Each video model has an internal limit on how many videos it can generate in a single API call. The AI SDK manages this automatically by batching requests appropriately when you request multiple videos using the `n` parameter. Most video models only support generating 1 video per call due to computational cost.
+
+If needed, you can override this behavior using the `maxVideosPerCall` setting:
+
+```swift
+let result = try await experimental_generateVideo(
+  model: fal.video("luma-dream-machine/ray-2"),
+  prompt: "A rocket launching into space",
+  maxVideosPerCall: 1, // Override the default batch size (provider-dependent)
+  n: 4
+)
+```
+
+### Image-to-Video Generation
+
+Some video models support generating videos from an input image. You can provide an image using the prompt object:
+
+```swift
+let result = try await experimental_generateVideo(
+  model: fal.video("hunyuan-video"),
+  prompt: .imageToVideo(
+    image: .string("https://example.com/my-image.png"),
+    text: "Animate this image with gentle motion"
+  )
+)
+```
+
+You can also provide the image as a base64 string or `Data`:
+
+```swift
+let imageBytes: Data = /* ... */
+
+let result = try await experimental_generateVideo(
+  model: fal.video("hunyuan-video"),
+  prompt: .imageToVideo(
+    image: .data(imageBytes),
+    text: "Animate this image"
+  )
+)
+```
+
+### Providing a Seed
+
+You can provide a seed to the `experimental_generateVideo` function to control the output of the video generation process.
+If supported by the model, the same seed will always produce the same video.
+
+```swift
+let result = try await experimental_generateVideo(
+  model: fal.video("luma-dream-machine/ray-2"),
+  prompt: "A cat walking on a treadmill",
+  seed: 1_234_567_890
+)
+```
+
+### Provider-specific Settings
+
+Video models often have provider- or even model-specific settings.
+You can pass such settings to the `experimental_generateVideo` function
+using the `providerOptions` parameter. The options for the provider
+become request body properties.
+
+```swift
+let result = try await experimental_generateVideo(
+  model: fal.video("luma-dream-machine/ray-2"),
+  prompt: "A cat walking on a treadmill",
+  aspectRatio: "16:9",
+  providerOptions: ["fal": [
+    "loop": true,
+    "motionStrength": 0.8
+  ]]
+)
+```
+
+### Abort Signals and Timeouts
+
+`experimental_generateVideo` accepts an optional `abortSignal` closure of type
+`@Sendable () -> Bool` that you can use to abort the video generation process or set a timeout.
+
+```swift
+let deadline = Date().addingTimeInterval(60)
+
+let result = try await experimental_generateVideo(
+  model: fal.video("luma-dream-machine/ray-2"),
+  prompt: "A cat walking on a treadmill",
+  abortSignal: { Date() >= deadline } // Abort after 60 seconds
+)
+```
+
+> Note
+> Video generation typically takes longer than image generation. Consider using longer timeouts (60 seconds or more) depending on the model and video length.
+
+### Polling Timeout
+
+Video generation is an asynchronous process that can take several minutes to complete. Most providers use a polling mechanism where the SDK periodically checks if the video is ready. The default polling timeout is typically 5 minutes, which may not be sufficient for longer videos or certain models.
+
+You can configure the polling timeout using provider-specific options. Each provider exports a type for its options that you can use with `satisfies` for type safety:
+
+```swift
+let result = try await experimental_generateVideo(
+  model: fal.video("luma-dream-machine/ray-2"),
+  prompt: "A cinematic timelapse of a city from dawn to dusk",
+  duration: 10,
+  providerOptions: ["fal": [
+    "pollTimeoutMs": 600_000 // 10 minutes
+  ]]
+)
+```
+
+> Note
+> For production use, we recommend setting `pollTimeoutMs` to at least 10 minutes (600000ms) to account for varying generation times across different models and video lengths.
+
+### Custom Headers
+
+`experimental_generateVideo` accepts an optional `headers` parameter of type `[String: String]`
+that you can use to add custom headers to the video generation request.
+
+```swift
+let result = try await experimental_generateVideo(
+  model: fal.video("luma-dream-machine/ray-2"),
+  prompt: "A cat walking on a treadmill",
+  headers: ["X-Custom-Header": "custom-value"]
+)
+```
+
+### Warnings
+
+If the model returns warnings, e.g. for unsupported parameters, they will be available in the `warnings` property of the response.
+
+```swift
+let result = try await experimental_generateVideo(
+  model: fal.video("luma-dream-machine/ray-2"),
+  prompt: "A cat walking on a treadmill"
+)
+
+print(result.warnings)
+```
+
+### Additional Provider-specific Metadata
+
+Some providers expose additional metadata for the result overall or per video.
+
+```swift
+let prompt = "A cat walking on a treadmill"
+
+let result = try await experimental_generateVideo(
+  model: fal.video("luma-dream-machine/ray-2"),
+  prompt: prompt
+)
+
+if let fal = result.providerMetadata["fal"],
+   case let .array(videos) = fal["videos"],
+   case let .object(video0) = videos.first {
+  print(video0["duration"] ?? .null)
+  print(video0["fps"] ?? .null)
+  print(video0["width"] ?? .null)
+  print(video0["height"] ?? .null)
+}
+```
+
+The outer key of the returned `providerMetadata` is the provider name. The inner values are the metadata. A `videos` key is typically present in the metadata and is an array with the same length as the top level `videos` key.
+
+When generating multiple videos with `n > 1`, you can also access per-call metadata through the `responses` array:
+
+```swift
+let result = try await experimental_generateVideo(
+  model: fal.video("luma-dream-machine/ray-2"),
+  prompt: "A rocket launching into space",
+  n: 5 // May require multiple API calls
+)
+
+for response in result.responses {
+  print(response.timestamp)
+  print(response.modelId)
+  print(response.providerMetadata ?? [:])
+}
+```
+
+### Error Handling
+
+When `experimental_generateVideo` cannot generate a valid video, it throws an `AI_NoVideoGeneratedError` (`NoVideoGeneratedError`).
+
+This error occurs when the AI provider fails to generate a video. It can arise due to the following reasons:
+
+- The model failed to generate a response
+- The model generated a response that could not be parsed
+
+The error preserves the following information to help you log the issue:
+
+- `responses`: Metadata about the video model responses, including timestamp, model, and headers.
+- `cause`: The cause of the error. You can use this for more detailed error handling
+
+```swift
+import SwiftAISDK
+
+do {
+  _ = try await experimental_generateVideo(
+    model: fal.video("luma-dream-machine/ray-2"),
+    prompt: "A cat walking on a treadmill"
+  )
+} catch {
+  if NoVideoGeneratedError.isInstance(error) {
+    let noVideo = error as! NoVideoGeneratedError
+    print("NoVideoGeneratedError")
+    print("Cause:", noVideo.cause as Any)
+    print("Responses:", noVideo.responses as Any)
+  }
+}
+```
+
+## Video Models
+
+| Provider | Model | Features |
+| --- | --- | --- |
+| [Fal](/providers/fal#video-models) | `luma-dream-machine/ray-2` | Text-to-video, image-to-video |
+| [Fal](/providers/fal#video-models) | `minimax-video` | Text-to-video |
+
+Above are a small subset of the video models supported by the Swift AI SDK providers. For more, see the respective provider documentation.

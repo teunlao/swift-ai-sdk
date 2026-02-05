@@ -45,6 +45,7 @@ export default defineConfig({
             { label: "Settings", link: "/ai-sdk-core/settings" },
             { label: "Embeddings", link: "/ai-sdk-core/embeddings" },
             { label: "Image Generation", link: "/ai-sdk-core/image-generation" },
+            { label: "Video Generation", link: "/ai-sdk-core/video-generation" },
             { label: "Transcription", link: "/ai-sdk-core/transcription" },
             { label: "Speech", link: "/ai-sdk-core/speech" },
             { label: "Language Model Middleware", link: "/ai-sdk-core/middleware" },
@@ -94,6 +95,7 @@ export default defineConfig({
             { label: "Replicate", link: "/providers/replicate" },
             { label: "Black Forest Labs", link: "/providers/black-forest-labs" },
             { label: "Prodia", link: "/providers/prodia" },
+            { label: "Fal", link: "/providers/fal" },
             { label: "Rev.ai", link: "/providers/revai" },
             { label: "LMNT", link: "/providers/lmnt" }
           ]

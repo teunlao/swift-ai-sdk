@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+- Video (experimental): `experimental_generateVideo` core API + `VideoModelV3` (v3) types and result/metadata support.
+- Fal: video model support via `fal.video(...)` (polling, metadata mapping, abort/timeout handling) + tests.
+
+### Docs
+- AI SDK Core: add Video Generation page and wire it into the sidebar.
+- Providers: add Fal provider page (including Video Models) and update provider overview/sidebar links.
+
+### Fixed
+- Download: normalize HTTP status casing so errors read like `404 Not Found`.
+
 ## [0.14.0] - 2026-02-05
 
 ### Changed
