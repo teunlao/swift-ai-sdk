@@ -81,6 +81,27 @@ public let audioMediaTypeSignatures: [MediaTypeSignature] = [
     MediaTypeSignature(mediaType: "audio/webm", bytesPrefix: [0x1A, 0x45, 0xDF, 0xA3]),
 ]
 
+/// Known video media type signatures for detection.
+public let videoMediaTypeSignatures: [MediaTypeSignature] = [
+    MediaTypeSignature(
+        mediaType: "video/mp4",
+        bytesPrefix: [
+            0x00, 0x00, 0x00, nil,
+            0x66, 0x74, 0x79, 0x70, // ftyp
+        ]
+    ),
+    MediaTypeSignature(mediaType: "video/webm", bytesPrefix: [0x1A, 0x45, 0xDF, 0xA3]), // EBML
+    MediaTypeSignature(
+        mediaType: "video/quicktime",
+        bytesPrefix: [
+            0x00, 0x00, 0x00, 0x14,
+            0x66, 0x74, 0x79, 0x70,
+            0x71, 0x74, // ftypqt
+        ]
+    ),
+    MediaTypeSignature(mediaType: "video/x-msvideo", bytesPrefix: [0x52, 0x49, 0x46, 0x46]), // RIFF (AVI)
+]
+
 /// Strips ID3 tags from MP3 data if present.
 ///
 /// - Parameter data: The data to process (either bytes or base64 string).

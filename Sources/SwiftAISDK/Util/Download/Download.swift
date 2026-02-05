@@ -66,10 +66,12 @@ public func download(url: URL) async throws -> (data: Data, mediaType: String?) 
         }
 
         guard (200..<300).contains(httpResponse.statusCode) else {
+            let localized = HTTPURLResponse.localizedString(forStatusCode: httpResponse.statusCode)
+            let statusText = localized.isEmpty ? "\(httpResponse.statusCode)" : localized.capitalized
             throw DownloadError(
                 url: urlText,
                 statusCode: httpResponse.statusCode,
-                statusText: HTTPURLResponse.localizedString(forStatusCode: httpResponse.statusCode)
+                statusText: statusText
             )
         }
 

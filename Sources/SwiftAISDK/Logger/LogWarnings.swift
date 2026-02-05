@@ -58,6 +58,7 @@ private nonisolated(unsafe) var _warningsLoggingDisabledForProcess: Bool = false
 public enum Warning: Sendable, Equatable {
     case languageModel(SharedV3Warning)
     case imageModel(SharedV3Warning)
+    case videoModel(SharedV3Warning)
     case speechModel(SharedV3Warning)
     case transcriptionModel(SharedV3Warning)
     case rerankingModel(SharedV3Warning)
@@ -121,6 +122,8 @@ private func formatWarning(_ warning: Warning) -> String {
     case .languageModel(let w):
         return formatSharedV3Warning(w, prefix: prefix)
     case .imageModel(let w):
+        return formatSharedV3Warning(w, prefix: prefix)
+    case .videoModel(let w):
         return formatSharedV3Warning(w, prefix: prefix)
     case .speechModel(let w):
         return formatSharedV3Warning(w, prefix: prefix)
