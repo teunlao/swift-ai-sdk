@@ -119,9 +119,9 @@ Black Forest Labs models support aspect ratios from 3:7 (portrait) to 7:3 (lands
 
 Black Forest Labs Kontext models support powerful image editing capabilities using reference images.
 
-> Note: In the upstream TypeScript SDK, input images are passed via
-> `prompt: { text, images, mask }`. In Swift, `generateImage` currently takes a
-> `prompt: String` and uses the `files:` / `mask:` parameters instead.
+> Note: In Swift, pass reference images (and optional masks) via
+> `prompt: .imageEditing(images:text:mask:)` (type `GenerateImagePrompt`).
+> This maps to the provider `files` / `mask` fields.
 
 #### Single Image Editing
 
@@ -133,13 +133,12 @@ import BlackForestLabsProvider
 
 let result = try await generateImage(
   model: blackForestLabs.image("flux-kontext-pro"),
-  prompt: "A baby elephant with a shirt that has the logo from the input image.",
-  files: [
-    .url(
-      url: "https://www.google.com/images/branding/googlelogo/1x/googlelogo_color_272x92dp.png",
-      providerOptions: nil
-    )
-  ],
+  prompt: .imageEditing(
+    images: [
+      .string("https://www.google.com/images/branding/googlelogo/1x/googlelogo_color_272x92dp.png")
+    ],
+    text: "A baby elephant with a shirt that has the logo from the input image."
+  ),
   providerOptions: [
     "blackForestLabs": [
       "width": 1024,
@@ -159,11 +158,13 @@ import BlackForestLabsProvider
 
 let result = try await generateImage(
   model: blackForestLabs.image("flux-kontext-pro"),
-  prompt: "Combine the style of image 1 with the subject of image 2",
-  files: [
-    .url(url: "https://example.com/style-reference.jpg", providerOptions: nil),
-    .url(url: "https://example.com/subject-reference.jpg", providerOptions: nil)
-  ]
+  prompt: .imageEditing(
+    images: [
+      .string("https://example.com/style-reference.jpg"),
+      .string("https://example.com/subject-reference.jpg")
+    ],
+    text: "Combine the style of image 1 with the subject of image 2"
+  )
 )
 ```
 
@@ -172,7 +173,7 @@ let result = try await generateImage(
 
 #### Inpainting
 
-The `flux-pro-1.0-fill` model supports inpainting, which allows you to fill masked regions of an image with new content. Pass the source image via `files:` and a mask image via `mask:`:
+The `flux-pro-1.0-fill` model supports inpainting, which allows you to fill masked regions of an image with new content. Pass the source image and mask via `prompt: .imageEditing(images:text:mask:)`:
 
 ```swift
 import SwiftAISDK
@@ -180,11 +181,11 @@ import BlackForestLabsProvider
 
 let result = try await generateImage(
   model: blackForestLabs.image("flux-pro-1.0-fill"),
-  prompt: "A beautiful garden with flowers",
-  files: [
-    .url(url: "https://example.com/source-image.jpg", providerOptions: nil)
-  ],
-  mask: .url(url: "https://example.com/mask-image.png", providerOptions: nil)
+  prompt: .imageEditing(
+    images: [.string("https://example.com/source-image.jpg")],
+    text: "A beautiful garden with flowers",
+    mask: .string("https://example.com/mask-image.png")
+  )
 )
 ```
 
@@ -209,8 +210,8 @@ Black Forest Labs image models support flexible provider options through the `pr
 - **webhookUrl** _string_ - URL for asynchronous completion notification. Must be a valid HTTP/HTTPS URL.
 - **webhookSecret** _string_ - Secret for webhook signature verification, sent in the `X-Webhook-Secret` header.
 
-> Note: To pass reference images for editing, use `files:` and `mask:` instead
-> of provider options. Black Forest Labs supports up to 10 input images.
+> Note: To pass reference images for editing, use `prompt: .imageEditing(images:text:mask:)`
+> instead of provider options. Black Forest Labs supports up to 10 input images.
 
 ### Provider Metadata
 

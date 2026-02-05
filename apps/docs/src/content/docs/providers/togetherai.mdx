@@ -194,9 +194,8 @@ The following provider options are available:
 
 Together AI supports image editing through FLUX Kontext models.
 
-> Note: In the upstream TypeScript SDK, input images are passed via
-> `prompt: { text, images, mask }`. In Swift, `generateImage` currently takes a
-> `prompt: String` and uses the `files:` / `mask:` parameters instead.
+> Note: In Swift, pass reference images via `prompt: .imageEditing(images:text:mask:)`
+> (type `GenerateImagePrompt`). This maps to the provider `files` / `mask` fields.
 
 > Note: Together AI does not support mask-based inpainting. Instead, use descriptive
 > prompts to specify what you want to change in the image.
@@ -213,11 +212,11 @@ let inputImage = try Data(contentsOf: URL(fileURLWithPath: "input-image.png"))
 
 let result = try await generateImage(
   model: togetherai.image("black-forest-labs/FLUX.1-kontext-pro"),
-  prompt: "Turn the cat into a golden retriever dog",
+  prompt: .imageEditing(
+    images: [.data(inputImage)],
+    text: "Turn the cat into a golden retriever dog"
+  ),
   size: "1024x1024",
-  files: [
-    .file(mediaType: "image/png", data: .binary(inputImage), providerOptions: nil)
-  ],
   providerOptions: [
     "togetherai": [
       "steps": 28
@@ -233,11 +232,11 @@ You can also pass image URLs directly:
 ```swift
 let result = try await generateImage(
   model: togetherai.image("black-forest-labs/FLUX.1-kontext-pro"),
-  prompt: "Make the background a lush rainforest",
+  prompt: .imageEditing(
+    images: [.string("https://example.com/photo.png")],
+    text: "Make the background a lush rainforest"
+  ),
   size: "1024x1024",
-  files: [
-    .url(url: "https://example.com/photo.png", providerOptions: nil)
-  ],
   providerOptions: [
     "togetherai": [
       "steps": 28
@@ -247,7 +246,7 @@ let result = try await generateImage(
 ```
 
 > Note: Together AI only supports a single input image per request. Additional
-> images in `files:` are ignored.
+> images in `prompt: .imageEditing(images: ...)` are ignored.
 
 #### Supported Image Editing Models
 
