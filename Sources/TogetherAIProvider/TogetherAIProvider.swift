@@ -82,20 +82,40 @@ public final class TogetherAIProvider: ProviderV3 {
         chatFactory(modelId)
     }
 
+    public func chat(_ modelId: TogetherAIChatModelId) -> OpenAICompatibleChatLanguageModel {
+        chat(modelId: modelId)
+    }
+
     public func completion(modelId: TogetherAICompletionModelId) -> OpenAICompatibleCompletionLanguageModel {
         completionFactory(modelId)
+    }
+
+    public func completion(_ modelId: TogetherAICompletionModelId) -> OpenAICompatibleCompletionLanguageModel {
+        completion(modelId: modelId)
     }
 
     public func embedding(modelId: TogetherAIEmbeddingModelId) -> OpenAICompatibleEmbeddingModel {
         embeddingFactory(modelId)
     }
 
+    public func embedding(_ modelId: TogetherAIEmbeddingModelId) -> OpenAICompatibleEmbeddingModel {
+        embedding(modelId: modelId)
+    }
+
     public func image(modelId: TogetherAIImageModelId) -> TogetherAIImageModel {
         imageFactory(modelId)
     }
 
+    public func image(_ modelId: TogetherAIImageModelId) -> TogetherAIImageModel {
+        image(modelId: modelId)
+    }
+
     public func reranking(modelId: TogetherAIRerankingModelId) -> TogetherAIRerankingModel {
         rerankingFactory(modelId)
+    }
+
+    public func reranking(_ modelId: TogetherAIRerankingModelId) -> TogetherAIRerankingModel {
+        reranking(modelId: modelId)
     }
 }
 
