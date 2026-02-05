@@ -19,21 +19,42 @@ extension URL {
     /// Returns the origin of the URL (scheme + host + port)
     /// Matches TypeScript's URL.origin behavior
     var origin: String {
-        var components: [String] = []
+        guard let scheme = scheme?.lowercased(),
+              let host = host?.lowercased()
+        else {
+            // Best-effort fallback for non-absolute URLs.
+            var components: [String] = []
 
-        if let scheme = scheme {
-            components.append("\(scheme)://")
+            if let scheme = scheme {
+                components.append("\(scheme)://")
+            }
+
+            if let host = host {
+                components.append(host)
+            }
+
+            if let port = port {
+                components.append(":\(port)")
+            }
+
+            return components.joined()
         }
 
-        if let host = host {
-            components.append(host)
-        }
+        var origin = "\(scheme)://\(host)"
 
         if let port = port {
-            components.append(":\(port)")
+            let defaultPort: Int? = switch scheme {
+            case "http": 80
+            case "https": 443
+            default: nil
+            }
+
+            if port != defaultPort {
+                origin.append(":\(port)")
+            }
         }
 
-        return components.joined()
+        return origin
     }
 }
 

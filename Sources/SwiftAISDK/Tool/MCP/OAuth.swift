@@ -125,7 +125,13 @@ public func extractResourceMetadataUrl(_ response: HTTPURLResponse) -> URL? {
     else { return nil }
 
     let urlString = String(header[urlRange])
-    return URL(string: urlString)
+    guard let url = URL(string: urlString),
+          url.scheme != nil,
+          url.host != nil
+    else {
+        return nil
+    }
+    return url
 }
 
 // MARK: - Network Helpers
@@ -173,7 +179,8 @@ private func tryMetadataDiscovery(
 
 private func shouldAttemptFallback(response: HTTPURLResponse?, pathname: String) -> Bool {
     guard let response else { return true }
-    return response.statusCode >= 400 && response.statusCode < 500 && pathname != "/"
+    let normalizedPathname = pathname.isEmpty ? "/" : pathname
+    return response.statusCode >= 400 && response.statusCode < 500 && normalizedPathname != "/"
 }
 
 private func buildWellKnownPath(
@@ -271,25 +278,31 @@ public enum AuthorizationServerDiscoveryType: Sendable {
 }
 
 public func buildDiscoveryUrls(authorizationServerUrl: URL) -> [(url: URL, type: AuthorizationServerDiscoveryType)] {
-    let hasPath = authorizationServerUrl.path != "/"
+    let pathname: String = {
+        let raw = URLComponents(url: authorizationServerUrl, resolvingAgainstBaseURL: false)?.path ?? authorizationServerUrl.path
+        return raw.isEmpty ? "/" : raw
+    }()
+
+    let hasPath = pathname != "/"
     var urlsToTry: [(url: URL, type: AuthorizationServerDiscoveryType)] = []
 
+    let origin = URL(string: authorizationServerUrl.origin)!
+
     if !hasPath {
-        urlsToTry.append((URL(string: "/.well-known/oauth-authorization-server", relativeTo: URL(string: authorizationServerUrl.origin)!)!.absoluteURL, .oauth))
-        urlsToTry.append((URL(string: "/.well-known/openid-configuration", relativeTo: URL(string: authorizationServerUrl.origin)!)!.absoluteURL, .oidc))
+        urlsToTry.append((URL(string: "/.well-known/oauth-authorization-server", relativeTo: origin)!.absoluteURL, .oauth))
+        urlsToTry.append((URL(string: "/.well-known/openid-configuration", relativeTo: origin)!.absoluteURL, .oidc))
         return urlsToTry
     }
 
-    var pathname = authorizationServerUrl.path
-    if pathname.hasSuffix("/") {
-        pathname = String(pathname.dropLast())
+    var normalizedPathname = pathname
+    if normalizedPathname.hasSuffix("/") {
+        normalizedPathname = String(normalizedPathname.dropLast())
     }
 
-    let origin = URL(string: authorizationServerUrl.origin)!
-    urlsToTry.append((URL(string: "/.well-known/oauth-authorization-server\(pathname)", relativeTo: origin)!.absoluteURL, .oauth))
+    urlsToTry.append((URL(string: "/.well-known/oauth-authorization-server\(normalizedPathname)", relativeTo: origin)!.absoluteURL, .oauth))
     urlsToTry.append((URL(string: "/.well-known/oauth-authorization-server", relativeTo: origin)!.absoluteURL, .oauth))
-    urlsToTry.append((URL(string: "/.well-known/openid-configuration\(pathname)", relativeTo: origin)!.absoluteURL, .oidc))
-    urlsToTry.append((URL(string: "\(pathname)/.well-known/openid-configuration", relativeTo: origin)!.absoluteURL, .oidc))
+    urlsToTry.append((URL(string: "/.well-known/openid-configuration\(normalizedPathname)", relativeTo: origin)!.absoluteURL, .oidc))
+    urlsToTry.append((URL(string: "\(normalizedPathname)/.well-known/openid-configuration", relativeTo: origin)!.absoluteURL, .oidc))
 
     return urlsToTry
 }
