@@ -129,6 +129,9 @@ public struct Tool: Sendable {
     /// Additional provider-specific metadata.
     public let providerOptions: [String: JSONValue]?
 
+    /// Optional metadata for the tool (used by some adapters like MCP).
+    public let _meta: [String: JSONValue]?
+
     /// The schema of the input that the tool expects.
     public let inputSchema: FlexibleSchema<JSONValue>
 
@@ -200,6 +203,7 @@ public struct Tool: Sendable {
         description: String? = nil,
         title: String? = nil,
         providerOptions: [String: JSONValue]? = nil,
+        _meta: [String: JSONValue]? = nil,
         inputSchema: FlexibleSchema<JSONValue>,
         inputExamples: [LanguageModelV3ToolInputExample]? = nil,
         strict: Bool? = nil,
@@ -219,6 +223,7 @@ public struct Tool: Sendable {
         self.description = description
         self.title = title
         self.providerOptions = providerOptions
+        self._meta = _meta
         self.inputSchema = inputSchema
         self.inputExamples = inputExamples
         self.strict = strict
@@ -497,6 +502,7 @@ public func tool(
     description: String? = nil,
     title: String? = nil,
     providerOptions: [String: JSONValue]? = nil,
+    _meta: [String: JSONValue]? = nil,
     inputSchema: FlexibleSchema<JSONValue>,
     inputExamples: [LanguageModelV3ToolInputExample]? = nil,
     strict: Bool? = nil,
@@ -512,6 +518,7 @@ public func tool(
         description: description,
         title: title,
         providerOptions: providerOptions,
+        _meta: _meta,
         inputSchema: inputSchema,
         inputExamples: inputExamples,
         strict: strict,
@@ -535,6 +542,7 @@ public func dynamicTool(
     description: String? = nil,
     title: String? = nil,
     providerOptions: [String: JSONValue]? = nil,
+    _meta: [String: JSONValue]? = nil,
     inputSchema: FlexibleSchema<JSONValue>,
     strict: Bool? = nil,
     execute: @escaping @Sendable (JSONValue, ToolCallOptions) async throws -> ToolExecutionResult<JSONValue>,
@@ -544,6 +552,7 @@ public func dynamicTool(
         description: description,
         title: title,
         providerOptions: providerOptions,
+        _meta: _meta,
         inputSchema: inputSchema,
         strict: strict,
         execute: execute,
