@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-02-05
+
+### Added
+- Providers: Vercel provider + tests.
+- Providers: TogetherAI, BlackForestLabs, Prodia, RevAI providers.
+- MCP: major parity update (OAuth support, HTTP transport, tolerant decoding) + extensive unit/integration tests.
+- Provider utils: add `Tool._meta`.
+
+### Fixed
+- MCP (HTTP transport): correctly flush inbound SSE chunks so messages parse without waiting for connection close.
+- MCP (OAuth): normalize resource URLs (origin/path) to match upstream behavior.
+
 ## [0.12.1] - 2026-02-04
 
 ### Added
