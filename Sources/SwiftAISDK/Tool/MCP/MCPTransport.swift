@@ -1,7 +1,8 @@
 /**
  Transport interface for MCP (Model Context Protocol) communication.
 
- Port of `@ai-sdk/ai/src/tool/mcp/mcp-transport.ts`.
+ Port of `packages/mcp/src/tool/mcp-transport.ts`.
+ Upstream commit: f3a72bc2a
 
  This module defines the base transport protocol for MCP communication and provides
  factory functions for creating transport instances.
@@ -54,7 +55,7 @@ public protocol MCPTransport: Sendable {
 
 /// Configuration for creating MCP transports
 public struct MCPTransportConfig: Sendable {
-    /// Transport type (currently only 'sse' is supported)
+    /// Transport type (`sse` or `http`)
     public let type: String
 
     /// The URL of the MCP server
@@ -63,14 +64,19 @@ public struct MCPTransportConfig: Sendable {
     /// Additional HTTP headers to be sent with requests
     public let headers: [String: String]?
 
+    /// Optional OAuth client provider for authentication.
+    public let authProvider: OAuthClientProvider?
+
     public init(
         type: String = "sse",
         url: String,
-        headers: [String: String]? = nil
+        headers: [String: String]? = nil,
+        authProvider: OAuthClientProvider? = nil
     ) {
         self.type = type
         self.url = url
         self.headers = headers
+        self.authProvider = authProvider
     }
 }
 
@@ -87,13 +93,18 @@ public struct MCPTransportConfig: Sendable {
  */
 @available(macOS 12.0, iOS 15.0, watchOS 8.0, tvOS 15.0, *)
 public func createMcpTransport(config: MCPTransportConfig) throws -> MCPTransport {
-    guard config.type == "sse" else {
+    switch config.type {
+    case "sse":
+        return try SseMCPTransport(config: config)
+
+    case "http":
+        return try HttpMCPTransport(config: config)
+
+    default:
         throw MCPClientError(
             message: "Unsupported or invalid transport configuration. If you are using a custom transport, make sure it implements the MCPTransport interface."
         )
     }
-
-    return SseMCPTransport(url: config.url, headers: config.headers)
 }
 
 /**

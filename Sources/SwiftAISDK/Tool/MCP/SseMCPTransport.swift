@@ -1,7 +1,8 @@
 /**
  Server-Sent Events (SSE) transport implementation for MCP.
 
- Port of `@ai-sdk/ai/src/tool/mcp/mcp-sse-transport.ts`.
+ Port of `packages/mcp/src/tool/mcp-sse-transport.ts`.
+ Upstream commit: f3a72bc2a
 
  This transport uses SSE for receiving messages and HTTP POST for sending messages,
  following the MCP specification.
@@ -48,13 +49,15 @@ extension URL {
  */
 @available(macOS 12.0, iOS 15.0, watchOS 8.0, tvOS 15.0, *)
 public final class SseMCPTransport: MCPTransport, @unchecked Sendable {
-    // State synchronized via actor or explicit locking
     private let stateLock = NSLock()
     private var _endpoint: URL?
     private var _streamTask: Task<Void, Never>?
     private let url: URL
+    private let session: URLSession
     private var _connected = false
     private let headers: [String: String]?
+    private let authProvider: (any OAuthClientProvider)?
+    private var resourceMetadataUrl: URL?
 
     private var endpoint: URL? {
         get { stateLock.withLock { _endpoint } }
@@ -75,12 +78,67 @@ public final class SseMCPTransport: MCPTransport, @unchecked Sendable {
     public var onerror: (@Sendable (Error) -> Void)?
     public var onmessage: (@Sendable (JSONRPCMessage) -> Void)?
 
-    public init(url: String, headers: [String: String]? = nil) {
-        guard let parsedUrl = URL(string: url) else {
-            fatalError("Invalid URL: \(url)")
+    public convenience init(config: MCPTransportConfig) throws {
+        try self.init(config: config, session: .shared)
+    }
+
+    internal init(config: MCPTransportConfig, session: URLSession) throws {
+        guard let parsedUrl = URL(string: config.url) else {
+            throw MCPClientError(message: "Invalid URL: \(config.url)")
         }
         self.url = parsedUrl
+        self.session = session
+        self.headers = config.headers
+        self.authProvider = config.authProvider
+    }
+
+    public convenience init(
+        url: String,
+        headers: [String: String]? = nil,
+        authProvider: (any OAuthClientProvider)? = nil
+    ) throws {
+        try self.init(url: url, headers: headers, authProvider: authProvider, session: .shared)
+    }
+
+    internal init(
+        url: String,
+        headers: [String: String]? = nil,
+        authProvider: (any OAuthClientProvider)? = nil,
+        session: URLSession
+    ) throws {
+        guard let parsedUrl = URL(string: url) else {
+            throw MCPClientError(message: "Invalid URL: \(url)")
+        }
+        self.url = parsedUrl
+        self.session = session
         self.headers = headers
+        self.authProvider = authProvider
+    }
+
+    private func commonHeaders(base: [String: String]) async -> [String: String] {
+        var merged: [String: String?] = [:]
+
+        if let headers {
+            for (k, v) in headers {
+                merged[k] = v
+            }
+        }
+
+        for (k, v) in base {
+            merged[k] = v
+        }
+
+        merged["mcp-protocol-version"] = LATEST_PROTOCOL_VERSION
+
+        if let authProvider, let tokens = try? await authProvider.tokens() {
+            merged["Authorization"] = "Bearer \(tokens.accessToken)"
+        }
+
+        return withUserAgentSuffix(
+            merged,
+            "ai-sdk/\(VERSION)",
+            getRuntimeEnvironmentUserAgent()
+        )
     }
 
     public func start() async throws {
@@ -88,7 +146,7 @@ public final class SseMCPTransport: MCPTransport, @unchecked Sendable {
             return
         }
 
-        try await establishConnection()
+        try await establishConnection(triedAuth: false)
     }
 
     public func close() async throws {
@@ -103,91 +161,146 @@ public final class SseMCPTransport: MCPTransport, @unchecked Sendable {
             throw MCPClientError(message: "MCP SSE Transport Error: Not connected")
         }
 
+        await attemptSend(endpoint: endpoint, message: message, triedAuth: false)
+    }
+
+    // MARK: - Private Methods
+
+    private func attemptSend(endpoint: URL, message: JSONRPCMessage, triedAuth: Bool) async {
         do {
+            let headers = await commonHeaders(base: [
+                "Content-Type": "application/json"
+            ])
+
             var request = URLRequest(url: endpoint)
             request.httpMethod = "POST"
-
-            // Add headers with user agent
-            var headersDict: [String: String?] = headers?.mapValues { $0 as String? } ?? [:]
-            headersDict["Content-Type"] = "application/json"
-
-            let allHeaders = withUserAgentSuffix(
-                headersDict,
-                "ai-sdk/\(VERSION)",
-                getRuntimeEnvironmentUserAgent()
-            )
-
-            for (key, value) in allHeaders {
+            for (key, value) in headers {
                 request.setValue(value, forHTTPHeaderField: key)
             }
 
-            // Encode message
-            let encoder = JSONEncoder()
-            request.httpBody = try encoder.encode(message)
+            request.httpBody = try JSONEncoder().encode(message)
 
-            // Send request
-            let (data, response) = try await URLSession.shared.data(for: request)
-
-            guard let httpResponse = response as? HTTPURLResponse else {
-                let error = MCPClientError(
-                    message: "MCP SSE Transport Error: Invalid response type"
-                )
-                onerror?(error)
+            let (data, response) = try await session.data(for: request)
+            guard let http = response as? HTTPURLResponse else {
+                onerror?(MCPClientError(message: "MCP SSE Transport Error: Invalid response type"))
                 return
             }
 
-            guard httpResponse.statusCode == 200 || httpResponse.statusCode == 201 else {
-                // Extract response text (with fallback to null if extraction fails)
-                let text = String(data: data, encoding: .utf8)
-                let error = MCPClientError(
-                    message: "MCP SSE Transport Error: POSTing to endpoint (HTTP \(httpResponse.statusCode)): \(text ?? "null")"
-                )
-                onerror?(error)
+            if http.statusCode == 401, let authProvider, !triedAuth {
+                resourceMetadataUrl = extractResourceMetadataUrl(http)
+                do {
+                    let result = try await auth(
+                        authProvider,
+                        serverUrl: url,
+                        authorizationCode: nil,
+                        scope: nil,
+                        resourceMetadataUrl: resourceMetadataUrl
+                    )
+                    guard result == .authorized else {
+                        onerror?(UnauthorizedError())
+                        return
+                    }
+                } catch {
+                    onerror?(error)
+                    return
+                }
+
+                await attemptSend(endpoint: endpoint, message: message, triedAuth: true)
                 return
             }
+
+            guard (200...299).contains(http.statusCode) else {
+                let text = String(data: data, encoding: .utf8) ?? "null"
+                onerror?(
+                    MCPClientError(
+                        message: "MCP SSE Transport Error: POSTing to endpoint (HTTP \(http.statusCode)): \(text)"
+                    )
+                )
+                return
+            }
+        } catch is CancellationError {
+            return
         } catch {
             onerror?(error)
         }
     }
 
-    // MARK: - Private Methods
-
-    private func establishConnection() async throws {
+    private func establishConnection(triedAuth: Bool) async throws {
         return try await withCheckedThrowingContinuation { continuation in
             var didResolve = false
 
             streamTask = Task {
                 do {
-                    // Create request
-                    var request = URLRequest(url: url)
-                    request.httpMethod = "GET"
+                    var triedAuthLocal = triedAuth
+                    var asyncBytes: URLSession.AsyncBytes?
 
-                    // Add headers with user agent
-                    var headersDict: [String: String?] = headers?.mapValues { $0 as String? } ?? [:]
-                    headersDict["Accept"] = "text/event-stream"
+                    while true {
+                        var request = URLRequest(url: url)
+                        request.httpMethod = "GET"
 
-                    let allHeaders = withUserAgentSuffix(
-                        headersDict,
-                        "ai-sdk/\(VERSION)",
-                        getRuntimeEnvironmentUserAgent()
-                    )
+                        let headers = await commonHeaders(base: [
+                            "Accept": "text/event-stream"
+                        ])
+                        for (key, value) in headers {
+                            request.setValue(value, forHTTPHeaderField: key)
+                        }
 
-                    for (key, value) in allHeaders {
-                        request.setValue(value, forHTTPHeaderField: key)
+                        let (bytes, response) = try await session.bytes(for: request)
+                        guard let httpResponse = response as? HTTPURLResponse else {
+                            throw MCPClientError(message: "MCP SSE Transport Error: Invalid response type")
+                        }
+
+                        if httpResponse.statusCode == 401, let authProvider, !triedAuthLocal {
+                            resourceMetadataUrl = extractResourceMetadataUrl(httpResponse)
+                            do {
+                                let result = try await auth(
+                                    authProvider,
+                                    serverUrl: url,
+                                    authorizationCode: nil,
+                                    scope: nil,
+                                    resourceMetadataUrl: resourceMetadataUrl
+                                )
+                                guard result == .authorized else {
+                                    let error = UnauthorizedError()
+                                    onerror?(error)
+                                    if !didResolve {
+                                        didResolve = true
+                                        continuation.resume(throwing: error)
+                                    }
+                                    return
+                                }
+                            } catch {
+                                onerror?(error)
+                                if !didResolve {
+                                    didResolve = true
+                                    continuation.resume(throwing: error)
+                                }
+                                return
+                            }
+
+                            triedAuthLocal = true
+                            continue
+                        }
+
+                        guard (200...299).contains(httpResponse.statusCode) else {
+                            var errorMessage = "MCP SSE Transport Error: \(httpResponse.statusCode) \(HTTPURLResponse.localizedString(forStatusCode: httpResponse.statusCode))"
+                            if httpResponse.statusCode == 405 {
+                                errorMessage += ". This server does not support SSE transport. Try using `http` transport instead"
+                            }
+                            let error = MCPClientError(message: errorMessage)
+                            onerror?(error)
+                            if !didResolve {
+                                didResolve = true
+                                continuation.resume(throwing: error)
+                            }
+                            return
+                        }
+
+                        asyncBytes = bytes
+                        break
                     }
 
-                    // Make request
-                    let (asyncBytes, response) = try await URLSession.shared.bytes(for: request)
-
-                    guard let httpResponse = response as? HTTPURLResponse else {
-                        throw MCPClientError(message: "MCP SSE Transport Error: Invalid response")
-                    }
-
-                    guard httpResponse.statusCode == 200 else {
-                        throw MCPClientError(
-                            message: "MCP SSE Transport Error: \(httpResponse.statusCode) \(HTTPURLResponse.localizedString(forStatusCode: httpResponse.statusCode))"
-                        )
-                    }
+                    guard let asyncBytes else { return }
 
                     // Convert URLSession.AsyncBytes to AsyncThrowingStream<Data, Error>
                     let dataStream = AsyncThrowingStream<Data, Error> { streamContinuation in
@@ -283,6 +396,12 @@ public final class SseMCPTransport: MCPTransport, @unchecked Sendable {
                         throw MCPClientError(
                             message: "MCP SSE Transport Error: Connection closed unexpectedly"
                         )
+                    } else if !didResolve {
+                        let error = MCPClientError(
+                            message: "MCP SSE Transport Error: Connection closed unexpectedly"
+                        )
+                        didResolve = true
+                        continuation.resume(throwing: error)
                     }
                 } catch is CancellationError {
                     // Task was cancelled, exit gracefully
