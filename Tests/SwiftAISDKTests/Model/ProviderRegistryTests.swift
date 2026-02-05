@@ -92,6 +92,34 @@ struct ProviderRegistryTests {
         #expect(resolved.modelId == "model")
     }
 
+    @Test("returns base video model when configured")
+    func returnsBaseVideoModel() throws {
+        let baseModel = TestVideoModel(provider: "base", modelId: "model")
+        let provider = customProvider(videoModels: ["model": baseModel])
+
+        let registry = createProviderRegistry(providers: ["p": provider])
+        let resolved = registry.videoModel(id: "p:model")
+
+        #expect(resolved.provider == "base")
+        #expect(resolved.modelId == "model")
+    }
+
+    @Test("supports custom separators when resolving video models")
+    func supportsCustomSeparatorsForVideoModels() throws {
+        let baseModel = TestVideoModel(provider: "base", modelId: "model")
+        let provider = customProvider(videoModels: ["model": baseModel])
+
+        let registry = createProviderRegistry(
+            providers: ["p": provider],
+            options: ProviderRegistryOptions(separator: " > ")
+        )
+
+        let resolved = registry.videoModel(id: "p > model")
+
+        #expect(resolved.provider == "base")
+        #expect(resolved.modelId == "model")
+    }
+
     @Test("supports custom separators when resolving reranking models")
     func supportsCustomSeparatorsForRerankingModels() throws {
         let baseModel = TestRerankingModel(provider: "base", modelId: "model")
@@ -164,5 +192,29 @@ private final class TestRerankingModel: RerankingModelV3, @unchecked Sendable {
 
     func doRerank(options: RerankingModelV3CallOptions) async throws -> RerankingModelV3DoRerankResult {
         RerankingModelV3DoRerankResult(ranking: [])
+    }
+}
+
+private final class TestVideoModel: VideoModelV3, @unchecked Sendable {
+    public var specificationVersion: String { "v3" }
+    public var provider: String { providerValue }
+    public var modelId: String { modelIdentifier }
+    public var maxVideosPerCall: VideoModelV3MaxVideosPerCall { .value(1) }
+
+    private let providerValue: String
+    private let modelIdentifier: String
+
+    init(provider: String, modelId: String) {
+        self.providerValue = provider
+        self.modelIdentifier = modelId
+    }
+
+    func doGenerate(options: VideoModelV3CallOptions) async throws -> VideoModelV3GenerateResult {
+        VideoModelV3GenerateResult(
+            videos: [],
+            warnings: [],
+            providerMetadata: nil,
+            response: VideoModelV3ResponseInfo(timestamp: Date(), modelId: modelIdentifier, headers: nil)
+        )
     }
 }
