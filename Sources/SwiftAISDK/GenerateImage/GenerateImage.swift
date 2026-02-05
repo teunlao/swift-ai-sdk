@@ -20,6 +20,8 @@ public func generateImage(
     size: String? = nil,
     aspectRatio: String? = nil,
     seed: Int? = nil,
+    files: [ImageModelV3File]? = nil,
+    mask: ImageModelV3File? = nil,
     providerOptions: ProviderOptions? = nil,
     maxRetries: Int? = nil,
     abortSignal: (@Sendable () -> Bool)? = nil,
@@ -78,7 +80,9 @@ public func generateImage(
                     seed: seed,
                     providerOptions: providerOptions ?? [:],
                     abortSignal: abortSignal,
-                    headers: headersWithUserAgent
+                    headers: headersWithUserAgent,
+                    files: files,
+                    mask: mask
                 )
             )
         }
