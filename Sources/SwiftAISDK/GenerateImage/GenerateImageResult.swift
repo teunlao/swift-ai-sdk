@@ -25,6 +25,9 @@ public protocol GenerateImageResult: Sendable {
 
     /// Provider-specific metadata aggregated across calls.
     var providerMetadata: ImageModelProviderMetadata { get }
+
+    /// Aggregated usage information (if reported by the provider).
+    var usage: ImageModelUsage { get }
 }
 
 /**
@@ -37,6 +40,7 @@ public final class DefaultGenerateImageResult: GenerateImageResult {
     public let warnings: [ImageGenerationWarning]
     public let responses: [ImageModelResponseMetadata]
     public let providerMetadata: ImageModelProviderMetadata
+    public let usage: ImageModelUsage
 
     /**
      Create a default image generation result.
@@ -51,12 +55,14 @@ public final class DefaultGenerateImageResult: GenerateImageResult {
         images: [GeneratedFile],
         warnings: [ImageGenerationWarning],
         responses: [ImageModelResponseMetadata],
-        providerMetadata: ImageModelProviderMetadata
+        providerMetadata: ImageModelProviderMetadata,
+        usage: ImageModelUsage = .init()
     ) {
         self.images = images
         self.warnings = warnings
         self.responses = responses
         self.providerMetadata = providerMetadata
+        self.usage = usage
     }
 
     public var image: GeneratedFile {

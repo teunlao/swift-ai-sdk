@@ -46,6 +46,7 @@ struct GenerateImageTests {
         timestamp: Date? = nil,
         modelId: String? = nil,
         providerMetadata: ImageModelV3ProviderMetadata? = nil,
+        usage: ImageModelV3Usage? = nil,
         headers: [String: String]? = nil
     ) -> ImageModelV3GenerateResult {
         let generatedImages: ImageModelV3GeneratedImages
@@ -75,7 +76,8 @@ struct GenerateImageTests {
                 timestamp: timestamp ?? Date(),
                 modelId: modelId ?? "test-model-id",
                 headers: headers
-            )
+            ),
+            usage: usage
         )
     }
 
@@ -714,6 +716,62 @@ struct GenerateImageTests {
         let expectedValue = metadata["testProvider"]
         #expect(providerValue?.images == expectedValue?.images)
         #expect(providerValue?.additionalData == expectedValue?.additionalData)
+    }
+
+    @Test("should expose empty usage when provider does not report usage")
+    func exposesEmptyUsageWhenProviderDoesNotReportUsage() async throws {
+        let result = try await generateImage(
+            model: MockImageModelV3(
+                doGenerate: { _ in
+                    self.createMockResponse(images: .base64([self.pngBase64]))
+                }
+            ),
+            prompt: prompt
+        )
+
+        #expect(result.usage == ImageModelUsage())
+    }
+
+    @Test("should aggregate usage across multiple provider calls")
+    func aggregatesUsageAcrossMultipleProviderCalls() async throws {
+        let counter = Counter()
+
+        let result = try await generateImage(
+            model: MockImageModelV3(
+                maxImagesPerCall: .value(1),
+                doGenerate: { _ in
+                    let index = await counter.next()
+                    switch index {
+                    case 0:
+                        return self.createMockResponse(
+                            images: .base64([self.pngBase64]),
+                            usage: ImageModelV3Usage(
+                                inputTokens: 10,
+                                outputTokens: 0,
+                                totalTokens: 10
+                            )
+                        )
+                    case 1:
+                        return self.createMockResponse(
+                            images: .base64([self.jpegBase64]),
+                            usage: ImageModelV3Usage(
+                                inputTokens: 5,
+                                outputTokens: 0,
+                                totalTokens: 5
+                            )
+                        )
+                    default:
+                        Issue.record("Unexpected call")
+                        return self.createMockResponse(images: .base64([]))
+                    }
+                }
+            ),
+            prompt: prompt,
+            n: 2
+        )
+
+        #expect(result.images.map { $0.base64 } == [pngBase64, jpegBase64])
+        #expect(result.usage == ImageModelUsage(inputTokens: 15, outputTokens: 0, totalTokens: 15))
     }
 
     @Test("experimental_generateImage forwards to generateImage")

@@ -115,6 +115,13 @@ public struct EmbeddingModelUsage: Sendable, Equatable, Codable {
 }
 
 /**
+ Usage information for an image model call.
+
+ Type alias for `ImageModelV3Usage` from the Provider package.
+ */
+public typealias ImageModelUsage = ImageModelV3Usage
+
+/**
  Convert provider-level usage into AI-level usage.
  */
 public func asLanguageModelUsage(_ usage: LanguageModelV3Usage) -> LanguageModelUsage {
@@ -177,6 +184,22 @@ public func addLanguageModelUsage(
         raw: nil,
         reasoningTokens: addTokenCounts(usage1.reasoningTokens, usage2.reasoningTokens),
         cachedInputTokens: addTokenCounts(usage1.cachedInputTokens, usage2.cachedInputTokens)
+    )
+}
+
+/**
+ Adds two `ImageModelUsage` values together.
+
+ Mirrors upstream `addImageModelUsage` behavior.
+ */
+public func addImageModelUsage(
+    _ usage1: ImageModelUsage,
+    _ usage2: ImageModelUsage
+) -> ImageModelUsage {
+    ImageModelUsage(
+        inputTokens: addTokenCounts(usage1.inputTokens, usage2.inputTokens),
+        outputTokens: addTokenCounts(usage1.outputTokens, usage2.outputTokens),
+        totalTokens: addTokenCounts(usage1.totalTokens, usage2.totalTokens)
     )
 }
 

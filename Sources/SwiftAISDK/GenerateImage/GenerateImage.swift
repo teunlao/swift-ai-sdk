@@ -97,6 +97,7 @@ public func generateImage(
     responses.reserveCapacity(results.count)
 
     var providerMetadata: ImageModelProviderMetadata = [:]
+    var usage: ImageModelUsage = .init()
 
     for result in results {
         switch result.images {
@@ -124,6 +125,11 @@ public func generateImage(
         }
 
         warnings.append(contentsOf: result.warnings)
+
+        if let resultUsage = result.usage {
+            usage = addImageModelUsage(usage, resultUsage)
+        }
+
         if let metadata = result.providerMetadata {
             mergeProviderMetadata(
                 target: &providerMetadata,
@@ -150,7 +156,8 @@ public func generateImage(
         images: generatedImages,
         warnings: warnings,
         responses: responses,
-        providerMetadata: providerMetadata
+        providerMetadata: providerMetadata,
+        usage: usage
     )
 }
 

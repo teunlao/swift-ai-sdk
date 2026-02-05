@@ -106,16 +106,21 @@ public struct ImageModelV3GenerateResult: Sendable {
     /// Response information for telemetry and debugging purposes
     public let response: ImageModelV3ResponseInfo
 
+    /// Optional token usage for the image generation call (if the provider reports it).
+    public let usage: ImageModelV3Usage?
+
     public init(
         images: ImageModelV3GeneratedImages,
         warnings: [SharedV3Warning] = [],
         providerMetadata: ImageModelV3ProviderMetadata? = nil,
-        response: ImageModelV3ResponseInfo
+        response: ImageModelV3ResponseInfo,
+        usage: ImageModelV3Usage? = nil
     ) {
         self.images = images
         self.warnings = warnings
         self.providerMetadata = providerMetadata
         self.response = response
+        self.usage = usage
     }
 }
 
