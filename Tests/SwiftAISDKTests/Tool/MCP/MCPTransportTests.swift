@@ -36,6 +36,18 @@ struct MCPTransportTests {
         #expect(transport is SseMCPTransport)
     }
 
+    @Test("createMcpTransport creates HTTP transport")
+    @available(macOS 12.0, iOS 15.0, watchOS 8.0, tvOS 15.0, *)
+    func testCreateHttpTransport() throws {
+        let config = MCPTransportConfig(
+            type: "http",
+            url: "http://localhost:4000/mcp"
+        )
+
+        let transport = try createMcpTransport(config: config)
+        #expect(transport is HttpMCPTransport)
+    }
+
     @Test("createMcpTransport throws for unsupported transport type")
     @available(macOS 12.0, iOS 15.0, watchOS 8.0, tvOS 15.0, *)
     func testCreateUnsupportedTransport() {
