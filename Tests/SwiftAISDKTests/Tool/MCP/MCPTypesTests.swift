@@ -260,7 +260,7 @@ struct MCPTypesTests {
     @Test("ToolContent resource encoding/decoding")
     func testToolContentResource() throws {
         let content = ToolContent.resource(ToolContent.EmbeddedResource(
-            resource: .text(uri: "file://test.txt", mimeType: "text/plain", text: "content")
+            resource: .text(uri: "file://test.txt", name: nil, title: nil, mimeType: "text/plain", text: "content")
         ))
 
         let encoded = try JSONEncoder().encode(content)
@@ -268,7 +268,7 @@ struct MCPTypesTests {
 
         if case .resource(let embeddedResource) = decoded {
             #expect(embeddedResource.type == "resource")
-            if case .text(let uri, let mimeType, let text) = embeddedResource.resource {
+            if case .text(let uri, _, _, let mimeType, let text) = embeddedResource.resource {
                 #expect(uri == "file://test.txt")
                 #expect(mimeType == "text/plain")
                 #expect(text == "content")
@@ -296,6 +296,8 @@ struct MCPTypesTests {
     func testResourceContentsText() throws {
         let resource = ResourceContents.text(
             uri: "file://test.txt",
+            name: nil,
+            title: nil,
             mimeType: "text/plain",
             text: "Hello, World!"
         )
@@ -303,7 +305,7 @@ struct MCPTypesTests {
         let encoded = try JSONEncoder().encode(resource)
         let decoded = try JSONDecoder().decode(ResourceContents.self, from: encoded)
 
-        if case .text(let uri, let mimeType, let text) = decoded {
+        if case .text(let uri, _, _, let mimeType, let text) = decoded {
             #expect(uri == "file://test.txt")
             #expect(mimeType == "text/plain")
             #expect(text == "Hello, World!")
@@ -316,6 +318,8 @@ struct MCPTypesTests {
     func testResourceContentsBlob() throws {
         let resource = ResourceContents.blob(
             uri: "file://test.bin",
+            name: nil,
+            title: nil,
             mimeType: "application/octet-stream",
             blob: "base64encodeddata"
         )
@@ -323,7 +327,7 @@ struct MCPTypesTests {
         let encoded = try JSONEncoder().encode(resource)
         let decoded = try JSONDecoder().decode(ResourceContents.self, from: encoded)
 
-        if case .blob(let uri, let mimeType, let blob) = decoded {
+        if case .blob(let uri, _, _, let mimeType, let blob) = decoded {
             #expect(uri == "file://test.bin")
             #expect(mimeType == "application/octet-stream")
             #expect(blob == "base64encodeddata")
@@ -334,12 +338,12 @@ struct MCPTypesTests {
 
     @Test("ResourceContents without mimeType")
     func testResourceContentsWithoutMimeType() throws {
-        let resource = ResourceContents.text(uri: "file://test.txt", mimeType: nil, text: "content")
+        let resource = ResourceContents.text(uri: "file://test.txt", name: nil, title: nil, mimeType: nil, text: "content")
 
         let encoded = try JSONEncoder().encode(resource)
         let decoded = try JSONDecoder().decode(ResourceContents.self, from: encoded)
 
-        if case .text(let uri, let mimeType, let text) = decoded {
+        if case .text(let uri, _, _, let mimeType, let text) = decoded {
             #expect(uri == "file://test.txt")
             #expect(mimeType == nil)
             #expect(text == "content")
@@ -354,6 +358,7 @@ struct MCPTypesTests {
     func testCallToolResultContent() throws {
         let result = CallToolResult.content(
             content: [.text(ToolContent.TextContent(text: "Result"))],
+            structuredContent: nil,
             isError: false,
             meta: ["duration": .number(123)]
         )
@@ -361,8 +366,9 @@ struct MCPTypesTests {
         let encoded = try JSONEncoder().encode(result)
         let decoded = try JSONDecoder().decode(CallToolResult.self, from: encoded)
 
-        if case .content(let content, let isError, let meta) = decoded {
+        if case .content(let content, let structuredContent, let isError, let meta) = decoded {
             #expect(content.count == 1)
+            #expect(structuredContent == nil)
             #expect(isError == false)
             #expect(meta?["duration"] == .number(123))
         } else {
@@ -374,6 +380,7 @@ struct MCPTypesTests {
     func testCallToolResultWithError() throws {
         let result = CallToolResult.content(
             content: [.text(ToolContent.TextContent(text: "Error message"))],
+            structuredContent: nil,
             isError: true,
             meta: nil
         )
@@ -381,7 +388,7 @@ struct MCPTypesTests {
         let encoded = try JSONEncoder().encode(result)
         let decoded = try JSONDecoder().decode(CallToolResult.self, from: encoded)
 
-        if case .content(_, let isError, let meta) = decoded {
+        if case .content(_, _, let isError, let meta) = decoded {
             #expect(isError == true)
             #expect(meta == nil)
         } else {
@@ -400,7 +407,7 @@ struct MCPTypesTests {
 
         let decoded = try JSONDecoder().decode(CallToolResult.self, from: json)
 
-        if case .content(_, let isError, _) = decoded {
+        if case .content(_, _, let isError, _) = decoded {
             #expect(isError == false)
         } else {
             Issue.record("Expected content variant")
@@ -411,6 +418,7 @@ struct MCPTypesTests {
     func testCallToolResultIsErrorNotEncodedWhenFalse() throws {
         let result = CallToolResult.content(
             content: [.text(ToolContent.TextContent(text: "test"))],
+            structuredContent: nil,
             isError: false,
             meta: nil
         )
@@ -426,6 +434,7 @@ struct MCPTypesTests {
     func testCallToolResultIsErrorEncodedWhenTrue() throws {
         let result = CallToolResult.content(
             content: [.text(ToolContent.TextContent(text: "error"))],
+            structuredContent: nil,
             isError: true,
             meta: nil
         )
