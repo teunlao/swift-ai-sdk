@@ -278,6 +278,81 @@ struct FalImageModelTests {
         }
     }
 
+    @Test("handles image API errors using fal error envelope")
+    func handlesFalErrorEnvelope() async throws {
+        let postURL = "https://api.example.com/\(modelId.rawValue)"
+        let errorBody = try jsonData([
+            "error": [
+                "message": "Something went wrong",
+                "code": 400
+            ]
+        ])
+
+        let fetch: FetchFunction = { request in
+            let url = request.url?.absoluteString ?? ""
+            if url == postURL {
+                return FetchResponse(
+                    body: .data(errorBody),
+                    urlResponse: makeHTTPResponse(
+                        url: request.url!,
+                        statusCode: 400,
+                        headers: ["Content-Type": "application/json"]
+                    )
+                )
+            }
+
+            Issue.record("Unexpected URL: \(url)")
+            throw CancellationError()
+        }
+
+        let model = makeModel(fetch: fetch)
+
+        do {
+            _ = try await model.doGenerate(options: .init(prompt: prompt, n: 1, providerOptions: [:]))
+            Issue.record("Expected APICallError")
+        } catch let error as APICallError {
+            #expect(error.message == "Something went wrong")
+            #expect(error.statusCode == 400)
+            #expect(error.url == postURL)
+        }
+    }
+
+    @Test("handles image API errors with message field")
+    func handlesImageMessageErrors() async throws {
+        let postURL = "https://api.example.com/\(modelId.rawValue)"
+        let errorBody = try jsonData([
+            "message": "Something went wrong"
+        ])
+
+        let fetch: FetchFunction = { request in
+            let url = request.url?.absoluteString ?? ""
+            if url == postURL {
+                return FetchResponse(
+                    body: .data(errorBody),
+                    urlResponse: makeHTTPResponse(
+                        url: request.url!,
+                        statusCode: 400,
+                        headers: ["Content-Type": "application/json"]
+                    )
+                )
+            }
+
+            Issue.record("Unexpected URL: \(url)")
+            throw CancellationError()
+        }
+
+        let model = makeModel(fetch: fetch)
+
+        do {
+            _ = try await model.doGenerate(options: .init(prompt: prompt, n: 1, providerOptions: [:]))
+            Issue.record("Expected APICallError")
+        } catch let error as APICallError {
+            #expect(error.message == "Something went wrong")
+            #expect(error.statusCode == 400)
+            #expect(error.url == postURL)
+        }
+    }
+
     @Test("supports image editing with file and mask data URI")
     func supportsImageEditingWithMask() async throws {
         let capture = RequestCapture()

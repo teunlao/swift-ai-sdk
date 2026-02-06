@@ -367,11 +367,17 @@ private let falImageResponseSchema = FlexibleSchema(
 
 private enum FalImageErrorData: Decodable, Sendable {
     case validation(FalImageValidationError)
+    case fal(FalErrorPayload)
     case http(FalImageHttpError)
 
     init(from decoder: Decoder) throws {
         if let value = try? FalImageValidationError(from: decoder) {
             self = .validation(value)
+            return
+        }
+
+        if let value = try? FalErrorPayload(from: decoder) {
+            self = .fal(value)
             return
         }
 
@@ -416,6 +422,8 @@ private let falImageFailedResponseHandler: ResponseHandler<APICallError> = creat
             return validation.detail
                 .map { "\($0.loc.joined(separator: ".")): \($0.msg)" }
                 .joined(separator: "\n")
+        case .fal(let fal):
+            return fal.error.message
         case .http(let http):
             return http.message
         }

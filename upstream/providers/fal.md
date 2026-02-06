@@ -15,7 +15,7 @@
 
 ## Known gaps / TODO
 
-- [ ] Add optional parity tests for additional Fal image validation error envelopes beyond `detail[]` / `message`.
+- (none currently known)
 
 ## Notes
 
