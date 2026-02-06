@@ -45,6 +45,9 @@ For source-of-truth code, always follow the commits and tests.
 - 2026-02-06
   - Fal: close non-video parity for image/speech/transcription against pinned baseline `f3a72bc2` (request mapping, error mapping, metadata mapping, polling behavior).
   - Fal: add provider/model parity coverage in `Tests/FalProviderTests/FalProviderTests.swift`, `Tests/FalProviderTests/FalImageModelTests.swift`, `Tests/FalProviderTests/FalSpeechModelTests.swift`, `Tests/FalProviderTests/FalTranscriptionModelTests.swift`, `Tests/FalProviderTests/FalErrorTests.swift`.
+  - Provider utils: extend `JSONSchemaValidator` to validate tuple schemas (`items: [...]` + `additionalItems`), `uniqueItems`, `multipleOf`, and object property count constraints + tests.
+  - Core: fix `AsyncIterableStream` init race that could leave streams open/hanging + regression test.
+  - Tools: harden `tools/test-runner.js` (selectors + Swift Testing output parsing) and add `tools/test-suspicious.config.json` for UI message stream suites.
 
 ### v0.7.x
 
