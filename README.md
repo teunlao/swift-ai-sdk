@@ -36,8 +36,8 @@ Add the package to your `Package.swift`:
 ```swift
 // Package.swift
 dependencies: [
-  // Use the latest release tag (e.g. "0.14.1").
-  .package(url: "https://github.com/teunlao/swift-ai-sdk.git", from: "0.14.1")
+  // Use the latest release tag (e.g. "0.14.2").
+  .package(url: "https://github.com/teunlao/swift-ai-sdk.git", from: "0.14.2")
 ],
 targets: [
   .target(

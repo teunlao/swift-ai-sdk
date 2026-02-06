@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.14.2] - 2026-02-06
+
+### Added
+- Fal (image): add parity coverage for additional error envelopes (`error.message/code` and top-level `message`) and align error message mapping.
+- Fal (speech): add provider options passthrough parity tests (`voice_setting` normalization, unknown key stripping, null/empty semantics).
+
+### Fixed
+- Fal (image/speech/transcription): close non-video parity gaps for provider option handling, request/response mapping, and metadata parity.
+- Fal (video): treat malformed status payloads (`video` present without `url`) as invalid JSON response (upstream parity).
+
 ## [0.14.1] - 2026-02-05
 
 ### Added
