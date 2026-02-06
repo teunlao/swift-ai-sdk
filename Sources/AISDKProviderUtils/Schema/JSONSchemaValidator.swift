@@ -229,13 +229,61 @@ struct JSONSchemaValidator: Sendable {
                 ))
             }
 
+            if schema["uniqueItems"]?.boolValue == true {
+                for i in 0..<array.count {
+                    for j in (i + 1)..<array.count where array[i] == array[j] {
+                        issues.append(JSONSchemaValidationIssue(
+                            path: path,
+                            message: "Invalid input: expected all items to be unique."
+                        ))
+                        break
+                    }
+                    if !issues.isEmpty {
+                        break
+                    }
+                }
+            }
+
             if let items = schema["items"] {
-                for (index, element) in array.enumerated() {
-                    issues += validate(
-                        value: element,
-                        schema: items,
-                        path: path + ["\(index)"]
-                    )
+                switch items {
+                case .array(let tupleSchemas):
+                    for (index, element) in array.enumerated() {
+                        if index < tupleSchemas.count {
+                            issues += validate(
+                                value: element,
+                                schema: tupleSchemas[index],
+                                path: path + ["\(index)"]
+                            )
+                            continue
+                        }
+
+                        if let additionalItems = schema["additionalItems"] {
+                            switch additionalItems {
+                            case .bool(let allowed) where !allowed:
+                                issues.append(JSONSchemaValidationIssue(
+                                    path: path + ["\(index)"],
+                                    message: "Invalid input: unexpected array item."
+                                ))
+                            case .object:
+                                issues += validate(
+                                    value: element,
+                                    schema: additionalItems,
+                                    path: path + ["\(index)"]
+                                )
+                            default:
+                                break
+                            }
+                        }
+                    }
+
+                default:
+                    for (index, element) in array.enumerated() {
+                        issues += validate(
+                            value: element,
+                            schema: items,
+                            path: path + ["\(index)"]
+                        )
+                    }
                 }
             }
 
@@ -287,6 +335,16 @@ struct JSONSchemaValidator: Sendable {
                 path: path,
                 message: "Invalid input: expected number < \(exclusiveMaximum)."
             ))
+        }
+
+        if let multipleOf = schema["multipleOf"]?.doubleValue, multipleOf != 0 {
+            let remainder = number.truncatingRemainder(dividingBy: multipleOf)
+            if abs(remainder) > 1e-9 && abs(remainder - multipleOf) > 1e-9 {
+                issues.append(JSONSchemaValidationIssue(
+                    path: path,
+                    message: "Invalid input: expected number to be a multiple of \(multipleOf)."
+                ))
+            }
         }
 
         return issues
@@ -360,6 +418,22 @@ struct JSONSchemaValidator: Sendable {
 
         let properties = (schema["properties"]?.objectValue) ?? [:]
         let required = schema["required"]?.stringArrayValue ?? []
+
+        if let minProperties = schema["minProperties"]?.doubleValue,
+           object.count < Int(minProperties) {
+            issues.append(JSONSchemaValidationIssue(
+                path: path,
+                message: "Invalid input: expected at least \(Int(minProperties)) properties."
+            ))
+        }
+
+        if let maxProperties = schema["maxProperties"]?.doubleValue,
+           object.count > Int(maxProperties) {
+            issues.append(JSONSchemaValidationIssue(
+                path: path,
+                message: "Invalid input: expected at most \(Int(maxProperties)) properties."
+            ))
+        }
 
         for property in required where object[property] == nil {
             issues.append(
@@ -456,6 +530,13 @@ extension JSONValue {
     fileprivate var doubleValue: Double? {
         if case .number(let number) = self {
             return number
+        }
+        return nil
+    }
+
+    fileprivate var boolValue: Bool? {
+        if case .bool(let bool) = self {
+            return bool
         }
         return nil
     }

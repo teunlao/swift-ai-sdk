@@ -104,5 +104,78 @@ struct JSONSchemaValidatorTests {
         #expect(!validator.validate(value: .number(0)).isEmpty)
         #expect(!validator.validate(value: .number(4)).isEmpty)
     }
-}
 
+    @Test("validates tuple schemas via items array and additionalItems")
+    func tupleValidation() async throws {
+        let schema: JSONValue = .object([
+            "type": .string("array"),
+            "minItems": .number(2),
+            "items": .array([
+                .object(["type": .string("number")]),
+                .object(["type": .string("string")])
+            ]),
+            "additionalItems": .bool(false)
+        ])
+
+        let validator = JSONSchemaValidator(schema: schema)
+
+        #expect(validator.validate(value: .array([.number(1), .string("ok")])).isEmpty)
+        #expect(!validator.validate(value: .array([.number(1), .number(2)])).isEmpty)
+        #expect(!validator.validate(value: .array([.number(1), .string("ok"), .string("extra")])).isEmpty)
+
+        let restSchema: JSONValue = .object([
+            "type": .string("array"),
+            "minItems": .number(2),
+            "items": .array([
+                .object(["type": .string("number")]),
+                .object(["type": .string("string")])
+            ]),
+            "additionalItems": .object(["type": .string("number")])
+        ])
+
+        let restValidator = JSONSchemaValidator(schema: restSchema)
+        #expect(restValidator.validate(value: .array([.number(1), .string("ok"), .number(3)])).isEmpty)
+        #expect(!restValidator.validate(value: .array([.number(1), .string("ok"), .string("bad")])).isEmpty)
+    }
+
+    @Test("validates uniqueItems constraint")
+    func uniqueItemsValidation() async throws {
+        let schema: JSONValue = .object([
+            "type": .string("array"),
+            "uniqueItems": .bool(true)
+        ])
+
+        let validator = JSONSchemaValidator(schema: schema)
+
+        #expect(validator.validate(value: .array([.number(1), .number(2)])).isEmpty)
+        #expect(!validator.validate(value: .array([.number(1), .number(1)])).isEmpty)
+    }
+
+    @Test("validates multipleOf constraint")
+    func multipleOfValidation() async throws {
+        let schema: JSONValue = .object([
+            "type": .string("number"),
+            "multipleOf": .number(2)
+        ])
+
+        let validator = JSONSchemaValidator(schema: schema)
+
+        #expect(validator.validate(value: .number(4)).isEmpty)
+        #expect(!validator.validate(value: .number(3)).isEmpty)
+    }
+
+    @Test("validates object minProperties/maxProperties constraints")
+    func objectPropertiesBounds() async throws {
+        let schema: JSONValue = .object([
+            "type": .string("object"),
+            "minProperties": .number(2),
+            "maxProperties": .number(2)
+        ])
+
+        let validator = JSONSchemaValidator(schema: schema)
+
+        #expect(validator.validate(value: .object(["a": .string("1"), "b": .string("2")])).isEmpty)
+        #expect(!validator.validate(value: .object(["a": .string("1")])).isEmpty)
+        #expect(!validator.validate(value: .object(["a": .string("1"), "b": .string("2"), "c": .string("3")])).isEmpty)
+    }
+}
