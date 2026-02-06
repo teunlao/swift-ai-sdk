@@ -16,7 +16,7 @@
 
 ## Known gaps / TODO
 
-- [ ] JSON Schema union validation is limited (Swift `JSONSchemaValidator` supports only a subset); complex unions are enforced via `Codable` decoding where applicable (e.g. shell tool outputs in Responses input building).
+- [ ] JSON Schema validation is still subset-only (notably: `$ref` resolution, `format`, and conditional keywords). Tuple schemas (`items: [...]` + `additionalItems`), `uniqueItems`, and `multipleOf` are supported by Swift `JSONSchemaValidator`.
 
 ## Notes
 
