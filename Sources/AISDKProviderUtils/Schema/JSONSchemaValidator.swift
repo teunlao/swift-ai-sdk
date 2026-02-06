@@ -54,6 +54,11 @@ struct JSONSchemaValidator: Sendable {
             )]
         }
 
+        let stringIssues = validateStringKeywordsIfApplicable(value: value, schema: schemaObject, path: path)
+        if !stringIssues.isEmpty {
+            return stringIssues
+        }
+
         if let allOf = schemaObject["allOf"]?.arrayValue, !allOf.isEmpty {
             let issues = allOf.flatMap { validate(value: value, schema: $0, path: path) }
             if !issues.isEmpty {
@@ -151,33 +156,7 @@ struct JSONSchemaValidator: Sendable {
                 )]
             }
 
-            var issues: [JSONSchemaValidationIssue] = []
-            let length = string.utf16.count
-
-            if let minLength = schema["minLength"]?.doubleValue, length < Int(minLength) {
-                issues.append(JSONSchemaValidationIssue(
-                    path: path,
-                    message: "Invalid input: expected string length >= \(Int(minLength))."
-                ))
-            }
-
-            if let maxLength = schema["maxLength"]?.doubleValue, length > Int(maxLength) {
-                issues.append(JSONSchemaValidationIssue(
-                    path: path,
-                    message: "Invalid input: expected string length <= \(Int(maxLength))."
-                ))
-            }
-
-            if let pattern = schema["pattern"]?.stringValue,
-               let regex = try? NSRegularExpression(pattern: pattern),
-               regex.firstMatch(in: string, range: NSRange(location: 0, length: length)) == nil {
-                issues.append(JSONSchemaValidationIssue(
-                    path: path,
-                    message: "Invalid input: string does not match required pattern."
-                ))
-            }
-
-            return issues
+            return validateStringKeywords(string: string, schema: schema, path: path)
         case "number":
             guard case .number(let number) = value else {
                 return [JSONSchemaValidationIssue(
@@ -306,6 +285,52 @@ struct JSONSchemaValidator: Sendable {
         default:
             return []
         }
+    }
+
+    private func validateStringKeywordsIfApplicable(
+        value: JSONValue,
+        schema: [String: JSONValue],
+        path: [String]
+    ) -> [JSONSchemaValidationIssue] {
+        guard case .string(let string) = value else {
+            return []
+        }
+
+        return validateStringKeywords(string: string, schema: schema, path: path)
+    }
+
+    private func validateStringKeywords(
+        string: String,
+        schema: [String: JSONValue],
+        path: [String]
+    ) -> [JSONSchemaValidationIssue] {
+        var issues: [JSONSchemaValidationIssue] = []
+        let length = string.utf16.count
+
+        if let minLength = schema["minLength"]?.doubleValue, length < Int(minLength) {
+            issues.append(JSONSchemaValidationIssue(
+                path: path,
+                message: "Invalid input: expected string length >= \(Int(minLength))."
+            ))
+        }
+
+        if let maxLength = schema["maxLength"]?.doubleValue, length > Int(maxLength) {
+            issues.append(JSONSchemaValidationIssue(
+                path: path,
+                message: "Invalid input: expected string length <= \(Int(maxLength))."
+            ))
+        }
+
+        if let pattern = schema["pattern"]?.stringValue,
+           let regex = try? NSRegularExpression(pattern: pattern),
+           regex.firstMatch(in: string, range: NSRange(location: 0, length: length)) == nil {
+            issues.append(JSONSchemaValidationIssue(
+                path: path,
+                message: "Invalid input: string does not match required pattern."
+            ))
+        }
+
+        return issues
     }
 
     private func validateNumericBounds(

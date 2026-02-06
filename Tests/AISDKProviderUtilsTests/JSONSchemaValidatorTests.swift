@@ -17,6 +17,22 @@ struct JSONSchemaValidatorTests {
         #expect(!validator.validate(value: .number(1)).isEmpty)
     }
 
+    @Test("validates pattern constraints in allOf subschemas without explicit types")
+    func allOfPatternWithoutTypeValidation() async throws {
+        let schema: JSONValue = .object([
+            "type": .string("string"),
+            "allOf": .array([
+                .object(["pattern": .string("^a")]),
+                .object(["pattern": .string("b$")])
+            ])
+        ])
+
+        let validator = JSONSchemaValidator(schema: schema)
+
+        #expect(validator.validate(value: .string("ab")).isEmpty)
+        #expect(!validator.validate(value: .string("ac")).isEmpty)
+    }
+
     @Test("supports type unions via type arrays")
     func typeArrayUnionValidation() async throws {
         let schema: JSONValue = .object([
