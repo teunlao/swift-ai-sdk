@@ -42,6 +42,10 @@ For source-of-truth code, always follow the commits and tests.
   - Fal: add `FalVideoModel` + `fal.video(...)` wiring (queue polling + providerMetadata mapping) + tests.
   - Docs: add Video Generation page + Fal provider page (incl. video models) and wire both into the sidebar.
 
+- 2026-02-06
+  - Fal: close non-video parity for image/speech/transcription against pinned baseline `f3a72bc2` (request mapping, error mapping, metadata mapping, polling behavior).
+  - Fal: add provider/model parity coverage in `Tests/FalProviderTests/FalProviderTests.swift`, `Tests/FalProviderTests/FalImageModelTests.swift`, `Tests/FalProviderTests/FalSpeechModelTests.swift`, `Tests/FalProviderTests/FalTranscriptionModelTests.swift`, `Tests/FalProviderTests/FalErrorTests.swift`.
+
 ### v0.7.x
 
 - `v0.7.0` (2026-01-26)

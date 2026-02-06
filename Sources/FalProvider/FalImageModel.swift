@@ -6,7 +6,7 @@ import AISDKProviderUtils
 //=== Upstream Reference ====================================================//
 //===----------------------------------------------------------------------===//
 // Ported from packages/fal/src/fal-image-model.ts
-// Upstream commit: 77db222ee
+// Upstream commit: f3a72bc2a0433fda9506b7c7ac1b28b4adafcfc9
 //===----------------------------------------------------------------------===//
 
 struct FalImageModelConfig: Sendable {
@@ -46,35 +46,20 @@ public final class FalImageModel: ImageModelV3 {
     }
 
     public func doGenerate(options: ImageModelV3CallOptions) async throws -> ImageModelV3GenerateResult {
-        var body: [String: JSONValue] = [
-            "num_images": .number(Double(options.n))
-        ]
+        let prepared = try await prepareRequest(options: options)
 
-        if let prompt = options.prompt {
-            body["prompt"] = .string(prompt)
-        }
+        let headers = combineHeaders(
+            config.headers(),
+            options.headers?.mapValues { Optional($0) }
+        ).compactMapValues { $0 }
 
-        if let seed = options.seed {
-            body["seed"] = .number(Double(seed))
-        }
-
-        if let sizeValue = makeImageSize(size: options.size, aspectRatio: options.aspectRatio) {
-            body["image_size"] = sizeValue
-        }
-
-        if let falOptions = options.providerOptions?["fal"] {
-            for (key, value) in falOptions {
-                body[key] = value
-            }
-        }
-
-        let headers = combineHeaders(config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 }
+        let now = config.currentDate()
 
         let response = try await postJsonToAPI(
             url: "\(config.baseURL)/\(modelIdentifier.rawValue)",
             headers: headers,
-            body: JSONValue.object(body),
-            failedResponseHandler: falFailedResponseHandler,
+            body: JSONValue.object(prepared.body),
+            failedResponseHandler: falImageFailedResponseHandler,
             successfulResponseHandler: createJsonResponseHandler(responseSchema: falImageResponseSchema),
             isAborted: options.abortSignal,
             fetch: config.fetch
@@ -109,7 +94,7 @@ public final class FalImageModel: ImageModelV3 {
 
         return ImageModelV3GenerateResult(
             images: .binary(imagesData),
-            warnings: [],
+            warnings: prepared.warnings,
             providerMetadata: [
                 "fal": ImageModelV3ProviderMetadataValue(
                     images: imageMetadata,
@@ -117,11 +102,82 @@ public final class FalImageModel: ImageModelV3 {
                 )
             ],
             response: ImageModelV3ResponseInfo(
-                timestamp: config.currentDate(),
+                timestamp: now,
                 modelId: modelIdentifier.rawValue,
                 headers: response.responseHeaders
             )
         )
+    }
+
+    private struct PreparedRequest: Sendable {
+        let body: [String: JSONValue]
+        let warnings: [SharedV3Warning]
+    }
+
+    private func prepareRequest(options: ImageModelV3CallOptions) async throws -> PreparedRequest {
+        var warnings: [SharedV3Warning] = []
+        var body: [String: JSONValue] = [
+            "num_images": .number(Double(options.n))
+        ]
+
+        if let prompt = options.prompt {
+            body["prompt"] = .string(prompt)
+        }
+
+        if let seed = options.seed {
+            body["seed"] = .number(Double(seed))
+        }
+
+        if let sizeValue = makeImageSize(size: options.size, aspectRatio: options.aspectRatio) {
+            body["image_size"] = sizeValue
+        }
+
+        let falOptions = try await parseProviderOptions(
+            provider: "fal",
+            providerOptions: options.providerOptions,
+            schema: falImageProviderOptionsSchema
+        )
+        let useMultipleImages = falOptions?.useMultipleImages == true
+
+        if let files = options.files, !files.isEmpty {
+            if useMultipleImages {
+                body["image_urls"] = .array(try files.map { file in
+                    .string(try convertImageFileToDataURI(file))
+                })
+            } else {
+                body["image_url"] = .string(try convertImageFileToDataURI(files[0]))
+
+                if files.count > 1 {
+                    warnings.append(.other(
+                        message: "Multiple input images provided but useMultipleImages is not enabled. Only the first image will be used. Set providerOptions.fal.useMultipleImages to true for models that support multiple images (e.g., fal-ai/flux-2/edit)."
+                    ))
+                }
+            }
+        }
+
+        if let mask = options.mask {
+            body["mask_url"] = .string(try convertImageFileToDataURI(mask))
+        }
+
+        if let falOptions, !falOptions.deprecatedKeys.isEmpty {
+            let mappedKeys = falOptions.deprecatedKeys.map { key in
+                "'\(key)' (use '\(snakeToCamelCase(key))')"
+            }.joined(separator: ", ")
+
+            warnings.append(.other(
+                message: "The following provider options use deprecated snake_case and will be removed in @ai-sdk/fal v2.0. Please use camelCase instead: \(mappedKeys)"
+            ))
+        }
+
+        if let falOptions {
+            for (key, value) in falOptions.options {
+                if key == "useMultipleImages" { continue }
+                let apiKey = camelToAPIFieldMapping[key] ?? key
+                body[apiKey] = value
+            }
+        }
+
+        return PreparedRequest(body: body, warnings: warnings)
     }
 }
 
@@ -178,6 +234,57 @@ private func makeImageSize(size: String?, aspectRatio: String?) -> JSONValue? {
     }
 }
 
+private let camelToAPIFieldMapping: [String: String] = [
+    "imageUrl": "image_url",
+    "maskUrl": "mask_url",
+    "guidanceScale": "guidance_scale",
+    "numInferenceSteps": "num_inference_steps",
+    "enableSafetyChecker": "enable_safety_checker",
+    "outputFormat": "output_format",
+    "syncMode": "sync_mode",
+    "safetyTolerance": "safety_tolerance"
+]
+
+private func snakeToCamelCase(_ snakeKey: String) -> String {
+    var result = ""
+    result.reserveCapacity(snakeKey.count)
+
+    var shouldCapitalizeNext = false
+    for character in snakeKey {
+        if character == "_" {
+            shouldCapitalizeNext = true
+            continue
+        }
+
+        if shouldCapitalizeNext {
+            result.append(contentsOf: String(character).uppercased())
+            shouldCapitalizeNext = false
+        } else {
+            result.append(character)
+        }
+    }
+
+    return result
+}
+
+private func convertImageFileToDataURI(_ file: ImageModelV3File) throws -> String {
+    switch file {
+    case .url(let url, _):
+        return url
+
+    case let .file(mediaType, data, _):
+        let base64: String
+        switch data {
+        case .base64(let string):
+            base64 = string
+        case .binary(let binary):
+            base64 = binary.base64EncodedString()
+        }
+
+        return "data:\(mediaType);base64,\(base64)"
+    }
+}
+
 private struct FalImageResponse {
     struct Image {
         let url: String
@@ -222,10 +329,10 @@ private struct FalImageResponse {
             let fileSize = imageDict.removeValue(forKey: "file_size")
 
             var metadata = imageDict
-            if let contentType, contentType != .null { metadata["contentType"] = contentType }
-            if let fileName, fileName != .null { metadata["fileName"] = fileName }
-            if let fileData, fileData != .null { metadata["fileData"] = fileData }
-            if let fileSize, fileSize != .null { metadata["fileSize"] = fileSize }
+            if let contentType { metadata["contentType"] = contentType }
+            if let fileName { metadata["fileName"] = fileName }
+            if let fileData { metadata["fileData"] = fileData }
+            if let fileSize { metadata["fileSize"] = fileSize }
 
             let nsfw = nsfwConcepts?[index] ?? nsfwDetected?[index]
 
@@ -244,11 +351,8 @@ private struct FalImageResponse {
         var result: [Bool] = []
         result.reserveCapacity(array.count)
         for entry in array {
-            if case .bool(let flag) = entry {
-                result.append(flag)
-            } else {
-                result.append(false)
-            }
+            guard case .bool(let flag) = entry else { return nil }
+            result.append(flag)
         }
         return result
     }
@@ -259,4 +363,61 @@ private let falImageResponseSchema = FlexibleSchema(
         JSONValue.self,
         jsonSchema: .object(["type": .string("object")])
     )
+)
+
+private enum FalImageErrorData: Decodable, Sendable {
+    case validation(FalImageValidationError)
+    case http(FalImageHttpError)
+
+    init(from decoder: Decoder) throws {
+        if let value = try? FalImageValidationError(from: decoder) {
+            self = .validation(value)
+            return
+        }
+
+        if let value = try? FalImageHttpError(from: decoder) {
+            self = .http(value)
+            return
+        }
+
+        throw DecodingError.dataCorrupted(.init(
+            codingPath: [],
+            debugDescription: "Unsupported fal image error response"
+        ))
+    }
+}
+
+private struct FalImageValidationError: Decodable, Sendable {
+    struct Detail: Decodable, Sendable {
+        let loc: [String]
+        let msg: String
+        let type: String
+    }
+
+    let detail: [Detail]
+}
+
+private struct FalImageHttpError: Decodable, Sendable {
+    let message: String
+}
+
+private let falImageErrorSchema = FlexibleSchema(
+    Schema<FalImageErrorData>.codable(
+        FalImageErrorData.self,
+        jsonSchema: .object(["type": .string("object")])
+    )
+)
+
+private let falImageFailedResponseHandler: ResponseHandler<APICallError> = createJsonErrorResponseHandler(
+    errorSchema: falImageErrorSchema,
+    errorToMessage: { error in
+        switch error {
+        case .validation(let validation):
+            return validation.detail
+                .map { "\($0.loc.joined(separator: ".")): \($0.msg)" }
+                .joined(separator: "\n")
+        case .http(let http):
+            return http.message
+        }
+    }
 )

@@ -6,7 +6,7 @@ import AISDKProviderUtils
 //=== Upstream Reference ====================================================//
 //===----------------------------------------------------------------------===//
 // Ported from packages/fal/src/fal-transcription-model.ts
-// Upstream commit: 77db222ee
+// Upstream commit: f3a72bc2a0433fda9506b7c7ac1b28b4adafcfc9
 //===----------------------------------------------------------------------===//
 
 public final class FalTranscriptionModel: TranscriptionModelV3 {
@@ -153,7 +153,9 @@ public final class FalTranscriptionModel: TranscriptionModelV3 {
             } catch {
                 if let apiError = error as? APICallError, apiError.message == "Request is still in progress" {
                     if Date().timeIntervalSince1970 - start > timeout {
-                        throw APICallError(message: "Transcription request timed out after 60 seconds", url: "", requestBodyValues: nil)
+                        throw FalTranscriptionRequestTimedOutError(
+                            message: "Transcription request timed out after 60 seconds"
+                        )
                     }
                     try await delay(1000)
                     continue
@@ -238,4 +240,12 @@ private let falQueueStatusErrorHandler: ResponseHandler<APICallError> = { input 
     )
 
     return try await falFailedResponseHandler(newInput)
+}
+
+private struct FalTranscriptionRequestTimedOutError: AISDKError, Sendable {
+    static let errorDomain = "fal.transcription.timeout"
+
+    let name = "TranscriptionRequestTimedOut"
+    let message: String
+    let cause: (any Error)? = nil
 }

@@ -6,7 +6,7 @@ import AISDKProviderUtils
 //=== Upstream Reference ====================================================//
 //===----------------------------------------------------------------------===//
 // Ported from packages/fal/src/fal-error.ts
-// Upstream commit: 77db222ee
+// Upstream commit: f3a72bc2a0433fda9506b7c7ac1b28b4adafcfc9
 //===----------------------------------------------------------------------===//
 
 public struct FalErrorPayload: Codable, Sendable {

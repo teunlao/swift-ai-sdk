@@ -6,7 +6,7 @@ import AISDKProviderUtils
 //=== Upstream Reference ====================================================//
 //===----------------------------------------------------------------------===//
 // Ported from packages/fal/src/fal-speech-model.ts
-// Upstream commit: 77db222ee
+// Upstream commit: f3a72bc2a0433fda9506b7c7ac1b28b4adafcfc9
 //===----------------------------------------------------------------------===//
 
 public final class FalSpeechModel: SpeechModelV3 {
@@ -81,11 +81,17 @@ public final class FalSpeechModel: SpeechModelV3 {
         }
 
         if options.language != nil {
-            warnings.append(.unsupported(feature: "language", details: "fal speech models do not support 'language'; use providerOptions.fal.language_boost instead."))
+            warnings.append(.unsupported(
+                feature: "language",
+                details: "fal speech models don't support 'language' directly; consider providerOptions.fal.language_boost"
+            ))
         }
 
         if let output = options.outputFormat, output != "url", output != "hex" {
-            warnings.append(.unsupported(feature: "outputFormat", details: "Unsupported or unhandled outputFormat: \(output). Using 'url' instead."))
+            warnings.append(.unsupported(
+                feature: "outputFormat",
+                details: "Unsupported outputFormat: \(output). Using 'url' instead."
+            ))
         }
 
         if let falOptions {
