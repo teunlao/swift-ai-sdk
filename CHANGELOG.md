@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.15.2] - 2026-02-06
+
+### Added
+- Provider utils: JSON Schema validator now supports tuple schemas (`items: [...]` + `additionalItems`), `uniqueItems`, `multipleOf`, object `minProperties` / `maxProperties`, and string `format` / `contentEncoding: base64` (Zod v3 schema output parity).
+
+### Fixed
+- Provider utils: schema composition (`anyOf`/`oneOf`) no longer bypasses base keyword validation (e.g. `type: "string"`).
+- Streams: prevent `AsyncIterableStream` init race hangs.
+- Tools: harden `tools/test-runner.js` selector normalization and Swift Testing output parsing; add `tools/test-suspicious.config.json` for UI message stream suites.
+
 ## [0.15.1] - 2026-02-06
 
 ### Added

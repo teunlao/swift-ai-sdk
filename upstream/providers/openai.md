@@ -16,7 +16,7 @@
 
 ## Known gaps / TODO
 
-- [ ] JSON Schema validation is still subset-only (notably: `$ref` resolution, `format`, and conditional keywords). Tuple schemas (`items: [...]` + `additionalItems`), `uniqueItems`, and `multipleOf` are supported by Swift `JSONSchemaValidator`.
+- [ ] JSON Schema validation is still subset-only (notably: `$ref` resolution and conditional keywords). Tuple schemas (`items: [...]` + `additionalItems`), `uniqueItems`, `multipleOf`, `format`, and `contentEncoding: base64` are supported by Swift `JSONSchemaValidator`.
 
 ## Notes
 
