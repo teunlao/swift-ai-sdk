@@ -660,6 +660,31 @@ public typealias GenerateTextOnStepFinishCallback = @Sendable (_ stepResult: Ste
 public typealias GenerateTextOnFinishCallback = @Sendable (_ event: GenerateTextFinishEvent) async throws -> Void
 
 /**
+ Controls what data is retained in the result/step objects.
+
+ Port of `experimental_include` from `@ai-sdk/ai/src/generate-text/generate-text.ts`.
+
+ Defaults mirror upstream behavior:
+ - `requestBody`: included
+ - `responseBody`: included
+ */
+public struct GenerateTextInclude: Sendable {
+    /// Whether to retain request body metadata in step results.
+    public var requestBody: Bool?
+
+    /// Whether to retain response body metadata in step results.
+    public var responseBody: Bool?
+
+    public init(
+        requestBody: Bool? = nil,
+        responseBody: Bool? = nil
+    ) {
+        self.requestBody = requestBody
+        self.responseBody = responseBody
+    }
+}
+
+/**
  Event payload passed to `onFinish` callback.
  */
 public struct GenerateTextFinishEvent: Sendable {
@@ -733,6 +758,7 @@ public func generateText<OutputValue: Sendable>(
     experimentalRepairToolCall repairToolCall: ToolCallRepairFunction? = nil,
     experimentalDownload download: DownloadFunction? = nil,
     experimentalContext: JSONValue? = nil,
+    experimentalInclude include: GenerateTextInclude? = nil,
     internalOptions _internal: GenerateTextInternalOptions = GenerateTextInternalOptions(),
     onStepFinish: GenerateTextOnStepFinishCallback? = nil,
     onFinish: GenerateTextOnFinishCallback? = nil,
@@ -743,10 +769,35 @@ public func generateText<OutputValue: Sendable>(
     let effectiveActiveTools = activeTools ?? experimentalActiveTools
     let effectivePrepareStep = prepareStep ?? experimentalPrepareStep
     let downloadHandler = download
+    let includeRequestBody = include?.requestBody ?? true
+    let includeResponseBody = include?.responseBody ?? true
+
+    let totalTimeoutMs = getTotalTimeoutMs(settings.timeout)
+    let stepTimeoutMs = getStepTimeoutMs(settings.timeout)
+    let timeoutController = TimeoutAbortSignalController()
+
+    let timeoutAbortSignal: (@Sendable () -> Bool)? = (totalTimeoutMs != nil || stepTimeoutMs != nil)
+        ? { @Sendable in timeoutController.isAborted() }
+        : nil
+    let effectiveAbortSignal = mergeAbortSignals(
+        settings.abortSignal,
+        timeoutAbortSignal
+    )
+
+    let totalTimeoutTask: Task<Void, Never>? = {
+        guard let totalTimeoutMs else { return nil }
+        return Task {
+            do {
+                try await sleepMs(totalTimeoutMs)
+                timeoutController.markTotalTimedOut()
+            } catch {}
+        }
+    }()
+    defer { totalTimeoutTask?.cancel() }
 
     let preparedRetries = try prepareRetries(
         maxRetries: settings.maxRetries,
-        abortSignal: settings.abortSignal
+        abortSignal: effectiveAbortSignal
     )
 
     let preparedCallSettings = try prepareCallSettings(
@@ -817,7 +868,7 @@ public func generateText<OutputValue: Sendable>(
             tracer: tracer,
             telemetry: telemetry,
             messages: initialMessages,
-            abortSignal: settings.abortSignal,
+            abortSignal: effectiveAbortSignal,
             experimentalContext: experimentalContext
         )
 
@@ -888,6 +939,17 @@ public func generateText<OutputValue: Sendable>(
             var currentExperimentalContext = experimentalContext
 
             repeat {
+                let stepTimeoutTask: Task<Void, Never>? = {
+                    guard let stepTimeoutMs else { return nil }
+                    return Task {
+                        do {
+                            try await sleepMs(stepTimeoutMs)
+                            timeoutController.markStepTimedOut()
+                        } catch {}
+                    }
+                }()
+                defer { stepTimeoutTask?.cancel() }
+
                 let currentResponseMessages = await responseMessageStore.all()
                 let stepInputMessages = initialMessages + convertResponseMessagesToModelMessages(currentResponseMessages)
 
@@ -961,7 +1023,7 @@ public func generateText<OutputValue: Sendable>(
                                 tools: toolPreparation.tools,
                                 toolChoice: toolPreparation.toolChoice,
                                 includeRawChunks: nil,
-                                abortSignal: settings.abortSignal,
+                                abortSignal: effectiveAbortSignal,
                                 headers: headersWithUserAgent,
                                 providerOptions: stepProviderOptions
                             )
@@ -971,7 +1033,7 @@ public func generateText<OutputValue: Sendable>(
                         let responseTimestamp = result.response?.timestamp ?? _internal.currentDate()
                         let responseModelId = result.response?.modelId ?? stepModel.modelId
                         let responseHeaders = result.response?.headers
-                        let responseBody = convertResponseBody(result.response?.body)
+                        let responseBody = includeResponseBody ? convertResponseBody(result.response?.body) : nil
                         let usage = asLanguageModelUsage(result.usage)
 
                         span.setAttributes(
@@ -997,7 +1059,7 @@ public func generateText<OutputValue: Sendable>(
                             usage: usage,
                             warnings: result.warnings,
                             providerMetadata: result.providerMetadata,
-                            requestInfo: result.request,
+                            requestInfo: includeRequestBody ? result.request : nil,
                             responseMetadata: LanguageModelResponseMetadata(
                                 id: responseId,
                                 timestamp: responseTimestamp,
@@ -1034,7 +1096,7 @@ public func generateText<OutputValue: Sendable>(
                                 input: toolCall.input,
                                 toolCallId: toolCall.toolCallId,
                                 messages: stepInputMessages,
-                                abortSignal: settings.abortSignal,
+                                abortSignal: effectiveAbortSignal,
                                 experimentalContext: currentExperimentalContext
                             )
                         )
@@ -1070,7 +1132,7 @@ public func generateText<OutputValue: Sendable>(
                         tracer: tracer,
                         telemetry: telemetry,
                         messages: stepInputMessages,
-                        abortSignal: settings.abortSignal,
+                        abortSignal: effectiveAbortSignal,
                         experimentalContext: currentExperimentalContext
                     )
 

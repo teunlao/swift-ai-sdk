@@ -1300,6 +1300,36 @@ struct GenerateTextTests {
         #expect(result.request.body == JSONValue.string("test body"))
     }
 
+    @Test("result.request excludes request body when experimentalInclude.requestBody is false")
+    func resultRequestExcludesBodyWhenIncludeRequestBodyFalse() async throws {
+        let model = MockLanguageModelV3(
+            doGenerate: .function { _ in
+                LanguageModelV3GenerateResult(
+                    content: [
+                        textContent("Hello, world!")
+                    ],
+                    finishReason: .stop,
+                    usage: testUsage,
+                    request: LanguageModelV3RequestInfo(body: "test body")
+                )
+            }
+        )
+
+        let result: DefaultGenerateTextResult<JSONValue> = try await generateText(
+            model: .v3(model),
+            prompt: "prompt",
+            experimentalInclude: GenerateTextInclude(requestBody: false)
+        )
+
+        guard let step = result.steps.first else {
+            Issue.record("Expected at least one step")
+            return
+        }
+
+        #expect(step.request.body == nil)
+        #expect(result.request.body == nil)
+    }
+
     // MARK: - result.response
 
     @Test("result.response contains response metadata and body")
@@ -1347,6 +1377,45 @@ struct GenerateTextTests {
         #expect(finalResponse.headers?["custom-response-header"] == "response-header-value")
         #expect(finalResponse.body == JSONValue.string("test body"))
         #expect(finalResponse.messages == stepResponse.messages)
+    }
+
+    @Test("result.response excludes response body when experimentalInclude.responseBody is false")
+    func resultResponseExcludesBodyWhenIncludeResponseBodyFalse() async throws {
+        let model = MockLanguageModelV3(
+            doGenerate: .function { _ in
+                LanguageModelV3GenerateResult(
+                    content: [
+                        textContent("Hello, world!")
+                    ],
+                    finishReason: .stop,
+                    usage: testUsage,
+                    response: LanguageModelV3ResponseInfo(
+                        id: "test-id-from-model",
+                        timestamp: Date(timeIntervalSince1970: 10),
+                        modelId: "test-response-model-id",
+                        headers: ["custom-response-header": "response-header-value"],
+                        body: "test body"
+                    )
+                )
+            }
+        )
+
+        let result: DefaultGenerateTextResult<JSONValue> = try await generateText(
+            model: .v3(model),
+            prompt: "prompt",
+            experimentalInclude: GenerateTextInclude(responseBody: false)
+        )
+
+        guard let step = result.steps.first else {
+            Issue.record("Expected at least one step")
+            return
+        }
+
+        #expect(step.response.headers?["custom-response-header"] == "response-header-value")
+        #expect(step.response.body == nil)
+
+        #expect(result.response.headers?["custom-response-header"] == "response-header-value")
+        #expect(result.response.body == nil)
     }
 
     // MARK: - options.onFinish

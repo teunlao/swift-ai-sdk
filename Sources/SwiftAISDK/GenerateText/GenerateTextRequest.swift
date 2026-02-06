@@ -35,6 +35,7 @@ public struct GenerateTextRequest<OutputValue: Sendable>: Sendable {
     public var repairToolCall: ToolCallRepairFunction?
     public var download: DownloadFunction?
     public var context: JSONValue?
+    public var include: GenerateTextInclude?
 
     public var internalOptions: GenerateTextInternalOptions
 
@@ -69,6 +70,7 @@ public struct GenerateTextRequest<OutputValue: Sendable>: Sendable {
         repairToolCall: ToolCallRepairFunction? = nil,
         download: DownloadFunction? = nil,
         context: JSONValue? = nil,
+        include: GenerateTextInclude? = nil,
         internalOptions: GenerateTextInternalOptions = GenerateTextInternalOptions(),
         onStepFinish: GenerateTextOnStepFinishCallback? = nil,
         onFinish: GenerateTextOnFinishCallback? = nil,
@@ -89,6 +91,7 @@ public struct GenerateTextRequest<OutputValue: Sendable>: Sendable {
         self.repairToolCall = repairToolCall
         self.download = download
         self.context = context
+        self.include = include
         self.internalOptions = internalOptions
         self.onStepFinish = onStepFinish
         self.onFinish = onFinish
@@ -116,6 +119,7 @@ public struct GenerateTextRequest<OutputValue: Sendable>: Sendable {
         repairToolCall: ToolCallRepairFunction? = nil,
         download: DownloadFunction? = nil,
         context: JSONValue? = nil,
+        include: GenerateTextInclude? = nil,
         internalOptions: GenerateTextInternalOptions = GenerateTextInternalOptions(),
         onStepFinish: GenerateTextOnStepFinishCallback? = nil,
         onFinish: GenerateTextOnFinishCallback? = nil,
@@ -136,6 +140,7 @@ public struct GenerateTextRequest<OutputValue: Sendable>: Sendable {
         self.repairToolCall = repairToolCall
         self.download = download
         self.context = context
+        self.include = include
         self.internalOptions = internalOptions
         self.onStepFinish = onStepFinish
         self.onFinish = onFinish
@@ -159,6 +164,7 @@ public struct GenerateTextRequest<OutputValue: Sendable>: Sendable {
         repairToolCall: ToolCallRepairFunction? = nil,
         download: DownloadFunction? = nil,
         context: JSONValue? = nil,
+        include: GenerateTextInclude? = nil,
         internalOptions: GenerateTextInternalOptions = GenerateTextInternalOptions(),
         onStepFinish: GenerateTextOnStepFinishCallback? = nil,
         onFinish: GenerateTextOnFinishCallback? = nil,
@@ -179,6 +185,7 @@ public struct GenerateTextRequest<OutputValue: Sendable>: Sendable {
             repairToolCall: repairToolCall,
             download: download,
             context: context,
+            include: include,
             internalOptions: internalOptions,
             onStepFinish: onStepFinish,
             onFinish: onFinish,
@@ -201,6 +208,7 @@ public struct GenerateTextRequest<OutputValue: Sendable>: Sendable {
         repairToolCall: ToolCallRepairFunction? = nil,
         download: DownloadFunction? = nil,
         context: JSONValue? = nil,
+        include: GenerateTextInclude? = nil,
         internalOptions: GenerateTextInternalOptions = GenerateTextInternalOptions(),
         onStepFinish: GenerateTextOnStepFinishCallback? = nil,
         onFinish: GenerateTextOnFinishCallback? = nil,
@@ -221,6 +229,7 @@ public struct GenerateTextRequest<OutputValue: Sendable>: Sendable {
             repairToolCall: repairToolCall,
             download: download,
             context: context,
+            include: include,
             internalOptions: internalOptions,
             onStepFinish: onStepFinish,
             onFinish: onFinish,
@@ -244,6 +253,7 @@ public struct GenerateTextRequest<OutputValue: Sendable>: Sendable {
         repairToolCall: ToolCallRepairFunction? = nil,
         download: DownloadFunction? = nil,
         context: JSONValue? = nil,
+        include: GenerateTextInclude? = nil,
         internalOptions: GenerateTextInternalOptions = GenerateTextInternalOptions(),
         onStepFinish: GenerateTextOnStepFinishCallback? = nil,
         onFinish: GenerateTextOnFinishCallback? = nil,
@@ -265,6 +275,7 @@ public struct GenerateTextRequest<OutputValue: Sendable>: Sendable {
             repairToolCall: repairToolCall,
             download: download,
             context: context,
+            include: include,
             internalOptions: internalOptions,
             onStepFinish: onStepFinish,
             onFinish: onFinish,
@@ -288,6 +299,7 @@ public struct GenerateTextRequest<OutputValue: Sendable>: Sendable {
         repairToolCall: ToolCallRepairFunction? = nil,
         download: DownloadFunction? = nil,
         context: JSONValue? = nil,
+        include: GenerateTextInclude? = nil,
         internalOptions: GenerateTextInternalOptions = GenerateTextInternalOptions(),
         onStepFinish: GenerateTextOnStepFinishCallback? = nil,
         onFinish: GenerateTextOnFinishCallback? = nil,
@@ -309,6 +321,7 @@ public struct GenerateTextRequest<OutputValue: Sendable>: Sendable {
             repairToolCall: repairToolCall,
             download: download,
             context: context,
+            include: include,
             internalOptions: internalOptions,
             onStepFinish: onStepFinish,
             onFinish: onFinish,
@@ -342,6 +355,7 @@ public func generateText<OutputValue: Sendable>(
         experimentalRepairToolCall: request.repairToolCall,
         experimentalDownload: request.download,
         experimentalContext: request.context,
+        experimentalInclude: request.include,
         internalOptions: request.internalOptions,
         onStepFinish: request.onStepFinish,
         onFinish: request.onFinish,

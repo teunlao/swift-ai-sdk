@@ -135,6 +135,19 @@ actor StreamTextActor {
                 if externalStopRequested { break }
                 let continueStreaming = await shouldStartAnotherStep()
                 if !continueStreaming { break }
+
+                let stepTimeoutTask: Task<Void, Never>? = {
+                    guard let stepTimeoutMs = configuration.stepTimeoutMs,
+                          let timeoutController = configuration.timeoutController else { return nil }
+                    return Task {
+                        do {
+                            try await sleepMs(stepTimeoutMs)
+                            timeoutController.markStepTimedOut()
+                        } catch {}
+                    }
+                }()
+                defer { stepTimeoutTask?.cancel() }
+
                 let stepInputMessages = makeConversationMessagesForContinuation()
                 let stepNumber = recordedSteps.count
 
@@ -186,7 +199,7 @@ actor StreamTextActor {
             }
             await finishAll(response: nil, usage: nil, finishReason: nil, providerMetadata: nil)
         } catch is CancellationError {
-            await finishAll(response: nil, usage: nil, finishReason: nil, providerMetadata: nil)
+            await finishAll(response: nil, usage: nil, finishReason: nil, providerMetadata: nil, aborted: true)
         } catch {
             await finishAll(
                 response: nil, usage: nil, finishReason: nil, providerMetadata: nil, error: error)
@@ -515,6 +528,24 @@ actor StreamTextActor {
         capturedTimestamp = configuration.currentDate()
         if externalStopRequested { return }
 
+        var chunkTimeoutTask: Task<Void, Never>? = nil
+        func clearChunkTimeout() {
+            chunkTimeoutTask?.cancel()
+            chunkTimeoutTask = nil
+        }
+        func resetChunkTimeout() {
+            guard let chunkTimeoutMs = configuration.chunkTimeoutMs,
+                  let timeoutController = configuration.timeoutController else { return }
+            chunkTimeoutTask?.cancel()
+            chunkTimeoutTask = Task {
+                do {
+                    try await sleepMs(chunkTimeoutMs)
+                    timeoutController.markChunkTimedOut()
+                } catch {}
+            }
+        }
+        defer { clearChunkTimeout() }
+
         // Per-step framing is emitted after we have seen `.streamStart(warnings)`
         // to ensure warnings are populated. If provider skips `.streamStart`,
         // we will emit framing before the first content part with empty warnings.
@@ -522,12 +553,14 @@ actor StreamTextActor {
         var didEmitStartStep = false
         var sawStreamStart = false
         for try await part in stream {
+            resetChunkTimeout()
             if Task.isCancelled {
                 await finishAll(
                     response: nil,
                     usage: nil,
                     finishReason: nil,
                     providerMetadata: nil,
+                    aborted: true,
                     error: nil
                 )
                 return
@@ -1168,6 +1201,7 @@ case let .toolInputStart(id, toolName, providerMetadata, providerExecuted, dynam
         usage: LanguageModelUsage?,
         finishReason: FinishReason?,
         providerMetadata: ProviderMetadata?,
+        aborted: Bool = false,
         error: Error? = nil
     ) async {
         guard !terminated else { return }
@@ -1206,7 +1240,14 @@ case let .toolInputStart(id, toolName, providerMetadata, providerExecuted, dynam
         // Resolve finish reason with the last recorded one (or other if none).
         finishReasonPromise.resolve(recordedFinishReason ?? .other)
 
-        if let error {
+        if aborted {
+            if !abortEmitted {
+                abortEmitted = true
+                await fullBroadcaster.send(.abort(reason: nil))
+            }
+            await textBroadcaster.finish()
+            await fullBroadcaster.finish()
+        } else if let error {
             // Error path: emit a .error part for downstream observers,
             // then finish streams with the error (no terminal `.finish`).
             await fullBroadcaster.send(.error(error))
@@ -1273,6 +1314,7 @@ case let .toolInputStart(id, toolName, providerMetadata, providerExecuted, dynam
 
     func setOnTerminate(_ cb: @escaping @Sendable () -> Void) { onTerminate = cb }
     func setInitialRequest(_ info: LanguageModelV3RequestInfo?) {
+        guard configuration.includeRequestBody else { return }
         guard let body = info?.body else { return }
         if let value = try? jsonValue(from: body) {
             recordedRequest = LanguageModelRequestMetadata(body: value)

@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.15.1] - 2026-02-06
+
+### Added
+- AI Core (`generateText`/`streamText`): add timeout configuration parity with upstream (`totalMs`, `stepMs`, `chunkMs`) and merged abort-signal behavior.
+- AI Core: add `experimentalInclude` retention controls:
+  - `generateText`: `requestBody` and `responseBody`
+  - `streamText`: `requestBody`
+
+### Fixed
+- Retry: make backoff delay abort-aware so timeout/abort interrupts retry sleep immediately.
+- Telemetry: report timeout as `ai.settings.timeout` using `totalMs` semantics.
+- Agent: forward timeout-derived abort behavior through `callSettings`.
+
 ## [0.14.2] - 2026-02-06
 
 ### Added

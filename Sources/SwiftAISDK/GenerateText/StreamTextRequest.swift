@@ -34,6 +34,7 @@ public struct StreamTextRequest<OutputValue: Sendable, PartialOutputValue: Senda
     public var repairToolCall: ToolCallRepairFunction?
     public var prepareStep: PrepareStepFunction?
     public var context: JSONValue?
+    public var include: StreamTextInclude?
 
     public var includeRawChunks: Bool
     public var stopWhen: [StopCondition]
@@ -68,6 +69,7 @@ public struct StreamTextRequest<OutputValue: Sendable, PartialOutputValue: Senda
         repairToolCall: ToolCallRepairFunction? = nil,
         prepareStep: PrepareStepFunction? = nil,
         context: JSONValue? = nil,
+        include: StreamTextInclude? = nil,
         includeRawChunks: Bool = false,
         stopWhen: [StopCondition] = [stepCountIs(1)],
         onChunk: StreamTextOnChunk? = nil,
@@ -94,6 +96,7 @@ public struct StreamTextRequest<OutputValue: Sendable, PartialOutputValue: Senda
         self.repairToolCall = repairToolCall
         self.prepareStep = prepareStep
         self.context = context
+        self.include = include
         self.includeRawChunks = includeRawChunks
         self.stopWhen = stopWhen
         self.onChunk = onChunk
@@ -127,6 +130,7 @@ public struct StreamTextRequest<OutputValue: Sendable, PartialOutputValue: Senda
         repairToolCall: ToolCallRepairFunction? = nil,
         prepareStep: PrepareStepFunction? = nil,
         context: JSONValue? = nil,
+        include: StreamTextInclude? = nil,
         includeRawChunks: Bool = false,
         stopWhen: [StopCondition] = [stepCountIs(1)],
         onChunk: StreamTextOnChunk? = nil,
@@ -153,6 +157,7 @@ public struct StreamTextRequest<OutputValue: Sendable, PartialOutputValue: Senda
         self.repairToolCall = repairToolCall
         self.prepareStep = prepareStep
         self.context = context
+        self.include = include
         self.includeRawChunks = includeRawChunks
         self.stopWhen = stopWhen
         self.onChunk = onChunk
@@ -182,6 +187,7 @@ public struct StreamTextRequest<OutputValue: Sendable, PartialOutputValue: Senda
         repairToolCall: ToolCallRepairFunction? = nil,
         prepareStep: PrepareStepFunction? = nil,
         context: JSONValue? = nil,
+        include: StreamTextInclude? = nil,
         includeRawChunks: Bool = false,
         stopWhen: [StopCondition] = [stepCountIs(1)],
         onChunk: StreamTextOnChunk? = nil,
@@ -208,6 +214,7 @@ public struct StreamTextRequest<OutputValue: Sendable, PartialOutputValue: Senda
             repairToolCall: repairToolCall,
             prepareStep: prepareStep,
             context: context,
+            include: include,
             includeRawChunks: includeRawChunks,
             stopWhen: stopWhen,
             onChunk: onChunk,
@@ -236,6 +243,7 @@ public struct StreamTextRequest<OutputValue: Sendable, PartialOutputValue: Senda
         repairToolCall: ToolCallRepairFunction? = nil,
         prepareStep: PrepareStepFunction? = nil,
         context: JSONValue? = nil,
+        include: StreamTextInclude? = nil,
         includeRawChunks: Bool = false,
         stopWhen: [StopCondition] = [stepCountIs(1)],
         onChunk: StreamTextOnChunk? = nil,
@@ -262,6 +270,7 @@ public struct StreamTextRequest<OutputValue: Sendable, PartialOutputValue: Senda
             repairToolCall: repairToolCall,
             prepareStep: prepareStep,
             context: context,
+            include: include,
             includeRawChunks: includeRawChunks,
             stopWhen: stopWhen,
             onChunk: onChunk,
@@ -291,6 +300,7 @@ public struct StreamTextRequest<OutputValue: Sendable, PartialOutputValue: Senda
         repairToolCall: ToolCallRepairFunction? = nil,
         prepareStep: PrepareStepFunction? = nil,
         context: JSONValue? = nil,
+        include: StreamTextInclude? = nil,
         includeRawChunks: Bool = false,
         stopWhen: [StopCondition] = [stepCountIs(1)],
         onChunk: StreamTextOnChunk? = nil,
@@ -318,6 +328,7 @@ public struct StreamTextRequest<OutputValue: Sendable, PartialOutputValue: Senda
             repairToolCall: repairToolCall,
             prepareStep: prepareStep,
             context: context,
+            include: include,
             includeRawChunks: includeRawChunks,
             stopWhen: stopWhen,
             onChunk: onChunk,
@@ -347,6 +358,7 @@ public struct StreamTextRequest<OutputValue: Sendable, PartialOutputValue: Senda
         repairToolCall: ToolCallRepairFunction? = nil,
         prepareStep: PrepareStepFunction? = nil,
         context: JSONValue? = nil,
+        include: StreamTextInclude? = nil,
         includeRawChunks: Bool = false,
         stopWhen: [StopCondition] = [stepCountIs(1)],
         onChunk: StreamTextOnChunk? = nil,
@@ -374,6 +386,7 @@ public struct StreamTextRequest<OutputValue: Sendable, PartialOutputValue: Senda
             repairToolCall: repairToolCall,
             prepareStep: prepareStep,
             context: context,
+            include: include,
             includeRawChunks: includeRawChunks,
             stopWhen: stopWhen,
             onChunk: onChunk,
@@ -419,6 +432,7 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
             experimentalRepairToolCall: request.repairToolCall,
             prepareStep: request.prepareStep,
             experimentalContext: request.context,
+            experimentalInclude: request.include,
             includeRawChunks: request.includeRawChunks,
             stopWhen: request.stopWhen,
             onChunk: request.onChunk,
@@ -449,6 +463,7 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
             experimentalRepairToolCall: request.repairToolCall,
             prepareStep: request.prepareStep,
             experimentalContext: request.context,
+            experimentalInclude: request.include,
             includeRawChunks: request.includeRawChunks,
             stopWhen: request.stopWhen,
             onChunk: request.onChunk,

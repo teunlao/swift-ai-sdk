@@ -20,6 +20,23 @@ public typealias StreamTextOnFinish = @Sendable (
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 public typealias StreamTextOnAbort = @Sendable (_ steps: [StepResult]) async -> Void
 
+/**
+ Controls what data is retained in the stream result/step objects.
+
+ Port of `experimental_include` from `@ai-sdk/ai/src/generate-text/stream-text.ts`.
+
+ Defaults mirror upstream behavior:
+ - `requestBody`: included
+ */
+public struct StreamTextInclude: Sendable {
+    /// Whether to retain request body metadata in step results.
+    public var requestBody: Bool?
+
+    public init(requestBody: Bool? = nil) {
+        self.requestBody = requestBody
+    }
+}
+
 public struct StreamTextInternalOptions: Sendable {
     public var now: @Sendable () -> Double
     public var generateId: IDGenerator
@@ -46,7 +63,11 @@ struct StreamTextActorConfiguration: Sendable {
     let headers: [String: String]
     let providerOptions: ProviderOptions?
     let includeRawChunks: Bool
+    let includeRequestBody: Bool
     let abortSignal: (@Sendable () -> Bool)?
+    let timeoutController: TimeoutAbortSignalController?
+    let stepTimeoutMs: Int?
+    let chunkTimeoutMs: Int?
     let toolChoice: ToolChoice?
     let activeTools: [String]?
     let download: DownloadFunction?
@@ -179,6 +200,7 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
     experimentalRepairToolCall repairToolCall: ToolCallRepairFunction? = nil,
     prepareStep: PrepareStepFunction? = nil,
     experimentalContext: JSONValue? = nil,
+    experimentalInclude include: StreamTextInclude? = nil,
     includeRawChunks: Bool = false,
     stopWhen stopConditions: [StopCondition] = [stepCountIs(1)],
     onChunk: StreamTextOnChunk? = nil,
@@ -209,6 +231,7 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
         experimentalRepairToolCall: repairToolCall,
         prepareStep: prepareStep,
         experimentalContext: experimentalContext,
+        experimentalInclude: include,
         includeRawChunks: includeRawChunks,
         stopWhen: stopConditions,
         onChunk: onChunk,
@@ -239,6 +262,7 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
     experimentalRepairToolCall repairToolCall: ToolCallRepairFunction? = nil,
     prepareStep: PrepareStepFunction? = nil,
     experimentalContext: JSONValue? = nil,
+    experimentalInclude include: StreamTextInclude? = nil,
     includeRawChunks: Bool = false,
     stopWhen stopConditions: [StopCondition] = [stepCountIs(1)],
     onChunk: StreamTextOnChunk? = nil,
@@ -266,6 +290,7 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
         experimentalRepairToolCall: repairToolCall,
         prepareStep: prepareStep,
         experimentalContext: experimentalContext,
+        experimentalInclude: include,
         includeRawChunks: includeRawChunks,
         stopWhen: stopConditions,
         onChunk: onChunk,
@@ -1365,6 +1390,7 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
     experimentalRepairToolCall repairToolCall: ToolCallRepairFunction? = nil,
     prepareStep: PrepareStepFunction? = nil,
     experimentalContext: JSONValue? = nil,
+    experimentalInclude include: StreamTextInclude? = nil,
     includeRawChunks: Bool = false,
     stopWhen stopConditions: [StopCondition] = [stepCountIs(1)],
     onChunk: StreamTextOnChunk? = nil,
@@ -1381,10 +1407,22 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
     let standardizedPrompt = StandardizedPrompt(system: system, messages: initialMessages)
     let normalizedMessages = standardizedPrompt.messages
     let effectiveActiveTools = activeTools ?? experimentalActiveTools
+    let includeRequestBody = include?.requestBody ?? true
+
+    let totalTimeoutMs = getTotalTimeoutMs(settings.timeout)
+    let stepTimeoutMs = getStepTimeoutMs(settings.timeout)
+    let chunkTimeoutMs = getChunkTimeoutMs(settings.timeout)
+    let timeoutController: TimeoutAbortSignalController? = (totalTimeoutMs != nil || stepTimeoutMs != nil || chunkTimeoutMs != nil)
+        ? TimeoutAbortSignalController()
+        : nil
+    let timeoutAbortSignal: (@Sendable () -> Bool)? = timeoutController.map { controller in
+        { @Sendable in controller.isAborted() }
+    }
+    let effectiveAbortSignal = mergeAbortSignals(settings.abortSignal, timeoutAbortSignal)
 
     let preparedRetries = try prepareRetries(
         maxRetries: settings.maxRetries,
-        abortSignal: settings.abortSignal
+        abortSignal: effectiveAbortSignal
     )
 
     let preparedCallSettings = try prepareCallSettings(
@@ -1431,7 +1469,11 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
         headers: headersWithUserAgent,
         providerOptions: providerOptions,
         includeRawChunks: includeRawChunks,
-        abortSignal: settings.abortSignal,
+        includeRequestBody: includeRequestBody,
+        abortSignal: effectiveAbortSignal,
+        timeoutController: timeoutController,
+        stepTimeoutMs: stepTimeoutMs,
+        chunkTimeoutMs: chunkTimeoutMs,
         toolChoice: toolChoice,
         activeTools: effectiveActiveTools,
         download: download,
@@ -1477,6 +1519,17 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
     )
 
     let providerTask = Task {
+        let totalTimeoutTask: Task<Void, Never>? = {
+            guard let totalTimeoutMs, let timeoutController = actorConfig.timeoutController else { return nil }
+            return Task {
+                do {
+                    try await sleepMs(totalTimeoutMs)
+                    timeoutController.markTotalTimedOut()
+                } catch {}
+            }
+        }()
+        defer { totalTimeoutTask?.cancel() }
+
         let outerAttributeInputs = buildStreamTextOuterTelemetryAttributes(
             telemetry: actorConfig.telemetry,
             baseAttributes: actorConfig.baseTelemetryAttributes,
@@ -1538,7 +1591,7 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
                                 tracer: tracer,
                                 telemetry: actorConfig.telemetry,
                                 messages: normalizedMessages,
-                                abortSignal: settings.abortSignal,
+                                abortSignal: actorConfig.abortSignal,
                                 experimentalContext: experimentalContext,
                                 onPreliminaryToolResult: { typed in
                                     Task {
@@ -1599,6 +1652,48 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
                         responseMessagesHistory.append(responseMessage)
                         await result._appendInitialResponseMessages([responseMessage])
                     }
+                }
+
+                var stepTimeoutTask: Task<Void, Never>? = nil
+                func clearStepTimeout() {
+                    stepTimeoutTask?.cancel()
+                    stepTimeoutTask = nil
+                }
+                func setStepTimeout() {
+                    guard let stepTimeoutMs = actorConfig.stepTimeoutMs,
+                          let timeoutController = actorConfig.timeoutController else { return }
+                    stepTimeoutTask?.cancel()
+                    stepTimeoutTask = Task {
+                        do {
+                            try await sleepMs(stepTimeoutMs)
+                            timeoutController.markStepTimedOut()
+                        } catch {}
+                    }
+                }
+
+                var chunkTimeoutTask: Task<Void, Never>? = nil
+                func clearChunkTimeout() {
+                    chunkTimeoutTask?.cancel()
+                    chunkTimeoutTask = nil
+                }
+                func resetChunkTimeout() {
+                    guard let chunkTimeoutMs = actorConfig.chunkTimeoutMs,
+                          let timeoutController = actorConfig.timeoutController else { return }
+                    chunkTimeoutTask?.cancel()
+                    chunkTimeoutTask = Task {
+                        do {
+                            try await sleepMs(chunkTimeoutMs)
+                            timeoutController.markChunkTimedOut()
+                        } catch {}
+                    }
+                }
+
+                // Step timeout starts when the stream step begins (after tool approvals),
+                // matching upstream semantics.
+                setStepTimeout()
+                defer {
+                    clearStepTimeout()
+                    clearChunkTimeout()
                 }
 
                 let conversationMessages: [ModelMessage]
@@ -1702,6 +1797,7 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
 
                 var sawFirstChunk = false
                 for try await part in providerResult.stream {
+                    resetChunkTimeout()
                     if !sawFirstChunk {
                         switch part {
                         case .streamStart:
@@ -1717,6 +1813,8 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
                     continuation.yield(part)
                 }
                 continuation.finish()
+                clearStepTimeout()
+                clearChunkTimeout()
 
                 let finish = try await result.waitForFinish()
                 let rootAttributeInputs = buildStreamTextRootTelemetryAttributes(
@@ -2033,6 +2131,7 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
     experimentalRepairToolCall repairToolCall: ToolCallRepairFunction? = nil,
     prepareStep: PrepareStepFunction? = nil,
     experimentalContext: JSONValue? = nil,
+    experimentalInclude include: StreamTextInclude? = nil,
     includeRawChunks: Bool = false,
     stopWhen stopConditions: [StopCondition] = [stepCountIs(1)],
     onChunk: StreamTextOnChunk? = nil,
@@ -2061,6 +2160,7 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
         experimentalRepairToolCall: repairToolCall,
         prepareStep: prepareStep,
         experimentalContext: experimentalContext,
+        experimentalInclude: include,
         includeRawChunks: includeRawChunks,
         stopWhen: stopConditions,
         onChunk: onChunk,

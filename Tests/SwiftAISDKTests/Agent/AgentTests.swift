@@ -72,6 +72,20 @@ struct AgentTests {
         #expect(options.providerOptions?["openai"]?["mode"] == .string("fast"))
     }
 
+    @Test("generate forwards timeout as abort signal")
+    func generateForwardsTimeoutAsAbortSignal() async throws {
+        let mockModel = MockLanguageModel()
+        let settings = AgentSettings<String, Never>(
+            model: .v3(mockModel),
+            callSettings: CallSettings(timeout: 5000)
+        )
+
+        let agent = Agent<String, Never>(settings: settings)
+        _ = try await agent.generate(prompt: .text("Hello"))
+
+        #expect(mockModel.lastGenerateOptions?.abortSignal != nil)
+    }
+
     @Test("stream standardizes prompt and records system message")
     func streamStandardizesPrompt() async throws {
         let mockModel = MockLanguageModel()
@@ -96,6 +110,21 @@ struct AgentTests {
             return
         }
         #expect(systemContent == "Context")
+    }
+
+    @Test("stream forwards timeout as abort signal")
+    func streamForwardsTimeoutAsAbortSignal() async throws {
+        let mockModel = MockLanguageModel()
+        let settings = AgentSettings<Never, Never>(
+            model: .v3(mockModel),
+            callSettings: CallSettings(timeout: 5000)
+        )
+
+        let agent = Agent<Never, Never>(settings: settings)
+        let result = try agent.stream(prompt: .text("Ping"))
+        _ = try await result.collectText()
+
+        #expect(mockModel.lastStreamOptions?.abortSignal != nil)
     }
 
     @Test("respond converts UI messages before streaming")

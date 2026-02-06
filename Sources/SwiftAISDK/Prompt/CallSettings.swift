@@ -3,6 +3,81 @@ import AISDKProvider
 import AISDKProviderUtils
 
 /**
+ Timeout configuration for API calls. Can be specified as:
+ - An integer representing milliseconds
+ - A configuration object with `totalMs`, `stepMs`, and/or `chunkMs` fields
+
+ Port of `@ai-sdk/ai/src/prompt/call-settings.ts` `TimeoutConfiguration`.
+ */
+public enum TimeoutConfiguration: Sendable, Equatable, ExpressibleByIntegerLiteral {
+    /// A timeout value in milliseconds (equivalent to `totalMs`).
+    case milliseconds(Int)
+    /// Granular timeout configuration in milliseconds.
+    case configuration(totalMs: Int? = nil, stepMs: Int? = nil, chunkMs: Int? = nil)
+
+    public init(integerLiteral value: Int) {
+        self = .milliseconds(value)
+    }
+
+    public static func totalMs(_ value: Int) -> TimeoutConfiguration {
+        .configuration(totalMs: value)
+    }
+
+    public static func stepMs(_ value: Int) -> TimeoutConfiguration {
+        .configuration(stepMs: value)
+    }
+
+    public static func chunkMs(_ value: Int) -> TimeoutConfiguration {
+        .configuration(chunkMs: value)
+    }
+}
+
+/**
+ Extracts the total timeout value in milliseconds from a TimeoutConfiguration.
+
+ Port of `@ai-sdk/ai/src/prompt/call-settings.ts::getTotalTimeoutMs`.
+ */
+public func getTotalTimeoutMs(_ timeout: TimeoutConfiguration?) -> Int? {
+    guard let timeout else { return nil }
+    switch timeout {
+    case .milliseconds(let value):
+        return value
+    case .configuration(let totalMs, _, _):
+        return totalMs
+    }
+}
+
+/**
+ Extracts the step timeout value in milliseconds from a TimeoutConfiguration.
+
+ Port of `@ai-sdk/ai/src/prompt/call-settings.ts::getStepTimeoutMs`.
+ */
+public func getStepTimeoutMs(_ timeout: TimeoutConfiguration?) -> Int? {
+    guard let timeout else { return nil }
+    switch timeout {
+    case .milliseconds:
+        return nil
+    case .configuration(_, let stepMs, _):
+        return stepMs
+    }
+}
+
+/**
+ Extracts the chunk timeout value in milliseconds from a TimeoutConfiguration.
+
+ Port of `@ai-sdk/ai/src/prompt/call-settings.ts::getChunkTimeoutMs`.
+ */
+public func getChunkTimeoutMs(_ timeout: TimeoutConfiguration?) -> Int? {
+    guard let timeout else { return nil }
+    switch timeout {
+    case .milliseconds:
+        return nil
+    case .configuration(_, _, let chunkMs):
+        return chunkMs
+    }
+}
+
+/**
  Settings for AI model calls (generation parameters).
 
  Port of `@ai-sdk/ai/src/prompt/call-settings.ts`.
@@ -119,6 +194,14 @@ public struct CallSettings: Sendable, Equatable {
     public var abortSignal: (@Sendable () -> Bool)?
 
     /**
+     Timeout in milliseconds. The call will be aborted if it takes longer
+     than the specified timeout. Can be used alongside abortSignal.
+
+     Equivalent to TypeScript's `TimeoutConfiguration`.
+     */
+    public var timeout: TimeoutConfiguration?
+
+    /**
      Additional HTTP headers to send with the request.
 
      Only applicable for HTTP-based providers.
@@ -136,6 +219,7 @@ public struct CallSettings: Sendable, Equatable {
         seed: Int? = nil,
         maxRetries: Int? = nil,
         abortSignal: (@Sendable () -> Bool)? = nil,
+        timeout: TimeoutConfiguration? = nil,
         headers: [String: String]? = nil
     ) {
         self.maxOutputTokens = maxOutputTokens
@@ -148,6 +232,7 @@ public struct CallSettings: Sendable, Equatable {
         self.seed = seed
         self.maxRetries = maxRetries
         self.abortSignal = abortSignal
+        self.timeout = timeout
         self.headers = headers
     }
 }
@@ -183,6 +268,7 @@ extension CallSettings {
             lhs.stopSequences == rhs.stopSequences &&
             lhs.seed == rhs.seed &&
             lhs.maxRetries == rhs.maxRetries &&
+            lhs.timeout == rhs.timeout &&
             lhs.headers == rhs.headers
         // abortSignal excluded (see doc comment above)
     }

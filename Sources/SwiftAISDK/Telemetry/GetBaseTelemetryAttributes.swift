@@ -70,6 +70,9 @@ public func getBaseTelemetryAttributes(
     if let maxRetries = settings.maxRetries {
         attributes["ai.settings.maxRetries"] = .int(maxRetries)
     }
+    if let timeout = settings.timeout, let totalTimeoutMs = getTotalTimeoutMs(timeout) {
+        attributes["ai.settings.timeout"] = .int(totalTimeoutMs)
+    }
     // abortSignal and headers are intentionally excluded (per upstream)
 
     // Add metadata as attributes

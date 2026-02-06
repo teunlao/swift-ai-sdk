@@ -154,7 +154,7 @@ func _retryWithExponentialBackoff<OUTPUT>(
             try Task.checkCancellation()
 
             // Wait before retrying
-            try await delay(retryDelay)
+            try await delay(retryDelay, abortSignal: abortSignal)
 
             // Retry with increased delay
             return try await _retryWithExponentialBackoff(
