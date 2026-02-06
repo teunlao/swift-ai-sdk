@@ -101,6 +101,278 @@ struct FalSpeechModelTests {
         ]))
     }
 
+    @Test("passes through unknown provider options")
+    func passesThroughUnknownProviderOptions() async throws {
+        let capture = RequestCapture()
+        let audioBytes = Data(repeating: 0x1, count: 8)
+        let responseData = try jsonData([
+            "audio": ["url": audioURL]
+        ])
+
+        let fetch: FetchFunction = { request in
+            await capture.append(request)
+            let url = request.url?.absoluteString ?? ""
+            if url == generateURL {
+                return FetchResponse(
+                    body: .data(responseData),
+                    urlResponse: makeHTTPResponse(
+                        url: request.url!,
+                        statusCode: 200,
+                        headers: ["Content-Type": "application/json"]
+                    )
+                )
+            }
+            if url == audioURL {
+                return FetchResponse(
+                    body: .data(audioBytes),
+                    urlResponse: makeHTTPResponse(
+                        url: request.url!,
+                        statusCode: 200,
+                        headers: ["Content-Type": "audio/mp3"]
+                    )
+                )
+            }
+
+            Issue.record("Unexpected URL: \(url)")
+            throw CancellationError()
+        }
+
+        let model = makeModel(fetch: fetch)
+        _ = try await model.doGenerate(options: .init(
+            text: "Hello from the AI SDK!",
+            providerOptions: [
+                "fal": [
+                    "additional_param": .string("value")
+                ]
+            ]
+        ))
+
+        guard let request = await capture.first(),
+              let body = request.httpBody else {
+            Issue.record("Missing request capture")
+            return
+        }
+
+        let requestBody = try JSONDecoder().decode(JSONValue.self, from: body)
+        guard case .object(let object) = requestBody else {
+            Issue.record("Expected JSON object body")
+            return
+        }
+
+        #expect(object["additional_param"] == .string("value"))
+    }
+
+    @Test("strips unknown keys from voice_setting")
+    func stripsUnknownKeysFromVoiceSetting() async throws {
+        let capture = RequestCapture()
+        let responseData = try jsonData([
+            "audio": ["url": audioURL]
+        ])
+
+        let fetch: FetchFunction = { request in
+            await capture.append(request)
+            let url = request.url?.absoluteString ?? ""
+            if url == generateURL {
+                return FetchResponse(
+                    body: .data(responseData),
+                    urlResponse: makeHTTPResponse(
+                        url: request.url!,
+                        statusCode: 200,
+                        headers: ["Content-Type": "application/json"]
+                    )
+                )
+            }
+            if url == audioURL {
+                return FetchResponse(
+                    body: .data(Data([1, 2, 3])),
+                    urlResponse: makeHTTPResponse(
+                        url: request.url!,
+                        statusCode: 200,
+                        headers: ["Content-Type": "audio/mp3"]
+                    )
+                )
+            }
+
+            Issue.record("Unexpected URL: \(url)")
+            throw CancellationError()
+        }
+
+        let model = makeModel(fetch: fetch)
+        _ = try await model.doGenerate(options: .init(
+            text: "Hello from the AI SDK!",
+            providerOptions: [
+                "fal": [
+                    "voice_setting": .object([
+                        "speed": .number(0.8),
+                        "unknown": .string("should-be-stripped")
+                    ])
+                ]
+            ]
+        ))
+
+        guard let request = await capture.first(),
+              let body = request.httpBody else {
+            Issue.record("Missing request capture")
+            return
+        }
+
+        let requestBody = try JSONDecoder().decode(JSONValue.self, from: body)
+        guard case .object(let object) = requestBody else {
+            Issue.record("Expected JSON object body")
+            return
+        }
+
+        guard case .object(let voiceSetting) = object["voice_setting"] else {
+            Issue.record("Missing voice_setting")
+            return
+        }
+
+        #expect(voiceSetting["speed"] == .number(0.8))
+        #expect(voiceSetting["unknown"] == nil)
+    }
+
+    @Test("preserves empty voice_setting object when provided")
+    func preservesEmptyVoiceSettingObject() async throws {
+        let capture = RequestCapture()
+        let responseData = try jsonData([
+            "audio": ["url": audioURL]
+        ])
+
+        let fetch: FetchFunction = { request in
+            await capture.append(request)
+            let url = request.url?.absoluteString ?? ""
+            if url == generateURL {
+                return FetchResponse(
+                    body: .data(responseData),
+                    urlResponse: makeHTTPResponse(
+                        url: request.url!,
+                        statusCode: 200,
+                        headers: ["Content-Type": "application/json"]
+                    )
+                )
+            }
+            if url == audioURL {
+                return FetchResponse(
+                    body: .data(Data([1, 2, 3])),
+                    urlResponse: makeHTTPResponse(
+                        url: request.url!,
+                        statusCode: 200,
+                        headers: ["Content-Type": "audio/mp3"]
+                    )
+                )
+            }
+
+            Issue.record("Unexpected URL: \(url)")
+            throw CancellationError()
+        }
+
+        let model = makeModel(fetch: fetch)
+        _ = try await model.doGenerate(options: .init(
+            text: "Hello from the AI SDK!",
+            providerOptions: [
+                "fal": [
+                    "voice_setting": .object([:])
+                ]
+            ]
+        ))
+
+        guard let request = await capture.first(),
+              let body = request.httpBody else {
+            Issue.record("Missing request capture")
+            return
+        }
+
+        let requestBody = try JSONDecoder().decode(JSONValue.self, from: body)
+        guard case .object(let object) = requestBody else {
+            Issue.record("Expected JSON object body")
+            return
+        }
+
+        #expect(object["voice_setting"] == .object([:]))
+    }
+
+    @Test("preserves null provider option values")
+    func preservesNullProviderOptionValues() async throws {
+        let capture = RequestCapture()
+        let responseData = try jsonData([
+            "audio": ["url": audioURL]
+        ])
+
+        let fetch: FetchFunction = { request in
+            await capture.append(request)
+            let url = request.url?.absoluteString ?? ""
+            if url == generateURL {
+                return FetchResponse(
+                    body: .data(responseData),
+                    urlResponse: makeHTTPResponse(
+                        url: request.url!,
+                        statusCode: 200,
+                        headers: ["Content-Type": "application/json"]
+                    )
+                )
+            }
+            if url == audioURL {
+                return FetchResponse(
+                    body: .data(Data([1, 2, 3])),
+                    urlResponse: makeHTTPResponse(
+                        url: request.url!,
+                        statusCode: 200,
+                        headers: ["Content-Type": "audio/mp3"]
+                    )
+                )
+            }
+
+            Issue.record("Unexpected URL: \(url)")
+            throw CancellationError()
+        }
+
+        let model = makeModel(fetch: fetch)
+        _ = try await model.doGenerate(options: .init(
+            text: "Hello from the AI SDK!",
+            providerOptions: [
+                "fal": [
+                    "language_boost": .null
+                ]
+            ]
+        ))
+
+        guard let request = await capture.first(),
+              let body = request.httpBody else {
+            Issue.record("Missing request capture")
+            return
+        }
+
+        let requestBody = try JSONDecoder().decode(JSONValue.self, from: body)
+        guard case .object(let object) = requestBody else {
+            Issue.record("Expected JSON object body")
+            return
+        }
+
+        #expect(object["language_boost"] == .null)
+    }
+
+    @Test("validates emotion values")
+    func validatesEmotionValues() async throws {
+        let model = makeModel()
+
+        do {
+            _ = try await model.doGenerate(options: .init(
+                text: "Hello from the AI SDK!",
+                providerOptions: [
+                    "fal": [
+                        "voice_setting": .object([
+                            "emotion": .string("definitely-not-valid")
+                        ])
+                    ]
+                ]
+            ))
+            Issue.record("Expected InvalidArgumentError")
+        } catch let error as InvalidArgumentError {
+            #expect(error.argument == "providerOptions")
+            #expect(error.message == "invalid fal provider options")
+        }
+    }
+
     @Test("passes provider and request headers")
     func passesHeaders() async throws {
         let capture = RequestCapture()

@@ -1050,6 +1050,49 @@ struct FalVideoModelTests {
         }
     }
 
+    @Test("error handling: surfaces invalid JSON response for malformed status payload")
+    func surfacesInvalidJSONResponseForMalformedStatusPayload() async throws {
+        let queueUrl = "https://queue.fal.run/fal-ai/luma-dream-machine"
+        let statusUrl = "https://queue.fal.run/fal-ai/luma-dream-machine/requests/test-request-id-123"
+
+        let queueResponse = try jsonData([
+            "request_id": "test-request-id-123",
+            "response_url": statusUrl,
+        ])
+
+        // `video.url` is required when `video` is present.
+        let invalidStatus = try jsonData([
+            "video": [:]
+        ])
+
+        let fetch: FetchFunction = { request in
+            let urlString = request.url!.absoluteString
+            if urlString == queueUrl {
+                return FetchResponse(
+                    body: .data(queueResponse),
+                    urlResponse: httpResponse(url: request.url!, statusCode: 200, headers: ["Content-Type": "application/json"])
+                )
+            }
+            if urlString == statusUrl {
+                return FetchResponse(
+                    body: .data(invalidStatus),
+                    urlResponse: httpResponse(url: request.url!, statusCode: 200, headers: ["Content-Type": "application/json"])
+                )
+            }
+            Issue.record("Unexpected URL: \(urlString)")
+            throw CancellationError()
+        }
+
+        let model = makeModel(fetch: fetch)
+
+        do {
+            _ = try await model.doGenerate(options: VideoModelV3CallOptions(prompt: prompt, n: 1, providerOptions: [:]))
+            Issue.record("Expected error")
+        } catch let error as APICallError {
+            #expect(error.message == "Invalid JSON response")
+        }
+    }
+
     @Test("error handling: surfaces API errors from queue endpoint")
     func surfacesQueueAPIErrors() async throws {
         let queueUrl = "https://queue.fal.run/fal-ai/luma-dream-machine"

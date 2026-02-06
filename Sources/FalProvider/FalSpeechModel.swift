@@ -65,7 +65,7 @@ public final class FalSpeechModel: SpeechModelV3 {
         let falOptions = try await parseProviderOptions(
             provider: "fal",
             providerOptions: options.providerOptions,
-            schema: falSpeechOptionsSchema
+            schema: falSpeechProviderOptionsSchema
         )
 
         var body: [String: JSONValue] = [
@@ -95,29 +95,9 @@ public final class FalSpeechModel: SpeechModelV3 {
         }
 
         if let falOptions {
-            if let voiceSettings = falOptions.voiceSetting {
-                var payload: [String: JSONValue] = [:]
-                if let speed = voiceSettings.speed { payload["speed"] = .number(speed) }
-                if let vol = voiceSettings.vol { payload["vol"] = .number(vol) }
-                if let voiceId = voiceSettings.voiceId { payload["voice_id"] = .string(voiceId) }
-                if let pitch = voiceSettings.pitch { payload["pitch"] = .number(pitch) }
-                if let englishNormalization = voiceSettings.englishNormalization { payload["english_normalization"] = .bool(englishNormalization) }
-                if let emotion = voiceSettings.emotion { payload["emotion"] = .string(emotion) }
-                if !payload.isEmpty {
-                    body["voice_setting"] = .object(payload)
-                }
-            }
-
-            if let audioSetting = falOptions.audioSetting, !audioSetting.isEmpty {
-                body["audio_setting"] = .object(audioSetting)
-            }
-
-            if let boost = falOptions.languageBoost {
-                body["language_boost"] = .string(boost)
-            }
-
-            if let pronunciation = falOptions.pronunciationDict, !pronunciation.isEmpty {
-                body["pronunciation_dict"] = .object(pronunciation.mapValues(JSONValue.string))
+            // Merge after base keys so provider options can override them (matches upstream spread order).
+            for (key, value) in falOptions.options {
+                body[key] = value
             }
         }
 

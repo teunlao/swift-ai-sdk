@@ -177,13 +177,14 @@ public final class FalVideoModel: VideoModelV3 {
             }
         }
 
-        guard let video = response.video, let videoUrl = video.url, !videoUrl.isEmpty else {
+        guard let video = response.video, !video.url.isEmpty else {
             throw FalVideoModelError(
                 name: "FAL_VIDEO_GENERATION_ERROR",
                 message: "No video URL in response"
             )
         }
 
+        let videoUrl = video.url
         let mediaType = video.contentType ?? "video/mp4"
 
         var videoMetadata: [String: JSONValue] = ["url": .string(videoUrl)]
@@ -339,7 +340,7 @@ private let falJobResponseSchema = FlexibleSchema(
 
 private struct FalVideoStatusResponse: Codable, Sendable {
     struct Video: Codable, Sendable {
-        let url: String?
+        let url: String
         let width: Double?
         let height: Double?
         let duration: Double?

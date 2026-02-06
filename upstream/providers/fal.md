@@ -10,7 +10,7 @@
 - [x] Video: polling behavior (queue + in-progress handling + timeout/abort)
 - [x] Video: providerMetadata mapping (videos[], seed, timings.inference optional, contentType optional)
 - [x] Image: request/response parity (providerOptions schema validation + camelCase/snake_case deprecations, image editing, metadata mapping, validation errors).
-- [x] Speech: request/response parity (request args, warnings, headers, audio download, response metadata).
+- [x] Speech: request/response parity (request args incl. providerOptions passthrough, warnings, headers, audio download, response metadata).
 - [x] Transcription: request/response parity (queue payload, polling/in-progress loop, text+segments mapping, response metadata).
 
 ## Known gaps / TODO
@@ -23,6 +23,7 @@
   - `Sources/FalProvider/FalImageModel.swift`
   - `Sources/FalProvider/FalImageOptions.swift`
   - `Sources/FalProvider/FalSpeechModel.swift`
+  - `Sources/FalProvider/FalSpeechOptions.swift`
   - `Sources/FalProvider/FalTranscriptionModel.swift`
   - `Sources/FalProvider/FalError.swift`
   - `Sources/FalProvider/FalVideoModel.swift`
