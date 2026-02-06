@@ -1,0 +1,16 @@
+{
+  "$schema": "test-runner.schema.json",
+  "mode": "include",
+  "include": [
+    "SwiftAISDKTests.HandleUIMessageStreamFinishTests/*",
+    "SwiftAISDKTests.ReadUIMessageStreamTests/*",
+    "SwiftAISDKTests.CreateUIMessageStreamResponseTests/*",
+    "SwiftAISDKTests.PipeUIMessageStreamToResponseTests/*",
+    "SwiftAISDKTests.JsonToSSETransformStreamTests/*",
+    "SwiftAISDKTests.GetResponseUIMessageIDTests/*"
+  ],
+  "parallel": true,
+  "verbose": false,
+  "timeout": 15000
+}
+
