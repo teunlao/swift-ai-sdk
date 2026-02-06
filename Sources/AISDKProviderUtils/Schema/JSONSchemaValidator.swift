@@ -6,6 +6,12 @@
 import Foundation
 import AISDKProvider
 
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
+
 /**
  Validates `JSONValue` instances against a subset of JSON Schema used by tool inputs.
 
@@ -330,8 +336,157 @@ struct JSONSchemaValidator: Sendable {
             ))
         }
 
+        if let format = schema["format"]?.stringValue,
+           !isValidStringFormat(string, format: format) {
+            issues.append(JSONSchemaValidationIssue(
+                path: path,
+                message: "Invalid input: string does not match required format."
+            ))
+        }
+
+        if let contentEncoding = schema["contentEncoding"]?.stringValue,
+           contentEncoding == "base64",
+           Data(base64Encoded: string) == nil {
+            issues.append(JSONSchemaValidationIssue(
+                path: path,
+                message: "Invalid input: expected base64-encoded string."
+            ))
+        }
+
         return issues
     }
+
+    private func isValidStringFormat(_ string: String, format: String) -> Bool {
+        switch format {
+        case "email", "idn-email":
+            return Self.emailRegex.firstMatch(
+                in: string,
+                range: NSRange(location: 0, length: string.utf16.count)
+            ) != nil
+
+        case "uri":
+            return isValidURI(string)
+
+        case "uuid":
+            return UUID(uuidString: string) != nil
+
+        case "ipv4":
+            return isValidIPv4(string)
+
+        case "ipv6":
+            return isValidIPv6(string)
+
+        case "date-time":
+            return isValidDateTime(string)
+
+        case "date":
+            return isValidDate(string)
+
+        case "time":
+            return Self.timeRegex.firstMatch(
+                in: string,
+                range: NSRange(location: 0, length: string.utf16.count)
+            ) != nil
+
+        case "duration":
+            return Self.durationRegex.firstMatch(
+                in: string,
+                range: NSRange(location: 0, length: string.utf16.count)
+            ) != nil
+
+        case "binary":
+            return Data(base64Encoded: string) != nil
+
+        default:
+            return true
+        }
+    }
+
+    private func isValidURI(_ string: String) -> Bool {
+        guard let components = URLComponents(string: string),
+              let scheme = components.scheme,
+              !scheme.isEmpty
+        else {
+            return false
+        }
+
+        if let host = components.host {
+            return !host.isEmpty
+        }
+
+        return !components.path.isEmpty
+    }
+
+    private func isValidIPv4(_ string: String) -> Bool {
+        var address = in_addr()
+        return string.withCString { inet_pton(AF_INET, $0, &address) } == 1
+    }
+
+    private func isValidIPv6(_ string: String) -> Bool {
+        var address = in6_addr()
+        return string.withCString { inet_pton(AF_INET6, $0, &address) } == 1
+    }
+
+    private func isValidDateTime(_ string: String) -> Bool {
+        let formatter = ISO8601DateFormatter()
+        if formatter.date(from: string) != nil {
+            return true
+        }
+
+        let formatterWithFractional = ISO8601DateFormatter()
+        formatterWithFractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatterWithFractional.date(from: string) != nil
+    }
+
+    private func isValidDate(_ string: String) -> Bool {
+        let parts = string.split(separator: "-")
+        guard parts.count == 3,
+              parts[0].count == 4,
+              parts[1].count == 2,
+              parts[2].count == 2,
+              let year = Int(parts[0]),
+              let month = Int(parts[1]),
+              let day = Int(parts[2]),
+              (1...12).contains(month)
+        else {
+            return false
+        }
+
+        let daysInMonth: Int = {
+            switch month {
+            case 1, 3, 5, 7, 8, 10, 12:
+                return 31
+            case 4, 6, 9, 11:
+                return 30
+            case 2:
+                let isLeapYear = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
+                return isLeapYear ? 29 : 28
+            default:
+                return 0
+            }
+        }()
+
+        return (1...daysInMonth).contains(day)
+    }
+
+    private static let emailRegex: NSRegularExpression = {
+        // Port of zod3-to-json-schema's email regex.
+        let pattern =
+            "^(?!\\.)(?!.*\\.\\.)([a-zA-Z0-9_'+\\-\\.]*?)[a-zA-Z0-9_+-]@([a-zA-Z0-9][a-zA-Z0-9\\-]*\\.)+[a-zA-Z]{2,}$"
+        return try! NSRegularExpression(pattern: pattern)
+    }()
+
+    private static let timeRegex: NSRegularExpression = {
+        // Rough approximation of Zod `.time()` validation.
+        let pattern = "^([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d+)?$"
+        return try! NSRegularExpression(pattern: pattern)
+    }()
+
+    private static let durationRegex: NSRegularExpression = {
+        // Rough ISO-8601 duration validation, e.g. "P3DT4H", "PT0.5S".
+        let pattern = "^P(?!$)(\\d+Y)?(\\d+M)?(\\d+D)?(T(\\d+H)?(\\d+M)?(\\d+(\\.\\d+)?S)?)?$"
+        return try! NSRegularExpression(pattern: pattern)
+    }()
 
     private func validateNumericBounds(
         number: Double,

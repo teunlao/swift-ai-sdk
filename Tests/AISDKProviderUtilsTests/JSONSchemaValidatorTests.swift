@@ -117,6 +117,76 @@ struct JSONSchemaValidatorTests {
         #expect(!validator.validate(value: .string("A1")).isEmpty)
     }
 
+    @Test("validates format uuid constraints")
+    func uuidFormatConstraints() async throws {
+        let schema: JSONValue = .object([
+            "type": .string("string"),
+            "format": .string("uuid")
+        ])
+
+        let validator = JSONSchemaValidator(schema: schema)
+
+        #expect(validator.validate(value: .string("550e8400-e29b-41d4-a716-446655440000")).isEmpty)
+        #expect(!validator.validate(value: .string("not-a-uuid")).isEmpty)
+    }
+
+    @Test("validates format email constraints")
+    func emailFormatConstraints() async throws {
+        let schema: JSONValue = .object([
+            "type": .string("string"),
+            "format": .string("email")
+        ])
+
+        let validator = JSONSchemaValidator(schema: schema)
+
+        #expect(validator.validate(value: .string("a+b@example.com")).isEmpty)
+        #expect(!validator.validate(value: .string("not-an-email")).isEmpty)
+    }
+
+    @Test("validates format uri constraints")
+    func uriFormatConstraints() async throws {
+        let schema: JSONValue = .object([
+            "type": .string("string"),
+            "format": .string("uri")
+        ])
+
+        let validator = JSONSchemaValidator(schema: schema)
+
+        #expect(validator.validate(value: .string("https://example.com")).isEmpty)
+        #expect(!validator.validate(value: .string("foo")).isEmpty)
+        #expect(!validator.validate(value: .string("http://")).isEmpty)
+    }
+
+    @Test("validates anyOf format constraints")
+    func anyOfFormatConstraints() async throws {
+        let schema: JSONValue = .object([
+            "type": .string("string"),
+            "anyOf": .array([
+                .object(["format": .string("ipv4")]),
+                .object(["format": .string("ipv6")])
+            ])
+        ])
+
+        let validator = JSONSchemaValidator(schema: schema)
+
+        #expect(validator.validate(value: .string("127.0.0.1")).isEmpty)
+        #expect(validator.validate(value: .string("2001:DB8::1")).isEmpty)
+        #expect(!validator.validate(value: .string("999.0.0.1")).isEmpty)
+    }
+
+    @Test("validates contentEncoding base64 constraints")
+    func contentEncodingBase64Constraints() async throws {
+        let schema: JSONValue = .object([
+            "type": .string("string"),
+            "contentEncoding": .string("base64")
+        ])
+
+        let validator = JSONSchemaValidator(schema: schema)
+
+        #expect(validator.validate(value: .string("Zm9v")).isEmpty) // "foo"
+        #expect(!validator.validate(value: .string("not-base64")).isEmpty)
+    }
+
     @Test("validates numeric bounds")
     func numericBoundsValidation() async throws {
         let schema: JSONValue = .object([
