@@ -17,6 +17,13 @@ const path = require('node:path');
 // Default config path
 const DEFAULT_CONFIG = path.join(__dirname, 'test-runner.default.config.json');
 const TEST_CACHE_FILE = path.join(__dirname, '.test-cache.json');
+const DEFAULT_TIMEOUT_MS = 15000;
+
+function normalizeTestSelector(selector) {
+    // `swift test list` prints test functions with trailing `()`, but `swift test --filter`
+    // expects selectors without it.
+    return selector.replace(/\(\)$/, '');
+}
 
 /**
  * Get all available tests (with optional caching)
@@ -44,7 +51,7 @@ function getAllTests(useCache = false) {
         const tests = output
             .split('\n')
             .filter(line => line.trim() && !line.includes('Building'))
-            .map(line => line.trim());
+            .map(line => normalizeTestSelector(line.trim()));
 
         // Save to cache only if user requested caching
         if (useCache) {
@@ -80,9 +87,13 @@ function loadConfig(configPath) {
  * Match test name against pattern (supports wildcards)
  */
 function matchPattern(testName, pattern) {
+    testName = normalizeTestSelector(testName);
+    pattern = normalizeTestSelector(pattern);
+
     // Convert wildcard pattern to regex
-    const regexPattern = pattern
-        .replace(/\./g, '\\.')
+    // Escape regex metacharacters except for wildcards (* and ?).
+    const escapedPattern = pattern.replace(/[\\^$+.()|[\]{}]/g, '\\$&');
+    const regexPattern = escapedPattern
         .replace(/\*/g, '.*')
         .replace(/\?/g, '.');
 
@@ -125,7 +136,7 @@ function filterTests(allTests, config) {
             );
 
             // If we have wildcards, also check if any tests match and return suite names
-            const hasWildcards = patterns.some(p => p.includes('*') || p.endsWith('/'));
+            const hasWildcards = patterns.some(p => p.includes('*') || p.includes('?') || p.endsWith('/'));
             if (hasWildcards && matchedTests.length === 0) {
                 // No actual tests match - return empty array
                 return [];
@@ -236,7 +247,7 @@ function cleanupZombieProcesses() {
  * Execute test command and return structured result
  * @returns Promise<{ status: 'passed'|'failed'|'timeout', duration: number, failedTests: Array, lastOutput: string[], totalTests: number }>
  */
-function executeTest(command, timeoutMs = 6000) {
+function executeTest(command, timeoutMs = DEFAULT_TIMEOUT_MS) {
     return new Promise((resolve) => {
         const startTime = Date.now();
 
@@ -274,7 +285,7 @@ function executeTest(command, timeoutMs = 6000) {
                 output += line + '\n';
 
                 if (line.includes('Test run with')) {
-                    const match = line.match(/Test run with (\d+) tests/);
+                    const match = line.match(/Test run with (\d+) tests?/);
                     if (match) testCount = parseInt(match[1]);
                 }
 
@@ -327,8 +338,8 @@ function executeTest(command, timeoutMs = 6000) {
                 return;
             }
 
-            const summaryMatch = output.match(/Test run with (\d+) tests (passed|failed)/);
-            const status = summaryMatch && summaryMatch[2] === 'passed' ? 'passed' : 'failed';
+            const summaryMatch = output.match(/Test run with (\d+) tests?(?: in (\d+) suites?)? (passed|failed)/);
+            const status = summaryMatch && summaryMatch[3] === 'passed' ? 'passed' : 'failed';
 
             resolve({
                 status,
@@ -403,7 +414,7 @@ function printTestResult(result) {
 /**
  * Run tests once with detailed output
  */
-async function runTests(command, timeoutMs = 6000) {
+async function runTests(command, timeoutMs = DEFAULT_TIMEOUT_MS) {
     cleanupZombieProcesses();
 
     console.log(`🧪 Running: ${command}`);
@@ -814,6 +825,7 @@ async function runSmart(allTests, config, baseTimeout, runs = 1) {
     let passedCount = 0;
     let failedCount = 0;
     let lastResult = null;
+    let firstFailedResult = null;
 
     for (let i = 1; i <= runs; i++) {
         if (runs > 1) {
@@ -833,6 +845,9 @@ async function runSmart(allTests, config, baseTimeout, runs = 1) {
         } else if (result.status === 'failed') {
             hasFailed = true;
             failedCount++;
+            if (!firstFailedResult) {
+                firstFailedResult = result;
+            }
             if (runs > 1) {
                 console.log(`  ❌ FAILED on run ${i}\n`);
             }
@@ -868,7 +883,7 @@ async function runSmart(allTests, config, baseTimeout, runs = 1) {
 
     if (initialResult.status === 'failed') {
         console.log('\n❌ Tests FAILED (not timeout) - showing failures:\n');
-        printTestResult(lastResult);
+        printTestResult(firstFailedResult || lastResult);
         exitWithTime(1);
     }
 
@@ -1227,7 +1242,7 @@ Examples:
     console.log(`✅ Found ${allTests.length} tests\n`);
 
     const filteredTests = filterTests(allTests, config);
-    const timeout = config.timeout || 6000;
+    const timeout = config.timeout || DEFAULT_TIMEOUT_MS;
 
     // Get number of runs
     const runsIndex = args.indexOf('--runs');
@@ -1247,7 +1262,7 @@ Examples:
         console.log(`Total tests:    ${allTests.length}`);
         console.log(`Selected tests: ${filteredTests.length}`);
         console.log(`Runs:           ${runs}`);
-        console.log(`Timeout:        ${config.timeout || 6000}ms`);
+        console.log(`Timeout:        ${config.timeout || DEFAULT_TIMEOUT_MS}ms`);
         console.log('━'.repeat(50) + '\n');
 
         const command = buildCommand(filteredTests, allTests, config);
