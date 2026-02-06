@@ -4,6 +4,19 @@ import Testing
 
 @Suite("JSONSchemaValidator")
 struct JSONSchemaValidatorTests {
+    @Test("anyOf does not bypass type validation")
+    func anyOfDoesNotBypassTypeValidation() async throws {
+        let schema: JSONValue = .object([
+            "type": .string("string"),
+            "anyOf": .array([
+                .object(["format": .string("uuid")])
+            ])
+        ])
+
+        let validator = JSONSchemaValidator(schema: schema)
+        #expect(!validator.validate(value: .number(1)).isEmpty)
+    }
+
     @Test("supports type unions via type arrays")
     func typeArrayUnionValidation() async throws {
         let schema: JSONValue = .object([

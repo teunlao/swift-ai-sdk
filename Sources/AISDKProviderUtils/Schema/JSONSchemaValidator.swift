@@ -33,21 +33,6 @@ struct JSONSchemaValidator: Sendable {
             return []
         }
 
-        if let anyOf = schemaObject["anyOf"]?.arrayValue, !anyOf.isEmpty {
-            return validateAnyOf(value: value, schemas: anyOf, path: path)
-        }
-
-        if let oneOf = schemaObject["oneOf"]?.arrayValue, !oneOf.isEmpty {
-            return validateOneOf(value: value, schemas: oneOf, path: path)
-        }
-
-        if let allOf = schemaObject["allOf"]?.arrayValue, !allOf.isEmpty {
-            let issues = allOf.flatMap { validate(value: value, schema: $0, path: path) }
-            if !issues.isEmpty {
-                return issues
-            }
-        }
-
         if let constValue = schemaObject["const"], value != constValue {
             return [JSONSchemaValidationIssue(
                 path: path,
@@ -67,6 +52,27 @@ struct JSONSchemaValidator: Sendable {
                 path: path,
                 message: "Invalid input: expected one of the allowed values."
             )]
+        }
+
+        if let allOf = schemaObject["allOf"]?.arrayValue, !allOf.isEmpty {
+            let issues = allOf.flatMap { validate(value: value, schema: $0, path: path) }
+            if !issues.isEmpty {
+                return issues
+            }
+        }
+
+        if let anyOf = schemaObject["anyOf"]?.arrayValue, !anyOf.isEmpty {
+            let issues = validateAnyOf(value: value, schemas: anyOf, path: path)
+            if !issues.isEmpty {
+                return issues
+            }
+        }
+
+        if let oneOf = schemaObject["oneOf"]?.arrayValue, !oneOf.isEmpty {
+            let issues = validateOneOf(value: value, schemas: oneOf, path: path)
+            if !issues.isEmpty {
+                return issues
+            }
         }
 
         return []
