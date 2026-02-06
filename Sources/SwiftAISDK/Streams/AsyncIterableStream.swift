@@ -156,10 +156,16 @@ actor AsyncIterableStreamState<Element: Sendable> {
         case finished
     }
 
+    private enum PendingFinish {
+        case success
+        case failure(Error)
+    }
+
     private var status: Status = .initializing
     private var continuation: AsyncThrowingStream<Element, Error>.Continuation?
     private var producerTask: Task<Void, Never>?
     private var pendingCancel: AsyncIterableStreamCancellationReason?
+    private var pendingFinish: PendingFinish?
     private let onCancel: @Sendable (AsyncIterableStreamCancellationReason) async -> Void
 
     init(onCancel: @escaping @Sendable (AsyncIterableStreamCancellationReason) async -> Void) {
@@ -179,6 +185,24 @@ actor AsyncIterableStreamState<Element: Sendable> {
         if let pendingCancel {
             self.pendingCancel = nil
             await requestCancel(reason: pendingCancel)
+            return
+        }
+
+        if let pendingFinish {
+            self.pendingFinish = nil
+
+            // The source finished before the actor was initialized (race). Ensure the
+            // continuation is closed so consumers don't hang.
+            switch pendingFinish {
+            case .success:
+                continuation.finish()
+            case .failure(let error):
+                continuation.finish(throwing: error)
+            }
+
+            self.continuation = nil
+            self.producerTask = nil
+            status = .finished
         }
     }
 
@@ -218,6 +242,7 @@ actor AsyncIterableStreamState<Element: Sendable> {
         case .initializing:
             status = .finished
             pendingCancel = nil
+            pendingFinish = .success
         case .active:
             status = .finished
             continuation?.finish()
@@ -233,6 +258,7 @@ actor AsyncIterableStreamState<Element: Sendable> {
         case .initializing:
             status = .finished
             pendingCancel = nil
+            pendingFinish = .failure(error)
         case .active:
             status = .finished
             continuation?.finish(throwing: error)
