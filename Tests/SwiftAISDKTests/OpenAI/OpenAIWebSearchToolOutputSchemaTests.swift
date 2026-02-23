@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import AISDKProviderUtils
 @testable import OpenAIProvider
@@ -29,10 +30,25 @@ struct OpenAIWebSearchToolOutputSchemaTests {
             Issue.record("Expected output to validate, got error: \(error)")
         }
 
+        let validNullish: [String: Any] = [
+            "action": [
+                "type": "findInPage",
+                "url": NSNull(),
+                "pattern": NSNull()
+            ]
+        ]
+
+        switch await safeValidateTypes(ValidateTypesOptions(value: validNullish, schema: schema)) {
+        case .success:
+            break
+        case .failure(let error, _):
+            Issue.record("Expected nullish findInPage output to validate, got error: \(error)")
+        }
+
         let invalid: [String: Any] = [
             "action": [
                 "type": "openPage",
-                "url": 123
+                "query": "should-not-be-here"
             ]
         ]
 
@@ -68,7 +84,8 @@ struct OpenAIWebSearchToolOutputSchemaTests {
 
         let invalid: [String: Any] = [
             "action": [
-                "type": "bogus"
+                "type": "openPage",
+                "name": "invalid-extra-field"
             ]
         ]
 

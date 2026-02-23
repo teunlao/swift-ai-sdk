@@ -1081,6 +1081,58 @@ struct OpenAIResponsesInputBuilderTests {
         #expect(result.input == expected)
     }
 
+    @Test("store=true reconstructs assistant shell tool-result as shell_call_output")
+    func storeTrueAssistantShellToolResultUsesShellCallOutput() async throws {
+        let toolResult = LanguageModelV3ToolResultPart(
+            toolCallId: "call_shell_1",
+            toolName: "shell",
+            output: .json(value: .object([
+                "output": .array([
+                    .object([
+                        "stdout": .string("ok\n"),
+                        "stderr": .string(""),
+                        "outcome": .object([
+                            "type": .string("exit"),
+                            "exitCode": .number(0)
+                        ])
+                    ])
+                ])
+            ])),
+            providerMetadata: ["openai": ["itemId": .string("shell_item_1")]]
+        )
+
+        let prompt: LanguageModelV3Prompt = [
+            .assistant(content: [.toolResult(toolResult)], providerOptions: nil)
+        ]
+
+        let result = try await OpenAIResponsesInputBuilder.makeInput(
+            prompt: prompt,
+            systemMessageMode: .system,
+            store: true,
+            hasShellTool: true
+        )
+
+        let expected: OpenAIResponsesInput = [
+            .object([
+                "type": .string("shell_call_output"),
+                "call_id": .string("call_shell_1"),
+                "output": .array([
+                    .object([
+                        "stdout": .string("ok\n"),
+                        "stderr": .string(""),
+                        "outcome": .object([
+                            "type": .string("exit"),
+                            "exit_code": .number(0)
+                        ])
+                    ])
+                ])
+            ])
+        ]
+
+        #expect(result.input == expected)
+        #expect(result.warnings.isEmpty)
+    }
+
     @Test("should convert multiple tool call parts in a single message")
     func multipleToolCallPartsInSingleMessage() async throws {
         let prompt: LanguageModelV3Prompt = [

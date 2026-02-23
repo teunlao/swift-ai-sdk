@@ -32,6 +32,14 @@ For source-of-truth code, always follow the commits and tests.
 - 2026-02-23
   - Anthropic: Claude 4.6 support (thanks to @bunchjesse).
   - Google Vertex: custom `baseURL` now bypasses `project/location` requirement when explicitly configured (regression test added).
+  - OpenAI: upstream parity fixes for Responses provider tools:
+    - `web_search_call` now maps to upstream output contract (`action` + optional `sources`) in non-stream + stream.
+    - `local_shell_call` input mapping now matches upstream snake_case contract (`timeout_ms`, `working_directory`) in non-stream + stream.
+    - `mcp_approval_request` no longer emits extra tool-call provider metadata (matches upstream output shape).
+    - `shell` assistant tool-results with `store=true` are reconstructed as `shell_call_output` (instead of `item_reference`) like upstream.
+    - `web_search` / `web_search_preview` schema strictness aligned with upstream (`userLocation.type` required, discriminated output actions).
+    - Missing OpenAI API key now throws request-time error (lazy load) instead of `fatalError`.
+    - Completion parity: `logprobs` mapping (`true -> 0`, `false -> omitted`), plus Responses shell/file-search/image parity updates and tests.
 
 - 2026-02-04
   - Breaking: align `LanguageModelV3FinishReason` with upstream as `{ unified, raw }` and propagate raw finish reasons through providers + `generateText`/`streamText` pipelines (tests updated).

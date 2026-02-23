@@ -26,7 +26,7 @@ public final class OpenAICompletionLanguageModel: LanguageModelV3 {
 
     public func doGenerate(options: LanguageModelV3CallOptions) async throws -> LanguageModelV3GenerateResult {
         let prepared = try await prepareRequest(options: options)
-        let headers = combineHeaders(config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 }
+        let headers = combineHeaders(try config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 }
 
         let response = try await postJsonToAPI(
             url: config.url(.init(modelId: modelIdentifier.rawValue, path: "/completions")),
@@ -84,7 +84,7 @@ public final class OpenAICompletionLanguageModel: LanguageModelV3 {
         body["stream"] = .bool(true)
         body["stream_options"] = .object(["include_usage": .bool(true)])
 
-        let headers = combineHeaders(config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 }
+        let headers = combineHeaders(try config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 }
 
         let eventStream = try await postJsonToAPI(
             url: config.url(.init(modelId: modelIdentifier.rawValue, path: "/completions")),

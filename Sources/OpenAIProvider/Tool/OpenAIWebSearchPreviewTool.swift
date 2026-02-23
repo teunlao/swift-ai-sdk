@@ -20,27 +20,29 @@ private let webSearchPreviewArgsJSONSchema: JSONValue = .object([
     "additionalProperties": .bool(false),
     "properties": .object([
         "searchContextSize": .object([
-            "type": .array([.string("string"), .string("null")]),
+            "type": .string("string"),
             "enum": .array([.string("low"), .string("medium"), .string("high")])
         ]),
         "userLocation": .object([
-            "type": .array([.string("object"), .string("null")]),
+            "type": .string("object"),
+            "required": .array([.string("type")]),
             "additionalProperties": .bool(false),
             "properties": .object([
                 "type": .object([
-                    "type": .array([.string("string"), .string("null")])
+                    "type": .string("string"),
+                    "enum": .array([.string("approximate")])
                 ]),
                 "country": .object([
-                    "type": .array([.string("string"), .string("null")])
+                    "type": .string("string")
                 ]),
                 "city": .object([
-                    "type": .array([.string("string"), .string("null")])
+                    "type": .string("string")
                 ]),
                 "region": .object([
-                    "type": .array([.string("string"), .string("null")])
+                    "type": .string("string")
                 ]),
                 "timezone": .object([
-                    "type": .array([.string("string"), .string("null")])
+                    "type": .string("string")
                 ])
             ])
         ])
@@ -59,7 +61,11 @@ public let openaiWebSearchPreviewArgsSchema = FlexibleSchema<OpenAIWebSearchPrev
                 }
 
                 var searchContextSize: String? = nil
-                if let sizeValue = dict["searchContextSize"], sizeValue != .null {
+                if let sizeValue = dict["searchContextSize"] {
+                    if sizeValue == .null {
+                        let error = SchemaValidationIssuesError(vendor: "openai", issues: "searchContextSize must be 'low', 'medium', or 'high'")
+                        return .failure(error: TypeValidationError.wrap(value: sizeValue, cause: error))
+                    }
                     guard case .string(let size) = sizeValue,
                           ["low", "medium", "high"].contains(size) else {
                         let error = SchemaValidationIssuesError(vendor: "openai", issues: "searchContextSize must be 'low', 'medium', or 'high'")
@@ -69,19 +75,25 @@ public let openaiWebSearchPreviewArgsSchema = FlexibleSchema<OpenAIWebSearchPrev
                 }
 
                 var userLocation: OpenAIWebSearchArgs.UserLocation? = nil
-                if let locationValue = dict["userLocation"], locationValue != .null {
+                if let locationValue = dict["userLocation"] {
+                    if locationValue == .null {
+                        let error = SchemaValidationIssuesError(vendor: "openai", issues: "userLocation must be an object")
+                        return .failure(error: TypeValidationError.wrap(value: locationValue, cause: error))
+                    }
                     guard case .object(let locationObject) = locationValue else {
                         let error = SchemaValidationIssuesError(vendor: "openai", issues: "userLocation must be an object")
                         return .failure(error: TypeValidationError.wrap(value: locationValue, cause: error))
                     }
-                    if let typeValue = locationObject["type"], typeValue != .null {
-                        guard case .string(let typeString) = typeValue, typeString == "approximate" else {
-                            let error = SchemaValidationIssuesError(vendor: "openai", issues: "userLocation.type must be 'approximate'")
-                            return .failure(error: TypeValidationError.wrap(value: typeValue, cause: error))
-                        }
+                    guard let typeValue = locationObject["type"] else {
+                        let error = SchemaValidationIssuesError(vendor: "openai", issues: "userLocation.type must be 'approximate'")
+                        return .failure(error: TypeValidationError.wrap(value: locationValue, cause: error))
+                    }
+                    guard case .string(let typeString) = typeValue, typeString == "approximate" else {
+                        let error = SchemaValidationIssuesError(vendor: "openai", issues: "userLocation.type must be 'approximate'")
+                        return .failure(error: TypeValidationError.wrap(value: typeValue, cause: error))
                     }
                     func optionalString(_ key: String) throws -> String? {
-                        guard let value = locationObject[key], value != .null else { return nil }
+                        guard let value = locationObject[key] else { return nil }
                         guard case .string(let string) = value else {
                             let error = SchemaValidationIssuesError(vendor: "openai", issues: "userLocation.\(key) must be a string")
                             throw TypeValidationError.wrap(value: value, cause: error)
@@ -89,6 +101,7 @@ public let openaiWebSearchPreviewArgsSchema = FlexibleSchema<OpenAIWebSearchPrev
                         return string
                     }
                     userLocation = OpenAIWebSearchArgs.UserLocation(
+                        type: .approximate,
                         country: try optionalString("country"),
                         city: try optionalString("city"),
                         region: try optionalString("region"),
@@ -123,22 +136,51 @@ private let webSearchPreviewOutputJSONSchema: JSONValue = .object([
     "additionalProperties": .bool(false),
     "properties": .object([
         "action": .object([
-            "type": .string("object"),
-            "required": .array([.string("type")]),
-            "additionalProperties": .bool(false),
-            "properties": .object([
-                "type": .object([
-                    "type": .string("string"),
-                    "enum": .array([.string("search"), .string("openPage"), .string("findInPage")])
+            "anyOf": .array([
+                .object([
+                    "type": .string("object"),
+                    "required": .array([.string("type")]),
+                    "additionalProperties": .bool(false),
+                    "properties": .object([
+                        "type": .object([
+                            "type": .string("string"),
+                            "enum": .array([.string("search")])
+                        ]),
+                        "query": .object([
+                            "type": .string("string")
+                        ])
+                    ])
                 ]),
-                "query": .object([
-                    "type": .string("string")
+                .object([
+                    "type": .string("object"),
+                    "required": .array([.string("type")]),
+                    "additionalProperties": .bool(false),
+                    "properties": .object([
+                        "type": .object([
+                            "type": .string("string"),
+                            "enum": .array([.string("openPage")])
+                        ]),
+                        "url": .object([
+                            "type": .array([.string("string"), .string("null")])
+                        ])
+                    ])
                 ]),
-                "url": .object([
-                    "type": .array([.string("string"), .string("null")])
-                ]),
-                "pattern": .object([
-                    "type": .array([.string("string"), .string("null")])
+                .object([
+                    "type": .string("object"),
+                    "required": .array([.string("type")]),
+                    "additionalProperties": .bool(false),
+                    "properties": .object([
+                        "type": .object([
+                            "type": .string("string"),
+                            "enum": .array([.string("findInPage")])
+                        ]),
+                        "url": .object([
+                            "type": .array([.string("string"), .string("null")])
+                        ]),
+                        "pattern": .object([
+                            "type": .array([.string("string"), .string("null")])
+                        ])
+                    ])
                 ])
             ])
         ])
@@ -169,7 +211,7 @@ private func encodeOpenAIWebSearchPreviewArgs(_ args: OpenAIWebSearchPreviewArgs
 
 private func makeUserLocationJSON(_ location: OpenAIWebSearchArgs.UserLocation) -> JSONValue {
     var payload: [String: JSONValue] = [
-        "type": .string("approximate")
+        "type": .string(location.type.rawValue)
     ]
     if let country = location.country {
         payload["country"] = .string(country)

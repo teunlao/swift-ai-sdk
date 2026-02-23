@@ -18,7 +18,7 @@ public final class OpenAISpeechModel: SpeechModelV3 {
         let prepared = try await prepareRequest(options: options)
         let currentDate = config._internal?.currentDate?() ?? Date()
 
-        let headers = combineHeaders(config.headers(), options.headers?.mapValues { Optional($0) })
+        let headers = combineHeaders(try config.headers(), options.headers?.mapValues { Optional($0) })
             .compactMapValues { $0 }
 
         let response = try await postJsonToAPI(

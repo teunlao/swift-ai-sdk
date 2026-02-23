@@ -17,7 +17,7 @@ public final class OpenAITranscriptionModel: TranscriptionModelV3 {
     public func doGenerate(options: TranscriptionModelV3CallOptions) async throws -> TranscriptionModelV3Result {
         let prepared = try await prepareRequest(options: options)
 
-        var headers = combineHeaders(config.headers(), options.headers?.mapValues { Optional($0) })
+        var headers = combineHeaders(try config.headers(), options.headers?.mapValues { Optional($0) })
             .compactMapValues { $0 }
         headers["Content-Type"] = prepared.contentType
 

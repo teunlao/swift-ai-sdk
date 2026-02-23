@@ -245,15 +245,52 @@ struct OpenAIResponsesInputBuilder {
                             continue
                         }
 
-	                        if store {
-	                            let itemId =
-	                                extractOpenAIItemId(from: resultPart.providerMetadata, providerOptionsName: providerOptionsName)
-	                                ?? resultPart.toolCallId
-	                            items.append(.object([
-	                                "type": .string("item_reference"),
-	                                "id": .string(itemId)
-	                            ]))
-	                        } else {
+                        let resolvedResultToolName = toolNameMapping.toProviderToolName(resultPart.toolName)
+
+                        // shell_call_output has a separate item identity in OpenAI store, so
+                        // we reconstruct it instead of referencing the shell_call item id.
+                        if hasShellTool, resolvedResultToolName == "shell" {
+                            if case .json(let value, _) = resultPart.output {
+                                let parsed = try await validateTypes(
+                                    ValidateTypesOptions(value: jsonValueToFoundation(value), schema: openaiShellOutputSchema)
+                                )
+
+                                let output: JSONValue = .array(parsed.output.map { item in
+                                    let outcome: JSONValue = switch item.outcome {
+                                    case .timeout:
+                                        .object(["type": .string("timeout")])
+                                    case .exit(let exitCode):
+                                        .object([
+                                            "type": .string("exit"),
+                                            "exit_code": .number(exitCode)
+                                        ])
+                                    }
+
+                                    return .object([
+                                        "stdout": .string(item.stdout),
+                                        "stderr": .string(item.stderr),
+                                        "outcome": outcome
+                                    ])
+                                })
+
+                                items.append(.object([
+                                    "type": .string("shell_call_output"),
+                                    "call_id": .string(resultPart.toolCallId),
+                                    "output": output
+                                ]))
+                            }
+                            continue
+                        }
+
+                        if store {
+                            let itemId =
+                                extractOpenAIItemId(from: resultPart.providerMetadata, providerOptionsName: providerOptionsName)
+                                ?? resultPart.toolCallId
+                            items.append(.object([
+                                "type": .string("item_reference"),
+                                "id": .string(itemId)
+                            ]))
+                        } else {
                             warnings.append(.other(message: "Results for OpenAI tool \(resultPart.toolName) are not sent to the API when store is false"))
                         }
 

@@ -26,7 +26,7 @@ public struct OpenAIConfig: @unchecked Sendable {
 
     public let provider: String
     public let url: @Sendable (_ options: URLOptions) -> String
-    public let headers: @Sendable () -> [String: String?]
+    public let headers: @Sendable () throws -> [String: String?]
     public let fetch: FetchFunction?
     public let generateId: (@Sendable () -> String)?
     public let fileIdPrefixes: [String]?
@@ -35,7 +35,7 @@ public struct OpenAIConfig: @unchecked Sendable {
     public init(
         provider: String,
         url: @escaping @Sendable (_ options: URLOptions) -> String,
-        headers: @escaping @Sendable () -> [String: String?],
+        headers: @escaping @Sendable () throws -> [String: String?],
         fetch: FetchFunction? = nil,
         generateId: (@Sendable () -> String)? = nil,
         fileIdPrefixes: [String]? = nil,

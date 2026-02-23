@@ -516,11 +516,7 @@ struct OpenAIResponsesLanguageModelTests {
         #expect(toolCall.toolName == "mcp.list_files")
         #expect(toolCall.providerExecuted == true)
         #expect(toolCall.dynamic == true)
-        if let openaiMetadata = toolCall.providerMetadata?["openai"] {
-            #expect(openaiMetadata["approvalRequestId"] == .string("approval_1"))
-        } else {
-            Issue.record("Missing provider metadata for mcp_approval_request tool call")
-        }
+        #expect(toolCall.providerMetadata == nil)
 
         guard let approvalRequest = approvalRequests.first else {
             Issue.record("Expected tool-approval-request for mcp_approval_request")
@@ -1745,7 +1741,13 @@ struct OpenAIResponsesLanguageModelTests {
                     "status": "completed",
                     "action": [
                         "type": "search",
-                        "query": "swift ai"
+                        "query": "swift ai",
+                        "sources": [
+                            [
+                                "type": "url",
+                                "url": "https://example.com"
+                            ]
+                        ]
                     ]
                 ]
             ]),
@@ -1819,14 +1821,33 @@ struct OpenAIResponsesLanguageModelTests {
 
         #expect(parts.contains { part in
             if case .toolCall(let call) = part {
-                return call.toolCallId == "web_call" && call.toolName == "web_search" && call.providerExecuted == true
+                return call.toolCallId == "web_call"
+                    && call.toolName == "web_search"
+                    && call.providerExecuted == true
+                    && call.input == "{}"
             }
             return false
         })
 
         #expect(parts.contains { part in
             if case .toolResult(let result) = part {
-                return result.toolCallId == "web_call" && result.toolName == "web_search"
+                guard result.toolCallId == "web_call",
+                      result.toolName == "web_search",
+                      case .object(let resultObject) = result.result,
+                      case .object(let action) = resultObject["action"],
+                      case .string(let actionType) = action["type"],
+                      case .string(let query) = action["query"],
+                      case .array(let sources) = resultObject["sources"],
+                      case .object(let firstSource) = sources.first,
+                      case .string(let sourceType) = firstSource["type"],
+                      case .string(let sourceURL) = firstSource["url"] else {
+                    return false
+                }
+
+                return actionType == "search"
+                    && query == "swift ai"
+                    && sourceType == "url"
+                    && sourceURL == "https://example.com"
             }
             return false
         })
@@ -1835,6 +1856,200 @@ struct OpenAIResponsesLanguageModelTests {
            let json = decodeRequestBody(data) {
             #expect(json["stream"] as? Bool == true)
         }
+    }
+
+    @Test("doGenerate maps web search output action and sources")
+    func testDoGenerateMapsWebSearchOutput() async throws {
+        let responseJSON: [String: Any] = [
+            "id": "resp_web_generate",
+            "created_at": 1_742_150_000.0,
+            "model": "gpt-4o",
+            "output": [
+                [
+                    "id": "web_call_generate",
+                    "type": "web_search_call",
+                    "status": "completed",
+                    "action": [
+                        "type": "search",
+                        "query": "swift ai sdk",
+                        "sources": [
+                            [
+                                "type": "url",
+                                "url": "https://ai-sdk.dev"
+                            ]
+                        ]
+                    ]
+                ]
+            ],
+            "service_tier": "default",
+            "usage": [
+                "input_tokens": 2,
+                "output_tokens": 1,
+                "output_tokens_details": ["reasoning_tokens": 0],
+                "input_tokens_details": ["cached_tokens": 0]
+            ],
+            "warnings": [],
+            "incomplete_details": ["reason": NSNull()],
+            "finish_reason": NSNull(),
+            "error": NSNull()
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.openai.com/v1/responses")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let webSearchTool = LanguageModelV3Tool.provider(.init(id: "openai.web_search", name: "web_search", args: [:]))
+
+        let result = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: samplePrompt,
+                tools: [webSearchTool]
+            )
+        )
+
+        guard let toolCall = result.content.first(where: {
+            if case .toolCall = $0 { return true }
+            return false
+        }),
+        case .toolCall(let call) = toolCall else {
+            Issue.record("Expected web_search tool-call content")
+            return
+        }
+
+        #expect(call.toolCallId == "web_call_generate")
+        #expect(call.toolName == "web_search")
+        #expect(call.providerExecuted == true)
+        #expect(call.input == "{}")
+
+        guard let toolResult = result.content.first(where: {
+            if case .toolResult = $0 { return true }
+            return false
+        }),
+        case .toolResult(let mappedResult) = toolResult,
+        case .object(let payload) = mappedResult.result,
+        case .object(let action) = payload["action"],
+        case .string(let actionType) = action["type"],
+        case .string(let query) = action["query"],
+        case .array(let sources) = payload["sources"],
+        case .object(let firstSource) = sources.first,
+        case .string(let sourceType) = firstSource["type"],
+        case .string(let sourceURL) = firstSource["url"] else {
+            Issue.record("Expected mapped web_search result payload")
+            return
+        }
+
+        #expect(mappedResult.toolCallId == "web_call_generate")
+        #expect(mappedResult.toolName == "web_search")
+        #expect(actionType == "search")
+        #expect(query == "swift ai sdk")
+        #expect(sourceType == "url")
+        #expect(sourceURL == "https://ai-sdk.dev")
+    }
+
+    @Test("doGenerate keeps web search nullish fields for openPage/findInPage actions")
+    func testDoGenerateMapsWebSearchNullishActionFields() async throws {
+        let responseJSON: [String: Any] = [
+            "id": "resp_web_nullish",
+            "created_at": 1_742_150_000.0,
+            "model": "gpt-4o",
+            "output": [
+                [
+                    "id": "web_open_generate",
+                    "type": "web_search_call",
+                    "status": "completed",
+                    "action": [
+                        "type": "open_page",
+                        "url": NSNull()
+                    ]
+                ],
+                [
+                    "id": "web_find_generate",
+                    "type": "web_search_call",
+                    "status": "completed",
+                    "action": [
+                        "type": "find_in_page",
+                        "url": NSNull(),
+                        "pattern": NSNull()
+                    ]
+                ]
+            ],
+            "service_tier": "default",
+            "usage": [
+                "input_tokens": 2,
+                "output_tokens": 2,
+                "output_tokens_details": ["reasoning_tokens": 0],
+                "input_tokens_details": ["cached_tokens": 0]
+            ],
+            "warnings": [],
+            "incomplete_details": ["reason": NSNull()],
+            "finish_reason": NSNull(),
+            "error": NSNull()
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.openai.com/v1/responses")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let webSearchTool = LanguageModelV3Tool.provider(.init(id: "openai.web_search", name: "web_search", args: [:]))
+
+        let result = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: samplePrompt,
+                tools: [webSearchTool]
+            )
+        )
+
+        let toolResults = result.content.compactMap { content -> LanguageModelV3ToolResult? in
+            if case .toolResult(let value) = content {
+                return value
+            }
+            return nil
+        }
+
+        guard let openPageResult = toolResults.first(where: { $0.toolCallId == "web_open_generate" }),
+              case .object(let openPayload) = openPageResult.result,
+              case .object(let openAction) = openPayload["action"],
+              openAction["type"] == .string("openPage") else {
+            Issue.record("Expected openPage tool-result")
+            return
+        }
+        #expect(openAction["url"] == .null)
+
+        guard let findInPageResult = toolResults.first(where: { $0.toolCallId == "web_find_generate" }),
+              case .object(let findPayload) = findInPageResult.result,
+              case .object(let findAction) = findPayload["action"],
+              findAction["type"] == .string("findInPage") else {
+            Issue.record("Expected findInPage tool-result")
+            return
+        }
+        #expect(findAction["url"] == .null)
+        #expect(findAction["pattern"] == .null)
     }
 
     @Test("doStream aliases mcp_call toolCallId after mcp_approval_request")
@@ -3021,6 +3236,8 @@ struct OpenAIResponsesLanguageModelTests {
                     "action": [
                         "type": "exec",
                         "command": ["ls"],
+                        "timeout_ms": 1500,
+                        "user": "dev",
                         "working_directory": "/tmp",
                         "env": [
                             "PATH": "/usr/bin"
@@ -3080,10 +3297,116 @@ struct OpenAIResponsesLanguageModelTests {
 
         #expect(parts.contains { part in
             if case .toolCall(let call) = part {
-                return call.toolCallId == "call_shell" && call.toolName == "local_shell" && call.providerExecuted == nil
+                guard call.toolCallId == "call_shell",
+                      call.toolName == "local_shell",
+                      call.providerExecuted == nil,
+                      let inputData = call.input.data(using: .utf8),
+                      let input = try? JSONSerialization.jsonObject(with: inputData) as? [String: Any],
+                      let action = input["action"] as? [String: Any] else {
+                    return false
+                }
+
+                let timeoutMs = action["timeout_ms"] as? Double
+                let user = action["user"] as? String
+                let workingDirectory = action["working_directory"] as? String
+                let hasCamelCaseTimeout = action["timeoutMs"] != nil
+                let hasCamelCaseWorkingDirectory = action["workingDirectory"] != nil
+
+                return timeoutMs == 1500
+                    && user == "dev"
+                    && workingDirectory == "/tmp"
+                    && hasCamelCaseTimeout == false
+                    && hasCamelCaseWorkingDirectory == false
             }
             return false
         })
+    }
+
+    @Test("doGenerate maps local shell input using snake_case fields")
+    func testDoGenerateMapsLocalShellInputSnakeCase() async throws {
+        let responseJSON: [String: Any] = [
+            "id": "resp_local_shell",
+            "created_at": 1_742_150_000.0,
+            "model": "gpt-4o",
+            "output": [
+                [
+                    "id": "local_shell_item",
+                    "type": "local_shell_call",
+                    "call_id": "call_local_shell",
+                    "status": "completed",
+                    "action": [
+                        "type": "exec",
+                        "command": ["pwd"],
+                        "timeout_ms": 1200,
+                        "user": "dev",
+                        "working_directory": "/workspace",
+                        "env": ["PATH": "/usr/bin"]
+                    ]
+                ]
+            ],
+            "service_tier": "default",
+            "usage": [
+                "input_tokens": 2,
+                "output_tokens": 1,
+                "output_tokens_details": ["reasoning_tokens": 0],
+                "input_tokens_details": ["cached_tokens": 0]
+            ],
+            "warnings": [],
+            "incomplete_details": ["reason": NSNull()],
+            "finish_reason": NSNull(),
+            "error": NSNull()
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.openai.com/v1/responses")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let tool = LanguageModelV3Tool.provider(.init(id: "openai.local_shell", name: "local_shell", args: [:]))
+
+        let result = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: samplePrompt,
+                tools: [tool]
+            )
+        )
+
+        guard let toolCall = result.content.first(where: {
+            if case .toolCall = $0 { return true }
+            return false
+        }),
+        case .toolCall(let call) = toolCall else {
+            Issue.record("Expected local shell tool-call content")
+            return
+        }
+
+        #expect(call.toolCallId == "call_local_shell")
+        #expect(call.toolName == "local_shell")
+
+        guard let inputData = call.input.data(using: .utf8),
+              let input = try JSONSerialization.jsonObject(with: inputData) as? [String: Any],
+              let action = input["action"] as? [String: Any] else {
+            Issue.record("Expected valid local shell input JSON")
+            return
+        }
+
+        #expect(action["timeout_ms"] as? Double == 1200)
+        #expect(action["working_directory"] as? String == "/workspace")
+        #expect(action["user"] as? String == "dev")
+        #expect(action["timeoutMs"] == nil)
+        #expect(action["workingDirectory"] == nil)
     }
 
     @Test("doGenerate maps shell providerExecuted and shell_call_output")

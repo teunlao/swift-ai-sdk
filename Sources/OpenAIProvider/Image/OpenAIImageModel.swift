@@ -36,7 +36,7 @@ public final class OpenAIImageModel: ImageModelV3 {
             warnings.append(.unsupported(feature: "seed", details: nil))
         }
 
-        let headers = combineHeaders(config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 }
+        let headers = combineHeaders(try config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 }
 
         let response: ResponseHandlerResult<OpenAIImageResponse>
         if let files = options.files, !files.isEmpty {

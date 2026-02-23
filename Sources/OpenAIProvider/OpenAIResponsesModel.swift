@@ -46,7 +46,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
         let prepared = try await prepareRequest(options: options)
 
         let url = config.url(.init(modelId: modelIdentifier.rawValue, path: "/responses"))
-        let headers = combineHeaders(config.headers(), options.headers?.mapValues { Optional($0) })
+        let headers = combineHeaders(try config.headers(), options.headers?.mapValues { Optional($0) })
         let normalizedHeaders = headers.compactMapValues { $0 }
 
         let response = try await postJsonToAPI(
@@ -134,7 +134,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
         let prepared = try await prepareRequest(options: options)
 
         let url = config.url(.init(modelId: modelIdentifier.rawValue, path: "/responses"))
-        let headers = combineHeaders(config.headers(), options.headers?.mapValues { Optional($0) })
+        let headers = combineHeaders(try config.headers(), options.headers?.mapValues { Optional($0) })
         let normalizedHeaders = headers.compactMapValues { $0 }
 
         var requestBody = prepared.body
@@ -669,14 +669,6 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
         return mapping
     }
 
-    private func openAIApprovalRequestProviderMetadata(approvalRequestId: String) -> SharedV3ProviderMetadata {
-        [
-            "openai": [
-                "approvalRequestId": .string(approvalRequestId)
-            ]
-        ]
-    }
-
     private func mapResponseOutput(
         _ output: [JSONValue],
         approvalRequestIdToToolCallIdFromPrompt: [String: String],
@@ -842,27 +834,24 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 )))
 
             case "web_search_call":
-                guard let toolCallId = object["id"]?.stringValue else { continue }
-                let action = object["action"] ?? .null
-                let status = object["status"]?.stringValue ?? "unknown"
+                guard let toolCallId = object["id"]?.stringValue,
+                      let action = object["action"],
+                      let mappedOutput = mapWebSearchOutput(action) else { continue }
 
                 let toolName = toolNameMapping.toCustomToolName(webSearchToolName ?? "web_search")
-                let inputObject: JSONValue = .object(["action": action])
-                let inputString = try jsonString(from: inputObject)
 
                 content.append(.toolCall(LanguageModelV3ToolCall(
                     toolCallId: toolCallId,
                     toolName: toolName,
-                    input: inputString,
+                    input: "{}",
                     providerExecuted: true,
                     providerMetadata: nil
                 )))
 
-                let resultValue: JSONValue = .object(["status": .string(status)])
                 content.append(.toolResult(LanguageModelV3ToolResult(
                     toolCallId: toolCallId,
                     toolName: toolName,
-                    result: resultValue,
+                    result: mappedOutput,
                     isError: nil,
                     preliminary: nil,
                     providerMetadata: nil
@@ -927,14 +916,13 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 let dummyToolCallId = config.generateId?() ?? generateID()
                 let toolName = "mcp.\(name)"
 
-                let approvalMetadata = openAIApprovalRequestProviderMetadata(approvalRequestId: approvalRequestId)
                 content.append(.toolCall(LanguageModelV3ToolCall(
                     toolCallId: dummyToolCallId,
                     toolName: toolName,
                     input: arguments,
                     providerExecuted: true,
                     dynamic: true,
-                    providerMetadata: approvalMetadata
+                    providerMetadata: nil
                 )))
 
                 content.append(.toolApprovalRequest(LanguageModelV3ToolApprovalRequest(
@@ -1171,12 +1159,32 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
 
             case "local_shell_call":
                 guard let toolCallId = object["call_id"]?.stringValue,
-                      let action = object["action"],
+                      let actionObject = object["action"]?.objectValue,
+                      let actionType = actionObject["type"]?.stringValue,
+                      let commands = actionObject["command"]?.arrayValue?.compactMap({ $0.stringValue }),
                       let itemId = object["id"]?.stringValue else {
                     continue
                 }
 
-                let inputValue: JSONValue = .object(["action": action])
+                var actionPayload: [String: JSONValue] = [
+                    "type": .string(actionType),
+                    "command": .array(commands.map(JSONValue.string))
+                ]
+                if let timeoutMs = actionObject["timeout_ms"]?.numberValue {
+                    actionPayload["timeout_ms"] = .number(timeoutMs)
+                }
+                if let user = actionObject["user"]?.stringValue {
+                    actionPayload["user"] = .string(user)
+                }
+                if let workingDirectory = actionObject["working_directory"]?.stringValue {
+                    actionPayload["working_directory"] = .string(workingDirectory)
+                }
+                if let env = actionObject["env"]?.objectValue {
+                    let mappedEnv = env.compactMapValues { value in value.stringValue.map(JSONValue.string) }
+                    actionPayload["env"] = .object(mappedEnv)
+                }
+
+                let inputValue: JSONValue = .object(["action": .object(actionPayload)])
                 let inputString = try jsonString(from: inputValue)
                 let metadata = openAIProviderMetadata(["itemId": .string(itemId)])
 
@@ -1370,6 +1378,60 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
         }
     }
 
+    private func mapWebSearchOutput(_ action: JSONValue) -> JSONValue? {
+        guard let actionObject = action.objectValue,
+              let actionType = actionObject["type"]?.stringValue else {
+            return nil
+        }
+
+        switch actionType {
+        case "search":
+            var mappedAction: [String: JSONValue] = [
+                "type": .string("search")
+            ]
+            if let query = actionObject["query"]?.stringValue {
+                mappedAction["query"] = .string(query)
+            }
+
+            var result: [String: JSONValue] = [
+                "action": .object(mappedAction)
+            ]
+            if let sources = actionObject["sources"] {
+                result["sources"] = sources
+            }
+
+            return .object(result)
+
+        case "open_page":
+            let urlValue = actionObject["url"] ?? .null
+            guard urlValue == .null || urlValue.stringValue != nil else { return nil }
+            return .object([
+                "action": .object([
+                    "type": .string("openPage"),
+                    "url": urlValue
+                ])
+            ])
+
+        case "find_in_page":
+            let urlValue = actionObject["url"] ?? .null
+            let patternValue = actionObject["pattern"] ?? .null
+            guard (urlValue == .null || urlValue.stringValue != nil),
+                  (patternValue == .null || patternValue.stringValue != nil) else {
+                return nil
+            }
+            return .object([
+                "action": .object([
+                    "type": .string("findInPage"),
+                    "url": urlValue,
+                    "pattern": patternValue
+                ])
+            ])
+
+        default:
+            return nil
+        }
+    }
+
     private func handleOutputItemAdded(
         _ chunk: [String: JSONValue],
         webSearchToolName: String,
@@ -1421,6 +1483,14 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 dynamic: nil,
                 title: nil
             ))
+            continuation.yield(.toolInputEnd(id: callId, providerMetadata: nil))
+            continuation.yield(.toolCall(LanguageModelV3ToolCall(
+                toolCallId: callId,
+                toolName: webSearchToolName,
+                input: "{}",
+                providerExecuted: true,
+                providerMetadata: nil
+            )))
         case "computer_call":
             guard let callId = item["id"]?.stringValue else { return }
             let toolName = toolNameMapping.toCustomToolName("computer_use")
@@ -1587,25 +1657,14 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 providerMetadata: metadata
             )))
         case "web_search_call":
-            guard let callId = item["id"]?.stringValue else { return }
+            guard let callId = item["id"]?.stringValue,
+                  let action = item["action"],
+                  let mappedOutput = mapWebSearchOutput(action) else { return }
             ongoingToolCalls[outputIndex] = nil
-            continuation.yield(.toolInputEnd(id: callId, providerMetadata: nil))
-            let action = item["action"] ?? .null
-            let inputValue: JSONValue = .object(["action": action])
-            let inputString = try jsonString(from: inputValue)
-            continuation.yield(.toolCall(LanguageModelV3ToolCall(
-                toolCallId: callId,
-                toolName: webSearchToolName,
-                input: inputString,
-                providerExecuted: true,
-                providerMetadata: nil
-            )))
-            let status = item["status"]?.stringValue ?? "unknown"
-            let resultValue: JSONValue = .object(["status": .string(status)])
             continuation.yield(.toolResult(LanguageModelV3ToolResult(
                 toolCallId: callId,
                 toolName: webSearchToolName,
-                result: resultValue,
+                result: mappedOutput,
                 isError: nil,
                 preliminary: nil,
                 providerMetadata: nil
@@ -1673,14 +1732,13 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             approvalRequestIdToDummyToolCallIdFromStream[approvalRequestId] = dummyToolCallId
 
             let toolName = "mcp.\(name)"
-            let approvalMetadata = openAIApprovalRequestProviderMetadata(approvalRequestId: approvalRequestId)
             continuation.yield(.toolCall(LanguageModelV3ToolCall(
                 toolCallId: dummyToolCallId,
                 toolName: toolName,
                 input: arguments,
                 providerExecuted: true,
                 dynamic: true,
-                providerMetadata: approvalMetadata
+                providerMetadata: nil
             )))
             continuation.yield(.toolApprovalRequest(LanguageModelV3ToolApprovalRequest(
                 approvalId: approvalRequestId,
@@ -1885,10 +1943,29 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             )))
         case "local_shell_call":
             guard let callId = item["call_id"]?.stringValue,
-                  let action = item["action"],
+                  let actionObject = item["action"]?.objectValue,
+                  let actionType = actionObject["type"]?.stringValue,
+                  let commands = actionObject["command"]?.arrayValue?.compactMap({ $0.stringValue }),
                   let itemId = item["id"]?.stringValue else { return }
             ongoingToolCalls[outputIndex] = nil
-            let inputValue: JSONValue = .object(["action": action])
+            var actionPayload: [String: JSONValue] = [
+                "type": .string(actionType),
+                "command": .array(commands.map(JSONValue.string))
+            ]
+            if let timeoutMs = actionObject["timeout_ms"]?.numberValue {
+                actionPayload["timeout_ms"] = .number(timeoutMs)
+            }
+            if let user = actionObject["user"]?.stringValue {
+                actionPayload["user"] = .string(user)
+            }
+            if let workingDirectory = actionObject["working_directory"]?.stringValue {
+                actionPayload["working_directory"] = .string(workingDirectory)
+            }
+            if let env = actionObject["env"]?.objectValue {
+                let mappedEnv = env.compactMapValues { value in value.stringValue.map(JSONValue.string) }
+                actionPayload["env"] = .object(mappedEnv)
+            }
+            let inputValue: JSONValue = .object(["action": .object(actionPayload)])
             let inputString = try jsonString(from: inputValue)
             let metadata = openAIProviderMetadata(["itemId": .string(itemId)])
             continuation.yield(.toolCall(LanguageModelV3ToolCall(

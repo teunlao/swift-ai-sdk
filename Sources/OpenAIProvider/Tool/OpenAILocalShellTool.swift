@@ -10,7 +10,7 @@ public struct OpenAILocalShellAction: Codable, Sendable, Equatable {
     public let workingDirectory: String?
     public let env: [String: String]?
 
-    enum CodingKeys: String, CodingKey {
+    private enum CodingKeys: String, CodingKey {
         case type
         case command
         case timeoutMs = "timeout_ms"

@@ -300,6 +300,7 @@ struct OpenAIResponsesPrepareToolsTests {
         let args: [String: JSONValue] = [
             "searchContextSize": .string("low"),
             "userLocation": .object([
+                "type": .string("approximate"),
                 "country": .string("DE"),
                 "city": .string("Berlin"),
                 "region": .string("BE"),
@@ -326,6 +327,30 @@ struct OpenAIResponsesPrepareToolsTests {
         #expect(toolObject["type"] == JSONValue.string("web_search_preview"))
         #expect(location["country"] == JSONValue.string("DE"))
         #expect(location["type"] == JSONValue.string("approximate"))
+    }
+
+    @Test("web search preview tool rejects userLocation without type")
+    func webSearchPreviewToolRejectsUserLocationWithoutType() async throws {
+        let args: [String: JSONValue] = [
+            "userLocation": .object([
+                "country": .string("DE")
+            ])
+        ]
+        let tool = providerTool(
+            id: "openai.web_search_preview",
+            name: "web_search_preview",
+            args: args
+        )
+
+        do {
+            _ = try await prepareOpenAIResponsesTools(
+                tools: [tool],
+                toolChoice: nil
+            )
+            Issue.record("Expected validation to fail when userLocation.type is missing")
+        } catch {
+            #expect(true)
+        }
     }
 
     @Test("web search tool maps filters")

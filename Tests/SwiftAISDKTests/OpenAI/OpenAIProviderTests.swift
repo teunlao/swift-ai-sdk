@@ -45,6 +45,37 @@ struct OpenAIProviderTests {
 
     @Suite("baseURL configuration", .serialized)
     struct BaseURLConfigurationTests {
+        @Test("missing API key throws LoadAPIKeyError on first request")
+        func testMissingAPIKeyThrowsAtRequestTime() async throws {
+            let original = getenv("OPENAI_API_KEY").flatMap { String(validatingCString: $0) }
+            defer {
+                if let original {
+                    setenv("OPENAI_API_KEY", original, 1)
+                } else {
+                    unsetenv("OPENAI_API_KEY")
+                }
+            }
+
+            unsetenv("OPENAI_API_KEY")
+            let capture = URLCapture()
+            let provider = createOpenAIProvider(
+                settings: OpenAIProviderSettings(fetch: makeFetch(capture: capture))
+            )
+
+            do {
+                _ = try await provider.textEmbeddingModel(modelId: "text-embedding-3-small").doEmbed(
+                    options: EmbeddingModelV3DoEmbedOptions(values: ["hello"])
+                )
+                Issue.record("Expected missing API key error")
+            } catch let error as LoadAPIKeyError {
+                #expect(error.message.contains("OpenAI API key is missing"))
+            } catch {
+                Issue.record("Expected LoadAPIKeyError, got: \(error)")
+            }
+
+            #expect(await capture.current() == nil)
+        }
+
         // Port of openai-provider.test.ts: "uses the default OpenAI base URL when not provided"
         @Test("uses default OpenAI base URL")
         func testUsesDefaultBaseURL() async throws {

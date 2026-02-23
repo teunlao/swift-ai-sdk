@@ -39,7 +39,7 @@ public final class OpenAIEmbeddingModel: EmbeddingModelV3 {
             schema: openaiEmbeddingProviderOptionsSchema
         )
 
-        let headers = combineHeaders(config.headers(), options.headers?.mapValues { Optional($0) })
+        let headers = combineHeaders(try config.headers(), options.headers?.mapValues { Optional($0) })
         let normalizedHeaders = headers.compactMapValues { $0 }
 
         let body = OpenAIEmbeddingRequestBody(

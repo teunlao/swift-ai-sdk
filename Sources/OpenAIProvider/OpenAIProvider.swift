@@ -162,19 +162,13 @@ public func createOpenAIProvider(settings: OpenAIProviderSettings = .init()) -> 
 
     let providerName = settings.name ?? "openai"
 
-    let headersClosure: @Sendable () -> [String: String?] = {
+    let headersClosure: @Sendable () throws -> [String: String?] = {
         // Lazily load API key on first request to mirror upstream behavior.
-        // If missing, fail with a clear error message.
-        let apiKey: String
-        do {
-            apiKey = try loadAPIKey(
-                apiKey: settings.apiKey,
-                environmentVariableName: "OPENAI_API_KEY",
-                description: "OpenAI"
-            )
-        } catch {
-            fatalError("OpenAI API key is missing: \(error)")
-        }
+        let apiKey = try loadAPIKey(
+            apiKey: settings.apiKey,
+            environmentVariableName: "OPENAI_API_KEY",
+            description: "OpenAI"
+        )
 
         let baseHeaders: [String: String?] = [
             "Authorization": "Bearer \(apiKey)",
