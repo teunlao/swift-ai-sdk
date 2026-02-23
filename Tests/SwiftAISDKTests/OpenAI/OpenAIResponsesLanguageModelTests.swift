@@ -3086,6 +3086,240 @@ struct OpenAIResponsesLanguageModelTests {
         })
     }
 
+    @Test("doGenerate maps shell providerExecuted and shell_call_output")
+    func testDoGenerateMapsShellOutput() async throws {
+        let responseJSON: [String: Any] = [
+            "id": "resp_shell",
+            "created_at": 1_742_150_000.0,
+            "model": "gpt-4o",
+            "output": [
+                [
+                    "id": "shell_item",
+                    "type": "shell_call",
+                    "call_id": "call_shell",
+                    "status": "completed",
+                    "action": [
+                        "commands": ["ls -la"]
+                    ]
+                ],
+                [
+                    "id": "shell_out",
+                    "type": "shell_call_output",
+                    "call_id": "call_shell",
+                    "status": "completed",
+                    "output": [
+                        [
+                            "stdout": "ok",
+                            "stderr": "",
+                            "outcome": [
+                                "type": "exit",
+                                "exit_code": 0
+                            ]
+                        ]
+                    ]
+                ]
+            ],
+            "service_tier": "default",
+            "usage": [
+                "input_tokens": 2,
+                "output_tokens": 1,
+                "output_tokens_details": ["reasoning_tokens": 0],
+                "input_tokens_details": ["cached_tokens": 0]
+            ],
+            "warnings": [],
+            "incomplete_details": ["reason": NSNull()],
+            "finish_reason": NSNull(),
+            "error": NSNull()
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let fetch: FetchFunction = { request in
+            let httpResponse = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let shellTool = LanguageModelV3Tool.provider(.init(
+            id: "openai.shell",
+            name: "shell",
+            args: [
+                "environment": .object([
+                    "type": .string("containerAuto")
+                ])
+            ]
+        ))
+
+        let result = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: samplePrompt,
+                tools: [shellTool]
+            )
+        )
+
+        #expect(result.content.contains { part in
+            if case .toolCall(let call) = part {
+                return call.toolCallId == "call_shell" && call.toolName == "shell" && call.providerExecuted == true
+            }
+            return false
+        })
+
+        #expect(result.content.contains { part in
+            guard case .toolResult(let toolResult) = part,
+                  toolResult.toolCallId == "call_shell",
+                  toolResult.toolName == "shell",
+                  case .object(let payload) = toolResult.result,
+                  case .array(let output)? = payload["output"],
+                  case .object(let firstOutput) = output.first,
+                  case .object(let outcome)? = firstOutput["outcome"] else {
+                return false
+            }
+            return outcome["type"] == .string("exit") && outcome["exitCode"] == .number(0)
+        })
+    }
+
+    @Test("doStream maps shell_call_output result")
+    func testDoStreamMapsShellCallOutput() async throws {
+        func chunk(_ value: Any) -> String {
+            let data = try! JSONSerialization.data(withJSONObject: value)
+            let encoded = String(data: data, encoding: .utf8)!
+            return "data:\(encoded)\n\n"
+        }
+
+        let chunks: [String] = [
+            chunk([
+                "type": "response.output_item.added",
+                "output_index": 0,
+                "item": [
+                    "id": "shell_item",
+                    "type": "shell_call",
+                    "status": "in_progress",
+                    "action": [
+                        "commands": []
+                    ],
+                    "call_id": "call_shell"
+                ]
+            ]),
+            chunk([
+                "type": "response.output_item.done",
+                "output_index": 0,
+                "item": [
+                    "id": "shell_item",
+                    "type": "shell_call",
+                    "status": "completed",
+                    "action": [
+                        "commands": ["ls"]
+                    ],
+                    "call_id": "call_shell"
+                ]
+            ]),
+            chunk([
+                "type": "response.output_item.done",
+                "output_index": 1,
+                "item": [
+                    "id": "shell_output",
+                    "type": "shell_call_output",
+                    "status": "completed",
+                    "call_id": "call_shell",
+                    "output": [
+                        [
+                            "stdout": "ok",
+                            "stderr": "",
+                            "outcome": [
+                                "type": "exit",
+                                "exit_code": 0
+                            ]
+                        ]
+                    ]
+                ]
+            ]),
+            chunk([
+                "type": "response.completed",
+                "response": [
+                    "id": "resp_shell",
+                    "object": "response",
+                    "created_at": 1_742_150_000.0,
+                    "status": "completed",
+                    "usage": ["input_tokens": 2, "output_tokens": 1, "total_tokens": 3]
+                ]
+            ]),
+            "data: [DONE]\n\n"
+        ]
+
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.openai.com/v1/responses")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "text/event-stream"]
+        )!
+
+        let fetch: FetchFunction = { _ in
+            let stream = AsyncThrowingStream<Data, Error> { continuation in
+                for string in chunks {
+                    continuation.yield(Data(string.utf8))
+                }
+                continuation.finish()
+            }
+            return FetchResponse(body: .stream(stream), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let tool = LanguageModelV3Tool.provider(.init(
+            id: "openai.shell",
+            name: "shell",
+            args: [
+                "environment": .object([
+                    "type": .string("containerReference"),
+                    "containerId": .string("container-1")
+                ])
+            ]
+        ))
+
+        let streamResult = try await model.doStream(
+            options: LanguageModelV3CallOptions(
+                prompt: samplePrompt,
+                tools: [tool]
+            )
+        )
+
+        var parts: [LanguageModelV3StreamPart] = []
+        for try await part in streamResult.stream {
+            parts.append(part)
+        }
+
+        #expect(parts.contains { part in
+            if case .toolCall(let call) = part {
+                return call.toolCallId == "call_shell" && call.toolName == "shell" && call.providerExecuted == true
+            }
+            return false
+        })
+
+        #expect(parts.contains { part in
+            guard case .toolResult(let result) = part,
+                  result.toolCallId == "call_shell",
+                  result.toolName == "shell",
+                  case .object(let payload) = result.result,
+                  case .array(let output)? = payload["output"],
+                  case .object(let firstOutput) = output.first,
+                  case .object(let outcome)? = firstOutput["outcome"] else {
+                return false
+            }
+            return outcome["type"] == .string("exit") && outcome["exitCode"] == .number(0)
+        })
+    }
+
     @Test("doGenerate maps apply_patch tool calls")
     func testDoGenerateMapsApplyPatchToolCall() async throws {
         actor BodyCapture {

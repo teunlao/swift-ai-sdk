@@ -5,16 +5,10 @@ import AISDKProviderUtils
 public final class OpenAITranscriptionModel: TranscriptionModelV3 {
     private let modelIdentifier: OpenAITranscriptionModelId
     private let config: OpenAIConfig
-    private let providerOptionsName: String
 
     public init(modelId: OpenAITranscriptionModelId, config: OpenAIConfig) {
         self.modelIdentifier = modelId
         self.config = config
-        if let prefix = config.provider.split(separator: ".").first {
-            self.providerOptionsName = String(prefix)
-        } else {
-            self.providerOptionsName = "openai"
-        }
     }
 
     public var provider: String { config.provider }
@@ -72,29 +66,7 @@ public final class OpenAITranscriptionModel: TranscriptionModelV3 {
             provider: "openai",
             providerOptions: options.providerOptions,
             schema: openAITranscriptionProviderOptionsSchema
-        ) ?? .default
-
-        let providerSpecificOptions: OpenAITranscriptionProviderOptions = try await { () async throws -> OpenAITranscriptionProviderOptions in
-            guard providerOptionsName != "openai" else { return .default }
-            return try await parseProviderOptions(
-                provider: providerOptionsName,
-                providerOptions: options.providerOptions,
-                schema: openAITranscriptionProviderOptionsSchema
-            ) ?? .default
-        }()
-
-        var effectiveOptions = OpenAITranscriptionProviderOptions.default
-
-        func apply(_ source: OpenAITranscriptionProviderOptions) {
-            if let include = source.include { effectiveOptions.include = include }
-            if let language = source.language { effectiveOptions.language = language }
-            if let prompt = source.prompt { effectiveOptions.prompt = prompt }
-            if let temperature = source.temperature { effectiveOptions.temperature = temperature }
-            if let granularities = source.timestampGranularities { effectiveOptions.timestampGranularities = granularities }
-        }
-
-        apply(openAIOptions)
-        apply(providerSpecificOptions)
+        )
 
         let audioData = try data(from: options.audio)
         let fileExtension = mediaTypeToExtension(options.mediaType)
@@ -104,26 +76,28 @@ public final class OpenAITranscriptionModel: TranscriptionModelV3 {
         builder.appendField(name: "model", value: modelIdentifier.rawValue)
         builder.appendFile(name: "file", filename: filename, contentType: options.mediaType, data: audioData)
 
-        if let include = effectiveOptions.include {
-            for value in include {
-                builder.appendField(name: "include[]", value: value)
+        if let openAIOptions {
+            if let include = openAIOptions.include {
+                for value in include {
+                    builder.appendField(name: "include[]", value: value)
+                }
             }
-        }
-        if let language = effectiveOptions.language {
-            builder.appendField(name: "language", value: language)
-        }
-        if let prompt = effectiveOptions.prompt {
-            builder.appendField(name: "prompt", value: prompt)
-        }
+            if let language = openAIOptions.language {
+                builder.appendField(name: "language", value: language)
+            }
+            if let prompt = openAIOptions.prompt {
+                builder.appendField(name: "prompt", value: prompt)
+            }
 
-        builder.appendField(name: "response_format", value: responseFormat(for: modelIdentifier))
+            builder.appendField(name: "response_format", value: responseFormat(for: modelIdentifier))
 
-        if let temperature = effectiveOptions.temperature {
-            builder.appendField(name: "temperature", value: String(temperature))
-        }
-        if let granularities = effectiveOptions.timestampGranularities {
-            for granularity in granularities {
-                builder.appendField(name: "timestamp_granularities[]", value: granularity)
+            if let temperature = openAIOptions.temperature {
+                builder.appendField(name: "temperature", value: String(temperature))
+            }
+            if let granularities = openAIOptions.timestampGranularities {
+                for granularity in granularities {
+                    builder.appendField(name: "timestamp_granularities[]", value: granularity)
+                }
             }
         }
 
@@ -138,20 +112,6 @@ public final class OpenAITranscriptionModel: TranscriptionModelV3 {
         case .base64(let base64):
             return try convertBase64ToData(base64)
         }
-    }
-
-    private func merge(primary: OpenAITranscriptionProviderOptions?, override: OpenAITranscriptionProviderOptions?) -> OpenAITranscriptionProviderOptions? {
-        if primary == nil { return override }
-        if override == nil { return primary }
-        guard var result = primary, let override else { return nil }
-
-        if let include = override.include { result.include = include }
-        if let language = override.language { result.language = language }
-        if let prompt = override.prompt { result.prompt = prompt }
-        if let temperature = override.temperature { result.temperature = temperature }
-        if let granularities = override.timestampGranularities { result.timestampGranularities = granularities }
-
-        return result
     }
 
     private func responseFormat(for modelId: OpenAITranscriptionModelId) -> String {

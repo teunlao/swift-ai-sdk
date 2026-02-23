@@ -256,6 +256,136 @@ struct OpenAICompletionLanguageModelTests {
         }
     }
 
+    @Test("providerOptions logprobs true maps to request logprobs 0")
+    func testLogprobsTrueMapsToZero() async throws {
+        actor RequestCapture {
+            var request: URLRequest?
+            func store(_ request: URLRequest) { self.request = request }
+            func current() -> URLRequest? { request }
+        }
+
+        let capture = RequestCapture()
+        let responseJSON: [String: Any] = [
+            "id": "cmpl-logprobs-true",
+            "object": "text_completion",
+            "created": 1_711_363_706,
+            "model": "gpt-3.5-turbo-instruct",
+            "choices": [[
+                "text": "ok",
+                "index": 0,
+                "finish_reason": "stop"
+            ]],
+            "usage": [
+                "prompt_tokens": 1,
+                "completion_tokens": 1,
+                "total_tokens": 2
+            ]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.openai.com/v1/completions")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAICompletionLanguageModel(
+            modelId: "gpt-3.5-turbo-instruct",
+            config: makeConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: completionPrompt,
+                providerOptions: [
+                    "openai": [
+                        "logprobs": .bool(true)
+                    ]
+                ]
+            )
+        )
+
+        guard let request = await capture.current(),
+              let body = request.httpBody,
+              let json = try JSONSerialization.jsonObject(with: body) as? [String: Any] else {
+            Issue.record("Missing captured request")
+            return
+        }
+
+        #expect(json["logprobs"] as? Int == 0 || json["logprobs"] as? Double == 0)
+    }
+
+    @Test("providerOptions logprobs false is omitted from request body")
+    func testLogprobsFalseIsOmitted() async throws {
+        actor RequestCapture {
+            var request: URLRequest?
+            func store(_ request: URLRequest) { self.request = request }
+            func current() -> URLRequest? { request }
+        }
+
+        let capture = RequestCapture()
+        let responseJSON: [String: Any] = [
+            "id": "cmpl-logprobs-false",
+            "object": "text_completion",
+            "created": 1_711_363_706,
+            "model": "gpt-3.5-turbo-instruct",
+            "choices": [[
+                "text": "ok",
+                "index": 0,
+                "finish_reason": "stop"
+            ]],
+            "usage": [
+                "prompt_tokens": 1,
+                "completion_tokens": 1,
+                "total_tokens": 2
+            ]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.openai.com/v1/completions")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAICompletionLanguageModel(
+            modelId: "gpt-3.5-turbo-instruct",
+            config: makeConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: completionPrompt,
+                providerOptions: [
+                    "openai": [
+                        "logprobs": .bool(false)
+                    ]
+                ]
+            )
+        )
+
+        guard let request = await capture.current(),
+              let body = request.httpBody,
+              let json = try JSONSerialization.jsonObject(with: body) as? [String: Any] else {
+            Issue.record("Missing captured request")
+            return
+        }
+
+        #expect(json["logprobs"] == nil)
+    }
+
     @Test("should extract logprobs")
     func testExtractLogprobs() async throws {
         let logprobsValue = makeLogprobsValue()

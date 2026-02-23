@@ -91,7 +91,8 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             approvalRequestIdToToolCallIdFromPrompt: approvalRequestIdToToolCallIdFromPrompt,
             webSearchToolName: prepared.webSearchToolName,
             toolNameMapping: prepared.toolNameMapping,
-            logprobsRequested: logprobsRequested
+            logprobsRequested: logprobsRequested,
+            isShellProviderExecuted: prepared.isShellProviderExecuted
         )
 
         let providerMetadata = makeProviderMetadata(
@@ -214,6 +215,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                                     approvalRequestIdToDummyToolCallIdFromStream: &approvalRequestIdToDummyToolCallIdFromStream,
                                     ongoingToolCalls: &ongoingToolCalls,
                                     activeReasoning: &activeReasoning,
+                                    isShellProviderExecuted: prepared.isShellProviderExecuted,
                                     hasFunctionCall: &hasFunctionCall,
                                     continuation: continuation
                                 )
@@ -361,6 +363,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
         let toolNameMapping: OpenAIToolNameMapping
         let store: Bool
         let openAIOptions: OpenAIResponsesProviderOptions?
+        let isShellProviderExecuted: Bool
     }
 
     private func prepareRequest(options: LanguageModelV3CallOptions) async throws -> PreparedRequest {
@@ -554,7 +557,8 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             webSearchToolName: webSearchToolName,
             toolNameMapping: toolNameMapping,
             store: storeForInput,
-            openAIOptions: openAIOptions
+            openAIOptions: openAIOptions,
+            isShellProviderExecuted: shellToolIsProviderExecuted(options.tools)
         )
     }
 
@@ -623,6 +627,25 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
         return nil
     }
 
+    private func shellToolIsProviderExecuted(_ tools: [LanguageModelV3Tool]?) -> Bool {
+        guard let tools else { return false }
+
+        for tool in tools {
+            guard case .provider(let providerTool) = tool,
+                  providerTool.id == "openai.shell",
+                  let environment = providerTool.args["environment"]?.objectValue else {
+                continue
+            }
+
+            let environmentType = environment["type"]?.stringValue
+            if environmentType == "containerAuto" || environmentType == "containerReference" {
+                return true
+            }
+        }
+
+        return false
+    }
+
     private struct MappedResponse {
         let content: [LanguageModelV3Content]
         let logprobs: [JSONValue]
@@ -659,7 +682,8 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
         approvalRequestIdToToolCallIdFromPrompt: [String: String],
         webSearchToolName: String?,
         toolNameMapping: OpenAIToolNameMapping,
-        logprobsRequested: Bool
+        logprobsRequested: Bool,
+        isShellProviderExecuted: Bool
     ) throws -> MappedResponse {
         var content: [LanguageModelV3Content] = []
         var logprobs: [JSONValue] = []
@@ -992,13 +1016,13 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                       let containerId = object["container_id"]?.stringValue else {
                     continue
                 }
-                let code = object["code"]?.stringValue ?? ""
-                let outputs = object["outputs"] ?? .null
-
-                let inputValue: JSONValue = .object([
-                    "code": .string(code),
+                var inputPayload: [String: JSONValue] = [
                     "containerId": .string(containerId)
-                ])
+                ]
+                if let code = object["code"] {
+                    inputPayload["code"] = code
+                }
+                let inputValue: JSONValue = .object(inputPayload)
                 let inputString = try jsonString(from: inputValue)
 
                 content.append(.toolCall(LanguageModelV3ToolCall(
@@ -1009,7 +1033,11 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                     providerMetadata: nil
                 )))
 
-                let resultValue: JSONValue = .object(["outputs": outputs])
+                var resultPayload: [String: JSONValue] = [:]
+                if let outputs = object["outputs"] {
+                    resultPayload["outputs"] = outputs
+                }
+                let resultValue: JSONValue = .object(resultPayload)
                 content.append(.toolResult(LanguageModelV3ToolResult(
                     toolCallId: toolCallId,
                     toolName: toolNameMapping.toCustomToolName("code_interpreter"),
@@ -1063,8 +1091,60 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                     toolCallId: toolCallId,
                     toolName: toolNameMapping.toCustomToolName("shell"),
                     input: inputString,
-                    providerExecuted: nil,
+                    providerExecuted: isShellProviderExecuted ? true : nil,
                     providerMetadata: metadata
+                )))
+
+            case "shell_call_output":
+                guard let toolCallId = object["call_id"]?.stringValue,
+                      let outputs = object["output"]?.arrayValue else {
+                    continue
+                }
+
+                let mappedOutputs = outputs.compactMap { outputEntry -> JSONValue? in
+                    guard let outputObject = outputEntry.objectValue,
+                          let stdout = outputObject["stdout"]?.stringValue,
+                          let stderr = outputObject["stderr"]?.stringValue,
+                          let outcomeObject = outputObject["outcome"]?.objectValue,
+                          let outcomeType = outcomeObject["type"]?.stringValue else {
+                        return nil
+                    }
+
+                    let outcome: JSONValue
+                    if outcomeType == "exit" {
+                        guard let exitCode = outcomeObject["exit_code"]?.numberValue else {
+                            return nil
+                        }
+                        outcome = .object([
+                            "type": .string("exit"),
+                            "exitCode": .number(exitCode)
+                        ])
+                    } else if outcomeType == "timeout" {
+                        outcome = .object([
+                            "type": .string("timeout")
+                        ])
+                    } else {
+                        return nil
+                    }
+
+                    return .object([
+                        "stdout": .string(stdout),
+                        "stderr": .string(stderr),
+                        "outcome": outcome
+                    ])
+                }
+
+                let resultValue: JSONValue = .object([
+                    "output": .array(mappedOutputs)
+                ])
+
+                content.append(.toolResult(LanguageModelV3ToolResult(
+                    toolCallId: toolCallId,
+                    toolName: toolNameMapping.toCustomToolName("shell"),
+                    result: resultValue,
+                    isError: nil,
+                    preliminary: nil,
+                    providerMetadata: nil
                 )))
 
             case "apply_patch_call":
@@ -1478,6 +1558,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
         approvalRequestIdToDummyToolCallIdFromStream: inout [String: String],
         ongoingToolCalls: inout [Int: ToolCallState],
         activeReasoning: inout [String: ReasoningState],
+        isShellProviderExecuted: Bool,
         hasFunctionCall: inout Bool,
         continuation: AsyncThrowingStream<LanguageModelV3StreamPart, Error>.Continuation
     ) throws {
@@ -1667,9 +1748,11 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
         case "code_interpreter_call":
             guard let callId = item["id"]?.stringValue else { return }
             ongoingToolCalls[outputIndex] = nil
-            let resultValue: JSONValue = .object([
-                "outputs": item["outputs"] ?? .null
-            ])
+            var resultPayload: [String: JSONValue] = [:]
+            if let outputs = item["outputs"] {
+                resultPayload["outputs"] = outputs
+            }
+            let resultValue: JSONValue = .object(resultPayload)
             continuation.yield(.toolResult(LanguageModelV3ToolResult(
                 toolCallId: callId,
                 toolName: toolNameMapping.toCustomToolName("code_interpreter"),
@@ -1748,8 +1831,57 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 toolCallId: callId,
                 toolName: toolNameMapping.toCustomToolName("shell"),
                 input: inputString,
-                providerExecuted: nil,
+                providerExecuted: isShellProviderExecuted ? true : nil,
                 providerMetadata: metadata
+            )))
+        case "shell_call_output":
+            guard let callId = item["call_id"]?.stringValue,
+                  let output = item["output"]?.arrayValue else { return }
+            ongoingToolCalls[outputIndex] = nil
+
+            let mappedOutput = output.compactMap { entry -> JSONValue? in
+                guard let outputObject = entry.objectValue,
+                      let stdout = outputObject["stdout"]?.stringValue,
+                      let stderr = outputObject["stderr"]?.stringValue,
+                      let outcomeObject = outputObject["outcome"]?.objectValue,
+                      let outcomeType = outcomeObject["type"]?.stringValue else {
+                    return nil
+                }
+
+                let outcome: JSONValue
+                if outcomeType == "exit" {
+                    guard let exitCode = outcomeObject["exit_code"]?.numberValue else {
+                        return nil
+                    }
+                    outcome = .object([
+                        "type": .string("exit"),
+                        "exitCode": .number(exitCode)
+                    ])
+                } else if outcomeType == "timeout" {
+                    outcome = .object([
+                        "type": .string("timeout")
+                    ])
+                } else {
+                    return nil
+                }
+
+                return .object([
+                    "stdout": .string(stdout),
+                    "stderr": .string(stderr),
+                    "outcome": outcome
+                ])
+            }
+
+            let resultValue: JSONValue = .object([
+                "output": .array(mappedOutput)
+            ])
+            continuation.yield(.toolResult(LanguageModelV3ToolResult(
+                toolCallId: callId,
+                toolName: toolNameMapping.toCustomToolName("shell"),
+                result: resultValue,
+                isError: nil,
+                preliminary: nil,
+                providerMetadata: nil
             )))
         case "local_shell_call":
             guard let callId = item["call_id"]?.stringValue,

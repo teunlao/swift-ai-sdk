@@ -156,12 +156,6 @@ struct OpenAISpeechModelTests {
                 voice: "nova",
                 outputFormat: "opus",
                 speed: 1.25,
-                providerOptions: [
-                    "openai": [
-                        "instructions": .string("Speak softly"),
-                        "speed": .number(1.1)
-                    ]
-                ],
                 headers: ["Custom-Header": "request-header-value"]
             )
         )
@@ -195,7 +189,6 @@ struct OpenAISpeechModelTests {
         #expect(jsonObject?["voice"] as? String == "nova")
         #expect(jsonObject?["speed"] as? Double == 1.25)
         #expect(jsonObject?["response_format"] as? String == "opus")
-        #expect(jsonObject?["instructions"] as? String == "Speak softly")
     }
 
     @Test("doGenerate reports warnings for unsupported options")

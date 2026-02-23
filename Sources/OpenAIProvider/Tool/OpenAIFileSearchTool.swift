@@ -40,11 +40,19 @@ private let comparisonFilterSchema: JSONValue = .object([
         "type": .object([
             "type": .string("string"),
             "enum": .array([
-                .string("eq"), .string("ne"), .string("gt"), .string("gte"), .string("lt"), .string("lte")
+                .string("eq"), .string("ne"), .string("gt"), .string("gte"), .string("lt"), .string("lte"), .string("in"), .string("nin")
             ])
         ]),
         "value": .object([
-            "type": .array([.string("string"), .string("number"), .string("boolean")])
+            "oneOf": .array([
+                .object(["type": .string("string")]),
+                .object(["type": .string("number")]),
+                .object(["type": .string("boolean")]),
+                .object([
+                    "type": .string("array"),
+                    "items": .object(["type": .string("string")])
+                ])
+            ])
         ])
     ])
 ])
@@ -187,7 +195,7 @@ private func isValidFileSearchFilter(_ value: JSONValue) -> Bool {
                 return filters.allSatisfy(isValidFileSearchFilter)
             }
 
-            if ["eq", "ne", "gt", "gte", "lt", "lte"].contains(type) {
+            if ["eq", "ne", "gt", "gte", "lt", "lte", "in", "nin"].contains(type) {
                 guard let keyValue = object["key"], case .string = keyValue else {
                     return false
                 }
@@ -197,6 +205,13 @@ private func isValidFileSearchFilter(_ value: JSONValue) -> Bool {
                 switch comparisonValue {
                 case .string, .number, .bool:
                     return true
+                case .array(let values):
+                    return values.allSatisfy { value in
+                        if case .string = value {
+                            return true
+                        }
+                        return false
+                    }
                 default:
                     return false
                 }

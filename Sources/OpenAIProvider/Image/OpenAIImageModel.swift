@@ -69,21 +69,19 @@ public final class OpenAIImageModel: ImageModelV3 {
 
         let value = response.value
         let images = value.data.map { $0.b64JSON }
-
-        let metadataValue: ImageModelV3ProviderMetadataValue? = {
-            let revisions = value.data.map { item -> JSONValue in
-                if let prompt = item.revisedPrompt {
-                    return .object(["revisedPrompt": .string(prompt)])
-                }
-                return .null
-            }
-            if revisions.allSatisfy({ $0 == .null }) {
-                return nil
-            }
-            return ImageModelV3ProviderMetadataValue(images: revisions, additionalData: nil)
-        }()
-
-        let providerMetadata: ImageModelV3ProviderMetadata? = metadataValue.map { ["openai": $0] }
+        let usage = value.usage.map {
+            ImageModelV3Usage(
+                inputTokens: $0.inputTokens,
+                outputTokens: $0.outputTokens,
+                totalTokens: $0.totalTokens
+            )
+        }
+        let providerMetadata: ImageModelV3ProviderMetadata = [
+            "openai": ImageModelV3ProviderMetadataValue(
+                images: makeOpenAIImageMetadataEntries(value),
+                additionalData: nil
+            )
+        ]
 
         let timestamp = config._internal?.currentDate?() ?? Date()
         let responseInfo = ImageModelV3ResponseInfo(
@@ -96,8 +94,75 @@ public final class OpenAIImageModel: ImageModelV3 {
             images: .base64(images),
             warnings: warnings,
             providerMetadata: providerMetadata,
-            response: responseInfo
+            response: responseInfo,
+            usage: usage
         )
+    }
+
+    private func makeOpenAIImageMetadataEntries(_ response: OpenAIImageResponse) -> [JSONValue] {
+        let total = max(response.data.count, 1)
+
+        return response.data.enumerated().map { index, item in
+            var metadata: [String: JSONValue] = [:]
+
+            if let revisedPrompt = item.revisedPrompt {
+                metadata["revisedPrompt"] = .string(revisedPrompt)
+            }
+            if let created = response.created {
+                metadata["created"] = .number(created)
+            }
+            if let size = response.size {
+                metadata["size"] = .string(size)
+            }
+            if let quality = response.quality {
+                metadata["quality"] = .string(quality)
+            }
+            if let background = response.background {
+                metadata["background"] = .string(background)
+            }
+            if let outputFormat = response.outputFormat {
+                metadata["outputFormat"] = .string(outputFormat)
+            }
+
+            let tokenDetails = distributeInputTokenDetails(
+                details: response.usage?.inputTokensDetails,
+                index: index,
+                total: total
+            )
+            for (key, value) in tokenDetails {
+                metadata[key] = value
+            }
+
+            return .object(metadata)
+        }
+    }
+
+    private func distributeInputTokenDetails(
+        details: OpenAIImageResponse.Usage.InputTokensDetails?,
+        index: Int,
+        total: Int
+    ) -> [String: JSONValue] {
+        guard let details, total > 0 else {
+            return [:]
+        }
+
+        var result: [String: JSONValue] = [:]
+
+        if let imageTokens = details.imageTokens {
+            let base = imageTokens / total
+            let remainder = imageTokens - base * (total - 1)
+            let distributed = (index == total - 1) ? remainder : base
+            result["imageTokens"] = .number(Double(distributed))
+        }
+
+        if let textTokens = details.textTokens {
+            let base = textTokens / total
+            let remainder = textTokens - base * (total - 1)
+            let distributed = (index == total - 1) ? remainder : base
+            result["textTokens"] = .number(Double(distributed))
+        }
+
+        return result
     }
 
     private func makeRequestBody(options: ImageModelV3CallOptions) throws -> JSONValue {

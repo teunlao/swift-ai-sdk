@@ -425,6 +425,39 @@ struct OpenAIResponsesPrepareToolsTests {
         }
     }
 
+    @Test("file search supports in/nin filters with string arrays")
+    func fileSearchSupportsSetFilters() async throws {
+        let args: [String: JSONValue] = [
+            "vectorStoreIds": .array([.string("vs_1")]),
+            "filters": .object([
+                "type": .string("in"),
+                "key": .string("category"),
+                "value": .array([.string("news"), .string("docs")])
+            ])
+        ]
+        let tool = providerTool(
+            id: "openai.file_search",
+            name: "file_search",
+            args: args
+        )
+
+        let result = try await prepareOpenAIResponsesTools(
+            tools: [tool],
+            toolChoice: nil
+        )
+
+        guard let tools = result.tools,
+              case .object(let toolObject) = tools.first,
+              case .object(let filters)? = toolObject["filters"] else {
+            Issue.record("Expected mapped file_search tool with filters")
+            return
+        }
+
+        #expect(filters["type"] == JSONValue.string("in"))
+        #expect(filters["key"] == JSONValue.string("category"))
+        #expect(filters["value"] == JSONValue.array([.string("news"), .string("docs")]))
+    }
+
     @Test("local shell tool mapped without args")
     func localShellToolMapped() async throws {
         let result = try await prepareOpenAIResponsesTools(
@@ -455,6 +488,69 @@ struct OpenAIResponsesPrepareToolsTests {
         }
         #expect(toolObject.keys.count == 1)
         #expect(toolObject["type"] == JSONValue.string("shell"))
+    }
+
+    @Test("shell tool maps containerAuto environment")
+    func shellToolMapsContainerAutoEnvironment() async throws {
+        let tool = providerTool(
+            id: "openai.shell",
+            name: "shell",
+            args: [
+                "environment": .object([
+                    "type": .string("containerAuto"),
+                    "fileIds": .array([.string("file_1")]),
+                    "memoryLimit": .string("4g"),
+                    "networkPolicy": .object([
+                        "type": .string("allowlist"),
+                        "allowedDomains": .array([.string("example.com")]),
+                        "domainSecrets": .array([
+                            .object([
+                                "domain": .string("example.com"),
+                                "name": .string("API_KEY"),
+                                "value": .string("secret")
+                            ])
+                        ])
+                    ]),
+                    "skills": .array([
+                        .object([
+                            "type": .string("skillReference"),
+                            "skillId": .string("skill-1"),
+                            "version": .string("1")
+                        ])
+                    ])
+                ])
+            ]
+        )
+
+        let result = try await prepareOpenAIResponsesTools(
+            tools: [tool],
+            toolChoice: nil
+        )
+
+        guard let tools = result.tools,
+              case .object(let toolObject) = tools.first,
+              case .object(let environment)? = toolObject["environment"] else {
+            Issue.record("Expected shell tool with environment")
+            return
+        }
+
+        #expect(toolObject["type"] == JSONValue.string("shell"))
+        #expect(environment["type"] == JSONValue.string("container_auto"))
+        #expect(environment["memory_limit"] == JSONValue.string("4g"))
+        #expect(environment["file_ids"] == JSONValue.array([.string("file_1")]))
+        if case .object(let networkPolicy)? = environment["network_policy"] {
+            #expect(networkPolicy["type"] == JSONValue.string("allowlist"))
+            #expect(networkPolicy["allowed_domains"] == JSONValue.array([.string("example.com")]))
+        } else {
+            Issue.record("Expected mapped network policy")
+        }
+        if case .array(let skills)? = environment["skills"],
+           case .object(let firstSkill) = skills.first {
+            #expect(firstSkill["type"] == JSONValue.string("skill_reference"))
+            #expect(firstSkill["skill_id"] == JSONValue.string("skill-1"))
+        } else {
+            Issue.record("Expected mapped skills")
+        }
     }
 
     @Test("apply patch tool choice mapping")

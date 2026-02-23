@@ -76,9 +76,16 @@ func prepareOpenAIResponsesTools(
                 ]))
 
             case "openai.shell":
-                openAITools.append(.object([
+                let parsed = try await validateTypes(
+                    ValidateTypesOptions(value: providerTool.args, schema: openaiShellArgsSchema)
+                )
+                var payload: [String: JSONValue] = [
                     "type": .string("shell")
-                ]))
+                ]
+                if let environment = parsed.environment {
+                    payload["environment"] = mapShellEnvironment(environment)
+                }
+                openAITools.append(.object(payload))
 
             case "openai.apply_patch":
                 openAITools.append(.object([
@@ -304,6 +311,138 @@ private func makeUserLocationJSON(_ location: OpenAIWebSearchArgs.UserLocation) 
         payload["timezone"] = .string(timezone)
     }
     return .object(payload)
+}
+
+private func mapShellEnvironment(_ environment: [String: JSONValue]) -> JSONValue {
+    let type = environment["type"]?.stringValue ?? "local"
+
+    if type == "containerReference" {
+        var payload: [String: JSONValue] = [
+            "type": .string("container_reference")
+        ]
+        if let containerId = environment["containerId"] {
+            payload["container_id"] = containerId
+        }
+        return .object(payload)
+    }
+
+    if type == "containerAuto" {
+        var payload: [String: JSONValue] = [
+            "type": .string("container_auto")
+        ]
+        if let fileIds = environment["fileIds"] {
+            payload["file_ids"] = fileIds
+        }
+        if let memoryLimit = environment["memoryLimit"] {
+            payload["memory_limit"] = memoryLimit
+        }
+        if let networkPolicy = environment["networkPolicy"] {
+            payload["network_policy"] = mapShellNetworkPolicy(networkPolicy)
+        }
+        if let skills = environment["skills"] {
+            payload["skills"] = mapShellSkills(skills)
+        }
+        return .object(payload)
+    }
+
+    var payload: [String: JSONValue] = [
+        "type": .string("local")
+    ]
+    if let skills = environment["skills"] {
+        payload["skills"] = skills
+    }
+    return .object(payload)
+}
+
+private func mapShellNetworkPolicy(_ policy: JSONValue) -> JSONValue {
+    guard case .object(let object) = policy,
+          let type = object["type"]?.stringValue else {
+        return policy
+    }
+
+    switch type {
+    case "disabled":
+        return .object(["type": .string("disabled")])
+    case "allowlist":
+        var payload: [String: JSONValue] = [
+            "type": .string("allowlist")
+        ]
+        if let allowedDomains = object["allowedDomains"] {
+            payload["allowed_domains"] = allowedDomains
+        }
+        if let domainSecrets = object["domainSecrets"] {
+            payload["domain_secrets"] = domainSecrets
+        }
+        return .object(payload)
+    default:
+        return policy
+    }
+}
+
+private func mapShellSkills(_ skillsValue: JSONValue) -> JSONValue {
+    guard case .array(let skills) = skillsValue else {
+        return skillsValue
+    }
+
+    let mapped: [JSONValue] = skills.map { skill in
+        guard case .object(let object) = skill,
+              let type = object["type"]?.stringValue else {
+            return skill
+        }
+
+        switch type {
+        case "skillReference":
+            var payload: [String: JSONValue] = [
+                "type": .string("skill_reference")
+            ]
+            if let skillId = object["skillId"] {
+                payload["skill_id"] = skillId
+            }
+            if let version = object["version"] {
+                payload["version"] = version
+            }
+            return .object(payload)
+
+        case "inline":
+            var payload: [String: JSONValue] = [
+                "type": .string("inline")
+            ]
+            if let name = object["name"] {
+                payload["name"] = name
+            }
+            if let description = object["description"] {
+                payload["description"] = description
+            }
+            if let source = object["source"], case .object(let sourceObject) = source {
+                var sourcePayload: [String: JSONValue] = [:]
+                if let sourceType = sourceObject["type"] {
+                    sourcePayload["type"] = sourceType
+                }
+                if let mediaType = sourceObject["mediaType"] {
+                    sourcePayload["media_type"] = mediaType
+                }
+                if let data = sourceObject["data"] {
+                    sourcePayload["data"] = data
+                }
+                payload["source"] = .object(sourcePayload)
+            }
+            return .object(payload)
+
+        default:
+            return skill
+        }
+    }
+
+    return .array(mapped)
+}
+
+private extension JSONValue {
+    var stringValue: String? {
+        if case .string(let value) = self {
+            return value
+        }
+        return nil
+    }
 }
 
 private func mapToolChoice(_ choice: LanguageModelV3ToolChoice?) throws -> JSONValue? {

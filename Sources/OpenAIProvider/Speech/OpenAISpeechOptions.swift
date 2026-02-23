@@ -5,7 +5,6 @@ import AISDKProviderUtils
 struct OpenAISpeechProviderOptions: Sendable, Equatable {
     var instructions: String?
     var speed: Double?
-    var responseFormat: String?
 }
 
 private let openAISpeechProviderOptionsJSONSchema: JSONValue = .object([
@@ -46,14 +45,6 @@ let openAISpeechProviderOptionsSchema = FlexibleSchema<OpenAISpeechProviderOptio
                     options.speed = number
                 }
 
-                if let responseFormatValue = dict["response_format"], responseFormatValue != .null {
-                    guard case .string(let format) = responseFormatValue else {
-                        let error = SchemaValidationIssuesError(vendor: "openai", issues: "response_format must be a string")
-                        return .failure(error: TypeValidationError.wrap(value: responseFormatValue, cause: error))
-                    }
-                    options.responseFormat = format
-                }
-
                 return .success(value: options)
             } catch let error as TypeValidationError {
                 return .failure(error: error)
@@ -63,4 +54,3 @@ let openAISpeechProviderOptionsSchema = FlexibleSchema<OpenAISpeechProviderOptio
         }
     )
 )
-

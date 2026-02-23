@@ -148,13 +148,26 @@ struct OpenAIImageModelTests {
         }
 
         if let metadata = result.providerMetadata?["openai"] {
-            #expect(metadata.images == [
-                .object(["revisedPrompt": .string("Revised prompt text")]),
-                .null
-            ])
+            #expect(metadata.images.count == 2)
+            if metadata.images.count == 2 {
+                if case .object(let first) = metadata.images[0] {
+                    #expect(first["revisedPrompt"] == .string("Revised prompt text"))
+                    #expect(first["created"] == .number(1_733_837_122))
+                } else {
+                    Issue.record("Expected first image metadata object")
+                }
+
+                if case .object(let second) = metadata.images[1] {
+                    #expect(second["created"] == .number(1_733_837_122))
+                } else {
+                    Issue.record("Expected second image metadata object")
+                }
+            }
         } else {
             Issue.record("Missing provider metadata")
         }
+
+        #expect(result.usage == nil)
 
         #expect(result.response.timestamp == Date(timeIntervalSince1970: 1_733_837_122))
         #expect(result.response.modelId == "dall-e-3")
@@ -756,12 +769,97 @@ struct OpenAIImageModelTests {
             return
         }
 
-        #expect(metadata.images == [
-            .object([
-                "revisedPrompt": .string("A charming visual illustration of a baby sea otter swimming joyously.")
-            ]),
-            .null
-        ])
+        #expect(metadata.images.count == 2)
+        if metadata.images.count == 2 {
+            if case .object(let first) = metadata.images[0] {
+                #expect(first["revisedPrompt"] == .string("A charming visual illustration of a baby sea otter swimming joyously."))
+                #expect(first["created"] == .number(1_733_837_122))
+            } else {
+                Issue.record("Expected first image metadata object")
+            }
+            if case .object(let second) = metadata.images[1] {
+                #expect(second["created"] == .number(1_733_837_122))
+            } else {
+                Issue.record("Expected second image metadata object")
+            }
+        }
+    }
+
+    @Test("doGenerate maps image usage and distributes input token details")
+    func testDoGenerateMapsUsageAndTokenDetails() async throws {
+        let responseJSON: [String: Any] = [
+            "created": 1_733_837_122,
+            "data": [
+                [
+                    "b64_json": "base64-image-1"
+                ],
+                [
+                    "b64_json": "base64-image-2"
+                ]
+            ],
+            "usage": [
+                "input_tokens": 12,
+                "output_tokens": 4,
+                "total_tokens": 16,
+                "input_tokens_details": [
+                    "image_tokens": 5,
+                    "text_tokens": 3
+                ]
+            ]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.openai.com/v1/images/generations")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIImageModel(modelId: "dall-e-3", config: makeConfig(fetch: fetch))
+
+        let result = try await model.doGenerate(
+            options: ImageModelV3CallOptions(
+                prompt: imagePrompt,
+                n: 2,
+                size: "1024x1024",
+                aspectRatio: nil,
+                seed: nil,
+                providerOptions: [:],
+                abortSignal: nil,
+                headers: nil
+            )
+        )
+
+        #expect(result.usage?.inputTokens == 12)
+        #expect(result.usage?.outputTokens == 4)
+        #expect(result.usage?.totalTokens == 16)
+
+        guard let metadata = result.providerMetadata?["openai"] else {
+            Issue.record("Missing provider metadata")
+            return
+        }
+
+        #expect(metadata.images.count == 2)
+        if metadata.images.count == 2 {
+            if case .object(let first) = metadata.images[0] {
+                #expect(first["imageTokens"] == .number(2))
+                #expect(first["textTokens"] == .number(1))
+            } else {
+                Issue.record("Expected first image metadata object")
+            }
+
+            if case .object(let second) = metadata.images[1] {
+                #expect(second["imageTokens"] == .number(3))
+                #expect(second["textTokens"] == .number(2))
+            } else {
+                Issue.record("Expected second image metadata object")
+            }
+        }
     }
 
     @Test("doGenerate calls /images/edits with multipart form-data when files are provided")

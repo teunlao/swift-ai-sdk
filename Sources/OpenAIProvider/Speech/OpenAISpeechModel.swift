@@ -5,16 +5,10 @@ import AISDKProviderUtils
 public final class OpenAISpeechModel: SpeechModelV3 {
     private let modelIdentifier: OpenAISpeechModelId
     private let config: OpenAIConfig
-    private let providerOptionsName: String
 
     public init(modelId: OpenAISpeechModelId, config: OpenAIConfig) {
         self.modelIdentifier = modelId
         self.config = config
-        if let prefix = config.provider.split(separator: ".").first {
-            self.providerOptionsName = String(prefix)
-        } else {
-            self.providerOptionsName = "openai"
-        }
     }
 
     public var provider: String { config.provider }
@@ -61,32 +55,12 @@ public final class OpenAISpeechModel: SpeechModelV3 {
     private func prepareRequest(options: SpeechModelV3CallOptions) async throws -> PreparedRequest {
         var warnings: [SharedV3Warning] = []
 
-        let openAIOptions = try await parseProviderOptions(
+        // Parity with upstream TS: provider options are parsed for validation but not applied to request body.
+        _ = try await parseProviderOptions(
             provider: "openai",
             providerOptions: options.providerOptions,
             schema: openAISpeechProviderOptionsSchema
         )
-
-        let providerSpecificOptions: OpenAISpeechProviderOptions? = try await {
-            guard providerOptionsName != "openai" else { return nil }
-            return try await parseProviderOptions(
-                provider: providerOptionsName,
-                providerOptions: options.providerOptions,
-                schema: openAISpeechProviderOptionsSchema
-            )
-        }()
-
-        var effectiveOptions = OpenAISpeechProviderOptions()
-        if let openAIOptions {
-            if let instructions = openAIOptions.instructions { effectiveOptions.instructions = instructions }
-            if let speed = openAIOptions.speed { effectiveOptions.speed = speed }
-            if let format = openAIOptions.responseFormat { effectiveOptions.responseFormat = format }
-        }
-        if let providerSpecificOptions {
-            if let instructions = providerSpecificOptions.instructions { effectiveOptions.instructions = instructions }
-            if let speed = providerSpecificOptions.speed { effectiveOptions.speed = speed }
-            if let format = providerSpecificOptions.responseFormat { effectiveOptions.responseFormat = format }
-        }
 
         let voice = options.voice ?? "alloy"
         var body: [String: JSONValue] = [
@@ -96,13 +70,13 @@ public final class OpenAISpeechModel: SpeechModelV3 {
             "response_format": .string("mp3")
         ]
 
-        if let speed = options.speed ?? effectiveOptions.speed {
+        if let speed = options.speed {
             body["speed"] = .number(speed)
         }
-        if let instructions = options.instructions ?? effectiveOptions.instructions {
+        if let instructions = options.instructions {
             body["instructions"] = .string(instructions)
         }
-        if let format = options.outputFormat ?? effectiveOptions.responseFormat {
+        if let format = options.outputFormat {
             if allowedOutputFormats.contains(format) {
                 body["response_format"] = .string(format)
             } else {

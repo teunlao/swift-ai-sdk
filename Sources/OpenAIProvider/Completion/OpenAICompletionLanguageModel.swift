@@ -266,7 +266,17 @@ public final class OpenAICompletionLanguageModel: LanguageModelV3 {
             }
             if let suffix = opt.suffix { body["suffix"] = .string(suffix) }
             if let user = opt.user { body["user"] = .string(user) }
-            if let logprobs = opt.logprobs { body["logprobs"] = logprobs.jsonValue }
+            if let logprobs = opt.logprobs {
+                switch logprobs {
+                case .bool(let value):
+                    // Upstream parity: true -> 0, false -> omit
+                    if value {
+                        body["logprobs"] = .number(0)
+                    }
+                case .number(let value):
+                    body["logprobs"] = .number(Double(value))
+                }
+            }
         }
 
         return PreparedRequest(body: body, warnings: warnings)

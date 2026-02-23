@@ -22,6 +22,14 @@ public struct OpenAIShellOutput: Codable, Sendable, Equatable {
     public let output: [Item]
 }
 
+public struct OpenAIShellArgs: Sendable, Equatable {
+    public let environment: [String: JSONValue]?
+
+    public init(environment: [String: JSONValue]? = nil) {
+        self.environment = environment
+    }
+}
+
 public enum OpenAIShellOutcome: Codable, Sendable, Equatable {
     case timeout
     case exit(exitCode: Double)
@@ -126,6 +134,16 @@ private let shellOutputJSONSchema: JSONValue = .object([
     ])
 ])
 
+private let shellArgsJSONSchema: JSONValue = .object([
+    "type": .string("object"),
+    "additionalProperties": .bool(true),
+    "properties": .object([
+        "environment": .object([
+            "type": .array([.string("object"), .string("null")])
+        ])
+    ])
+])
+
 public let openaiShellInputSchema = FlexibleSchema(
     Schema.codable(OpenAIShellInput.self, jsonSchema: shellInputJSONSchema)
 )
@@ -134,9 +152,182 @@ public let openaiShellOutputSchema = FlexibleSchema(
     Schema.codable(OpenAIShellOutput.self, jsonSchema: shellOutputJSONSchema)
 )
 
+public let openaiShellArgsSchema = FlexibleSchema<OpenAIShellArgs>(
+    Schema(
+        jsonSchemaResolver: { shellArgsJSONSchema },
+        validator: { value in
+            do {
+                let json = try jsonValue(from: value)
+                guard case .object(let dict) = json else {
+                    let error = SchemaValidationIssuesError(vendor: "openai", issues: "expected object")
+                    return .failure(error: TypeValidationError.wrap(value: value, cause: error))
+                }
+
+                var environment: [String: JSONValue]?
+                if let environmentValue = dict["environment"], environmentValue != .null {
+                    guard case .object(let environmentObject) = environmentValue else {
+                        let error = SchemaValidationIssuesError(vendor: "openai", issues: "environment must be an object")
+                        return .failure(error: TypeValidationError.wrap(value: environmentValue, cause: error))
+                    }
+                    guard isValidShellEnvironment(environmentObject) else {
+                        let error = SchemaValidationIssuesError(vendor: "openai", issues: "invalid shell environment")
+                        return .failure(error: TypeValidationError.wrap(value: environmentValue, cause: error))
+                    }
+                    environment = environmentObject
+                }
+
+                return .success(value: OpenAIShellArgs(environment: environment))
+            } catch let error as TypeValidationError {
+                return .failure(error: error)
+            } catch {
+                return .failure(error: TypeValidationError.wrap(value: value, cause: error))
+            }
+        }
+    )
+)
+
 public let openaiShellTool = createProviderToolFactoryWithOutputSchema(
     id: "openai.shell",
     name: "shell",
     inputSchema: FlexibleSchema(jsonSchema(shellInputJSONSchema)),
     outputSchema: FlexibleSchema(jsonSchema(shellOutputJSONSchema))
 )
+
+private func isValidShellEnvironment(_ environment: [String: JSONValue]) -> Bool {
+    let type = environment["type"]?.stringValue ?? "local"
+
+    switch type {
+    case "containerReference":
+        guard let containerId = environment["containerId"], case .string(let value) = containerId else {
+            return false
+        }
+        return !value.isEmpty
+
+    case "containerAuto":
+        if let fileIds = environment["fileIds"], fileIds != .null {
+            guard case .array(let entries) = fileIds,
+                  entries.allSatisfy({ entry in
+                      if case .string = entry { return true }
+                      return false
+                  }) else {
+                return false
+            }
+        }
+
+        if let memoryLimit = environment["memoryLimit"], memoryLimit != .null {
+            guard case .string(let value) = memoryLimit,
+                  ["1g", "4g", "16g", "64g"].contains(value) else {
+                return false
+            }
+        }
+
+        if let networkPolicy = environment["networkPolicy"], networkPolicy != .null {
+            guard case .object(let policy) = networkPolicy,
+                  let policyType = policy["type"]?.stringValue else {
+                return false
+            }
+
+            switch policyType {
+            case "disabled":
+                break
+            case "allowlist":
+                guard let allowedDomains = policy["allowedDomains"], case .array(let domains) = allowedDomains,
+                      domains.allSatisfy({ domain in
+                          if case .string = domain { return true }
+                          return false
+                      }) else {
+                    return false
+                }
+
+                if let domainSecrets = policy["domainSecrets"], domainSecrets != .null {
+                    guard case .array(let secrets) = domainSecrets else {
+                        return false
+                    }
+
+                    let validSecrets = secrets.allSatisfy { secret in
+                        guard case .object(let object) = secret,
+                              case .string = object["domain"],
+                              case .string = object["name"],
+                              case .string = object["value"] else {
+                            return false
+                        }
+                        return true
+                    }
+                    if !validSecrets { return false }
+                }
+            default:
+                return false
+            }
+        }
+
+        if let skills = environment["skills"], skills != .null {
+            guard case .array(let entries) = skills else {
+                return false
+            }
+
+            let validSkills = entries.allSatisfy { skill in
+                guard case .object(let object) = skill,
+                      let skillType = object["type"]?.stringValue else {
+                    return false
+                }
+
+                switch skillType {
+                case "skillReference":
+                    guard case .string? = object["skillId"] else { return false }
+                    if let version = object["version"], version != .null {
+                        guard case .string = version else { return false }
+                    }
+                    return true
+
+                case "inline":
+                    guard case .string? = object["name"],
+                          case .string? = object["description"],
+                          case .object(let source)? = object["source"],
+                          source["type"] == .string("base64"),
+                          source["mediaType"] == .string("application/zip"),
+                          case .string? = source["data"] else {
+                        return false
+                    }
+                    return true
+
+                default:
+                    return false
+                }
+            }
+
+            if !validSkills { return false }
+        }
+
+        return true
+
+    case "local":
+        if let skills = environment["skills"], skills != .null {
+            guard case .array(let entries) = skills else {
+                return false
+            }
+
+            return entries.allSatisfy { entry in
+                guard case .object(let object) = entry,
+                      case .string? = object["name"],
+                      case .string? = object["description"],
+                      case .string? = object["path"] else {
+                    return false
+                }
+                return true
+            }
+        }
+        return true
+
+    default:
+        return false
+    }
+}
+
+private extension JSONValue {
+    var stringValue: String? {
+        if case .string(let value) = self {
+            return value
+        }
+        return nil
+    }
+}

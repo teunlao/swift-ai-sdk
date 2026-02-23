@@ -157,7 +157,12 @@ struct OpenAITranscriptionModelTests {
         _ = try await model.doGenerate(
             options: TranscriptionModelV3CallOptions(
                 audio: .binary(sampleAudioData),
-                mediaType: "audio/mpeg"
+                mediaType: "audio/mpeg",
+                providerOptions: [
+                    "openai": [
+                        "timestampGranularities": .array([.string("word")])
+                    ]
+                ]
             )
         )
 
