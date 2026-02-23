@@ -489,6 +489,9 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
         if let effort = custom.effort {
             merged.effort = effort
         }
+        if let speed = custom.speed {
+            merged.speed = speed
+        }
         if let contextManagement = custom.contextManagement {
             merged.contextManagement = contextManagement
         }
@@ -649,10 +652,11 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
 
         var topP = options.topP
 
-        let isThinking = anthropicOptions?.thinking?.type == .enabled
-        var thinkingBudget = anthropicOptions?.thinking?.budgetTokens
+        let thinkingMode = anthropicOptions?.thinking?.type
+        let isThinking = thinkingMode == .enabled || thinkingMode == .adaptive
+        var thinkingBudget = thinkingMode == .enabled ? anthropicOptions?.thinking?.budgetTokens : nil
 
-        if isThinking == false, topP != nil, temperature != nil {
+        if !isThinking, topP != nil, temperature != nil {
             warnings.append(
                 .unsupported(
                     feature: "topP",
@@ -670,9 +674,9 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
             args["stop_sequences"] = .array(stopSequences.map(JSONValue.string))
         }
 
-        // Thinking
+        // Thinking (both manual and adaptive modes suppress sampling params)
         if isThinking {
-            if thinkingBudget == nil {
+            if thinkingMode == .enabled, thinkingBudget == nil {
                 warnings.append(
                     .other(
                         message:
@@ -710,12 +714,20 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                 args.removeValue(forKey: "top_p")
             }
 
-            if let budget = thinkingBudget {
-                args["thinking"] = .object([
-                    "type": .string("enabled"),
-                    "budget_tokens": .number(Double(budget)),
-                ])
-                args["max_tokens"] = .number(Double(maxTokens + budget))
+            switch thinkingMode {
+            case .enabled:
+                if let budget = thinkingBudget {
+                    args["thinking"] = .object([
+                        "type": .string("enabled"),
+                        "budget_tokens": .number(Double(budget)),
+                    ])
+                    args["max_tokens"] = .number(Double(maxTokens + budget))
+                }
+            case .adaptive:
+                // Adaptive mode: Claude dynamically decides when and how much to think
+                args["thinking"] = .object(["type": .string("adaptive")])
+            default:
+                break
             }
         }
 
@@ -740,6 +752,14 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
         if let effort = anthropicOptions?.effort {
             args["output_config"] = .object(["effort": .string(effort.rawValue)])
             betas.insert("effort-2025-11-24")
+        }
+
+        // Speed (fast mode, Opus 4.6 only)
+        if let speed = anthropicOptions?.speed {
+            args["speed"] = .string(speed.rawValue)
+            if speed == .fast {
+                betas.insert("fast-mode-2026-02-01")
+            }
         }
 
         // Native structured outputs
@@ -869,8 +889,31 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                         }
                     }
                     return .object(payload)
+
+                case .compact20260112(let settings):
+                    var payload: [String: JSONValue] = [
+                        "type": .string("compact_20260112")
+                    ]
+                    if let trigger = settings.trigger {
+                        payload["trigger"] = .object([
+                            "type": .string(trigger.type),
+                            "value": .number(trigger.value),
+                        ])
+                    }
+                    if let pause = settings.pauseAfterCompaction {
+                        payload["pause_after_compaction"] = .bool(pause)
+                    }
+                    if let instructions = settings.instructions {
+                        payload["instructions"] = .string(instructions)
+                    }
+                    return .object(payload)
                 }
             }
+
+            if contextManagement.edits.contains(where: { $0.type == "compact_20260112" }) {
+                betas.insert("compact-2026-01-12")
+            }
+
             args["context_management"] = .object(["edits": .array(edits)])
         }
 
@@ -934,7 +977,13 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
 
     /// Port of `getModelCapabilities` from `@ai-sdk/anthropic/src/anthropic-messages-language-model.ts`.
     private func getModelCapabilities(modelId: String) -> AnthropicModelCapabilities {
-        if modelId.contains("claude-sonnet-4-5")
+        if modelId.contains("claude-sonnet-4-6") || modelId.contains("claude-opus-4-6") {
+            return AnthropicModelCapabilities(
+                maxOutputTokens: 128000,
+                supportsStructuredOutput: true,
+                isKnownModel: true
+            )
+        } else if modelId.contains("claude-sonnet-4-5")
             || modelId.contains("claude-opus-4-5")
             || modelId.contains("claude-haiku-4-5")
         {
@@ -2215,6 +2264,10 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                     "type": .string(value.type),
                     "clearedThinkingTurns": .number(Double(value.clearedThinkingTurns)),
                     "clearedInputTokens": .number(Double(value.clearedInputTokens)),
+                ])
+            case .compact20260112(let value):
+                return .object([
+                    "type": .string(value.type),
                 ])
             }
         }

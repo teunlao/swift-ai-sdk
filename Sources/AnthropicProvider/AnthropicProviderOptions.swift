@@ -23,13 +23,19 @@ public let anthropicMessagesModelIds: [AnthropicMessagesModelId] = [
     "claude-sonnet-4-0",
     "claude-sonnet-4-20250514",
     "claude-sonnet-4-5-20250929",
-    "claude-sonnet-4-5"
+    "claude-sonnet-4-5",
+    "claude-sonnet-4-6",
+    "claude-opus-4-6"
 ].map(AnthropicMessagesModelId.init(rawValue:))
 
 public struct AnthropicThinkingOptions: Sendable, Equatable {
     public enum Mode: String, Sendable, Equatable {
         case enabled
         case disabled
+        /// Adaptive thinking lets Claude dynamically determine when and how much
+        /// to use extended thinking based on the complexity of each request.
+        /// Supported on claude-opus-4-6 and claude-sonnet-4-6 and later.
+        case adaptive
     }
 
     public var type: Mode
@@ -51,6 +57,13 @@ public enum AnthropicEffort: String, Sendable, Equatable {
     case low
     case medium
     case high
+    /// Opus 4.6 only. Claude always thinks with no constraints on thinking depth.
+    case max
+}
+
+public enum AnthropicSpeed: String, Sendable, Equatable {
+    case fast
+    case standard
 }
 
 public struct AnthropicMCPServer: Sendable, Equatable {
@@ -120,6 +133,7 @@ public struct AnthropicContextManagement: Sendable, Equatable {
     public enum Edit: Sendable, Equatable {
         case clearToolUses20250919(ClearToolUses20250919)
         case clearThinking20251015(ClearThinking20251015)
+        case compact20260112(Compact20260112)
 
         public var type: String {
             switch self {
@@ -127,6 +141,8 @@ public struct AnthropicContextManagement: Sendable, Equatable {
                 return "clear_tool_uses_20250919"
             case .clearThinking20251015:
                 return "clear_thinking_20251015"
+            case .compact20260112:
+                return "compact_20260112"
             }
         }
     }
@@ -199,6 +215,31 @@ public struct AnthropicContextManagement: Sendable, Equatable {
         }
     }
 
+    public struct Compact20260112: Sendable, Equatable {
+        public struct Trigger: Sendable, Equatable {
+            public var type: String = "input_tokens"
+            public var value: Double
+
+            public init(value: Double) {
+                self.value = value
+            }
+        }
+
+        public var trigger: Trigger?
+        public var pauseAfterCompaction: Bool?
+        public var instructions: String?
+
+        public init(
+            trigger: Trigger? = nil,
+            pauseAfterCompaction: Bool? = nil,
+            instructions: String? = nil
+        ) {
+            self.trigger = trigger
+            self.pauseAfterCompaction = pauseAfterCompaction
+            self.instructions = instructions
+        }
+    }
+
     public var edits: [Edit]
 
     public init(edits: [Edit]) {
@@ -237,6 +278,8 @@ public struct AnthropicProviderOptions: Sendable, Equatable {
     public var container: AnthropicContainerOptions?
     public var toolStreaming: Bool?
     public var effort: AnthropicEffort?
+    /// Enable fast mode for faster inference. Only supported on claude-opus-4-6.
+    public var speed: AnthropicSpeed?
     public var contextManagement: AnthropicContextManagement?
 
     public init(
@@ -249,6 +292,7 @@ public struct AnthropicProviderOptions: Sendable, Equatable {
         container: AnthropicContainerOptions? = nil,
         toolStreaming: Bool? = nil,
         effort: AnthropicEffort? = nil,
+        speed: AnthropicSpeed? = nil,
         contextManagement: AnthropicContextManagement? = nil
     ) {
         self.sendReasoning = sendReasoning
@@ -260,6 +304,7 @@ public struct AnthropicProviderOptions: Sendable, Equatable {
         self.container = container
         self.toolStreaming = toolStreaming
         self.effort = effort
+        self.speed = speed
         self.contextManagement = contextManagement
     }
 }
@@ -351,12 +396,12 @@ public let anthropicProviderOptionsSchema = FlexibleSchema(
                     }
 
                     guard let typeValue = thinkingDict["type"], case .string(let typeRaw) = typeValue else {
-                        let error = SchemaValidationIssuesError(vendor: "anthropic", issues: "thinking.type must be 'enabled' or 'disabled'")
+                        let error = SchemaValidationIssuesError(vendor: "anthropic", issues: "thinking.type must be 'enabled', 'disabled', or 'adaptive'")
                         return .failure(error: TypeValidationError.wrap(value: thinkingValue, cause: error))
                     }
 
                     guard let mode = AnthropicThinkingOptions.Mode(rawValue: typeRaw) else {
-                        let error = SchemaValidationIssuesError(vendor: "anthropic", issues: "thinking.type must be 'enabled' or 'disabled'")
+                        let error = SchemaValidationIssuesError(vendor: "anthropic", issues: "thinking.type must be 'enabled', 'disabled', or 'adaptive'")
                         return .failure(error: TypeValidationError.wrap(value: thinkingValue, cause: error))
                     }
 
@@ -523,10 +568,19 @@ public let anthropicProviderOptionsSchema = FlexibleSchema(
                 if let effortValue = dict["effort"], effortValue != .null {
                     guard case .string(let raw) = effortValue,
                           let effort = AnthropicEffort(rawValue: raw) else {
-                        let error = SchemaValidationIssuesError(vendor: "anthropic", issues: "effort must be 'low', 'medium', or 'high'")
+                        let error = SchemaValidationIssuesError(vendor: "anthropic", issues: "effort must be 'low', 'medium', 'high', or 'max'")
                         return .failure(error: TypeValidationError.wrap(value: effortValue, cause: error))
                     }
                     options.effort = effort
+                }
+
+                if let speedValue = dict["speed"], speedValue != .null {
+                    guard case .string(let raw) = speedValue,
+                          let speed = AnthropicSpeed(rawValue: raw) else {
+                        let error = SchemaValidationIssuesError(vendor: "anthropic", issues: "speed must be 'fast' or 'standard'")
+                        return .failure(error: TypeValidationError.wrap(value: speedValue, cause: error))
+                    }
+                    options.speed = speed
                 }
 
                 if let contextManagementValue = dict["contextManagement"], contextManagementValue != .null {
@@ -635,6 +689,31 @@ public let anthropicProviderOptionsSchema = FlexibleSchema(
                             }
 
                             edits.append(.clearThinking20251015(.init(keep: keep)))
+
+                        case "compact_20260112":
+                            var trigger: AnthropicContextManagement.Compact20260112.Trigger? = nil
+                            if let triggerValue = editDict["trigger"], triggerValue != .null {
+                                guard case .object(let triggerDict) = triggerValue,
+                                      let triggerNumber = triggerDict["value"],
+                                      case .number(let triggerValueNumber) = triggerNumber else {
+                                    let error = SchemaValidationIssuesError(vendor: "anthropic", issues: "contextManagement.edits[].trigger must be a valid trigger object")
+                                    return .failure(error: TypeValidationError.wrap(value: triggerValue, cause: error))
+                                }
+                                trigger = .init(value: triggerValueNumber)
+                            }
+
+                            let pauseAfterCompaction = try parseOptionalBool(editDict, key: "pauseAfterCompaction")
+                            let instructions = try parseOptionalString(editDict, key: "instructions")
+
+                            edits.append(
+                                .compact20260112(
+                                    .init(
+                                        trigger: trigger,
+                                        pauseAfterCompaction: pauseAfterCompaction,
+                                        instructions: instructions
+                                    )
+                                )
+                            )
 
                         default:
                             let error = SchemaValidationIssuesError(vendor: "anthropic", issues: "Unknown context management strategy: \(type)")

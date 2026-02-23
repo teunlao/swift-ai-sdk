@@ -105,6 +105,7 @@ public struct AnthropicResponseContextManagement: Codable, Sendable {
     public enum AppliedEdit: Codable, Sendable {
         case clearToolUses20250919(ClearToolUses20250919)
         case clearThinking20251015(ClearThinking20251015)
+        case compact20260112(Compact20260112)
 
         enum CodingKeys: String, CodingKey {
             case type
@@ -113,6 +114,7 @@ public struct AnthropicResponseContextManagement: Codable, Sendable {
         enum EditType: String {
             case clearToolUses20250919 = "clear_tool_uses_20250919"
             case clearThinking20251015 = "clear_thinking_20251015"
+            case compact20260112 = "compact_20260112"
         }
 
         public init(from decoder: Decoder) throws {
@@ -132,6 +134,8 @@ public struct AnthropicResponseContextManagement: Codable, Sendable {
                 self = .clearToolUses20250919(try single.decode(ClearToolUses20250919.self))
             case .clearThinking20251015:
                 self = .clearThinking20251015(try single.decode(ClearThinking20251015.self))
+            case .compact20260112:
+                self = .compact20260112(try single.decode(Compact20260112.self))
             }
         }
 
@@ -140,6 +144,8 @@ public struct AnthropicResponseContextManagement: Codable, Sendable {
             case .clearToolUses20250919(let value):
                 try value.encode(to: encoder)
             case .clearThinking20251015(let value):
+                try value.encode(to: encoder)
+            case .compact20260112(let value):
                 try value.encode(to: encoder)
             }
         }
@@ -167,6 +173,10 @@ public struct AnthropicResponseContextManagement: Codable, Sendable {
             case clearedThinkingTurns = "cleared_thinking_turns"
             case clearedInputTokens = "cleared_input_tokens"
         }
+    }
+
+    public struct Compact20260112: Codable, Sendable {
+        public let type: String
     }
 
     public let appliedEdits: [AppliedEdit]

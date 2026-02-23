@@ -398,6 +398,275 @@ struct AnthropicMessagesLanguageModelProviderOptionsRequestTests {
         #expect(anthropicBetaSet(await capture.current()) == Set(["context-management-2025-06-27"]))
     }
 
+    @Test("sends adaptive thinking payload and suppresses sampling params")
+    func sendsAdaptiveThinking() async throws {
+        let capture = RequestCapture()
+        let responseData = try makeProviderOptionsTestResponseData(model: "claude-sonnet-4-5-20250929")
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: makeProviderOptionsTestHTTPResponse())
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-sonnet-4-5-20250929"),
+            config: makeProviderOptionsTestConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(options: .init(
+            prompt: providerOptionsTestPrompt,
+            temperature: 0.5,
+            topP: 0.9,
+            topK: 10,
+            providerOptions: [
+                "anthropic": [
+                    "thinking": .object([
+                        "type": .string("adaptive")
+                    ])
+                ]
+            ]
+        ))
+
+        let json = decodeRequestJSON(await capture.current())
+        if let thinking = json?["thinking"] as? [String: Any] {
+            #expect(thinking["type"] as? String == "adaptive")
+            // Adaptive mode does not use budget_tokens
+            #expect(thinking["budget_tokens"] == nil)
+        } else {
+            Issue.record("Expected thinking payload")
+        }
+
+        // Sampling params are suppressed in adaptive mode, same as manual thinking
+        #expect(json?["temperature"] == nil)
+        #expect(json?["top_k"] == nil)
+        #expect(json?["top_p"] == nil)
+    }
+
+    @Test("sends speed=fast and fast-mode beta header")
+    func sendsSpeedFast() async throws {
+        let capture = RequestCapture()
+        let responseData = try makeProviderOptionsTestResponseData(model: "claude-opus-4-6")
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: makeProviderOptionsTestHTTPResponse())
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-opus-4-6"),
+            config: makeProviderOptionsTestConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(options: .init(
+            prompt: providerOptionsTestPrompt,
+            providerOptions: [
+                "anthropic": [
+                    "speed": .string("fast")
+                ]
+            ]
+        ))
+
+        let json = decodeRequestJSON(await capture.current())
+        #expect(json?["speed"] as? String == "fast")
+        #expect(anthropicBetaSet(await capture.current()) == Set(["fast-mode-2026-02-01"]))
+    }
+
+    @Test("sends speed=standard without fast-mode beta header")
+    func sendsSpeedStandard() async throws {
+        let capture = RequestCapture()
+        let responseData = try makeProviderOptionsTestResponseData(model: "claude-opus-4-6")
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: makeProviderOptionsTestHTTPResponse())
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-opus-4-6"),
+            config: makeProviderOptionsTestConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(options: .init(
+            prompt: providerOptionsTestPrompt,
+            providerOptions: [
+                "anthropic": [
+                    "speed": .string("standard")
+                ]
+            ]
+        ))
+
+        let json = decodeRequestJSON(await capture.current())
+        #expect(json?["speed"] as? String == "standard")
+        // standard speed does not add a beta header
+        #expect(anthropicBetaSet(await capture.current()) == nil)
+    }
+
+    @Test("sends effort=max output_config and beta")
+    func sendsEffortMax() async throws {
+        let capture = RequestCapture()
+        let responseData = try makeProviderOptionsTestResponseData(model: "claude-opus-4-6")
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: makeProviderOptionsTestHTTPResponse())
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-opus-4-6"),
+            config: makeProviderOptionsTestConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(options: .init(
+            prompt: providerOptionsTestPrompt,
+            providerOptions: [
+                "anthropic": [
+                    "effort": .string("max")
+                ]
+            ]
+        ))
+
+        let json = decodeRequestJSON(await capture.current())
+        if let outputConfig = json?["output_config"] as? [String: Any] {
+            #expect(outputConfig["effort"] as? String == "max")
+        } else {
+            Issue.record("Expected output_config payload")
+        }
+
+        #expect(anthropicBetaSet(await capture.current()) == Set(["effort-2025-11-24"]))
+    }
+
+    @Test("sends compact_20260112 with trigger")
+    func sendsCompactWithTrigger() async throws {
+        let capture = RequestCapture()
+        let responseData = try makeProviderOptionsTestResponseData(model: "claude-3-haiku-20240307")
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: makeProviderOptionsTestHTTPResponse())
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: makeProviderOptionsTestConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(options: .init(
+            prompt: providerOptionsTestPrompt,
+            providerOptions: [
+                "anthropic": [
+                    "contextManagement": .object([
+                        "edits": .array([
+                            .object([
+                                "type": .string("compact_20260112"),
+                                "trigger": .object([
+                                    "type": .string("input_tokens"),
+                                    "value": .number(50000),
+                                ]),
+                            ])
+                        ])
+                    ])
+                ]
+            ]
+        ))
+
+        let json = decodeRequestJSON(await capture.current())
+        if let contextManagement = json?["context_management"] as? [String: Any],
+           let edits = contextManagement["edits"] as? [[String: Any]],
+           let first = edits.first {
+            #expect(first["type"] as? String == "compact_20260112")
+            if let trigger = first["trigger"] as? [String: Any] {
+                #expect(trigger["type"] as? String == "input_tokens")
+                #expect(trigger["value"] as? Double == 50000)
+            } else {
+                Issue.record("Expected trigger in compact edit")
+            }
+        } else {
+            Issue.record("Expected context_management payload")
+        }
+    }
+
+    @Test("sends compact_20260112 with all options")
+    func sendsCompactWithAllOptions() async throws {
+        let capture = RequestCapture()
+        let responseData = try makeProviderOptionsTestResponseData(model: "claude-3-haiku-20240307")
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: makeProviderOptionsTestHTTPResponse())
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: makeProviderOptionsTestConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(options: .init(
+            prompt: providerOptionsTestPrompt,
+            providerOptions: [
+                "anthropic": [
+                    "contextManagement": .object([
+                        "edits": .array([
+                            .object([
+                                "type": .string("compact_20260112"),
+                                "trigger": .object([
+                                    "type": .string("input_tokens"),
+                                    "value": .number(50000),
+                                ]),
+                                "pauseAfterCompaction": .bool(true),
+                                "instructions": .string("Summarize the conversation concisely."),
+                            ])
+                        ])
+                    ])
+                ]
+            ]
+        ))
+
+        let json = decodeRequestJSON(await capture.current())
+        if let contextManagement = json?["context_management"] as? [String: Any],
+           let edits = contextManagement["edits"] as? [[String: Any]],
+           let first = edits.first {
+            #expect(first["type"] as? String == "compact_20260112")
+            // camelCase → snake_case mapping
+            #expect(first["pause_after_compaction"] as? Bool == true)
+            #expect(first["instructions"] as? String == "Summarize the conversation concisely.")
+        } else {
+            Issue.record("Expected context_management payload with compact options")
+        }
+    }
+
+    @Test("sends compact_20260112 and adds both compact and context-management betas")
+    func sendsCompactBetas() async throws {
+        let capture = RequestCapture()
+        let responseData = try makeProviderOptionsTestResponseData(model: "claude-3-haiku-20240307")
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: makeProviderOptionsTestHTTPResponse())
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: makeProviderOptionsTestConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(options: .init(
+            prompt: providerOptionsTestPrompt,
+            providerOptions: [
+                "anthropic": [
+                    "contextManagement": .object([
+                        "edits": .array([
+                            .object(["type": .string("compact_20260112")])
+                        ])
+                    ])
+                ]
+            ]
+        ))
+
+        let betas = anthropicBetaSet(await capture.current())
+        #expect(betas?.contains("compact-2026-01-12") == true)
+        #expect(betas?.contains("context-management-2025-06-27") == true)
+    }
+
     @Test("sends container id as string without skills")
     func sendsContainerIdOnly() async throws {
         let capture = RequestCapture()

@@ -5228,3 +5228,196 @@ struct AnthropicMessagesLanguageModelBatch17Tests {
         #expect(headers["anthropic-beta"] == "code-execution-2025-05-22")
     }
 }
+
+// MARK: - Model Capabilities Tests
+
+@Suite("AnthropicMessagesLanguageModel model capabilities")
+struct AnthropicMessagesLanguageModelCapabilitiesTests {
+
+    private func makeResponseData(model: String) throws -> Data {
+        let json: [String: Any] = [
+            "type": "message",
+            "id": "msg_test",
+            "model": model,
+            "content": [["type": "text", "text": ""]],
+            "stop_reason": "end_turn",
+            "stop_sequence": NSNull(),
+            "usage": ["input_tokens": 1, "output_tokens": 1],
+        ]
+        return try JSONSerialization.data(withJSONObject: json)
+    }
+
+    private func makeHTTPResponse() -> HTTPURLResponse {
+        HTTPURLResponse(
+            url: URL(string: "https://api.anthropic.com/v1/messages")!,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: nil
+        )!
+    }
+
+    @Test("claude-sonnet-4-6 gets 128K max output tokens")
+    func sonnet46MaxTokens() async throws {
+        actor RequestCapture {
+            var request: URLRequest?
+            func store(_ req: URLRequest) { request = req }
+            func current() -> URLRequest? { request }
+        }
+
+        let capture = RequestCapture()
+        let responseData = try makeResponseData(model: "claude-sonnet-4-6")
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-sonnet-4-6"),
+            config: AnthropicMessagesConfig(
+                provider: "anthropic.messages",
+                baseURL: "https://api.anthropic.com/v1",
+                headers: { ["x-api-key": "test-key", "anthropic-version": "2023-06-01"] },
+                fetch: { req in
+                    await capture.store(req)
+                    return FetchResponse(body: .data(responseData), urlResponse: self.makeHTTPResponse())
+                }
+            )
+        )
+
+        _ = try await model.doGenerate(options: .init(prompt: testPrompt))
+
+        let json = try? JSONSerialization.jsonObject(
+            with: (await capture.current())!.httpBody!
+        ) as? [String: Any]
+        #expect(json?["max_tokens"] as? Int == 128000)
+    }
+
+    @Test("claude-opus-4-6 gets 128K max output tokens")
+    func opus46MaxTokens() async throws {
+        actor RequestCapture {
+            var request: URLRequest?
+            func store(_ req: URLRequest) { request = req }
+            func current() -> URLRequest? { request }
+        }
+
+        let capture = RequestCapture()
+        let responseData = try makeResponseData(model: "claude-opus-4-6")
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-opus-4-6"),
+            config: AnthropicMessagesConfig(
+                provider: "anthropic.messages",
+                baseURL: "https://api.anthropic.com/v1",
+                headers: { ["x-api-key": "test-key", "anthropic-version": "2023-06-01"] },
+                fetch: { req in
+                    await capture.store(req)
+                    return FetchResponse(body: .data(responseData), urlResponse: self.makeHTTPResponse())
+                }
+            )
+        )
+
+        _ = try await model.doGenerate(options: .init(prompt: testPrompt))
+
+        let json = try? JSONSerialization.jsonObject(
+            with: (await capture.current())!.httpBody!
+        ) as? [String: Any]
+        #expect(json?["max_tokens"] as? Int == 128000)
+    }
+
+    @Test("claude-sonnet-4-6 uses native structured output")
+    func sonnet46NativeStructuredOutput() async throws {
+        actor RequestCapture {
+            var request: URLRequest?
+            func store(_ req: URLRequest) { request = req }
+            func current() -> URLRequest? { request }
+        }
+
+        let capture = RequestCapture()
+        let responseData = try makeResponseData(model: "claude-sonnet-4-6")
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-sonnet-4-6"),
+            config: AnthropicMessagesConfig(
+                provider: "anthropic.messages",
+                baseURL: "https://api.anthropic.com/v1",
+                headers: { ["x-api-key": "test-key", "anthropic-version": "2023-06-01"] },
+                fetch: { req in
+                    await capture.store(req)
+                    return FetchResponse(body: .data(responseData), urlResponse: self.makeHTTPResponse())
+                }
+            )
+        )
+
+        let schema: JSONValue = .object([
+            "type": .string("object"),
+            "properties": .object(["value": .object(["type": .string("string")])]),
+            "required": .array([.string("value")]),
+            "additionalProperties": .bool(false),
+            "$schema": .string("http://json-schema.org/draft-07/schema#"),
+        ])
+
+        _ = try await model.doGenerate(options: .init(
+            prompt: testPrompt,
+            responseFormat: .json(schema: schema, name: nil, description: nil)
+        ))
+
+        let json = try? JSONSerialization.jsonObject(
+            with: (await capture.current())!.httpBody!
+        ) as? [String: Any]
+        // Native output_format used instead of json tool fallback
+        #expect(json?["output_format"] != nil)
+        #expect(json?["tools"] == nil)
+    }
+}
+
+// MARK: - compact_20260112 Response Parsing Tests
+
+@Suite("AnthropicMessagesLanguageModel compact_20260112")
+struct AnthropicMessagesLanguageModelCompactTests {
+
+    private let testPrompt: LanguageModelV3Prompt = [
+        .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
+    ]
+
+    @Test("parses compact_20260112 in context_management response metadata")
+    func parsesCompactContextManagement() async throws {
+        let responseJSON: [String: Any] = [
+            "type": "message",
+            "id": "msg_123",
+            "model": "claude-3-haiku-20240307",
+            "content": [["type": "text", "text": "Hello"]],
+            "stop_reason": "end_turn",
+            "stop_sequence": NSNull(),
+            "usage": ["input_tokens": 100, "output_tokens": 50],
+            "context_management": [
+                "applied_edits": [
+                    ["type": "compact_20260112"]
+                ]
+            ],
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.anthropic.com/v1/messages")!,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: ["content-type": "application/json"]
+        )!
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: makeConfig(fetch: { _ in
+                FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+            })
+        )
+
+        let result = try await model.doGenerate(options: .init(prompt: testPrompt))
+
+        if let contextManagement = result.providerMetadata?["anthropic"]?["contextManagement"],
+           case .object(let cmObj) = contextManagement,
+           let appliedEdits = cmObj["appliedEdits"],
+           case .array(let edits) = appliedEdits,
+           let first = edits.first,
+           case .object(let editObj) = first {
+            #expect(editObj["type"] == .string("compact_20260112"))
+        } else {
+            Issue.record("Expected contextManagement.appliedEdits with compact_20260112")
+        }
+    }
+}
