@@ -122,5 +122,26 @@ struct GoogleVertexChatBaseURLTests {
         #expect(request.url?.absoluteString == "https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-pro:generateContent")
         #expect(headerValue("x-goog-api-key", in: request) == "KEY")
     }
-}
 
+    @Test("uses custom baseURL without requiring project/location")
+    func usesCustomBaseURL_withoutProjectLocation() async throws {
+        let capture = RequestCapture()
+
+        let fetch: FetchFunction = { request in
+            await capture.set(request)
+            return try makeOKChatResponse(url: try #require(request.url))
+        }
+
+        let provider = createGoogleVertex(settings: GoogleVertexProviderSettings(
+            fetch: fetch,
+            baseURL: "https://custom-endpoint.example.com/"
+        ))
+
+        let model = try provider.languageModel(modelId: "gemini-pro")
+        _ = try await model.doGenerate(options: .init(prompt: makePrompt()))
+
+        let request = try #require(await capture.lastRequest)
+        #expect(request.url?.absoluteString == "https://custom-endpoint.example.com/models/gemini-pro:generateContent")
+        #expect(headerValue("x-goog-api-key", in: request) == nil)
+    }
+}

@@ -190,8 +190,13 @@ public func createGoogleVertex(settings: GoogleVertexProviderSettings = .init())
     }
 
     let resolvedBaseURL: String = {
+        // If an explicit baseURL is provided, it should not require project/location.
+        if let baseURL = withoutTrailingSlash(settings.baseURL) {
+            return baseURL
+        }
+
         if apiKey != nil {
-            return withoutTrailingSlash(settings.baseURL) ?? GOOGLE_VERTEX_EXPRESS_MODE_BASE_URL
+            return GOOGLE_VERTEX_EXPRESS_MODE_BASE_URL
         }
 
         do {
@@ -199,8 +204,7 @@ public func createGoogleVertex(settings: GoogleVertexProviderSettings = .init())
             let project = try loadProject()
             let hostPrefix = location == "global" ? "" : "\(location)-"
             let baseHost = "\(hostPrefix)aiplatform.googleapis.com"
-            return withoutTrailingSlash(settings.baseURL)
-                ?? "https://\(baseHost)/v1beta1/projects/\(project)/locations/\(location)/publishers/google"
+            return "https://\(baseHost)/v1beta1/projects/\(project)/locations/\(location)/publishers/google"
         } catch {
             fatalError("Google Vertex configuration is missing: \(error)")
         }
