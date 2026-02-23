@@ -29,6 +29,10 @@ For source-of-truth code, always follow the commits and tests.
 
 ### Unreleased (main)
 
+- 2026-02-23
+  - Anthropic: Claude 4.6 support (thanks to @bunchjesse).
+  - Google Vertex: custom `baseURL` now bypasses `project/location` requirement when explicitly configured (regression test added).
+
 - 2026-02-04
   - Breaking: align `LanguageModelV3FinishReason` with upstream as `{ unified, raw }` and propagate raw finish reasons through providers + `generateText`/`streamText` pipelines (tests updated).
   - Anthropic: tool results no longer set `providerExecuted` (upstream parity); MCP tool-call/result are `dynamic: true` (tests updated).

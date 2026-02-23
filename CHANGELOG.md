@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.15.3] - 2026-02-23
+
+### Added
+- Anthropic: Claude 4.6 support. Thanks to `@bunchjesse`.
+
+### Fixed
+- Google Vertex: respect explicit `baseURL` without requiring `project`/`location` and add regression coverage.
+
 ## [0.15.2] - 2026-02-06
 
 ### Added
