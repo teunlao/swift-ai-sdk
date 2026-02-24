@@ -490,6 +490,7 @@ private struct GoogleGenerativeAIResponse: Codable {
         let promptTokenCount: Int?
         let candidatesTokenCount: Int?
         let totalTokenCount: Int?
+        let trafficType: String?
     }
 
     let candidates: [Candidate]

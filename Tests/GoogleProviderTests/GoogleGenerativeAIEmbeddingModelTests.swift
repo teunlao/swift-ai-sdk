@@ -403,4 +403,130 @@ struct GoogleGenerativeAIEmbeddingModelTests {
         #expect((first["outputDimensionality"] as? NSNumber)?.doubleValue == 64.5)
         #expect(first["taskType"] as? String == "SEMANTIC_SIMILARITY")
     }
+
+    @Test("provider options reject null outputDimensionality before request")
+    func rejectsNullOutputDimensionality() async throws {
+        actor FetchCallCounter {
+            var count = 0
+            func increment() { count += 1 }
+            func value() -> Int { count }
+        }
+
+        let counter = FetchCallCounter()
+        let responseJSON: [String: Any] = [
+            "embedding": ["values": [0.1]]
+        ]
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { _ in
+            await counter.increment()
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = GoogleGenerativeAIEmbeddingModel(
+            modelId: GoogleGenerativeAIEmbeddingModelId(rawValue: "text-embedding-004"),
+            config: makeEmbeddingConfig(fetch: fetch)
+        )
+
+        do {
+            _ = try await model.doEmbed(
+                options: EmbeddingModelV3DoEmbedOptions(
+                    values: ["a"],
+                    providerOptions: [
+                        "google": [
+                            "outputDimensionality": .null
+                        ]
+                    ]
+                )
+            )
+            Issue.record("Expected InvalidArgumentError")
+        } catch let error as InvalidArgumentError {
+            #expect(error.argument == "providerOptions")
+            #expect(error.message == "invalid google provider options")
+
+            guard let typeError = error.cause as? TypeValidationError else {
+                Issue.record("Expected TypeValidationError as cause")
+                return
+            }
+
+            guard let schemaError = typeError.cause as? SchemaValidationIssuesError else {
+                Issue.record("Expected SchemaValidationIssuesError as TypeValidationError cause")
+                return
+            }
+
+            #expect(schemaError.vendor == "google")
+            #expect(String(describing: schemaError.issues).contains("outputDimensionality must be a number"))
+        }
+
+        #expect(await counter.value() == 0)
+    }
+
+    @Test("provider options reject null taskType before request")
+    func rejectsNullTaskType() async throws {
+        actor FetchCallCounter {
+            var count = 0
+            func increment() { count += 1 }
+            func value() -> Int { count }
+        }
+
+        let counter = FetchCallCounter()
+        let responseJSON: [String: Any] = [
+            "embedding": ["values": [0.1]]
+        ]
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { _ in
+            await counter.increment()
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = GoogleGenerativeAIEmbeddingModel(
+            modelId: GoogleGenerativeAIEmbeddingModelId(rawValue: "text-embedding-004"),
+            config: makeEmbeddingConfig(fetch: fetch)
+        )
+
+        do {
+            _ = try await model.doEmbed(
+                options: EmbeddingModelV3DoEmbedOptions(
+                    values: ["a"],
+                    providerOptions: [
+                        "google": [
+                            "taskType": .null
+                        ]
+                    ]
+                )
+            )
+            Issue.record("Expected InvalidArgumentError")
+        } catch let error as InvalidArgumentError {
+            #expect(error.argument == "providerOptions")
+            #expect(error.message == "invalid google provider options")
+
+            guard let typeError = error.cause as? TypeValidationError else {
+                Issue.record("Expected TypeValidationError as cause")
+                return
+            }
+
+            guard let schemaError = typeError.cause as? SchemaValidationIssuesError else {
+                Issue.record("Expected SchemaValidationIssuesError as TypeValidationError cause")
+                return
+            }
+
+            #expect(schemaError.vendor == "google")
+            #expect(String(describing: schemaError.issues).contains("taskType must be a valid enum value"))
+        }
+
+        #expect(await counter.value() == 0)
+    }
 }

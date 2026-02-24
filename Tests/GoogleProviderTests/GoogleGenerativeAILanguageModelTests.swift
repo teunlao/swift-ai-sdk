@@ -374,7 +374,8 @@ struct GoogleGenerativeAILanguageModelTests {
             "usageMetadata": [
                 "promptTokenCount": 20,
                 "candidatesTokenCount": 5,
-                "totalTokenCount": 25
+                "totalTokenCount": 25,
+                "trafficType": "ON_DEMAND"
             ]
         ]
 
@@ -402,6 +403,12 @@ struct GoogleGenerativeAILanguageModelTests {
         #expect(result.usage.inputTokens.total == 20)
         #expect(result.usage.outputTokens.total == 5)
         #expect((result.usage.inputTokens.total ?? 0) + (result.usage.outputTokens.total ?? 0) == 25)
+
+        if case let .object(rawUsage)? = result.usage.raw {
+            #expect(rawUsage["trafficType"] == .string("ON_DEMAND"))
+        } else {
+            Issue.record("Expected usage.raw object")
+        }
     }
 
     @Test("includes imageConfig provider option in generation config")

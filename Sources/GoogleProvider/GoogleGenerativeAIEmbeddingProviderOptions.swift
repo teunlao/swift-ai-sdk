@@ -43,7 +43,15 @@ public let googleGenerativeAIEmbeddingProviderOptionsSchema = FlexibleSchema(
                 }
 
                 var outputDimensionality: Double? = nil
-                if let dimensionalityValue = dict["outputDimensionality"], dimensionalityValue != .null {
+                if let dimensionalityValue = dict["outputDimensionality"] {
+                    if dimensionalityValue == .null {
+                        let error = SchemaValidationIssuesError(
+                            vendor: "google",
+                            issues: "outputDimensionality must be a number"
+                        )
+                        return .failure(error: TypeValidationError.wrap(value: dimensionalityValue, cause: error))
+                    }
+
                     guard case .number(let number) = dimensionalityValue else {
                         let error = SchemaValidationIssuesError(
                             vendor: "google",
@@ -55,7 +63,15 @@ public let googleGenerativeAIEmbeddingProviderOptionsSchema = FlexibleSchema(
                 }
 
                 var taskType: GoogleGenerativeAIEmbeddingTaskType? = nil
-                if let taskTypeValue = dict["taskType"], taskTypeValue != .null {
+                if let taskTypeValue = dict["taskType"] {
+                    if taskTypeValue == .null {
+                        let error = SchemaValidationIssuesError(
+                            vendor: "google",
+                            issues: "taskType must be a valid enum value"
+                        )
+                        return .failure(error: TypeValidationError.wrap(value: taskTypeValue, cause: error))
+                    }
+
                     guard case .string(let raw) = taskTypeValue,
                           let parsed = GoogleGenerativeAIEmbeddingTaskType(rawValue: raw) else {
                         let error = SchemaValidationIssuesError(
