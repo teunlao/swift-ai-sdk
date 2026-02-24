@@ -463,4 +463,293 @@ struct GoogleVertexImageModelTests {
             .object(["revisedPrompt": .string("revised prompt 2")]),
         ])
     }
+
+    @Test("gemini image model should use maxImagesPerCall=10")
+    func geminiDefaultMaxImagesPerCall() throws {
+        let model = GoogleVertexImageModel(
+            modelId: GoogleVertexImageModelId(rawValue: "gemini-2.5-flash-image"),
+            config: GoogleVertexImageModelConfig(
+                provider: "google.vertex.image",
+                baseURL: "https://api.example.com",
+                headers: { ["api-key": "test-key"] },
+                fetch: nil
+            )
+        )
+
+        switch model.maxImagesPerCall {
+        case .value(let value):
+            #expect(value == 10)
+        case .default, .function:
+            Issue.record("Expected maxImagesPerCall to be a fixed value")
+        }
+    }
+
+    @Test("gemini image model should map request and usage through language API")
+    func geminiRequestAndUsageMapping() async throws {
+        let capture = RequestCapture()
+        let responseJSON: [String: Any] = [
+            "candidates": [
+                [
+                    "content": [
+                        "parts": [
+                            [
+                                "inlineData": [
+                                    "mimeType": "image/png",
+                                    "data": "base64-generated-image"
+                                ]
+                            ]
+                        ],
+                        "role": "model"
+                    ],
+                    "finishReason": "STOP"
+                ]
+            ],
+            "usageMetadata": [
+                "promptTokenCount": 10,
+                "candidatesTokenCount": 100,
+                "totalTokenCount": 110
+            ]
+        ]
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let responseURL = URL(string: "https://api.example.com/models/gemini-2.5-flash-image:generateContent")!
+        let httpResponse = HTTPURLResponse(
+            url: responseURL,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { request in
+            await capture.set(request)
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = GoogleVertexImageModel(
+            modelId: GoogleVertexImageModelId(rawValue: "gemini-2.5-flash-image"),
+            config: GoogleVertexImageModelConfig(
+                provider: "google.vertex.image",
+                baseURL: "https://api.example.com",
+                headers: { ["api-key": "test-key"] },
+                fetch: fetch
+            )
+        )
+
+        let result = try await model.doGenerate(options: .init(
+            prompt: "A beautiful sunset",
+            n: 1,
+            aspectRatio: "16:9",
+            providerOptions: [:]
+        ))
+
+        if case let .base64(images) = result.images {
+            #expect(images == ["base64-generated-image"])
+        } else {
+            Issue.record("Expected base64 images")
+        }
+
+        let usage = try #require(result.usage)
+        #expect(usage.inputTokens == 10)
+        #expect(usage.outputTokens == 100)
+        #expect(usage.totalTokens == 110)
+
+        let vertexMetadata = try #require(result.providerMetadata?["vertex"])
+        #expect(vertexMetadata.images.count == 1)
+
+        let request = try #require(await capture.lastRequest)
+        #expect(request.url?.absoluteString == "https://api.example.com/models/gemini-2.5-flash-image:generateContent")
+
+        let body = try #require(request.httpBody)
+        let json = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+        let generationConfig = try #require(json["generationConfig"] as? [String: Any])
+        #expect(generationConfig["responseModalities"] as? [String] == ["IMAGE"])
+        let imageConfig = try #require(generationConfig["imageConfig"] as? [String: Any])
+        #expect(imageConfig["aspectRatio"] as? String == "16:9")
+    }
+
+    @Test("gemini image model should omit usage when usageMetadata is missing")
+    func geminiUsageMissingMapsToNil() async throws {
+        let capture = RequestCapture()
+        let responseJSON: [String: Any] = [
+            "candidates": [
+                [
+                    "content": [
+                        "parts": [
+                            [
+                                "inlineData": [
+                                    "mimeType": "image/png",
+                                    "data": "base64-generated-image"
+                                ]
+                            ]
+                        ],
+                        "role": "model"
+                    ],
+                    "finishReason": "STOP"
+                ]
+            ]
+        ]
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let responseURL = URL(string: "https://api.example.com/models/gemini-2.5-flash-image:generateContent")!
+        let httpResponse = HTTPURLResponse(
+            url: responseURL,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { request in
+            await capture.set(request)
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = GoogleVertexImageModel(
+            modelId: GoogleVertexImageModelId(rawValue: "gemini-2.5-flash-image"),
+            config: GoogleVertexImageModelConfig(
+                provider: "google.vertex.image",
+                baseURL: "https://api.example.com",
+                headers: { ["api-key": "test-key"] },
+                fetch: fetch
+            )
+        )
+
+        let result = try await model.doGenerate(options: .init(
+            prompt: "A beautiful sunset",
+            n: 1,
+            providerOptions: [:]
+        ))
+
+        #expect(result.usage == nil)
+    }
+
+    @Test("gemini image model should include url and file input parts")
+    func geminiInputFilesMapping() async throws {
+        let capture = RequestCapture()
+        let responseJSON: [String: Any] = [
+            "candidates": [
+                [
+                    "content": [
+                        "parts": [
+                            [
+                                "inlineData": [
+                                    "mimeType": "image/png",
+                                    "data": "base64-generated-image"
+                                ]
+                            ]
+                        ],
+                        "role": "model"
+                    ],
+                    "finishReason": "STOP"
+                ]
+            ],
+            "usageMetadata": [
+                "promptTokenCount": 1,
+                "candidatesTokenCount": 2,
+                "totalTokenCount": 3
+            ]
+        ]
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let responseURL = URL(string: "https://api.example.com/models/gemini-2.5-flash-image:generateContent")!
+        let httpResponse = HTTPURLResponse(
+            url: responseURL,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { request in
+            await capture.set(request)
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = GoogleVertexImageModel(
+            modelId: GoogleVertexImageModelId(rawValue: "gemini-2.5-flash-image"),
+            config: GoogleVertexImageModelConfig(
+                provider: "google.vertex.image",
+                baseURL: "https://api.example.com",
+                headers: { ["api-key": "test-key"] },
+                fetch: fetch
+            )
+        )
+
+        _ = try await model.doGenerate(options: .init(
+            prompt: "Edit this image",
+            n: 1,
+            providerOptions: [:],
+            files: [
+                .file(mediaType: "image/png", data: .base64("base64-source-image"), providerOptions: nil),
+                .url(url: "https://example.com/cat.png", providerOptions: nil)
+            ]
+        ))
+
+        let request = try #require(await capture.lastRequest)
+        let body = try #require(request.httpBody)
+        let json = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+        let contents = try #require(json["contents"] as? [[String: Any]])
+        let first = try #require(contents.first)
+        let parts = try #require(first["parts"] as? [[String: Any]])
+
+        #expect(parts.count == 3)
+        #expect(parts[0]["text"] as? String == "Edit this image")
+
+        let inlineData = try #require(parts[1]["inlineData"] as? [String: Any])
+        #expect(inlineData["mimeType"] as? String == "image/png")
+        #expect(inlineData["data"] as? String == "base64-source-image")
+
+        let fileData = try #require(parts[2]["fileData"] as? [String: Any])
+        #expect(fileData["mimeType"] as? String == "image/jpeg")
+        #expect(fileData["fileUri"] as? String == "https://example.com/cat.png")
+    }
+
+    @Test("gemini image model should reject unsupported n and mask")
+    func geminiRejectsUnsupportedOptions() async throws {
+        let model = GoogleVertexImageModel(
+            modelId: GoogleVertexImageModelId(rawValue: "gemini-2.5-flash-image"),
+            config: GoogleVertexImageModelConfig(
+                provider: "google.vertex.image",
+                baseURL: "https://api.example.com",
+                headers: { ["api-key": "test-key"] },
+                fetch: nil
+            )
+        )
+
+        await #expect(throws: InvalidArgumentError.self) {
+            _ = try await model.doGenerate(options: .init(
+                prompt: "A beautiful sunset",
+                n: 2,
+                providerOptions: [:]
+            ))
+        }
+
+        await #expect(throws: InvalidArgumentError.self) {
+            _ = try await model.doGenerate(options: .init(
+                prompt: "Edit this image",
+                n: 1,
+                providerOptions: [:],
+                mask: .file(mediaType: "image/png", data: .base64("base64-mask-image"), providerOptions: nil)
+            ))
+        }
+    }
+
+    @Test("gemini image model should reject relative file URLs")
+    func geminiRejectsRelativeFileURLs() async throws {
+        let model = GoogleVertexImageModel(
+            modelId: GoogleVertexImageModelId(rawValue: "gemini-2.5-flash-image"),
+            config: GoogleVertexImageModelConfig(
+                provider: "google.vertex.image",
+                baseURL: "https://api.example.com",
+                headers: { ["api-key": "test-key"] },
+                fetch: nil
+            )
+        )
+
+        await #expect(throws: InvalidArgumentError.self) {
+            _ = try await model.doGenerate(options: .init(
+                prompt: "Edit this image",
+                n: 1,
+                providerOptions: [:],
+                files: [
+                    .url(url: "cat.png", providerOptions: nil)
+                ]
+            ))
+        }
+    }
 }

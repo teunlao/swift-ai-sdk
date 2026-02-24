@@ -73,11 +73,18 @@ public extension GoogleGenerativeAIModelId {
     static let gemini20FlashExp: Self = "gemini-2.0-flash-exp"
     static let gemini25Pro: Self = "gemini-2.5-pro"
     static let gemini25Flash: Self = "gemini-2.5-flash"
-    static let gemini25FlashImagePreview: Self = "gemini-2.5-flash-image-preview"
+    static let gemini25FlashImage: Self = "gemini-2.5-flash-image"
     static let gemini25FlashLite: Self = "gemini-2.5-flash-lite"
     static let gemini25FlashLitePreview092025: Self = "gemini-2.5-flash-lite-preview-09-2025"
     static let gemini25FlashPreview0417: Self = "gemini-2.5-flash-preview-04-17"
     static let gemini25FlashPreview092025: Self = "gemini-2.5-flash-preview-09-2025"
+    static let gemini31ProPreview: Self = "gemini-3.1-pro-preview"
+    static let gemini3ProPreview: Self = "gemini-3-pro-preview"
+    static let gemini3ProImagePreview: Self = "gemini-3-pro-image-preview"
+    static let gemini3FlashPreview: Self = "gemini-3-flash-preview"
+
+    @available(*, deprecated, message: "Use `gemini25FlashImage`.")
+    static let gemini25FlashImagePreview: Self = "gemini-2.5-flash-image-preview"
 
     // Latest versions
     // https://ai.google.dev/gemini-api/docs/models#latest
@@ -102,7 +109,17 @@ public extension GoogleGenerativeAIEmbeddingModelId {
 
 public extension GoogleGenerativeAIImageModelId {
     // Image generation models
-    // https://ai.google.dev/gemini-api/docs/imagen#imagen-model
+    // https://ai.google.dev/gemini-api/docs/imagen
+    static let imagen40Generate001: Self = "imagen-4.0-generate-001"
+    static let imagen40UltraGenerate001: Self = "imagen-4.0-ultra-generate-001"
+    static let imagen40FastGenerate001: Self = "imagen-4.0-fast-generate-001"
+    static let gemini25FlashImage: Self = "gemini-2.5-flash-image"
+    static let gemini3ProImagePreview: Self = "gemini-3-pro-image-preview"
+
+    @available(*, deprecated, message: "Use `gemini25FlashImage`.")
+    static let gemini25FlashImagePreview: Self = "gemini-2.5-flash-image-preview"
+
+    @available(*, deprecated, message: "Use Imagen 4 model constants.")
     static let imagen30Generate002: Self = "imagen-3.0-generate-002"
 }
 

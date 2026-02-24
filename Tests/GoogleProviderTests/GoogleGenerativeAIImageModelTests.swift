@@ -582,4 +582,380 @@ struct GoogleGenerativeAIImageModelTests {
             Issue.record("Expected parameters object")
         }
     }
+
+    @Test("gemini image model should use maxImagesPerCall=10 by default")
+    func geminiDefaultMaxImagesPerCall() throws {
+        let model = GoogleGenerativeAIImageModel(
+            modelId: GoogleGenerativeAIImageModelId(rawValue: "gemini-2.5-flash-image"),
+            settings: .init(),
+            config: GoogleGenerativeAIImageModelConfig(
+                provider: "google.generative-ai",
+                baseURL: "https://api.example.com/v1beta",
+                headers: { ["api-key": "test-api-key"] },
+                fetch: nil
+            )
+        )
+
+        if case let .value(maxImages) = model.maxImagesPerCall {
+            #expect(maxImages == 10)
+        } else {
+            Issue.record("Expected maxImagesPerCall to be .value(10)")
+        }
+    }
+
+    @Test("gemini image model should support responseModalities/imageConfig and map usage")
+    func geminiRequestAndUsageMapping() async throws {
+        actor RequestCapture {
+            var request: URLRequest?
+            func store(_ request: URLRequest) { self.request = request }
+            func value() -> URLRequest? { request }
+        }
+
+        let capture = RequestCapture()
+        let responseJSON: [String: Any] = [
+            "candidates": [
+                [
+                    "content": [
+                        "parts": [
+                            [
+                                "inlineData": [
+                                    "mimeType": "image/png",
+                                    "data": "base64-generated-image"
+                                ]
+                            ]
+                        ],
+                        "role": "model"
+                    ],
+                    "finishReason": "STOP"
+                ]
+            ],
+            "usageMetadata": [
+                "promptTokenCount": 20,
+                "candidatesTokenCount": 200,
+                "totalTokenCount": 220
+            ]
+        ]
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let responseURL = URL(string: "https://api.example.com/v1beta/models/gemini-2.5-flash-image:generateContent")!
+        let httpResponse = HTTPURLResponse(
+            url: responseURL,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = GoogleGenerativeAIImageModel(
+            modelId: GoogleGenerativeAIImageModelId(rawValue: "gemini-2.5-flash-image"),
+            settings: .init(),
+            config: GoogleGenerativeAIImageModelConfig(
+                provider: "google.generative-ai",
+                baseURL: "https://api.example.com/v1beta",
+                headers: { ["api-key": "test-api-key"] },
+                fetch: fetch
+            )
+        )
+
+        let result = try await model.doGenerate(options: .init(
+            prompt: "A beautiful sunset",
+            n: 1,
+            aspectRatio: "16:9",
+            providerOptions: [:]
+        ))
+
+        if case let .base64(images) = result.images {
+            #expect(images == ["base64-generated-image"])
+        } else {
+            Issue.record("Expected base64 images")
+        }
+
+        let usage = try #require(result.usage)
+        #expect(usage.inputTokens == 20)
+        #expect(usage.outputTokens == 200)
+        #expect(usage.totalTokens == 220)
+
+        let googleMetadata = try #require(result.providerMetadata?["google"])
+        #expect(googleMetadata.images.count == 1)
+
+        let request = try #require(await capture.value())
+        #expect(request.url?.absoluteString == "https://api.example.com/v1beta/models/gemini-2.5-flash-image:generateContent")
+
+        let body = try #require(request.httpBody)
+        let json = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+        let generationConfig = try #require(json["generationConfig"] as? [String: Any])
+        #expect(generationConfig["responseModalities"] as? [String] == ["IMAGE"])
+
+        let imageConfig = try #require(generationConfig["imageConfig"] as? [String: Any])
+        #expect(imageConfig["aspectRatio"] as? String == "16:9")
+
+        let contents = try #require(json["contents"] as? [[String: Any]])
+        let first = try #require(contents.first)
+        let parts = try #require(first["parts"] as? [[String: Any]])
+        let firstPart = try #require(parts.first)
+        #expect(firstPart["text"] as? String == "A beautiful sunset")
+    }
+
+    @Test("gemini image model should omit usage when usageMetadata is missing")
+    func geminiUsageMissingMapsToNil() async throws {
+        actor RequestCapture {
+            var request: URLRequest?
+            func store(_ request: URLRequest) { self.request = request }
+            func value() -> URLRequest? { request }
+        }
+
+        let capture = RequestCapture()
+        let responseJSON: [String: Any] = [
+            "candidates": [
+                [
+                    "content": [
+                        "parts": [
+                            [
+                                "inlineData": [
+                                    "mimeType": "image/png",
+                                    "data": "base64-generated-image"
+                                ]
+                            ]
+                        ],
+                        "role": "model"
+                    ],
+                    "finishReason": "STOP"
+                ]
+            ]
+        ]
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let responseURL = URL(string: "https://api.example.com/v1beta/models/gemini-2.5-flash-image:generateContent")!
+        let httpResponse = HTTPURLResponse(
+            url: responseURL,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = GoogleGenerativeAIImageModel(
+            modelId: GoogleGenerativeAIImageModelId(rawValue: "gemini-2.5-flash-image"),
+            settings: .init(),
+            config: GoogleGenerativeAIImageModelConfig(
+                provider: "google.generative-ai",
+                baseURL: "https://api.example.com/v1beta",
+                headers: { ["api-key": "test-api-key"] },
+                fetch: fetch
+            )
+        )
+
+        let result = try await model.doGenerate(options: .init(
+            prompt: "A beautiful sunset",
+            n: 1,
+            providerOptions: [:]
+        ))
+
+        #expect(result.usage == nil)
+
+        let request = try #require(await capture.value())
+        #expect(request.url?.absoluteString == "https://api.example.com/v1beta/models/gemini-2.5-flash-image:generateContent")
+    }
+
+    @Test("gemini image model should include url and file inputs in request")
+    func geminiInputFilesMapping() async throws {
+        actor RequestCapture {
+            var request: URLRequest?
+            func store(_ request: URLRequest) { self.request = request }
+            func value() -> URLRequest? { request }
+        }
+
+        let capture = RequestCapture()
+        let responseJSON: [String: Any] = [
+            "candidates": [
+                [
+                    "content": [
+                        "parts": [
+                            [
+                                "inlineData": [
+                                    "mimeType": "image/png",
+                                    "data": "base64-generated-image"
+                                ]
+                            ]
+                        ],
+                        "role": "model"
+                    ],
+                    "finishReason": "STOP"
+                ]
+            ],
+            "usageMetadata": [
+                "promptTokenCount": 1,
+                "candidatesTokenCount": 2,
+                "totalTokenCount": 3
+            ]
+        ]
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let responseURL = URL(string: "https://api.example.com/v1beta/models/gemini-2.5-flash-image:generateContent")!
+        let httpResponse = HTTPURLResponse(
+            url: responseURL,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = GoogleGenerativeAIImageModel(
+            modelId: GoogleGenerativeAIImageModelId(rawValue: "gemini-2.5-flash-image"),
+            settings: .init(),
+            config: GoogleGenerativeAIImageModelConfig(
+                provider: "google.generative-ai",
+                baseURL: "https://api.example.com/v1beta",
+                headers: { ["api-key": "test-api-key"] },
+                fetch: fetch
+            )
+        )
+
+        _ = try await model.doGenerate(options: .init(
+            prompt: "Edit this image",
+            n: 1,
+            providerOptions: [:],
+            files: [
+                .file(mediaType: "image/png", data: .base64("base64-source-image"), providerOptions: nil),
+                .url(url: "https://example.com/cat.png", providerOptions: nil)
+            ]
+        ))
+
+        let request = try #require(await capture.value())
+        let body = try #require(request.httpBody)
+        let json = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+        let contents = try #require(json["contents"] as? [[String: Any]])
+        let first = try #require(contents.first)
+        let parts = try #require(first["parts"] as? [[String: Any]])
+
+        #expect(parts.count == 3)
+        #expect(parts[0]["text"] as? String == "Edit this image")
+
+        let inlineData = try #require(parts[1]["inlineData"] as? [String: Any])
+        #expect(inlineData["mimeType"] as? String == "image/png")
+        #expect(inlineData["data"] as? String == "base64-source-image")
+
+        let fileData = try #require(parts[2]["fileData"] as? [String: Any])
+        #expect(fileData["mimeType"] as? String == "image/jpeg")
+        #expect(fileData["fileUri"] as? String == "https://example.com/cat.png")
+    }
+
+    @Test("gemini image model should reject unsupported n and mask")
+    func geminiRejectsUnsupportedOptions() async throws {
+        let model = GoogleGenerativeAIImageModel(
+            modelId: GoogleGenerativeAIImageModelId(rawValue: "gemini-2.5-flash-image"),
+            settings: .init(),
+            config: GoogleGenerativeAIImageModelConfig(
+                provider: "google.generative-ai",
+                baseURL: "https://api.example.com/v1beta",
+                headers: { ["api-key": "test-api-key"] },
+                fetch: nil
+            )
+        )
+
+        await #expect(throws: InvalidArgumentError.self) {
+            _ = try await model.doGenerate(options: .init(
+                prompt: "A beautiful sunset",
+                n: 2,
+                providerOptions: [:]
+            ))
+        }
+
+        await #expect(throws: InvalidArgumentError.self) {
+            _ = try await model.doGenerate(options: .init(
+                prompt: "Edit this image",
+                n: 1,
+                providerOptions: [:],
+                mask: .file(mediaType: "image/png", data: .base64("base64-mask-image"), providerOptions: nil)
+            ))
+        }
+    }
+
+    @Test("gemini image model should reject relative file URLs")
+    func geminiRejectsRelativeFileURLs() async throws {
+        let model = GoogleGenerativeAIImageModel(
+            modelId: GoogleGenerativeAIImageModelId(rawValue: "gemini-2.5-flash-image"),
+            settings: .init(),
+            config: GoogleGenerativeAIImageModelConfig(
+                provider: "google.generative-ai",
+                baseURL: "https://api.example.com/v1beta",
+                headers: { ["api-key": "test-api-key"] },
+                fetch: nil
+            )
+        )
+
+        await #expect(throws: InvalidArgumentError.self) {
+            _ = try await model.doGenerate(options: .init(
+                prompt: "Edit this image",
+                n: 1,
+                providerOptions: [:],
+                files: [
+                    .url(url: "cat.png", providerOptions: nil)
+                ]
+            ))
+        }
+    }
+
+    @Test("gemini image model should respect custom maxImagesPerCall")
+    func geminiCustomMaxImagesPerCall() throws {
+        let model = GoogleGenerativeAIImageModel(
+            modelId: GoogleGenerativeAIImageModelId(rawValue: "gemini-2.5-flash-image"),
+            settings: .init(maxImagesPerCall: 5),
+            config: GoogleGenerativeAIImageModelConfig(
+                provider: "google.generative-ai",
+                baseURL: "https://api.example.com/v1beta",
+                headers: { ["api-key": "test-api-key"] },
+                fetch: nil
+            )
+        )
+
+        if case let .value(maxImages) = model.maxImagesPerCall {
+            #expect(maxImages == 5)
+        } else {
+            Issue.record("Expected maxImagesPerCall to be .value(5)")
+        }
+    }
+
+    @Test("imagen model should reject editing with files and mask")
+    func imagenRejectsEditingInputs() async throws {
+        let model = GoogleGenerativeAIImageModel(
+            modelId: GoogleGenerativeAIImageModelId(rawValue: "imagen-4.0-generate-001"),
+            settings: .init(),
+            config: GoogleGenerativeAIImageModelConfig(
+                provider: "google.generative-ai",
+                baseURL: "https://api.example.com/v1beta",
+                headers: { ["api-key": "test-api-key"] },
+                fetch: nil
+            )
+        )
+
+        await #expect(throws: UnsupportedFunctionalityError.self) {
+            _ = try await model.doGenerate(options: .init(
+                prompt: "Edit this image",
+                n: 1,
+                providerOptions: [:],
+                files: [
+                    .file(mediaType: "image/png", data: .base64("base64-source-image"), providerOptions: nil)
+                ]
+            ))
+        }
+
+        await #expect(throws: UnsupportedFunctionalityError.self) {
+            _ = try await model.doGenerate(options: .init(
+                prompt: "Edit this image",
+                n: 1,
+                providerOptions: [:],
+                mask: .file(mediaType: "image/png", data: .base64("base64-mask-image"), providerOptions: nil)
+            ))
+        }
+    }
 }

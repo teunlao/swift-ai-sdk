@@ -83,6 +83,10 @@ public final class GoogleProvider: ProviderV3 {
         languageFactory(modelId)
     }
 
+    public func languageModel(modelId: GoogleGenerativeAIModelId) -> GoogleGenerativeAILanguageModel {
+        languageFactory(modelId)
+    }
+
     public func generativeAI(modelId: GoogleGenerativeAIModelId) -> GoogleGenerativeAILanguageModel {
         languageFactory(modelId)
     }
@@ -91,7 +95,23 @@ public final class GoogleProvider: ProviderV3 {
         imageFactory(modelId, settings)
     }
 
+    public func imageModel(modelId: GoogleGenerativeAIImageModelId, settings: GoogleGenerativeAIImageSettings = .init()) -> any ImageModelV3 {
+        imageFactory(modelId, settings)
+    }
+
+    public func embedding(modelId: GoogleGenerativeAIEmbeddingModelId) -> any EmbeddingModelV3<String> {
+        embeddingFactory(modelId)
+    }
+
+    public func embeddingModel(modelId: GoogleGenerativeAIEmbeddingModelId) -> any EmbeddingModelV3<String> {
+        embeddingFactory(modelId)
+    }
+
     public func textEmbedding(modelId: GoogleGenerativeAIEmbeddingModelId) -> any EmbeddingModelV3<String> {
+        embeddingFactory(modelId)
+    }
+
+    public func textEmbeddingModel(modelId: GoogleGenerativeAIEmbeddingModelId) -> any EmbeddingModelV3<String> {
         embeddingFactory(modelId)
     }
 

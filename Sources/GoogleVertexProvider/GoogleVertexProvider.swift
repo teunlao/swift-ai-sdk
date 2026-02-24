@@ -159,8 +159,20 @@ public final class GoogleVertexProvider: ProviderV3 {
 
     // MARK: - Convenience Accessors
 
+    public func languageModel(modelId: GoogleVertexModelId) -> GoogleGenerativeAILanguageModel {
+        languageFactory(modelId)
+    }
+
     public func chat(modelId: GoogleVertexModelId) -> GoogleGenerativeAILanguageModel {
         languageFactory(modelId)
+    }
+
+    public func embeddingModel(modelId: GoogleVertexEmbeddingModelId) -> GoogleVertexEmbeddingModel {
+        embeddingFactory(modelId)
+    }
+
+    public func textEmbeddingModel(modelId: GoogleVertexEmbeddingModelId) -> GoogleVertexEmbeddingModel {
+        embeddingFactory(modelId)
     }
 
     public func textEmbedding(modelId: GoogleVertexEmbeddingModelId) -> GoogleVertexEmbeddingModel {
@@ -168,6 +180,10 @@ public final class GoogleVertexProvider: ProviderV3 {
     }
 
     public func image(modelId: GoogleVertexImageModelId) -> GoogleVertexImageModel {
+        imageFactory(modelId)
+    }
+
+    public func imageModel(modelId: GoogleVertexImageModelId) -> GoogleVertexImageModel {
         imageFactory(modelId)
     }
 
@@ -286,6 +302,7 @@ public func createGoogleVertex(settings: GoogleVertexProviderSettings = .init())
                 baseURL: resolvedBaseURL,
                 headers: headersClosure,
                 fetch: fetch,
+                generateId: generateId,
                 currentDate: { Date() }
             )
         )

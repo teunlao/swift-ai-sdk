@@ -82,6 +82,10 @@ public extension GoogleVertexModelId {
     static let gemini20FlashLitePreview0205: Self = "gemini-2.0-flash-lite-preview-02-05"
     static let gemini25FlashLitePreview092025: Self = "gemini-2.5-flash-lite-preview-09-2025"
     static let gemini25FlashPreview092025: Self = "gemini-2.5-flash-preview-09-2025"
+    static let gemini31ProPreview: Self = "gemini-3.1-pro-preview"
+    static let gemini3ProPreview: Self = "gemini-3-pro-preview"
+    static let gemini3ProImagePreview: Self = "gemini-3-pro-image-preview"
+    static let gemini3FlashPreview: Self = "gemini-3-flash-preview"
 
     // Experimental models
     static let gemini20ProExp0205: Self = "gemini-2.0-pro-exp-02-05"
@@ -103,8 +107,19 @@ public extension GoogleVertexImageModelId {
     static let imagen30Generate001: Self = "imagen-3.0-generate-001"
     static let imagen30Generate002: Self = "imagen-3.0-generate-002"
     static let imagen30FastGenerate001: Self = "imagen-3.0-fast-generate-001"
+    static let imagen40Generate001: Self = "imagen-4.0-generate-001"
+    static let imagen40FastGenerate001: Self = "imagen-4.0-fast-generate-001"
+    static let imagen40UltraGenerate001: Self = "imagen-4.0-ultra-generate-001"
+    static let gemini25FlashImage: Self = "gemini-2.5-flash-image"
+    static let gemini3ProImagePreview: Self = "gemini-3-pro-image-preview"
+
+    @available(*, deprecated, message: "Use `imagen40Generate001`.")
     static let imagen40GeneratePreview0606: Self = "imagen-4.0-generate-preview-06-06"
+
+    @available(*, deprecated, message: "Use `imagen40FastGenerate001`.")
     static let imagen40FastGeneratePreview0606: Self = "imagen-4.0-fast-generate-preview-06-06"
+
+    @available(*, deprecated, message: "Use `imagen40UltraGenerate001`.")
     static let imagen40UltraGeneratePreview0606: Self = "imagen-4.0-ultra-generate-preview-06-06"
 }
 

@@ -1,6 +1,7 @@
 import Foundation
 import AISDKProvider
 import AISDKProviderUtils
+import GoogleProvider
 
 //===----------------------------------------------------------------------===//
 //=== Upstream Reference ====================================================//
@@ -14,6 +15,7 @@ struct GoogleVertexImageModelConfig: Sendable {
     let baseURL: String
     let headers: @Sendable () -> [String: String?]
     let fetch: FetchFunction?
+    let generateId: @Sendable () -> String
     let currentDate: @Sendable () -> Date
 
     init(
@@ -21,15 +23,31 @@ struct GoogleVertexImageModelConfig: Sendable {
         baseURL: String,
         headers: @escaping @Sendable () -> [String: String?],
         fetch: FetchFunction?,
+        generateId: @escaping @Sendable () -> String = generateID,
         currentDate: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.provider = provider
         self.baseURL = baseURL
         self.headers = headers
         self.fetch = fetch
+        self.generateId = generateId
         self.currentDate = currentDate
     }
 }
+
+private let googleVertexGeminiHTTPRegex: NSRegularExpression = {
+    try! NSRegularExpression(
+        pattern: "^https?:\\/\\/.*$",
+        options: [.caseInsensitive]
+    )
+}()
+
+private let googleVertexGeminiGCSRegex: NSRegularExpression = {
+    try! NSRegularExpression(
+        pattern: "^gs:\\/\\/.*$",
+        options: [.caseInsensitive]
+    )
+}()
 
 private enum GoogleVertexPersonGeneration: String, Sendable {
     case dontAllow = "dont_allow"
@@ -278,7 +296,9 @@ private let googleVertexImageResponseSchema = FlexibleSchema(
 public final class GoogleVertexImageModel: ImageModelV3 {
     public var provider: String { config.provider }
     public var modelId: String { modelIdentifier.rawValue }
-    public var maxImagesPerCall: ImageModelV3MaxImagesPerCall { .value(4) }
+    public var maxImagesPerCall: ImageModelV3MaxImagesPerCall {
+        isGeminiModel(modelIdentifier.rawValue) ? .value(10) : .value(4)
+    }
 
     private let modelIdentifier: GoogleVertexImageModelId
     private let config: GoogleVertexImageModelConfig
@@ -289,6 +309,13 @@ public final class GoogleVertexImageModel: ImageModelV3 {
     }
 
     public func doGenerate(options: ImageModelV3CallOptions) async throws -> ImageModelV3GenerateResult {
+        if isGeminiModel(modelIdentifier.rawValue) {
+            return try await doGenerateGemini(options: options)
+        }
+        return try await doGenerateImagen(options: options)
+    }
+
+    private func doGenerateImagen(options: ImageModelV3CallOptions) async throws -> ImageModelV3GenerateResult {
         var warnings: [SharedV3Warning] = []
 
         if options.size != nil {
@@ -421,4 +448,180 @@ public final class GoogleVertexImageModel: ImageModelV3 {
             )
         )
     }
+
+    private func doGenerateGemini(options: ImageModelV3CallOptions) async throws -> ImageModelV3GenerateResult {
+        var warnings: [SharedV3Warning] = []
+
+        if options.mask != nil {
+            throw InvalidArgumentError(
+                argument: "mask",
+                message: "Gemini image models do not support mask-based image editing."
+            )
+        }
+
+        if options.n > 1 {
+            throw InvalidArgumentError(
+                argument: "n",
+                message: "Gemini image models do not support generating a set number of images per call. Use n=1 or omit the n parameter."
+            )
+        }
+
+        if options.size != nil {
+            warnings.append(
+                .unsupported(
+                    feature: "size",
+                    details: "This model does not support the `size` option. Use `aspectRatio` instead."
+                )
+            )
+        }
+
+        var userContent: [LanguageModelV3UserMessagePart] = []
+
+        if let prompt = options.prompt {
+            userContent.append(.text(.init(text: prompt)))
+        }
+
+        if let files = options.files, !files.isEmpty {
+            for file in files {
+                switch file {
+                case .url(let url, _):
+                    guard let parsedURL = parseAbsoluteURL(url) else {
+                        throw InvalidArgumentError(
+                            argument: "files",
+                            message: "Invalid file URL: \(url)"
+                        )
+                    }
+                    userContent.append(
+                        .file(
+                            .init(
+                                data: .url(parsedURL),
+                                mediaType: "image/*"
+                            )
+                        )
+                    )
+
+                case let .file(mediaType, data, _):
+                    let contentData: LanguageModelV3DataContent
+                    switch data {
+                    case .base64(let base64):
+                        contentData = .base64(base64)
+                    case .binary(let binary):
+                        contentData = .data(binary)
+                    }
+
+                    userContent.append(
+                        .file(
+                            .init(
+                                data: contentData,
+                                mediaType: mediaType
+                            )
+                        )
+                    )
+                }
+            }
+        }
+
+        let languageModelPrompt: LanguageModelV3Prompt = [
+            .user(content: userContent, providerOptions: nil)
+        ]
+
+        let mergedVertexOptions = mergeVertexLanguageModelOptions(
+            providerOptions: options.providerOptions,
+            aspectRatio: options.aspectRatio
+        )
+
+        let languageModel = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: modelIdentifier.rawValue),
+            config: .init(
+                provider: config.provider,
+                baseURL: config.baseURL,
+                headers: config.headers,
+                fetch: config.fetch,
+                generateId: config.generateId,
+                supportedUrls: {
+                    ["*": [googleVertexGeminiHTTPRegex, googleVertexGeminiGCSRegex]]
+                }
+            )
+        )
+
+        let result = try await languageModel.doGenerate(options: .init(
+            prompt: languageModelPrompt,
+            seed: options.seed,
+            abortSignal: options.abortSignal,
+            headers: options.headers,
+            providerOptions: ["vertex": mergedVertexOptions]
+        ))
+
+        var images: [String] = []
+        for content in result.content {
+            guard case let .file(file) = content, file.mediaType.hasPrefix("image/") else {
+                continue
+            }
+
+            switch file.data {
+            case .base64(let base64):
+                images.append(convertToBase64(.string(base64)))
+            case .binary(let binary):
+                images.append(convertToBase64(.data(binary)))
+            }
+        }
+
+        let metadataImages = images.map { _ in JSONValue.object([:]) }
+        let hasUsage = result.usage.inputTokens.total != nil || result.usage.outputTokens.total != nil || result.usage.raw != nil
+        let usage = hasUsage
+            ? ImageModelV3Usage(
+                inputTokens: result.usage.inputTokens.total,
+                outputTokens: result.usage.outputTokens.total,
+                totalTokens: (result.usage.inputTokens.total ?? 0) + (result.usage.outputTokens.total ?? 0)
+            )
+            : nil
+
+        return ImageModelV3GenerateResult(
+            images: .base64(images),
+            warnings: warnings,
+            providerMetadata: [
+                "vertex": ImageModelV3ProviderMetadataValue(images: metadataImages)
+            ],
+            response: ImageModelV3ResponseInfo(
+                timestamp: config.currentDate(),
+                modelId: modelIdentifier.rawValue,
+                headers: result.response?.headers
+            ),
+            usage: usage
+        )
+    }
+}
+
+private func isGeminiModel(_ modelId: String) -> Bool {
+    modelId.hasPrefix("gemini-")
+}
+
+private func mergeVertexLanguageModelOptions(
+    providerOptions: SharedV3ProviderOptions?,
+    aspectRatio: String?
+) -> [String: JSONValue] {
+    var merged: [String: JSONValue] = [
+        "responseModalities": .array([.string(GoogleGenerativeAIResponseModality.image.rawValue)])
+    ]
+
+    if let aspectRatio {
+        merged["imageConfig"] = .object([
+            "aspectRatio": .string(aspectRatio)
+        ])
+    }
+
+    if let optionsObject = providerOptions?["vertex"] {
+        for (key, value) in optionsObject {
+            merged[key] = value
+        }
+    }
+
+    return merged
+}
+
+private func parseAbsoluteURL(_ rawValue: String) -> URL? {
+    guard let url = URL(string: rawValue), url.scheme != nil else {
+        return nil
+    }
+    return url
 }

@@ -132,4 +132,28 @@ struct GoogleVertexProviderExpressModeTests {
         let first = try #require(instances.first)
         #expect(first["task_type"] as? String == "SEMANTIC_SIMILARITY")
     }
+
+    @Test("should expose typed alias methods")
+    func typedAliasMethods() throws {
+        let provider = createGoogleVertex(settings: GoogleVertexProviderSettings(
+            location: "us-central1",
+            project: "test-project"
+        ))
+
+        let language = provider.languageModel(modelId: .gemini25Flash)
+        #expect(language.provider == "google.vertex.chat")
+        #expect(language.modelId == "gemini-2.5-flash")
+
+        let embedding = provider.embeddingModel(modelId: .textEmbedding004)
+        #expect(embedding.provider == "google.vertex.embedding")
+        #expect(embedding.modelId == "text-embedding-004")
+
+        let deprecatedEmbedding = provider.textEmbeddingModel(modelId: .textEmbedding004)
+        #expect(deprecatedEmbedding.provider == "google.vertex.embedding")
+        #expect(deprecatedEmbedding.modelId == "text-embedding-004")
+
+        let image = provider.imageModel(modelId: .imagen40Generate001)
+        #expect(image.provider == "google.vertex.image")
+        #expect(image.modelId == "imagen-4.0-generate-001")
+    }
 }

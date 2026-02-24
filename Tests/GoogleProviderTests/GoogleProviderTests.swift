@@ -49,6 +49,36 @@ struct GoogleProviderTests {
         #expect(model.modelId == "text-embedding-004")
     }
 
+    @Test("creates embedding model via embedding aliases")
+    func createEmbeddingModelViaEmbeddingAliases() throws {
+        let provider = createGoogleGenerativeAI(settings: GoogleProviderSettings(apiKey: "test-api-key"))
+
+        let embedding = provider.embedding(modelId: .geminiEmbedding001)
+        #expect(embedding.provider == "google.generative-ai")
+        #expect(embedding.modelId == "gemini-embedding-001")
+
+        let embeddingModel = provider.embeddingModel(modelId: .textEmbedding004)
+        #expect(embeddingModel.provider == "google.generative-ai")
+        #expect(embeddingModel.modelId == "text-embedding-004")
+    }
+
+    @Test("creates models via typed alias methods")
+    func createModelsViaTypedAliases() throws {
+        let provider = createGoogleGenerativeAI(settings: GoogleProviderSettings(apiKey: "test-api-key"))
+
+        let language = provider.languageModel(modelId: .gemini15Flash)
+        #expect(language.provider == "google.generative-ai")
+        #expect(language.modelId == "gemini-1.5-flash")
+
+        let image = provider.imageModel(modelId: .imagen40Generate001)
+        #expect(image.provider == "google.generative-ai")
+        #expect(image.modelId == "imagen-4.0-generate-001")
+
+        let textEmbeddingModel = provider.textEmbeddingModel(modelId: .geminiEmbedding001)
+        #expect(textEmbeddingModel.provider == "google.generative-ai")
+        #expect(textEmbeddingModel.modelId == "gemini-embedding-001")
+    }
+
     @Test("uses chat method to create a model")
     func createModelViaChatMethod() throws {
         let provider = createGoogleGenerativeAI(settings: GoogleProviderSettings(apiKey: "test-api-key"))
@@ -82,7 +112,7 @@ struct GoogleProviderTests {
 
         let chatModel = provider.chat(modelId: .gemini15Flash)
         let embeddingModel = provider.textEmbedding(modelId: .geminiEmbedding001)
-        let imageModel = provider.image(modelId: .imagen30Generate002)
+        let imageModel = provider.image(modelId: .imagen40Generate001)
         let videoModel = provider.video(modelId: .veo31GeneratePreview)
 
         #expect(chatModel.provider == "my-gemini-proxy")
@@ -94,20 +124,20 @@ struct GoogleProviderTests {
     @Test("creates an image model with default settings")
     func createImageModelWithDefaults() throws {
         let provider = createGoogleGenerativeAI(settings: GoogleProviderSettings(apiKey: "test-api-key"))
-        let model = provider.image(modelId: .imagen30Generate002)
+        let model = provider.image(modelId: .imagen40Generate001)
 
         #expect(model.provider == "google.generative-ai")
-        #expect(model.modelId == "imagen-3.0-generate-002")
+        #expect(model.modelId == "imagen-4.0-generate-001")
     }
 
     @Test("creates an image model with custom maxImagesPerCall")
     func createImageModelWithCustomMaxImages() throws {
         let provider = createGoogleGenerativeAI(settings: GoogleProviderSettings(apiKey: "test-api-key"))
         let imageSettings = GoogleGenerativeAIImageSettings(maxImagesPerCall: 3)
-        let model = provider.image(modelId: .imagen30Generate002, settings: imageSettings) as! GoogleGenerativeAIImageModel
+        let model = provider.image(modelId: .imagen40Generate001, settings: imageSettings) as! GoogleGenerativeAIImageModel
 
         #expect(model.provider == "google.generative-ai")
-        #expect(model.modelId == "imagen-3.0-generate-002")
+        #expect(model.modelId == "imagen-4.0-generate-001")
 
         if case let .value(maxImages) = model.maxImagesPerCall {
             #expect(maxImages == 3)
@@ -119,10 +149,10 @@ struct GoogleProviderTests {
     @Test("creates image model via imageModel method")
     func createImageModelViaImageModelMethod() throws {
         let provider = createGoogleGenerativeAI(settings: GoogleProviderSettings(apiKey: "test-api-key"))
-        let model = try provider.imageModel(modelId: "imagen-3.0-generate-002")
+        let model = try provider.imageModel(modelId: "imagen-4.0-generate-001")
 
         #expect(model.provider == "google.generative-ai")
-        #expect(model.modelId == "imagen-3.0-generate-002")
+        #expect(model.modelId == "imagen-4.0-generate-001")
     }
 
     @Test("creates a video model with default settings")
