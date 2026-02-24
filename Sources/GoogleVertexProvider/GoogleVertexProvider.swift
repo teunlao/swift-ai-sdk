@@ -119,6 +119,7 @@ public final class GoogleVertexProvider: ProviderV3 {
     private let languageFactory: @Sendable (GoogleVertexModelId) -> GoogleGenerativeAILanguageModel
     private let embeddingFactory: @Sendable (GoogleVertexEmbeddingModelId) -> GoogleVertexEmbeddingModel
     private let imageFactory: @Sendable (GoogleVertexImageModelId) -> GoogleVertexImageModel
+    private let videoFactory: @Sendable (GoogleVertexVideoModelId) -> GoogleVertexVideoModel
 
     public let tools: GoogleVertexTools
 
@@ -126,11 +127,13 @@ public final class GoogleVertexProvider: ProviderV3 {
         language: @escaping @Sendable (GoogleVertexModelId) -> GoogleGenerativeAILanguageModel,
         embedding: @escaping @Sendable (GoogleVertexEmbeddingModelId) -> GoogleVertexEmbeddingModel,
         image: @escaping @Sendable (GoogleVertexImageModelId) -> GoogleVertexImageModel,
+        video: @escaping @Sendable (GoogleVertexVideoModelId) -> GoogleVertexVideoModel,
         tools: GoogleVertexTools
     ) {
         self.languageFactory = language
         self.embeddingFactory = embedding
         self.imageFactory = image
+        self.videoFactory = video
         self.tools = tools
     }
 
@@ -144,6 +147,10 @@ public final class GoogleVertexProvider: ProviderV3 {
 
     public func imageModel(modelId: String) throws -> any ImageModelV3 {
         imageFactory(GoogleVertexImageModelId(rawValue: modelId))
+    }
+
+    public func videoModel(modelId: String) throws -> (any VideoModelV3)? {
+        videoFactory(GoogleVertexVideoModelId(rawValue: modelId))
     }
 
     public func callAsFunction(_ modelId: String) throws -> any LanguageModelV3 {
@@ -162,6 +169,14 @@ public final class GoogleVertexProvider: ProviderV3 {
 
     public func image(modelId: GoogleVertexImageModelId) -> GoogleVertexImageModel {
         imageFactory(modelId)
+    }
+
+    public func video(modelId: GoogleVertexVideoModelId) -> GoogleVertexVideoModel {
+        videoFactory(modelId)
+    }
+
+    public func videoModel(modelId: GoogleVertexVideoModelId) -> GoogleVertexVideoModel {
+        videoFactory(modelId)
     }
 }
 
@@ -276,10 +291,24 @@ public func createGoogleVertex(settings: GoogleVertexProviderSettings = .init())
         )
     }
 
+    let videoFactory: @Sendable (GoogleVertexVideoModelId) -> GoogleVertexVideoModel = { modelId in
+        GoogleVertexVideoModel(
+            modelId: modelId,
+            config: GoogleVertexVideoModelConfig(
+                provider: "google.vertex.video",
+                baseURL: resolvedBaseURL,
+                headers: headersClosure,
+                fetch: fetch,
+                generateId: generateId
+            )
+        )
+    }
+
     return GoogleVertexProvider(
         language: languageFactory,
         embedding: embeddingFactory,
         image: imageFactory,
+        video: videoFactory,
         tools: googleVertexTools
     )
 }

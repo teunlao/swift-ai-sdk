@@ -8,6 +8,7 @@ import Foundation
 import Testing
 @testable import GoogleProvider
 @testable import AISDKProvider
+@testable import AISDKProviderUtils
 
 @Suite("GoogleProvider")
 struct GoogleProviderTests {
@@ -72,6 +73,24 @@ struct GoogleProviderTests {
         #expect(model.modelId == "gemini-1.5-flash")
     }
 
+    @Test("uses custom provider name when provided")
+    func customProviderName() throws {
+        let provider = createGoogleGenerativeAI(settings: GoogleProviderSettings(
+            apiKey: "test-api-key",
+            name: "my-gemini-proxy"
+        ))
+
+        let chatModel = provider.chat(modelId: .gemini15Flash)
+        let embeddingModel = provider.textEmbedding(modelId: .geminiEmbedding001)
+        let imageModel = provider.image(modelId: .imagen30Generate002)
+        let videoModel = provider.video(modelId: .veo31GeneratePreview)
+
+        #expect(chatModel.provider == "my-gemini-proxy")
+        #expect(embeddingModel.provider == "my-gemini-proxy")
+        #expect(imageModel.provider == "my-gemini-proxy")
+        #expect(videoModel.provider == "my-gemini-proxy")
+    }
+
     @Test("creates an image model with default settings")
     func createImageModelWithDefaults() throws {
         let provider = createGoogleGenerativeAI(settings: GoogleProviderSettings(apiKey: "test-api-key"))
@@ -104,6 +123,105 @@ struct GoogleProviderTests {
 
         #expect(model.provider == "google.generative-ai")
         #expect(model.modelId == "imagen-3.0-generate-002")
+    }
+
+    @Test("creates a video model with default settings")
+    func createVideoModelWithDefaults() throws {
+        let provider = createGoogleGenerativeAI(settings: GoogleProviderSettings(apiKey: "test-api-key"))
+        let model = provider.video(modelId: .veo31GeneratePreview)
+
+        #expect(model.provider == "google.generative-ai")
+        #expect(model.modelId == "veo-3.1-generate-preview")
+    }
+
+    @Test("creates video model via videoModel method")
+    func createVideoModelViaVideoModelMethod() throws {
+        let provider = createGoogleGenerativeAI(settings: GoogleProviderSettings(apiKey: "test-api-key"))
+        let maybeModel = try provider.videoModel(modelId: "veo-3.1-generate-preview")
+
+        guard let model = maybeModel else {
+            Issue.record("Expected video model")
+            return
+        }
+
+        #expect(model.provider == "google.generative-ai")
+        #expect(model.modelId == "veo-3.1-generate-preview")
+    }
+
+    @Test("uses custom baseURL for video model requests")
+    func customBaseURLForVideoRequests() async throws {
+        actor RequestCapture {
+            private(set) var firstRequest: URLRequest?
+            func set(_ request: URLRequest) {
+                if firstRequest == nil {
+                    firstRequest = request
+                }
+            }
+        }
+
+        @Sendable func jsonData(_ value: Any) throws -> Data {
+            try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys])
+        }
+
+        let capture = RequestCapture()
+        let fetch: FetchFunction = { request in
+            await capture.set(request)
+            let url = try #require(request.url)
+
+            if url.absoluteString.contains(":predictLongRunning") {
+                let data = try jsonData([
+                    "name": "operations/test-op",
+                    "done": false
+                ])
+                let response = try #require(HTTPURLResponse(
+                    url: url,
+                    statusCode: 200,
+                    httpVersion: nil,
+                    headerFields: ["Content-Type": "application/json"]
+                ))
+                return FetchResponse(body: .data(data), urlResponse: response)
+            }
+
+            if url.absoluteString.contains("/operations/test-op") {
+                let data = try jsonData([
+                    "name": "operations/test-op",
+                    "done": true,
+                    "response": [
+                        "generateVideoResponse": [
+                            "generatedSamples": [
+                                ["video": ["uri": "https://example.com/video.mp4"]]
+                            ]
+                        ]
+                    ]
+                ])
+                let response = try #require(HTTPURLResponse(
+                    url: url,
+                    statusCode: 200,
+                    httpVersion: nil,
+                    headerFields: ["Content-Type": "application/json"]
+                ))
+                return FetchResponse(body: .data(data), urlResponse: response)
+            }
+
+            Issue.record("Unexpected URL: \(url.absoluteString)")
+            throw CancellationError()
+        }
+
+        let provider = createGoogleGenerativeAI(settings: GoogleProviderSettings(
+            baseURL: "https://custom-endpoint.example.com",
+            apiKey: "test-api-key",
+            fetch: fetch
+        ))
+
+        let model = provider.video(modelId: .veo31GeneratePreview)
+        _ = try await model.doGenerate(options: VideoModelV3CallOptions(
+            prompt: "hello",
+            n: 1,
+            providerOptions: ["google": ["pollIntervalMs": .number(10)]]
+        ))
+
+        let request = try #require(await capture.firstRequest)
+        #expect(request.url?.absoluteString == "https://custom-endpoint.example.com/models/veo-3.1-generate-preview:predictLongRunning")
     }
 
     @Test("supports deprecated methods")

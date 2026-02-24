@@ -45,6 +45,18 @@ public struct GoogleVertexImageModelId: RawRepresentable, Hashable, Sendable, Ex
     }
 }
 
+public struct GoogleVertexVideoModelId: RawRepresentable, Hashable, Sendable, ExpressibleByStringLiteral {
+    public let rawValue: String
+
+    public init(rawValue: String) {
+        self.rawValue = rawValue
+    }
+
+    public init(stringLiteral value: StringLiteralType) {
+        self.init(rawValue: value)
+    }
+}
+
 // MARK: - Known model identifiers
 
 public extension GoogleVertexModelId {
@@ -94,4 +106,18 @@ public extension GoogleVertexImageModelId {
     static let imagen40GeneratePreview0606: Self = "imagen-4.0-generate-preview-06-06"
     static let imagen40FastGeneratePreview0606: Self = "imagen-4.0-fast-generate-preview-06-06"
     static let imagen40UltraGeneratePreview0606: Self = "imagen-4.0-ultra-generate-preview-06-06"
+}
+
+public extension GoogleVertexVideoModelId {
+    static let veo20GeneratePreview: Self = "veo-2.0-generate-preview"
+    static let veo20GenerateExp: Self = "veo-2.0-generate-exp"
+    static let veo20Generate001: Self = "veo-2.0-generate-001"
+    static let veo30Generate001: Self = "veo-3.0-generate-001"
+    static let veo30FastGenerate001: Self = "veo-3.0-fast-generate-001"
+    static let veo30GeneratePreview: Self = "veo-3.0-generate-preview"
+    static let veo30FastGeneratePreview: Self = "veo-3.0-fast-generate-preview"
+    static let veo31Generate001: Self = "veo-3.1-generate-001"
+    static let veo31FastGenerate001: Self = "veo-3.1-fast-generate-001"
+    static let veo31GeneratePreview: Self = "veo-3.1-generate-preview"
+    static let veo31FastGeneratePreview: Self = "veo-3.1-fast-generate-preview"
 }

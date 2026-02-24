@@ -2,12 +2,6 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-private let googleFilesRegex: NSRegularExpression = {
-    try! NSRegularExpression(pattern: "^https?://" +
-        "generativelanguage\\.googleapis\\.com/v1beta/files/.*$",
-        options: [.caseInsensitive])
-}()
-
 private let youtubeWatchRegex: NSRegularExpression = {
     try! NSRegularExpression(
         pattern: "^https://(?:www\\.)?youtube\\.com/watch\\?v=[A-Za-z0-9_-]+(?:&[A-Za-z0-9_=&.-]*)?$",
@@ -28,19 +22,22 @@ public struct GoogleProviderSettings: Sendable {
     public var headers: [String: String]?
     public var fetch: FetchFunction?
     public var generateId: @Sendable () -> String
+    public var name: String?
 
     public init(
         baseURL: String? = nil,
         apiKey: String? = nil,
         headers: [String: String]? = nil,
         fetch: FetchFunction? = nil,
-        generateId: @escaping @Sendable () -> String = generateID
+        generateId: @escaping @Sendable () -> String = generateID,
+        name: String? = nil
     ) {
         self.baseURL = baseURL
         self.apiKey = apiKey
         self.headers = headers
         self.fetch = fetch
         self.generateId = generateId
+        self.name = name
     }
 }
 
@@ -48,6 +45,7 @@ public final class GoogleProvider: ProviderV3 {
     private let languageFactory: @Sendable (GoogleGenerativeAIModelId) -> GoogleGenerativeAILanguageModel
     private let embeddingFactory: @Sendable (GoogleGenerativeAIEmbeddingModelId) -> GoogleGenerativeAIEmbeddingModel
     private let imageFactory: @Sendable (GoogleGenerativeAIImageModelId, GoogleGenerativeAIImageSettings) -> GoogleGenerativeAIImageModel
+    private let videoFactory: @Sendable (GoogleGenerativeAIVideoModelId) -> GoogleGenerativeAIVideoModel
 
     public let tools: GoogleTools
 
@@ -55,11 +53,13 @@ public final class GoogleProvider: ProviderV3 {
         language: @escaping @Sendable (GoogleGenerativeAIModelId) -> GoogleGenerativeAILanguageModel,
         embedding: @escaping @Sendable (GoogleGenerativeAIEmbeddingModelId) -> GoogleGenerativeAIEmbeddingModel,
         image: @escaping @Sendable (GoogleGenerativeAIImageModelId, GoogleGenerativeAIImageSettings) -> GoogleGenerativeAIImageModel,
+        video: @escaping @Sendable (GoogleGenerativeAIVideoModelId) -> GoogleGenerativeAIVideoModel,
         tools: GoogleTools
     ) {
         self.languageFactory = language
         self.embeddingFactory = embedding
         self.imageFactory = image
+        self.videoFactory = video
         self.tools = tools
     }
 
@@ -73,6 +73,10 @@ public final class GoogleProvider: ProviderV3 {
 
     public func imageModel(modelId: String) throws -> any ImageModelV3 {
         imageFactory(GoogleGenerativeAIImageModelId(rawValue: modelId), .init())
+    }
+
+    public func videoModel(modelId: String) throws -> (any VideoModelV3)? {
+        videoFactory(GoogleGenerativeAIVideoModelId(rawValue: modelId))
     }
 
     public func chat(modelId: GoogleGenerativeAIModelId) -> GoogleGenerativeAILanguageModel {
@@ -90,12 +94,21 @@ public final class GoogleProvider: ProviderV3 {
     public func textEmbedding(modelId: GoogleGenerativeAIEmbeddingModelId) -> any EmbeddingModelV3<String> {
         embeddingFactory(modelId)
     }
+
+    public func video(modelId: GoogleGenerativeAIVideoModelId) -> GoogleGenerativeAIVideoModel {
+        videoFactory(modelId)
+    }
+
+    public func videoModel(modelId: GoogleGenerativeAIVideoModelId) -> GoogleGenerativeAIVideoModel {
+        videoFactory(modelId)
+    }
 }
 
 public func createGoogleGenerativeAI(
     settings: GoogleProviderSettings = .init()
 ) -> GoogleProvider {
     let baseURL = withoutTrailingSlash(settings.baseURL) ?? "https://generativelanguage.googleapis.com/v1beta"
+    let providerName = settings.name ?? "google.generative-ai"
 
     let headersClosure: @Sendable () -> [String: String?] = {
         let apiKey: String
@@ -142,7 +155,7 @@ public func createGoogleGenerativeAI(
         GoogleGenerativeAILanguageModel(
             modelId: modelId,
             config: GoogleGenerativeAILanguageModel.Config(
-                provider: "google.generative-ai",
+                provider: providerName,
                 baseURL: baseURL,
                 headers: headersClosure,
                 fetch: settings.fetch,
@@ -156,7 +169,7 @@ public func createGoogleGenerativeAI(
         GoogleGenerativeAIEmbeddingModel(
             modelId: modelId,
             config: GoogleGenerativeAIEmbeddingConfig(
-                provider: "google.generative-ai",
+                provider: providerName,
                 baseURL: baseURL,
                 headers: headersClosure,
                 fetch: settings.fetch
@@ -169,10 +182,23 @@ public func createGoogleGenerativeAI(
             modelId: modelId,
             settings: imageSettings,
             config: GoogleGenerativeAIImageModelConfig(
-                provider: "google.generative-ai",
+                provider: providerName,
                 baseURL: baseURL,
                 headers: headersClosure,
                 fetch: settings.fetch
+            )
+        )
+    }
+
+    let makeVideoModel: @Sendable (GoogleGenerativeAIVideoModelId) -> GoogleGenerativeAIVideoModel = { modelId in
+        GoogleGenerativeAIVideoModel(
+            modelId: modelId,
+            config: GoogleGenerativeAIVideoModelConfig(
+                provider: providerName,
+                baseURL: baseURL,
+                headers: headersClosure,
+                fetch: settings.fetch,
+                generateId: settings.generateId
             )
         )
     }
@@ -181,6 +207,7 @@ public func createGoogleGenerativeAI(
         language: makeLanguageModel,
         embedding: makeEmbeddingModel,
         image: makeImageModel,
+        video: makeVideoModel,
         tools: googleTools
     )
 }

@@ -36,6 +36,18 @@ public struct GoogleGenerativeAIImageModelId: RawRepresentable, Hashable, Sendab
     }
 }
 
+public struct GoogleGenerativeAIVideoModelId: RawRepresentable, Hashable, Sendable, ExpressibleByStringLiteral {
+    public let rawValue: String
+
+    public init(rawValue: String) {
+        self.rawValue = rawValue
+    }
+
+    public init(stringLiteral value: StringLiteralType) {
+        self.init(rawValue: value)
+    }
+}
+
 // MARK: - Model Constants
 
 public extension GoogleGenerativeAIModelId {
@@ -92,4 +104,13 @@ public extension GoogleGenerativeAIImageModelId {
     // Image generation models
     // https://ai.google.dev/gemini-api/docs/imagen#imagen-model
     static let imagen30Generate002: Self = "imagen-3.0-generate-002"
+}
+
+public extension GoogleGenerativeAIVideoModelId {
+    // Video generation models
+    // https://ai.google.dev/gemini-api/docs/video
+    static let veo31FastGeneratePreview: Self = "veo-3.1-fast-generate-preview"
+    static let veo31GeneratePreview: Self = "veo-3.1-generate-preview"
+    static let veo31Generate: Self = "veo-3.1-generate"
+    static let veo20Generate001: Self = "veo-2.0-generate-001"
 }
