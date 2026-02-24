@@ -4,9 +4,11 @@ import AISDKProviderUtils
 
 public struct GoogleGenerativeAIMessagesOptions: Sendable, Equatable {
     public var isGemmaModel: Bool
+    public var providerOptionsName: String
 
-    public init(isGemmaModel: Bool = false) {
+    public init(isGemmaModel: Bool = false, providerOptionsName: String = "google") {
         self.isGemmaModel = isGemmaModel
+        self.providerOptionsName = providerOptionsName
     }
 }
 
@@ -18,6 +20,7 @@ func convertToGoogleGenerativeAIMessages(
     var contents: [GoogleGenerativeAIContent] = []
     var systemMessagesAllowed = true
     let isGemmaModel = options.isGemmaModel
+    let providerOptionsName = options.providerOptionsName
 
     for message in prompt {
         switch message {
@@ -58,7 +61,7 @@ func convertToGoogleGenerativeAIMessages(
 
             contents.append(.init(role: .user, parts: converted))
 
-        case .assistant(let parts, let providerOptions):
+        case .assistant(let parts, _):
             systemMessagesAllowed = false
 
             let converted = try parts.compactMap { part -> GoogleGenerativeAIContentPart? in
@@ -68,7 +71,10 @@ func convertToGoogleGenerativeAIMessages(
                     return .text(
                         .init(
                             text: textPart.text,
-                            thoughtSignature: googleThoughtSignature(from: textPart.providerOptions ?? providerOptions)
+                            thoughtSignature: googleThoughtSignature(
+                                from: textPart.providerOptions,
+                                providerOptionsName: providerOptionsName
+                            )
                         )
                     )
 
@@ -78,30 +84,38 @@ func convertToGoogleGenerativeAIMessages(
                         .init(
                             text: reasoningPart.text,
                             thought: true,
-                            thoughtSignature: googleThoughtSignature(from: reasoningPart.providerOptions ?? providerOptions)
+                            thoughtSignature: googleThoughtSignature(
+                                from: reasoningPart.providerOptions,
+                                providerOptionsName: providerOptionsName
+                            )
                         )
                     )
 
                 case .file(let filePart):
-                    guard filePart.mediaType == "image/png" else {
-                        throw UnsupportedFunctionalityError(functionality: "Only PNG images are supported in assistant messages")
-                    }
-
-                    guard case let .data(data) = filePart.data else {
+                    switch filePart.data {
+                    case .url:
                         throw UnsupportedFunctionalityError(functionality: "File data URLs in assistant messages are not supported")
+                    case .data(let data):
+                        return .inlineData(.init(
+                            mimeType: filePart.mediaType,
+                            data: convertToBase64(.data(data))
+                        ))
+                    case .base64(let base64):
+                        return .inlineData(.init(
+                            mimeType: filePart.mediaType,
+                            data: convertToBase64(.string(base64))
+                        ))
                     }
-
-                    return .inlineData(.init(
-                        mimeType: filePart.mediaType,
-                        data: convertToBase64(.data(data))
-                    ))
 
                 case .toolCall(let toolCall):
                     return .functionCall(
                         .init(
                             name: toolCall.toolName,
                             arguments: toolCall.input,
-                            thoughtSignature: googleThoughtSignature(from: toolCall.providerOptions ?? providerOptions)
+                            thoughtSignature: googleThoughtSignature(
+                                from: toolCall.providerOptions,
+                                providerOptionsName: providerOptionsName
+                            )
                         )
                     )
 
@@ -203,9 +217,14 @@ func convertToGoogleGenerativeAIMessages(
     )
 }
 
-private func googleThoughtSignature(from providerOptions: SharedV3ProviderOptions?) -> String? {
-    guard let options = providerOptions?["google"],
-          let value = options["thoughtSignature"],
+private func googleThoughtSignature(
+    from providerOptions: SharedV3ProviderOptions?,
+    providerOptionsName: String
+) -> String? {
+    let resolvedOptions = providerOptions?[providerOptionsName]
+    ?? (providerOptionsName != "google" ? providerOptions?["google"] : nil)
+
+    guard let value = resolvedOptions?["thoughtSignature"],
           case .string(let signature) = value else {
         return nil
     }

@@ -10,11 +10,24 @@ public enum GoogleGenerativeAIResponseModality: String, Sendable, Equatable {
 public struct GoogleGenerativeAIThinkingConfig: Sendable, Equatable {
     public var thinkingBudget: Double?
     public var includeThoughts: Bool?
+    public var thinkingLevel: GoogleGenerativeAIThinkingLevel?
 
-    public init(thinkingBudget: Double? = nil, includeThoughts: Bool? = nil) {
+    public init(
+        thinkingBudget: Double? = nil,
+        includeThoughts: Bool? = nil,
+        thinkingLevel: GoogleGenerativeAIThinkingLevel? = nil
+    ) {
         self.thinkingBudget = thinkingBudget
         self.includeThoughts = includeThoughts
+        self.thinkingLevel = thinkingLevel
     }
+}
+
+public enum GoogleGenerativeAIThinkingLevel: String, Sendable, Equatable {
+    case minimal
+    case low
+    case medium
+    case high
 }
 
 public enum GoogleGenerativeAISafetyCategory: String, Sendable, Equatable {
@@ -68,11 +81,40 @@ public enum GoogleGenerativeAIImageConfigAspectRatio: String, Sendable, Equatabl
     case twentyOneToNine = "21:9"
 }
 
+public enum GoogleGenerativeAIImageConfigImageSize: String, Sendable, Equatable {
+    case oneK = "1K"
+    case twoK = "2K"
+    case fourK = "4K"
+}
+
 public struct GoogleGenerativeAIImageConfig: Sendable, Equatable {
     public var aspectRatio: GoogleGenerativeAIImageConfigAspectRatio?
+    public var imageSize: GoogleGenerativeAIImageConfigImageSize?
 
-    public init(aspectRatio: GoogleGenerativeAIImageConfigAspectRatio? = nil) {
+    public init(
+        aspectRatio: GoogleGenerativeAIImageConfigAspectRatio? = nil,
+        imageSize: GoogleGenerativeAIImageConfigImageSize? = nil
+    ) {
         self.aspectRatio = aspectRatio
+        self.imageSize = imageSize
+    }
+}
+
+public struct GoogleGenerativeAIRetrievalLatLng: Sendable, Equatable {
+    public var latitude: Double
+    public var longitude: Double
+
+    public init(latitude: Double, longitude: Double) {
+        self.latitude = latitude
+        self.longitude = longitude
+    }
+}
+
+public struct GoogleGenerativeAIRetrievalConfig: Sendable, Equatable {
+    public var latLng: GoogleGenerativeAIRetrievalLatLng?
+
+    public init(latLng: GoogleGenerativeAIRetrievalLatLng? = nil) {
+        self.latLng = latLng
     }
 }
 
@@ -87,6 +129,7 @@ public struct GoogleGenerativeAIProviderOptions: Sendable, Equatable {
     public var labels: [String: String]?
     public var mediaResolution: GoogleGenerativeAIMediaResolution?
     public var imageConfig: GoogleGenerativeAIImageConfig?
+    public var retrievalConfig: GoogleGenerativeAIRetrievalConfig?
 
     public init(
         responseModalities: [GoogleGenerativeAIResponseModality]? = nil,
@@ -98,7 +141,8 @@ public struct GoogleGenerativeAIProviderOptions: Sendable, Equatable {
         audioTimestamp: Bool? = nil,
         labels: [String: String]? = nil,
         mediaResolution: GoogleGenerativeAIMediaResolution? = nil,
-        imageConfig: GoogleGenerativeAIImageConfig? = nil
+        imageConfig: GoogleGenerativeAIImageConfig? = nil,
+        retrievalConfig: GoogleGenerativeAIRetrievalConfig? = nil
     ) {
         self.responseModalities = responseModalities
         self.thinkingConfig = thinkingConfig
@@ -110,6 +154,7 @@ public struct GoogleGenerativeAIProviderOptions: Sendable, Equatable {
         self.labels = labels
         self.mediaResolution = mediaResolution
         self.imageConfig = imageConfig
+        self.retrievalConfig = retrievalConfig
     }
 }
 
@@ -190,9 +235,23 @@ public let googleGenerativeAIProviderOptionsSchema = FlexibleSchema(
                         }
                     }
 
+                    var thinkingLevel: GoogleGenerativeAIThinkingLevel? = nil
+                    if let levelValue = thinkingDict["thinkingLevel"], levelValue != .null {
+                        guard case .string(let levelRaw) = levelValue,
+                              let parsed = GoogleGenerativeAIThinkingLevel(rawValue: levelRaw) else {
+                            let error = SchemaValidationIssuesError(
+                                vendor: "google",
+                                issues: "thinkingConfig.thinkingLevel must be one of 'minimal', 'low', 'medium', 'high'"
+                            )
+                            return .failure(error: TypeValidationError.wrap(value: levelValue, cause: error))
+                        }
+                        thinkingLevel = parsed
+                    }
+
                     thinkingConfig = GoogleGenerativeAIThinkingConfig(
                         thinkingBudget: budget,
-                        includeThoughts: includeThoughts
+                        includeThoughts: includeThoughts,
+                        thinkingLevel: thinkingLevel
                     )
                 }
 
@@ -361,7 +420,68 @@ public let googleGenerativeAIProviderOptionsSchema = FlexibleSchema(
                         aspectRatio = parsed
                     }
 
-                    imageConfig = GoogleGenerativeAIImageConfig(aspectRatio: aspectRatio)
+                    var imageSize: GoogleGenerativeAIImageConfigImageSize? = nil
+                    if let sizeValue = imageConfigDict["imageSize"], sizeValue != .null {
+                        guard case .string(let sizeRaw) = sizeValue,
+                              let parsed = GoogleGenerativeAIImageConfigImageSize(rawValue: sizeRaw) else {
+                            let error = SchemaValidationIssuesError(
+                                vendor: "google",
+                                issues: "imageConfig.imageSize must be one of '1K', '2K', '4K'"
+                            )
+                            return .failure(error: TypeValidationError.wrap(value: sizeValue, cause: error))
+                        }
+                        imageSize = parsed
+                    }
+
+                    imageConfig = GoogleGenerativeAIImageConfig(
+                        aspectRatio: aspectRatio,
+                        imageSize: imageSize
+                    )
+                }
+
+                var retrievalConfig: GoogleGenerativeAIRetrievalConfig? = nil
+                if let retrievalValue = dict["retrievalConfig"], retrievalValue != .null {
+                    guard case .object(let retrievalDict) = retrievalValue else {
+                        let error = SchemaValidationIssuesError(
+                            vendor: "google",
+                            issues: "retrievalConfig must be an object"
+                        )
+                        return .failure(error: TypeValidationError.wrap(value: retrievalValue, cause: error))
+                    }
+
+                    var latLng: GoogleGenerativeAIRetrievalLatLng? = nil
+                    if let latLngValue = retrievalDict["latLng"], latLngValue != .null {
+                        guard case .object(let latLngDict) = latLngValue else {
+                            let error = SchemaValidationIssuesError(
+                                vendor: "google",
+                                issues: "retrievalConfig.latLng must be an object"
+                            )
+                            return .failure(error: TypeValidationError.wrap(value: latLngValue, cause: error))
+                        }
+
+                        guard let latitudeValue = latLngDict["latitude"], case .number(let latitude) = latitudeValue else {
+                            let error = SchemaValidationIssuesError(
+                                vendor: "google",
+                                issues: "retrievalConfig.latLng.latitude must be a number"
+                            )
+                            return .failure(error: TypeValidationError.wrap(value: latLngDict["latitude"] ?? .null, cause: error))
+                        }
+
+                        guard let longitudeValue = latLngDict["longitude"], case .number(let longitude) = longitudeValue else {
+                            let error = SchemaValidationIssuesError(
+                                vendor: "google",
+                                issues: "retrievalConfig.latLng.longitude must be a number"
+                            )
+                            return .failure(error: TypeValidationError.wrap(value: latLngDict["longitude"] ?? .null, cause: error))
+                        }
+
+                        latLng = GoogleGenerativeAIRetrievalLatLng(
+                            latitude: latitude,
+                            longitude: longitude
+                        )
+                    }
+
+                    retrievalConfig = GoogleGenerativeAIRetrievalConfig(latLng: latLng)
                 }
 
                 let options = GoogleGenerativeAIProviderOptions(
@@ -374,7 +494,8 @@ public let googleGenerativeAIProviderOptionsSchema = FlexibleSchema(
                     audioTimestamp: audioTimestamp,
                     labels: labels,
                     mediaResolution: mediaResolution,
-                    imageConfig: imageConfig
+                    imageConfig: imageConfig,
+                    retrievalConfig: retrievalConfig
                 )
 
                 return .success(value: options)
@@ -400,6 +521,9 @@ extension GoogleGenerativeAIProviderOptions {
             }
             if let budget = thinkingConfig.thinkingBudget {
                 thinking["thinkingBudget"] = budget
+            }
+            if let thinkingLevel = thinkingConfig.thinkingLevel {
+                thinking["thinkingLevel"] = thinkingLevel.rawValue
             }
             if !thinking.isEmpty {
                 result["thinkingConfig"] = thinking
@@ -444,8 +568,24 @@ extension GoogleGenerativeAIProviderOptions {
             if let aspectRatio = imageConfig.aspectRatio {
                 config["aspectRatio"] = aspectRatio.rawValue
             }
+            if let imageSize = imageConfig.imageSize {
+                config["imageSize"] = imageSize.rawValue
+            }
             if !config.isEmpty {
                 result["imageConfig"] = config
+            }
+        }
+
+        if let retrievalConfig {
+            var config: [String: Any] = [:]
+            if let latLng = retrievalConfig.latLng {
+                config["latLng"] = [
+                    "latitude": latLng.latitude,
+                    "longitude": latLng.longitude
+                ]
+            }
+            if !config.isEmpty {
+                result["retrievalConfig"] = config
             }
         }
 

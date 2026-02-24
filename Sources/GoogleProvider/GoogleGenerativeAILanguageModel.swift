@@ -57,6 +57,7 @@ public final class GoogleGenerativeAILanguageModel: LanguageModelV3 {
     private struct PreparedRequest {
         let body: [String: JSONValue]
         let warnings: [SharedV3Warning]
+        let providerOptionsName: String
     }
 
     private let modelIdentifier: GoogleGenerativeAIModelId
@@ -94,7 +95,8 @@ public final class GoogleGenerativeAILanguageModel: LanguageModelV3 {
             response: response.value,
             rawResponse: response.rawValue,
             usageMetadata: response.value.usageMetadata,
-            generateId: config.generateId
+            generateId: config.generateId,
+            providerOptionsName: prepared.providerOptionsName
         )
 
         return LanguageModelV3GenerateResult(
@@ -167,14 +169,15 @@ public final class GoogleGenerativeAILanguageModel: LanguageModelV3 {
                                     blockCounter: &blockCounter,
                                     lastCodeExecutionToolCallId: &lastCodeExecutionToolCallId,
                                     hasToolCalls: &hasToolCalls,
-                                    generateId: config.generateId
+                                    generateId: config.generateId,
+                                    providerOptionsName: prepared.providerOptionsName
                                 )
 
-                                for inlineData in parts.compactMap({ $0.inlineData }) {
-                                    continuation.yield(.file(LanguageModelV3File(mediaType: inlineData.mimeType, data: .base64(inlineData.data))))
-                                }
-
-                                for toolCall in getToolCallsFromParts(parts: parts, generateId: config.generateId) {
+                                for toolCall in getToolCallsFromParts(
+                                    parts: parts,
+                                    generateId: config.generateId,
+                                    providerOptionsName: prepared.providerOptionsName
+                                ) {
                                     continuation.yield(.toolInputStart(
                                         id: toolCall.toolCallId,
                                         toolName: toolCall.toolName,
@@ -221,7 +224,8 @@ public final class GoogleGenerativeAILanguageModel: LanguageModelV3 {
                                     groundingMetadata: candidate.groundingMetadata,
                                     urlContextMetadata: candidate.urlContextMetadata,
                                     safetyRatings: candidate.safetyRatings,
-                                    usageMetadata: chunk.usageMetadata
+                                    usageMetadata: chunk.usageMetadata,
+                                    providerOptionsName: prepared.providerOptionsName
                                 )
                             }
                         }
@@ -253,11 +257,20 @@ public final class GoogleGenerativeAILanguageModel: LanguageModelV3 {
     private func prepareRequest(options: LanguageModelV3CallOptions) async throws -> PreparedRequest {
         var warnings: [SharedV3Warning] = []
 
-        let googleOptions = try await parseProviderOptions(
-            provider: "google",
+        let providerOptionsName = providerOptionsNamespace(for: config.provider)
+        var googleOptions = try await parseProviderOptions(
+            provider: providerOptionsName,
             providerOptions: options.providerOptions,
             schema: googleGenerativeAIProviderOptionsSchema
         )
+
+        if googleOptions == nil && providerOptionsName != "google" {
+            googleOptions = try await parseProviderOptions(
+                provider: "google",
+                providerOptions: options.providerOptions,
+                schema: googleGenerativeAIProviderOptionsSchema
+            )
+        }
 
         if googleOptions?.thinkingConfig?.includeThoughts == true,
            !config.provider.hasPrefix("google.vertex.") {
@@ -267,7 +280,10 @@ public final class GoogleGenerativeAILanguageModel: LanguageModelV3 {
         let isGemmaModel = modelIdentifier.rawValue.lowercased().hasPrefix("gemma-")
         let convertedPrompt = try convertToGoogleGenerativeAIMessages(
             options.prompt,
-            options: GoogleGenerativeAIMessagesOptions(isGemmaModel: isGemmaModel)
+            options: GoogleGenerativeAIMessagesOptions(
+                isGemmaModel: isGemmaModel,
+                providerOptionsName: providerOptionsName
+            )
         )
 
         let promptJSON = try encodePrompt(convertedPrompt)
@@ -317,6 +333,9 @@ public final class GoogleGenerativeAILanguageModel: LanguageModelV3 {
             if let budget = thinking.thinkingBudget {
                 thinkingJSON["thinkingBudget"] = .number(budget)
             }
+            if let thinkingLevel = thinking.thinkingLevel {
+                thinkingJSON["thinkingLevel"] = .string(thinkingLevel.rawValue)
+            }
             if !thinkingJSON.isEmpty {
                 generationConfig["thinkingConfig"] = .object(thinkingJSON)
             }
@@ -330,6 +349,9 @@ public final class GoogleGenerativeAILanguageModel: LanguageModelV3 {
             var configObject: [String: JSONValue] = [:]
             if let aspectRatio = imageConfig.aspectRatio {
                 configObject["aspectRatio"] = .string(aspectRatio.rawValue)
+            }
+            if let imageSize = imageConfig.imageSize {
+                configObject["imageSize"] = .string(imageSize.rawValue)
             }
             if !configObject.isEmpty {
                 generationConfig["imageConfig"] = .object(configObject)
@@ -367,15 +389,51 @@ public final class GoogleGenerativeAILanguageModel: LanguageModelV3 {
         if let tools = preparedTools.tools {
             body["tools"] = tools
         }
-        if let toolConfig = preparedTools.toolConfig {
+        if let toolConfig = mergeToolConfig(
+            toolConfig: preparedTools.toolConfig,
+            retrievalConfig: googleOptions?.retrievalConfig
+        ) {
             body["toolConfig"] = toolConfig
         }
 
-        return PreparedRequest(body: body, warnings: warnings)
+        return PreparedRequest(
+            body: body,
+            warnings: warnings,
+            providerOptionsName: providerOptionsName
+        )
     }
 }
 
 // MARK: - Mapping Helpers
+
+private func providerOptionsNamespace(for provider: String) -> String {
+    provider.contains("vertex") ? "vertex" : "google"
+}
+
+private func mergeToolConfig(
+    toolConfig: JSONValue?,
+    retrievalConfig: GoogleGenerativeAIRetrievalConfig?
+) -> JSONValue? {
+    guard let retrievalConfig else { return toolConfig }
+
+    var merged: [String: JSONValue] = [:]
+    if let toolConfig, case .object(let toolConfigObject) = toolConfig {
+        merged = toolConfigObject
+    }
+    merged["retrievalConfig"] = retrievalConfigToJSONValue(retrievalConfig)
+    return .object(merged)
+}
+
+private func retrievalConfigToJSONValue(_ retrievalConfig: GoogleGenerativeAIRetrievalConfig) -> JSONValue {
+    var object: [String: JSONValue] = [:]
+    if let latLng = retrievalConfig.latLng {
+        object["latLng"] = .object([
+            "latitude": .number(latLng.latitude),
+            "longitude": .number(latLng.longitude)
+        ])
+    }
+    return .object(object)
+}
 
 private struct GoogleGenerativeAIResponse: Codable {
     struct Candidate: Codable {
@@ -479,7 +537,8 @@ private func mapGenerateResponse(
     response: GoogleGenerativeAIResponse,
     rawResponse: Any?,
     usageMetadata: GoogleGenerativeAIResponse.UsageMetadata?,
-    generateId: @escaping @Sendable () -> String
+    generateId: @escaping @Sendable () -> String,
+    providerOptionsName: String
 ) -> (
     content: [LanguageModelV3Content],
     finishReason: LanguageModelV3FinishReason,
@@ -519,19 +578,20 @@ private func mapGenerateResponse(
 	                            toolName: "code_execution",
 	                            input: stringifyJSONValue(argsObject),
 	                            providerExecuted: true,
-	                            providerMetadata: metadataFromThoughtSignature(part.thoughtSignature)
+	                            providerMetadata: metadataFromThoughtSignature(
+                                part.thoughtSignature,
+                                providerOptionsName: providerOptionsName
+                            )
 	                        )
 	                    )
 	                )
 	            } else if let result = part.codeExecutionResult, let toolCallId = lastCodeExecutionToolCallId {
-	                // Use actual values without defaults - omit keys if nil
+	                // Match upstream: include empty string when output is missing.
 	                var resultDict: [String: JSONValue] = [:]
 	                if let outcome = result.outcome {
                     resultDict["outcome"] = .string(outcome)
                 }
-                if let output = result.output {
-                    resultDict["output"] = .string(output)
-                }
+                resultDict["output"] = .string(result.output ?? "")
                 let resultObject: JSONValue = .object(resultDict)
                 content.append(
                     .toolResult(
@@ -539,7 +599,10 @@ private func mapGenerateResponse(
                             toolCallId: toolCallId,
                             toolName: "code_execution",
                             result: resultObject,
-                            providerMetadata: metadataFromThoughtSignature(part.thoughtSignature)
+                            providerMetadata: metadataFromThoughtSignature(
+                                part.thoughtSignature,
+                                providerOptionsName: providerOptionsName
+                            )
                         )
                     )
                 )
@@ -552,7 +615,10 @@ private func mapGenerateResponse(
                             toolCallId: toolCallId,
                             toolName: functionCall.name,
                             input: stringifyJSONValue(args),
-                            providerMetadata: metadataFromThoughtSignature(part.thoughtSignature)
+                            providerMetadata: metadataFromThoughtSignature(
+                                part.thoughtSignature,
+                                providerOptionsName: providerOptionsName
+                            )
                         )
                     )
                 )
@@ -567,7 +633,10 @@ private func mapGenerateResponse(
                     )
                 )
             } else if let text = part.text, !text.isEmpty {
-                let providerMetadata = metadataFromThoughtSignature(part.thoughtSignature)
+                let providerMetadata = metadataFromThoughtSignature(
+                    part.thoughtSignature,
+                    providerOptionsName: providerOptionsName
+                )
                 if part.thought == true {
                     content.append(
                         .reasoning(
@@ -608,7 +677,8 @@ private func mapGenerateResponse(
         groundingMetadata: candidate.groundingMetadata,
         urlContextMetadata: candidate.urlContextMetadata,
         safetyRatings: candidate.safetyRatings,
-        usageMetadata: usageMetadata
+        usageMetadata: usageMetadata,
+        providerOptionsName: providerOptionsName
     )
 
     return (
@@ -646,9 +716,12 @@ private func convertGoogleGenerativeAIUsage(_ usage: GoogleGenerativeAIResponse.
     )
 }
 
-private func metadataFromThoughtSignature(_ signature: String?) -> SharedV3ProviderMetadata? {
+private func metadataFromThoughtSignature(
+    _ signature: String?,
+    providerOptionsName: String
+) -> SharedV3ProviderMetadata? {
     guard let signature else { return nil }
-    return ["google": ["thoughtSignature": .string(signature)]]
+    return [providerOptionsName: ["thoughtSignature": .string(signature)]]
 }
 
 private func makeProviderMetadata(
@@ -656,7 +729,8 @@ private func makeProviderMetadata(
     groundingMetadata: JSONValue?,
     urlContextMetadata: JSONValue?,
     safetyRatings: JSONValue?,
-    usageMetadata: GoogleGenerativeAIResponse.UsageMetadata?
+    usageMetadata: GoogleGenerativeAIResponse.UsageMetadata?,
+    providerOptionsName: String
 ) -> SharedV3ProviderMetadata? {
     var metadata: [String: JSONValue] = [:]
 
@@ -690,7 +764,7 @@ private func makeProviderMetadata(
         metadata["usageMetadata"] = .null
     }
 
-    return metadata.isEmpty ? nil : ["google": metadata]
+    return metadata.isEmpty ? nil : [providerOptionsName: metadata]
 }
 
 private func extractSources(
@@ -812,7 +886,8 @@ private struct ToolCallDelta {
 
 private func getToolCallsFromParts(
     parts: [GoogleGenerativeAIResponse.Candidate.Part],
-    generateId: @escaping @Sendable () -> String
+    generateId: @escaping @Sendable () -> String,
+    providerOptionsName: String
 ) -> [ToolCallDelta] {
     parts.compactMap { part in
         guard let functionCall = part.functionCall, let args = functionCall.args else {
@@ -823,7 +898,10 @@ private func getToolCallsFromParts(
             toolCallId: generateId(),
             toolName: functionCall.name,
             args: stringifyJSONValue(args),
-            providerMetadata: metadataFromThoughtSignature(part.thoughtSignature)
+            providerMetadata: metadataFromThoughtSignature(
+                part.thoughtSignature,
+                providerOptionsName: providerOptionsName
+            )
         )
     }
 }
@@ -836,7 +914,8 @@ private func handleStreamingParts(
     blockCounter: inout Int,
     lastCodeExecutionToolCallId: inout String?,
     hasToolCalls: inout Bool,
-    generateId: @escaping @Sendable () -> String
+    generateId: @escaping @Sendable () -> String,
+    providerOptionsName: String
 ) {
     for part in parts {
         if let executableCode = part.executableCode, let code = executableCode.code {
@@ -857,19 +936,20 @@ private func handleStreamingParts(
 	                        toolName: "code_execution",
 	                        input: stringifyJSONValue(argsObject),
 	                        providerExecuted: true,
-	                        providerMetadata: metadataFromThoughtSignature(part.thoughtSignature)
+	                        providerMetadata: metadataFromThoughtSignature(
+                                part.thoughtSignature,
+                                providerOptionsName: providerOptionsName
+                            )
 	                    )
 	                )
 	            )
 	        } else if let result = part.codeExecutionResult, let toolCallId = lastCodeExecutionToolCallId {
-	            // Use actual values without defaults - omit keys if nil
+	            // Match upstream: include empty string when output is missing.
 	            var resultDict: [String: JSONValue] = [:]
 	            if let outcome = result.outcome {
                 resultDict["outcome"] = .string(outcome)
             }
-            if let output = result.output {
-                resultDict["output"] = .string(output)
-            }
+            resultDict["output"] = .string(result.output ?? "")
             let resultObject: JSONValue = .object(resultDict)
             continuation.yield(
                 .toolResult(
@@ -877,13 +957,19 @@ private func handleStreamingParts(
                         toolCallId: toolCallId,
                         toolName: "code_execution",
                         result: resultObject,
-                        providerMetadata: metadataFromThoughtSignature(part.thoughtSignature)
+                        providerMetadata: metadataFromThoughtSignature(
+                            part.thoughtSignature,
+                            providerOptionsName: providerOptionsName
+                        )
                     )
                 )
             )
             lastCodeExecutionToolCallId = nil
         } else if let text = part.text, !text.isEmpty {
-            let providerMetadata = metadataFromThoughtSignature(part.thoughtSignature)
+            let providerMetadata = metadataFromThoughtSignature(
+                part.thoughtSignature,
+                providerOptionsName: providerOptionsName
+            )
             if part.thought == true {
                 if let id = currentTextBlockId {
                     continuation.yield(.textEnd(id: id, providerMetadata: nil))
@@ -907,6 +993,15 @@ private func handleStreamingParts(
                 }
                 continuation.yield(.textDelta(id: currentTextBlockId!, delta: text, providerMetadata: providerMetadata))
             }
+        } else if let inlineData = part.inlineData {
+            continuation.yield(
+                .file(
+                    LanguageModelV3File(
+                        mediaType: inlineData.mimeType,
+                        data: .base64(inlineData.data)
+                    )
+                )
+            )
         }
     }
 }

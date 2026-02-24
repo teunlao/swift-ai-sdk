@@ -87,6 +87,69 @@ struct ConvertToGoogleGenerativeAIMessagesTests {
         }
     }
 
+    @Test("resolves thoughtSignature from google namespace when providerOptionsName is vertex")
+    func thoughtSignatureFallsBackToGoogleNamespaceForVertex() throws {
+        let prompt: LanguageModelV3Prompt = [
+            .assistant(content: [
+                .toolCall(.init(
+                    toolCallId: "call-1",
+                    toolName: "getWeather",
+                    input: .object(["location": .string("London")]),
+                    providerOptions: ["google": ["thoughtSignature": .string("google_sig")]]
+                ))
+            ], providerOptions: nil)
+        ]
+
+        let result = try convertToGoogleGenerativeAIMessages(
+            prompt,
+            options: .init(providerOptionsName: "vertex")
+        )
+
+        guard let part = result.contents.first?.parts.first else {
+            Issue.record("Missing converted part")
+            return
+        }
+
+        if case let .functionCall(call) = part {
+            #expect(call.thoughtSignature == "google_sig")
+        } else {
+            Issue.record("Expected functionCall part")
+        }
+    }
+
+    @Test("prefers vertex namespace over google namespace when both are present")
+    func thoughtSignaturePrefersVertexNamespace() throws {
+        let prompt: LanguageModelV3Prompt = [
+            .assistant(content: [
+                .toolCall(.init(
+                    toolCallId: "call-1",
+                    toolName: "getWeather",
+                    input: .object(["location": .string("London")]),
+                    providerOptions: [
+                        "vertex": ["thoughtSignature": .string("vertex_sig")],
+                        "google": ["thoughtSignature": .string("google_sig")]
+                    ]
+                ))
+            ], providerOptions: nil)
+        ]
+
+        let result = try convertToGoogleGenerativeAIMessages(
+            prompt,
+            options: .init(providerOptionsName: "vertex")
+        )
+
+        guard let part = result.contents.first?.parts.first else {
+            Issue.record("Missing converted part")
+            return
+        }
+
+        if case let .functionCall(call) = part {
+            #expect(call.thoughtSignature == "vertex_sig")
+        } else {
+            Issue.record("Expected functionCall part")
+        }
+    }
+
     @Test("maps tool result to function response")
     func toolResultMapping() throws {
         let toolPart = LanguageModelV3ToolResultPart(
@@ -228,16 +291,26 @@ struct ConvertToGoogleGenerativeAIMessagesTests {
         }
     }
 
-    @Test("should throw error for non-PNG images in assistant messages")
-    func throwErrorForNonPNGImagesInAssistantMessages() throws {
+    @Test("should support non-PNG images in assistant messages")
+    func supportNonPNGImagesInAssistantMessages() throws {
         let prompt: LanguageModelV3Prompt = [
             .assistant(content: [
                 .file(.init(data: .data(Data([0x01, 0x02, 0x03])), mediaType: "image/jpeg"))
             ], providerOptions: nil)
         ]
 
-        #expect(throws: (any Error).self) {
-            try convertToGoogleGenerativeAIMessages(prompt)
+        let result = try convertToGoogleGenerativeAIMessages(prompt)
+
+        guard let part = result.contents.first?.parts.first else {
+            Issue.record("Missing converted part")
+            return
+        }
+
+        if case let .inlineData(inline) = part {
+            #expect(inline.mimeType == "image/jpeg")
+            #expect(inline.data == Data([0x01, 0x02, 0x03]).base64EncodedString())
+        } else {
+            Issue.record("Expected inlineData part")
         }
     }
 
