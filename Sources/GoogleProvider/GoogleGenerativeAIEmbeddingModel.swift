@@ -5,7 +5,7 @@ import AISDKProviderUtils
 struct GoogleGenerativeAIEmbeddingConfig: Sendable {
     let provider: String
     let baseURL: String
-    let headers: @Sendable () -> [String: String?]
+    let headers: @Sendable () throws -> [String: String?]
     let fetch: FetchFunction?
 }
 
@@ -78,7 +78,7 @@ final class GoogleGenerativeAIEmbeddingModel: EmbeddingModelV3 {
             )
         }
 
-        let combinedHeaders = combineHeaders(config.headers(), options.headers?.mapValues { Optional($0) })
+        let combinedHeaders = combineHeaders(try config.headers(), options.headers?.mapValues { Optional($0) })
         let normalizedHeaders = combinedHeaders.compactMapValues { $0 }
 
         if options.values.count == 1, let value = options.values.first {

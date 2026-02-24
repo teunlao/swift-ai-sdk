@@ -13,7 +13,7 @@ import AISDKProviderUtils
 struct GoogleVertexVideoModelConfig: Sendable {
     let provider: String
     let baseURL: String
-    let headers: @Sendable () -> [String: String?]
+    let headers: @Sendable () throws -> [String: String?]
     let fetch: FetchFunction?
     let generateId: @Sendable () -> String
     let currentDate: @Sendable () -> Date
@@ -21,7 +21,7 @@ struct GoogleVertexVideoModelConfig: Sendable {
     init(
         provider: String,
         baseURL: String,
-        headers: @escaping @Sendable () -> [String: String?],
+        headers: @escaping @Sendable () throws -> [String: String?],
         fetch: FetchFunction?,
         generateId: @escaping @Sendable () -> String,
         currentDate: @escaping @Sendable () -> Date = { Date() }
@@ -426,8 +426,8 @@ public final class GoogleVertexVideoModel: VideoModelV3 {
             parameters[key] = value
         }
 
-        let requestHeaders: @Sendable () -> [String: String] = { [self] in
-            combineHeaders(self.config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 }
+        let requestHeaders: @Sendable () throws -> [String: String] = { [self] in
+            combineHeaders(try self.config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 }
         }
 
         let operation = try await postJsonToAPI(

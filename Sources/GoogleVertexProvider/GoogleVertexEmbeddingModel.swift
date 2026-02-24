@@ -12,7 +12,7 @@ import AISDKProviderUtils
 struct GoogleVertexEmbeddingConfig: Sendable {
     let provider: String
     let baseURL: String
-    let headers: @Sendable () -> [String: String?]
+    let headers: @Sendable () throws -> [String: String?]
     let fetch: FetchFunction?
 }
 
@@ -116,7 +116,7 @@ public final class GoogleVertexEmbeddingModel: EmbeddingModelV3 {
             }
         }
 
-        let headers = combineHeaders(config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 }
+        let headers = combineHeaders(try config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 }
 
         let response = try await postJsonToAPI(
             url: "\(config.baseURL)/models/\(modelIdentifier.rawValue):predict",

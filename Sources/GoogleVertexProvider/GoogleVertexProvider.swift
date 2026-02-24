@@ -220,14 +220,14 @@ public func createGoogleVertex(settings: GoogleVertexProviderSettings = .init())
         )
     }
 
-    let resolvedBaseURL: String = {
+    let baseURLResolution: Result<String, any Error> = {
         // If an explicit baseURL is provided, it should not require project/location.
         if let baseURL = withoutTrailingSlash(settings.baseURL) {
-            return baseURL
+            return .success(baseURL)
         }
 
         if apiKey != nil {
-            return GOOGLE_VERTEX_EXPRESS_MODE_BASE_URL
+            return .success(GOOGLE_VERTEX_EXPRESS_MODE_BASE_URL)
         }
 
         do {
@@ -235,13 +235,19 @@ public func createGoogleVertex(settings: GoogleVertexProviderSettings = .init())
             let project = try loadProject()
             let hostPrefix = location == "global" ? "" : "\(location)-"
             let baseHost = "\(hostPrefix)aiplatform.googleapis.com"
-            return "https://\(baseHost)/v1beta1/projects/\(project)/locations/\(location)/publishers/google"
+            return .success("https://\(baseHost)/v1beta1/projects/\(project)/locations/\(location)/publishers/google")
         } catch {
-            fatalError("Google Vertex configuration is missing: \(error)")
+            return .failure(error)
         }
     }()
 
-    let headersClosure: @Sendable () -> [String: String?] = {
+    let resolvedBaseURL: String = (try? baseURLResolution.get()) ?? GOOGLE_VERTEX_EXPRESS_MODE_BASE_URL
+
+    let headersClosure: @Sendable () throws -> [String: String?] = {
+        if case .failure(let error) = baseURLResolution {
+            throw error
+        }
+
         var computed: [String: String?] = [:]
         if let provided = settings.headers {
             for (key, value) in provided {

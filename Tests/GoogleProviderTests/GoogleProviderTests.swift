@@ -12,6 +12,67 @@ import Testing
 
 @Suite("GoogleProvider")
 struct GoogleProviderTests {
+    @Suite("baseURL configuration", .serialized)
+    struct BaseURLConfigurationTests {
+        actor URLCapture {
+            private(set) var url: String?
+            func store(_ url: String?) { self.url = url }
+            func current() -> String? { url }
+        }
+
+        private func makeFetch(capture: URLCapture) -> FetchFunction {
+            return { request in
+                await capture.store(request.url?.absoluteString)
+
+                let responseBody: [String: Any] = [
+                    "embedding": [
+                        "values": [0.1, 0.2]
+                    ]
+                ]
+                let data = try JSONSerialization.data(withJSONObject: responseBody, options: [.sortedKeys])
+                let response = HTTPURLResponse(
+                    url: URL(string: "https://example.com")!,
+                    statusCode: 200,
+                    httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "application/json"]
+                )!
+
+                return FetchResponse(body: .data(data), urlResponse: response)
+            }
+        }
+
+        @Test("missing API key throws LoadAPIKeyError on first request")
+        func testMissingAPIKeyThrowsAtRequestTime() async throws {
+            let original = getenv("GOOGLE_GENERATIVE_AI_API_KEY").flatMap { String(validatingCString: $0) }
+            defer {
+                if let original {
+                    setenv("GOOGLE_GENERATIVE_AI_API_KEY", original, 1)
+                } else {
+                    unsetenv("GOOGLE_GENERATIVE_AI_API_KEY")
+                }
+            }
+
+            unsetenv("GOOGLE_GENERATIVE_AI_API_KEY")
+
+            let capture = URLCapture()
+            let provider = createGoogleGenerativeAI(settings: GoogleProviderSettings(
+                fetch: makeFetch(capture: capture)
+            ))
+
+            do {
+                _ = try await provider.textEmbeddingModel(modelId: "text-embedding-004").doEmbed(
+                    options: EmbeddingModelV3DoEmbedOptions(values: ["hello"])
+                )
+                Issue.record("Expected missing API key error")
+            } catch let error as LoadAPIKeyError {
+                #expect(error.message.contains("Google Generative AI API key is missing"))
+            } catch {
+                Issue.record("Expected LoadAPIKeyError, got: \(error)")
+            }
+
+            #expect(await capture.current() == nil)
+        }
+    }
 
     @Test("creates a language model with default settings")
     func createLanguageModelWithDefaults() throws {

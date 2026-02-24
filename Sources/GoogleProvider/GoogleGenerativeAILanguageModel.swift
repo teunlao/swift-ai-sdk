@@ -32,7 +32,7 @@ public final class GoogleGenerativeAILanguageModel: LanguageModelV3 {
     public struct Config: Sendable {
         public let provider: String
         public let baseURL: String
-        public let headers: @Sendable () -> [String: String?]
+        public let headers: @Sendable () throws -> [String: String?]
         public let fetch: FetchFunction?
         public let generateId: @Sendable () -> String
         public let supportedUrls: @Sendable () -> [String: [NSRegularExpression]]
@@ -40,7 +40,7 @@ public final class GoogleGenerativeAILanguageModel: LanguageModelV3 {
         public init(
             provider: String,
             baseURL: String,
-            headers: @escaping @Sendable () -> [String: String?],
+            headers: @escaping @Sendable () throws -> [String: String?],
             fetch: FetchFunction?,
             generateId: @escaping @Sendable () -> String,
             supportedUrls: @escaping @Sendable () -> [String: [NSRegularExpression]]
@@ -79,7 +79,7 @@ public final class GoogleGenerativeAILanguageModel: LanguageModelV3 {
 
     public func doGenerate(options: LanguageModelV3CallOptions) async throws -> LanguageModelV3GenerateResult {
         let prepared = try await prepareRequest(options: options)
-        let headers = combineHeaders(config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 }
+        let headers = combineHeaders(try config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 }
 
         let response = try await postJsonToAPI(
             url: "\(config.baseURL)/\(getGoogleModelPath(modelIdentifier.rawValue)):generateContent",
@@ -118,7 +118,7 @@ public final class GoogleGenerativeAILanguageModel: LanguageModelV3 {
 
     public func doStream(options: LanguageModelV3CallOptions) async throws -> LanguageModelV3StreamResult {
         let prepared = try await prepareRequest(options: options)
-        let headers = combineHeaders(config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 }
+        let headers = combineHeaders(try config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 }
 
         let response = try await postJsonToAPI(
             url: "\(config.baseURL)/\(getGoogleModelPath(modelIdentifier.rawValue)):streamGenerateContent?alt=sse",

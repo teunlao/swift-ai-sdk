@@ -1,6 +1,6 @@
 # Provider: Google
 
-- Audited against upstream commit: `f5b2b5ef497ae6c207c17bb8ff81988ef084194b`
+- Audited against upstream commit: `73d5c5920e0fea7633027fdd87374adc9ba49743`
 - Upstream package: `external/vercel-ai-sdk/packages/google/src/**`
 - Swift implementation: `Sources/GoogleProvider/**`
 
@@ -9,6 +9,7 @@
 - [x] Tools request payload shape: tools are encoded as an array under `functionDeclarations` (Gemini-compatible).
 - [x] Provider tools: prepareTools mapping for `google_search`, `url_context`, `code_execution`, `enterprise_web_search`, `file_search`, `vertex_rag_store`, `google_maps` (model gating + payload shapes).
 - [x] Provider tool factories: tool ids/names and args schemas for the provider-defined tools listed above.
+- [x] Missing `GOOGLE_GENERATIVE_AI_API_KEY` now throws `LoadAPIKeyError` at request-time (no process crash / no `fatalError`).
 
 ## Known gaps / TODO
 

@@ -13,7 +13,7 @@ import GoogleProvider
 struct GoogleVertexImageModelConfig: Sendable {
     let provider: String
     let baseURL: String
-    let headers: @Sendable () -> [String: String?]
+    let headers: @Sendable () throws -> [String: String?]
     let fetch: FetchFunction?
     let generateId: @Sendable () -> String
     let currentDate: @Sendable () -> Date
@@ -21,7 +21,7 @@ struct GoogleVertexImageModelConfig: Sendable {
     init(
         provider: String,
         baseURL: String,
-        headers: @escaping @Sendable () -> [String: String?],
+        headers: @escaping @Sendable () throws -> [String: String?],
         fetch: FetchFunction?,
         generateId: @escaping @Sendable () -> String = generateID,
         currentDate: @escaping @Sendable () -> Date = { Date() }
@@ -408,7 +408,7 @@ public final class GoogleVertexImageModel: ImageModelV3 {
             instances = [.object(instance)]
         }
 
-        let headers = combineHeaders(config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 }
+        let headers = combineHeaders(try config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 }
 
         let response = try await postJsonToAPI(
             url: "\(config.baseURL)/models/\(modelIdentifier.rawValue):predict",

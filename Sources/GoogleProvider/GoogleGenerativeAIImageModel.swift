@@ -5,7 +5,7 @@ import AISDKProviderUtils
 struct GoogleGenerativeAIImageModelConfig: Sendable {
     let provider: String
     let baseURL: String
-    let headers: @Sendable () -> [String: String?]
+    let headers: @Sendable () throws -> [String: String?]
     let fetch: FetchFunction?
     let generateId: @Sendable () -> String
     let currentDate: @Sendable () -> Date
@@ -13,7 +13,7 @@ struct GoogleGenerativeAIImageModelConfig: Sendable {
     init(
         provider: String,
         baseURL: String,
-        headers: @escaping @Sendable () -> [String: String?],
+        headers: @escaping @Sendable () throws -> [String: String?],
         fetch: FetchFunction?,
         generateId: @escaping @Sendable () -> String = generateID,
         currentDate: @escaping @Sendable () -> Date = { Date() }
@@ -137,7 +137,7 @@ final class GoogleGenerativeAIImageModel: ImageModelV3 {
             }
         }
 
-        let headers = combineHeaders(config.headers(), options.headers?.mapValues { Optional($0) })
+        let headers = combineHeaders(try config.headers(), options.headers?.mapValues { Optional($0) })
         let normalizedHeaders = headers.compactMapValues { $0 }
 
         var instance: [String: JSONValue] = [:]

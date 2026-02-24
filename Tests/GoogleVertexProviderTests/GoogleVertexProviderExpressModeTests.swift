@@ -6,6 +6,82 @@ import AISDKProviderUtils
 
 @Suite("GoogleVertexProvider (express mode)")
 struct GoogleVertexProviderExpressModeTests {
+    @Suite("configuration", .serialized)
+    struct ConfigurationTests {
+        actor URLCapture {
+            private(set) var url: String?
+            func store(_ url: String?) { self.url = url }
+            func current() -> String? { url }
+        }
+
+        private func makeFetch(capture: URLCapture) -> FetchFunction {
+            return { request in
+                await capture.store(request.url?.absoluteString)
+
+                let responseBody: [String: Any] = [
+                    "predictions": [
+                        [
+                            "embeddings": [
+                                "values": [0.1],
+                                "statistics": ["token_count": 1]
+                            ]
+                        ]
+                    ]
+                ]
+                let data = try JSONSerialization.data(withJSONObject: responseBody, options: [.sortedKeys])
+                let response = HTTPURLResponse(
+                    url: URL(string: "https://example.com")!,
+                    statusCode: 200,
+                    httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "application/json"]
+                )!
+
+                return FetchResponse(body: .data(data), urlResponse: response)
+            }
+        }
+
+        @Test("missing project/location throws LoadSettingError at request-time")
+        func missingProjectLocationThrowsAtRequestTime() async throws {
+            let originalProject = getenv("GOOGLE_VERTEX_PROJECT").flatMap { String(validatingCString: $0) }
+            let originalLocation = getenv("GOOGLE_VERTEX_LOCATION").flatMap { String(validatingCString: $0) }
+
+            defer {
+                if let originalProject {
+                    setenv("GOOGLE_VERTEX_PROJECT", originalProject, 1)
+                } else {
+                    unsetenv("GOOGLE_VERTEX_PROJECT")
+                }
+
+                if let originalLocation {
+                    setenv("GOOGLE_VERTEX_LOCATION", originalLocation, 1)
+                } else {
+                    unsetenv("GOOGLE_VERTEX_LOCATION")
+                }
+            }
+
+            unsetenv("GOOGLE_VERTEX_PROJECT")
+            unsetenv("GOOGLE_VERTEX_LOCATION")
+
+            let capture = URLCapture()
+            let provider = createGoogleVertex(settings: GoogleVertexProviderSettings(
+                fetch: makeFetch(capture: capture)
+            ))
+
+            do {
+                _ = try await provider.textEmbeddingModel(modelId: "text-embedding-004").doEmbed(
+                    options: EmbeddingModelV3DoEmbedOptions(values: ["hello"])
+                )
+                Issue.record("Expected missing Vertex configuration error")
+            } catch let error as LoadSettingError {
+                #expect(error.message.contains("Google Vertex location setting is missing"))
+            } catch {
+                Issue.record("Expected LoadSettingError, got: \(error)")
+            }
+
+            #expect(await capture.current() == nil)
+        }
+    }
+
     actor RequestCapture {
         private(set) var lastRequest: URLRequest?
 

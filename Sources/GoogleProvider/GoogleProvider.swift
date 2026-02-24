@@ -130,17 +130,12 @@ public func createGoogleGenerativeAI(
     let baseURL = withoutTrailingSlash(settings.baseURL) ?? "https://generativelanguage.googleapis.com/v1beta"
     let providerName = settings.name ?? "google.generative-ai"
 
-    let headersClosure: @Sendable () -> [String: String?] = {
-        let apiKey: String
-        do {
-            apiKey = try loadAPIKey(
-                apiKey: settings.apiKey,
-                environmentVariableName: "GOOGLE_GENERATIVE_AI_API_KEY",
-                description: "Google Generative AI"
-            )
-        } catch {
-            fatalError("Google Generative AI API key is missing: \(error)")
-        }
+    let headersClosure: @Sendable () throws -> [String: String?] = {
+        let apiKey = try loadAPIKey(
+            apiKey: settings.apiKey,
+            environmentVariableName: "GOOGLE_GENERATIVE_AI_API_KEY",
+            description: "Google Generative AI"
+        )
 
         var baseHeaders: [String: String?] = [
             "x-goog-api-key": apiKey

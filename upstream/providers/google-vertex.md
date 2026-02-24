@@ -1,6 +1,6 @@
 # Provider: Google Vertex
 
-- Audited against upstream commit: `f5b2b5ef497ae6c207c17bb8ff81988ef084194b`
+- Audited against upstream commit: `73d5c5920e0fea7633027fdd87374adc9ba49743`
 - Upstream package: `external/vercel-ai-sdk/packages/google-vertex/src/**`
 - Swift implementation: `Sources/GoogleVertexProvider/**`
 
@@ -15,6 +15,7 @@
 - [x] Image editing mode (files/mask): builds `referenceImages` payload, supports `providerOptions.vertex.edit.*`, rejects URL-based images (upstream parity).
 - [x] Error mapping (Vertex): non-2xx responses throw `APICallError` with `error.message` for embedding + image calls.
 - [x] Tool factories: `googleVertexTools` exposes the same provider-defined tools surface as upstream (`google_search`, `url_context`, `code_execution`, plus `enterprise_web_search`, `google_maps`, `file_search`, `vertex_rag_store`).
+- [x] Missing Vertex config (`GOOGLE_VERTEX_LOCATION`/`GOOGLE_VERTEX_PROJECT`) now throws `LoadSettingError` at request-time (no process crash / no `fatalError`).
 
 Tests live under:
 - `Tests/GoogleVertexProviderTests/GoogleVertexChatBaseURLTests.swift`
