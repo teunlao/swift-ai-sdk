@@ -88,7 +88,7 @@ public enum OpenAIResponsesIncludeValue: String, CaseIterable, Sendable {
 
 public enum OpenAIResponsesLogprobsOption: Sendable, Equatable {
     case bool(Bool)
-    case number(Int)
+    case number(Double)
 }
 
 public struct OpenAIResponsesProviderOptions: Sendable, Equatable {
@@ -96,7 +96,7 @@ public struct OpenAIResponsesProviderOptions: Sendable, Equatable {
     public var include: [OpenAIResponsesIncludeValue]?
     public var instructions: String?
     public var logprobs: OpenAIResponsesLogprobsOption?
-    public var maxToolCalls: Int?
+    public var maxToolCalls: Double?
     public var metadata: JSONValue?
     public var parallelToolCalls: Bool?
     public var previousResponseId: String?
@@ -119,7 +119,7 @@ public struct OpenAIResponsesProviderOptions: Sendable, Equatable {
         include: [OpenAIResponsesIncludeValue]? = nil,
         instructions: String? = nil,
         logprobs: OpenAIResponsesLogprobsOption? = nil,
-        maxToolCalls: Int? = nil,
+        maxToolCalls: Double? = nil,
         metadata: JSONValue? = nil,
         parallelToolCalls: Bool? = nil,
         previousResponseId: String? = nil,
@@ -179,7 +179,7 @@ private let openAIResponsesProviderOptionsJSONSchema: JSONValue = .object([
             "type": .array([.string("string"), .string("null")])
         ]),
         "logprobs": .object([
-            "type": .array([.string("boolean"), .string("number"), .string("null")])
+            "type": .array([.string("boolean"), .string("number")])
         ]),
         "maxToolCalls": .object([
             "type": .array([.string("number"), .string("null")])
@@ -227,10 +227,10 @@ private let openAIResponsesProviderOptionsJSONSchema: JSONValue = .object([
             "type": .array([.string("string"), .string("null")])
         ]),
         "systemMessageMode": .object([
-            "type": .array([.string("string"), .string("null")])
+            "type": .string("string")
         ]),
         "forceReasoning": .object([
-            "type": .array([.string("boolean"), .string("null")])
+            "type": .string("boolean")
         ])
     ])
 ])
@@ -288,7 +288,7 @@ private func parseOpenAIResponsesProviderOptions(dict: [String: JSONValue]) thro
     }
 
     options.instructions = try parseOptionalString(dict, key: "instructions")
-    options.maxToolCalls = try parseOptionalInt(dict, key: "maxToolCalls")
+    options.maxToolCalls = try parseOptionalNumber(dict, key: "maxToolCalls")
     if let metadataValue = dict["metadata"], metadataValue != .null {
         options.metadata = metadataValue
     }
@@ -342,7 +342,10 @@ private func parseOpenAIResponsesProviderOptions(dict: [String: JSONValue]) thro
     }
     options.user = try parseOptionalString(dict, key: "user")
 
-    if let systemModeValue = dict["systemMessageMode"], systemModeValue != .null {
+    if let systemModeValue = dict["systemMessageMode"] {
+        guard systemModeValue != .null else {
+            throw TypeValidationError.wrap(value: systemModeValue, cause: SchemaValidationIssuesError(vendor: "openai", issues: "systemMessageMode must be a string"))
+        }
         guard case .string(let rawMode) = systemModeValue else {
             throw TypeValidationError.wrap(value: systemModeValue, cause: SchemaValidationIssuesError(vendor: "openai", issues: "systemMessageMode must be a string"))
         }
@@ -358,18 +361,20 @@ private func parseOpenAIResponsesProviderOptions(dict: [String: JSONValue]) thro
         }
     }
 
-    options.forceReasoning = try parseOptionalBool(dict, key: "forceReasoning")
+    options.forceReasoning = try parseOptionalBool(dict, key: "forceReasoning", allowNull: false)
 
-    if let logprobsValue = dict["logprobs"], logprobsValue != .null {
+    if let logprobsValue = dict["logprobs"] {
+        guard logprobsValue != .null else {
+            throw TypeValidationError.wrap(value: logprobsValue, cause: SchemaValidationIssuesError(vendor: "openai", issues: "logprobs must be boolean or number"))
+        }
         switch logprobsValue {
         case .bool(let value):
             options.logprobs = .bool(value)
         case .number(let number):
-            let intValue = Int(number)
-            if Double(intValue) != number || intValue < 1 || intValue > TOP_LOGPROBS_MAX {
+            if number < 1 || number > Double(TOP_LOGPROBS_MAX) {
                 throw TypeValidationError.wrap(value: logprobsValue, cause: SchemaValidationIssuesError(vendor: "openai", issues: "logprobs must be between 1 and 20"))
             }
-            options.logprobs = .number(intValue)
+            options.logprobs = .number(number)
         default:
             throw TypeValidationError.wrap(value: logprobsValue, cause: SchemaValidationIssuesError(vendor: "openai", issues: "logprobs must be boolean or number"))
         }
@@ -378,30 +383,44 @@ private func parseOpenAIResponsesProviderOptions(dict: [String: JSONValue]) thro
     return options
 }
 
-private func parseOptionalString(_ dict: [String: JSONValue], key: String) throws -> String? {
-    guard let value = dict[key], value != .null else { return nil }
+private func parseOptionalString(_ dict: [String: JSONValue], key: String, allowNull: Bool = true) throws -> String? {
+    guard let value = dict[key] else { return nil }
+    if value == .null {
+        if allowNull {
+            return nil
+        }
+        throw TypeValidationError.wrap(value: value, cause: SchemaValidationIssuesError(vendor: "openai", issues: "\(key) must be a string"))
+    }
     guard case .string(let stringValue) = value else {
         throw TypeValidationError.wrap(value: value, cause: SchemaValidationIssuesError(vendor: "openai", issues: "\(key) must be a string"))
     }
     return stringValue
 }
 
-private func parseOptionalBool(_ dict: [String: JSONValue], key: String) throws -> Bool? {
-    guard let value = dict[key], value != .null else { return nil }
+private func parseOptionalBool(_ dict: [String: JSONValue], key: String, allowNull: Bool = true) throws -> Bool? {
+    guard let value = dict[key] else { return nil }
+    if value == .null {
+        if allowNull {
+            return nil
+        }
+        throw TypeValidationError.wrap(value: value, cause: SchemaValidationIssuesError(vendor: "openai", issues: "\(key) must be a boolean"))
+    }
     guard case .bool(let boolValue) = value else {
         throw TypeValidationError.wrap(value: value, cause: SchemaValidationIssuesError(vendor: "openai", issues: "\(key) must be a boolean"))
     }
     return boolValue
 }
 
-private func parseOptionalInt(_ dict: [String: JSONValue], key: String) throws -> Int? {
-    guard let value = dict[key], value != .null else { return nil }
+private func parseOptionalNumber(_ dict: [String: JSONValue], key: String, allowNull: Bool = true) throws -> Double? {
+    guard let value = dict[key] else { return nil }
+    if value == .null {
+        if allowNull {
+            return nil
+        }
+        throw TypeValidationError.wrap(value: value, cause: SchemaValidationIssuesError(vendor: "openai", issues: "\(key) must be a number"))
+    }
     guard case .number(let number) = value else {
         throw TypeValidationError.wrap(value: value, cause: SchemaValidationIssuesError(vendor: "openai", issues: "\(key) must be a number"))
     }
-    let intValue = Int(number)
-    if Double(intValue) != number {
-        throw TypeValidationError.wrap(value: value, cause: SchemaValidationIssuesError(vendor: "openai", issues: "\(key) must be an integer"))
-    }
-    return intValue
+    return number
 }

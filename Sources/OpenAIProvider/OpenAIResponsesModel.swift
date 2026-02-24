@@ -437,11 +437,11 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             includeSet.insert(value)
         }
 
-        var topLogprobs: Int?
+        var topLogprobs: Double?
         if let logprobs = openAIOptions?.logprobs {
             switch logprobs {
             case .bool(let flag) where flag:
-                topLogprobs = TOP_LOGPROBS_MAX
+                topLogprobs = Double(TOP_LOGPROBS_MAX)
             case .bool:
                 break
             case .number(let value):
@@ -835,8 +835,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
 
             case "web_search_call":
                 guard let toolCallId = object["id"]?.stringValue,
-                      let action = object["action"],
-                      let mappedOutput = mapWebSearchOutput(action) else { continue }
+                      let mappedOutput = mapWebSearchOutput(object["action"]) else { continue }
 
                 let toolName = toolNameMapping.toCustomToolName(webSearchToolName ?? "web_search")
 
@@ -1378,7 +1377,13 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
         }
     }
 
-    private func mapWebSearchOutput(_ action: JSONValue) -> JSONValue? {
+    private func mapWebSearchOutput(_ action: JSONValue?) -> JSONValue? {
+        guard let action else {
+            return .object([:])
+        }
+        guard action != .null else {
+            return .object([:])
+        }
         guard let actionObject = action.objectValue,
               let actionType = actionObject["type"]?.stringValue else {
             return nil
@@ -1396,7 +1401,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             var result: [String: JSONValue] = [
                 "action": .object(mappedAction)
             ]
-            if let sources = actionObject["sources"] {
+            if let sources = actionObject["sources"], sources != .null {
                 result["sources"] = sources
             }
 
@@ -1658,8 +1663,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             )))
         case "web_search_call":
             guard let callId = item["id"]?.stringValue,
-                  let action = item["action"],
-                  let mappedOutput = mapWebSearchOutput(action) else { return }
+                  let mappedOutput = mapWebSearchOutput(item["action"]) else { return }
             ongoingToolCalls[outputIndex] = nil
             continuation.yield(.toolResult(LanguageModelV3ToolResult(
                 toolCallId: callId,

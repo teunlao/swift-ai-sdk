@@ -9,15 +9,6 @@ public struct OpenAILocalShellAction: Codable, Sendable, Equatable {
     public let user: String?
     public let workingDirectory: String?
     public let env: [String: String]?
-
-    private enum CodingKeys: String, CodingKey {
-        case type
-        case command
-        case timeoutMs = "timeout_ms"
-        case user
-        case workingDirectory = "working_directory"
-        case env
-    }
 }
 
 public struct OpenAILocalShellInput: Codable, Sendable, Equatable {
@@ -46,13 +37,13 @@ private let localShellInputJSONSchema: JSONValue = .object([
                     "type": .string("array"),
                     "items": .object(["type": .string("string")])
                 ]),
-                "timeout_ms": .object([
+                "timeoutMs": .object([
                     "type": .array([.string("number"), .string("null")])
                 ]),
                 "user": .object([
                     "type": .array([.string("string"), .string("null")])
                 ]),
-                "working_directory": .object([
+                "workingDirectory": .object([
                     "type": .array([.string("string"), .string("null")])
                 ]),
                 "env": .object([

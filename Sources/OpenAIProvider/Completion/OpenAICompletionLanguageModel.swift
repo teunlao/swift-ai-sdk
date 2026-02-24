@@ -274,7 +274,7 @@ public final class OpenAICompletionLanguageModel: LanguageModelV3 {
                         body["logprobs"] = .number(0)
                     }
                 case .number(let value):
-                    body["logprobs"] = .number(Double(value))
+                    body["logprobs"] = .number(value)
                 }
             }
         }

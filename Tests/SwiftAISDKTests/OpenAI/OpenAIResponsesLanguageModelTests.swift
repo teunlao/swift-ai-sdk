@@ -849,7 +849,10 @@ struct OpenAIResponsesLanguageModelTests {
         if let data = await capture.current(),
            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
             #expect(json["stream"] as? Bool == true)
-            #expect(json["top_logprobs"] as? Int == TOP_LOGPROBS_MAX)
+            #expect(
+                (json["top_logprobs"] as? Int == TOP_LOGPROBS_MAX) ||
+                (json["top_logprobs"] as? Double == Double(TOP_LOGPROBS_MAX))
+            )
         } else {
             Issue.record("Missing captured request body")
         }
@@ -1637,7 +1640,10 @@ struct OpenAIResponsesLanguageModelTests {
         } else {
             Issue.record("Missing include array for logprobs")
         }
-        #expect(json["top_logprobs"] as? Int == TOP_LOGPROBS_MAX)
+        #expect(
+            (json["top_logprobs"] as? Int == TOP_LOGPROBS_MAX) ||
+            (json["top_logprobs"] as? Double == Double(TOP_LOGPROBS_MAX))
+        )
     }
 
     @Test("doGenerate auto-includes provider tool sources and outputs")
@@ -1703,7 +1709,10 @@ struct OpenAIResponsesLanguageModelTests {
         #expect(includeValues.contains("web_search_call.action.sources"))
         #expect(includeValues.contains("code_interpreter_call.outputs"))
         #expect(includeValues.contains("message.output_text.logprobs"))
-        #expect(json["top_logprobs"] as? Int == TOP_LOGPROBS_MAX)
+        #expect(
+            (json["top_logprobs"] as? Int == TOP_LOGPROBS_MAX) ||
+            (json["top_logprobs"] as? Double == Double(TOP_LOGPROBS_MAX))
+        )
     }
 
     @Test("doStream emits web search tool results")
@@ -2050,6 +2059,153 @@ struct OpenAIResponsesLanguageModelTests {
         }
         #expect(findAction["url"] == .null)
         #expect(findAction["pattern"] == .null)
+    }
+
+    @Test("doGenerate accepts web_search_call without action")
+    func testDoGenerateWebSearchWithoutAction() async throws {
+        let responseJSON: [String: Any] = [
+            "id": "resp_missing_web_search_action",
+            "created_at": 1_742_160_000.0,
+            "model": "gpt-4o",
+            "output": [
+                [
+                    "id": "ws_missing_action",
+                    "type": "web_search_call",
+                    "status": "completed"
+                ],
+                [
+                    "id": "msg_done",
+                    "type": "message",
+                    "status": "completed",
+                    "role": "assistant",
+                    "content": [["type": "output_text", "text": "No action payload was returned.", "annotations": []]]
+                ]
+            ],
+            "service_tier": "default",
+            "usage": [
+                "input_tokens": 10,
+                "output_tokens": 5,
+                "output_tokens_details": ["reasoning_tokens": 0],
+                "input_tokens_details": ["cached_tokens": 0]
+            ],
+            "warnings": [],
+            "incomplete_details": ["reason": NSNull()],
+            "finish_reason": NSNull(),
+            "error": NSNull()
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.openai.com/v1/responses")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch)
+        )
+        let webSearchTool = LanguageModelV3Tool.provider(.init(id: "openai.web_search", name: "web_search", args: [:]))
+
+        let result = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: samplePrompt,
+                tools: [webSearchTool]
+            )
+        )
+
+        guard let webSearchResult = result.content.first(where: {
+            if case .toolResult(let toolResult) = $0 {
+                return toolResult.toolCallId == "ws_missing_action"
+            }
+            return false
+        }),
+        case .toolResult(let toolResult) = webSearchResult,
+        case .object(let payload) = toolResult.result else {
+            Issue.record("Expected web_search tool-result for missing action")
+            return
+        }
+
+        #expect(payload.isEmpty)
+    }
+
+    @Test("doGenerate excludes null web search sources")
+    func testDoGenerateWebSearchNullSourcesAreOmitted() async throws {
+        let responseJSON: [String: Any] = [
+            "id": "resp_web_null_sources",
+            "created_at": 1_742_160_001.0,
+            "model": "gpt-4o",
+            "output": [
+                [
+                    "id": "web_null_sources",
+                    "type": "web_search_call",
+                    "status": "completed",
+                    "action": [
+                        "type": "search",
+                        "query": "swift parity",
+                        "sources": NSNull()
+                    ]
+                ]
+            ],
+            "service_tier": "default",
+            "usage": [
+                "input_tokens": 2,
+                "output_tokens": 1,
+                "output_tokens_details": ["reasoning_tokens": 0],
+                "input_tokens_details": ["cached_tokens": 0]
+            ],
+            "warnings": [],
+            "incomplete_details": ["reason": NSNull()],
+            "finish_reason": NSNull(),
+            "error": NSNull()
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.openai.com/v1/responses")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch)
+        )
+        let webSearchTool = LanguageModelV3Tool.provider(.init(id: "openai.web_search", name: "web_search", args: [:]))
+
+        let result = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: samplePrompt,
+                tools: [webSearchTool]
+            )
+        )
+
+        guard let webSearchResult = result.content.first(where: {
+            if case .toolResult(let toolResult) = $0 {
+                return toolResult.toolCallId == "web_null_sources"
+            }
+            return false
+        }),
+        case .toolResult(let toolResult) = webSearchResult,
+        case .object(let payload) = toolResult.result,
+        case .object(let action) = payload["action"] else {
+            Issue.record("Expected mapped web_search tool-result")
+            return
+        }
+
+        #expect(action["type"] == .string("search"))
+        #expect(action["query"] == .string("swift parity"))
+        #expect(payload["sources"] == nil)
     }
 
     @Test("doStream aliases mcp_call toolCallId after mcp_approval_request")
@@ -4359,7 +4515,7 @@ struct OpenAIResponsesLanguageModelTests {
         #expect(json["model"] as? String == "gpt-4o")
         #expect(json["temperature"] as? Double == 0.5)
         #expect(json["top_p"] as? Double == 0.3)
-        #expect(json["max_tool_calls"] as? Int == 10)
+        #expect((json["max_tool_calls"] as? Int == 10) || (json["max_tool_calls"] as? Double == 10))
 
         if let input = json["input"] as? [[String: Any]] {
             #expect(input.count == 2)
@@ -5498,7 +5654,10 @@ struct OpenAIResponsesLanguageModelTests {
         } else {
             Issue.record("Missing include for logprobs")
         }
-        #expect(json["top_logprobs"] as? Int == TOP_LOGPROBS_MAX)
+        #expect(
+            (json["top_logprobs"] as? Int == TOP_LOGPROBS_MAX) ||
+            (json["top_logprobs"] as? Double == Double(TOP_LOGPROBS_MAX))
+        )
     }
 
     // MARK: - Response Format Additional Tests (lines 936-1061)

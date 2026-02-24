@@ -775,6 +775,70 @@ struct OpenAIChatLanguageModelTests {
         }
     }
 
+    @Test("Ignore provider-specific options for different provider")
+    func testIgnoreCustomProviderKeyOptions() async throws {
+        final class RequestCapture: @unchecked Sendable {
+            var body: [String: Any]?
+        }
+
+        let capture = RequestCapture()
+        let mockData = try JSONSerialization.data(withJSONObject: [
+            "id": "test",
+            "created": 1,
+            "model": "gpt-3.5-turbo",
+            "choices": [["index": 0, "message": ["content": "ok"], "finish_reason": "stop"]],
+            "usage": ["prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2]
+        ])
+
+        let mockFetch: FetchFunction = { request in
+            if let body = request.httpBody,
+               let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] {
+                capture.body = json
+            }
+            return FetchResponse(
+                body: .data(mockData),
+                urlResponse: HTTPURLResponse(
+                    url: request.url!,
+                    statusCode: 200,
+                    httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "application/json"]
+                )!
+            )
+        }
+
+        let config = OpenAIConfig(
+            provider: "custom.chat",
+            url: { _ in "https://api.openai.com/v1/chat/completions" },
+            headers: { ["Authorization": "Bearer test-key"] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAIChatLanguageModel(modelId: "gpt-3.5-turbo", config: config)
+
+        _ = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: samplePrompt,
+                providerOptions: [
+                    "custom": [
+                        "user": .string("custom-user"),
+                        "parallelToolCalls": .bool(false),
+                        "logitBias": .object(["50256": .number(-100)])
+                    ]
+                ]
+            )
+        )
+
+        guard let body = capture.body else {
+            Issue.record("Request body not captured")
+            return
+        }
+
+        #expect(body["model"] as? String == "gpt-3.5-turbo")
+        #expect(body["user"] == nil)
+        #expect(body["parallel_tool_calls"] == nil)
+        #expect(body["logit_bias"] == nil)
+    }
+
     @Test("Pass reasoningEffort from provider metadata")
     func testReasoningEffortFromMetadata() async throws {
         final class RequestCapture: @unchecked Sendable {

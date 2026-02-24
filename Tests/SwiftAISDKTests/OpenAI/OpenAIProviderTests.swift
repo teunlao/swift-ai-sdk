@@ -166,4 +166,31 @@ struct OpenAIProviderTests {
             }
         }
     }
+
+    @Test("embeddingModel String alias creates embedding model")
+    func embeddingModelStringAliasCreatesEmbeddingModel() throws {
+        let provider = createOpenAIProvider(
+            settings: OpenAIProviderSettings(apiKey: "test-api-key")
+        )
+
+        let model = try provider.embeddingModel(modelId: "text-embedding-3-small")
+
+        #expect(model.provider == "openai.embedding")
+        #expect(model.modelId == "text-embedding-3-small")
+    }
+
+    @Test("typed embeddingModel alias matches embedding alias")
+    func typedEmbeddingModelAliasMatchesEmbeddingAlias() {
+        let provider = createOpenAIProvider(
+            settings: OpenAIProviderSettings(apiKey: "test-api-key")
+        )
+
+        let typedModel = provider.embeddingModel(OpenAIEmbeddingModelId(rawValue: "text-embedding-3-small"))
+        let embeddingAliasModel = provider.embedding(OpenAIEmbeddingModelId(rawValue: "text-embedding-3-small"))
+
+        #expect(typedModel.provider == "openai.embedding")
+        #expect(typedModel.modelId == "text-embedding-3-small")
+        #expect(embeddingAliasModel.provider == "openai.embedding")
+        #expect(embeddingAliasModel.modelId == "text-embedding-3-small")
+    }
 }

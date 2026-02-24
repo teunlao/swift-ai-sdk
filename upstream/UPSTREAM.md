@@ -5,10 +5,10 @@
 
 ## Current pinned reference
 
-- Upstream commit: `32be973f7f70fea5bab1fa0cb393f95db1267503`
-- Commit subject: `Version Packages (#12745)`
-- Commit date: `2026-02-20`
-- Last refreshed (local): `2026-02-23`
+- Upstream commit: `73d5c5920e0fea7633027fdd87374adc9ba49743`
+- Commit subject: `Version Packages (#12792)`
+- Commit date: `2026-02-24`
+- Last refreshed (local): `2026-02-24`
 
 ## Refresh history
 
@@ -17,3 +17,4 @@
 - `2026-02-01`: Pinned at `f5b2b5ef497ae6c207c17bb8ff81988ef084194b`
 - `2026-02-04`: Pinned at `f3a72bc2a0433fda9506b7c7ac1b28b4adafcfc9`
 - `2026-02-23`: Pinned at `32be973f7f70fea5bab1fa0cb393f95db1267503`
+- `2026-02-24`: Pinned at `73d5c5920e0fea7633027fdd87374adc9ba49743`

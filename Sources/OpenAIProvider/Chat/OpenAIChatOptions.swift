@@ -4,14 +4,14 @@ import AISDKProviderUtils
 
 enum OpenAIChatLogprobsOption: Sendable, Equatable {
     case bool(Bool)
-    case number(Int)
+    case number(Double)
 
     var jsonValue: JSONValue {
         switch self {
         case .bool(let flag):
             return .bool(flag)
         case .number(let value):
-            return .number(Double(value))
+            return .number(value)
         }
     }
 }
@@ -55,7 +55,7 @@ struct OpenAIChatProviderOptions: Sendable, Equatable {
     var parallelToolCalls: Bool?
     var user: String?
     var reasoningEffort: OpenAIChatReasoningEffort?
-    var maxCompletionTokens: Int?
+    var maxCompletionTokens: Double?
     var store: Bool?
     var metadata: [String: String]?
     var prediction: [String: JSONValue]?
@@ -88,8 +88,16 @@ let openAIChatProviderOptionsSchema = FlexibleSchema<OpenAIChatProviderOptions>(
                 }
 
                 var result = OpenAIChatProviderOptions()
+                func field(_ key: String, message: String) throws -> JSONValue? {
+                    guard let value = dict[key] else { return nil }
+                    guard value != .null else {
+                        let error = SchemaValidationIssuesError(vendor: "openai", issues: message)
+                        throw TypeValidationError.wrap(value: value, cause: error)
+                    }
+                    return value
+                }
 
-                if let logitBiasValue = dict["logitBias"], logitBiasValue != .null {
+                if let logitBiasValue = try field("logitBias", message: "logitBias must be an object") {
                     guard case .object(let entries) = logitBiasValue else {
                         let error = SchemaValidationIssuesError(vendor: "openai", issues: "logitBias must be an object")
                         return .failure(error: TypeValidationError.wrap(value: logitBiasValue, cause: error))
@@ -112,24 +120,19 @@ let openAIChatProviderOptionsSchema = FlexibleSchema<OpenAIChatProviderOptions>(
                     result.logitBias = bias
                 }
 
-                if let logprobsValue = dict["logprobs"], logprobsValue != .null {
+                if let logprobsValue = try field("logprobs", message: "logprobs must be boolean or number") {
                     switch logprobsValue {
                     case .bool(let flag):
                         result.logprobs = .bool(flag)
                     case .number(let number):
-                        let intValue = Int(number)
-                        if Double(intValue) != number {
-                            let error = SchemaValidationIssuesError(vendor: "openai", issues: "logprobs must be an integer when numeric")
-                            return .failure(error: TypeValidationError.wrap(value: logprobsValue, cause: error))
-                        }
-                        result.logprobs = .number(intValue)
+                        result.logprobs = .number(number)
                     default:
                         let error = SchemaValidationIssuesError(vendor: "openai", issues: "logprobs must be boolean or number")
                         return .failure(error: TypeValidationError.wrap(value: logprobsValue, cause: error))
                     }
                 }
 
-                if let parallel = dict["parallelToolCalls"], parallel != .null {
+                if let parallel = try field("parallelToolCalls", message: "parallelToolCalls must be a boolean") {
                     guard case .bool(let flag) = parallel else {
                         let error = SchemaValidationIssuesError(vendor: "openai", issues: "parallelToolCalls must be a boolean")
                         return .failure(error: TypeValidationError.wrap(value: parallel, cause: error))
@@ -137,7 +140,7 @@ let openAIChatProviderOptionsSchema = FlexibleSchema<OpenAIChatProviderOptions>(
                     result.parallelToolCalls = flag
                 }
 
-                if let userValue = dict["user"], userValue != .null {
+                if let userValue = try field("user", message: "user must be a string") {
                     guard case .string(let string) = userValue else {
                         let error = SchemaValidationIssuesError(vendor: "openai", issues: "user must be a string")
                         return .failure(error: TypeValidationError.wrap(value: userValue, cause: error))
@@ -145,7 +148,7 @@ let openAIChatProviderOptionsSchema = FlexibleSchema<OpenAIChatProviderOptions>(
                     result.user = string
                 }
 
-                if let reasoningValue = dict["reasoningEffort"], reasoningValue != .null {
+                if let reasoningValue = try field("reasoningEffort", message: "reasoningEffort must be one of minimal, low, medium, high") {
                     guard case .string(let string) = reasoningValue,
                           let effort = OpenAIChatReasoningEffort(rawValue: string) else {
                         let error = SchemaValidationIssuesError(vendor: "openai", issues: "reasoningEffort must be one of minimal, low, medium, high")
@@ -154,20 +157,15 @@ let openAIChatProviderOptionsSchema = FlexibleSchema<OpenAIChatProviderOptions>(
                     result.reasoningEffort = effort
                 }
 
-                if let maxCompletionTokens = dict["maxCompletionTokens"], maxCompletionTokens != .null {
+                if let maxCompletionTokens = try field("maxCompletionTokens", message: "maxCompletionTokens must be a number") {
                     guard case .number(let number) = maxCompletionTokens else {
                         let error = SchemaValidationIssuesError(vendor: "openai", issues: "maxCompletionTokens must be a number")
                         return .failure(error: TypeValidationError.wrap(value: maxCompletionTokens, cause: error))
                     }
-                    let intValue = Int(number)
-                    if Double(intValue) != number {
-                        let error = SchemaValidationIssuesError(vendor: "openai", issues: "maxCompletionTokens must be an integer")
-                        return .failure(error: TypeValidationError.wrap(value: maxCompletionTokens, cause: error))
-                    }
-                    result.maxCompletionTokens = intValue
+                    result.maxCompletionTokens = number
                 }
 
-                if let storeValue = dict["store"], storeValue != .null {
+                if let storeValue = try field("store", message: "store must be a boolean") {
                     guard case .bool(let flag) = storeValue else {
                         let error = SchemaValidationIssuesError(vendor: "openai", issues: "store must be a boolean")
                         return .failure(error: TypeValidationError.wrap(value: storeValue, cause: error))
@@ -175,7 +173,7 @@ let openAIChatProviderOptionsSchema = FlexibleSchema<OpenAIChatProviderOptions>(
                     result.store = flag
                 }
 
-                if let metadataValue = dict["metadata"], metadataValue != .null {
+                if let metadataValue = try field("metadata", message: "metadata must be an object") {
                     guard case .object(let entries) = metadataValue else {
                         let error = SchemaValidationIssuesError(vendor: "openai", issues: "metadata must be an object")
                         return .failure(error: TypeValidationError.wrap(value: metadataValue, cause: error))
@@ -199,7 +197,7 @@ let openAIChatProviderOptionsSchema = FlexibleSchema<OpenAIChatProviderOptions>(
                     result.metadata = metadata
                 }
 
-                if let predictionValue = dict["prediction"], predictionValue != .null {
+                if let predictionValue = try field("prediction", message: "prediction must be an object") {
                     guard case .object(let entries) = predictionValue else {
                         let error = SchemaValidationIssuesError(vendor: "openai", issues: "prediction must be an object")
                         return .failure(error: TypeValidationError.wrap(value: predictionValue, cause: error))
@@ -207,7 +205,7 @@ let openAIChatProviderOptionsSchema = FlexibleSchema<OpenAIChatProviderOptions>(
                     result.prediction = entries
                 }
 
-                if let tierValue = dict["serviceTier"], tierValue != .null {
+                if let tierValue = try field("serviceTier", message: "serviceTier must be one of auto, flex, priority, default") {
                     guard case .string(let string) = tierValue,
                           let tier = OpenAIChatServiceTier(rawValue: string) else {
                         let error = SchemaValidationIssuesError(vendor: "openai", issues: "serviceTier must be one of auto, flex, priority, default")
@@ -216,7 +214,7 @@ let openAIChatProviderOptionsSchema = FlexibleSchema<OpenAIChatProviderOptions>(
                     result.serviceTier = tier
                 }
 
-                if let strictValue = dict["strictJsonSchema"], strictValue != .null {
+                if let strictValue = try field("strictJsonSchema", message: "strictJsonSchema must be a boolean") {
                     guard case .bool(let flag) = strictValue else {
                         let error = SchemaValidationIssuesError(vendor: "openai", issues: "strictJsonSchema must be a boolean")
                         return .failure(error: TypeValidationError.wrap(value: strictValue, cause: error))
@@ -224,7 +222,7 @@ let openAIChatProviderOptionsSchema = FlexibleSchema<OpenAIChatProviderOptions>(
                     result.strictJsonSchema = flag
                 }
 
-                if let verbosityValue = dict["textVerbosity"], verbosityValue != .null {
+                if let verbosityValue = try field("textVerbosity", message: "textVerbosity must be one of low, medium, high") {
                     guard case .string(let string) = verbosityValue,
                           let verbosity = OpenAIChatTextVerbosity(rawValue: string) else {
                         let error = SchemaValidationIssuesError(vendor: "openai", issues: "textVerbosity must be one of low, medium, high")
@@ -233,7 +231,7 @@ let openAIChatProviderOptionsSchema = FlexibleSchema<OpenAIChatProviderOptions>(
                     result.textVerbosity = verbosity
                 }
 
-                if let cacheKeyValue = dict["promptCacheKey"], cacheKeyValue != .null {
+                if let cacheKeyValue = try field("promptCacheKey", message: "promptCacheKey must be a string") {
                     guard case .string(let string) = cacheKeyValue else {
                         let error = SchemaValidationIssuesError(vendor: "openai", issues: "promptCacheKey must be a string")
                         return .failure(error: TypeValidationError.wrap(value: cacheKeyValue, cause: error))
@@ -241,7 +239,7 @@ let openAIChatProviderOptionsSchema = FlexibleSchema<OpenAIChatProviderOptions>(
                     result.promptCacheKey = string
                 }
 
-                if let cacheRetentionValue = dict["promptCacheRetention"], cacheRetentionValue != .null {
+                if let cacheRetentionValue = try field("promptCacheRetention", message: "promptCacheRetention must be one of in_memory, 24h") {
                     guard case .string(let string) = cacheRetentionValue,
                           let retention = OpenAIChatPromptCacheRetention(rawValue: string) else {
                         let error = SchemaValidationIssuesError(vendor: "openai", issues: "promptCacheRetention must be one of in_memory, 24h")
@@ -250,7 +248,7 @@ let openAIChatProviderOptionsSchema = FlexibleSchema<OpenAIChatProviderOptions>(
                     result.promptCacheRetention = retention
                 }
 
-                if let safetyValue = dict["safetyIdentifier"], safetyValue != .null {
+                if let safetyValue = try field("safetyIdentifier", message: "safetyIdentifier must be a string") {
                     guard case .string(let string) = safetyValue else {
                         let error = SchemaValidationIssuesError(vendor: "openai", issues: "safetyIdentifier must be a string")
                         return .failure(error: TypeValidationError.wrap(value: safetyValue, cause: error))
@@ -258,7 +256,7 @@ let openAIChatProviderOptionsSchema = FlexibleSchema<OpenAIChatProviderOptions>(
                     result.safetyIdentifier = string
                 }
 
-                if let systemModeValue = dict["systemMessageMode"], systemModeValue != .null {
+                if let systemModeValue = try field("systemMessageMode", message: "systemMessageMode must be a string") {
                     guard case .string(let rawMode) = systemModeValue else {
                         let error = SchemaValidationIssuesError(vendor: "openai", issues: "systemMessageMode must be a string")
                         return .failure(error: TypeValidationError.wrap(value: systemModeValue, cause: error))
@@ -276,7 +274,7 @@ let openAIChatProviderOptionsSchema = FlexibleSchema<OpenAIChatProviderOptions>(
                     }
                 }
 
-                if let forceReasoningValue = dict["forceReasoning"], forceReasoningValue != .null {
+                if let forceReasoningValue = try field("forceReasoning", message: "forceReasoning must be a boolean") {
                     guard case .bool(let flag) = forceReasoningValue else {
                         let error = SchemaValidationIssuesError(vendor: "openai", issues: "forceReasoning must be a boolean")
                         return .failure(error: TypeValidationError.wrap(value: forceReasoningValue, cause: error))

@@ -5,16 +5,10 @@ import AISDKProviderUtils
 public final class OpenAIChatLanguageModel: LanguageModelV3 {
     private let modelIdentifier: OpenAIChatModelId
     private let config: OpenAIConfig
-    private let providerOptionsName: String
 
     public init(modelId: OpenAIChatModelId, config: OpenAIConfig) {
         self.modelIdentifier = modelId
         self.config = config
-        if let prefix = config.provider.split(separator: ".").first {
-            self.providerOptionsName = String(prefix)
-        } else {
-            self.providerOptionsName = "openai"
-        }
     }
 
     public var provider: String { config.provider }
@@ -279,29 +273,16 @@ public final class OpenAIChatLanguageModel: LanguageModelV3 {
             providerOptions: options.providerOptions,
             schema: openAIChatProviderOptionsSchema
         )
-
-        let providerSpecificOptions: OpenAIChatProviderOptions?
-        if providerOptionsName != "openai" {
-            providerSpecificOptions = try await parseProviderOptions(
-                provider: providerOptionsName,
-                providerOptions: options.providerOptions,
-                schema: openAIChatProviderOptionsSchema
-            )
-        } else {
-            providerSpecificOptions = nil
-        }
-
-        let mergedOptions = mergeOptions(primary: openAIOptions, override: providerSpecificOptions)
-        let strictJsonSchema = mergedOptions?.strictJsonSchema ?? true
+        let strictJsonSchema = openAIOptions?.strictJsonSchema ?? true
 
         let modelId = modelIdentifier.rawValue
         let modelCapabilities = getOpenAILanguageModelCapabilities(for: modelId)
         let modelIsReasoningModel = modelCapabilities.isReasoningModel
         let supportsNonReasoningParameters = modelCapabilities.supportsNonReasoningParameters
-        let isReasoningModel = mergedOptions?.forceReasoning ?? modelCapabilities.isReasoningModel
+        let isReasoningModel = openAIOptions?.forceReasoning ?? modelCapabilities.isReasoningModel
 
         let modelDefaultSystemMode: OpenAIChatSystemMessageMode = modelIsReasoningModel ? .developer : .system
-        let systemMode = mergedOptions?.systemMessageMode
+        let systemMode = openAIOptions?.systemMessageMode
             ?? (isReasoningModel ? .developer : modelDefaultSystemMode)
 
         let conversion = try OpenAIChatMessagesConverter.convert(prompt: options.prompt, systemMessageMode: systemMode)
@@ -340,15 +321,15 @@ public final class OpenAIChatLanguageModel: LanguageModelV3 {
             body["stop"] = .array(stopSequences.map(JSONValue.string))
         }
 
-        if let verbosity = mergedOptions?.textVerbosity {
+        if let verbosity = openAIOptions?.textVerbosity {
             body["verbosity"] = .string(verbosity.rawValue)
         }
 
-        if let logitBias = mergedOptions?.logitBias {
+        if let logitBias = openAIOptions?.logitBias {
             body["logit_bias"] = .object(logitBias.mapValues(JSONValue.number))
         }
 
-        if let logprobs = mergedOptions?.logprobs {
+        if let logprobs = openAIOptions?.logprobs {
             switch logprobs {
             case .bool(true):
                 body["logprobs"] = .bool(true)
@@ -361,38 +342,38 @@ public final class OpenAIChatLanguageModel: LanguageModelV3 {
             }
         }
 
-        if let parallelToolCalls = mergedOptions?.parallelToolCalls {
+        if let parallelToolCalls = openAIOptions?.parallelToolCalls {
             body["parallel_tool_calls"] = .bool(parallelToolCalls)
         }
-        if let user = mergedOptions?.user {
+        if let user = openAIOptions?.user {
             body["user"] = .string(user)
         }
-        if let store = mergedOptions?.store {
+        if let store = openAIOptions?.store {
             body["store"] = .bool(store)
         }
-        if let reasoningEffort = mergedOptions?.reasoningEffort {
+        if let reasoningEffort = openAIOptions?.reasoningEffort {
             body["reasoning_effort"] = .string(reasoningEffort.rawValue)
         }
-        if let serviceTier = mergedOptions?.serviceTier {
+        if let serviceTier = openAIOptions?.serviceTier {
             body["service_tier"] = .string(serviceTier.rawValue)
         }
-        if let promptCacheKey = mergedOptions?.promptCacheKey {
+        if let promptCacheKey = openAIOptions?.promptCacheKey {
             body["prompt_cache_key"] = .string(promptCacheKey)
         }
-        if let promptCacheRetention = mergedOptions?.promptCacheRetention {
+        if let promptCacheRetention = openAIOptions?.promptCacheRetention {
             body["prompt_cache_retention"] = .string(promptCacheRetention.rawValue)
         }
-        if let safetyIdentifier = mergedOptions?.safetyIdentifier {
+        if let safetyIdentifier = openAIOptions?.safetyIdentifier {
             body["safety_identifier"] = .string(safetyIdentifier)
         }
-        if let metadata = mergedOptions?.metadata {
+        if let metadata = openAIOptions?.metadata {
             body["metadata"] = .object(metadata.mapValues(JSONValue.string))
         }
-        if let prediction = mergedOptions?.prediction {
+        if let prediction = openAIOptions?.prediction {
             body["prediction"] = .object(prediction)
         }
-        if let maxCompletionTokens = mergedOptions?.maxCompletionTokens {
-            body["max_completion_tokens"] = .number(Double(maxCompletionTokens))
+        if let maxCompletionTokens = openAIOptions?.maxCompletionTokens {
+            body["max_completion_tokens"] = .number(maxCompletionTokens)
         }
 
         if let responseFormat = options.responseFormat {
@@ -426,7 +407,7 @@ public final class OpenAIChatLanguageModel: LanguageModelV3 {
             body["tool_choice"] = toolChoice
         }
 
-        let allowsNonReasoningParameters = mergedOptions?.reasoningEffort == OpenAIChatReasoningEffort.none && supportsNonReasoningParameters
+        let allowsNonReasoningParameters = openAIOptions?.reasoningEffort == OpenAIChatReasoningEffort.none && supportsNonReasoningParameters
         adjustForModelConstraints(
             body: &body,
             warnings: &warnings,
@@ -435,7 +416,7 @@ public final class OpenAIChatLanguageModel: LanguageModelV3 {
             modelId: modelId
         )
 
-        if mergedOptions?.serviceTier == .flex, !modelCapabilities.supportsFlexProcessing {
+        if openAIOptions?.serviceTier == .flex, !modelCapabilities.supportsFlexProcessing {
             warnings.append(.unsupported(
                 feature: "serviceTier",
                 details: "flex processing is only available for o3, o4-mini, and gpt-5 models"
@@ -443,7 +424,7 @@ public final class OpenAIChatLanguageModel: LanguageModelV3 {
             body.removeValue(forKey: "service_tier")
         }
 
-        if mergedOptions?.serviceTier == .priority, !modelCapabilities.supportsPriorityProcessing {
+        if openAIOptions?.serviceTier == .priority, !modelCapabilities.supportsPriorityProcessing {
             warnings.append(.unsupported(
                 feature: "serviceTier",
                 details: "priority processing is only available for supported models (gpt-4, gpt-5, gpt-5-mini, o3, o4-mini) and requires Enterprise access. gpt-5-nano is not supported"
@@ -452,35 +433,6 @@ public final class OpenAIChatLanguageModel: LanguageModelV3 {
         }
 
         return PreparedRequest(body: body, warnings: warnings)
-    }
-
-    private func mergeOptions(
-        primary: OpenAIChatProviderOptions?,
-        override: OpenAIChatProviderOptions?
-    ) -> OpenAIChatProviderOptions? {
-        if primary == nil { return override }
-        if override == nil { return primary }
-        guard var result = primary, let override = override else { return nil }
-
-        if let logitBias = override.logitBias { result.logitBias = logitBias }
-        if let logprobs = override.logprobs { result.logprobs = logprobs }
-        if let parallel = override.parallelToolCalls { result.parallelToolCalls = parallel }
-        if let user = override.user { result.user = user }
-        if let reasoning = override.reasoningEffort { result.reasoningEffort = reasoning }
-        if let maxCompletionTokens = override.maxCompletionTokens { result.maxCompletionTokens = maxCompletionTokens }
-        if let store = override.store { result.store = store }
-        if let metadata = override.metadata { result.metadata = metadata }
-        if let prediction = override.prediction { result.prediction = prediction }
-        if let serviceTier = override.serviceTier { result.serviceTier = serviceTier }
-        if let strict = override.strictJsonSchema { result.strictJsonSchema = strict }
-        if let verbosity = override.textVerbosity { result.textVerbosity = verbosity }
-        if let promptCacheKey = override.promptCacheKey { result.promptCacheKey = promptCacheKey }
-        if let promptCacheRetention = override.promptCacheRetention { result.promptCacheRetention = promptCacheRetention }
-        if let safetyIdentifier = override.safetyIdentifier { result.safetyIdentifier = safetyIdentifier }
-        if let systemMessageMode = override.systemMessageMode { result.systemMessageMode = systemMessageMode }
-        if let forceReasoning = override.forceReasoning { result.forceReasoning = forceReasoning }
-
-        return result
     }
 
     private func adjustForModelConstraints(

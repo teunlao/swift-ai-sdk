@@ -45,6 +45,15 @@ struct OpenAIWebSearchToolOutputSchemaTests {
             Issue.record("Expected nullish findInPage output to validate, got error: \(error)")
         }
 
+        let validWithoutAction: [String: Any] = [:]
+
+        switch await safeValidateTypes(ValidateTypesOptions(value: validWithoutAction, schema: schema)) {
+        case .success:
+            break
+        case .failure(let error, _):
+            Issue.record("Expected empty web_search output to validate, got error: \(error)")
+        }
+
         let invalid: [String: Any] = [
             "action": [
                 "type": "openPage",
@@ -80,6 +89,15 @@ struct OpenAIWebSearchToolOutputSchemaTests {
             break
         case .failure(let error, _):
             Issue.record("Expected output to validate, got error: \(error)")
+        }
+
+        let validWithoutAction: [String: Any] = [:]
+
+        switch await safeValidateTypes(ValidateTypesOptions(value: validWithoutAction, schema: schema)) {
+        case .success:
+            break
+        case .failure(let error, _):
+            Issue.record("Expected empty web_search_preview output to validate, got error: \(error)")
         }
 
         let invalid: [String: Any] = [

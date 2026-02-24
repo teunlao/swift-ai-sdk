@@ -132,7 +132,6 @@ private let webSearchPreviewInputJSONSchema: JSONValue = .object([
 
 private let webSearchPreviewOutputJSONSchema: JSONValue = .object([
     "type": .string("object"),
-    "required": .array([.string("action")]),
     "additionalProperties": .bool(false),
     "properties": .object([
         "action": .object([

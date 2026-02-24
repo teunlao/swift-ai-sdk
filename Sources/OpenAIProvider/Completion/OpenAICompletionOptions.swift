@@ -4,14 +4,14 @@ import AISDKProviderUtils
 
 enum OpenAICompletionLogprobsOption: Sendable, Equatable {
     case bool(Bool)
-    case number(Int)
+    case number(Double)
 
     var jsonValue: JSONValue {
         switch self {
         case .bool(let value):
             return .bool(value)
         case .number(let value):
-            return .number(Double(value))
+            return .number(value)
         }
     }
 }
@@ -40,11 +40,11 @@ private let openAICompletionProviderOptionsJSONSchema: JSONValue = .object([
     "type": .string("object"),
     "additionalProperties": .bool(true),
     "properties": .object([
-        "echo": .object(["type": .array([.string("boolean"), .string("null")])]),
-        "logitBias": .object(["type": .array([.string("object"), .string("null")])]),
-        "suffix": .object(["type": .array([.string("string"), .string("null")])]),
-        "user": .object(["type": .array([.string("string"), .string("null")])]),
-        "logprobs": .object(["type": .array([.string("boolean"), .string("number"), .string("null")])])
+        "echo": .object(["type": .string("boolean")]),
+        "logitBias": .object(["type": .string("object")]),
+        "suffix": .object(["type": .string("string")]),
+        "user": .object(["type": .string("string")]),
+        "logprobs": .object(["type": .array([.string("boolean"), .string("number")])])
     ])
 ])
 
@@ -60,8 +60,16 @@ let openAICompletionProviderOptionsSchema = FlexibleSchema<OpenAICompletionProvi
                 }
 
                 var options = OpenAICompletionProviderOptions()
+                func field(_ key: String, message: String) throws -> JSONValue? {
+                    guard let value = dict[key] else { return nil }
+                    guard value != .null else {
+                        let error = SchemaValidationIssuesError(vendor: "openai", issues: message)
+                        throw TypeValidationError.wrap(value: value, cause: error)
+                    }
+                    return value
+                }
 
-                if let echoValue = dict["echo"], echoValue != .null {
+                if let echoValue = try field("echo", message: "echo must be a boolean") {
                     guard case .bool(let boolValue) = echoValue else {
                         let error = SchemaValidationIssuesError(vendor: "openai", issues: "echo must be a boolean")
                         return .failure(error: TypeValidationError.wrap(value: echoValue, cause: error))
@@ -69,7 +77,7 @@ let openAICompletionProviderOptionsSchema = FlexibleSchema<OpenAICompletionProvi
                     options.echo = boolValue
                 }
 
-                if let logitBiasValue = dict["logitBias"], logitBiasValue != .null {
+                if let logitBiasValue = try field("logitBias", message: "logitBias must be an object") {
                     guard case .object(let biasObject) = logitBiasValue else {
                         let error = SchemaValidationIssuesError(vendor: "openai", issues: "logitBias must be an object")
                         return .failure(error: TypeValidationError.wrap(value: logitBiasValue, cause: error))
@@ -85,20 +93,15 @@ let openAICompletionProviderOptionsSchema = FlexibleSchema<OpenAICompletionProvi
                     options.logitBias = bias
                 }
 
-                options.suffix = try parseOptionalString(dict, key: "suffix")
-                options.user = try parseOptionalString(dict, key: "user")
+                options.suffix = try parseOptionalString(dict, key: "suffix", allowNull: false)
+                options.user = try parseOptionalString(dict, key: "user", allowNull: false)
 
-                if let logprobsValue = dict["logprobs"], logprobsValue != .null {
+                if let logprobsValue = try field("logprobs", message: "logprobs must be boolean or number") {
                     switch logprobsValue {
                     case .bool(let flag):
                         options.logprobs = .bool(flag)
                     case .number(let number):
-                        let intValue = Int(number)
-                        if Double(intValue) != number {
-                            let error = SchemaValidationIssuesError(vendor: "openai", issues: "logprobs must be an integer when numeric")
-                            return .failure(error: TypeValidationError.wrap(value: logprobsValue, cause: error))
-                        }
-                        options.logprobs = .number(intValue)
+                        options.logprobs = .number(number)
                     default:
                         let error = SchemaValidationIssuesError(vendor: "openai", issues: "logprobs must be boolean or number")
                         return .failure(error: TypeValidationError.wrap(value: logprobsValue, cause: error))
@@ -117,8 +120,15 @@ let openAICompletionProviderOptionsSchema = FlexibleSchema<OpenAICompletionProvi
 )
 
 
-private func parseOptionalString(_ dict: [String: JSONValue], key: String) throws -> String? {
-    guard let value = dict[key], value != .null else { return nil }
+private func parseOptionalString(_ dict: [String: JSONValue], key: String, allowNull: Bool = false) throws -> String? {
+    guard let value = dict[key] else { return nil }
+    if value == .null {
+        if allowNull {
+            return nil
+        }
+        let error = SchemaValidationIssuesError(vendor: "openai", issues: "\(key) must be a string")
+        throw TypeValidationError.wrap(value: value, cause: error)
+    }
     guard case .string(let string) = value else {
         let error = SchemaValidationIssuesError(vendor: "openai", issues: "\(key) must be a string")
         throw TypeValidationError.wrap(value: value, cause: error)

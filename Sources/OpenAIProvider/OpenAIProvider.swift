@@ -95,6 +95,14 @@ public final class OpenAIProvider: ProviderV3 {
         try textEmbeddingModel(modelId: modelId)
     }
 
+    public func embeddingModel(modelId: String) throws -> any EmbeddingModelV3<String> {
+        try textEmbeddingModel(modelId: modelId)
+    }
+
+    public func embeddingModel(_ modelId: String) throws -> any EmbeddingModelV3<String> {
+        try embeddingModel(modelId: modelId)
+    }
+
     public func imageModel(modelId: String) throws -> any ImageModelV3 {
         imageFactory(OpenAIImageModelId(rawValue: modelId))
     }
@@ -271,6 +279,11 @@ public extension OpenAIProvider {
 
     /// Typed alias for embeddings to mirror TS facade naming.
     func embedding(_ modelId: OpenAIEmbeddingModelId) -> OpenAIEmbeddingModel {
+        embeddingFactory(modelId)
+    }
+
+    /// Typed alias to mirror upstream `embeddingModel(...)`.
+    func embeddingModel(_ modelId: OpenAIEmbeddingModelId) -> OpenAIEmbeddingModel {
         embeddingFactory(modelId)
     }
 
