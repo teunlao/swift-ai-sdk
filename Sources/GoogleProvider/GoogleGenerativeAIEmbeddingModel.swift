@@ -95,7 +95,7 @@ final class GoogleGenerativeAIEmbeddingModel: EmbeddingModelV3 {
             ]
 
             if let dimensionality = googleOptions?.outputDimensionality {
-                bodyObject["outputDimensionality"] = .number(Double(dimensionality))
+                bodyObject["outputDimensionality"] = .number(dimensionality)
             }
 
             if let taskType = googleOptions?.taskType {
@@ -137,7 +137,7 @@ final class GoogleGenerativeAIEmbeddingModel: EmbeddingModelV3 {
             ]
 
             if let dimensionality = googleOptions?.outputDimensionality {
-                requestObject["outputDimensionality"] = .number(Double(dimensionality))
+                requestObject["outputDimensionality"] = .number(dimensionality)
             }
 
             if let taskType = googleOptions?.taskType {

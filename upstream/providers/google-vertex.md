@@ -16,6 +16,8 @@
 - [x] Error mapping (Vertex): non-2xx responses throw `APICallError` with `error.message` for embedding + image calls.
 - [x] Tool factories: `googleVertexTools` exposes the same provider-defined tools surface as upstream (`google_search`, `url_context`, `code_execution`, plus `enterprise_web_search`, `google_maps`, `file_search`, `vertex_rag_store`).
 - [x] Missing Vertex config (`GOOGLE_VERTEX_LOCATION`/`GOOGLE_VERTEX_PROJECT`) now throws `LoadSettingError` at request-time (no process crash / no `fatalError`).
+- [x] Facade aliases parity: `createVertex(...)` and default `vertex` instance are exported alongside Swift-native `createGoogleVertex` / `googleVertex`.
+- [x] Version alias parity: `VERSION` is exported as an alias to `GOOGLE_VERTEX_VERSION`.
 
 Tests live under:
 - `Tests/GoogleVertexProviderTests/GoogleVertexChatBaseURLTests.swift`

@@ -3,7 +3,7 @@ import Foundation
 func isGoogleSupportedFileURL(_ url: URL) -> Bool {
     let urlString = url.absoluteString
 
-    if urlString.lowercased().hasPrefix("https://generativelanguage.googleapis.com/v1beta/files/") {
+    if urlString.hasPrefix("https://generativelanguage.googleapis.com/v1beta/files/") {
         return true
     }
 
@@ -13,7 +13,7 @@ func isGoogleSupportedFileURL(_ url: URL) -> Bool {
     ]
 
     return patterns.contains { pattern in
-        (try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]))?
+        (try? NSRegularExpression(pattern: pattern, options: []))?
             .firstMatch(in: urlString, range: NSRange(location: 0, length: urlString.count)) != nil
     }
 }

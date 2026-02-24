@@ -232,4 +232,24 @@ struct GoogleVertexProviderExpressModeTests {
         #expect(image.provider == "google.vertex.image")
         #expect(image.modelId == "imagen-4.0-generate-001")
     }
+
+    @Test("should expose upstream facade aliases createVertex and vertex")
+    func upstreamFacadeAliases() throws {
+        let provider = createVertex(settings: GoogleVertexProviderSettings(
+            location: "us-central1",
+            project: "test-project"
+        ))
+        let model = provider.languageModel(modelId: .gemini25Flash)
+        #expect(model.provider == "google.vertex.chat")
+        #expect(model.modelId == "gemini-2.5-flash")
+
+        let defaultModel = vertex.languageModel(modelId: .gemini25Flash)
+        #expect(defaultModel.provider == "google.vertex.chat")
+        #expect(defaultModel.modelId == "gemini-2.5-flash")
+    }
+
+    @Test("VERSION alias should mirror GOOGLE_VERTEX_VERSION")
+    func versionAliasParity() {
+        #expect(VERSION == GOOGLE_VERTEX_VERSION)
+    }
 }

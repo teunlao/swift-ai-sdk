@@ -364,7 +364,9 @@ struct GoogleProviderTests {
         let unsupportedTestURLs = [
             "https://example.com",
             "https://vimeo.com/123456789",
-            "https://youtube.com/channel/UCdQw4w9WgXcQ"
+            "https://youtube.com/channel/UCdQw4w9WgXcQ",
+            "https://YouTube.com/watch?v=dQw4w9WgXcQ",
+            "https://GENERATIVELANGUAGE.googleapis.com/v1beta/files/test123"
         ]
 
         for url in unsupportedTestURLs {

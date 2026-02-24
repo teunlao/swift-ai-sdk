@@ -10,3 +10,4 @@ import AISDKProviderUtils
 /// Version string for the Google Vertex provider package.
 /// Mirrors `packages/google-vertex/src/version.ts`.
 public let GOOGLE_VERTEX_VERSION = SDKReleaseVersion.value
+public let VERSION = GOOGLE_VERTEX_VERSION

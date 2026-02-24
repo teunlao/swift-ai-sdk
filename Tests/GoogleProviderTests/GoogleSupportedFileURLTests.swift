@@ -64,4 +64,17 @@ struct GoogleSupportedFileURLTests {
             #expect(isGoogleSupportedFileURL(url) == false)
         }
     }
+
+    @Test("should be case-sensitive for host and path")
+    func caseSensitiveURLs() throws {
+        let caseSensitiveFailures = [
+            URL(string: "https://GENERATIVELANGUAGE.googleapis.com/v1beta/files/test123")!,
+            URL(string: "https://YouTube.com/watch?v=dQw4w9WgXcQ")!,
+            URL(string: "https://YOUTU.BE/dQw4w9WgXcQ")!
+        ]
+
+        for url in caseSensitiveFailures {
+            #expect(isGoogleSupportedFileURL(url) == false)
+        }
+    }
 }

@@ -14,10 +14,10 @@ public enum GoogleGenerativeAIEmbeddingTaskType: String, Sendable, Equatable {
 }
 
 public struct GoogleGenerativeAIEmbeddingProviderOptions: Sendable, Equatable {
-    public var outputDimensionality: Int?
+    public var outputDimensionality: Double?
     public var taskType: GoogleGenerativeAIEmbeddingTaskType?
 
-    public init(outputDimensionality: Int? = nil, taskType: GoogleGenerativeAIEmbeddingTaskType? = nil) {
+    public init(outputDimensionality: Double? = nil, taskType: GoogleGenerativeAIEmbeddingTaskType? = nil) {
         self.outputDimensionality = outputDimensionality
         self.taskType = taskType
     }
@@ -42,7 +42,7 @@ public let googleGenerativeAIEmbeddingProviderOptionsSchema = FlexibleSchema(
                     return .failure(error: TypeValidationError.wrap(value: value, cause: error))
                 }
 
-                var outputDimensionality: Int? = nil
+                var outputDimensionality: Double? = nil
                 if let dimensionalityValue = dict["outputDimensionality"], dimensionalityValue != .null {
                     guard case .number(let number) = dimensionalityValue else {
                         let error = SchemaValidationIssuesError(
@@ -51,17 +51,7 @@ public let googleGenerativeAIEmbeddingProviderOptionsSchema = FlexibleSchema(
                         )
                         return .failure(error: TypeValidationError.wrap(value: dimensionalityValue, cause: error))
                     }
-
-                    let intValue = Int(number)
-                    if Double(intValue) != number {
-                        let error = SchemaValidationIssuesError(
-                            vendor: "google",
-                            issues: "outputDimensionality must be an integer"
-                        )
-                        return .failure(error: TypeValidationError.wrap(value: dimensionalityValue, cause: error))
-                    }
-
-                    outputDimensionality = intValue
+                    outputDimensionality = number
                 }
 
                 var taskType: GoogleGenerativeAIEmbeddingTaskType? = nil

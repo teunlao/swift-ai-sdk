@@ -5,14 +5,14 @@ import AISDKProviderUtils
 private let youtubeWatchRegex: NSRegularExpression = {
     try! NSRegularExpression(
         pattern: "^https://(?:www\\.)?youtube\\.com/watch\\?v=[A-Za-z0-9_-]+(?:&[A-Za-z0-9_=&.-]*)?$",
-        options: [.caseInsensitive]
+        options: []
     )
 }()
 
 private let youtubeShortRegex: NSRegularExpression = {
     try! NSRegularExpression(
         pattern: "^https://youtu\\.be/[A-Za-z0-9_-]+(?:\\?[A-Za-z0-9_=&.-]*)?$",
-        options: [.caseInsensitive]
+        options: []
     )
 }()
 
@@ -158,7 +158,7 @@ public func createGoogleGenerativeAI(
     let supportedURLs: @Sendable () -> [String: [NSRegularExpression]] = {
         let baseRegex = try! NSRegularExpression(
             pattern: "^" + NSRegularExpression.escapedPattern(for: baseURL) + "/files/.*$",
-            options: [.caseInsensitive]
+            options: []
         )
 
         return [

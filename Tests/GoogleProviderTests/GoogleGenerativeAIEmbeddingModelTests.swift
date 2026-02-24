@@ -342,8 +342,65 @@ struct GoogleGenerativeAIEmbeddingModelTests {
         #expect(requests.count == 2)
         if let first = requests.first {
             #expect(first["model"] as? String == "models/text-embedding-004")
-            #expect(first["outputDimensionality"] as? Int == 64)
+            #expect((first["outputDimensionality"] as? NSNumber)?.doubleValue == 64)
             #expect(first["taskType"] as? String == "SEMANTIC_SIMILARITY")
         }
+    }
+
+    @Test("outputDimensionality accepts non-integer numbers")
+    func outputDimensionalityAcceptsFractionalNumbers() async throws {
+        actor RequestCapture {
+            var request: URLRequest?
+            func store(_ request: URLRequest) { self.request = request }
+            func value() -> URLRequest? { request }
+        }
+
+        let capture = RequestCapture()
+        let responseJSON: [String: Any] = [
+            "embeddings": [
+                ["values": [0.1]]
+            ]
+        ]
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:batchEmbedContents")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = GoogleGenerativeAIEmbeddingModel(
+            modelId: GoogleGenerativeAIEmbeddingModelId(rawValue: "text-embedding-004"),
+            config: makeEmbeddingConfig(fetch: fetch)
+        )
+
+        _ = try await model.doEmbed(
+            options: EmbeddingModelV3DoEmbedOptions(
+                values: ["a", "b"],
+                providerOptions: [
+                    "google": [
+                        "outputDimensionality": .number(64.5),
+                        "taskType": .string("SEMANTIC_SIMILARITY")
+                    ]
+                ]
+            )
+        )
+
+        guard let request = await capture.value(),
+              let body = request.httpBody,
+              let json = try JSONSerialization.jsonObject(with: body) as? [String: Any],
+              let requests = json["requests"] as? [[String: Any]],
+              let first = requests.first else {
+            Issue.record("Missing batch payload")
+            return
+        }
+
+        #expect((first["outputDimensionality"] as? NSNumber)?.doubleValue == 64.5)
+        #expect(first["taskType"] as? String == "SEMANTIC_SIMILARITY")
     }
 }

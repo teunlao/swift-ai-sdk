@@ -75,7 +75,8 @@ private func createExpressModeFetch(
     return { request in
         var modified = request
         var headers = modified.allHTTPHeaderFields ?? [:]
-        for key in headers.keys where key.lowercased() == "x-goog-api-key" {
+        let keysToRemove = headers.keys.filter { $0.lowercased() == "x-goog-api-key" }
+        for key in keysToRemove {
             headers.removeValue(forKey: key)
         }
         headers["x-goog-api-key"] = apiKey
@@ -336,4 +337,9 @@ public func createGoogleVertex(settings: GoogleVertexProviderSettings = .init())
     )
 }
 
+public func createVertex(settings: GoogleVertexProviderSettings = .init()) -> GoogleVertexProvider {
+    createGoogleVertex(settings: settings)
+}
+
 public let googleVertex = createGoogleVertex()
+public let vertex = createVertex()

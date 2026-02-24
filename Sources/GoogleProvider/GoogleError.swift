@@ -42,6 +42,7 @@ private let googleErrorSchema = FlexibleSchema(
                             ])
                         ]),
                         "required": .array([
+                            .string("code"),
                             .string("message"),
                             .string("status")
                         ])
@@ -62,7 +63,12 @@ private let googleErrorSchema = FlexibleSchema(
                 }
 
                 let code: Double?
-                if let codeValue = errorObject["code"], codeValue != .null {
+                guard let codeValue = errorObject["code"] else {
+                    let error = SchemaValidationIssuesError(vendor: "google", issues: "error.code must be a number")
+                    return .failure(error: TypeValidationError.wrap(value: nil, cause: error))
+                }
+
+                if codeValue != .null {
                     guard case .number(let number) = codeValue else {
                         let error = SchemaValidationIssuesError(vendor: "google", issues: "error.code must be a number")
                         return .failure(error: TypeValidationError.wrap(value: codeValue, cause: error))
