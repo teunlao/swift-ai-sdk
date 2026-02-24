@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.15.4] - 2026-02-24
+
+### Fixed
+- OpenAI: align Responses parity for provider tools and request/response mapping.
+- OpenAI: align `web_search` / `web_search_preview` tool schemas with upstream (strict action unions and `userLocation.type` requirements).
+- OpenAI: align `local_shell` contract to upstream snake_case fields (`timeout_ms`, `working_directory`).
+- OpenAI: align `shell` tool result handling with upstream when `store=true` by reconstructing `shell_call_output`.
+- OpenAI: map missing API key to runtime error (`LoadAPIKeyError`) instead of process crash (`fatalError`).
+
 ## [0.15.3] - 2026-02-23
 
 ### Added
