@@ -123,8 +123,28 @@ struct GoogleVertexChatBaseURLTests {
         #expect(headerValue("x-goog-api-key", in: request) == "KEY")
     }
 
-    @Test("uses custom baseURL without requiring project/location")
-    func usesCustomBaseURL_withoutProjectLocation() async throws {
+    @Test("custom baseURL still requires project/location when apiKey is absent")
+    func customBaseURL_requiresProjectLocationWhenApiKeyAbsent() async throws {
+        let originalProject = getenv("GOOGLE_VERTEX_PROJECT").flatMap { String(validatingCString: $0) }
+        let originalLocation = getenv("GOOGLE_VERTEX_LOCATION").flatMap { String(validatingCString: $0) }
+
+        defer {
+            if let originalProject {
+                setenv("GOOGLE_VERTEX_PROJECT", originalProject, 1)
+            } else {
+                unsetenv("GOOGLE_VERTEX_PROJECT")
+            }
+
+            if let originalLocation {
+                setenv("GOOGLE_VERTEX_LOCATION", originalLocation, 1)
+            } else {
+                unsetenv("GOOGLE_VERTEX_LOCATION")
+            }
+        }
+
+        unsetenv("GOOGLE_VERTEX_PROJECT")
+        unsetenv("GOOGLE_VERTEX_LOCATION")
+
         let capture = RequestCapture()
 
         let fetch: FetchFunction = { request in
@@ -138,10 +158,15 @@ struct GoogleVertexChatBaseURLTests {
         ))
 
         let model = try provider.languageModel(modelId: "gemini-pro")
-        _ = try await model.doGenerate(options: .init(prompt: makePrompt()))
+        do {
+            _ = try await model.doGenerate(options: .init(prompt: makePrompt()))
+            Issue.record("Expected missing Vertex location/project error")
+        } catch let error as LoadSettingError {
+            #expect(error.message.contains("Google Vertex location setting is missing"))
+        } catch {
+            Issue.record("Expected LoadSettingError, got: \(error)")
+        }
 
-        let request = try #require(await capture.lastRequest)
-        #expect(request.url?.absoluteString == "https://custom-endpoint.example.com/models/gemini-pro:generateContent")
-        #expect(headerValue("x-goog-api-key", in: request) == nil)
+        #expect(await capture.lastRequest == nil)
     }
 }

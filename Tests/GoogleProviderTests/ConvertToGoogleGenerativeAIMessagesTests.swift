@@ -314,6 +314,31 @@ struct ConvertToGoogleGenerativeAIMessagesTests {
         }
     }
 
+    @Test("maps assistant file thought signature")
+    func mapsAssistantFileThoughtSignature() throws {
+        let prompt: LanguageModelV3Prompt = [
+            .assistant(content: [
+                .file(.init(
+                    data: .data(Data([0x01, 0x02, 0x03])),
+                    mediaType: "image/png",
+                    providerOptions: ["google": ["thoughtSignature": .string("file_sig")]]
+                ))
+            ], providerOptions: nil)
+        ]
+
+        let result = try convertToGoogleGenerativeAIMessages(prompt)
+        guard let part = result.contents.first?.parts.first else {
+            Issue.record("Missing converted part")
+            return
+        }
+
+        if case let .inlineData(inline) = part {
+            #expect(inline.thoughtSignature == "file_sig")
+        } else {
+            Issue.record("Expected inlineData part")
+        }
+    }
+
     @Test("should throw error for URL file data in assistant messages")
     func throwErrorForURLFileDataInAssistantMessages() throws {
         let fileURL = URL(string: "https://example.com/image.png")!

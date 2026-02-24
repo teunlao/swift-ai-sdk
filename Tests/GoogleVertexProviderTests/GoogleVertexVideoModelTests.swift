@@ -385,8 +385,8 @@ struct GoogleVertexVideoModelTests {
         ]))
     }
 
-    @Test("doGenerate omits empty mimeType for image payload")
-    func imageToVideoOmitsEmptyMimeType() async throws {
+    @Test("doGenerate includes empty mimeType for image payload")
+    func imageToVideoIncludesEmptyMimeType() async throws {
         actor Capture {
             var predictBody: JSONValue?
             func set(_ body: JSONValue) { predictBody = body }
@@ -445,7 +445,8 @@ struct GoogleVertexVideoModelTests {
                 .object([
                     "prompt": .string(prompt),
                     "image": .object([
-                        "bytesBase64Encoded": .string("base64-image-data")
+                        "bytesBase64Encoded": .string("base64-image-data"),
+                        "mimeType": .string("")
                     ])
                 ])
             ]),

@@ -340,12 +340,10 @@ public final class GoogleVertexVideoModel: VideoModelV3 {
                     base64Data = convertDataToBase64(value)
                 }
 
-                var imagePayload: [String: JSONValue] = [
-                    "bytesBase64Encoded": .string(base64Data)
+                let imagePayload: [String: JSONValue] = [
+                    "bytesBase64Encoded": .string(base64Data),
+                    "mimeType": .string(mediaType)
                 ]
-                if !mediaType.isEmpty {
-                    imagePayload["mimeType"] = .string(mediaType)
-                }
                 instance["image"] = .object(imagePayload)
             }
         }

@@ -29,6 +29,9 @@ public struct GoogleVertexEmbeddingProviderOptions: Sendable, Equatable {
     }
 }
 
+/// Upstream naming parity alias.
+public typealias GoogleVertexEmbeddingModelOptions = GoogleVertexEmbeddingProviderOptions
+
 private let googleVertexEmbeddingOptionsJsonSchema: JSONValue = .object([
     "type": .string("object"),
     "additionalProperties": .bool(true)
@@ -121,6 +124,9 @@ public let googleVertexEmbeddingProviderOptionsSchema = FlexibleSchema(
         }
     )
 )
+
+/// Upstream naming parity alias.
+public let googleVertexEmbeddingModelOptionsSchema = googleVertexEmbeddingProviderOptionsSchema
 
 extension GoogleVertexEmbeddingProviderOptions {
     func toParametersDictionary() -> [String: JSONValue] {

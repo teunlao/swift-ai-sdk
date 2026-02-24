@@ -65,6 +65,41 @@ struct GoogleVertexEmbeddingModelTests {
         )
     }
 
+    @Test("should expose upstream embedding model options aliases")
+    func exposesUpstreamEmbeddingModelOptionsAliases() async throws {
+        let options = GoogleVertexEmbeddingModelOptions(
+            outputDimensionality: 128,
+            taskType: .semanticSimilarity,
+            title: "example",
+            autoTruncate: true
+        )
+
+        #expect(options == GoogleVertexEmbeddingProviderOptions(
+            outputDimensionality: 128,
+            taskType: .semanticSimilarity,
+            title: "example",
+            autoTruncate: true
+        ))
+
+        let parsed = try await parseProviderOptions(
+            provider: "vertex",
+            providerOptions: [
+                "vertex": [
+                    "outputDimensionality": .number(128),
+                    "taskType": .string("SEMANTIC_SIMILARITY"),
+                    "title": .string("example"),
+                    "autoTruncate": .bool(true)
+                ]
+            ],
+            schema: googleVertexEmbeddingModelOptionsSchema
+        )
+
+        #expect(parsed?.outputDimensionality == 128)
+        #expect(parsed?.taskType == .semanticSimilarity)
+        #expect(parsed?.title == "example")
+        #expect(parsed?.autoTruncate == true)
+    }
+
     @Test("should extract embeddings")
     func extractEmbeddings() async throws {
         let capture = RequestCapture()

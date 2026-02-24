@@ -90,7 +90,7 @@ final class GoogleGenerativeAIEmbeddingModel: EmbeddingModelV3 {
             ])
 
             var bodyObject: [String: JSONValue] = [
-                "model": .string(getGoogleModelPath(modelIdentifier.rawValue)),
+                "model": .string("models/\(modelIdentifier.rawValue)"),
                 "content": content
             ]
 
@@ -129,7 +129,7 @@ final class GoogleGenerativeAIEmbeddingModel: EmbeddingModelV3 {
         var requests: [JSONValue] = []
         for value in options.values {
             var requestObject: [String: JSONValue] = [
-                "model": .string(getGoogleModelPath(modelIdentifier.rawValue)),
+                "model": .string("models/\(modelIdentifier.rawValue)"),
                 "content": .object([
                     "role": .string("user"),
                     "parts": .array([.object(["text": .string(value)])])

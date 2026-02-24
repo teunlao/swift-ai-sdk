@@ -201,6 +201,50 @@ struct GoogleGenerativeAIEmbeddingModelTests {
         }
     }
 
+    @Test("single value always sends models/ prefix in request model field")
+    func singleEmbeddingRequestAlwaysPrefixesModelField() async throws {
+        actor RequestCapture {
+            var request: URLRequest?
+            func store(_ request: URLRequest) { self.request = request }
+            func value() -> URLRequest? { request }
+        }
+
+        let capture = RequestCapture()
+        let responseJSON: [String: Any] = [
+            "embedding": [
+                "values": [0.1, 0.2, 0.3]
+            ]
+        ]
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/publishers/google/text-embedding-004:embedContent")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = GoogleGenerativeAIEmbeddingModel(
+            modelId: GoogleGenerativeAIEmbeddingModelId(rawValue: "publishers/google/text-embedding-004"),
+            config: makeEmbeddingConfig(fetch: fetch)
+        )
+
+        _ = try await model.doEmbed(options: .init(values: ["hello world"]))
+
+        guard let request = await capture.value(),
+              let body = request.httpBody,
+              let json = try JSONSerialization.jsonObject(with: body) as? [String: Any] else {
+            Issue.record("Missing request payload")
+            return
+        }
+
+        #expect(json["model"] as? String == "models/publishers/google/text-embedding-004")
+    }
+
     @Test("should pass headers")
     func passHeaders() async throws {
         actor RequestCapture {

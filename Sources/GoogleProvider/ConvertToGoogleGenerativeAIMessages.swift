@@ -92,18 +92,25 @@ func convertToGoogleGenerativeAIMessages(
                     )
 
                 case .file(let filePart):
+                    let thoughtSignature = googleThoughtSignature(
+                        from: filePart.providerOptions,
+                        providerOptionsName: providerOptionsName
+                    )
+
                     switch filePart.data {
                     case .url:
                         throw UnsupportedFunctionalityError(functionality: "File data URLs in assistant messages are not supported")
                     case .data(let data):
                         return .inlineData(.init(
                             mimeType: filePart.mediaType,
-                            data: convertToBase64(.data(data))
+                            data: convertToBase64(.data(data)),
+                            thoughtSignature: thoughtSignature
                         ))
                     case .base64(let base64):
                         return .inlineData(.init(
                             mimeType: filePart.mediaType,
-                            data: convertToBase64(.string(base64))
+                            data: convertToBase64(.string(base64)),
+                            thoughtSignature: thoughtSignature
                         ))
                     }
 

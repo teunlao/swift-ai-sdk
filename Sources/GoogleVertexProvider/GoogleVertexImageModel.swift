@@ -37,15 +37,13 @@ struct GoogleVertexImageModelConfig: Sendable {
 
 private let googleVertexGeminiHTTPRegex: NSRegularExpression = {
     try! NSRegularExpression(
-        pattern: "^https?:\\/\\/.*$",
-        options: [.caseInsensitive]
+        pattern: "^https?:\\/\\/.*$"
     )
 }()
 
 private let googleVertexGeminiGCSRegex: NSRegularExpression = {
     try! NSRegularExpression(
-        pattern: "^gs:\\/\\/.*$",
-        options: [.caseInsensitive]
+        pattern: "^gs:\\/\\/.*$"
     )
 }()
 

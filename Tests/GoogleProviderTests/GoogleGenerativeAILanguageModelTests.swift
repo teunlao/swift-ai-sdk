@@ -332,7 +332,7 @@ struct GoogleGenerativeAILanguageModelTests {
 
         let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
         let httpResponse = HTTPURLResponse(
-            url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent")!,
+            url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-pro:generateContent")!,
             statusCode: 200,
             httpVersion: "HTTP/1.1",
             headerFields: ["Content-Type": "application/json"]
@@ -381,7 +381,7 @@ struct GoogleGenerativeAILanguageModelTests {
 
         let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
         let httpResponse = HTTPURLResponse(
-            url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent")!,
+            url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-pro:generateContent")!,
             statusCode: 200,
             httpVersion: "HTTP/1.1",
             headerFields: ["Content-Type": "application/json"]
@@ -1289,7 +1289,7 @@ struct GoogleGenerativeAILanguageModelTests {
             prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)]
         ))
 
-        #expect(result.content.count == 2)
+        #expect(result.content.count == 3)
 
         if case let .text(text) = result.content[0] {
             #expect(text.text == "test response")
@@ -1303,6 +1303,170 @@ struct GoogleGenerativeAILanguageModelTests {
             #expect(title == "Source Title")
         } else {
             Issue.record("Expected source content at index 1")
+        }
+
+        if case let .source(.url(id, url, title, _)) = result.content[2] {
+            #expect(id == "test-id")
+            #expect(url == "https://not-a-source.example.com")
+            #expect(title == "Not a Source")
+        } else {
+            Issue.record("Expected source content at index 2")
+        }
+    }
+
+    @Test("should extract document sources from RAG and file search chunks")
+    func testExtractDocumentSourcesFromRetrievedContext() async throws {
+        let responseJSON: [String: Any] = [
+            "candidates": [
+                [
+                    "content": [
+                        "parts": [["text": "test response with documents"]],
+                        "role": "model"
+                    ],
+                    "finishReason": "STOP",
+                    "groundingMetadata": [
+                        "groundingChunks": [
+                            [
+                                "retrievedContext": [
+                                    "uri": "gs://rag-corpus/document.pdf",
+                                    "title": "RAG Document",
+                                    "text": "context"
+                                ]
+                            ],
+                            [
+                                "retrievedContext": [
+                                    "uri": "gs://rag-corpus/readme.md"
+                                ]
+                            ],
+                            [
+                                "retrievedContext": [
+                                    "fileSearchStore": "fileSearchStores/store-123"
+                                ]
+                            ]
+                        ]
+                    ]
+                ]
+            ]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-pro"),
+            config: makeLanguageModelConfig(fetch: fetch, generateId: { "test-id" })
+        )
+
+        let result = try await model.doGenerate(options: .init(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)]
+        ))
+
+        #expect(result.content.count == 4)
+
+        if case let .source(.document(id, mediaType, title, filename, _)) = result.content[1] {
+            #expect(id == "test-id")
+            #expect(mediaType == "application/pdf")
+            #expect(title == "RAG Document")
+            #expect(filename == "document.pdf")
+        } else {
+            Issue.record("Expected document source at index 1")
+        }
+
+        if case let .source(.document(id, mediaType, title, filename, _)) = result.content[2] {
+            #expect(id == "test-id")
+            #expect(mediaType == "text/markdown")
+            #expect(title == "Unknown Document")
+            #expect(filename == "readme.md")
+        } else {
+            Issue.record("Expected document source at index 2")
+        }
+
+        if case let .source(.document(id, mediaType, title, filename, _)) = result.content[3] {
+            #expect(id == "test-id")
+            #expect(mediaType == "application/octet-stream")
+            #expect(title == "Unknown Document")
+            #expect(filename == "store-123")
+        } else {
+            Issue.record("Expected document source at index 3")
+        }
+    }
+
+    @Test("should extract sources from maps grounding metadata")
+    func testExtractSourcesFromMapsGroundingMetadata() async throws {
+        let responseJSON: [String: Any] = [
+            "candidates": [
+                [
+                    "content": [
+                        "parts": [["text": "test response with maps"]],
+                        "role": "model"
+                    ],
+                    "finishReason": "STOP",
+                    "groundingMetadata": [
+                        "groundingChunks": [
+                            [
+                                "maps": [
+                                    "uri": "https://maps.google.com/maps?cid=12345",
+                                    "title": "Best Italian Restaurant",
+                                    "placeId": "ChIJ12345"
+                                ]
+                            ],
+                            [
+                                "maps": [
+                                    "uri": "https://maps.google.com/maps?cid=67890"
+                                ]
+                            ]
+                        ]
+                    ]
+                ]
+            ]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-pro"),
+            config: makeLanguageModelConfig(fetch: fetch, generateId: { "test-id" })
+        )
+
+        let result = try await model.doGenerate(options: .init(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)]
+        ))
+
+        #expect(result.content.count == 3)
+
+        if case let .source(.url(id, url, title, _)) = result.content[1] {
+            #expect(id == "test-id")
+            #expect(url == "https://maps.google.com/maps?cid=12345")
+            #expect(title == "Best Italian Restaurant")
+        } else {
+            Issue.record("Expected URL source at index 1")
+        }
+
+        if case let .source(.url(id, url, title, _)) = result.content[2] {
+            #expect(id == "test-id")
+            #expect(url == "https://maps.google.com/maps?cid=67890")
+            #expect(title == nil)
+        } else {
+            Issue.record("Expected URL source at index 2")
         }
     }
 
@@ -2948,6 +3112,130 @@ struct GoogleGenerativeAILanguageModelTests {
         }
     }
 
+    @Test("should encode thought signature for assistant inlineData parts")
+    func testEncodeThoughtSignatureForAssistantInlineDataParts() async throws {
+        actor RequestCapture {
+            var request: URLRequest?
+            func store(_ request: URLRequest) { self.request = request }
+            func value() -> URLRequest? { request }
+        }
+
+        let capture = RequestCapture()
+        let responseJSON: [String: Any] = [
+            "candidates": [
+                [
+                    "content": [
+                        "parts": [["text": "ok"]],
+                        "role": "model"
+                    ],
+                    "finishReason": "STOP"
+                ]
+            ]
+        ]
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-pro"),
+            config: makeLanguageModelConfig(fetch: fetch)
+        )
+
+        let prompt: LanguageModelV3Prompt = [
+            .assistant(content: [
+                .file(.init(
+                    data: .data(Data([0x01, 0x02, 0x03])),
+                    mediaType: "image/png",
+                    providerOptions: ["google": ["thoughtSignature": .string("file-sig")]]
+                ))
+            ], providerOptions: nil),
+            .user(content: [.text(.init(text: "continue"))], providerOptions: nil)
+        ]
+
+        _ = try await model.doGenerate(options: .init(prompt: prompt))
+
+        guard let request = await capture.value() else {
+            Issue.record("Missing captured request")
+            return
+        }
+
+        let json = try decodeRequestBody(request)
+        guard let contents = json["contents"] as? [[String: Any]],
+              let modelContent = contents.first(where: { $0["role"] as? String == "model" }),
+              let parts = modelContent["parts"] as? [[String: Any]],
+              let part = parts.first,
+              let thoughtSignature = part["thoughtSignature"] as? String else {
+            Issue.record("Missing thoughtSignature in model inlineData part")
+            return
+        }
+
+        #expect(thoughtSignature == "file-sig")
+    }
+
+    @Test("should apply thought signature from empty text part to previous content")
+    func testThoughtSignatureFromEmptyTextPartInGenerate() async throws {
+        let responseJSON: [String: Any] = [
+            "candidates": [
+                [
+                    "content": [
+                        "parts": [
+                            ["text": "Visible text part"],
+                            ["text": "", "thoughtSignature": "sig-empty"]
+                        ],
+                        "role": "model"
+                    ],
+                    "finishReason": "STOP"
+                ]
+            ]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-pro"),
+            config: makeLanguageModelConfig(fetch: fetch)
+        )
+
+        let result = try await model.doGenerate(options: .init(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)]
+        ))
+
+        #expect(result.content.count == 1)
+
+        guard case .text(let text) = result.content[0] else {
+            Issue.record("Expected text content")
+            return
+        }
+
+        #expect(text.text == "Visible text part")
+        guard let metadata = text.providerMetadata,
+              let google = metadata["google"],
+              let thoughtSignature = google["thoughtSignature"] else {
+            Issue.record("Expected thoughtSignature metadata on previous text part")
+            return
+        }
+        #expect(thoughtSignature == .string("sig-empty"))
+    }
+
     // MARK: - doStream Tests
 
     @Test("should stream text deltas")
@@ -3055,6 +3343,49 @@ struct GoogleGenerativeAILanguageModelTests {
         #expect(sources.count == 1)
         #expect(sources[0].0 == "https://source.example.com")
         #expect(sources[0].1 == "Source Title")
+    }
+
+    @Test("should stream map source events")
+    func testStreamMapSourceEvents() async throws {
+        let groundingMetadata = #"{"groundingChunks":[{"maps":{"uri":"https://maps.google.com/maps?cid=12345","title":"Map Source"}}]}"#
+        let payloads = [
+            #"{"candidates":[{"content":{"parts":[{"text":"Some initial text"}]},"groundingMetadata":\#(groundingMetadata)}],"usageMetadata":{"promptTokenCount":294,"candidatesTokenCount":233,"totalTokenCount":527}}"#
+        ]
+        let events = sseEvents(from: payloads)
+
+        let fetch: FetchFunction = { _ in
+            let response = HTTPURLResponse(
+                url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:streamGenerateContent?alt=sse")!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "text/event-stream"]
+            )!
+            return FetchResponse(body: .stream(makeSSEStream(from: events)), urlResponse: response)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-pro"),
+            config: makeLanguageModelConfig(fetch: fetch, generateId: { "test-id" })
+        )
+
+        let result = try await model.doStream(options: .init(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
+            includeRawChunks: false
+        ))
+
+        let parts = try await collectStream(result.stream)
+
+        let sources = parts.compactMap { part -> (String, String)? in
+            if case .source(let source) = part,
+               case let .url(_, url, title, _) = source {
+                return (url, title ?? "")
+            }
+            return nil
+        }
+
+        #expect(sources.count == 1)
+        #expect(sources[0].0 == "https://maps.google.com/maps?cid=12345")
+        #expect(sources[0].1 == "Map Source")
     }
 
     @Test("should stream sources during intermediate chunks")
@@ -3575,6 +3906,50 @@ struct GoogleGenerativeAILanguageModelTests {
         }
     }
 
+    @Test("should omit usageMetadata in stream provider metadata when usage is missing")
+    func testOmitUsageMetadataInStreamProviderMetadataWhenMissing() async throws {
+        let payloads = [
+            #"{"candidates":[{"content":{"parts":[{"text":"test"}]},"finishReason":"STOP"}]}"#
+        ]
+        let events = sseEvents(from: payloads)
+
+        let fetch: FetchFunction = { _ in
+            let response = HTTPURLResponse(
+                url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:streamGenerateContent?alt=sse")!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "text/event-stream"]
+            )!
+            return FetchResponse(body: .stream(makeSSEStream(from: events)), urlResponse: response)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-pro"),
+            config: makeLanguageModelConfig(fetch: fetch, generateId: { "test-id" })
+        )
+
+        let result = try await model.doStream(options: .init(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
+            includeRawChunks: false
+        ))
+
+        let parts = try await collectStream(result.stream)
+        guard let finish = parts.last(where: { if case .finish = $0 { return true } else { return false } }) else {
+            Issue.record("Missing finish part")
+            return
+        }
+
+        if case let .finish(_, _, providerMetadata) = finish {
+            guard let metadata = providerMetadata,
+                  let googleMeta = metadata["google"] else {
+                Issue.record("Expected google provider metadata on finish")
+                return
+            }
+
+            #expect(googleMeta["usageMetadata"] == nil)
+        }
+    }
+
     @Test("should expose grounding metadata in provider metadata on finish")
     func testExposeGroundingMetadataInProviderMetadataOnFinish() async throws {
         let groundingMetadata = #"{"webSearchQueries":["What's the weather in Chicago this weekend?"],"searchEntryPoint":{"renderedContent":"Sample rendered content"}}"#
@@ -3855,6 +4230,49 @@ struct GoogleGenerativeAILanguageModelTests {
         #expect(reasoningWithSignatures.contains("sig2"))
     }
 
+    @Test("should stream empty text delta for thought signature metadata")
+    func testStreamEmptyTextDeltaWithThoughtSignature() async throws {
+        let payloads = [
+            #"{"candidates":[{"content":{"parts":[{"text":"Visible"}]}}]}"#,
+            #"{"candidates":[{"content":{"parts":[{"text":"","thoughtSignature":"sig-empty"}]}}]}"#,
+            #"{"candidates":[{"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":5,"totalTokenCount":15}}"#
+        ]
+        let events = sseEvents(from: payloads)
+
+        let fetch: FetchFunction = { _ in
+            let response = HTTPURLResponse(
+                url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:streamGenerateContent?alt=sse")!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "text/event-stream"]
+            )!
+            return FetchResponse(body: .stream(makeSSEStream(from: events)), urlResponse: response)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-pro"),
+            config: makeLanguageModelConfig(fetch: fetch, generateId: { "test-id" })
+        )
+
+        let result = try await model.doStream(options: .init(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
+            includeRawChunks: false
+        ))
+
+        let parts = try await collectStream(result.stream)
+        let hasEmptyTextDeltaWithSignature = parts.contains { part in
+            guard case let .textDelta(_, delta, metadata) = part,
+                  delta.isEmpty,
+                  let metadata,
+                  let google = metadata["google"] else {
+                return false
+            }
+            return google["thoughtSignature"] == .string("sig-empty")
+        }
+
+        #expect(hasEmptyTextDeltaWithSignature)
+    }
+
     @Test("should include raw chunks when includeRawChunks is enabled")
     func testIncludeRawChunksWhenEnabled() async throws {
         let payloads = [
@@ -3933,6 +4351,56 @@ struct GoogleGenerativeAILanguageModelTests {
         }
 
         #expect(hasRawChunk == false)
+    }
+
+    @Test("should emit structured parse error payload for invalid stream chunk")
+    func testEmitStructuredParseErrorPayloadForInvalidStreamChunk() async throws {
+        let payloads = [
+            #"{"foo":"bar"}"#,
+            #"{"candidates":[{"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":1,"totalTokenCount":2}}"#
+        ]
+        let events = sseEvents(from: payloads)
+
+        let fetch: FetchFunction = { _ in
+            let response = HTTPURLResponse(
+                url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:streamGenerateContent?alt=sse")!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "text/event-stream"]
+            )!
+            return FetchResponse(body: .stream(makeSSEStream(from: events)), urlResponse: response)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-pro"),
+            config: makeLanguageModelConfig(fetch: fetch, generateId: { "test-id" })
+        )
+
+        let result = try await model.doStream(options: .init(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
+            includeRawChunks: false
+        ))
+
+        let parts = try await collectStream(result.stream)
+        guard let errorPart = parts.first(where: {
+            if case .error = $0 { return true }
+            return false
+        }) else {
+            Issue.record("Missing error stream part")
+            return
+        }
+
+        guard case let .error(errorPayload) = errorPart else {
+            Issue.record("Expected error stream part")
+            return
+        }
+
+        guard case let .object(object) = errorPayload else {
+            Issue.record("Expected structured JSON object error payload")
+            return
+        }
+
+        #expect(object["foo"] == .string("bar"))
     }
 
     // MARK: - GEMMA Model Tests
@@ -4353,10 +4821,10 @@ struct GoogleGenerativeAILanguageModelTests {
         #expect(toolResults[0].1 == "hello\n")
     }
 
-    // MARK: - includeThoughts Warning Tests
+    // MARK: - Warning and Request Mapping Tests
 
-    @Test("should generate a warning if includeThoughts is true for a non-Vertex provider")
-    func testGenerateWarningIfIncludeThoughtsForNonVertex() async throws {
+    @Test("should not generate warning for includeThoughts on non-Vertex provider")
+    func testNotGenerateWarningIfIncludeThoughtsForNonVertex() async throws {
         let responseJSON: [String: Any] = [
             "candidates": [
                 [
@@ -4379,7 +4847,7 @@ struct GoogleGenerativeAILanguageModelTests {
         }
 
         let model = GoogleGenerativeAILanguageModel(
-            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-pro"),
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-2.0-pro"),
             config: GoogleGenerativeAILanguageModel.Config(
                 provider: "google.generative-ai.chat",
                 baseURL: "https://generativelanguage.googleapis.com/v1beta",
@@ -4402,14 +4870,95 @@ struct GoogleGenerativeAILanguageModelTests {
             ]
         ))
 
-        #expect(result.warnings.count == 1)
-        if case .other(let message) = result.warnings[0] {
-            #expect(message == "The 'includeThoughts' option is only supported with the Google Vertex provider and might not be supported or could behave unexpectedly with the current Google provider (google.generative-ai.chat).")
+        #expect(result.warnings.isEmpty)
+    }
+
+    @Test("should preserve explicit empty arrays and objects in request body")
+    func testPreserveExplicitlyEmptyCollectionsInRequestBody() async throws {
+        actor RequestCapture {
+            var request: URLRequest?
+            func store(_ request: URLRequest) { self.request = request }
+            func value() -> URLRequest? { request }
+        }
+
+        let capture = RequestCapture()
+        let responseJSON: [String: Any] = [
+            "candidates": [
+                [
+                    "content": ["parts": [["text": "test"]], "role": "model"],
+                    "finishReason": "STOP"
+                ]
+            ]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-pro:generateContent")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-pro"),
+            config: makeLanguageModelConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(options: .init(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
+            stopSequences: [],
+            providerOptions: [
+                "google": [
+                    "responseModalities": .array([]),
+                    "safetySettings": .array([]),
+                    "labels": .object([:])
+                ]
+            ]
+        ))
+
+        guard let request = await capture.value() else {
+            Issue.record("Missing captured request")
+            return
+        }
+
+        let json = try decodeRequestBody(request)
+        guard let generationConfig = json["generationConfig"] as? [String: Any] else {
+            Issue.record("Missing generationConfig")
+            return
+        }
+
+        if let stopSequences = generationConfig["stopSequences"] as? [Any] {
+            #expect(stopSequences.isEmpty)
+        } else {
+            Issue.record("Missing stopSequences in generationConfig")
+        }
+
+        if let responseModalities = generationConfig["responseModalities"] as? [Any] {
+            #expect(responseModalities.isEmpty)
+        } else {
+            Issue.record("Missing responseModalities in generationConfig")
+        }
+
+        if let safetySettings = json["safetySettings"] as? [Any] {
+            #expect(safetySettings.isEmpty)
+        } else {
+            Issue.record("Missing safetySettings in request body")
+        }
+
+        if let labels = json["labels"] as? [String: Any] {
+            #expect(labels.isEmpty)
+        } else {
+            Issue.record("Missing labels in request body")
         }
     }
 
-    @Test("should NOT generate a warning if includeThoughts is true for a Vertex provider")
-    func testNotGenerateWarningIfIncludeThoughtsForVertex() async throws {
+    @Test("should generate warning for vertex_rag_store tool on non-Vertex provider")
+    func testGenerateWarningForVertexRagStoreOnNonVertexProvider() async throws {
         let responseJSON: [String: Any] = [
             "candidates": [
                 [
@@ -4432,7 +4981,63 @@ struct GoogleGenerativeAILanguageModelTests {
         }
 
         let model = GoogleGenerativeAILanguageModel(
-            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-pro"),
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-2.0-pro"),
+            config: GoogleGenerativeAILanguageModel.Config(
+                provider: "google.generative-ai.chat",
+                baseURL: "https://generativelanguage.googleapis.com/v1beta",
+                headers: { [:] },
+                fetch: fetch,
+                generateId: { "test-id" },
+                supportedUrls: { [:] }
+            )
+        )
+
+        let result = try await model.doGenerate(options: .init(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
+            tools: [
+                .provider(LanguageModelV3ProviderTool(
+                    id: "google.vertex_rag_store",
+                    name: "vertex_rag_store",
+                    args: [
+                        "ragCorpus": .string("projects/my-project/locations/us-central1/ragCorpora/my-rag-corpus")
+                    ]
+                ))
+            ]
+        ))
+
+        #expect(result.warnings.count == 1)
+        if case .other(let message) = result.warnings[0] {
+            #expect(message == "The 'vertex_rag_store' tool is only supported with the Google Vertex provider and might not be supported or could behave unexpectedly with the current Google provider (google.generative-ai.chat).")
+        } else {
+            Issue.record("Expected warning message")
+        }
+    }
+
+    @Test("should not generate warning for vertex_rag_store tool on Vertex provider")
+    func testNotGenerateWarningForVertexRagStoreOnVertexProvider() async throws {
+        let responseJSON: [String: Any] = [
+            "candidates": [
+                [
+                    "content": ["parts": [["text": "test"]], "role": "model"],
+                    "finishReason": "STOP"
+                ]
+            ]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { _ in
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-2.0-pro"),
             config: GoogleGenerativeAILanguageModel.Config(
                 provider: "google.vertex.chat",
                 baseURL: "https://generativelanguage.googleapis.com/v1beta",
@@ -4445,107 +5050,15 @@ struct GoogleGenerativeAILanguageModelTests {
 
         let result = try await model.doGenerate(options: .init(
             prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
-            providerOptions: [
-                "google": [
-                    "thinkingConfig": .object([
-                        "includeThoughts": .bool(true),
-                        "thinkingBudget": .number(500)
-                    ])
-                ]
+            tools: [
+                .provider(LanguageModelV3ProviderTool(
+                    id: "google.vertex_rag_store",
+                    name: "vertex_rag_store",
+                    args: [
+                        "ragCorpus": .string("projects/my-project/locations/us-central1/ragCorpora/my-rag-corpus")
+                    ]
+                ))
             ]
-        ))
-
-        #expect(result.warnings.isEmpty)
-    }
-
-    @Test("should NOT generate a warning if includeThoughts is false for a non-Vertex provider")
-    func testNotGenerateWarningIfIncludeThoughtsFalseForNonVertex() async throws {
-        let responseJSON: [String: Any] = [
-            "candidates": [
-                [
-                    "content": ["parts": [["text": "test"]], "role": "model"],
-                    "finishReason": "STOP"
-                ]
-            ]
-        ]
-
-        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
-        let httpResponse = HTTPURLResponse(
-            url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent")!,
-            statusCode: 200,
-            httpVersion: "HTTP/1.1",
-            headerFields: ["Content-Type": "application/json"]
-        )!
-
-        let fetch: FetchFunction = { _ in
-            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
-        }
-
-        let model = GoogleGenerativeAILanguageModel(
-            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-pro"),
-            config: GoogleGenerativeAILanguageModel.Config(
-                provider: "google.generative-ai.chat",
-                baseURL: "https://generativelanguage.googleapis.com/v1beta",
-                headers: { [:] },
-                fetch: fetch,
-                generateId: { "test-id" },
-                supportedUrls: { [:] }
-            )
-        )
-
-        let result = try await model.doGenerate(options: .init(
-            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
-            providerOptions: [
-                "google": [
-                    "thinkingConfig": .object([
-                        "includeThoughts": .bool(false),
-                        "thinkingBudget": .number(500)
-                    ])
-                ]
-            ]
-        ))
-
-        #expect(result.warnings.isEmpty)
-    }
-
-    @Test("should NOT generate a warning if thinkingConfig is not provided for a non-Vertex provider")
-    func testNotGenerateWarningIfThinkingConfigNotProvided() async throws {
-        let responseJSON: [String: Any] = [
-            "candidates": [
-                [
-                    "content": ["parts": [["text": "test"]], "role": "model"],
-                    "finishReason": "STOP"
-                ]
-            ]
-        ]
-
-        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
-        let httpResponse = HTTPURLResponse(
-            url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent")!,
-            statusCode: 200,
-            httpVersion: "HTTP/1.1",
-            headerFields: ["Content-Type": "application/json"]
-        )!
-
-        let fetch: FetchFunction = { _ in
-            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
-        }
-
-        let model = GoogleGenerativeAILanguageModel(
-            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-pro"),
-            config: GoogleGenerativeAILanguageModel.Config(
-                provider: "google.generative-ai.chat",
-                baseURL: "https://generativelanguage.googleapis.com/v1beta",
-                headers: { [:] },
-                fetch: fetch,
-                generateId: { "test-id" },
-                supportedUrls: { [:] }
-            )
-        )
-
-        let result = try await model.doGenerate(options: .init(
-            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
-            providerOptions: ["google": [:]]
         ))
 
         #expect(result.warnings.isEmpty)

@@ -151,8 +151,8 @@ public final class GoogleGenerativeAILanguageModel: LanguageModelV3 {
                         }
 
                         switch parseResult {
-                        case .failure(let error, _):
-                            continuation.yield(.error(error: .string(String(describing: error))))
+                        case .failure:
+                            continuation.yield(.error(error: parseResult.streamErrorPayload))
                         case .success(let chunk, _):
                             if let usageMetadata = chunk.usageMetadata {
                                 usage = convertGoogleGenerativeAIUsage(usageMetadata)
@@ -225,7 +225,8 @@ public final class GoogleGenerativeAILanguageModel: LanguageModelV3 {
                                     urlContextMetadata: candidate.urlContextMetadata,
                                     safetyRatings: candidate.safetyRatings,
                                     usageMetadata: chunk.usageMetadata,
-                                    providerOptionsName: prepared.providerOptionsName
+                                    providerOptionsName: prepared.providerOptionsName,
+                                    omitMissingUsageMetadata: true
                                 )
                             }
                         }
@@ -272,9 +273,12 @@ public final class GoogleGenerativeAILanguageModel: LanguageModelV3 {
             )
         }
 
-        if googleOptions?.thinkingConfig?.includeThoughts == true,
+        if options.tools?.contains(where: { tool in
+            guard case .provider(let providerTool) = tool else { return false }
+            return providerTool.id == "google.vertex_rag_store"
+        }) == true,
            !config.provider.hasPrefix("google.vertex.") {
-            warnings.append(.other(message: "The 'includeThoughts' option is only supported with the Google Vertex provider and might not be supported or could behave unexpectedly with the current Google provider (\(config.provider))."))
+            warnings.append(.other(message: "The 'vertex_rag_store' tool is only supported with the Google Vertex provider and might not be supported or could behave unexpectedly with the current Google provider (\(config.provider))."))
         }
 
         let isGemmaModel = modelIdentifier.rawValue.lowercased().hasPrefix("gemma-")
@@ -303,7 +307,7 @@ public final class GoogleGenerativeAILanguageModel: LanguageModelV3 {
         if let value = options.frequencyPenalty { generationConfig["frequencyPenalty"] = .number(value) }
         if let value = options.presencePenalty { generationConfig["presencePenalty"] = .number(value) }
         if let value = options.seed { generationConfig["seed"] = .number(Double(value)) }
-        if let value = options.stopSequences, !value.isEmpty {
+        if let value = options.stopSequences {
             generationConfig["stopSequences"] = .array(value.map { .string($0) })
         }
 
@@ -321,7 +325,7 @@ public final class GoogleGenerativeAILanguageModel: LanguageModelV3 {
             generationConfig["audioTimestamp"] = .bool(true)
         }
 
-        if let modalities = googleOptions?.responseModalities, !modalities.isEmpty {
+        if let modalities = googleOptions?.responseModalities {
             generationConfig["responseModalities"] = .array(modalities.map { .string($0.rawValue) })
         }
 
@@ -369,7 +373,7 @@ public final class GoogleGenerativeAILanguageModel: LanguageModelV3 {
         // Always include generationConfig, even if empty (matches upstream behavior)
         body["generationConfig"] = .object(generationConfig)
 
-        if let safetySettings = googleOptions?.safetySettings, !safetySettings.isEmpty {
+        if let safetySettings = googleOptions?.safetySettings {
             body["safetySettings"] = .array(safetySettings.map { setting in
                 .object([
                     "category": .string(setting.category.rawValue),
@@ -382,7 +386,7 @@ public final class GoogleGenerativeAILanguageModel: LanguageModelV3 {
             body["cachedContent"] = .string(cachedContent)
         }
 
-        if let labels = googleOptions?.labels, !labels.isEmpty {
+        if let labels = googleOptions?.labels {
             body["labels"] = .object(labels.mapValues { .string($0) })
         }
 
@@ -572,24 +576,24 @@ private func mapGenerateResponse(
                 }
                 let argsObject: JSONValue = .object(argsDict)
 
-	                content.append(
-	                    .toolCall(
-	                        LanguageModelV3ToolCall(
-	                            toolCallId: toolCallId,
-	                            toolName: "code_execution",
-	                            input: stringifyJSONValue(argsObject),
-	                            providerExecuted: true,
-	                            providerMetadata: metadataFromThoughtSignature(
+                content.append(
+                    .toolCall(
+                        LanguageModelV3ToolCall(
+                            toolCallId: toolCallId,
+                            toolName: "code_execution",
+                            input: stringifyJSONValue(argsObject),
+                            providerExecuted: true,
+                            providerMetadata: metadataFromThoughtSignature(
                                 part.thoughtSignature,
                                 providerOptionsName: providerOptionsName
                             )
-	                        )
-	                    )
-	                )
-	            } else if let result = part.codeExecutionResult, let toolCallId = lastCodeExecutionToolCallId {
-	                // Match upstream: include empty string when output is missing.
-	                var resultDict: [String: JSONValue] = [:]
-	                if let outcome = result.outcome {
+                        )
+                    )
+                )
+            } else if let result = part.codeExecutionResult, let toolCallId = lastCodeExecutionToolCallId {
+                // Match upstream: include empty string when output is missing.
+                var resultDict: [String: JSONValue] = [:]
+                if let outcome = result.outcome {
                     resultDict["outcome"] = .string(outcome)
                 }
                 resultDict["output"] = .string(result.output ?? "")
@@ -624,20 +628,20 @@ private func mapGenerateResponse(
                     )
                 )
                 hasToolCalls = true
-            } else if let inlineData = part.inlineData {
-                content.append(
-                    .file(
-                        LanguageModelV3File(
-                            mediaType: inlineData.mimeType,
-                            data: .base64(inlineData.data)
-                        )
-                    )
-                )
-            } else if let text = part.text, !text.isEmpty {
+            } else if let text = part.text {
                 let providerMetadata = metadataFromThoughtSignature(
                     part.thoughtSignature,
                     providerOptionsName: providerOptionsName
                 )
+
+                if text.isEmpty {
+                    updateLastContentProviderMetadata(
+                        content: &content,
+                        providerMetadata: providerMetadata
+                    )
+                    continue
+                }
+
                 if part.thought == true {
                     content.append(
                         .reasoning(
@@ -651,6 +655,15 @@ private func mapGenerateResponse(
                         )
                     )
                 }
+            } else if let inlineData = part.inlineData {
+                content.append(
+                    .file(
+                        LanguageModelV3File(
+                            mediaType: inlineData.mimeType,
+                            data: .base64(inlineData.data)
+                        )
+                    )
+                )
             }
         }
     }
@@ -725,13 +738,86 @@ private func metadataFromThoughtSignature(
     return [providerOptionsName: ["thoughtSignature": .string(signature)]]
 }
 
+private func updateLastContentProviderMetadata(
+    content: inout [LanguageModelV3Content],
+    providerMetadata: SharedV3ProviderMetadata?
+) {
+    guard let providerMetadata, !content.isEmpty else { return }
+
+    let lastIndex = content.count - 1
+    switch content[lastIndex] {
+    case .text(let text):
+        content[lastIndex] = .text(
+            LanguageModelV3Text(
+                text: text.text,
+                providerMetadata: providerMetadata
+            )
+        )
+    case .reasoning(let reasoning):
+        content[lastIndex] = .reasoning(
+            LanguageModelV3Reasoning(
+                text: reasoning.text,
+                providerMetadata: providerMetadata
+            )
+        )
+    case .toolCall(let toolCall):
+        content[lastIndex] = .toolCall(
+            LanguageModelV3ToolCall(
+                toolCallId: toolCall.toolCallId,
+                toolName: toolCall.toolName,
+                input: toolCall.input,
+                providerExecuted: toolCall.providerExecuted,
+                dynamic: toolCall.dynamic,
+                providerMetadata: providerMetadata
+            )
+        )
+    case .toolResult(let toolResult):
+        content[lastIndex] = .toolResult(
+            LanguageModelV3ToolResult(
+                toolCallId: toolResult.toolCallId,
+                toolName: toolResult.toolName,
+                result: toolResult.result,
+                isError: toolResult.isError,
+                preliminary: toolResult.preliminary,
+                dynamic: toolResult.dynamic,
+                providerMetadata: providerMetadata
+            )
+        )
+    case .source(let source):
+        switch source {
+        case let .url(id, url, title, _):
+            content[lastIndex] = .source(
+                .url(
+                    id: id,
+                    url: url,
+                    title: title,
+                    providerMetadata: providerMetadata
+                )
+            )
+        case let .document(id, mediaType, title, filename, _):
+            content[lastIndex] = .source(
+                .document(
+                    id: id,
+                    mediaType: mediaType,
+                    title: title,
+                    filename: filename,
+                    providerMetadata: providerMetadata
+                )
+            )
+        }
+    case .file, .toolApprovalRequest:
+        break
+    }
+}
+
 private func makeProviderMetadata(
     promptFeedback: JSONValue?,
     groundingMetadata: JSONValue?,
     urlContextMetadata: JSONValue?,
     safetyRatings: JSONValue?,
     usageMetadata: GoogleGenerativeAIResponse.UsageMetadata?,
-    providerOptionsName: String
+    providerOptionsName: String,
+    omitMissingUsageMetadata: Bool = false
 ) -> SharedV3ProviderMetadata? {
     var metadata: [String: JSONValue] = [:]
 
@@ -761,7 +847,7 @@ private func makeProviderMetadata(
 
     if let usageMetadata, let usageJSON = try? JSONEncoder().encodeToJSONValue(usageMetadata) {
         metadata["usageMetadata"] = usageJSON
-    } else {
+    } else if !omitMissingUsageMetadata {
         metadata["usageMetadata"] = .null
     }
 
@@ -782,32 +868,135 @@ private func extractSources(
     var sources: [LanguageModelV3Source] = []
 
     for chunk in chunks {
-        guard case .object(let chunkObject) = chunk,
-              let webValue = chunkObject["web"],
-              case .object(let webObject) = webValue,
-              let uriValue = webObject["uri"],
-              case .string(let uri) = uriValue else {
+        guard case .object(let chunkObject) = chunk else {
             continue
         }
 
-        let title: String?
-        if let titleValue = webObject["title"], case .string(let t) = titleValue {
-            title = t
-        } else {
-            title = nil
+        if let source = extractWebSource(from: chunkObject, generateId: generateId) {
+            sources.append(source)
+        } else if let source = extractRetrievedContextSource(from: chunkObject, generateId: generateId) {
+            sources.append(source)
+        } else if let source = extractMapsSource(from: chunkObject, generateId: generateId) {
+            sources.append(source)
         }
+    }
 
-        sources.append(
-            .url(
+    return sources.isEmpty ? nil : sources
+}
+
+private func extractWebSource(
+    from chunkObject: [String: JSONValue],
+    generateId: @escaping @Sendable () -> String
+) -> LanguageModelV3Source? {
+    guard let webValue = chunkObject["web"],
+          case .object(let webObject) = webValue,
+          let uri = jsonString(webObject["uri"]) else {
+        return nil
+    }
+
+    return .url(
+        id: generateId(),
+        url: uri,
+        title: jsonString(webObject["title"]),
+        providerMetadata: nil
+    )
+}
+
+private func extractRetrievedContextSource(
+    from chunkObject: [String: JSONValue],
+    generateId: @escaping @Sendable () -> String
+) -> LanguageModelV3Source? {
+    guard let retrievedContextValue = chunkObject["retrievedContext"],
+          case .object(let retrievedContextObject) = retrievedContextValue else {
+        return nil
+    }
+
+    let uri = jsonString(retrievedContextObject["uri"])
+    let fileSearchStore = jsonString(retrievedContextObject["fileSearchStore"])
+    let title = jsonString(retrievedContextObject["title"])
+
+    if let uri {
+        if uri.hasPrefix("http://") || uri.hasPrefix("https://") {
+            return .url(
                 id: generateId(),
                 url: uri,
                 title: title,
                 providerMetadata: nil
             )
+        }
+
+        let metadata = documentMetadata(from: uri)
+        return .document(
+            id: generateId(),
+            mediaType: metadata.mediaType,
+            title: title ?? "Unknown Document",
+            filename: metadata.filename,
+            providerMetadata: nil
         )
     }
 
-    return sources.isEmpty ? nil : sources
+    if let fileSearchStore {
+        return .document(
+            id: generateId(),
+            mediaType: "application/octet-stream",
+            title: title ?? "Unknown Document",
+            filename: lastPathComponent(of: fileSearchStore),
+            providerMetadata: nil
+        )
+    }
+
+    return nil
+}
+
+private func extractMapsSource(
+    from chunkObject: [String: JSONValue],
+    generateId: @escaping @Sendable () -> String
+) -> LanguageModelV3Source? {
+    guard let mapsValue = chunkObject["maps"],
+          case .object(let mapsObject) = mapsValue,
+          let uri = jsonString(mapsObject["uri"]) else {
+        return nil
+    }
+
+    return .url(
+        id: generateId(),
+        url: uri,
+        title: jsonString(mapsObject["title"]),
+        providerMetadata: nil
+    )
+}
+
+private func documentMetadata(from uri: String) -> (mediaType: String, filename: String?) {
+    if uri.hasSuffix(".pdf") {
+        return ("application/pdf", lastPathComponent(of: uri))
+    }
+
+    if uri.hasSuffix(".txt") {
+        return ("text/plain", lastPathComponent(of: uri))
+    }
+
+    if uri.hasSuffix(".docx") {
+        return ("application/vnd.openxmlformats-officedocument.wordprocessingml.document", lastPathComponent(of: uri))
+    }
+
+    if uri.hasSuffix(".doc") {
+        return ("application/msword", lastPathComponent(of: uri))
+    }
+
+    if uri.hasSuffix(".md") || uri.hasSuffix(".markdown") {
+        return ("text/markdown", lastPathComponent(of: uri))
+    }
+
+    return ("application/octet-stream", lastPathComponent(of: uri))
+}
+
+private func lastPathComponent(of path: String) -> String? {
+    path.components(separatedBy: "/").last
+}
+
+private func jsonString(_ value: JSONValue?) -> String? {
+    guard case .string(let string) = value else { return nil }
+    return string
 }
 
 // MARK: - Prompt Encoding
@@ -833,12 +1022,16 @@ private func encodePrompt(_ prompt: GoogleGenerativeAIPrompt) throws -> (systemI
                 }
                 return .object(object)
             case .inlineData(let data):
-                return .object([
+                var object: [String: JSONValue] = [
                     "inlineData": .object([
                         "mimeType": .string(data.mimeType),
                         "data": .string(data.data)
                     ])
-                ])
+                ]
+                if let signature = data.thoughtSignature {
+                    object["thoughtSignature"] = .string(signature)
+                }
+                return .object(object)
             case .functionCall(let call):
                 var inner: [String: JSONValue] = [
                     "name": .string(call.name)
@@ -930,24 +1123,24 @@ private func handleStreamingParts(
             }
             let argsObject: JSONValue = .object(argsDict)
 
-	            continuation.yield(
-	                .toolCall(
-	                    LanguageModelV3ToolCall(
-	                        toolCallId: toolCallId,
-	                        toolName: "code_execution",
-	                        input: stringifyJSONValue(argsObject),
-	                        providerExecuted: true,
-	                        providerMetadata: metadataFromThoughtSignature(
+            continuation.yield(
+                .toolCall(
+                    LanguageModelV3ToolCall(
+                        toolCallId: toolCallId,
+                        toolName: "code_execution",
+                        input: stringifyJSONValue(argsObject),
+                        providerExecuted: true,
+                        providerMetadata: metadataFromThoughtSignature(
                                 part.thoughtSignature,
                                 providerOptionsName: providerOptionsName
                             )
-	                    )
-	                )
-	            )
-	        } else if let result = part.codeExecutionResult, let toolCallId = lastCodeExecutionToolCallId {
-	            // Match upstream: include empty string when output is missing.
-	            var resultDict: [String: JSONValue] = [:]
-	            if let outcome = result.outcome {
+                    )
+                )
+            )
+        } else if let result = part.codeExecutionResult, let toolCallId = lastCodeExecutionToolCallId {
+            // Match upstream: include empty string when output is missing.
+            var resultDict: [String: JSONValue] = [:]
+            if let outcome = result.outcome {
                 resultDict["outcome"] = .string(outcome)
             }
             resultDict["output"] = .string(result.output ?? "")
@@ -966,11 +1159,25 @@ private func handleStreamingParts(
                 )
             )
             lastCodeExecutionToolCallId = nil
-        } else if let text = part.text, !text.isEmpty {
+        } else if let text = part.text {
             let providerMetadata = metadataFromThoughtSignature(
                 part.thoughtSignature,
                 providerOptionsName: providerOptionsName
             )
+
+            if text.isEmpty {
+                if providerMetadata != nil, let currentTextBlockId {
+                    continuation.yield(
+                        .textDelta(
+                            id: currentTextBlockId,
+                            delta: "",
+                            providerMetadata: providerMetadata
+                        )
+                    )
+                }
+                continue
+            }
+
             if part.thought == true {
                 if let id = currentTextBlockId {
                     continuation.yield(.textEnd(id: id, providerMetadata: nil))
@@ -1016,6 +1223,18 @@ private extension ParseJSONResult where Output == GoogleGenerativeAIChunk {
             return try? jsonValue(from: raw)
         case .failure(_, let raw):
             return raw.flatMap { try? jsonValue(from: $0) }
+        }
+    }
+
+    var streamErrorPayload: JSONValue {
+        switch self {
+        case .failure(let error, let raw):
+            if let raw, let value = try? jsonValue(from: raw) {
+                return value
+            }
+            return .string(String(describing: error))
+        case .success:
+            return .string("Unknown stream parsing error")
         }
     }
 }

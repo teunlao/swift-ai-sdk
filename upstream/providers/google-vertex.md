@@ -18,6 +18,10 @@
 - [x] Missing Vertex config (`GOOGLE_VERTEX_LOCATION`/`GOOGLE_VERTEX_PROJECT`) now throws `LoadSettingError` at request-time (no process crash / no `fatalError`).
 - [x] Facade aliases parity: `createVertex(...)` and default `vertex` instance are exported alongside Swift-native `createGoogleVertex` / `googleVertex`.
 - [x] Version alias parity: `VERSION` is exported as an alias to `GOOGLE_VERTEX_VERSION`.
+- [x] Supported URL regex parity: HTTP/GCS patterns are case-sensitive (no `.caseInsensitive` matching), with dedicated `supportedUrls` coverage.
+- [x] Video request mapping parity: image payload now always includes `mimeType` (including empty string), matching upstream request body shape.
+- [x] Base URL parity: when `apiKey` is absent, `project/location` are required even with custom `baseURL`; custom baseURL no longer bypasses Vertex config requirements.
+- [x] Embedding options naming parity: upstream aliases `GoogleVertexEmbeddingModelOptions` / `googleVertexEmbeddingModelOptionsSchema` are exported alongside existing Swift names.
 
 Tests live under:
 - `Tests/GoogleVertexProviderTests/GoogleVertexChatBaseURLTests.swift`

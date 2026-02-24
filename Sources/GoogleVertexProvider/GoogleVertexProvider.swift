@@ -14,15 +14,13 @@ private let GOOGLE_VERTEX_EXPRESS_MODE_BASE_URL = "https://aiplatform.googleapis
 
 private let googleVertexHTTPRegex: NSRegularExpression = {
     try! NSRegularExpression(
-        pattern: "^https?:\\/\\/.*$",
-        options: [.caseInsensitive]
+        pattern: "^https?:\\/\\/.*$"
     )
 }()
 
 private let googleVertexGCSRegex: NSRegularExpression = {
     try! NSRegularExpression(
-        pattern: "^gs:\\/\\/.*$",
-        options: [.caseInsensitive]
+        pattern: "^gs:\\/\\/.*$"
     )
 }()
 
@@ -222,18 +220,21 @@ public func createGoogleVertex(settings: GoogleVertexProviderSettings = .init())
     }
 
     let baseURLResolution: Result<String, any Error> = {
-        // If an explicit baseURL is provided, it should not require project/location.
-        if let baseURL = withoutTrailingSlash(settings.baseURL) {
-            return .success(baseURL)
-        }
-
-        if apiKey != nil {
-            return .success(GOOGLE_VERTEX_EXPRESS_MODE_BASE_URL)
-        }
-
         do {
+            if apiKey != nil {
+                if let baseURL = withoutTrailingSlash(settings.baseURL) {
+                    return .success(baseURL)
+                }
+                return .success(GOOGLE_VERTEX_EXPRESS_MODE_BASE_URL)
+            }
+
             let location = try loadLocation()
             let project = try loadProject()
+
+            if let baseURL = withoutTrailingSlash(settings.baseURL) {
+                return .success(baseURL)
+            }
+
             let hostPrefix = location == "global" ? "" : "\(location)-"
             let baseHost = "\(hostPrefix)aiplatform.googleapis.com"
             return .success("https://\(baseHost)/v1beta1/projects/\(project)/locations/\(location)/publishers/google")

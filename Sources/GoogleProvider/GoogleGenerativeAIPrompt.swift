@@ -65,10 +65,12 @@ public struct GoogleGenerativeAITextPart: Sendable, Equatable {
 public struct GoogleGenerativeAIInlineDataPart: Sendable, Equatable {
     public var mimeType: String
     public var data: String
+    public var thoughtSignature: String?
 
-    public init(mimeType: String, data: String) {
+    public init(mimeType: String, data: String, thoughtSignature: String? = nil) {
         self.mimeType = mimeType
         self.data = data
+        self.thoughtSignature = thoughtSignature
     }
 }
 
