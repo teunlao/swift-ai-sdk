@@ -177,6 +177,36 @@ public let googleGenerativeAIProviderOptionsSchema = FlexibleSchema(
                     return .failure(error: TypeValidationError.wrap(value: value, cause: error))
                 }
 
+                func rejectNull(
+                    _ key: String,
+                    in dictionary: [String: JSONValue],
+                    issue: String
+                ) throws {
+                    guard let fieldValue = dictionary[key], fieldValue == .null else {
+                        return
+                    }
+
+                    let error = SchemaValidationIssuesError(
+                        vendor: "google",
+                        issues: issue
+                    )
+                    throw TypeValidationError.wrap(value: fieldValue, cause: error)
+                }
+
+                // Upstream zod schema uses `.optional()` (not `.nullish()`) for these fields.
+                // `null` must therefore fail validation instead of being treated as missing.
+                try rejectNull("responseModalities", in: dict, issue: "responseModalities must be an array")
+                try rejectNull("thinkingConfig", in: dict, issue: "thinkingConfig must be an object")
+                try rejectNull("cachedContent", in: dict, issue: "cachedContent must be a string")
+                try rejectNull("structuredOutputs", in: dict, issue: "structuredOutputs must be a boolean")
+                try rejectNull("safetySettings", in: dict, issue: "safetySettings must be an array")
+                try rejectNull("threshold", in: dict, issue: "threshold must be a valid enum value")
+                try rejectNull("audioTimestamp", in: dict, issue: "audioTimestamp must be a boolean")
+                try rejectNull("labels", in: dict, issue: "labels must be an object")
+                try rejectNull("mediaResolution", in: dict, issue: "mediaResolution must be a valid enum value")
+                try rejectNull("imageConfig", in: dict, issue: "imageConfig must be an object")
+                try rejectNull("retrievalConfig", in: dict, issue: "retrievalConfig must be an object")
+
                 var responseModalities: [GoogleGenerativeAIResponseModality]? = nil
                 if let modalitiesValue = dict["responseModalities"], modalitiesValue != .null {
                     guard case .array(let array) = modalitiesValue else {
@@ -208,6 +238,22 @@ public let googleGenerativeAIProviderOptionsSchema = FlexibleSchema(
                         )
                         return .failure(error: TypeValidationError.wrap(value: thinkingValue, cause: error))
                     }
+
+                    try rejectNull(
+                        "includeThoughts",
+                        in: thinkingDict,
+                        issue: "thinkingConfig.includeThoughts must be a boolean"
+                    )
+                    try rejectNull(
+                        "thinkingBudget",
+                        in: thinkingDict,
+                        issue: "thinkingConfig.thinkingBudget must be a number"
+                    )
+                    try rejectNull(
+                        "thinkingLevel",
+                        in: thinkingDict,
+                        issue: "thinkingConfig.thinkingLevel must be one of 'minimal', 'low', 'medium', 'high'"
+                    )
 
                     var includeThoughts: Bool? = nil
                     if let includeValue = thinkingDict["includeThoughts"], includeValue != .null {
@@ -407,6 +453,17 @@ public let googleGenerativeAIProviderOptionsSchema = FlexibleSchema(
                         return .failure(error: TypeValidationError.wrap(value: imageConfigValue, cause: error))
                     }
 
+                    try rejectNull(
+                        "aspectRatio",
+                        in: imageConfigDict,
+                        issue: "imageConfig.aspectRatio must be a supported ratio"
+                    )
+                    try rejectNull(
+                        "imageSize",
+                        in: imageConfigDict,
+                        issue: "imageConfig.imageSize must be one of '1K', '2K', '4K'"
+                    )
+
                     var aspectRatio: GoogleGenerativeAIImageConfigAspectRatio? = nil
                     if let aspectValue = imageConfigDict["aspectRatio"], aspectValue != .null {
                         guard case .string(let aspectRaw) = aspectValue,
@@ -448,6 +505,12 @@ public let googleGenerativeAIProviderOptionsSchema = FlexibleSchema(
                         )
                         return .failure(error: TypeValidationError.wrap(value: retrievalValue, cause: error))
                     }
+
+                    try rejectNull(
+                        "latLng",
+                        in: retrievalDict,
+                        issue: "retrievalConfig.latLng must be an object"
+                    )
 
                     var latLng: GoogleGenerativeAIRetrievalLatLng? = nil
                     if let latLngValue = retrievalDict["latLng"], latLngValue != .null {

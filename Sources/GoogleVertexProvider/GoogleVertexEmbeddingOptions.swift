@@ -11,13 +11,13 @@ import GoogleProvider
 //===----------------------------------------------------------------------===//
 
 public struct GoogleVertexEmbeddingProviderOptions: Sendable, Equatable {
-    public var outputDimensionality: Int?
+    public var outputDimensionality: Double?
     public var taskType: GoogleGenerativeAIEmbeddingTaskType?
     public var title: String?
     public var autoTruncate: Bool?
 
     public init(
-        outputDimensionality: Int? = nil,
+        outputDimensionality: Double? = nil,
         taskType: GoogleGenerativeAIEmbeddingTaskType? = nil,
         title: String? = nil,
         autoTruncate: Bool? = nil
@@ -51,8 +51,16 @@ public let googleVertexEmbeddingProviderOptionsSchema = FlexibleSchema(
                     return .failure(error: TypeValidationError.wrap(value: value, cause: error))
                 }
 
-                var outputDimensionality: Int? = nil
-                if let dimensionalityValue = dict["outputDimensionality"], dimensionalityValue != .null {
+                var outputDimensionality: Double? = nil
+                if let dimensionalityValue = dict["outputDimensionality"] {
+                    if dimensionalityValue == .null {
+                        let error = SchemaValidationIssuesError(
+                            vendor: "google",
+                            issues: "outputDimensionality must be a number"
+                        )
+                        return .failure(error: TypeValidationError.wrap(value: dimensionalityValue, cause: error))
+                    }
+
                     guard case .number(let number) = dimensionalityValue else {
                         let error = SchemaValidationIssuesError(
                             vendor: "google",
@@ -61,20 +69,19 @@ public let googleVertexEmbeddingProviderOptionsSchema = FlexibleSchema(
                         return .failure(error: TypeValidationError.wrap(value: dimensionalityValue, cause: error))
                     }
 
-                    let intValue = Int(number)
-                    if Double(intValue) != number {
-                        let error = SchemaValidationIssuesError(
-                            vendor: "google",
-                            issues: "outputDimensionality must be an integer"
-                        )
-                        return .failure(error: TypeValidationError.wrap(value: dimensionalityValue, cause: error))
-                    }
-
-                    outputDimensionality = intValue
+                    outputDimensionality = number
                 }
 
                 var taskType: GoogleGenerativeAIEmbeddingTaskType? = nil
-                if let taskTypeValue = dict["taskType"], taskTypeValue != .null {
+                if let taskTypeValue = dict["taskType"] {
+                    if taskTypeValue == .null {
+                        let error = SchemaValidationIssuesError(
+                            vendor: "google",
+                            issues: "taskType must be a valid enum value"
+                        )
+                        return .failure(error: TypeValidationError.wrap(value: taskTypeValue, cause: error))
+                    }
+
                     guard case .string(let raw) = taskTypeValue,
                           let parsed = GoogleGenerativeAIEmbeddingTaskType(rawValue: raw) else {
                         let error = SchemaValidationIssuesError(
@@ -87,7 +94,15 @@ public let googleVertexEmbeddingProviderOptionsSchema = FlexibleSchema(
                 }
 
                 var title: String? = nil
-                if let titleValue = dict["title"], titleValue != .null {
+                if let titleValue = dict["title"] {
+                    if titleValue == .null {
+                        let error = SchemaValidationIssuesError(
+                            vendor: "google",
+                            issues: "title must be a string"
+                        )
+                        return .failure(error: TypeValidationError.wrap(value: titleValue, cause: error))
+                    }
+
                     guard case .string(let stringValue) = titleValue else {
                         let error = SchemaValidationIssuesError(
                             vendor: "google",
@@ -99,7 +114,15 @@ public let googleVertexEmbeddingProviderOptionsSchema = FlexibleSchema(
                 }
 
                 var autoTruncate: Bool? = nil
-                if let autoTruncateValue = dict["autoTruncate"], autoTruncateValue != .null {
+                if let autoTruncateValue = dict["autoTruncate"] {
+                    if autoTruncateValue == .null {
+                        let error = SchemaValidationIssuesError(
+                            vendor: "google",
+                            issues: "autoTruncate must be a boolean"
+                        )
+                        return .failure(error: TypeValidationError.wrap(value: autoTruncateValue, cause: error))
+                    }
+
                     guard case .bool(let boolValue) = autoTruncateValue else {
                         let error = SchemaValidationIssuesError(
                             vendor: "google",
@@ -132,7 +155,7 @@ extension GoogleVertexEmbeddingProviderOptions {
     func toParametersDictionary() -> [String: JSONValue] {
         var parameters: [String: JSONValue] = [:]
         if let outputDimensionality {
-            parameters["outputDimensionality"] = .number(Double(outputDimensionality))
+            parameters["outputDimensionality"] = .number(outputDimensionality)
         }
         if let autoTruncate {
             parameters["autoTruncate"] = .bool(autoTruncate)

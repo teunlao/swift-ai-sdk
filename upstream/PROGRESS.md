@@ -29,6 +29,10 @@ For source-of-truth code, always follow the commits and tests.
 
 ### Unreleased (main)
 
+- 2026-02-24
+  - Google Vertex: embedding options parity fix — `outputDimensionality` now accepts fractional numbers and rejects `null` (Vertex + Google fallback namespaces), with new coverage in `GoogleVertexEmbeddingModelTests`.
+  - Google: language provider options parity fix — `null` is now rejected for optional schema fields (including nested `thinkingConfig.includeThoughts`), with regression coverage in `GoogleGenerativeAILanguageModelTests`.
+
 - 2026-02-23
   - Anthropic: Claude 4.6 support (thanks to @bunchjesse).
   - Google Vertex: custom `baseURL` now bypasses `project/location` requirement when explicitly configured (regression test added).

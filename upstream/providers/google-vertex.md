@@ -22,6 +22,7 @@
 - [x] Video request mapping parity: image payload now always includes `mimeType` (including empty string), matching upstream request body shape.
 - [x] Base URL parity: when `apiKey` is absent, `project/location` are required even with custom `baseURL`; custom baseURL no longer bypasses Vertex config requirements.
 - [x] Embedding options naming parity: upstream aliases `GoogleVertexEmbeddingModelOptions` / `googleVertexEmbeddingModelOptionsSchema` are exported alongside existing Swift names.
+- [x] Embedding options validation parity: `outputDimensionality` accepts fractional numbers (not integer-only), and `null` for optional fields is rejected (matches upstream `.optional()` semantics for Vertex + Google fallback namespaces).
 
 Tests live under:
 - `Tests/GoogleVertexProviderTests/GoogleVertexChatBaseURLTests.swift`

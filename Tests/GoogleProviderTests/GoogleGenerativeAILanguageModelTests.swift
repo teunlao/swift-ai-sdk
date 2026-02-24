@@ -4957,6 +4957,112 @@ struct GoogleGenerativeAILanguageModelTests {
         }
     }
 
+    @Test("provider options reject null responseModalities before request")
+    func testRejectNullResponseModalitiesBeforeRequest() async throws {
+        actor FetchCallCounter {
+            var count = 0
+            func increment() { count += 1 }
+            func value() -> Int { count }
+        }
+
+        let counter = FetchCallCounter()
+        let fetch: FetchFunction = { _ in
+            await counter.increment()
+            let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-pro:generateContent")!
+            let data = try JSONSerialization.data(withJSONObject: [
+                "candidates": [
+                    ["content": ["parts": [["text": "ok"]], "role": "model"], "finishReason": "STOP"]
+                ]
+            ])
+            let response = HTTPURLResponse(
+                url: url,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(data), urlResponse: response)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-2.0-pro"),
+            config: makeLanguageModelConfig(fetch: fetch)
+        )
+
+        do {
+            _ = try await model.doGenerate(options: .init(
+                prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
+                providerOptions: [
+                    "google": [
+                        "responseModalities": .null
+                    ]
+                ]
+            ))
+            Issue.record("Expected InvalidArgumentError")
+        } catch let error as InvalidArgumentError {
+            #expect(error.argument == "providerOptions")
+            #expect(error.message == "invalid google provider options")
+
+            let typeError = try #require(error.cause as? TypeValidationError)
+            #expect(String(describing: typeError).contains("responseModalities must be an array"))
+        }
+
+        #expect(await counter.value() == 0)
+    }
+
+    @Test("provider options reject null thinkingConfig.includeThoughts before request")
+    func testRejectNullThinkingConfigIncludeThoughtsBeforeRequest() async throws {
+        actor FetchCallCounter {
+            var count = 0
+            func increment() { count += 1 }
+            func value() -> Int { count }
+        }
+
+        let counter = FetchCallCounter()
+        let fetch: FetchFunction = { _ in
+            await counter.increment()
+            let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-pro:generateContent")!
+            let data = try JSONSerialization.data(withJSONObject: [
+                "candidates": [
+                    ["content": ["parts": [["text": "ok"]], "role": "model"], "finishReason": "STOP"]
+                ]
+            ])
+            let response = HTTPURLResponse(
+                url: url,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(data), urlResponse: response)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-2.0-pro"),
+            config: makeLanguageModelConfig(fetch: fetch)
+        )
+
+        do {
+            _ = try await model.doGenerate(options: .init(
+                prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
+                providerOptions: [
+                    "google": [
+                        "thinkingConfig": .object([
+                            "includeThoughts": .null
+                        ])
+                    ]
+                ]
+            ))
+            Issue.record("Expected InvalidArgumentError")
+        } catch let error as InvalidArgumentError {
+            #expect(error.argument == "providerOptions")
+            #expect(error.message == "invalid google provider options")
+
+            let typeError = try #require(error.cause as? TypeValidationError)
+            #expect(String(describing: typeError).contains("thinkingConfig.includeThoughts must be a boolean"))
+        }
+
+        #expect(await counter.value() == 0)
+    }
+
     @Test("should generate warning for vertex_rag_store tool on non-Vertex provider")
     func testGenerateWarningForVertexRagStoreOnNonVertexProvider() async throws {
         let responseJSON: [String: Any] = [

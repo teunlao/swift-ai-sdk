@@ -100,6 +100,135 @@ struct GoogleVertexEmbeddingModelTests {
         #expect(parsed?.autoTruncate == true)
     }
 
+    @Test("outputDimensionality accepts non-integer numbers for vertex options")
+    func outputDimensionalityAcceptsFractionalNumbersForVertexOptions() async throws {
+        let capture = RequestCapture()
+
+        let fetch: FetchFunction = { request in
+            await capture.capture(request)
+
+            let url = try #require(request.url)
+            let (data, response) = try makePredictionsData(
+                embeddings: [[0.1]],
+                tokenCounts: [1],
+                url: url
+            )
+            return FetchResponse(body: .data(data), urlResponse: response)
+        }
+
+        let model = makeModel(fetch: fetch)
+        _ = try await model.doEmbed(options: .init(
+            values: ["test text one", "test text two"],
+            providerOptions: [
+                "vertex": [
+                    "outputDimensionality": .number(64.5)
+                ]
+            ]
+        ))
+
+        let request = try #require(await capture.lastRequest)
+        let body = try #require(request.httpBody)
+        let json = try JSONSerialization.jsonObject(with: body)
+        let dict = try #require(json as? [String: Any])
+        let parameters = try #require(dict["parameters"] as? [String: Any])
+
+        #expect((parameters["outputDimensionality"] as? NSNumber)?.doubleValue == 64.5)
+    }
+
+    @Test("provider options reject null outputDimensionality in vertex namespace before request")
+    func rejectsNullOutputDimensionalityInVertexNamespaceBeforeRequest() async throws {
+        actor FetchCallCounter {
+            var count = 0
+            func increment() { count += 1 }
+            func value() -> Int { count }
+        }
+
+        let counter = FetchCallCounter()
+        let fetch: FetchFunction = { request in
+            await counter.increment()
+
+            let url = try #require(request.url)
+            let (data, response) = try makePredictionsData(
+                embeddings: [[0.1]],
+                tokenCounts: [1],
+                url: url
+            )
+            return FetchResponse(body: .data(data), urlResponse: response)
+        }
+
+        let model = makeModel(fetch: fetch)
+
+        do {
+            _ = try await model.doEmbed(options: .init(
+                values: ["test text one"],
+                providerOptions: [
+                    "vertex": [
+                        "outputDimensionality": .null
+                    ]
+                ]
+            ))
+            Issue.record("Expected InvalidArgumentError")
+        } catch let error as InvalidArgumentError {
+            #expect(error.argument == "providerOptions")
+            #expect(error.message == "invalid vertex provider options")
+
+            let typeError = try #require(error.cause as? TypeValidationError)
+            let schemaError = try #require(typeError.cause as? SchemaValidationIssuesError)
+
+            #expect(schemaError.vendor == "google")
+            #expect(String(describing: schemaError.issues).contains("outputDimensionality must be a number"))
+        }
+
+        #expect(await counter.value() == 0)
+    }
+
+    @Test("provider options reject null outputDimensionality in google fallback namespace before request")
+    func rejectsNullOutputDimensionalityInGoogleFallbackNamespaceBeforeRequest() async throws {
+        actor FetchCallCounter {
+            var count = 0
+            func increment() { count += 1 }
+            func value() -> Int { count }
+        }
+
+        let counter = FetchCallCounter()
+        let fetch: FetchFunction = { request in
+            await counter.increment()
+
+            let url = try #require(request.url)
+            let (data, response) = try makePredictionsData(
+                embeddings: [[0.1]],
+                tokenCounts: [1],
+                url: url
+            )
+            return FetchResponse(body: .data(data), urlResponse: response)
+        }
+
+        let model = makeModel(fetch: fetch)
+
+        do {
+            _ = try await model.doEmbed(options: .init(
+                values: ["test text one"],
+                providerOptions: [
+                    "google": [
+                        "outputDimensionality": .null
+                    ]
+                ]
+            ))
+            Issue.record("Expected InvalidArgumentError")
+        } catch let error as InvalidArgumentError {
+            #expect(error.argument == "providerOptions")
+            #expect(error.message == "invalid google provider options")
+
+            let typeError = try #require(error.cause as? TypeValidationError)
+            let schemaError = try #require(typeError.cause as? SchemaValidationIssuesError)
+
+            #expect(schemaError.vendor == "google")
+            #expect(String(describing: schemaError.issues).contains("outputDimensionality must be a number"))
+        }
+
+        #expect(await counter.value() == 0)
+    }
+
     @Test("should extract embeddings")
     func extractEmbeddings() async throws {
         let capture = RequestCapture()
