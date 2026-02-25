@@ -22,6 +22,7 @@
 - [x] Thought signature parity for assistant files: preserve `providerOptions.*.thoughtSignature` on assistant `file` parts and encode it as part-level `thoughtSignature` alongside `inlineData`.
 - [x] Stream parse-error payload parity: when an SSE chunk fails schema parsing, emit structured JSON error payload (prefer raw parsed chunk) instead of stringifying the error object only.
 - [x] Stream chunk schema parity: chunks without `candidates` are accepted (usage/metadata-only chunks) instead of being treated as parse errors.
+- [x] Tool schema conversion parity: `convertJSONSchemaToOpenAPISchema` matches upstream for nested empty object schemas (root is removed; nested schemas are preserved) and for `type: [...]` arrays (converted to `anyOf` + `nullable`).
 - [x] Imagen request-shape parity: explicit `null` for nullish image provider options (`personGeneration`, `aspectRatio`) is preserved in `parameters` and can override defaults (upstream `Object.assign` behavior).
 - [x] Imagen response-schema parity: missing `predictions` defaults to `[]` instead of failing decode.
 - [x] Gemini image usage parity: missing `usageMetadata` still maps to a usage object with `totalTokens = 0` (instead of omitting usage entirely), matching upstream usage conversion flow.

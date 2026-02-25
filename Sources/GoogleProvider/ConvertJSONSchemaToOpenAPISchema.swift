@@ -1,11 +1,30 @@
 import Foundation
 import AISDKProvider
 
-func convertJSONSchemaToOpenAPISchema(_ jsonSchema: JSONValue?) -> Any? {
+func convertJSONSchemaToOpenAPISchema(_ jsonSchema: JSONValue?, isRoot: Bool = true) -> Any? {
     guard let jsonSchema else { return nil }
 
     if isEmptyGoogleObjectSchema(jsonSchema) {
-        return nil
+        // Port of upstream behavior:
+        // - root empty object schemas become undefined/nil
+        // - nested empty object schemas are preserved as `{ type: "object" }` (and keep description).
+        if isRoot {
+            return nil
+        }
+
+        if case .object(let dict) = jsonSchema,
+           let description = dict.stringValue(forKey: "description"),
+           !description.isEmpty
+        {
+            return [
+                "type": "object",
+                "description": description
+            ]
+        }
+
+        return [
+            "type": "object"
+        ]
     }
 
     switch jsonSchema {
@@ -29,25 +48,28 @@ func convertJSONSchemaToOpenAPISchema(_ jsonSchema: JSONValue?) -> Any? {
             result["format"] = format
         }
 
-        if let constValue = dict["const"], constValue != .null {
+        if let constValue = dict["const"] {
             result["enum"] = [constValue.toAny()]
         }
 
         if let typeValue = dict["type"], typeValue != .null {
             switch typeValue {
             case .array(let array):
-                var types: [String] = []
-                for element in array {
-                    if case .string(let str) = element {
-                        types.append(str)
+                let types = array.compactMap { element in
+                    if case .string(let str) = element { return str }
+                    return nil
+                }
+
+                let hasNull = types.contains("null")
+                let nonNullTypes = types.filter { $0 != "null" }
+
+                if nonNullTypes.isEmpty {
+                    result["type"] = "null"
+                } else {
+                    result["anyOf"] = nonNullTypes.map { ["type": $0] }
+                    if hasNull {
+                        result["nullable"] = true
                     }
-                }
-                if let nullIndex = types.firstIndex(of: "null") {
-                    types.remove(at: nullIndex)
-                    result["nullable"] = true
-                }
-                if let first = types.first {
-                    result["type"] = types.count == 1 ? first : types
                 }
             case .string(let string):
                 result["type"] = string
@@ -56,19 +78,14 @@ func convertJSONSchemaToOpenAPISchema(_ jsonSchema: JSONValue?) -> Any? {
             }
         }
 
-        if let enumArray = dict["enum"], enumArray != .null {
-            switch enumArray {
-            case .array(let array):
-                result["enum"] = array.map { $0.toAny() }
-            default:
-                break
-            }
+        if let enumValues = dict["enum"] {
+            result["enum"] = enumValues.toAny()
         }
 
         if let propertiesValue = dict["properties"], case .object(let propertiesDict) = propertiesValue {
             var properties: [String: Any] = [:]
             for (key, value) in propertiesDict {
-                properties[key] = convertJSONSchemaToOpenAPISchema(value)
+                properties[key] = convertJSONSchemaToOpenAPISchema(value, isRoot: false)
             }
             result["properties"] = properties
         }
@@ -76,14 +93,14 @@ func convertJSONSchemaToOpenAPISchema(_ jsonSchema: JSONValue?) -> Any? {
         if let itemsValue = dict["items"], itemsValue != .null {
             switch itemsValue {
             case .array(let array):
-                result["items"] = array.map { convertJSONSchemaToOpenAPISchema($0) as Any }
+                result["items"] = array.compactMap { convertJSONSchemaToOpenAPISchema($0, isRoot: false) }
             default:
-                result["items"] = convertJSONSchemaToOpenAPISchema(itemsValue)
+                result["items"] = convertJSONSchemaToOpenAPISchema(itemsValue, isRoot: false)
             }
         }
 
         if let allOfValue = dict["allOf"], case .array(let array) = allOfValue {
-            result["allOf"] = array.compactMap { convertJSONSchemaToOpenAPISchema($0) }
+            result["allOf"] = array.compactMap { convertJSONSchemaToOpenAPISchema($0, isRoot: false) }
         }
 
         if let anyOfValue = dict["anyOf"], case .array(let array) = anyOfValue {
@@ -108,20 +125,22 @@ func convertJSONSchemaToOpenAPISchema(_ jsonSchema: JSONValue?) -> Any? {
                     return true
                 }
 
-                if nonNullSchemas.count == 1, let converted = convertJSONSchemaToOpenAPISchema(nonNullSchemas.first) as? [String: Any] {
+                if nonNullSchemas.count == 1,
+                   let converted = convertJSONSchemaToOpenAPISchema(nonNullSchemas.first, isRoot: false) as? [String: Any]
+                {
                     result.merge(converted) { _, new in new }
                     result["nullable"] = true
                 } else {
-                    result["anyOf"] = nonNullSchemas.compactMap { convertJSONSchemaToOpenAPISchema($0) }
+                    result["anyOf"] = nonNullSchemas.compactMap { convertJSONSchemaToOpenAPISchema($0, isRoot: false) }
                     result["nullable"] = true
                 }
             } else {
-                result["anyOf"] = array.compactMap { convertJSONSchemaToOpenAPISchema($0) }
+                result["anyOf"] = array.compactMap { convertJSONSchemaToOpenAPISchema($0, isRoot: false) }
             }
         }
 
         if let oneOfValue = dict["oneOf"], case .array(let array) = oneOfValue {
-            result["oneOf"] = array.compactMap { convertJSONSchemaToOpenAPISchema($0) }
+            result["oneOf"] = array.compactMap { convertJSONSchemaToOpenAPISchema($0, isRoot: false) }
         }
 
         if let minLength = dict.numberValue(forKey: "minLength") {
@@ -144,6 +163,8 @@ private func isEmptyGoogleObjectSchema(_ value: JSONValue) -> Bool {
     let propertiesEmpty: Bool
     if let propertiesValue = dict["properties"], case .object(let propertiesDict) = propertiesValue {
         propertiesEmpty = propertiesDict.isEmpty
+    } else if dict["properties"] == .null {
+        propertiesEmpty = true
     } else if dict["properties"] == nil {
         propertiesEmpty = true
     } else {
