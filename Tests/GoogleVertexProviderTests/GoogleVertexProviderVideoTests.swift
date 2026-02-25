@@ -73,7 +73,8 @@ struct GoogleVertexProviderVideoTests {
         let provider = createGoogleVertex(settings: GoogleVertexProviderSettings(
             location: "us-central1",
             project: "test-project",
-            fetch: fetch
+            fetch: fetch,
+            accessTokenProvider: { "test-access-token" }
         ))
 
         let model = provider.video(modelId: .veo20Generate001)
@@ -147,7 +148,8 @@ struct GoogleVertexProviderVideoTests {
         let provider = createGoogleVertex(settings: GoogleVertexProviderSettings(
             location: "global",
             project: "test-project",
-            fetch: fetch
+            fetch: fetch,
+            accessTokenProvider: { "test-access-token" }
         ))
 
         let model = provider.video(modelId: .veo30Generate001)

@@ -74,7 +74,8 @@ struct GoogleVertexChatStreamingBaseURLTests {
         let provider = createGoogleVertex(settings: GoogleVertexProviderSettings(
             location: "us-central1",
             project: "test-project",
-            fetch: fetch
+            fetch: fetch,
+            accessTokenProvider: { "test-access-token" }
         ))
 
         let model = try provider.languageModel(modelId: "gemini-pro")
@@ -122,4 +123,3 @@ struct GoogleVertexChatStreamingBaseURLTests {
         #expect(headerValue("x-goog-api-key", in: request) == "KEY")
     }
 }
-

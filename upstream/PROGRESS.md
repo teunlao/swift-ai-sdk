@@ -40,6 +40,7 @@ For source-of-truth code, always follow the commits and tests.
   - Google language parity: invalid stream chunk schema now emits serialized validation parse error payload (`AI_TypeValidationError`/`AI_JSONParseError` fields) instead of raw chunk JSON.
   - Google tools schema parity: `convertJSONSchemaToOpenAPISchema` now matches upstream for nested empty object schemas (root removed; nested preserved) and for `type: [...]` arrays (converted to `anyOf` + `nullable`), with upstream tests ported to Swift.
   - Google Vertex provider config: custom `baseURL` bypasses `project/location` validation when `apiKey` is absent; missing config errors remain request-time (tests updated accordingly).
+  - Google Vertex auth parity (Vertex mode): when `apiKey` is absent and `baseURL` is not provided, requests now auto-inject `Authorization: Bearer <token>` via service-account credentials (settings or env), matching upstream Node/Edge wrapper behavior; added regression coverage in `GoogleVertexAuthTests`.
   - SwiftAISDK tests: stabilized `RerankTests.logsWarnings` against parallel observer races by capturing non-empty warning batches instead of last write wins.
 
 - 2026-02-24

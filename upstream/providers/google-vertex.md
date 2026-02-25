@@ -8,6 +8,7 @@
 
 - [x] Express mode support: `apiKey` / `GOOGLE_VERTEX_API_KEY` uses base URL `https://aiplatform.googleapis.com/v1/publishers/google`.
 - [x] Express mode auth: always sets and overrides `x-goog-api-key` header (even if caller passes a different value).
+- [x] OAuth auth parity (Vertex mode): when `apiKey` is absent and `baseURL` is not provided, the provider auto-injects `Authorization: Bearer <token>` using service-account credentials (`googleCredentials` or env `GOOGLE_CLIENT_EMAIL`/`GOOGLE_PRIVATE_KEY`/`GOOGLE_PRIVATE_KEY_ID`). User-supplied `Authorization` header is not overridden.
 - [x] Chat model baseURL: regional host prefix + global region handling + express mode base URL; express mode injects `x-goog-api-key` (generate + stream).
 - [x] Embedding provider options: reads options from `providerOptions["vertex"]` (fallback to `providerOptions["google"]`).
 - [x] Embedding model: request payload (`instances`/`parameters`), usage tokens, raw response headers/body, custom `baseURL`, custom `fetch`, too-many-values guard.
@@ -32,6 +33,7 @@ Tests live under:
 - `Tests/GoogleVertexProviderTests/GoogleVertexChatBaseURLTests.swift`
 - `Tests/GoogleVertexProviderTests/GoogleVertexChatStreamingBaseURLTests.swift`
 - `Tests/GoogleVertexProviderTests/GoogleVertexProviderExpressModeTests.swift`
+- `Tests/GoogleVertexProviderTests/GoogleVertexAuthTests.swift`
 - `Tests/GoogleVertexProviderTests/GoogleVertexEmbeddingModelTests.swift`
 - `Tests/GoogleVertexProviderTests/GoogleVertexImageEditingTests.swift`
 - `Tests/GoogleVertexProviderTests/GoogleVertexImageModelTests.swift`
@@ -40,11 +42,10 @@ Tests live under:
 ## Known gaps / TODO
 
 - [ ] Full end-to-end parity audit (prompt conversion, streaming, errors) for `google-vertex`.
-- [ ] Auth parity: upstream `google-vertex` Node/Edge wrappers auto-inject `Authorization: Bearer <token>` when `apiKey` is absent (google-auth-library / service account credentials). Swift currently requires user-supplied auth headers.
 
 ## Notes
 
-- Intentional deviation: unlike upstream `createVertex`, Swift `createGoogleVertex` short-circuits to `baseURL` when provided (so `project/location` are not required). Keep this behavior unless explicitly reverted.
+- Intentional deviation: unlike upstream `createVertex`, Swift `createGoogleVertex` short-circuits to `baseURL` when provided (so `project/location` are not required). OAuth auto-injection is also skipped in this case (assume caller/proxy handles auth). Keep this behavior unless explicitly reverted.
 
 - Upstream (key files):
   - `external/vercel-ai-sdk/packages/google-vertex/src/google-vertex-provider.ts`

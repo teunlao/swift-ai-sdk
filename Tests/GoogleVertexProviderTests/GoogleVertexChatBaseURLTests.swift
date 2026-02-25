@@ -68,7 +68,8 @@ struct GoogleVertexChatBaseURLTests {
         let provider = createGoogleVertex(settings: GoogleVertexProviderSettings(
             location: "us-central1",
             project: "test-project",
-            fetch: fetch
+            fetch: fetch,
+            accessTokenProvider: { "test-access-token" }
         ))
 
         let model = try provider.languageModel(modelId: "gemini-pro")
@@ -91,7 +92,8 @@ struct GoogleVertexChatBaseURLTests {
         let provider = createGoogleVertex(settings: GoogleVertexProviderSettings(
             location: "global",
             project: "test-project",
-            fetch: fetch
+            fetch: fetch,
+            accessTokenProvider: { "test-access-token" }
         ))
 
         let model = try provider.languageModel(modelId: "gemini-pro")

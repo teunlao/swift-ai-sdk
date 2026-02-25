@@ -452,7 +452,8 @@ struct GoogleVertexEmbeddingModelTests {
             location: "us-central1",
             project: "test-project",
             headers: ["X-Custom-Header": "custom-value"],
-            fetch: fetch
+            fetch: fetch,
+            accessTokenProvider: { "test-access-token" }
         ))
 
         let model = try provider.textEmbeddingModel(modelId: "textembedding-gecko@001")

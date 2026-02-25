@@ -153,7 +153,8 @@ struct GoogleVertexProviderExpressModeTests {
         let provider = createGoogleVertex(settings: GoogleVertexProviderSettings(
             location: "us-central1",
             project: "test-project",
-            fetch: fetch
+            fetch: fetch,
+            accessTokenProvider: { "test-access-token" }
         ))
 
         let model = try provider.textEmbeddingModel(modelId: "text-embedding-004")
@@ -187,7 +188,8 @@ struct GoogleVertexProviderExpressModeTests {
         let provider = createGoogleVertex(settings: GoogleVertexProviderSettings(
             location: "us-central1",
             project: "test-project",
-            fetch: fetch
+            fetch: fetch,
+            accessTokenProvider: { "test-access-token" }
         ))
 
         let model = try provider.textEmbeddingModel(modelId: "text-embedding-004")
