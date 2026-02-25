@@ -802,8 +802,8 @@ struct GoogleGenerativeAIImageModelTests {
         #expect(firstPart["text"] as? String == "A beautiful sunset")
     }
 
-    @Test("gemini image model should omit usage when usageMetadata is missing")
-    func geminiUsageMissingMapsToNil() async throws {
+    @Test("gemini image model should include usage with zero total when usageMetadata is missing")
+    func geminiUsageMissingMapsToZeroTotal() async throws {
         actor RequestCapture {
             var request: URLRequest?
             func store(_ request: URLRequest) { self.request = request }
@@ -860,7 +860,10 @@ struct GoogleGenerativeAIImageModelTests {
             providerOptions: [:]
         ))
 
-        #expect(result.usage == nil)
+        let usage = try #require(result.usage)
+        #expect(usage.inputTokens == nil)
+        #expect(usage.outputTokens == nil)
+        #expect(usage.totalTokens == 0)
 
         let request = try #require(await capture.value())
         #expect(request.url?.absoluteString == "https://api.example.com/v1beta/models/gemini-2.5-flash-image:generateContent")

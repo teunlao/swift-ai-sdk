@@ -607,8 +607,8 @@ struct GoogleVertexImageModelTests {
         #expect(imageConfig["aspectRatio"] as? String == "16:9")
     }
 
-    @Test("gemini image model should omit usage when usageMetadata is missing")
-    func geminiUsageMissingMapsToNil() async throws {
+    @Test("gemini image model should include usage with zero total when usageMetadata is missing")
+    func geminiUsageMissingMapsToZeroTotal() async throws {
         let capture = RequestCapture()
         let responseJSON: [String: Any] = [
             "candidates": [
@@ -658,7 +658,10 @@ struct GoogleVertexImageModelTests {
             providerOptions: [:]
         ))
 
-        #expect(result.usage == nil)
+        let usage = try #require(result.usage)
+        #expect(usage.inputTokens == nil)
+        #expect(usage.outputTokens == nil)
+        #expect(usage.totalTokens == 0)
     }
 
     @Test("gemini image model should include url and file input parts")

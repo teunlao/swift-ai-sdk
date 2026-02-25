@@ -580,14 +580,11 @@ public final class GoogleVertexImageModel: ImageModelV3 {
         }
 
         let metadataImages = images.map { _ in JSONValue.object([:]) }
-        let hasUsage = result.usage.inputTokens.total != nil || result.usage.outputTokens.total != nil || result.usage.raw != nil
-        let usage = hasUsage
-            ? ImageModelV3Usage(
-                inputTokens: result.usage.inputTokens.total,
-                outputTokens: result.usage.outputTokens.total,
-                totalTokens: (result.usage.inputTokens.total ?? 0) + (result.usage.outputTokens.total ?? 0)
-            )
-            : nil
+        let usage = ImageModelV3Usage(
+            inputTokens: result.usage.inputTokens.total,
+            outputTokens: result.usage.outputTokens.total,
+            totalTokens: (result.usage.inputTokens.total ?? 0) + (result.usage.outputTokens.total ?? 0)
+        )
 
         return ImageModelV3GenerateResult(
             images: .base64(images),
