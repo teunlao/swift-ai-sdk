@@ -85,11 +85,13 @@ export default defineConfig({
           items: [
             { label: "Overview", link: "/providers/overview" },
             { label: "OpenAI", link: "/providers/openai" },
+            { label: "Open Responses", link: "/providers/open-responses" },
             { label: "Anthropic", link: "/providers/anthropic" },
             { label: "Google Generative AI", link: "/providers/google-generative-ai" },
             { label: "Vercel", link: "/providers/vercel" },
             { label: "Together.ai", link: "/providers/togetherai" },
             { label: "Mistral", link: "/providers/mistral" },
+            { label: "Moonshot AI", link: "/providers/moonshotai" },
             { label: "Cohere", link: "/providers/cohere" },
             { label: "Perplexity", link: "/providers/perplexity" },
             { label: "Replicate", link: "/providers/replicate" },

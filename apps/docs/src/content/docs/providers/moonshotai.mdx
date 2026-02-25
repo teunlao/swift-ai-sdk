@@ -1,0 +1,159 @@
+---
+title: Moonshot AI
+description: Learn how to use Moonshot AI models with the Swift AI SDK.
+---
+
+_This page adapts the original AI SDK documentation: [Moonshot AI](https://github.com/vercel/ai/blob/main/content/providers/01-ai-sdk-providers/31-moonshotai.mdx)._
+
+The [Moonshot AI](https://www.moonshot.ai) provider offers access to powerful language models through the Moonshot API, including the Kimi series of models with reasoning capabilities.
+
+API keys can be obtained from the [Moonshot Platform](https://platform.moonshot.ai).
+
+## Setup
+
+The Moonshot AI provider is available in the `MoonshotAIProvider` module. Add it to your Swift package:
+
+```swift
+// Package.swift (excerpt)
+dependencies: [
+  .package(url: "https://github.com/teunlao/swift-ai-sdk", from: "0.16.0")
+],
+targets: [
+  .target(
+    name: "YourTarget",
+    dependencies: [
+      .product(name: "SwiftAISDK", package: "swift-ai-sdk"),
+      .product(name: "MoonshotAIProvider", package: "swift-ai-sdk")
+    ]
+  )
+]
+```
+
+## Provider Instance
+
+You can import the default provider instance `moonshotai`:
+
+```swift
+import MoonshotAIProvider
+```
+
+For custom configuration, use `createMoonshotAI` and create a provider instance with your settings:
+
+```swift
+import MoonshotAIProvider
+
+let moonshotai = createMoonshotAI(settings: MoonshotAIProviderSettings(
+  apiKey: "your-api-key" // optional, defaults to MOONSHOT_API_KEY
+))
+```
+
+You can use the following optional settings to customize the Moonshot AI provider instance:
+
+- **baseURL** `String`
+
+  Use a different URL prefix for API calls.
+  The default prefix is `https://api.moonshot.ai/v1`.
+
+- **apiKey** `String`
+
+  API key that is being sent using the `Authorization` header. It defaults to
+  the `MOONSHOT_API_KEY` environment variable.
+
+- **headers** `[String: String]`
+
+  Custom headers to include in the requests.
+
+- **fetch** `FetchFunction`
+
+  Custom fetch implementation.
+
+## Language Models
+
+You can create language models using a provider instance:
+
+```swift
+import SwiftAISDK
+import MoonshotAIProvider
+
+let result = try await generateText(
+  model: try moonshotai.chatModel(modelId: "kimi-k2.5"),
+  prompt: "Write a vegetarian lasagna recipe for 4 people."
+)
+
+print(result.text)
+```
+
+You can also use the `.chatModel()` or `.languageModel()` factory methods:
+
+```swift
+let chatModel = try moonshotai.chatModel(modelId: "kimi-k2.5")
+let languageModel = try moonshotai.languageModel(modelId: "kimi-k2.5")
+```
+
+Moonshot AI language models can be used in the `streamText` function
+(see [AI SDK Core](/ai-sdk-core/generating-text)).
+
+### Reasoning Models
+
+Moonshot AI offers thinking models like `kimi-k2-thinking` that generate intermediate reasoning tokens before their final response. The reasoning output is streamed through the standard AI SDK reasoning parts.
+
+```swift
+import SwiftAISDK
+import MoonshotAIProvider
+
+let result = try await generateText(
+  model: try moonshotai.chatModel(modelId: "kimi-k2-thinking"),
+  providerOptions: [
+    "moonshotai": [
+      "thinking": [
+        "type": "enabled",
+        "budgetTokens": 2048
+      ],
+      "reasoningHistory": "interleaved"
+    ]
+  ],
+  prompt: "How many \"r\"s are in the word \"strawberry\"?"
+)
+
+print(result.reasoningText ?? "")
+print(result.text)
+```
+
+### Provider Options
+
+The following optional provider options are available for Moonshot AI language models:
+
+- **thinking** `object`
+
+  Configuration for thinking/reasoning models like Kimi K2 Thinking.
+
+  - **type** `'enabled' | 'disabled'`
+
+    Whether to enable thinking mode
+
+  - **budgetTokens** `number`
+
+    Maximum number of tokens for thinking (minimum 1024)
+
+- **reasoningHistory** `'disabled' | 'interleaved' | 'preserved'`
+
+  Controls how reasoning history is handled in multi-turn conversations:
+
+  - `'disabled'`: Remove reasoning from history
+  - `'interleaved'`: Include reasoning between tool calls within a single turn
+  - `'preserved'`: Keep all reasoning in history
+
+## Model Capabilities
+
+| Model                    | Image Input | Object Generation | Tool Usage | Tool Streaming |
+| ------------------------ | ----------- | ----------------- | ---------- | -------------- |
+| `moonshot-v1-8k`         | No          | Yes               | Yes        | Yes            |
+| `moonshot-v1-32k`        | No          | Yes               | Yes        | Yes            |
+| `moonshot-v1-128k`       | No          | Yes               | Yes        | Yes            |
+| `kimi-k2`                | No          | Yes               | Yes        | Yes            |
+| `kimi-k2.5`              | Yes         | Yes               | Yes        | Yes            |
+| `kimi-k2-thinking`       | No          | Yes               | Yes        | Yes            |
+| `kimi-k2-thinking-turbo` | No          | Yes               | Yes        | Yes            |
+| `kimi-k2-turbo`          | No          | Yes               | Yes        | Yes            |
+
+> Note: Please see the [Moonshot AI docs](https://platform.moonshot.ai/docs/intro) for a full list of available models. You can also pass any available provider model ID as a string if needed.

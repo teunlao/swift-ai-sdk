@@ -1,0 +1,100 @@
+---
+title: Open Responses
+description: Learn how to use the Open Responses provider for the Swift AI SDK.
+---
+
+_This page adapts the original AI SDK documentation: [Open Responses](https://github.com/vercel/ai/blob/main/content/providers/01-ai-sdk-providers/06-open-responses.mdx)._
+
+The [Open Responses](https://www.openresponses.org/) provider contains language model support for Open Responses compatible APIs.
+
+## Setup
+
+The Open Responses provider is available in the `OpenResponsesProvider` module. Add it to your Swift package:
+
+```swift
+// Package.swift (excerpt)
+dependencies: [
+  .package(url: "https://github.com/teunlao/swift-ai-sdk", from: "0.16.0")
+],
+targets: [
+  .target(
+    name: "YourTarget",
+    dependencies: [
+      .product(name: "SwiftAISDK", package: "swift-ai-sdk"),
+      .product(name: "OpenResponsesProvider", package: "swift-ai-sdk")
+    ]
+  )
+]
+```
+
+## Provider Instance
+
+Create an Open Responses provider instance using `createOpenResponses`:
+
+```swift
+import OpenResponsesProvider
+
+let openResponses = createOpenResponses(options: OpenResponsesProviderSettings(
+  url: "http://localhost:1234/v1/responses",
+  name: "aProvider"
+))
+```
+
+The `name` and `url` options are required:
+
+- **name** `String`
+
+  Provider name. Used as the key for provider options and metadata.
+
+- **url** `String`
+
+  URL for the Open Responses API POST endpoint.
+
+You can use the following optional settings to customize the Open Responses provider instance:
+
+- **apiKey** `String`
+
+  API key that is being sent using the `Authorization` header.
+
+- **headers** `[String: String]`
+
+  Custom headers to include in the requests.
+
+- **fetch** `FetchFunction`
+
+  Custom fetch implementation.
+
+## Language Models
+
+Create a language model via `.languageModel(modelId:)`:
+
+```swift
+let model = try openResponses.languageModel(modelId: "mistralai/ministral-3-14b-reasoning")
+```
+
+You can use Open Responses models with `generateText` and `streamText`,
+and they support structured data generation with `generateObject` (see [AI SDK Core](/ai-sdk-core/generating-text)).
+
+### Example
+
+```swift
+import SwiftAISDK
+import OpenResponsesProvider
+
+let openResponses = createOpenResponses(options: OpenResponsesProviderSettings(
+  url: "http://localhost:1234/v1/responses",
+  name: "aProvider"
+))
+
+let result = try await generateText(
+  model: try openResponses.languageModel(modelId: "mistralai/ministral-3-14b-reasoning"),
+  prompt: "Invent a new holiday and describe its traditions."
+)
+
+print(result.text)
+```
+
+## Notes
+
+- Stop sequences, `topK`, and `seed` are not supported and are ignored with warnings.
+- Image inputs are supported for user messages with `file` parts using image media types.
