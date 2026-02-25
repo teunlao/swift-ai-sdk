@@ -23,6 +23,7 @@
 - [x] Base URL parity: when `apiKey` is absent, `project/location` are required even with custom `baseURL`; custom baseURL no longer bypasses Vertex config requirements.
 - [x] Embedding options naming parity: upstream aliases `GoogleVertexEmbeddingModelOptions` / `googleVertexEmbeddingModelOptionsSchema` are exported alongside existing Swift names.
 - [x] Embedding options validation parity: `outputDimensionality` accepts fractional numbers (not integer-only), and `null` for optional fields is rejected (matches upstream `.optional()` semantics for Vertex + Google fallback namespaces).
+- [x] Imagen request-shape parity: explicit `null` in nullish Vertex image options (`negativePrompt`, `addWatermark`, `sampleImageSize`, etc.) is preserved in `parameters` for Imagen requests.
 
 Tests live under:
 - `Tests/GoogleVertexProviderTests/GoogleVertexChatBaseURLTests.swift`

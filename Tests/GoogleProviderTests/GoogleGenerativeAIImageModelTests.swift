@@ -160,6 +160,48 @@ struct GoogleGenerativeAIImageModelTests {
         }
     }
 
+    @Test("should default missing predictions to empty image list")
+    func defaultMissingPredictionsToEmptyImageList() async throws {
+        let responseData = try JSONSerialization.data(withJSONObject: [:])
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.example.com/v1beta/models/imagen-3.0-generate-002:predict")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { _ in
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = GoogleGenerativeAIImageModel(
+            modelId: GoogleGenerativeAIImageModelId(rawValue: "imagen-3.0-generate-002"),
+            settings: GoogleGenerativeAIImageSettings(),
+            config: GoogleGenerativeAIImageModelConfig(
+                provider: "google.generative-ai",
+                baseURL: "https://api.example.com/v1beta",
+                headers: { ["api-key": "test-api-key"] },
+                fetch: fetch
+            )
+        )
+
+        let result = try await model.doGenerate(options: ImageModelV3CallOptions(
+            prompt: "A cute baby sea otter",
+            n: 1,
+            providerOptions: [:]
+        ))
+
+        switch result.images {
+        case .base64(let images):
+            #expect(images.isEmpty)
+        case .binary:
+            Issue.record("Expected base64 images")
+        }
+
+        let metadata = result.providerMetadata?["google"]?.images ?? []
+        #expect(metadata.isEmpty)
+    }
+
     @Test("sends aspect ratio in the request")
     func sendAspectRatioInRequest() async throws {
         actor RequestCapture {
@@ -280,6 +322,67 @@ struct GoogleGenerativeAIImageModelTests {
         } else {
             Issue.record("Expected parameters")
         }
+    }
+
+    @Test("should preserve explicit nullish provider options in parameters")
+    func preserveExplicitNullishProviderOptionsInParameters() async throws {
+        actor RequestCapture {
+            var request: URLRequest?
+            func store(_ request: URLRequest) { self.request = request }
+            func value() -> URLRequest? { request }
+        }
+
+        let capture = RequestCapture()
+        let responseJSON: [String: Any] = [
+            "predictions": [["bytesBase64Encoded": "base64-image-1"]]
+        ]
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.example.com/v1beta/models/imagen-3.0-generate-002:predict")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = GoogleGenerativeAIImageModel(
+            modelId: GoogleGenerativeAIImageModelId(rawValue: "imagen-3.0-generate-002"),
+            settings: GoogleGenerativeAIImageSettings(),
+            config: GoogleGenerativeAIImageModelConfig(
+                provider: "google.generative-ai",
+                baseURL: "https://api.example.com/v1beta",
+                headers: { ["api-key": "test-api-key"] },
+                fetch: fetch
+            )
+        )
+
+        _ = try await model.doGenerate(options: ImageModelV3CallOptions(
+            prompt: "test prompt",
+            n: 1,
+            aspectRatio: "16:9",
+            providerOptions: [
+                "google": [
+                    "personGeneration": .null,
+                    "aspectRatio": .null
+                ]
+            ]
+        ))
+
+        guard let request = await capture.value(),
+              let body = request.httpBody,
+              let json = try JSONSerialization.jsonObject(with: body) as? [String: Any],
+              let parameters = json["parameters"] as? [String: Any] else {
+            Issue.record("Missing request parameters")
+            return
+        }
+
+        #expect(parameters["sampleCount"] as? Int == 1)
+        #expect(parameters["personGeneration"] is NSNull)
+        #expect(parameters["aspectRatio"] is NSNull)
     }
 
     @Test("should return warnings for unsupported settings")

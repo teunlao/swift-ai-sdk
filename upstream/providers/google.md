@@ -20,6 +20,9 @@
 - [x] Provider options validation parity: `null` is rejected for optional Google language options (e.g. `responseModalities`, nested `thinkingConfig.includeThoughts`) to match upstream schema behavior.
 - [x] Thought signature parity for assistant files: preserve `providerOptions.*.thoughtSignature` on assistant `file` parts and encode it as part-level `thoughtSignature` alongside `inlineData`.
 - [x] Stream parse-error payload parity: when an SSE chunk fails schema parsing, emit structured JSON error payload (prefer raw parsed chunk) instead of stringifying the error object only.
+- [x] Stream chunk schema parity: chunks without `candidates` are accepted (usage/metadata-only chunks) instead of being treated as parse errors.
+- [x] Imagen request-shape parity: explicit `null` for nullish image provider options (`personGeneration`, `aspectRatio`) is preserved in `parameters` and can override defaults (upstream `Object.assign` behavior).
+- [x] Imagen response-schema parity: missing `predictions` defaults to `[]` instead of failing decode.
 
 ## Known gaps / TODO
 

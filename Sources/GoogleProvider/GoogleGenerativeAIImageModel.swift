@@ -33,6 +33,33 @@ private struct GoogleImagePrediction: Codable, Sendable {
 
 private struct GoogleImageResponse: Codable, Sendable {
     let predictions: [GoogleImagePrediction]
+
+    private enum CodingKeys: String, CodingKey {
+        case predictions
+    }
+
+    init(predictions: [GoogleImagePrediction]) {
+        self.predictions = predictions
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        if container.contains(.predictions) {
+            if try container.decodeNil(forKey: .predictions) {
+                throw DecodingError.valueNotFound(
+                    [GoogleImagePrediction].self,
+                    DecodingError.Context(
+                        codingPath: container.codingPath + [CodingKeys.predictions],
+                        debugDescription: "predictions must be an array"
+                    )
+                )
+            }
+            self.predictions = try container.decode([GoogleImagePrediction].self, forKey: .predictions)
+        } else {
+            self.predictions = []
+        }
+    }
 }
 
 private let googleImageResponseSchema = FlexibleSchema(
@@ -120,6 +147,7 @@ final class GoogleGenerativeAIImageModel: ImageModelV3 {
             providerOptions: options.providerOptions,
             schema: googleImageProviderOptionsSchema
         )
+        let rawGoogleOptions = options.providerOptions?["google"] ?? [:]
 
         var parameters: [String: JSONValue] = [
             "sampleCount": .number(Double(options.n))
@@ -129,12 +157,20 @@ final class GoogleGenerativeAIImageModel: ImageModelV3 {
         let aspectRatio = options.aspectRatio ?? defaultAspectRatio
         parameters["aspectRatio"] = .string(aspectRatio)
 
-        // Allow providerOptions to override aspectRatio (Object.assign behavior)
-        if let providerOptions {
-            let dict = providerOptions.toDictionary()
-            for (k, v) in dict {
-                parameters[k] = v  // Overwrite any existing values including aspectRatio
-            }
+        // Match upstream Object.assign behavior for known nullish options:
+        // explicit null from provider options must override defaults.
+        if let personGeneration = providerOptions?.personGeneration {
+            parameters["personGeneration"] = .string(personGeneration.rawValue)
+        }
+        if rawGoogleOptions["personGeneration"] == .null {
+            parameters["personGeneration"] = .null
+        }
+
+        if let providerAspectRatio = providerOptions?.aspectRatio {
+            parameters["aspectRatio"] = .string(providerAspectRatio.rawValue)
+        }
+        if rawGoogleOptions["aspectRatio"] == .null {
+            parameters["aspectRatio"] = .null
         }
 
         let headers = combineHeaders(try config.headers(), options.headers?.mapValues { Optional($0) })

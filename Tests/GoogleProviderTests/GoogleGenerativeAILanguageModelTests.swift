@@ -3950,6 +3950,53 @@ struct GoogleGenerativeAILanguageModelTests {
         }
     }
 
+    @Test("should handle stream chunks without candidates and keep usage")
+    func testHandleChunksWithoutCandidatesInStream() async throws {
+        let payloads = [
+            #"{"usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":5,"totalTokenCount":15}}"#
+        ]
+        let events = sseEvents(from: payloads)
+
+        let fetch: FetchFunction = { _ in
+            let response = HTTPURLResponse(
+                url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:streamGenerateContent?alt=sse")!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "text/event-stream"]
+            )!
+            return FetchResponse(body: .stream(makeSSEStream(from: events)), urlResponse: response)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-pro"),
+            config: makeLanguageModelConfig(fetch: fetch, generateId: { "test-id" })
+        )
+
+        let result = try await model.doStream(options: .init(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
+            includeRawChunks: false
+        ))
+
+        let parts = try await collectStream(result.stream)
+
+        let hasErrorPart = parts.contains { part in
+            if case .error = part { return true }
+            return false
+        }
+        #expect(hasErrorPart == false)
+
+        guard let finish = parts.last(where: { if case .finish = $0 { return true } else { return false } }) else {
+            Issue.record("Missing finish part")
+            return
+        }
+
+        if case let .finish(_, usage, _) = finish {
+            #expect(usage.inputTokens.total == 10)
+            #expect(usage.outputTokens.total == 5)
+            #expect((usage.inputTokens.total ?? 0) + (usage.outputTokens.total ?? 0) == 15)
+        }
+    }
+
     @Test("should expose grounding metadata in provider metadata on finish")
     func testExposeGroundingMetadataInProviderMetadataOnFinish() async throws {
         let groundingMetadata = #"{"webSearchQueries":["What's the weather in Chicago this weekend?"],"searchEntryPoint":{"renderedContent":"Sample rendered content"}}"#
@@ -4356,7 +4403,7 @@ struct GoogleGenerativeAILanguageModelTests {
     @Test("should emit structured parse error payload for invalid stream chunk")
     func testEmitStructuredParseErrorPayloadForInvalidStreamChunk() async throws {
         let payloads = [
-            #"{"foo":"bar"}"#,
+            #"{"candidates":"not-an-array"}"#,
             #"{"candidates":[{"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":1,"totalTokenCount":2}}"#
         ]
         let events = sseEvents(from: payloads)
@@ -4400,7 +4447,7 @@ struct GoogleGenerativeAILanguageModelTests {
             return
         }
 
-        #expect(object["foo"] == .string("bar"))
+        #expect(object["candidates"] == .string("not-an-array"))
     }
 
     // MARK: - GEMMA Model Tests

@@ -32,6 +32,8 @@ For source-of-truth code, always follow the commits and tests.
 - 2026-02-24
   - Google Vertex: embedding options parity fix — `outputDimensionality` now accepts fractional numbers and rejects `null` (Vertex + Google fallback namespaces), with new coverage in `GoogleVertexEmbeddingModelTests`.
   - Google: language provider options parity fix — `null` is now rejected for optional schema fields (including nested `thinkingConfig.includeThoughts`), with regression coverage in `GoogleGenerativeAILanguageModelTests`.
+  - Google/Vertex Imagen: preserve explicit `null` for nullish image provider options in request `parameters`; Google Imagen now defaults missing `predictions` to an empty array (upstream response schema parity).
+  - Google streaming: align chunk parsing with upstream by accepting usage-only chunks without `candidates` (no false parse-error events), with regression coverage in `GoogleGenerativeAILanguageModelTests`.
 
 - 2026-02-23
   - Anthropic: Claude 4.6 support (thanks to @bunchjesse).

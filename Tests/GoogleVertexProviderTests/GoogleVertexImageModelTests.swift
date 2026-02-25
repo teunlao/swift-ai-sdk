@@ -271,6 +271,47 @@ struct GoogleVertexImageModelTests {
         #expect(parameters["seed"] as? Double == 42)
     }
 
+    @Test("should preserve explicit nullish provider options in parameters")
+    func preserveExplicitNullishProviderOptionsInParameters() async throws {
+        let capture = RequestCapture()
+
+        let fetch: FetchFunction = { request in
+            await capture.set(request)
+            return try makePredictionsResponse(
+                url: try #require(request.url),
+                predictions: [
+                    ["bytesBase64Encoded": "base64-image-1"]
+                ]
+            )
+        }
+
+        let model = makeModel(fetch: fetch)
+        _ = try await model.doGenerate(options: ImageModelV3CallOptions(
+            prompt: "test prompt",
+            n: 1,
+            aspectRatio: "16:9",
+            providerOptions: [
+                "vertex": [
+                    "negativePrompt": .null,
+                    "addWatermark": .null,
+                    "sampleImageSize": .null
+                ]
+            ]
+        ))
+
+        let request = try #require(await capture.lastRequest)
+        let body = try #require(request.httpBody)
+        let json = try JSONSerialization.jsonObject(with: body)
+        let dict = try #require(json as? [String: Any])
+
+        let parameters = try #require(dict["parameters"] as? [String: Any])
+        #expect(parameters["sampleCount"] as? Double == 1)
+        #expect(parameters["aspectRatio"] as? String == "16:9")
+        #expect(parameters["negativePrompt"] is NSNull)
+        #expect(parameters["addWatermark"] is NSNull)
+        #expect(parameters["sampleImageSize"] is NSNull)
+    }
+
     @Test("should return warnings for unsupported settings")
     func warningsForUnsupportedSettings() async throws {
         let fetch: FetchFunction = { request in

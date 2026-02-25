@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.15.5] - 2026-02-25
+
+### Fixed
+- Google: preserve explicit `null` values in Imagen provider options for request payload parity.
+- Google: treat missing Imagen `predictions` as an empty list (upstream default behavior).
+- Google: allow usage-only Gemini stream chunks without `candidates`.
+- Google Vertex: preserve explicit `null` values in Imagen provider options for request payload parity.
+
 ## [0.15.4] - 2026-02-24
 
 ### Fixed

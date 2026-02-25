@@ -158,7 +158,7 @@ public final class GoogleGenerativeAILanguageModel: LanguageModelV3 {
                                 usage = convertGoogleGenerativeAIUsage(usageMetadata)
                             }
 
-                            guard let candidate = chunk.candidates.first else { continue }
+                            guard let candidate = chunk.candidates?.first else { continue }
 
                             if let parts = candidate.content?.parts {
                                 handleStreamingParts(
@@ -517,7 +517,7 @@ private struct GoogleGenerativeAIChunk: Codable {
         let urlContextMetadata: JSONValue?
     }
 
-    let candidates: [Candidate]
+    let candidates: [Candidate]?
     let usageMetadata: GoogleGenerativeAIResponse.UsageMetadata?
     let promptFeedback: JSONValue?
 }

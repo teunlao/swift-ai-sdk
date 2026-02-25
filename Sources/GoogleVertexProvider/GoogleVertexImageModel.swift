@@ -330,6 +330,7 @@ public final class GoogleVertexImageModel: ImageModelV3 {
             providerOptions: options.providerOptions,
             schema: googleVertexImageProviderOptionsSchema
         )
+        let rawVertexOptions = options.providerOptions?["vertex"] ?? [:]
 
         let editOptions = vertexOptions?.edit
         let isEditMode = options.files?.isEmpty == false
@@ -346,6 +347,20 @@ public final class GoogleVertexImageModel: ImageModelV3 {
             if let addWatermark = vertexOptions.addWatermark { parameters["addWatermark"] = .bool(addWatermark) }
             if let storageUri = vertexOptions.storageUri { parameters["storageUri"] = .string(storageUri) }
             if let sampleImageSize = vertexOptions.sampleImageSize { parameters["sampleImageSize"] = .string(sampleImageSize.rawValue) }
+        }
+
+        // Upstream spreads parsed nullish options directly into `parameters`.
+        // Preserve explicit nulls for known nullish fields.
+        let nullishParameterKeys = [
+            "negativePrompt",
+            "personGeneration",
+            "safetySetting",
+            "addWatermark",
+            "storageUri",
+            "sampleImageSize"
+        ]
+        for key in nullishParameterKeys where rawVertexOptions[key] == .null {
+            parameters[key] = .null
         }
 
         if isEditMode {
