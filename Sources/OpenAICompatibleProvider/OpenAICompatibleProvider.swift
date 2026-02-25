@@ -11,6 +11,8 @@ public struct OpenAICompatibleProviderSettings: Sendable {
     public var fetch: FetchFunction?
     public var includeUsage: Bool
     public var supportsStructuredOutputs: Bool
+    public var transformRequestBody: (@Sendable (_ body: [String: JSONValue]) -> [String: JSONValue])?
+    public var metadataExtractor: OpenAICompatibleMetadataExtractor?
 
     public init(
         baseURL: String,
@@ -20,7 +22,9 @@ public struct OpenAICompatibleProviderSettings: Sendable {
         queryParams: [String: String]? = nil,
         fetch: FetchFunction? = nil,
         includeUsage: Bool = false,
-        supportsStructuredOutputs: Bool = false
+        supportsStructuredOutputs: Bool = false,
+        transformRequestBody: (@Sendable (_ body: [String: JSONValue]) -> [String: JSONValue])? = nil,
+        metadataExtractor: OpenAICompatibleMetadataExtractor? = nil
     ) {
         self.baseURL = baseURL
         self.name = name
@@ -30,6 +34,8 @@ public struct OpenAICompatibleProviderSettings: Sendable {
         self.fetch = fetch
         self.includeUsage = includeUsage
         self.supportsStructuredOutputs = supportsStructuredOutputs
+        self.transformRequestBody = transformRequestBody
+        self.metadataExtractor = metadataExtractor
     }
 }
 
@@ -116,6 +122,8 @@ public func createOpenAICompatibleProvider(
     let commonFetch = settings.fetch
     let includeUsage = settings.includeUsage
     let supportsStructuredOutputs = settings.supportsStructuredOutputs
+    let transformRequestBody = settings.transformRequestBody
+    let metadataExtractor = settings.metadataExtractor
 
     let errorConfiguration = defaultOpenAICompatibleErrorConfiguration
 
@@ -129,7 +137,9 @@ public func createOpenAICompatibleProvider(
                 fetch: commonFetch,
                 includeUsage: includeUsage,
                 errorConfiguration: errorConfiguration,
-                supportsStructuredOutputs: supportsStructuredOutputs
+                metadataExtractor: metadataExtractor,
+                supportsStructuredOutputs: supportsStructuredOutputs,
+                transformRequestBody: transformRequestBody
             )
         )
     }

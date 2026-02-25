@@ -12,6 +12,7 @@ public struct OpenAICompatibleChatConfig: Sendable {
     public let metadataExtractor: OpenAICompatibleMetadataExtractor?
     public let supportsStructuredOutputs: Bool
     public let supportedUrls: (@Sendable () async throws -> [String: [NSRegularExpression]])?
+    public let transformRequestBody: (@Sendable (_ body: [String: JSONValue]) -> [String: JSONValue])?
 
     public init(
         provider: String,
@@ -22,7 +23,8 @@ public struct OpenAICompatibleChatConfig: Sendable {
         errorConfiguration: OpenAICompatibleErrorConfiguration = defaultOpenAICompatibleErrorConfiguration,
         metadataExtractor: OpenAICompatibleMetadataExtractor? = nil,
         supportsStructuredOutputs: Bool = false,
-        supportedUrls: (@Sendable () async throws -> [String: [NSRegularExpression]])? = nil
+        supportedUrls: (@Sendable () async throws -> [String: [NSRegularExpression]])? = nil,
+        transformRequestBody: (@Sendable (_ body: [String: JSONValue]) -> [String: JSONValue])? = nil
     ) {
         self.provider = provider
         self.headers = headers
@@ -33,6 +35,7 @@ public struct OpenAICompatibleChatConfig: Sendable {
         self.metadataExtractor = metadataExtractor
         self.supportsStructuredOutputs = supportsStructuredOutputs
         self.supportedUrls = supportedUrls
+        self.transformRequestBody = transformRequestBody
     }
 }
 
@@ -59,6 +62,7 @@ public final class OpenAICompatibleChatLanguageModel: LanguageModelV3 {
 
     public func doGenerate(options: LanguageModelV3CallOptions) async throws -> LanguageModelV3GenerateResult {
         let prepared = try await prepareRequest(options: options)
+        let transformedBody = transformRequestBody(prepared.body)
         let defaultHeaders = config.headers().mapValues { Optional($0) }
         let requestHeaders = options.headers?.mapValues { Optional($0) }
         let headers = combineHeaders(defaultHeaders, requestHeaders).compactMapValues { $0 }
@@ -66,7 +70,7 @@ public final class OpenAICompatibleChatLanguageModel: LanguageModelV3 {
         let response = try await postJsonToAPI(
             url: config.url(.init(modelId: modelIdentifier.rawValue, path: "/chat/completions")),
             headers: headers,
-            body: JSONValue.object(prepared.body),
+            body: JSONValue.object(transformedBody),
             failedResponseHandler: config.errorConfiguration.failedResponseHandler,
             successfulResponseHandler: createJsonResponseHandler(responseSchema: openAICompatibleChatResponseSchema),
             isAborted: options.abortSignal,
@@ -77,7 +81,7 @@ public final class OpenAICompatibleChatLanguageModel: LanguageModelV3 {
             throw APICallError(
                 message: "OpenAI-compatible response did not include choices.",
                 url: config.url(.init(modelId: modelIdentifier.rawValue, path: "/chat/completions")),
-                requestBodyValues: prepared.body
+                requestBodyValues: transformedBody
             )
         }
 
@@ -108,7 +112,9 @@ public final class OpenAICompatibleChatLanguageModel: LanguageModelV3 {
             }
         }
 
-        let usage = mapUsage(response.value.usage)
+        let rawJSON = try decodeJSONValue(from: response.rawValue)
+        let usageRaw = extractUsage(from: rawJSON)
+        let usage = mapUsage(response.value.usage, raw: usageRaw)
         let rawFinishReason = choice.finishReason
         let finishReason = LanguageModelV3FinishReason(
             unified: mapOpenAICompatibleFinishReason(rawFinishReason),
@@ -116,7 +122,6 @@ public final class OpenAICompatibleChatLanguageModel: LanguageModelV3 {
         )
         let metadata = responseMetadata(id: response.value.id, model: response.value.model, created: response.value.created)
 
-        let rawJSON = try decodeJSONValue(from: response.rawValue)
         let extractedMetadata = try await config.metadataExtractor?.extractMetadata(parsedBody: rawJSON)
         let providerMetadata = makeProviderMetadata(
             usage: response.value.usage,
@@ -128,7 +133,7 @@ public final class OpenAICompatibleChatLanguageModel: LanguageModelV3 {
             finishReason: finishReason,
             usage: usage,
             providerMetadata: providerMetadata,
-            request: LanguageModelV3RequestInfo(body: prepared.body),
+            request: LanguageModelV3RequestInfo(body: transformedBody),
             response: LanguageModelV3ResponseInfo(
                 id: metadata.id,
                 timestamp: metadata.timestamp,
@@ -147,6 +152,7 @@ public final class OpenAICompatibleChatLanguageModel: LanguageModelV3 {
         if config.includeUsage {
             body["stream_options"] = .object(["include_usage": .bool(true)])
         }
+        let transformedBody = transformRequestBody(body)
 
         let defaultHeaders = config.headers().mapValues { Optional($0) }
         let requestHeaders = options.headers?.mapValues { Optional($0) }
@@ -155,7 +161,7 @@ public final class OpenAICompatibleChatLanguageModel: LanguageModelV3 {
         let eventStream = try await postJsonToAPI(
             url: config.url(.init(modelId: modelIdentifier.rawValue, path: "/chat/completions")),
             headers: headers,
-            body: JSONValue.object(body),
+            body: JSONValue.object(transformedBody),
             failedResponseHandler: config.errorConfiguration.failedResponseHandler,
             successfulResponseHandler: createEventSourceResponseHandler(chunkSchema: openAICompatibleChatChunkSchema),
             isAborted: options.abortSignal,
@@ -208,7 +214,8 @@ public final class OpenAICompatibleChatLanguageModel: LanguageModelV3 {
                                 }
 
                                 if let usageValue = data.usage {
-                                    usage = mapUsage(usageValue)
+                                    let usageRaw = extractUsage(from: parseResult.rawJSONValue)
+                                    usage = mapUsage(usageValue, raw: usageRaw)
                                     if let accepted = usageValue.completionTokensDetails?.acceptedPredictionTokens {
                                         providerValues["acceptedPredictionTokens"] = .number(Double(accepted))
                                     }
@@ -290,7 +297,7 @@ public final class OpenAICompatibleChatLanguageModel: LanguageModelV3 {
 
         return LanguageModelV3StreamResult(
             stream: stream,
-            request: LanguageModelV3RequestInfo(body: body),
+            request: LanguageModelV3RequestInfo(body: transformedBody),
             response: LanguageModelV3StreamResponseInfo(headers: eventStream.responseHeaders)
         )
     }
@@ -307,8 +314,18 @@ public final class OpenAICompatibleChatLanguageModel: LanguageModelV3 {
             warnings.append(.unsupported(feature: "topK", details: nil))
         }
 
-        let baseOptions = try await parseProviderOptions(
+        let deprecatedOptions = try await parseProviderOptions(
             provider: "openai-compatible",
+            providerOptions: options.providerOptions,
+            schema: openAICompatibleProviderOptionsSchema
+        )
+
+        if deprecatedOptions != nil {
+            warnings.append(.other(message: "The 'openai-compatible' key in providerOptions is deprecated. Use 'openaiCompatible' instead."))
+        }
+
+        let compatibleOptions = try await parseProviderOptions(
+            provider: "openaiCompatible",
             providerOptions: options.providerOptions,
             schema: openAICompatibleProviderOptionsSchema
         ) ?? OpenAICompatibleChatProviderOptions()
@@ -319,7 +336,13 @@ public final class OpenAICompatibleChatLanguageModel: LanguageModelV3 {
             schema: openAICompatibleProviderOptionsSchema
         ) ?? OpenAICompatibleChatProviderOptions()
 
-        var mergedOptions = baseOptions
+        // Merge order matches upstream: deprecated -> openaiCompatible -> providerOptionsName
+        var mergedOptions = deprecatedOptions ?? OpenAICompatibleChatProviderOptions()
+        if let user = compatibleOptions.user { mergedOptions.user = user }
+        if let reasoningEffort = compatibleOptions.reasoningEffort { mergedOptions.reasoningEffort = reasoningEffort }
+        if let textVerbosity = compatibleOptions.textVerbosity { mergedOptions.textVerbosity = textVerbosity }
+        if let strictJsonSchema = compatibleOptions.strictJsonSchema { mergedOptions.strictJsonSchema = strictJsonSchema }
+
         if let user = providerSpecificOptions.user {
             mergedOptions.user = user
         }
@@ -329,10 +352,13 @@ public final class OpenAICompatibleChatLanguageModel: LanguageModelV3 {
         if let textVerbosity = providerSpecificOptions.textVerbosity {
             mergedOptions.textVerbosity = textVerbosity
         }
+        if let strictJsonSchema = providerSpecificOptions.strictJsonSchema {
+            mergedOptions.strictJsonSchema = strictJsonSchema
+        }
 
         let providerSpecificRaw = options.providerOptions?[providerOptionsName] ?? [:]
         let forwardedOptions = providerSpecificRaw.filter { key, _ in
-            !["user", "reasoningEffort", "textVerbosity"].contains(key)
+            !["user", "reasoningEffort", "textVerbosity", "strictJsonSchema"].contains(key)
         }
 
         let messages = try convertToOpenAICompatibleChatMessages(prompt: options.prompt)
@@ -390,9 +416,11 @@ public final class OpenAICompatibleChatLanguageModel: LanguageModelV3 {
             case let .json(schema, name, description):
                 // Only use json_schema if BOTH supportsStructuredOutputs AND schema are present
                 if config.supportsStructuredOutputs, let schema {
+                    let strictJsonSchema = mergedOptions.strictJsonSchema ?? true
                     var payload: [String: JSONValue] = [
                         "schema": schema,
-                        "name": .string(name ?? "response")
+                        "name": .string(name ?? "response"),
+                        "strict": .bool(strictJsonSchema)
                     ]
                     if let description {
                         payload["description"] = .string(description)
@@ -429,7 +457,7 @@ public final class OpenAICompatibleChatLanguageModel: LanguageModelV3 {
         return PreparedRequest(body: body, warnings: warnings)
     }
 
-    private func mapUsage(_ usage: OpenAICompatibleUsage?) -> LanguageModelV3Usage {
+    private func mapUsage(_ usage: OpenAICompatibleUsage?, raw: JSONValue?) -> LanguageModelV3Usage {
         guard let usage else { return LanguageModelV3Usage() }
 
         let promptTokens = usage.promptTokens ?? 0
@@ -449,8 +477,18 @@ public final class OpenAICompatibleChatLanguageModel: LanguageModelV3 {
                 text: completionTokens - reasoningTokens,
                 reasoning: reasoningTokens
             ),
-            raw: try? jsonValue(from: usage)
+            raw: raw == .null ? nil : raw
         )
+    }
+
+    private func extractUsage(from json: JSONValue?) -> JSONValue? {
+        guard let json, case .object(let dict) = json else { return nil }
+        guard let usage = dict["usage"], usage != .null else { return nil }
+        return usage
+    }
+
+    private func transformRequestBody(_ body: [String: JSONValue]) -> [String: JSONValue] {
+        config.transformRequestBody?(body) ?? body
     }
 
     private func makeProviderMetadata(

@@ -18,6 +18,7 @@ let package = Package(
         .library(name: "SwiftAISDK", targets: ["SwiftAISDK"]),
         .library(name: "OpenAIProvider", targets: ["OpenAIProvider"]),
         .library(name: "OpenAICompatibleProvider", targets: ["OpenAICompatibleProvider"]),
+        .library(name: "MoonshotAIProvider", targets: ["MoonshotAIProvider"]),
         .library(name: "AnthropicProvider", targets: ["AnthropicProvider"]),
         .library(name: "AmazonBedrockProvider", targets: ["AmazonBedrockProvider"]),
         .library(name: "GatewayProvider", targets: ["GatewayProvider"]),
@@ -83,6 +84,7 @@ let package = Package(
 
         // OpenAI-compatible provider package
         .target(name: "OpenAICompatibleProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils"]),
+        .target(name: "MoonshotAIProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "OpenAICompatibleProvider"]),
         .target(name: "AnthropicProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "EventSourceParser"]),
         .target(name: "AmazonBedrockProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "AnthropicProvider"]),
         .target(name: "GatewayProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils"]),
@@ -129,6 +131,7 @@ let package = Package(
         .target(name: "SwiftAISDK", dependencies: ["AISDKProvider", "AISDKProviderUtils", "AISDKJSONSchema", "EventSourceParser", "GatewayProvider"]),
         .testTarget(name: "SwiftAISDKTests", dependencies: ["SwiftAISDK", "OpenAIProvider", "OpenAICompatibleProvider", "CohereProvider", "AmazonBedrockProvider"]),
         .testTarget(name: "OpenAICompatibleProviderTests", dependencies: ["OpenAICompatibleProvider", "AISDKProvider", "AISDKProviderUtils"]),
+        .testTarget(name: "MoonshotAIProviderTests", dependencies: ["MoonshotAIProvider", "AISDKProvider", "AISDKProviderUtils", "OpenAICompatibleProvider"]),
         .testTarget(name: "AnthropicProviderTests", dependencies: ["AnthropicProvider", "AISDKProvider", "AISDKProviderUtils"], resources: [.copy("Fixtures")]),
         .testTarget(name: "GoogleProviderTests", dependencies: ["GoogleProvider", "AISDKProvider", "AISDKProviderUtils"]),
         .testTarget(name: "GoogleVertexProviderTests", dependencies: ["GoogleVertexProvider", "AISDKProvider", "AISDKProviderUtils"]),
@@ -165,6 +168,7 @@ let package = Package(
                 "CohereProvider",
                 "DeepgramProvider",
                 "DeepInfraProvider",
+                "MoonshotAIProvider",
                 "ElevenLabsProvider",
                 "FalProvider",
                 "FireworksProvider",

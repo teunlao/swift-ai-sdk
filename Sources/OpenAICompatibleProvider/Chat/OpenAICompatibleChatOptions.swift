@@ -6,11 +6,18 @@ public struct OpenAICompatibleChatProviderOptions: Sendable, Equatable {
     public var user: String?
     public var reasoningEffort: String?
     public var textVerbosity: String?
+    public var strictJsonSchema: Bool?
 
-    public init(user: String? = nil, reasoningEffort: String? = nil, textVerbosity: String? = nil) {
+    public init(
+        user: String? = nil,
+        reasoningEffort: String? = nil,
+        textVerbosity: String? = nil,
+        strictJsonSchema: Bool? = nil
+    ) {
         self.user = user
         self.reasoningEffort = reasoningEffort
         self.textVerbosity = textVerbosity
+        self.strictJsonSchema = strictJsonSchema
     }
 }
 
@@ -54,6 +61,14 @@ public let openAICompatibleProviderOptionsSchema = FlexibleSchema(
                         return .failure(error: TypeValidationError.wrap(value: verbosity, cause: error))
                     }
                     options.textVerbosity = text
+                }
+
+                if let strictJsonSchemaValue = dict["strictJsonSchema"], strictJsonSchemaValue != .null {
+                    guard case .bool(let strictJsonSchema) = strictJsonSchemaValue else {
+                        let error = SchemaValidationIssuesError(vendor: "openai-compatible", issues: "strictJsonSchema must be a boolean")
+                        return .failure(error: TypeValidationError.wrap(value: strictJsonSchemaValue, cause: error))
+                    }
+                    options.strictJsonSchema = strictJsonSchema
                 }
 
                 return .success(value: options)
