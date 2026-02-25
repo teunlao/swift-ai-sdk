@@ -67,8 +67,9 @@ struct GoogleVertexProviderExpressModeTests {
                 fetch: makeFetch(capture: capture)
             ))
 
+            let model = try provider.textEmbeddingModel(modelId: "text-embedding-004")
             do {
-                _ = try await provider.textEmbeddingModel(modelId: "text-embedding-004").doEmbed(
+                _ = try await model.doEmbed(
                     options: EmbeddingModelV3DoEmbedOptions(values: ["hello"])
                 )
                 Issue.record("Expected missing Vertex configuration error")

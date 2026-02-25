@@ -67,6 +67,27 @@ struct LanguageModelV3ContentTests {
 
         #expect(decoded.data == .base64("QUJDREVG"))
         #expect(decoded.mediaType == "image/png")
+        #expect(decoded.providerMetadata == nil)
+    }
+
+    @Test("File: encode/decode with providerMetadata")
+    func v3_file_withProviderMetadata() throws {
+        let providerMetadata: SharedV3ProviderMetadata = [
+            "google": ["thoughtSignature": .string("sig-1")]
+        ]
+
+        let file = LanguageModelV3File(
+            mediaType: "application/pdf",
+            data: .base64("cGRm"),
+            providerMetadata: providerMetadata
+        )
+
+        let encoded = try JSONEncoder().encode(file)
+        let decoded = try JSONDecoder().decode(LanguageModelV3File.self, from: encoded)
+
+        #expect(decoded.mediaType == "application/pdf")
+        #expect(decoded.data == .base64("cGRm"))
+        #expect(decoded.providerMetadata == providerMetadata)
     }
 
     @Test("File: encode with binary data")

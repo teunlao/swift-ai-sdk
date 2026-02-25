@@ -15,17 +15,18 @@
 - [x] Image editing mode (files/mask): builds `referenceImages` payload, supports `providerOptions.vertex.edit.*`, rejects URL-based images (upstream parity).
 - [x] Error mapping (Vertex): non-2xx responses throw `APICallError` with `error.message` for embedding + image calls.
 - [x] Tool factories: `googleVertexTools` exposes the same provider-defined tools surface as upstream (`google_search`, `url_context`, `code_execution`, plus `enterprise_web_search`, `google_maps`, `file_search`, `vertex_rag_store`).
-- [x] Missing Vertex config (`GOOGLE_VERTEX_LOCATION`/`GOOGLE_VERTEX_PROJECT`) now throws `LoadSettingError` at request-time (no process crash / no `fatalError`).
+- [x] Missing Vertex config (`GOOGLE_VERTEX_LOCATION`/`GOOGLE_VERTEX_PROJECT`) throws `LoadSettingError` at request-time when `apiKey` is absent and `baseURL` is not provided (no process crash / no `fatalError`).
 - [x] Facade aliases parity: `createVertex(...)` and default `vertex` instance are exported alongside Swift-native `createGoogleVertex` / `googleVertex`.
 - [x] Version alias parity: `VERSION` is exported as an alias to `GOOGLE_VERTEX_VERSION`.
 - [x] Supported URL regex parity: HTTP/GCS patterns are case-sensitive (no `.caseInsensitive` matching), with dedicated `supportedUrls` coverage.
 - [x] Video request mapping parity: image payload now always includes `mimeType` (including empty string), matching upstream request body shape.
-- [x] Base URL parity: when `apiKey` is absent, `project/location` are required even with custom `baseURL`; custom baseURL no longer bypasses Vertex config requirements.
+- [x] Custom base URL behavior: when `baseURL` is provided, `project/location` are not required (even when `apiKey` is absent).
 - [x] Embedding options naming parity: upstream aliases `GoogleVertexEmbeddingModelOptions` / `googleVertexEmbeddingModelOptionsSchema` are exported alongside existing Swift names.
 - [x] Embedding options validation parity: `outputDimensionality` accepts fractional numbers (not integer-only), and `null` for optional fields is rejected (matches upstream `.optional()` semantics for Vertex + Google fallback namespaces).
 - [x] Imagen request-shape parity: explicit `null` in nullish Vertex image options (`negativePrompt`, `addWatermark`, `sampleImageSize`, etc.) is preserved in `parameters` for Imagen requests.
 - [x] Gemini image usage parity: missing `usageMetadata` still maps to a usage object with `totalTokens = 0` (instead of omitting usage entirely), matching upstream usage conversion flow.
 - [x] Gemini image aspect-ratio parity: Gemini-only ratios such as `21:9` are forwarded via `generationConfig.imageConfig.aspectRatio`.
+- [x] Video model parity coverage: supports alternative model IDs, maps `n` to `sampleCount`, returns multiple videos, and returns an empty warnings array when no warnings are produced.
 
 Tests live under:
 - `Tests/GoogleVertexProviderTests/GoogleVertexChatBaseURLTests.swift`
@@ -39,8 +40,11 @@ Tests live under:
 ## Known gaps / TODO
 
 - [ ] Full end-to-end parity audit (prompt conversion, streaming, errors) for `google-vertex`.
+- [ ] Auth parity: upstream `google-vertex` Node/Edge wrappers auto-inject `Authorization: Bearer <token>` when `apiKey` is absent (google-auth-library / service account credentials). Swift currently requires user-supplied auth headers.
 
 ## Notes
+
+- Intentional deviation: unlike upstream `createVertex`, Swift `createGoogleVertex` short-circuits to `baseURL` when provided (so `project/location` are not required). Keep this behavior unless explicitly reverted.
 
 - Upstream (key files):
   - `external/vercel-ai-sdk/packages/google-vertex/src/google-vertex-provider.ts`

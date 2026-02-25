@@ -26,6 +26,10 @@
 - [x] Imagen response-schema parity: missing `predictions` defaults to `[]` instead of failing decode.
 - [x] Gemini image usage parity: missing `usageMetadata` still maps to a usage object with `totalTokens = 0` (instead of omitting usage entirely), matching upstream usage conversion flow.
 - [x] Gemini image aspect-ratio parity: Gemini-only ratios such as `21:9` are forwarded via `generationConfig.imageConfig.aspectRatio`.
+- [x] Video model parity coverage: supports alternative model IDs, maps `n` to `sampleCount`, returns multiple videos, and returns an empty warnings array when no warnings are produced.
+- [x] Code execution finish-reason parity: provider-executed `code_execution` yields `stop` (not `tool-calls`) unless a client function call is present; stream coverage includes missing `codeExecutionResult.output` mapping to empty string.
+- [x] File content metadata parity: `inlineData` parts in generate responses carry `providerMetadata` (thought signature), while streamed `file` chunks intentionally omit it, matching upstream behavior.
+- [x] Stream parse-error payload parity: invalid SSE chunk schema now emits serialized parse/type-validation error payload (`name`/`message`/`value`) instead of raw chunk JSON.
 
 ## Known gaps / TODO
 

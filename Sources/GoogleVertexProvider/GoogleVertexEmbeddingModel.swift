@@ -81,7 +81,7 @@ public final class GoogleVertexEmbeddingModel: EmbeddingModelV3 {
         let vertexOptions = try await parseProviderOptions(
             provider: "vertex",
             providerOptions: options.providerOptions,
-            schema: googleVertexEmbeddingProviderOptionsSchema
+            schema: googleVertexEmbeddingProviderOptionsSchemaVertex
         )
 
         let googleOptions: GoogleVertexEmbeddingProviderOptions?

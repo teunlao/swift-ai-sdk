@@ -175,7 +175,7 @@ struct GoogleVertexEmbeddingModelTests {
             let typeError = try #require(error.cause as? TypeValidationError)
             let schemaError = try #require(typeError.cause as? SchemaValidationIssuesError)
 
-            #expect(schemaError.vendor == "google")
+            #expect(schemaError.vendor == "vertex")
             #expect(String(describing: schemaError.issues).contains("outputDimensionality must be a number"))
         }
 

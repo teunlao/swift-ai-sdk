@@ -92,23 +92,27 @@ struct RerankTests {
 
         final class WarningsCapture: @unchecked Sendable {
             private let lock = NSLock()
-            private var warnings: [Warning] = []
+            private var warningsBatches: [[Warning]] = []
 
-            func set(_ warnings: [Warning]) {
+            func append(_ warnings: [Warning]) {
                 lock.lock()
-                self.warnings = warnings
+                warningsBatches.append(warnings)
                 lock.unlock()
             }
 
-            func get() -> [Warning] {
+            func contains(_ warning: Warning) -> Bool {
                 lock.lock()
                 defer { lock.unlock() }
-                return warnings
+                return warningsBatches.contains(where: { $0.contains(warning) })
             }
         }
 
         let capture = WarningsCapture()
-        logWarningsObserver = { warnings in capture.set(warnings) }
+        logWarningsObserver = { warnings in
+            if !warnings.isEmpty {
+                capture.append(warnings)
+            }
+        }
         defer { logWarningsObserver = nil }
 
         let model = TestRerankingModel(provider: "test", modelId: "test-model") { _ in
@@ -126,9 +130,9 @@ struct RerankTests {
             query: "q"
         )
 
-        #expect(capture.get() == [
+        #expect(capture.contains(
             .rerankingModel(.unsupported(feature: "object documents", details: "not supported"))
-        ])
+        ))
     }
 }
 

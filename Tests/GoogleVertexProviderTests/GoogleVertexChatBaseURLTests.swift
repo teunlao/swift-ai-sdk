@@ -123,8 +123,8 @@ struct GoogleVertexChatBaseURLTests {
         #expect(headerValue("x-goog-api-key", in: request) == "KEY")
     }
 
-    @Test("custom baseURL still requires project/location when apiKey is absent")
-    func customBaseURL_requiresProjectLocationWhenApiKeyAbsent() async throws {
+    @Test("custom baseURL does not require project/location when apiKey is absent")
+    func customBaseURL_doesNotRequireProjectLocationWhenApiKeyAbsent() async throws {
         let originalProject = getenv("GOOGLE_VERTEX_PROJECT").flatMap { String(validatingCString: $0) }
         let originalLocation = getenv("GOOGLE_VERTEX_LOCATION").flatMap { String(validatingCString: $0) }
 
@@ -158,15 +158,10 @@ struct GoogleVertexChatBaseURLTests {
         ))
 
         let model = try provider.languageModel(modelId: "gemini-pro")
-        do {
-            _ = try await model.doGenerate(options: .init(prompt: makePrompt()))
-            Issue.record("Expected missing Vertex location/project error")
-        } catch let error as LoadSettingError {
-            #expect(error.message.contains("Google Vertex location setting is missing"))
-        } catch {
-            Issue.record("Expected LoadSettingError, got: \(error)")
-        }
+        _ = try await model.doGenerate(options: .init(prompt: makePrompt()))
 
-        #expect(await capture.lastRequest == nil)
+        let request = try #require(await capture.lastRequest)
+        #expect(request.url?.absoluteString == "https://custom-endpoint.example.com/models/gemini-pro:generateContent")
+        #expect(headerValue("x-goog-api-key", in: request) == nil)
     }
 }

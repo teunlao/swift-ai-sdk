@@ -409,4 +409,238 @@ struct GoogleGenerativeAILanguageModelParityTests {
         #expect(providerMetadata?["vertex"] != nil)
         #expect(providerMetadata?["google"] == nil)
     }
+
+    @Test("returns stop finish reason for provider-executed code execution in doGenerate")
+    func codeExecutionDoGenerateFinishReasonStop() async throws {
+        let responseJSON: [String: Any] = [
+            "candidates": [[
+                "content": [
+                    "parts": [
+                        [
+                            "executableCode": [
+                                "language": "PYTHON",
+                                "code": "print(1+1)"
+                            ]
+                        ],
+                        [
+                            "codeExecutionResult": [
+                                "outcome": "OUTCOME_OK",
+                                "output": "2"
+                            ]
+                        ],
+                        [
+                            "text": #"{"answer":2}"#
+                        ]
+                    ],
+                    "role": "model"
+                ],
+                "finishReason": "STOP"
+            ]]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-pro:generateContent")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-2.0-pro"),
+            config: makeParityModelConfig(fetch: fetch, generateId: { "gen-id" })
+        )
+
+        let result = try await model.doGenerate(options: .init(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
+            tools: [
+                .provider(LanguageModelV3ProviderTool(
+                    id: "google.code_execution",
+                    name: "code_execution",
+                    args: [:]
+                ))
+            ]
+        ))
+
+        #expect(result.finishReason.unified == .stop)
+        #expect(result.finishReason.raw == "STOP")
+        #expect(result.content.contains { content in
+            if case .text(let text) = content {
+                return text.text == #"{"answer":2}"#
+            }
+            return false
+        })
+    }
+
+    @Test("returns tool-calls finish reason when code execution is combined with function call in doGenerate")
+    func mixedCodeExecutionAndFunctionCallDoGenerateFinishReasonToolCalls() async throws {
+        let responseJSON: [String: Any] = [
+            "candidates": [[
+                "content": [
+                    "parts": [
+                        [
+                            "executableCode": [
+                                "language": "PYTHON",
+                                "code": "print(1+1)"
+                            ]
+                        ],
+                        [
+                            "codeExecutionResult": [
+                                "outcome": "OUTCOME_OK",
+                                "output": "2"
+                            ]
+                        ],
+                        [
+                            "functionCall": [
+                                "name": "test-tool",
+                                "args": ["value": "ok"]
+                            ]
+                        ]
+                    ],
+                    "role": "model"
+                ],
+                "finishReason": "STOP"
+            ]]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-pro:generateContent")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-2.0-pro"),
+            config: makeParityModelConfig(fetch: fetch, generateId: { "gen-id" })
+        )
+
+        let result = try await model.doGenerate(options: .init(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
+            tools: [
+                .provider(LanguageModelV3ProviderTool(
+                    id: "google.code_execution",
+                    name: "code_execution",
+                    args: [:]
+                )),
+                .function(LanguageModelV3FunctionTool(
+                    name: "test-tool",
+                    inputSchema: [
+                        "type": .string("object"),
+                        "properties": .object([
+                            "value": .object(["type": .string("string")])
+                        ]),
+                        "required": .array([.string("value")]),
+                        "additionalProperties": .bool(false),
+                        "$schema": .string("http://json-schema.org/draft-07/schema#")
+                    ],
+                    description: "test"
+                ))
+            ]
+        ))
+
+        #expect(result.finishReason.unified == LanguageModelV3FinishReason.Unified.toolCalls)
+        #expect(result.finishReason.raw == "STOP")
+    }
+
+    @Test("returns stop finish reason for provider-executed code execution in doStream")
+    func codeExecutionDoStreamFinishReasonStop() async throws {
+        let payloads = [
+            #"{"candidates":[{"content":{"parts":[{"executableCode":{"language":"PYTHON","code":"print(\"hello\")"}}]}}]}"#,
+            #"{"candidates":[{"content":{"parts":[{"codeExecutionResult":{"outcome":"OUTCOME_OK","output":"hello\n"}},{"text":"{\"answer\":\"hello\"}"}]},"finishReason":"STOP"}]}"#
+        ]
+        let events = paritySSEEvents(from: payloads)
+
+        let fetch: FetchFunction = { _ in
+            let response = HTTPURLResponse(
+                url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-pro:streamGenerateContent?alt=sse")!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "text/event-stream"]
+            )!
+            return FetchResponse(body: .stream(makeParitySSEStream(from: events)), urlResponse: response)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-2.0-pro"),
+            config: makeParityModelConfig(fetch: fetch, generateId: { "stream-id" })
+        )
+
+        let result = try await model.doStream(options: .init(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
+            tools: [
+                .provider(LanguageModelV3ProviderTool(
+                    id: "google.code_execution",
+                    name: "code_execution",
+                    args: [:]
+                ))
+            ]
+        ))
+
+        let parts = try await collectParityStream(result.stream)
+        guard let finish = parts.first(where: { if case .finish = $0 { return true } else { return false } }),
+              case let .finish(finishReason, _, _) = finish else {
+            Issue.record("Expected finish event")
+            return
+        }
+
+        #expect(finishReason.unified == .stop)
+        #expect(finishReason.raw == "STOP")
+    }
+
+    @Test("maps missing codeExecutionResult.output to empty string in doStream")
+    func codeExecutionResultMissingOutputMapsToEmptyStringInDoStream() async throws {
+        let payloads = [
+            #"{"candidates":[{"content":{"parts":[{"executableCode":{"language":"PYTHON","code":"print(\"hello\")"}}]}}]}"#,
+            #"{"candidates":[{"content":{"parts":[{"codeExecutionResult":{"outcome":"OUTCOME_OK"}}]},"finishReason":"STOP"}]}"#
+        ]
+        let events = paritySSEEvents(from: payloads)
+
+        let fetch: FetchFunction = { _ in
+            let response = HTTPURLResponse(
+                url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-pro:streamGenerateContent?alt=sse")!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "text/event-stream"]
+            )!
+            return FetchResponse(body: .stream(makeParitySSEStream(from: events)), urlResponse: response)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-2.0-pro"),
+            config: makeParityModelConfig(fetch: fetch, generateId: { "stream-id" })
+        )
+
+        let result = try await model.doStream(options: .init(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
+            tools: [
+                .provider(LanguageModelV3ProviderTool(
+                    id: "google.code_execution",
+                    name: "code_execution",
+                    args: [:]
+                ))
+            ]
+        ))
+
+        let parts = try await collectParityStream(result.stream)
+        let toolResults = parts.compactMap { part -> String? in
+            guard case .toolResult(let toolResult) = part,
+                  case .object(let resultObject) = toolResult.result,
+                  case .string(let output) = resultObject["output"] else {
+                return nil
+            }
+            return output
+        }
+
+        #expect(toolResults == [""])
+    }
 }

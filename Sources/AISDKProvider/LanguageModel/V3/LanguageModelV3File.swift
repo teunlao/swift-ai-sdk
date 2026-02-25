@@ -11,6 +11,7 @@ import Foundation
    type: 'file';
    mediaType: string;
    data: string | Uint8Array;
+   providerMetadata?: SharedV3ProviderMetadata;
  };
  ```
  */
@@ -28,21 +29,36 @@ public struct LanguageModelV3File: Sendable, Equatable, Codable {
     /// be returned as binary data.
     public let data: LanguageModelV3FileData
 
-    public init(mediaType: String, data: LanguageModelV3FileData) {
+    /// Optional provider-specific metadata for the file part.
+    public let providerMetadata: SharedV3ProviderMetadata?
+
+    public init(
+        mediaType: String,
+        data: LanguageModelV3FileData,
+        providerMetadata: SharedV3ProviderMetadata?
+    ) {
         self.mediaType = mediaType
         self.data = data
+        self.providerMetadata = providerMetadata
+    }
+
+    // Keep the original two-argument initializer for binary compatibility.
+    public init(mediaType: String, data: LanguageModelV3FileData) {
+        self.init(mediaType: mediaType, data: data, providerMetadata: nil)
     }
 
     private enum CodingKeys: String, CodingKey {
         case type
         case mediaType
         case data
+        case providerMetadata
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         mediaType = try container.decode(String.self, forKey: .mediaType)
         data = try container.decode(LanguageModelV3FileData.self, forKey: .data)
+        providerMetadata = try container.decodeIfPresent(SharedV3ProviderMetadata.self, forKey: .providerMetadata)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -50,6 +66,7 @@ public struct LanguageModelV3File: Sendable, Equatable, Codable {
         try container.encode(type, forKey: .type)
         try container.encode(mediaType, forKey: .mediaType)
         try container.encode(data, forKey: .data)
+        try container.encodeIfPresent(providerMetadata, forKey: .providerMetadata)
     }
 }
 

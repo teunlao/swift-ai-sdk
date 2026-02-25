@@ -2615,6 +2615,7 @@ struct GoogleGenerativeAILanguageModelTests {
         if case .file(let file1) = result.content[1] {
             #expect(file1.mediaType == "image/jpeg")
             #expect(file1.data == .base64("validimagedata"))
+            #expect(file1.providerMetadata == nil)
         } else {
             Issue.record("Expected file at index 1")
         }
@@ -2622,9 +2623,59 @@ struct GoogleGenerativeAILanguageModelTests {
         if case .file(let file2) = result.content[2] {
             #expect(file2.mediaType == "application/pdf")
             #expect(file2.data == .base64("pdfdata"))
+            #expect(file2.providerMetadata == nil)
         } else {
             Issue.record("Expected file at index 2")
         }
+    }
+
+    @Test("should include thoughtSignature metadata for inlineData file parts")
+    func testIncludeThoughtSignatureMetadataForInlineDataFileParts() async throws {
+        let responseJSON: [String: Any] = [
+            "candidates": [
+                [
+                    "content": [
+                        "parts": [
+                            [
+                                "inlineData": ["mimeType": "application/pdf", "data": "pdfdata"],
+                                "thoughtSignature": "file-sig"
+                            ]
+                        ],
+                        "role": "model"
+                    ],
+                    "finishReason": "STOP"
+                ]
+            ]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-pro"),
+            config: makeLanguageModelConfig(fetch: fetch)
+        )
+
+        let result = try await model.doGenerate(options: .init(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)]
+        ))
+
+        #expect(result.content.count == 1)
+        guard case let .file(file) = result.content[0] else {
+            Issue.record("Expected file content")
+            return
+        }
+
+        #expect(file.providerMetadata?["google"]?["thoughtSignature"] == .string("file-sig"))
     }
 
     @Test("should correctly parse and separate reasoning parts from text output")
@@ -4447,7 +4498,12 @@ struct GoogleGenerativeAILanguageModelTests {
             return
         }
 
-        #expect(object["candidates"] == .string("not-an-array"))
+        #expect(object["name"] == .string("AI_TypeValidationError"))
+        if case let .object(value)? = object["value"] {
+            #expect(value["candidates"] == .string("not-an-array"))
+        } else {
+            Issue.record("Expected error payload value object")
+        }
     }
 
     // MARK: - GEMMA Model Tests
@@ -5001,6 +5057,76 @@ struct GoogleGenerativeAILanguageModelTests {
             #expect(labels.isEmpty)
         } else {
             Issue.record("Missing labels in request body")
+        }
+    }
+
+    @Test("should preserve explicitly empty thinkingConfig/imageConfig objects in generationConfig")
+    func testPreserveExplicitlyEmptyOptionObjectsInGenerationConfig() async throws {
+        actor RequestCapture {
+            var request: URLRequest?
+            func store(_ request: URLRequest) { self.request = request }
+            func value() -> URLRequest? { request }
+        }
+
+        let capture = RequestCapture()
+        let responseJSON: [String: Any] = [
+            "candidates": [
+                [
+                    "content": ["parts": [["text": "test"]], "role": "model"],
+                    "finishReason": "STOP"
+                ]
+            ]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = GoogleGenerativeAILanguageModel(
+            modelId: GoogleGenerativeAIModelId(rawValue: "gemini-pro"),
+            config: makeLanguageModelConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(options: .init(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
+            providerOptions: [
+                "google": [
+                    "thinkingConfig": .object([:]),
+                    "imageConfig": .object([:])
+                ]
+            ]
+        ))
+
+        guard let request = await capture.value() else {
+            Issue.record("Missing captured request")
+            return
+        }
+
+        let json = try decodeRequestBody(request)
+        guard let generationConfig = json["generationConfig"] as? [String: Any] else {
+            Issue.record("Missing generationConfig")
+            return
+        }
+
+        if let thinkingConfig = generationConfig["thinkingConfig"] as? [String: Any] {
+            #expect(thinkingConfig.isEmpty)
+        } else {
+            Issue.record("Missing thinkingConfig in generationConfig")
+        }
+
+        if let imageConfig = generationConfig["imageConfig"] as? [String: Any] {
+            #expect(imageConfig.isEmpty)
+        } else {
+            Issue.record("Missing imageConfig in generationConfig")
         }
     }
 

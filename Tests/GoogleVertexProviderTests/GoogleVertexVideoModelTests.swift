@@ -98,6 +98,31 @@ struct GoogleVertexVideoModelTests {
         }
     }
 
+    @Test("constructor supports different model IDs")
+    func constructorSupportsDifferentModelIDs() async throws {
+        let fetch: FetchFunction = { request in
+            let body = try self.jsonData([
+                "name": "operations/test-op",
+                "done": true,
+                "response": [
+                    "videos": [
+                        [
+                            "bytesBase64Encoded": "video-data",
+                            "mimeType": "video/mp4"
+                        ]
+                    ]
+                ]
+            ])
+            return FetchResponse(
+                body: .data(body),
+                urlResponse: self.httpResponse(url: try #require(request.url))
+            )
+        }
+
+        let model = makeModel(modelId: .veo30Generate001, fetch: fetch)
+        #expect(model.modelId == "veo-3.0-generate-001")
+    }
+
     @Test("doGenerate maps prompt/seed/aspectRatio/resolution/duration")
     func requestMappingCoreFields() async throws {
         actor Capture {
@@ -167,6 +192,121 @@ struct GoogleVertexVideoModelTests {
                 "durationSeconds": .number(5)
             ])
         ]))
+    }
+
+    @Test("doGenerate maps n to sampleCount and returns multiple videos")
+    func sampleCountAndMultipleVideos() async throws {
+        actor Capture {
+            var predictBody: JSONValue?
+            func set(_ body: JSONValue) { predictBody = body }
+            func value() -> JSONValue? { predictBody }
+        }
+
+        let capture = Capture()
+        let fetch: FetchFunction = { request in
+            let urlString = request.url!.absoluteString
+
+            if urlString.contains(":predictLongRunning") {
+                if let body = request.httpBody {
+                    let json = try JSONDecoder().decode(JSONValue.self, from: body)
+                    await capture.set(json)
+                }
+
+                let response = try self.jsonData([
+                    "name": "operations/test-op",
+                    "done": false
+                ])
+                return FetchResponse(
+                    body: .data(response),
+                    urlResponse: self.httpResponse(url: request.url!)
+                )
+            }
+
+            if urlString.contains(":fetchPredictOperation") {
+                let response = try self.jsonData([
+                    "name": "operations/test-op",
+                    "done": true,
+                    "response": [
+                        "videos": [
+                            [
+                                "bytesBase64Encoded": "video-1",
+                                "mimeType": "video/mp4"
+                            ],
+                            [
+                                "gcsUri": "gs://bucket/video-2.mp4",
+                                "mimeType": "video/mp4"
+                            ]
+                        ]
+                    ]
+                ])
+                return FetchResponse(
+                    body: .data(response),
+                    urlResponse: self.httpResponse(url: request.url!)
+                )
+            }
+
+            Issue.record("Unexpected URL: \(urlString)")
+            throw CancellationError()
+        }
+
+        let model = makeModel(fetch: fetch)
+        let result = try await model.doGenerate(options: makeOptions(
+            n: 2
+        ))
+
+        #expect(await capture.value() == .object([
+            "instances": .array([.object(["prompt": .string(prompt)])]),
+            "parameters": .object([
+                "sampleCount": .number(2)
+            ])
+        ]))
+
+        #expect(result.videos.count == 2)
+        #expect(result.videos[0] == .base64(data: "video-1", mediaType: "video/mp4"))
+        #expect(result.videos[1] == .url(url: "gs://bucket/video-2.mp4", mediaType: "video/mp4"))
+    }
+
+    @Test("doGenerate returns empty warnings array when no warnings are produced")
+    func emptyWarningsArray() async throws {
+        let fetch: FetchFunction = { request in
+            let urlString = request.url!.absoluteString
+            if urlString.contains(":predictLongRunning") {
+                let response = try self.jsonData([
+                    "name": "operations/test-op",
+                    "done": false
+                ])
+                return FetchResponse(
+                    body: .data(response),
+                    urlResponse: self.httpResponse(url: request.url!)
+                )
+            }
+
+            if urlString.contains(":fetchPredictOperation") {
+                let response = try self.jsonData([
+                    "name": "operations/test-op",
+                    "done": true,
+                    "response": [
+                        "videos": [
+                            [
+                                "bytesBase64Encoded": "video-data",
+                                "mimeType": "video/mp4"
+                            ]
+                        ]
+                    ]
+                ])
+                return FetchResponse(
+                    body: .data(response),
+                    urlResponse: self.httpResponse(url: request.url!)
+                )
+            }
+
+            Issue.record("Unexpected URL: \(urlString)")
+            throw CancellationError()
+        }
+
+        let model = makeModel(fetch: fetch)
+        let result = try await model.doGenerate(options: makeOptions())
+        #expect(result.warnings == [])
     }
 
     @Test("doGenerate maps provider options and passthrough values")

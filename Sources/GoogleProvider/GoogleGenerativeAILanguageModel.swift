@@ -340,9 +340,8 @@ public final class GoogleGenerativeAILanguageModel: LanguageModelV3 {
             if let thinkingLevel = thinking.thinkingLevel {
                 thinkingJSON["thinkingLevel"] = .string(thinkingLevel.rawValue)
             }
-            if !thinkingJSON.isEmpty {
-                generationConfig["thinkingConfig"] = .object(thinkingJSON)
-            }
+            // Upstream includes `{}` when the option object is present but empty.
+            generationConfig["thinkingConfig"] = .object(thinkingJSON)
         }
 
         if let mediaResolution = googleOptions?.mediaResolution {
@@ -357,9 +356,8 @@ public final class GoogleGenerativeAILanguageModel: LanguageModelV3 {
             if let imageSize = imageConfig.imageSize {
                 configObject["imageSize"] = .string(imageSize.rawValue)
             }
-            if !configObject.isEmpty {
-                generationConfig["imageConfig"] = .object(configObject)
-            }
+            // Upstream includes `{}` when the option object is present but empty.
+            generationConfig["imageConfig"] = .object(configObject)
         }
 
         var body: [String: JSONValue] = [
@@ -583,10 +581,7 @@ private func mapGenerateResponse(
                             toolName: "code_execution",
                             input: stringifyJSONValue(argsObject),
                             providerExecuted: true,
-                            providerMetadata: metadataFromThoughtSignature(
-                                part.thoughtSignature,
-                                providerOptionsName: providerOptionsName
-                            )
+                            providerMetadata: nil
                         )
                     )
                 )
@@ -604,10 +599,7 @@ private func mapGenerateResponse(
                             toolCallId: toolCallId,
                             toolName: "code_execution",
                             result: resultObject,
-                            providerMetadata: metadataFromThoughtSignature(
-                                part.thoughtSignature,
-                                providerOptionsName: providerOptionsName
-                            )
+                            providerMetadata: nil
                         )
                     )
                 )
@@ -660,7 +652,11 @@ private func mapGenerateResponse(
                     .file(
                         LanguageModelV3File(
                             mediaType: inlineData.mimeType,
-                            data: .base64(inlineData.data)
+                            data: .base64(inlineData.data),
+                            providerMetadata: metadataFromThoughtSignature(
+                                part.thoughtSignature,
+                                providerOptionsName: providerOptionsName
+                            )
                         )
                     )
                 )
@@ -805,7 +801,15 @@ private func updateLastContentProviderMetadata(
                 )
             )
         }
-    case .file, .toolApprovalRequest:
+    case .file(let file):
+        content[lastIndex] = .file(
+            LanguageModelV3File(
+                mediaType: file.mediaType,
+                data: file.data,
+                providerMetadata: providerMetadata
+            )
+        )
+    case .toolApprovalRequest:
         break
     }
 }
@@ -1130,10 +1134,7 @@ private func handleStreamingParts(
                         toolName: "code_execution",
                         input: stringifyJSONValue(argsObject),
                         providerExecuted: true,
-                        providerMetadata: metadataFromThoughtSignature(
-                                part.thoughtSignature,
-                                providerOptionsName: providerOptionsName
-                            )
+                        providerMetadata: nil
                     )
                 )
             )
@@ -1151,10 +1152,7 @@ private func handleStreamingParts(
                         toolCallId: toolCallId,
                         toolName: "code_execution",
                         result: resultObject,
-                        providerMetadata: metadataFromThoughtSignature(
-                            part.thoughtSignature,
-                            providerOptionsName: providerOptionsName
-                        )
+                        providerMetadata: nil
                     )
                 )
             )
@@ -1229,14 +1227,47 @@ private extension ParseJSONResult where Output == GoogleGenerativeAIChunk {
     var streamErrorPayload: JSONValue {
         switch self {
         case .failure(let error, let raw):
-            if let raw, let value = try? jsonValue(from: raw) {
-                return value
-            }
-            return .string(String(describing: error))
+            return serializeStreamParseError(error: error, raw: raw)
         case .success:
             return .string("Unknown stream parsing error")
         }
     }
+}
+
+private func serializeStreamParseError(error: Error, raw: Any?) -> JSONValue {
+    if let typeValidationError = error as? TypeValidationError {
+        var payload: [String: JSONValue] = [
+            "name": .string(typeValidationError.name),
+            "message": .string(typeValidationError.message)
+        ]
+
+        if let value = typeValidationError.value {
+            payload["value"] = (try? jsonValue(from: value)) ?? .string(String(describing: value))
+        } else if let raw {
+            payload["value"] = (try? jsonValue(from: raw)) ?? .null
+        }
+
+        return .object(payload)
+    }
+
+    if let jsonParseError = error as? JSONParseError {
+        return .object([
+            "name": .string(jsonParseError.name),
+            "message": .string(jsonParseError.message),
+            "text": .string(jsonParseError.text)
+        ])
+    }
+
+    var payload: [String: JSONValue] = [
+        "name": .string("Error"),
+        "message": .string(AISDKProvider.getErrorMessage(error))
+    ]
+
+    if let raw {
+        payload["value"] = (try? jsonValue(from: raw)) ?? .null
+    }
+
+    return .object(payload)
 }
 
 private func stringifyJSONValue(_ value: JSONValue) -> String {

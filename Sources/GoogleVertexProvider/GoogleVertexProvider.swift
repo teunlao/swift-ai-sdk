@@ -137,19 +137,19 @@ public final class GoogleVertexProvider: ProviderV3 {
     }
 
     public func languageModel(modelId: String) throws -> any LanguageModelV3 {
-        languageFactory(GoogleVertexModelId(rawValue: modelId))
+        return languageFactory(GoogleVertexModelId(rawValue: modelId))
     }
 
     public func textEmbeddingModel(modelId: String) throws -> any EmbeddingModelV3<String> {
-        embeddingFactory(GoogleVertexEmbeddingModelId(rawValue: modelId))
+        return embeddingFactory(GoogleVertexEmbeddingModelId(rawValue: modelId))
     }
 
     public func imageModel(modelId: String) throws -> any ImageModelV3 {
-        imageFactory(GoogleVertexImageModelId(rawValue: modelId))
+        return imageFactory(GoogleVertexImageModelId(rawValue: modelId))
     }
 
     public func videoModel(modelId: String) throws -> (any VideoModelV3)? {
-        videoFactory(GoogleVertexVideoModelId(rawValue: modelId))
+        return videoFactory(GoogleVertexVideoModelId(rawValue: modelId))
     }
 
     public func callAsFunction(_ modelId: String) throws -> any LanguageModelV3 {
@@ -159,39 +159,39 @@ public final class GoogleVertexProvider: ProviderV3 {
     // MARK: - Convenience Accessors
 
     public func languageModel(modelId: GoogleVertexModelId) -> GoogleGenerativeAILanguageModel {
-        languageFactory(modelId)
+        return languageFactory(modelId)
     }
 
     public func chat(modelId: GoogleVertexModelId) -> GoogleGenerativeAILanguageModel {
-        languageFactory(modelId)
+        return languageFactory(modelId)
     }
 
     public func embeddingModel(modelId: GoogleVertexEmbeddingModelId) -> GoogleVertexEmbeddingModel {
-        embeddingFactory(modelId)
+        return embeddingFactory(modelId)
     }
 
     public func textEmbeddingModel(modelId: GoogleVertexEmbeddingModelId) -> GoogleVertexEmbeddingModel {
-        embeddingFactory(modelId)
+        return embeddingFactory(modelId)
     }
 
     public func textEmbedding(modelId: GoogleVertexEmbeddingModelId) -> GoogleVertexEmbeddingModel {
-        embeddingFactory(modelId)
+        return embeddingFactory(modelId)
     }
 
     public func image(modelId: GoogleVertexImageModelId) -> GoogleVertexImageModel {
-        imageFactory(modelId)
+        return imageFactory(modelId)
     }
 
     public func imageModel(modelId: GoogleVertexImageModelId) -> GoogleVertexImageModel {
-        imageFactory(modelId)
+        return imageFactory(modelId)
     }
 
     public func video(modelId: GoogleVertexVideoModelId) -> GoogleVertexVideoModel {
-        videoFactory(modelId)
+        return videoFactory(modelId)
     }
 
     public func videoModel(modelId: GoogleVertexVideoModelId) -> GoogleVertexVideoModel {
-        videoFactory(modelId)
+        return videoFactory(modelId)
     }
 }
 
@@ -221,19 +221,16 @@ public func createGoogleVertex(settings: GoogleVertexProviderSettings = .init())
 
     let baseURLResolution: Result<String, any Error> = {
         do {
+            if let baseURL = withoutTrailingSlash(settings.baseURL) {
+                return .success(baseURL)
+            }
+
             if apiKey != nil {
-                if let baseURL = withoutTrailingSlash(settings.baseURL) {
-                    return .success(baseURL)
-                }
                 return .success(GOOGLE_VERTEX_EXPRESS_MODE_BASE_URL)
             }
 
             let location = try loadLocation()
             let project = try loadProject()
-
-            if let baseURL = withoutTrailingSlash(settings.baseURL) {
-                return .success(baseURL)
-            }
 
             let hostPrefix = location == "global" ? "" : "\(location)-"
             let baseHost = "\(hostPrefix)aiplatform.googleapis.com"

@@ -33,6 +33,13 @@ For source-of-truth code, always follow the commits and tests.
   - Google/Vertex Gemini image parity: when `usageMetadata` is missing, image generation now still returns usage object with `totalTokens = 0` (matching upstream conversion path); added regression coverage in `GoogleGenerativeAIImageModelTests` and `GoogleVertexImageModelTests`.
   - Google/Vertex Gemini image parity: add regression coverage for Gemini-only aspect ratio `21:9` being forwarded into `generationConfig.imageConfig.aspectRatio`.
   - Google provider parity: align `supportedUrls` files regex construction to upstream unescaped `baseURL` interpolation; add regression coverage in `GoogleProviderTests`.
+  - Google/Vertex video parity coverage: add regression tests for alternative model IDs, `n -> sampleCount`, multi-video decode, and empty warnings defaults in `GoogleGenerativeAIVideoModelTests` and `GoogleVertexVideoModelTests`.
+  - Google language parity coverage: add regression tests for code-execution finishReason semantics (`providerExecuted` tools keep `STOP -> stop`, mixed function calls keep `STOP -> tool-calls`) and stream mapping of missing `codeExecutionResult.output` to empty string in `GoogleGenerativeAILanguageModelParityTests`.
+  - Google language parity: `inlineData` file parts now preserve thought-signature metadata via `providerMetadata` in generate output (stream remains metadata-free, as upstream); added regression coverage in `GoogleGenerativeAILanguageModelTests` and `LanguageModelV3ContentTests`.
+  - Google language request-shape parity: explicitly empty `thinkingConfig`/`imageConfig` provider option objects are forwarded as empty objects in `generationConfig` (matches upstream); code-execution tool-call/result no longer attach thought-signature metadata directly.
+  - Google language parity: invalid stream chunk schema now emits serialized validation parse error payload (`AI_TypeValidationError`/`AI_JSONParseError` fields) instead of raw chunk JSON.
+  - Google Vertex provider config: custom `baseURL` bypasses `project/location` validation when `apiKey` is absent; missing config errors remain request-time (tests updated accordingly).
+  - SwiftAISDK tests: stabilized `RerankTests.logsWarnings` against parallel observer races by capturing non-empty warning batches instead of last write wins.
 
 - 2026-02-24
   - Google Vertex: embedding options parity fix — `outputDimensionality` now accepts fractional numbers and rejects `null` (Vertex + Google fallback namespaces), with new coverage in `GoogleVertexEmbeddingModelTests`.
