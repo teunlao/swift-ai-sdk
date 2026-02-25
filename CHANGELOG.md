@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-02-25
+
+### Added
+- Open Responses provider (`OpenResponsesProvider`).
+- Moonshot AI provider (`MoonshotAIProvider`).
+
+### Fixed
+- OpenAI-compatible: align request mapping and provider options with upstream parity.
+- Anthropic: missing API key now throws request-time `LoadAPIKeyError` instead of crashing the process.
+- Google / Vertex: upstream parity fixes for schema conversion, auth, and language/image/video request + streaming edge cases.
+
 ## [0.15.5] - 2026-02-25
 
 ### Fixed
