@@ -14,6 +14,7 @@
 - [x] Embedding provider options parity: `outputDimensionality` accepts any numeric value (not only integers).
 - [x] Embedding request mapping parity: `model` field in single + batch embed requests always uses `models/<modelId>` (including model IDs containing `/`).
 - [x] Supported file URL parity: Google Files/YouTube URL checks are case-sensitive (no implicit lowercasing/case-insensitive regex).
+- [x] Supported file URL regex construction parity: files endpoint regex interpolates `baseURL` directly (unescaped), matching upstream dynamic-regex semantics.
 - [x] Grounding source extraction parity: maps `web` + `retrievedContext` (HTTP URL, file URI, `fileSearchStore`) + `maps` chunks to V3 `source` content (including document media-type/filename/title defaults) in generate responses, with stream coverage for map URL sources.
 - [x] Warnings parity: `includeThoughts` on non-Vertex providers does not emit warning; `google.vertex_rag_store` on non-Vertex providers emits upstream-compatible provider warning.
 - [x] Request shape parity for explicit empty inputs: preserve empty `stopSequences`, empty `responseModalities`, empty `safetySettings`, and empty `labels` when explicitly provided.
@@ -24,6 +25,7 @@
 - [x] Imagen request-shape parity: explicit `null` for nullish image provider options (`personGeneration`, `aspectRatio`) is preserved in `parameters` and can override defaults (upstream `Object.assign` behavior).
 - [x] Imagen response-schema parity: missing `predictions` defaults to `[]` instead of failing decode.
 - [x] Gemini image usage parity: missing `usageMetadata` still maps to a usage object with `totalTokens = 0` (instead of omitting usage entirely), matching upstream usage conversion flow.
+- [x] Gemini image aspect-ratio parity: Gemini-only ratios such as `21:9` are forwarded via `generationConfig.imageConfig.aspectRatio`.
 
 ## Known gaps / TODO
 

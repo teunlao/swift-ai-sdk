@@ -378,4 +378,29 @@ struct GoogleProviderTests {
             #expect(!isSupported, "Expected URL to NOT be supported: \(url)")
         }
     }
+
+    @Test("supportedUrls files regex mirrors upstream unescaped baseURL interpolation")
+    func supportedURLsMatchesUpstreamRegexInterpolation() async throws {
+        let provider = createGoogleGenerativeAI(settings: GoogleProviderSettings(
+            baseURL: "https://api.example.com/v1beta",
+            apiKey: "test-api-key"
+        ))
+        let model = provider.chat(modelId: .gemini15Flash)
+
+        let supportedUrls = try await model.supportedUrls
+        guard let patterns = supportedUrls["*"] else {
+            Issue.record("Expected supportedUrls to contain '*' key")
+            return
+        }
+
+        let upstreamInterpolatedMatch = "https://apiXexampleYcom/v1beta/files/test123"
+
+        let matches = patterns.contains { pattern in
+            let nsString = upstreamInterpolatedMatch as NSString
+            let range = NSRange(location: 0, length: nsString.length)
+            return pattern.firstMatch(in: upstreamInterpolatedMatch, options: [], range: range) != nil
+        }
+
+        #expect(matches)
+    }
 }

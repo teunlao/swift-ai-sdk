@@ -157,7 +157,7 @@ public func createGoogleGenerativeAI(
 
     let supportedURLs: @Sendable () -> [String: [NSRegularExpression]] = {
         let baseRegex = try! NSRegularExpression(
-            pattern: "^" + NSRegularExpression.escapedPattern(for: baseURL) + "/files/.*$",
+            pattern: "^\(baseURL)/files/.*$",
             options: []
         )
 

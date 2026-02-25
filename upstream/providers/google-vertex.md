@@ -25,6 +25,7 @@
 - [x] Embedding options validation parity: `outputDimensionality` accepts fractional numbers (not integer-only), and `null` for optional fields is rejected (matches upstream `.optional()` semantics for Vertex + Google fallback namespaces).
 - [x] Imagen request-shape parity: explicit `null` in nullish Vertex image options (`negativePrompt`, `addWatermark`, `sampleImageSize`, etc.) is preserved in `parameters` for Imagen requests.
 - [x] Gemini image usage parity: missing `usageMetadata` still maps to a usage object with `totalTokens = 0` (instead of omitting usage entirely), matching upstream usage conversion flow.
+- [x] Gemini image aspect-ratio parity: Gemini-only ratios such as `21:9` are forwarded via `generationConfig.imageConfig.aspectRatio`.
 
 Tests live under:
 - `Tests/GoogleVertexProviderTests/GoogleVertexChatBaseURLTests.swift`

@@ -802,6 +802,78 @@ struct GoogleGenerativeAIImageModelTests {
         #expect(firstPart["text"] as? String == "A beautiful sunset")
     }
 
+    @Test("gemini image model should support aspect ratio 21:9")
+    func geminiSupportsAspectRatio219() async throws {
+        actor RequestCapture {
+            var request: URLRequest?
+            func store(_ request: URLRequest) { self.request = request }
+            func value() -> URLRequest? { request }
+        }
+
+        let capture = RequestCapture()
+        let responseJSON: [String: Any] = [
+            "candidates": [
+                [
+                    "content": [
+                        "parts": [
+                            [
+                                "inlineData": [
+                                    "mimeType": "image/png",
+                                    "data": "base64-generated-image"
+                                ]
+                            ]
+                        ],
+                        "role": "model"
+                    ],
+                    "finishReason": "STOP"
+                ]
+            ],
+            "usageMetadata": [
+                "promptTokenCount": 1,
+                "candidatesTokenCount": 2,
+                "totalTokenCount": 3
+            ]
+        ]
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let responseURL = URL(string: "https://api.example.com/v1beta/models/gemini-2.5-flash-image:generateContent")!
+        let httpResponse = HTTPURLResponse(
+            url: responseURL,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = GoogleGenerativeAIImageModel(
+            modelId: GoogleGenerativeAIImageModelId(rawValue: "gemini-2.5-flash-image"),
+            settings: .init(),
+            config: GoogleGenerativeAIImageModelConfig(
+                provider: "google.generative-ai",
+                baseURL: "https://api.example.com/v1beta",
+                headers: { ["api-key": "test-api-key"] },
+                fetch: fetch
+            )
+        )
+
+        _ = try await model.doGenerate(options: .init(
+            prompt: "A beautiful sunset",
+            n: 1,
+            aspectRatio: "21:9",
+            providerOptions: [:]
+        ))
+
+        let request = try #require(await capture.value())
+        let body = try #require(request.httpBody)
+        let json = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+        let generationConfig = try #require(json["generationConfig"] as? [String: Any])
+        let imageConfig = try #require(generationConfig["imageConfig"] as? [String: Any])
+        #expect(imageConfig["aspectRatio"] as? String == "21:9")
+    }
+
     @Test("gemini image model should include usage with zero total when usageMetadata is missing")
     func geminiUsageMissingMapsToZeroTotal() async throws {
         actor RequestCapture {
