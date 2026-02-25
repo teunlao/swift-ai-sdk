@@ -81,13 +81,17 @@ public func createAnthropicProvider(settings: AnthropicProviderSettings = .init(
         loadOptionalSetting(settingValue: settings.baseURL, environmentVariableName: "ANTHROPIC_BASE_URL")
     ) ?? "https://api.anthropic.com/v1"
 
-    if settings.apiKey != nil, settings.authToken != nil {
-        fatalError("Both apiKey and authToken were provided. Please use only one authentication method.")
-    }
-
     let providerName = settings.name ?? "anthropic.messages"
 
-    let headersClosure: @Sendable () -> [String: String?] = {
+    let headersClosure: @Sendable () throws -> [String: String?] = {
+        // Match upstream semantics: apiKey/authToken conflict should not crash the process.
+        if settings.apiKey != nil, settings.authToken != nil {
+            throw InvalidArgumentError(
+                argument: "apiKey/authToken",
+                message: "Both apiKey and authToken were provided. Please use only one authentication method."
+            )
+        }
+
         let authToken = settings.authToken
 
         var baseHeaders: [String: String?] = [
@@ -97,16 +101,12 @@ public func createAnthropicProvider(settings: AnthropicProviderSettings = .init(
         if let authToken {
             baseHeaders["Authorization"] = "Bearer \(authToken)"
         } else {
-            let apiKey: String
-            do {
-                apiKey = try loadAPIKey(
-                    apiKey: settings.apiKey,
-                    environmentVariableName: "ANTHROPIC_API_KEY",
-                    description: "Anthropic"
-                )
-            } catch {
-                fatalError("Anthropic API key is missing: \(error)")
-            }
+            // Lazily load API key on first request to mirror upstream behavior.
+            let apiKey = try loadAPIKey(
+                apiKey: settings.apiKey,
+                environmentVariableName: "ANTHROPIC_API_KEY",
+                description: "Anthropic"
+            )
             baseHeaders["x-api-key"] = apiKey
         }
 

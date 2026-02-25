@@ -1,17 +1,18 @@
 # Provider: Anthropic
 
-- Audited against upstream commit: `f5b2b5ef497ae6c207c17bb8ff81988ef084194b`
+- Audited against upstream commit: `73d5c5920e0fea7633027fdd87374adc9ba49743`
 - Upstream package: `external/vercel-ai-sdk/packages/anthropic/src/**`
 - Swift implementation: `Sources/AnthropicProvider/**`
 
 ## What is verified (checked + tested)
 
+- [x] Auth headers + error semantics: API key is loaded lazily at request-time and missing key throws `LoadAPIKeyError` (no `fatalError`); `apiKey`/`authToken` conflict throws `InvalidArgumentError`.
 - [x] Prompt conversion (messages/system/tools) incl. JSON tool inputs (objects, not JSON strings).
 - [x] Tool call serialization (tool_use/server_tool_use) + tool result mapping.
 - [x] Tool search tools + deferred tool references (regex/bm25).
 - [x] Provider tools: set `supportsDeferredResults` on upstream-marked tools (code execution, web tools, tool search) for correct multi-step deferred tool result handling.
 - [x] Tool name mapping parity (`toolNameMapping`) for server tools + results.
-- [x] Tool schemas parity (bash/computer/text editors/tool search/code execution) — tests added in `Tests/AnthropicProviderTests/AnthropicToolSchemasTests.swift` (post `v0.10.0`, unreleased until we commit).
+- [x] Tool schemas parity (bash/computer/text editors/tool search/code execution) — tests in `Tests/AnthropicProviderTests/AnthropicToolSchemasTests.swift`.
 - [x] Streaming SSE mapping (advanced tool streaming, multi-step container id forwarding).
 - [x] Model/feature gates and validation (`cache_control` usage).
 - [x] Settings/provider options parity (custom provider option keys).
@@ -26,7 +27,8 @@ Tests live under:
 - `Tests/AnthropicProviderTests/AnthropicMessagesLanguageModelTests.swift`
 - `Tests/AnthropicProviderTests/AnthropicMessagesLanguageModelStreamAdvancedTests.swift`
 - `Tests/AnthropicProviderTests/AnthropicWebToolsSchemaTests.swift`
-- `Tests/AnthropicProviderTests/AnthropicToolSchemasTests.swift` (unreleased; pending commit)
+- `Tests/AnthropicProviderTests/AnthropicToolSchemasTests.swift`
+- `Tests/AnthropicProviderTests/AnthropicProviderAuthErrorTests.swift`
 - `Tests/SwiftAISDKTests/GenerateText/GenerateTextDeferredToolResultsTests.swift` (AI-level deferred provider tool results)
 - `Tests/SwiftAISDKTests/GenerateText/StreamTextDeferredToolResultsTests.swift` (AI-level deferred provider tool results)
 

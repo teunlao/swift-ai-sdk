@@ -18,7 +18,7 @@ public struct AnthropicMessagesConfig: @unchecked Sendable {
 
     public let provider: String
     public let baseURL: String
-    public let headers: @Sendable () -> [String: String?]
+    public let headers: @Sendable () throws -> [String: String?]
     public let fetch: FetchFunction?
     public let supportedUrls: @Sendable () -> [String: [NSRegularExpression]]
     public let generateId: @Sendable () -> String
@@ -28,7 +28,7 @@ public struct AnthropicMessagesConfig: @unchecked Sendable {
     public init(
         provider: String,
         baseURL: String,
-        headers: @escaping @Sendable () -> [String: String?],
+        headers: @escaping @Sendable () throws -> [String: String?],
         fetch: FetchFunction? = nil,
         supportedUrls: @escaping @Sendable () -> [String: [NSRegularExpression]] = { [:] },
         generateId: @escaping @Sendable () -> String = defaultAnthropicId,
@@ -95,7 +95,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
     {
         let prepared = try await prepareRequest(options: options)
         let requestURL = buildRequestURL(isStreaming: false)
-        let headers = getHeaders(betas: prepared.betas, additional: options.headers)
+        let headers = try getHeaders(betas: prepared.betas, additional: options.headers)
 
         let body = config.requestTransform.transformBody?(prepared.body) ?? prepared.body
 
@@ -159,10 +159,11 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
         var requestBody = prepared.body
         requestBody["stream"] = .bool(true)
         let transformedBody = config.requestTransform.transformBody?(requestBody) ?? requestBody
+        let headers = try getHeaders(betas: betas, additional: options.headers)
 
         let response = try await postJsonToAPI(
             url: buildRequestURL(isStreaming: true),
-            headers: getHeaders(betas: betas, additional: options.headers),
+            headers: headers,
             body: JSONValue.object(transformedBody),
             failedResponseHandler: anthropicFailedResponseHandler,
             successfulResponseHandler: createEventSourceResponseHandler(
@@ -957,8 +958,8 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
         return "\(config.baseURL)/messages"
     }
 
-    private func getHeaders(betas: Set<String>, additional: [String: String]?) -> [String: String] {
-        var combined: [String: String?] = config.headers()
+    private func getHeaders(betas: Set<String>, additional: [String: String]?) throws -> [String: String] {
+        var combined: [String: String?] = try config.headers()
         if !betas.isEmpty {
             combined = combineHeaders(
                 combined, ["anthropic-beta": betas.sorted().joined(separator: ",")])

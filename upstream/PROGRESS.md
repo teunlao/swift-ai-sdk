@@ -30,6 +30,7 @@ For source-of-truth code, always follow the commits and tests.
 ### Unreleased (main)
 
 - 2026-02-25
+  - Anthropic: auth header parity and error semantics now match upstream behavior more closely: API key is loaded lazily and missing key throws request-time `LoadAPIKeyError` (no `fatalError`); `apiKey`/`authToken` conflict now throws `InvalidArgumentError` (no crash). Added coverage in `AnthropicProviderAuthErrorTests`.
   - Google/Vertex Gemini image parity: when `usageMetadata` is missing, image generation now still returns usage object with `totalTokens = 0` (matching upstream conversion path); added regression coverage in `GoogleGenerativeAIImageModelTests` and `GoogleVertexImageModelTests`.
   - Google/Vertex Gemini image parity: add regression coverage for Gemini-only aspect ratio `21:9` being forwarded into `generationConfig.imageConfig.aspectRatio`.
   - Google provider parity: align `supportedUrls` files regex construction to upstream unescaped `baseURL` interpolation; add regression coverage in `GoogleProviderTests`.
