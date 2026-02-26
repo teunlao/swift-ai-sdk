@@ -24,9 +24,7 @@ struct CerebrasProviderTests {
 
     @Test("should create a CerebrasProvider instance with default options")
     func createCerebrasProviderWithDefaultOptions() throws {
-        let provider = createCerebras(settings: CerebrasProviderSettings(
-            apiKey: "test-api-key"
-        ))
+        let provider = createCerebras(settings: CerebrasProviderSettings())
 
         let model = try provider("model-id")
 
@@ -109,7 +107,7 @@ struct CerebrasProviderTests {
         }
 
         let userAgent = request.value(forHTTPHeaderField: "User-Agent")
-        #expect(userAgent?.contains("ai-sdk/cerebras") == true)
+        #expect(userAgent?.contains("ai-sdk/cerebras/\(CEREBRAS_PROVIDER_VERSION)") == true)
     }
 
     @Test("should return a chat model when called as a function")
@@ -162,7 +160,8 @@ struct CerebrasProviderTests {
 
         let model = provider.chat(modelId)
 
-        #expect(model is OpenAICompatibleChatLanguageModel)
+        #expect(model.provider == "cerebras.chat")
+        #expect(model.modelId == modelId.rawValue)
     }
 
     @Suite("auth behavior", .serialized)
@@ -236,6 +235,75 @@ struct CerebrasProviderTests {
             }
 
             #expect(await capture.value() == nil)
+        }
+
+        @Test("provided apiKey takes precedence over CEREBRAS_API_KEY environment variable")
+        func providedAPIKeyTakesPrecedenceOverEnvironmentVariable() async throws {
+            actor RequestCapture {
+                var request: URLRequest?
+                func store(_ request: URLRequest) { self.request = request }
+                func value() -> URLRequest? { request }
+            }
+
+            let original = getenv("CEREBRAS_API_KEY").flatMap { String(validatingCString: $0) }
+            defer {
+                if let original {
+                    setenv("CEREBRAS_API_KEY", original, 1)
+                } else {
+                    unsetenv("CEREBRAS_API_KEY")
+                }
+            }
+
+            setenv("CEREBRAS_API_KEY", "env-key", 1)
+
+            let capture = RequestCapture()
+            let responseJSON: [String: Any] = [
+                "id": "test-id",
+                "object": "chat.completion",
+                "created": 1_700_000_000,
+                "model": "model-id",
+                "choices": [[
+                    "index": 0,
+                    "message": [
+                        "role": "assistant",
+                        "content": "ok",
+                    ],
+                    "finish_reason": "stop",
+                ]],
+                "usage": [
+                    "prompt_tokens": 1,
+                    "completion_tokens": 1,
+                    "total_tokens": 2,
+                ],
+            ]
+
+            let responseData = CerebrasProviderTests.encodeJSON(responseJSON)
+            let response = HTTPURLResponse(
+                url: URL(string: "https://api.cerebras.ai/v1/chat/completions")!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+
+            let fetch: FetchFunction = { request in
+                await capture.store(request)
+                return FetchResponse(body: .data(responseData), urlResponse: response)
+            }
+
+            let provider = createCerebras(settings: CerebrasProviderSettings(apiKey: "custom-key", fetch: fetch))
+            let model = try provider("model-id")
+            let prompt: LanguageModelV3Prompt = [
+                .user(content: [.text(.init(text: "hello"))], providerOptions: nil)
+            ]
+
+            _ = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: prompt))
+
+            guard let request = await capture.value() else {
+                Issue.record("Expected to capture request")
+                return
+            }
+
+            #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer custom-key")
         }
     }
 }

@@ -12,7 +12,7 @@
 
 ## Known gaps / TODO
 
-- [ ] Full parity audit of all provider tests from upstream `cerebras-provider.test.ts` for constructor-level assertions.
+- [ ] None known.
 
 ## Notes
 
