@@ -58,6 +58,27 @@ struct XAIProviderTests {
         #expect(model.modelId == "grok-2-image")
     }
 
+    @Test("creates a video model with correct settings")
+    func createVideoModel() throws {
+        let provider = createXai(settings: XAIProviderSettings(apiKey: "test-api-key"))
+        guard let model = try provider.videoModel(modelId: "grok-imagine-video") else {
+            Issue.record("Expected video model")
+            return
+        }
+
+        #expect(model.provider == "xai.video")
+        #expect(model.modelId == "grok-imagine-video")
+    }
+
+    @Test("creates video model via video method")
+    func createVideoModelViaVideoMethod() throws {
+        let provider = createXai(settings: XAIProviderSettings(apiKey: "test-api-key"))
+        let model = provider.video(modelId: "grok-imagine-video")
+
+        #expect(model.provider == "xai.video")
+        #expect(model.modelId == "grok-imagine-video")
+    }
+
     @Test("uses custom baseURL when provided")
     func usesCustomBaseURL() throws {
         let provider = createXai(settings: XAIProviderSettings(

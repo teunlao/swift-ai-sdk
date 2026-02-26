@@ -1,7 +1,8 @@
 import Foundation
 
 /// Wrapper types for xAI model identifiers.
-/// Mirrors `packages/xai/src/xai-chat-options.ts` and `xai-image-settings.ts`.
+/// Mirrors `packages/xai/src/xai-chat-options.ts`, `xai-image-settings.ts`,
+/// and `xai-video-settings.ts`.
 public struct XAIChatModelId: RawRepresentable, Hashable, Sendable, ExpressibleByStringLiteral {
     public let rawValue: String
 
@@ -15,6 +16,18 @@ public struct XAIChatModelId: RawRepresentable, Hashable, Sendable, ExpressibleB
 }
 
 public struct XAIImageModelId: RawRepresentable, Hashable, Sendable, ExpressibleByStringLiteral {
+    public let rawValue: String
+
+    public init(rawValue: String) {
+        self.rawValue = rawValue
+    }
+
+    public init(stringLiteral value: StringLiteralType) {
+        self.init(rawValue: value)
+    }
+}
+
+public struct XAIVideoModelId: RawRepresentable, Hashable, Sendable, ExpressibleByStringLiteral {
     public let rawValue: String
 
     public init(rawValue: String) {
@@ -58,4 +71,8 @@ public extension XAIChatModelId {
 
 public extension XAIImageModelId {
     static let grok2Image: Self = "grok-2-image"
+}
+
+public extension XAIVideoModelId {
+    static let grokImagineVideo: Self = "grok-imagine-video"
 }

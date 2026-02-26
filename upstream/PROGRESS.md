@@ -29,6 +29,10 @@ For source-of-truth code, always follow the commits and tests.
 
 ### Unreleased (main)
 
+- 2026-02-26
+  - Alibaba: port the upstream `@ai-sdk/alibaba` provider (Qwen chat + Wan video generation) including thinking mode, prompt caching (`cacheControl`), tool calling + streaming SSE mapping, and video polling, with end-to-end Swift tests.
+  - xAI: add upstream parity for `grok-imagine-video` (generations/edits request mapping, polling behavior, edit-mode warnings, headers/metadata) with Swift tests.
+
 - 2026-02-25
   - Anthropic: auth header parity and error semantics now match upstream behavior more closely: API key is loaded lazily and missing key throws request-time `LoadAPIKeyError` (no `fatalError`); `apiKey`/`authToken` conflict now throws `InvalidArgumentError` (no crash). Added coverage in `AnthropicProviderAuthErrorTests`.
   - OpenAI-compatible: request mapping parity updates (provider options, structured outputs strictness, usage passthrough) and new Moonshot AI provider built on OpenAI-compatible with mapping/tests.

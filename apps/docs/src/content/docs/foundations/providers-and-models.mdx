@@ -24,13 +24,14 @@ The Swift AI SDK mirrors the AI SDK language-model specification (`AISDKProvider
 
 ## Swift AI SDK provider modules
 
-The Swift port currently ships with **37 provider modules** (one SwiftPM product per provider). Each module exports a lazily configured global shortcut plus a factory for advanced configuration, matching the TypeScript behavior. See [Providers](/providers/overview) for the full, up-to-date list.
+The Swift port currently ships with **38 provider modules** (one SwiftPM product per provider). Each module exports a lazily configured global shortcut plus a factory for advanced configuration, matching the TypeScript behavior. See [Providers](/providers/overview) for the full, up-to-date list.
 
 A few common examples:
 
 - [OpenAI Provider](/providers/openai) — `import OpenAIProvider`, then call `openai("gpt-4o")` or `createOpenAIProvider(settings:)`.
 - [Anthropic Provider](/providers/anthropic) — `import AnthropicProvider`, use `anthropic("claude-3-5-sonnet")` or `createAnthropicProvider(settings:)`.
 - [Google Generative AI Provider](/providers/google-generative-ai) — `import GoogleProvider`, use `google("gemini-1.5-pro")` or `createGoogleGenerativeAI(settings:)`.
+- [Alibaba Provider](/providers/alibaba) — `import AlibabaProvider`, then call `alibaba("qwen-plus")` or `createAlibaba(settings:)`.
 - Vercel Provider — `import VercelProvider`, then call `vercel("v0-1.0-md")` or `createVercelProvider(settings:)`. _(Documentation coming soon)_
 - TogetherAI Provider — `import TogetherAIProvider`, then call `togetherai("meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo")` or `createTogetherAIProvider(settings:)`. _(Documentation coming soon)_
 

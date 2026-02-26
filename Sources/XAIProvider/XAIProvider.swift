@@ -29,13 +29,16 @@ public struct XAIProviderSettings: Sendable {
 public final class XAIProvider: ProviderV3 {
     private let languageModelFactory: @Sendable (XAIChatModelId) -> XAIChatLanguageModel
     private let imageModelFactory: @Sendable (XAIImageModelId) -> OpenAICompatibleImageModel
+    private let videoModelFactory: @Sendable (XAIVideoModelId) -> XAIVideoModel
 
     init(
         languageModelFactory: @escaping @Sendable (XAIChatModelId) -> XAIChatLanguageModel,
-        imageModelFactory: @escaping @Sendable (XAIImageModelId) -> OpenAICompatibleImageModel
+        imageModelFactory: @escaping @Sendable (XAIImageModelId) -> OpenAICompatibleImageModel,
+        videoModelFactory: @escaping @Sendable (XAIVideoModelId) -> XAIVideoModel
     ) {
         self.languageModelFactory = languageModelFactory
         self.imageModelFactory = imageModelFactory
+        self.videoModelFactory = videoModelFactory
     }
 
     public func languageModel(modelId: String) throws -> any LanguageModelV3 {
@@ -60,6 +63,22 @@ public final class XAIProvider: ProviderV3 {
 
     public func image(modelId: XAIImageModelId) -> OpenAICompatibleImageModel {
         imageModelFactory(modelId)
+    }
+
+    public func videoModel(modelId: String) throws -> (any VideoModelV3)? {
+        videoModelFactory(XAIVideoModelId(rawValue: modelId))
+    }
+
+    public func video(modelId: XAIVideoModelId) -> XAIVideoModel {
+        videoModelFactory(modelId)
+    }
+
+    public func video(_ modelId: XAIVideoModelId) -> XAIVideoModel {
+        videoModelFactory(modelId)
+    }
+
+    public func videoModel(modelId: XAIVideoModelId) -> XAIVideoModel {
+        videoModelFactory(modelId)
     }
 
     public func callAsFunction(_ modelId: String) throws -> any LanguageModelV3 {
@@ -120,9 +139,22 @@ public func createXAIProvider(settings: XAIProviderSettings = .init()) -> XAIPro
         )
     }
 
+    let videoModelFactory: @Sendable (XAIVideoModelId) -> XAIVideoModel = { modelId in
+        XAIVideoModel(
+            modelId: modelId,
+            config: XAIVideoModelConfig(
+                provider: "xai.video",
+                baseURL: baseURL,
+                headers: headersClosure,
+                fetch: settings.fetch
+            )
+        )
+    }
+
     return XAIProvider(
         languageModelFactory: languageModelFactory,
-        imageModelFactory: imageModelFactory
+        imageModelFactory: imageModelFactory,
+        videoModelFactory: videoModelFactory
     )
 }
 

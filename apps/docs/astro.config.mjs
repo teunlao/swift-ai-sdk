@@ -87,6 +87,7 @@ export default defineConfig({
             { label: "OpenAI", link: "/providers/openai" },
             { label: "Open Responses", link: "/providers/open-responses" },
             { label: "ByteDance", link: "/providers/bytedance" },
+            { label: "Alibaba", link: "/providers/alibaba" },
             { label: "Kling AI", link: "/providers/klingai" },
             { label: "Anthropic", link: "/providers/anthropic" },
             { label: "Google Generative AI", link: "/providers/google-generative-ai" },
