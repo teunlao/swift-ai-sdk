@@ -66,21 +66,76 @@ public final class ElevenLabsProvider: ProviderV3 {
     }
 }
 
-public func createElevenLabsProvider(settings: ElevenLabsProviderSettings = .init()) -> ElevenLabsProvider {
-    let headersClosure: @Sendable () -> [String: String?] = {
-        var computed: [String: String?] = [:]
-        let apiKey: String
-        do {
-            apiKey = try loadAPIKey(
-                apiKey: settings.apiKey,
+private func defaultElevenLabsFetchFunction() -> FetchFunction {
+    { request in
+        let session = URLSession.shared
+
+        if #available(macOS 12.0, iOS 15.0, tvOS 15.0, watchOS 8.0, *) {
+            let (bytes, response) = try await session.bytes(for: request)
+            let stream = AsyncThrowingStream<Data, Error> { continuation in
+                Task {
+                    var buffer = Data()
+                    buffer.reserveCapacity(16_384)
+
+                    do {
+                        for try await byte in bytes {
+                            buffer.append(byte)
+
+                            if buffer.count >= 16_384 {
+                                continuation.yield(buffer)
+                                buffer.removeAll(keepingCapacity: true)
+                            }
+                        }
+
+                        if !buffer.isEmpty {
+                            continuation.yield(buffer)
+                        }
+
+                        continuation.finish()
+                    } catch {
+                        continuation.finish(throwing: error)
+                    }
+                }
+            }
+
+            return FetchResponse(body: .stream(stream), urlResponse: response)
+        } else {
+            let (data, response) = try await session.data(for: request)
+            return FetchResponse(body: .data(data), urlResponse: response)
+        }
+    }
+}
+
+private func createElevenLabsAuthFetch(apiKey: String?, customFetch: FetchFunction?) -> FetchFunction {
+    let baseFetch = customFetch ?? defaultElevenLabsFetchFunction()
+
+    return { request in
+        var modified = request
+        var headers = modified.allHTTPHeaderFields ?? [:]
+
+        let hasApiKey = headers.keys.contains { $0.lowercased() == "xi-api-key" }
+        if !hasApiKey {
+            let resolved = try loadAPIKey(
+                apiKey: apiKey,
                 environmentVariableName: "ELEVENLABS_API_KEY",
                 description: "ElevenLabs"
             )
-        } catch {
-            fatalError("ElevenLabs API key is missing: \(error)")
+            headers["xi-api-key"] = resolved
+            modified.allHTTPHeaderFields = headers
         }
 
-        computed["xi-api-key"] = apiKey
+        return try await baseFetch(modified)
+    }
+}
+
+public func createElevenLabsProvider(settings: ElevenLabsProviderSettings = .init()) -> ElevenLabsProvider {
+    let fetch = createElevenLabsAuthFetch(
+        apiKey: settings.apiKey,
+        customFetch: settings.fetch
+    )
+
+    let headersClosure: @Sendable () -> [String: String?] = {
+        var computed: [String: String?] = [:]
         if let custom = settings.headers {
             for (key, value) in custom {
                 computed[key] = value
@@ -90,8 +145,6 @@ public func createElevenLabsProvider(settings: ElevenLabsProviderSettings = .ini
         let withUA = withUserAgentSuffix(computed, "ai-sdk/elevenlabs/\(ELEVENLABS_VERSION)")
         return withUA.mapValues { Optional($0) }
     }
-
-    let fetch = settings.fetch
 
     let makeConfig: @Sendable (_ provider: String) -> ElevenLabsConfig = { provider in
         ElevenLabsConfig(
@@ -117,6 +170,11 @@ public func createElevenLabsProvider(settings: ElevenLabsProviderSettings = .ini
         transcriptionFactory: transcriptionFactory,
         speechFactory: speechFactory
     )
+}
+
+/// Alias matching upstream naming (`createElevenLabs`).
+public func createElevenLabs(settings: ElevenLabsProviderSettings = .init()) -> ElevenLabsProvider {
+    createElevenLabsProvider(settings: settings)
 }
 
 public let elevenlabs = createElevenLabsProvider()
