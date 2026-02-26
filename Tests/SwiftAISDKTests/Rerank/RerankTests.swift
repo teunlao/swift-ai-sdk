@@ -314,23 +314,25 @@ struct BedrockRerankingModelTests {
 
         let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
         let httpResponse = HTTPURLResponse(
-            url: URL(string: "https://bedrock-runtime.us-east-1.amazonaws.com/rerank")!,
+            url: URL(string: "https://bedrock-agent-runtime.us-east-1.amazonaws.com/rerank")!,
             statusCode: 200,
             httpVersion: "HTTP/1.1",
             headerFields: ["Content-Type": "application/json", "x-bedrock": "ok"]
         )!
 
         let fetch: FetchFunction = { request in
-            await capture.store(request)
+            var modified = request
+            modified.setValue("test-auth", forHTTPHeaderField: "x-amz-auth")
+            await capture.store(modified)
             return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
         }
 
         let model = BedrockRerankingModel(
             modelId: .amazonRerankV1_0,
             config: .init(
-                baseURL: { "https://bedrock-runtime.us-east-1.amazonaws.com" },
-                region: "us-east-1",
-                headers: { [:] },
+                baseURL: { "https://bedrock-agent-runtime.us-east-1.amazonaws.com" },
+                region: "us-west-2",
+                headers: { ["config-header": "config-value", "shared-header": "config-shared"] },
                 fetch: fetch
             )
         )
@@ -362,7 +364,16 @@ struct BedrockRerankingModelTests {
             return
         }
 
-        #expect(request.url?.absoluteString == "https://bedrock-runtime.us-east-1.amazonaws.com/rerank")
+        #expect(request.url?.absoluteString == "https://bedrock-agent-runtime.us-east-1.amazonaws.com/rerank")
+
+        let headerFields = (request.allHTTPHeaderFields ?? [:]).reduce(into: [String: String]()) { result, entry in
+            result[entry.key.lowercased()] = entry.value
+        }
+        #expect(headerFields["config-header"] == "config-value")
+        #expect(headerFields["shared-header"] == "config-shared")
+        #expect(headerFields["content-type"] == "application/json")
+        #expect(headerFields["x-amz-auth"] == "test-auth")
+
         #expect(json["nextToken"] as? String == "token")
 
         if let queries = json["queries"] as? [[String: Any]],
@@ -382,7 +393,7 @@ struct BedrockRerankingModelTests {
             #expect(type == "BEDROCK_RERANKING_MODEL")
             if let bedrockConfig = config["bedrockRerankingConfiguration"] as? [String: Any],
                let modelConfig = bedrockConfig["modelConfiguration"] as? [String: Any] {
-                #expect(modelConfig["modelArn"] as? String == "arn:aws:bedrock:us-east-1::foundation-model/amazon.rerank-v1:0")
+                #expect(modelConfig["modelArn"] as? String == "arn:aws:bedrock:us-west-2::foundation-model/amazon.rerank-v1:0")
                 if let additional = modelConfig["additionalModelRequestFields"] as? [String: Any] {
                     #expect(additional["foo"] as? String == "bar")
                 } else {
@@ -408,6 +419,153 @@ struct BedrockRerankingModelTests {
         } else {
             Issue.record("Expected sources array")
         }
+    }
+
+    @Test("doRerank builds request with JSON documents")
+    func doRerankBuildsRequestWithObjectDocuments() async throws {
+        actor RequestCapture {
+            var request: URLRequest?
+            func store(_ request: URLRequest) { self.request = request }
+            func current() -> URLRequest? { request }
+        }
+
+        let capture = RequestCapture()
+
+        let responseJSON: [String: Any] = [
+            "results": [
+                ["index": 0, "relevanceScore": 0.5110583305358887],
+                ["index": 5, "relevanceScore": 0.30241215229034424],
+            ]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://bedrock-agent-runtime.us-east-1.amazonaws.com/rerank")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { request in
+            var modified = request
+            modified.setValue("test-auth", forHTTPHeaderField: "x-amz-auth")
+            await capture.store(modified)
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = BedrockRerankingModel(
+            modelId: .cohereRerankV3_5_0,
+            config: .init(
+                baseURL: { "https://bedrock-agent-runtime.us-east-1.amazonaws.com" },
+                region: "us-west-2",
+                headers: { ["config-header": "config-value", "shared-header": "config-shared"] },
+                fetch: fetch
+            )
+        )
+
+        let documents: [JSONObject] = [
+            ["example": .string("sunny day at the beach")],
+            ["example": .string("rainy day in the city")],
+        ]
+
+        _ = try await model.doRerank(
+            options: RerankingModelV3CallOptions(
+                documents: .object(values: documents),
+                query: "rainy day",
+                topN: 2,
+                providerOptions: [
+                    "bedrock": [
+                        "nextToken": .string("test-token"),
+                        "additionalModelRequestFields": .object(["test": .string("test-value")]),
+                    ]
+                ]
+            )
+        )
+
+        guard let request = await capture.current(),
+              let body = request.httpBody,
+              let json = try JSONSerialization.jsonObject(with: body) as? [String: Any]
+        else {
+            Issue.record("Missing request capture")
+            return
+        }
+
+        #expect(request.url?.absoluteString == "https://bedrock-agent-runtime.us-east-1.amazonaws.com/rerank")
+
+        guard let sources = json["sources"] as? [[String: Any]],
+              sources.count == 2
+        else {
+            Issue.record("Expected sources array")
+            return
+        }
+
+        func assertSource(_ source: [String: Any], example: String) {
+            #expect(source["type"] as? String == "INLINE")
+            guard let inline = source["inlineDocumentSource"] as? [String: Any] else {
+                Issue.record("Expected inlineDocumentSource object")
+                return
+            }
+            #expect(inline["type"] as? String == "JSON")
+            guard let jsonDoc = inline["jsonDocument"] as? [String: Any] else {
+                Issue.record("Expected jsonDocument object")
+                return
+            }
+            #expect(jsonDoc["example"] as? String == example)
+        }
+
+        assertSource(sources[0], example: "sunny day at the beach")
+        assertSource(sources[1], example: "rainy day in the city")
+    }
+
+    @Test("createAmazonBedrock uses bedrock-agent-runtime base URL for reranking")
+    func providerUsesAgentRuntimeBaseURLForReranking() async throws {
+        actor RequestCapture {
+            var request: URLRequest?
+            func store(_ request: URLRequest) { self.request = request }
+            func current() -> URLRequest? { request }
+        }
+
+        let capture = RequestCapture()
+
+        let responseJSON: [String: Any] = [
+            "results": [
+                ["index": 0, "relevanceScore": 0.5]
+            ]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            let httpResponse = HTTPURLResponse(
+                url: request.url ?? URL(string: "https://bedrock-agent-runtime.us-east-1.amazonaws.com/rerank")!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let provider = createAmazonBedrock(settings: .init(
+            region: "us-east-1",
+            apiKey: "test-token",
+            fetch: fetch
+        ))
+
+        let model = provider.reranking(modelId: .amazonRerankV1_0)
+        _ = try await model.doRerank(
+            options: RerankingModelV3CallOptions(
+                documents: .text(values: ["a"]),
+                query: "q"
+            )
+        )
+
+        guard let request = await capture.current() else {
+            Issue.record("Missing request capture")
+            return
+        }
+
+        #expect(request.url?.absoluteString == "https://bedrock-agent-runtime.us-east-1.amazonaws.com/rerank")
     }
 }
 

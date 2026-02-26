@@ -7,7 +7,7 @@ import AnthropicProvider
 //=== Upstream Reference ====================================================//
 //===----------------------------------------------------------------------===//
 // Ported from packages/amazon-bedrock/src/bedrock-provider.ts
-// Upstream commit: 77db222ee
+// Upstream commit: 73d5c5920
 //===----------------------------------------------------------------------===//
 
 public struct AmazonBedrockProviderSettings: Sendable {
@@ -136,12 +136,20 @@ public func createAmazonBedrock(
         )) ?? "us-east-1"
     }()
 
-    let baseURLResolver: @Sendable () -> String = {
+    let runtimeBaseURLResolver: @Sendable () -> String = {
         if let custom = withoutTrailingSlash(settings.baseURL) {
             return custom
         }
 
         return "https://bedrock-runtime.\(region).amazonaws.com"
+    }
+
+    let agentRuntimeBaseURLResolver: @Sendable () -> String = {
+        if let custom = withoutTrailingSlash(settings.baseURL) {
+            return custom
+        }
+
+        return "https://bedrock-agent-runtime.\(region).amazonaws.com"
     }
 
     let headersResolver: @Sendable () -> [String: String?] = {
@@ -159,7 +167,7 @@ public func createAmazonBedrock(
         BedrockChatLanguageModel(
             modelId: modelId,
             config: .init(
-                baseURL: baseURLResolver,
+                baseURL: runtimeBaseURLResolver,
                 headers: headersResolver,
                 fetch: fetch,
                 generateId: generateId
@@ -171,7 +179,7 @@ public func createAmazonBedrock(
         BedrockEmbeddingModel(
             modelId: modelId,
             config: BedrockEmbeddingConfig(
-                baseURL: baseURLResolver,
+                baseURL: runtimeBaseURLResolver,
                 headers: headersResolver,
                 fetch: fetch
             )
@@ -182,7 +190,7 @@ public func createAmazonBedrock(
         BedrockImageModel(
             modelId: modelId,
             config: BedrockImageModelConfig(
-                baseURL: baseURLResolver,
+                baseURL: runtimeBaseURLResolver,
                 headers: headersResolver,
                 fetch: fetch,
                 currentDate: { Date() }
@@ -194,7 +202,7 @@ public func createAmazonBedrock(
         BedrockRerankingModel(
             modelId: modelId,
             config: BedrockRerankingModel.Config(
-                baseURL: baseURLResolver,
+                baseURL: agentRuntimeBaseURLResolver,
                 region: region,
                 headers: headersResolver,
                 fetch: fetch
