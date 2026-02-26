@@ -53,21 +53,76 @@ public final class DeepgramProvider: ProviderV3 {
     }
 }
 
-public func createDeepgramProvider(settings: DeepgramProviderSettings = .init()) -> DeepgramProvider {
-    let headersClosure: @Sendable () -> [String: String?] = {
-        var computed: [String: String?] = [:]
-        let apiKey: String
-        do {
-            apiKey = try loadAPIKey(
-                apiKey: settings.apiKey,
+private func defaultDeepgramFetchFunction() -> FetchFunction {
+    { request in
+        let session = URLSession.shared
+
+        if #available(macOS 12.0, iOS 15.0, tvOS 15.0, watchOS 8.0, *) {
+            let (bytes, response) = try await session.bytes(for: request)
+            let stream = AsyncThrowingStream<Data, Error> { continuation in
+                Task {
+                    var buffer = Data()
+                    buffer.reserveCapacity(16_384)
+
+                    do {
+                        for try await byte in bytes {
+                            buffer.append(byte)
+
+                            if buffer.count >= 16_384 {
+                                continuation.yield(buffer)
+                                buffer.removeAll(keepingCapacity: true)
+                            }
+                        }
+
+                        if !buffer.isEmpty {
+                            continuation.yield(buffer)
+                        }
+
+                        continuation.finish()
+                    } catch {
+                        continuation.finish(throwing: error)
+                    }
+                }
+            }
+
+            return FetchResponse(body: .stream(stream), urlResponse: response)
+        } else {
+            let (data, response) = try await session.data(for: request)
+            return FetchResponse(body: .data(data), urlResponse: response)
+        }
+    }
+}
+
+private func createDeepgramAuthFetch(apiKey: String?, customFetch: FetchFunction?) -> FetchFunction {
+    let baseFetch = customFetch ?? defaultDeepgramFetchFunction()
+
+    return { request in
+        var modified = request
+        var headers = modified.allHTTPHeaderFields ?? [:]
+
+        let hasAuthorization = headers.keys.contains { $0.lowercased() == "authorization" }
+        if !hasAuthorization {
+            let resolved = try loadAPIKey(
+                apiKey: apiKey,
                 environmentVariableName: "DEEPGRAM_API_KEY",
                 description: "Deepgram"
             )
-        } catch {
-            fatalError("Deepgram API key is missing: \(error)")
+            headers["Authorization"] = "Token \(resolved)"
+            modified.allHTTPHeaderFields = headers
         }
 
-        computed["Authorization"] = "Token \(apiKey)"
+        return try await baseFetch(modified)
+    }
+}
+
+public func createDeepgramProvider(settings: DeepgramProviderSettings = .init()) -> DeepgramProvider {
+    let fetch = createDeepgramAuthFetch(
+        apiKey: settings.apiKey,
+        customFetch: settings.fetch
+    )
+
+    let headersClosure: @Sendable () -> [String: String?] = {
+        var computed: [String: String?] = [:]
         if let customHeaders = settings.headers {
             for (key, value) in customHeaders {
                 computed[key] = value
@@ -87,13 +142,18 @@ public func createDeepgramProvider(settings: DeepgramProviderSettings = .init())
                     "https://api.deepgram.com\(options.path)"
                 },
                 headers: headersClosure,
-                fetch: settings.fetch,
+                fetch: fetch,
                 currentDate: { Date() }
             )
         )
     }
 
     return DeepgramProvider(transcriptionFactory: transcriptionFactory)
+}
+
+/// Alias matching upstream naming (`createDeepgram`).
+public func createDeepgram(settings: DeepgramProviderSettings = .init()) -> DeepgramProvider {
+    createDeepgramProvider(settings: settings)
 }
 
 public let deepgram = createDeepgramProvider()
