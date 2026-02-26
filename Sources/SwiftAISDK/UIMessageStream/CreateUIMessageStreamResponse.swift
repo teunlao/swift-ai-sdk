@@ -133,8 +133,14 @@ private func buildSSEStream(
         }
 
         continuation.onTermination = { termination in
-            consumerTask.cancel()
-            forwardTask.cancel()
+            // Do not cancel the consumer on normal stream completion: upstream allows
+            // `consumeSSEStream` to finish (and even continue doing work) after the
+            // response stream is done. Cancelling here can race with the final chunk
+            // and cause `consumeSSEStream` to never observe `[DONE]`.
+            if case .cancelled = termination {
+                consumerTask.cancel()
+                forwardTask.cancel()
+            }
         }
     }
 }

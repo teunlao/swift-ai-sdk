@@ -97,11 +97,11 @@ public func handleUIMessageStreamFinish<Message: UIMessageConvertible>(
             }
         }
 
-        continuation.onTermination = { termination in
-            if case .cancelled = termination {
-                task.cancel()
-                Task { await finishInvoker.callIfNeeded() }
-            }
+        continuation.onTermination = { _ in
+            // Mirror upstream TransformStream semantics: cancellation should trigger
+            // `onFinish` promptly. Cancelling the forward task ensures it hits the
+            // `catch` path and invokes `finishInvoker` deterministically.
+            task.cancel()
         }
     }
 }
