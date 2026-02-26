@@ -5,7 +5,7 @@ import AISDKProvider
 //=== Upstream Reference ====================================================//
 //===----------------------------------------------------------------------===//
 // Ported from packages/cohere/src/cohere-prepare-tools.ts
-// Upstream commit: 77db222ee
+// Upstream commit: 73d5c5920e
 //===----------------------------------------------------------------------===//
 
 private struct CohereFunctionToolDefinition {
@@ -57,7 +57,9 @@ func prepareCohereTools(
         }
     }
 
-    let serializedTools = functionTools.isEmpty ? nil : functionTools.map { $0.json }
+    // Note: if `tools` were provided but all were provider-defined (unsupported),
+    // upstream returns `tools: []` (empty array), not `undefined`.
+    let serializedTools = functionTools.map { $0.json }
 
     guard let toolChoice else {
         return CoherePreparedTools(tools: serializedTools, toolChoice: nil, toolWarnings: toolWarnings)
@@ -75,7 +77,7 @@ func prepareCohereTools(
 
     case .tool(let toolName):
         let filtered = functionTools.filter { $0.name == toolName }.map { $0.json }
-        return CoherePreparedTools(tools: filtered.isEmpty ? nil : filtered, toolChoice: CohereToolChoice.required, toolWarnings: toolWarnings)
+        return CoherePreparedTools(tools: filtered, toolChoice: CohereToolChoice.required, toolWarnings: toolWarnings)
 
     @unknown default:
         return CoherePreparedTools(tools: serializedTools, toolChoice: nil, toolWarnings: toolWarnings)

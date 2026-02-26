@@ -6,7 +6,7 @@ import AISDKProviderUtils
 //=== Upstream Reference ====================================================//
 //===----------------------------------------------------------------------===//
 // Ported from packages/cohere/src/cohere-embedding-model.ts
-// Upstream commit: 77db222ee
+// Upstream commit: 73d5c5920e
 //===----------------------------------------------------------------------===//
 
 public final class CohereEmbeddingModel: EmbeddingModelV3 {
@@ -65,6 +65,10 @@ public final class CohereEmbeddingModel: EmbeddingModelV3 {
 
         if let truncate = embeddingOptions?.truncate {
             body["truncate"] = .string(truncate.rawValue)
+        }
+
+        if let outputDimension = embeddingOptions?.outputDimension {
+            body["output_dimension"] = .number(Double(outputDimension))
         }
 
         let headers = combineHeaders(config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 }

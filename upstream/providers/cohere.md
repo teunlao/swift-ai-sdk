@@ -9,10 +9,14 @@
 - [x] Provider factory naming parity: added upstream alias `createCohere(...)` (while keeping `createCohereProvider(...)`).
 - [x] Provider auth parity: API key now resolves at request time via `loadAPIKey`, missing key throws `LoadAPIKeyError` instead of process crash.
 - [x] Default base URL parity for provider-created chat model: `https://api.cohere.com/v2`.
+- [x] `convertToCohereChatPrompt` parity: file parts → `documents` extraction + tool call/result message mapping.
+- [x] `prepareTools` parity: provider-defined tool warnings and tool choice mapping (including empty `tools: []` behavior).
+- [x] Embedding model parity: request mapping (`input_type`, `truncate`, `output_dimension`), headers merge + user-agent suffix, usage/response exposure.
 
 ## Known gaps / TODO
 
-- [ ] Full parity audit for all Cohere model paths (`chat`, `embed`, `rerank`) beyond provider-construction/auth semantics.
+- [ ] Chat language model parity (`doGenerate` + `doStream`): request mapping coverage + streaming edge-cases.
+- [ ] Reranking model parity (`rerank`): request mapping + response mapping + tests.
 
 ## Notes
 

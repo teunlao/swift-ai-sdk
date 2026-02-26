@@ -6,7 +6,7 @@ import AISDKProviderUtils
 //=== Upstream Reference ====================================================//
 //===----------------------------------------------------------------------===//
 // Ported from packages/cohere/src/cohere-embedding-options.ts (provider options)
-// Upstream commit: 77db222ee
+// Upstream commit: 73d5c5920e
 //===----------------------------------------------------------------------===//
 
 public struct CohereEmbeddingOptions: Sendable, Equatable {
@@ -25,10 +25,12 @@ public struct CohereEmbeddingOptions: Sendable, Equatable {
 
     public var inputType: InputType?
     public var truncate: Truncate?
+    public var outputDimension: Int?
 
-    public init(inputType: InputType? = nil, truncate: Truncate? = nil) {
+    public init(inputType: InputType? = nil, truncate: Truncate? = nil, outputDimension: Int? = nil) {
         self.inputType = inputType
         self.truncate = truncate
+        self.outputDimension = outputDimension
     }
 }
 
@@ -91,6 +93,37 @@ public let cohereEmbeddingOptionsSchema = FlexibleSchema(
                     }
 
                     options.truncate = resolved
+                }
+
+                if let outputDimensionValue = dict["outputDimension"], outputDimensionValue != .null {
+                    guard case .number(let outputDimensionNumber) = outputDimensionValue,
+                          outputDimensionNumber.isFinite
+                    else {
+                        let error = SchemaValidationIssuesError(
+                            vendor: "cohere",
+                            issues: "outputDimension must be a number"
+                        )
+                        return .failure(error: TypeValidationError.wrap(value: outputDimensionValue, cause: error))
+                    }
+
+                    let resolved = Int(outputDimensionNumber)
+                    guard outputDimensionNumber == Double(resolved) else {
+                        let error = SchemaValidationIssuesError(
+                            vendor: "cohere",
+                            issues: "outputDimension must be an integer"
+                        )
+                        return .failure(error: TypeValidationError.wrap(value: outputDimensionValue, cause: error))
+                    }
+
+                    guard [256, 512, 1024, 1536].contains(resolved) else {
+                        let error = SchemaValidationIssuesError(
+                            vendor: "cohere",
+                            issues: "outputDimension must be one of 256, 512, 1024, 1536"
+                        )
+                        return .failure(error: TypeValidationError.wrap(value: outputDimensionValue, cause: error))
+                    }
+
+                    options.outputDimension = resolved
                 }
 
                 return .success(value: options)
