@@ -430,7 +430,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
 
         var includeSet: Set<OpenAIResponsesIncludeValue> = []
         if let includes = openAIOptions?.include {
-            includeSet.formUnion(includes)
+            includeSet.formUnion(includes.map(\.requestIncludeValue))
         }
 
         func addInclude(_ value: OpenAIResponsesIncludeValue) {

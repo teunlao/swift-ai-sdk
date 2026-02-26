@@ -30,6 +30,9 @@ For source-of-truth code, always follow the commits and tests.
 ### Unreleased (main)
 
 - 2026-02-26
+  - OpenAI Responses: provider-options `include` parity tightened to upstream schema-only values (`reasoning.encrypted_content`, `file_search_call.results`, `message.output_text.logprobs`) while preserving internal auto-includes (`web_search_call.action.sources`, `code_interpreter_call.outputs`) for request mapping; added parsing regression tests.
+  - TogetherAI: provider auth parity fix — API key now loads at request time via auth fetch wrapper; missing key throws `LoadAPIKeyError` instead of crashing; added provider tests for missing key + auth header injection.
+  - Vercel (v0): provider auth parity fix — API key now loads at request time via auth fetch wrapper; missing key throws `LoadAPIKeyError` instead of crashing; added provider test for missing key.
   - Alibaba: port the upstream `@ai-sdk/alibaba` provider (Qwen chat + Wan video generation) including thinking mode, prompt caching (`cacheControl`), tool calling + streaming SSE mapping, and video polling, with end-to-end Swift tests.
   - xAI: add upstream parity for `grok-imagine-video` (generations/edits request mapping, polling behavior, edit-mode warnings, headers/metadata) with Swift tests.
   - xAI: add upstream parity for Responses API (`/responses`) + server-side tools, replace image generation with dedicated `XAIImageModel` (URL download behavior + provider options + metadata), and load API key lazily with request-time `LoadAPIKeyError` (no `fatalError`) + tests.

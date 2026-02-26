@@ -169,6 +169,67 @@ struct OpenAIProviderOptionsParsingTests {
         #expect(parsed?.maxToolCalls == 3.5)
     }
 
+    @Test("responses options allow include values from provider schema")
+    func responsesOptionsAllowProviderIncludeValues() async throws {
+        let providerOptions: SharedV3ProviderOptions = [
+            "openai": [
+                "include": .array([
+                    .string("reasoning.encrypted_content"),
+                    .string("file_search_call.results"),
+                    .string("message.output_text.logprobs")
+                ])
+            ]
+        ]
+
+        let parsed: OpenAIResponsesProviderOptions? = try await parseProviderOptions(
+            provider: "openai",
+            providerOptions: providerOptions,
+            schema: openAIResponsesProviderOptionsSchema
+        )
+
+        #expect(parsed?.include == [
+            .reasoningEncryptedContent,
+            .fileSearchCallResults,
+            .messageOutputTextLogprobs
+        ])
+    }
+
+    @Test("responses options reject include values outside provider schema")
+    func responsesOptionsRejectUnsupportedIncludeValues() async throws {
+        let providerOptions: SharedV3ProviderOptions = [
+            "openai": [
+                "include": .array([
+                    .string("web_search_call.action.sources")
+                ])
+            ]
+        ]
+
+        do {
+            let _: OpenAIResponsesProviderOptions? = try await parseProviderOptions(
+                provider: "openai",
+                providerOptions: providerOptions,
+                schema: openAIResponsesProviderOptionsSchema
+            )
+            Issue.record("Expected InvalidArgumentError")
+        } catch let error as InvalidArgumentError {
+            #expect(error.argument == "providerOptions")
+            #expect(error.message == "invalid openai provider options")
+            guard let typeError = error.cause as? TypeValidationError else {
+                Issue.record("Expected TypeValidationError as cause")
+                return
+            }
+            guard let schemaError = typeError.cause as? SchemaValidationIssuesError else {
+                Issue.record("Expected SchemaValidationIssuesError as TypeValidationError cause")
+                return
+            }
+            #expect(schemaError.vendor == "openai")
+            #expect(
+                String(describing: schemaError.issues).contains("invalid include value"),
+                "Expected include validation issue"
+            )
+        }
+    }
+
     @Test("responses options reject null systemMessageMode")
     func responsesOptionsRejectNullSystemMessageMode() async throws {
         let providerOptions: SharedV3ProviderOptions = [

@@ -1,6 +1,6 @@
 # Provider: OpenAI
 
-- Audited against upstream commit: `32be973f7f70fea5bab1fa0cb393f95db1267503`
+- Audited against upstream commit: `73d5c5920e0fea7633027fdd87374adc9ba49743`
 - Upstream package: `external/vercel-ai-sdk/packages/openai/src/**`
 - Swift implementation: `Sources/OpenAIProvider/**`
 
@@ -18,6 +18,7 @@
 - [x] `mcp_approval_request` tool-call mapping matches upstream (no extra provider metadata on emitted tool-call)
 - [x] `shell` assistant tool-result with `store=true` reconstructs `shell_call_output` (instead of `item_reference`) like upstream
 - [x] `web_search` / `web_search_preview` args + output schemas aligned with upstream discriminated unions and required `userLocation.type = approximate`
+- [x] Responses provider-options include parity: public provider-options include values are restricted to upstream schema (`reasoning.encrypted_content`, `file_search_call.results`, `message.output_text.logprobs`) while internal request/autoinclude still supports full include union
 
 ## Known gaps / TODO
 

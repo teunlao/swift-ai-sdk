@@ -6,7 +6,7 @@ public struct OpenAIOptionsFacade: Sendable {
   public init() {}
 
   public func responses(
-    include: [OpenAIResponsesIncludeValue] = [],
+    include: [OpenAIResponsesProviderOptionsIncludeValue] = [],
     serviceTier: String? = nil,
     strictJsonSchema: Bool? = nil,
     store: Bool? = nil,

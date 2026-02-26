@@ -75,24 +75,77 @@ public final class VercelProvider: ProviderV3 {
 
 private let defaultBaseURL = "https://api.v0.dev/v1"
 
+private func defaultVercelFetchFunction() -> FetchFunction {
+    { request in
+        let session = URLSession.shared
+
+        if #available(macOS 12.0, iOS 15.0, tvOS 15.0, watchOS 8.0, *) {
+            let (bytes, response) = try await session.bytes(for: request)
+            let stream = AsyncThrowingStream<Data, Error> { continuation in
+                Task {
+                    var buffer = Data()
+                    buffer.reserveCapacity(16_384)
+
+                    do {
+                        for try await byte in bytes {
+                            buffer.append(byte)
+
+                            if buffer.count >= 16_384 {
+                                continuation.yield(buffer)
+                                buffer.removeAll(keepingCapacity: true)
+                            }
+                        }
+
+                        if !buffer.isEmpty {
+                            continuation.yield(buffer)
+                        }
+
+                        continuation.finish()
+                    } catch {
+                        continuation.finish(throwing: error)
+                    }
+                }
+            }
+
+            return FetchResponse(body: .stream(stream), urlResponse: response)
+        } else {
+            let (data, response) = try await session.data(for: request)
+            return FetchResponse(body: .data(data), urlResponse: response)
+        }
+    }
+}
+
+private func createVercelAuthFetch(
+    apiKey: String?,
+    customFetch: FetchFunction?
+) -> FetchFunction {
+    let baseFetch = customFetch ?? defaultVercelFetchFunction()
+
+    return { request in
+        var modified = request
+        var headers = modified.allHTTPHeaderFields ?? [:]
+
+        let resolved = try loadAPIKey(
+            apiKey: apiKey,
+            environmentVariableName: "VERCEL_API_KEY",
+            description: "Vercel"
+        )
+
+        let hasAuthorization = headers.keys.contains { $0.lowercased() == "authorization" }
+        if !hasAuthorization {
+            headers["Authorization"] = "Bearer \(resolved)"
+            modified.allHTTPHeaderFields = headers
+        }
+
+        return try await baseFetch(modified)
+    }
+}
+
 public func createVercelProvider(settings: VercelProviderSettings = .init()) -> VercelProvider {
     let baseURL = withoutTrailingSlash(settings.baseURL) ?? defaultBaseURL
 
     let headersClosure: @Sendable () -> [String: String] = {
-        let apiKey: String
-        do {
-            apiKey = try loadAPIKey(
-                apiKey: settings.apiKey,
-                environmentVariableName: "VERCEL_API_KEY",
-                description: "Vercel"
-            )
-        } catch {
-            fatalError("Vercel API key is missing: \(error)")
-        }
-
-        var computed: [String: String?] = [
-            "Authorization": "Bearer \(apiKey)"
-        ]
+        var computed: [String: String?] = [:]
 
         if let customHeaders = settings.headers {
             for (key, value) in customHeaders {
@@ -103,6 +156,11 @@ public func createVercelProvider(settings: VercelProviderSettings = .init()) -> 
         return withUserAgentSuffix(computed, "ai-sdk/vercel/\(VERCEL_VERSION)")
     }
 
+    let fetch = createVercelAuthFetch(
+        apiKey: settings.apiKey,
+        customFetch: settings.fetch
+    )
+
     let chatFactory: @Sendable (VercelChatModelId) -> OpenAICompatibleChatLanguageModel = { modelId in
         OpenAICompatibleChatLanguageModel(
             modelId: OpenAICompatibleChatModelId(rawValue: modelId.rawValue),
@@ -110,7 +168,7 @@ public func createVercelProvider(settings: VercelProviderSettings = .init()) -> 
                 provider: "vercel.chat",
                 headers: headersClosure,
                 url: { options in "\(baseURL)\(options.path)" },
-                fetch: settings.fetch
+                fetch: fetch
             )
         )
     }
@@ -125,4 +183,3 @@ public func createVercel(settings: VercelProviderSettings = .init()) -> VercelPr
 
 /// Default Vercel provider instance (`export const vercel = createVercel()`).
 public let vercel: VercelProvider = createVercelProvider()
-

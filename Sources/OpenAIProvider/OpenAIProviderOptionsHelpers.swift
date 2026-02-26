@@ -6,7 +6,7 @@ public extension OpenAIProvider {
   /// Swift-friendly builder for OpenAI Responses provider options.
   /// Returns the same SharedV3ProviderOptions dictionary as manual construction.
   static func responsesOptions(
-    include: [OpenAIResponsesIncludeValue] = [],
+    include: [OpenAIResponsesProviderOptionsIncludeValue] = [],
     serviceTier: String? = nil,
     strictJsonSchema: Bool? = nil,
     store: Bool? = nil,
@@ -52,7 +52,7 @@ public extension OpenAIProvider {
   }
 
   func responsesOptions(
-    include: [OpenAIResponsesIncludeValue] = [],
+    include: [OpenAIResponsesProviderOptionsIncludeValue] = [],
     serviceTier: String? = nil,
     strictJsonSchema: Bool? = nil,
     store: Bool? = nil,

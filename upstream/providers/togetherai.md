@@ -1,6 +1,6 @@
 # Provider: TogetherAI
 
-- Audited against upstream commit: `f3a72bc2a0433fda9506b7c7ac1b28b4adafcfc9`
+- Audited against upstream commit: `73d5c5920e0fea7633027fdd87374adc9ba49743`
 - Upstream package: `external/vercel-ai-sdk/packages/togetherai/src/**`
 - Swift implementation: `Sources/TogetherAIProvider/**`
 
@@ -10,10 +10,11 @@
 - [x] Image request mapping (size/seed/files/providerOptions) + response decoding + errors
 - [x] Reranking request mapping + response decoding + errors
 - [x] Abort signal handling for HTTP calls
+- [x] Chat/completion/embedding provider auth parity: API key is loaded at request time (not provider creation), and missing key throws `LoadAPIKeyError` without crashing the process
 
 ## Known gaps / TODO
 
-- [ ] Chat/completion/embedding parity is mediated via `OpenAICompatibleProvider`; audit TogetherAI-specific differences vs upstream if any.
+- [ ] None known.
 
 ## Notes
 
@@ -23,4 +24,3 @@
 - Swift: `Sources/TogetherAIProvider/TogetherAIProvider.swift`
 - Swift: `Sources/TogetherAIProvider/Image/TogetherAIImageModel.swift`
 - Swift: `Sources/TogetherAIProvider/Reranking/TogetherAIRerankingModel.swift`
-

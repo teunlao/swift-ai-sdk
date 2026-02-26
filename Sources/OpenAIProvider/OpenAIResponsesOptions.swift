@@ -86,6 +86,23 @@ public enum OpenAIResponsesIncludeValue: String, CaseIterable, Sendable {
     case reasoningEncryptedContent = "reasoning.encrypted_content"
 }
 
+public enum OpenAIResponsesProviderOptionsIncludeValue: String, CaseIterable, Sendable {
+    case reasoningEncryptedContent = "reasoning.encrypted_content"
+    case fileSearchCallResults = "file_search_call.results"
+    case messageOutputTextLogprobs = "message.output_text.logprobs"
+
+    var requestIncludeValue: OpenAIResponsesIncludeValue {
+        switch self {
+        case .reasoningEncryptedContent:
+            return .reasoningEncryptedContent
+        case .fileSearchCallResults:
+            return .fileSearchCallResults
+        case .messageOutputTextLogprobs:
+            return .messageOutputTextLogprobs
+        }
+    }
+}
+
 public enum OpenAIResponsesLogprobsOption: Sendable, Equatable {
     case bool(Bool)
     case number(Double)
@@ -93,7 +110,7 @@ public enum OpenAIResponsesLogprobsOption: Sendable, Equatable {
 
 public struct OpenAIResponsesProviderOptions: Sendable, Equatable {
     public var conversation: String?
-    public var include: [OpenAIResponsesIncludeValue]?
+    public var include: [OpenAIResponsesProviderOptionsIncludeValue]?
     public var instructions: String?
     public var logprobs: OpenAIResponsesLogprobsOption?
     public var maxToolCalls: Double?
@@ -116,7 +133,7 @@ public struct OpenAIResponsesProviderOptions: Sendable, Equatable {
 
     public init(
         conversation: String? = nil,
-        include: [OpenAIResponsesIncludeValue]? = nil,
+        include: [OpenAIResponsesProviderOptionsIncludeValue]? = nil,
         instructions: String? = nil,
         logprobs: OpenAIResponsesLogprobsOption? = nil,
         maxToolCalls: Double? = nil,
@@ -235,7 +252,7 @@ private let openAIResponsesProviderOptionsJSONSchema: JSONValue = .object([
     ])
 ])
 
-private let openAIResponsesProviderOptionIncludeValues: [OpenAIResponsesIncludeValue] = [
+private let openAIResponsesProviderOptionIncludeValues: [OpenAIResponsesProviderOptionsIncludeValue] = [
     .reasoningEncryptedContent,
     .fileSearchCallResults,
     .messageOutputTextLogprobs
@@ -274,11 +291,11 @@ private func parseOpenAIResponsesProviderOptions(dict: [String: JSONValue]) thro
             throw TypeValidationError.wrap(value: includeValue, cause: SchemaValidationIssuesError(vendor: "openai", issues: "include must be an array"))
         }
 
-        var include: [OpenAIResponsesIncludeValue] = []
+        var include: [OpenAIResponsesProviderOptionsIncludeValue] = []
         include.reserveCapacity(includeArray.count)
         for entry in includeArray {
             guard case .string(let raw) = entry,
-                  let parsed = OpenAIResponsesIncludeValue(rawValue: raw),
+                  let parsed = OpenAIResponsesProviderOptionsIncludeValue(rawValue: raw),
                   openAIResponsesProviderOptionIncludeValues.contains(parsed) else {
                 throw TypeValidationError.wrap(value: entry, cause: SchemaValidationIssuesError(vendor: "openai", issues: "invalid include value"))
             }
