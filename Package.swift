@@ -145,6 +145,7 @@ let package = Package(
 	        .testTarget(name: "AlibabaProviderTests", dependencies: ["AlibabaProvider", "AISDKProvider", "AISDKProviderUtils"]),
 	        .testTarget(name: "KlingAIProviderTests", dependencies: ["KlingAIProvider", "AISDKProvider", "AISDKProviderUtils"]),
 	        .testTarget(name: "AnthropicProviderTests", dependencies: ["AnthropicProvider", "AISDKProvider", "AISDKProviderUtils"], resources: [.copy("Fixtures")]),
+	        .testTarget(name: "AmazonBedrockProviderTests", dependencies: ["AmazonBedrockProvider", "AISDKProvider", "AISDKProviderUtils"]),
 	        .testTarget(name: "GoogleProviderTests", dependencies: ["GoogleProvider", "AISDKProvider", "AISDKProviderUtils"]),
 	        .testTarget(name: "GoogleVertexProviderTests", dependencies: ["GoogleVertexProvider", "AISDKProvider", "AISDKProviderUtils"]),
 	        .testTarget(name: "GatewayProviderTests", dependencies: ["GatewayProvider", "AISDKProvider", "AISDKProviderUtils"]),

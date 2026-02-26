@@ -58,6 +58,7 @@ For source-of-truth code, always follow the commits and tests.
   - Alibaba: port the upstream `@ai-sdk/alibaba` provider (Qwen chat + Wan video generation) including thinking mode, prompt caching (`cacheControl`), tool calling + streaming SSE mapping, and video polling, with end-to-end Swift tests.
   - xAI: add upstream parity for `grok-imagine-video` (generations/edits request mapping, polling behavior, edit-mode warnings, headers/metadata) with Swift tests.
   - xAI: add upstream parity for Responses API (`/responses`) + server-side tools, replace image generation with dedicated `XAIImageModel` (URL download behavior + provider options + metadata), and load API key lazily with request-time `LoadAPIKeyError` (no `fatalError`) + tests.
+  - Amazon Bedrock: embedding + image model parity (Cohere/Nova/Titan embeddings; Nova Canvas image gen/editing) + SigV4 fetch coverage, strict response validation, `encodeURIComponent` URL parity, and provider-level tests.
   - xAI: align chat/completions parity (request mapping, usage conversion incl cached+reasoning tokens, and streaming JSON error handling/block ordering) + tests.
 
 - 2026-02-25

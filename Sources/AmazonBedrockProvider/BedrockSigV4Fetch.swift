@@ -8,7 +8,7 @@ import AISDKProviderUtils
 //=== Upstream Reference ====================================================//
 //===----------------------------------------------------------------------===//
 // Ported from packages/amazon-bedrock/src/bedrock-sigv4-fetch.ts
-// Upstream commit: 77db222ee
+// Upstream commit: 73d5c5920
 //===----------------------------------------------------------------------===//
 
 public struct BedrockCredentials: Sendable {
@@ -125,11 +125,13 @@ public func createApiKeyFetchFunction(
             "ai-sdk/amazon-bedrock/\(AMAZON_BEDROCK_VERSION)",
             getRuntimeEnvironmentUserAgent()
         )
-        headers["Authorization"] = "Bearer \(apiKey)"
 
-        for (key, value) in headers {
+        // Ensure the API key always wins over any existing Authorization header.
+        for (key, value) in headers where key.lowercased() != "authorization" {
             mutableRequest.setValue(value, forHTTPHeaderField: key)
         }
+
+        mutableRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
 
         return try await underlyingFetch(mutableRequest)
     }

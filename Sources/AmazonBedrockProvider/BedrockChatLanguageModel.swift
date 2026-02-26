@@ -485,7 +485,7 @@ public final class BedrockChatLanguageModel: LanguageModelV3 {
     // MARK: - Helpers
 
     private func chatURL(for modelId: String, path: String) -> String {
-        let encoded = modelId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? modelId
+        let encoded = bedrockEncodeURIComponent(modelId)
         return "\(config.baseURL())/model/\(encoded)/\(path)"
     }
 
