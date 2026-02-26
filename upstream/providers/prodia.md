@@ -12,6 +12,7 @@
 - [x] Multipart parser edge-cases: LF-only line endings and `content-type` boundary with extra params.
 - [x] Provider metadata mapping from job result
 - [x] Error mapping (detail/message variants) + invalid size warning
+- [x] Auth behavior: missing `PRODIA_TOKEN` now throws `LoadAPIKeyError` at request time (no creation-time crash), and does not perform network calls before failing.
 
 ## Known gaps / TODO
 
