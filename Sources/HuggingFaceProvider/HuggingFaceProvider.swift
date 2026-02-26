@@ -79,24 +79,77 @@ public final class HuggingFaceProvider: ProviderV3 {
     }
 }
 
-public func createHuggingFaceProvider(settings: HuggingFaceProviderSettings = .init()) -> HuggingFaceProvider {
-    let baseURL = withoutTrailingSlash(settings.baseURL) ?? "https://router.huggingface.co/v1"
+private func defaultHuggingFaceFetchFunction() -> FetchFunction {
+    { request in
+        let session = URLSession.shared
 
-    let headersClosure: @Sendable () -> [String: String?] = {
-        let apiKey: String
-        do {
-            apiKey = try loadAPIKey(
-                apiKey: settings.apiKey,
+        if #available(macOS 12.0, iOS 15.0, tvOS 15.0, watchOS 8.0, *) {
+            let (bytes, response) = try await session.bytes(for: request)
+            let stream = AsyncThrowingStream<Data, Error> { continuation in
+                Task {
+                    var buffer = Data()
+                    buffer.reserveCapacity(16_384)
+
+                    do {
+                        for try await byte in bytes {
+                            buffer.append(byte)
+
+                            if buffer.count >= 16_384 {
+                                continuation.yield(buffer)
+                                buffer.removeAll(keepingCapacity: true)
+                            }
+                        }
+
+                        if !buffer.isEmpty {
+                            continuation.yield(buffer)
+                        }
+
+                        continuation.finish()
+                    } catch {
+                        continuation.finish(throwing: error)
+                    }
+                }
+            }
+
+            return FetchResponse(body: .stream(stream), urlResponse: response)
+        } else {
+            let (data, response) = try await session.data(for: request)
+            return FetchResponse(body: .data(data), urlResponse: response)
+        }
+    }
+}
+
+private func createHuggingFaceAuthFetch(apiKey: String?, customFetch: FetchFunction?) -> FetchFunction {
+    let baseFetch = customFetch ?? defaultHuggingFaceFetchFunction()
+
+    return { request in
+        var modified = request
+        var headers = modified.allHTTPHeaderFields ?? [:]
+
+        let hasAuthorization = headers.keys.contains { $0.lowercased() == "authorization" }
+        if !hasAuthorization {
+            let resolved = try loadAPIKey(
+                apiKey: apiKey,
                 environmentVariableName: "HUGGINGFACE_API_KEY",
                 description: "Hugging Face"
             )
-        } catch {
-            fatalError("Hugging Face API key is missing: \(error)")
+            headers["Authorization"] = "Bearer \(resolved)"
+            modified.allHTTPHeaderFields = headers
         }
 
-        var baseHeaders: [String: String?] = [
-            "Authorization": "Bearer \(apiKey)"
-        ]
+        return try await baseFetch(modified)
+    }
+}
+
+public func createHuggingFaceProvider(settings: HuggingFaceProviderSettings = .init()) -> HuggingFaceProvider {
+    let baseURL = withoutTrailingSlash(settings.baseURL) ?? "https://router.huggingface.co/v1"
+    let fetch = createHuggingFaceAuthFetch(
+        apiKey: settings.apiKey,
+        customFetch: settings.fetch
+    )
+
+    let headersClosure: @Sendable () -> [String: String?] = {
+        var baseHeaders: [String: String?] = [:]
 
         if let customHeaders = settings.headers {
             for (key, value) in customHeaders {
@@ -117,13 +170,18 @@ public func createHuggingFaceProvider(settings: HuggingFaceProviderSettings = .i
                     "\(baseURL)\(options.path)"
                 },
                 headers: headersClosure,
-                fetch: settings.fetch,
+                fetch: fetch,
                 generateId: settings.generateId
             )
         )
     }
 
     return HuggingFaceProvider(responsesFactory: responsesFactory)
+}
+
+/// Alias matching upstream naming (`createHuggingFace`).
+public func createHuggingFace(settings: HuggingFaceProviderSettings = .init()) -> HuggingFaceProvider {
+    createHuggingFaceProvider(settings: settings)
 }
 
 public let huggingface = createHuggingFaceProvider()
