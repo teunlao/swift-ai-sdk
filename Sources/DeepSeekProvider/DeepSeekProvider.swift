@@ -62,24 +62,77 @@ public final class DeepSeekProvider: ProviderV3 {
     }
 }
 
-public func createDeepSeekProvider(settings: DeepSeekProviderSettings = .init()) -> DeepSeekProvider {
-    let baseURL = withoutTrailingSlash(settings.baseURL) ?? "https://api.deepseek.com/v1"
+private func defaultDeepSeekFetchFunction() -> FetchFunction {
+    { request in
+        let session = URLSession.shared
 
-    let headersClosure: @Sendable () -> [String: String] = {
-        let apiKey: String
-        do {
-            apiKey = try loadAPIKey(
-                apiKey: settings.apiKey,
-                environmentVariableName: "DEEPSEEK_API_KEY",
-                description: "DeepSeek API key"
-            )
-        } catch {
-            fatalError("DeepSeek API key is missing: \(error)")
+        if #available(macOS 12.0, iOS 15.0, tvOS 15.0, watchOS 8.0, *) {
+            let (bytes, response) = try await session.bytes(for: request)
+            let stream = AsyncThrowingStream<Data, Error> { continuation in
+                Task {
+                    var buffer = Data()
+                    buffer.reserveCapacity(16_384)
+
+                    do {
+                        for try await byte in bytes {
+                            buffer.append(byte)
+
+                            if buffer.count >= 16_384 {
+                                continuation.yield(buffer)
+                                buffer.removeAll(keepingCapacity: true)
+                            }
+                        }
+
+                        if !buffer.isEmpty {
+                            continuation.yield(buffer)
+                        }
+
+                        continuation.finish()
+                    } catch {
+                        continuation.finish(throwing: error)
+                    }
+                }
+            }
+
+            return FetchResponse(body: .stream(stream), urlResponse: response)
+        } else {
+            let (data, response) = try await session.data(for: request)
+            return FetchResponse(body: .data(data), urlResponse: response)
+        }
+    }
+}
+
+private func createDeepSeekAuthFetch(
+    apiKey: String?,
+    customFetch: FetchFunction?
+) -> FetchFunction {
+    let baseFetch = customFetch ?? defaultDeepSeekFetchFunction()
+
+    return { request in
+        var modified = request
+        var headers = modified.allHTTPHeaderFields ?? [:]
+
+        let resolved = try loadAPIKey(
+            apiKey: apiKey,
+            environmentVariableName: "DEEPSEEK_API_KEY",
+            description: "DeepSeek API key"
+        )
+
+        let hasAuthorization = headers.keys.contains { $0.lowercased() == "authorization" }
+        if !hasAuthorization {
+            headers["Authorization"] = "Bearer \(resolved)"
+            modified.allHTTPHeaderFields = headers
         }
 
-        var headers: [String: String?] = [
-            "Authorization": "Bearer \(apiKey)"
-        ]
+        return try await baseFetch(modified)
+    }
+}
+
+public func createDeepSeekProvider(settings: DeepSeekProviderSettings = .init()) -> DeepSeekProvider {
+    let baseURL = withoutTrailingSlash(settings.baseURL) ?? "https://api.deepseek.com"
+
+    let headersClosure: @Sendable () -> [String: String] = {
+        var headers: [String: String?] = [:]
 
         if let customHeaders = settings.headers {
             for (key, value) in customHeaders {
@@ -91,6 +144,11 @@ public func createDeepSeekProvider(settings: DeepSeekProviderSettings = .init())
         return withUA
     }
 
+    let fetch = createDeepSeekAuthFetch(
+        apiKey: settings.apiKey,
+        customFetch: settings.fetch
+    )
+
     let chatFactory: @Sendable (DeepSeekChatModelId) -> OpenAICompatibleChatLanguageModel = { modelId in
         OpenAICompatibleChatLanguageModel(
             modelId: OpenAICompatibleChatModelId(rawValue: modelId.rawValue),
@@ -98,7 +156,7 @@ public func createDeepSeekProvider(settings: DeepSeekProviderSettings = .init())
                 provider: "deepseek.chat",
                 headers: headersClosure,
                 url: { options in "\(baseURL)\(options.path)" },
-                fetch: settings.fetch,
+                fetch: fetch,
                 metadataExtractor: deepSeekMetadataExtractor
             )
         )

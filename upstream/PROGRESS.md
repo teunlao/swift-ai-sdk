@@ -30,6 +30,9 @@ For source-of-truth code, always follow the commits and tests.
 ### Unreleased (main)
 
 - 2026-02-26
+  - Mistral: provider auth parity fix — API key now loads at request time via auth fetch wrapper, missing key throws `LoadAPIKeyError` instead of crashing; added upstream alias `createMistral(...)` and provider-level regression tests.
+  - Groq: provider auth parity fix — API key now loads at request time via auth fetch wrapper, missing key throws `LoadAPIKeyError` instead of crashing; added `createGroq(...)` alias for upstream API parity and provider-level regression tests.
+  - DeepSeek: provider auth/baseURL parity fix — default base URL aligned to upstream (`https://api.deepseek.com`), API key now loads at request time via auth fetch wrapper, and missing key throws `LoadAPIKeyError` instead of crashing; added regression tests.
   - OpenAI Responses: provider-options `include` parity tightened to upstream schema-only values (`reasoning.encrypted_content`, `file_search_call.results`, `message.output_text.logprobs`) while preserving internal auto-includes (`web_search_call.action.sources`, `code_interpreter_call.outputs`) for request mapping; added parsing regression tests.
   - TogetherAI: provider auth parity fix — API key now loads at request time via auth fetch wrapper; missing key throws `LoadAPIKeyError` instead of crashing; added provider tests for missing key + auth header injection.
   - Vercel (v0): provider auth parity fix — API key now loads at request time via auth fetch wrapper; missing key throws `LoadAPIKeyError` instead of crashing; added provider test for missing key.
