@@ -31,6 +31,14 @@ struct ReplicateProviderTests {
         #expect(type(of: model) == ReplicateImageModel.self)
     }
 
+    @Test("creates a video model instance")
+    func createsVideoModelInstance() throws {
+        let provider = createReplicate(settings: ReplicateProviderSettings(apiToken: "test-token"))
+        let model = provider.video("minimax/video-01")
+        #expect(type(of: model) == ReplicateVideoModel.self)
+        #expect(model.provider == "replicate.video")
+    }
+
     @Suite("auth behavior", .serialized)
     struct AuthBehaviorTests {
         @Test("missing API token throws LoadAPIKeyError at request time")

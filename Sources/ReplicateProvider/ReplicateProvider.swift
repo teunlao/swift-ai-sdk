@@ -32,9 +32,14 @@ public struct ReplicateProviderSettings: Sendable {
 
 public final class ReplicateProvider: ProviderV3 {
     private let imageFactory: @Sendable (ReplicateImageModelId) -> ReplicateImageModel
+    private let videoFactory: @Sendable (ReplicateVideoModelId) -> ReplicateVideoModel
 
-    init(imageFactory: @escaping @Sendable (ReplicateImageModelId) -> ReplicateImageModel) {
+    init(
+        imageFactory: @escaping @Sendable (ReplicateImageModelId) -> ReplicateImageModel,
+        videoFactory: @escaping @Sendable (ReplicateVideoModelId) -> ReplicateVideoModel
+    ) {
         self.imageFactory = imageFactory
+        self.videoFactory = videoFactory
     }
 
     // MARK: ProviderV3
@@ -50,6 +55,10 @@ public final class ReplicateProvider: ProviderV3 {
         imageFactory(ReplicateImageModelId(rawValue: modelId))
     }
 
+    public func videoModel(modelId: String) throws -> (any VideoModelV3)? {
+        videoFactory(ReplicateVideoModelId(rawValue: modelId))
+    }
+
     // MARK: Convenience
     public func image(_ modelId: ReplicateImageModelId) -> ReplicateImageModel {
         imageFactory(modelId)
@@ -57,6 +66,14 @@ public final class ReplicateProvider: ProviderV3 {
 
     public func imageModel(_ modelId: ReplicateImageModelId) -> ReplicateImageModel {
         imageFactory(modelId)
+    }
+
+    public func video(_ modelId: ReplicateVideoModelId) -> ReplicateVideoModel {
+        videoFactory(modelId)
+    }
+
+    public func videoModel(_ modelId: ReplicateVideoModelId) -> ReplicateVideoModel {
+        videoFactory(modelId)
     }
 }
 
@@ -154,7 +171,22 @@ public func createReplicate(settings: ReplicateProviderSettings = .init()) -> Re
         )
     }
 
-    return ReplicateProvider(imageFactory: factory)
+    let videoFactory: @Sendable (ReplicateVideoModelId) -> ReplicateVideoModel = { modelId in
+        ReplicateVideoModel(
+            modelId,
+            config: ReplicateVideoModelConfig(
+                provider: "replicate.video",
+                baseURL: baseURL,
+                headers: headersClosure,
+                fetch: fetch
+            )
+        )
+    }
+
+    return ReplicateProvider(
+        imageFactory: factory,
+        videoFactory: videoFactory
+    )
 }
 
 /// Default Replicate provider instance.
