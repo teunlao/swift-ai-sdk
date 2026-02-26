@@ -1831,4 +1831,103 @@ struct AzureProviderTests {
         #expect(input.count == 1)
         #expect((requestBody["include"] as? [String]) == ["file_search_call.results"])
     }
+
+    @Suite("auth behavior", .serialized)
+    struct AuthBehaviorTests {
+        @Test("missing API key throws LoadAPIKeyError at request time")
+        func missingAPIKeyThrowsAtRequestTime() async throws {
+            actor RequestCapture {
+                var count: Int = 0
+                func increment() { count += 1 }
+                func value() -> Int { count }
+            }
+
+            let originalAPIKey = getenv("AZURE_API_KEY").flatMap { String(validatingCString: $0) }
+            defer {
+                if let originalAPIKey {
+                    setenv("AZURE_API_KEY", originalAPIKey, 1)
+                } else {
+                    unsetenv("AZURE_API_KEY")
+                }
+            }
+
+            unsetenv("AZURE_API_KEY")
+
+            let capture = RequestCapture()
+            let fetch: FetchFunction = { request in
+                await capture.increment()
+                let response = HTTPURLResponse(
+                    url: request.url ?? URL(string: "https://test-resource.openai.azure.com/openai/v1/chat/completions?api-version=v1")!,
+                    statusCode: 200,
+                    httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "application/json"]
+                )!
+                return FetchResponse(body: .data(Data("{}".utf8)), urlResponse: response)
+            }
+
+            let provider = createAzure(settings: AzureProviderSettings(
+                resourceName: "test-resource",
+                fetch: fetch
+            ))
+
+            do {
+                _ = try await provider("test-deployment").doGenerate(options: LanguageModelV3CallOptions(prompt: TEST_PROMPT))
+                Issue.record("Expected missing API key error")
+            } catch let error as LoadAPIKeyError {
+                #expect(error.message.contains("AZURE_API_KEY environment variable"))
+            } catch {
+                Issue.record("Expected LoadAPIKeyError, got: \(error)")
+            }
+
+            #expect(await capture.value() == 0)
+        }
+
+        @Test("missing resourceName throws LoadSettingError at request time when baseURL is not set")
+        func missingResourceNameThrowsAtRequestTime() async throws {
+            actor RequestCapture {
+                var count: Int = 0
+                func increment() { count += 1 }
+                func value() -> Int { count }
+            }
+
+            let originalResourceName = getenv("AZURE_RESOURCE_NAME").flatMap { String(validatingCString: $0) }
+            defer {
+                if let originalResourceName {
+                    setenv("AZURE_RESOURCE_NAME", originalResourceName, 1)
+                } else {
+                    unsetenv("AZURE_RESOURCE_NAME")
+                }
+            }
+
+            unsetenv("AZURE_RESOURCE_NAME")
+
+            let capture = RequestCapture()
+            let fetch: FetchFunction = { request in
+                await capture.increment()
+                let response = HTTPURLResponse(
+                    url: request.url ?? URL(string: "https://openai.azure.com/openai/v1/chat/completions?api-version=v1")!,
+                    statusCode: 200,
+                    httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "application/json"]
+                )!
+                return FetchResponse(body: .data(Data("{}".utf8)), urlResponse: response)
+            }
+
+            let provider = createAzure(settings: AzureProviderSettings(
+                apiKey: "test-api-key",
+                fetch: fetch
+            ))
+
+            do {
+                _ = try await provider("test-deployment").doGenerate(options: LanguageModelV3CallOptions(prompt: TEST_PROMPT))
+                Issue.record("Expected missing resourceName error")
+            } catch let error as LoadSettingError {
+                #expect(error.message.contains("AZURE_RESOURCE_NAME environment variable"))
+            } catch {
+                Issue.record("Expected LoadSettingError, got: \(error)")
+            }
+
+            #expect(await capture.value() == 0)
+        }
+    }
 }

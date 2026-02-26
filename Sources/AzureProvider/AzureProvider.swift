@@ -136,21 +136,89 @@ public final class AzureProvider: ProviderV3 {
 }
 
 public func createAzureProvider(settings: AzureProviderSettings = .init()) -> AzureProvider {
-    let headersClosure: @Sendable () -> [String: String?] = {
-        let apiKey: String
-        do {
-            apiKey = try loadAPIKey(
-                apiKey: settings.apiKey,
-                environmentVariableName: "AZURE_API_KEY",
-                description: "Azure OpenAI"
-            )
-        } catch {
-            fatalError("Azure OpenAI API key is missing: \(error)")
-        }
+    func defaultAzureFetchFunction() -> FetchFunction {
+        { request in
+            let session = URLSession.shared
 
-        var baseHeaders: [String: String?] = [
-            "api-key": apiKey
-        ]
+            if #available(macOS 12.0, iOS 15.0, tvOS 15.0, watchOS 8.0, *) {
+                let (bytes, response) = try await session.bytes(for: request)
+                let stream = AsyncThrowingStream<Data, Error> { continuation in
+                    Task {
+                        var buffer = Data()
+                        buffer.reserveCapacity(16_384)
+
+                        do {
+                            for try await byte in bytes {
+                                buffer.append(byte)
+
+                                if buffer.count >= 16_384 {
+                                    continuation.yield(buffer)
+                                    buffer.removeAll(keepingCapacity: true)
+                                }
+                            }
+
+                            if !buffer.isEmpty {
+                                continuation.yield(buffer)
+                            }
+
+                            continuation.finish()
+                        } catch {
+                            continuation.finish(throwing: error)
+                        }
+                    }
+                }
+
+                return FetchResponse(body: .stream(stream), urlResponse: response)
+            } else {
+                let (data, response) = try await session.data(for: request)
+                return FetchResponse(body: .data(data), urlResponse: response)
+            }
+        }
+    }
+
+    func createAzureAuthFetch(
+        apiKey: String?,
+        resourceName: String?,
+        baseURL: String?,
+        customFetch: FetchFunction?
+    ) -> FetchFunction {
+        let baseFetch = customFetch ?? defaultAzureFetchFunction()
+
+        return { request in
+            let requiresResourceName = {
+                guard let baseURL else { return true }
+                return baseURL.isEmpty
+            }()
+
+            if requiresResourceName {
+                _ = try loadSetting(
+                    settingValue: resourceName,
+                    environmentVariableName: "AZURE_RESOURCE_NAME",
+                    settingName: "resourceName",
+                    description: "Azure OpenAI resource name"
+                )
+            }
+
+            var modified = request
+            var headers = modified.allHTTPHeaderFields ?? [:]
+
+            let hasAPIKey = headers.keys.contains { $0.lowercased() == "api-key" }
+            if !hasAPIKey {
+                let resolved = try loadAPIKey(
+                    apiKey: apiKey,
+                    environmentVariableName: "AZURE_API_KEY",
+                    description: "Azure OpenAI"
+                )
+                headers["api-key"] = resolved
+                modified.allHTTPHeaderFields = headers
+            }
+
+            return try await baseFetch(modified)
+        }
+    }
+
+    let headersClosure: @Sendable () -> [String: String?] = {
+        var baseHeaders: [String: String?] = [:]
 
         if let customHeaders = settings.headers {
             for (key, value) in customHeaders {
@@ -170,19 +238,18 @@ public func createAzureProvider(settings: AzureProviderSettings = .init()) -> Az
             return withoutTrailingSlash(base) ?? base
         }
 
-        let resourceName: String
         do {
-            resourceName = try loadSetting(
+            let resourceName = try loadSetting(
                 settingValue: settings.resourceName,
                 environmentVariableName: "AZURE_RESOURCE_NAME",
                 settingName: "resourceName",
                 description: "Azure OpenAI resource name"
             )
+            return "https://\(resourceName).openai.azure.com/openai"
         } catch {
-            fatalError("Azure OpenAI resource name is missing: \(error)")
+            // Missing resource name is validated at request-time in the auth fetch wrapper.
+            return "https://openai.azure.com/openai"
         }
-
-        return "https://\(resourceName).openai.azure.com/openai"
     }
 
     let urlBuilder: @Sendable (OpenAIConfig.URLOptions) -> String = { options in
@@ -209,7 +276,12 @@ public func createAzureProvider(settings: AzureProviderSettings = .init()) -> Az
     }
 
     let headers = headersClosure
-    let fetch = settings.fetch
+    let fetch = createAzureAuthFetch(
+        apiKey: settings.apiKey,
+        resourceName: settings.resourceName,
+        baseURL: settings.baseURL,
+        customFetch: settings.fetch
+    )
 
     let chatConfig = OpenAIConfig(
         provider: "azure.chat",
