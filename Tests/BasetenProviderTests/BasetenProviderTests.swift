@@ -674,4 +674,77 @@ struct BasetenProviderTests {
         let model2 = try provider("test-model")
         #expect(model2 is OpenAICompatibleChatLanguageModel)
     }
+
+    @Suite("auth behavior", .serialized)
+    struct AuthBehaviorTests {
+        @Test("missing API key throws LoadAPIKeyError at request time")
+        func missingAPIKeyThrowsAtRequestTime() async throws {
+            actor RequestCapture {
+                var request: URLRequest?
+                func store(_ request: URLRequest) { self.request = request }
+                func value() -> URLRequest? { request }
+            }
+
+            let original = getenv("BASETEN_API_KEY").flatMap { String(validatingCString: $0) }
+            defer {
+                if let original {
+                    setenv("BASETEN_API_KEY", original, 1)
+                } else {
+                    unsetenv("BASETEN_API_KEY")
+                }
+            }
+
+            unsetenv("BASETEN_API_KEY")
+
+            let capture = RequestCapture()
+            let responseJSON: [String: Any] = [
+                "id": "test-id",
+                "object": "chat.completion",
+                "created": 1234567890,
+                "model": "test-model",
+                "choices": [[
+                    "index": 0,
+                    "message": [
+                        "role": "assistant",
+                        "content": "Hello"
+                    ],
+                    "finish_reason": "stop"
+                ]],
+                "usage": [
+                    "prompt_tokens": 10,
+                    "completion_tokens": 5,
+                    "total_tokens": 15
+                ]
+            ]
+            let responseData = BasetenProviderTests.encodeJSON(responseJSON)
+            let response = HTTPURLResponse(
+                url: URL(string: "https://inference.baseten.co/v1/chat/completions")!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+
+            let fetch: FetchFunction = { request in
+                await capture.store(request)
+                return FetchResponse(body: .data(responseData), urlResponse: response)
+            }
+
+            let provider = createBaseten(settings: BasetenProviderSettings(fetch: fetch))
+            let model = try provider.chatModel(modelId: "test-model")
+            let prompt: LanguageModelV3Prompt = [
+                .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
+            ]
+
+            do {
+                _ = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: prompt))
+                Issue.record("Expected missing API key error")
+            } catch let error as LoadAPIKeyError {
+                #expect(error.message.contains("BASETEN_API_KEY environment variable"))
+            } catch {
+                Issue.record("Expected LoadAPIKeyError, got: \(error)")
+            }
+
+            #expect(await capture.value() == nil)
+        }
+    }
 }

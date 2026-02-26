@@ -81,24 +81,76 @@ public final class BasetenProvider: ProviderV3 {
 
 private let defaultBasetenBaseURL = "https://inference.baseten.co/v1"
 
+private func defaultBasetenFetchFunction() -> FetchFunction {
+    { request in
+        let session = URLSession.shared
+
+        if #available(macOS 12.0, iOS 15.0, tvOS 15.0, watchOS 8.0, *) {
+            let (bytes, response) = try await session.bytes(for: request)
+            let stream = AsyncThrowingStream<Data, Error> { continuation in
+                Task {
+                    var buffer = Data()
+                    buffer.reserveCapacity(16_384)
+
+                    do {
+                        for try await byte in bytes {
+                            buffer.append(byte)
+
+                            if buffer.count >= 16_384 {
+                                continuation.yield(buffer)
+                                buffer.removeAll(keepingCapacity: true)
+                            }
+                        }
+
+                        if !buffer.isEmpty {
+                            continuation.yield(buffer)
+                        }
+
+                        continuation.finish()
+                    } catch {
+                        continuation.finish(throwing: error)
+                    }
+                }
+            }
+
+            return FetchResponse(body: .stream(stream), urlResponse: response)
+        } else {
+            let (data, response) = try await session.data(for: request)
+            return FetchResponse(body: .data(data), urlResponse: response)
+        }
+    }
+}
+
+private func createBasetenAuthFetch(
+    apiKey: String?,
+    customFetch: FetchFunction?
+) -> FetchFunction {
+    let baseFetch = customFetch ?? defaultBasetenFetchFunction()
+
+    return { request in
+        var modified = request
+        var headers = modified.allHTTPHeaderFields ?? [:]
+
+        let hasAuthorization = headers.keys.contains { $0.lowercased() == "authorization" }
+        if !hasAuthorization {
+            let resolved = try loadAPIKey(
+                apiKey: apiKey,
+                environmentVariableName: "BASETEN_API_KEY",
+                description: "Baseten API key"
+            )
+            headers["Authorization"] = "Bearer \(resolved)"
+            modified.allHTTPHeaderFields = headers
+        }
+
+        return try await baseFetch(modified)
+    }
+}
+
 public func createBasetenProvider(settings: BasetenProviderSettings = .init()) -> BasetenProvider {
     let baseURL = withoutTrailingSlash(settings.baseURL) ?? defaultBasetenBaseURL
 
     let headersClosure: @Sendable () -> [String: String] = {
-        let apiKey: String
-        do {
-            apiKey = try loadAPIKey(
-                apiKey: settings.apiKey,
-                environmentVariableName: "BASETEN_API_KEY",
-                description: "Baseten API key"
-            )
-        } catch {
-            fatalError("Baseten API key is missing: \(error)")
-        }
-
-        var baseHeaders: [String: String?] = [
-            "Authorization": "Bearer \(apiKey)"
-        ]
+        var baseHeaders: [String: String?] = [:]
 
         if let customHeaders = settings.headers {
             for (key, value) in customHeaders {
@@ -122,7 +174,10 @@ public func createBasetenProvider(settings: BasetenProviderSettings = .init()) -
         }
     }
 
-    let fetch = settings.fetch
+    let fetch = createBasetenAuthFetch(
+        apiKey: settings.apiKey,
+        customFetch: settings.fetch
+    )
 
     let chatFactory: @Sendable (BasetenChatModelId?) throws -> OpenAICompatibleChatLanguageModel = { modelId in
         let customURL = settings.modelURL
