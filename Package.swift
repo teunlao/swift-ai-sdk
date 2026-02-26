@@ -154,6 +154,7 @@ let package = Package(
         .testTarget(name: "DeepInfraProviderTests", dependencies: ["DeepInfraProvider", "AISDKProvider", "AISDKProviderUtils", "OpenAICompatibleProvider"]),
         .testTarget(name: "DeepgramProviderTests", dependencies: ["DeepgramProvider", "AISDKProvider", "AISDKProviderUtils"]),
         .testTarget(name: "ElevenLabsProviderTests", dependencies: ["ElevenLabsProvider", "AISDKProvider", "AISDKProviderUtils"]),
+        .testTarget(name: "GladiaProviderTests", dependencies: ["GladiaProvider", "AISDKProvider", "AISDKProviderUtils"]),
         .testTarget(name: "AssemblyAIProviderTests", dependencies: ["AssemblyAIProvider", "AISDKProvider", "AISDKProviderUtils"]),
         .testTarget(name: "XAIProviderTests", dependencies: ["XAIProvider", "AISDKProvider", "AISDKProviderUtils"]),
         .testTarget(name: "AzureProviderTests", dependencies: ["AzureProvider", "AISDKProvider", "AISDKProviderUtils", "OpenAIProvider"]),
