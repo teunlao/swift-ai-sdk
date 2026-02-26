@@ -13,6 +13,7 @@ public struct OpenAICompatibleChatConfig: Sendable {
     public let supportsStructuredOutputs: Bool
     public let supportedUrls: (@Sendable () async throws -> [String: [NSRegularExpression]])?
     public let transformRequestBody: (@Sendable (_ body: [String: JSONValue]) -> [String: JSONValue])?
+    public let usagePostprocessor: (@Sendable (_ usage: LanguageModelV3Usage) -> LanguageModelV3Usage)?
 
     public init(
         provider: String,
@@ -24,7 +25,8 @@ public struct OpenAICompatibleChatConfig: Sendable {
         metadataExtractor: OpenAICompatibleMetadataExtractor? = nil,
         supportsStructuredOutputs: Bool = false,
         supportedUrls: (@Sendable () async throws -> [String: [NSRegularExpression]])? = nil,
-        transformRequestBody: (@Sendable (_ body: [String: JSONValue]) -> [String: JSONValue])? = nil
+        transformRequestBody: (@Sendable (_ body: [String: JSONValue]) -> [String: JSONValue])? = nil,
+        usagePostprocessor: (@Sendable (_ usage: LanguageModelV3Usage) -> LanguageModelV3Usage)? = nil
     ) {
         self.provider = provider
         self.headers = headers
@@ -36,6 +38,7 @@ public struct OpenAICompatibleChatConfig: Sendable {
         self.supportsStructuredOutputs = supportsStructuredOutputs
         self.supportedUrls = supportedUrls
         self.transformRequestBody = transformRequestBody
+        self.usagePostprocessor = usagePostprocessor
     }
 }
 
@@ -114,7 +117,8 @@ public final class OpenAICompatibleChatLanguageModel: LanguageModelV3 {
 
         let rawJSON = try decodeJSONValue(from: response.rawValue)
         let usageRaw = extractUsage(from: rawJSON)
-        let usage = mapUsage(response.value.usage, raw: usageRaw)
+        let baseUsage = mapUsage(response.value.usage, raw: usageRaw)
+        let usage = config.usagePostprocessor?(baseUsage) ?? baseUsage
         let rawFinishReason = choice.finishReason
         let finishReason = LanguageModelV3FinishReason(
             unified: mapOpenAICompatibleFinishReason(rawFinishReason),
@@ -287,7 +291,8 @@ public final class OpenAICompatibleChatLanguageModel: LanguageModelV3 {
                     }
                     let finalMetadata = providerMetadata.isEmpty ? nil : providerMetadata
 
-                    continuation.yield(.finish(finishReason: finishReason, usage: usage, providerMetadata: finalMetadata))
+                    let finalUsage = config.usagePostprocessor?(usage) ?? usage
+                    continuation.yield(.finish(finishReason: finishReason, usage: finalUsage, providerMetadata: finalMetadata))
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)

@@ -9,6 +9,7 @@
 - [x] Provider factory naming parity: added upstream alias `createDeepInfra(...)` (while keeping `createDeepInfraProvider(...)`).
 - [x] Provider auth parity: API key now resolves at request time via `loadAPIKey`, missing key throws `LoadAPIKeyError` instead of process crash.
 - [x] Default chat base URL parity for provider-created models: `https://api.deepinfra.com/v1/openai/chat/completions`.
+- [x] Chat usage fix parity for DeepInfra Gemini/Gemma models: when `completion_tokens_details.reasoning_tokens > completion_tokens`, Swift corrects `completion_tokens` (and derived `outputTokens`) in both `doGenerate` and `doStream` finish.
 
 ## Known gaps / TODO
 
@@ -17,6 +18,8 @@
 ## Notes
 
 - Upstream reference: `external/vercel-ai-sdk/packages/deepinfra/src/deepinfra-provider.ts`
+- Upstream reference: `external/vercel-ai-sdk/packages/deepinfra/src/deepinfra-chat-language-model.ts`
 - Swift files:
   - `Sources/DeepInfraProvider/DeepInfraProvider.swift`
   - `Tests/DeepInfraProviderTests/DeepInfraProviderTests.swift`
+  - `Tests/DeepInfraProviderTests/DeepInfraChatUsageFixTests.swift`

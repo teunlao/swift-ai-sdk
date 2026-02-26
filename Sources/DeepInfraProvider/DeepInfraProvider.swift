@@ -183,7 +183,8 @@ public func createDeepInfraProvider(settings: DeepInfraProviderSettings = .init(
             provider: "deepinfra.chat",
             headers: headersClosure,
             url: urlBuilder,
-            fetch: fetch
+            fetch: fetch,
+            usagePostprocessor: fixDeepInfraUsageForGeminiModels
         )
         return OpenAICompatibleChatLanguageModel(modelId: OpenAICompatibleChatModelId(rawValue: modelId.rawValue), config: config)
     }
@@ -233,3 +234,75 @@ public func createDeepInfra(settings: DeepInfraProviderSettings = .init()) -> De
 }
 
 public let deepinfra = createDeepInfraProvider()
+
+// MARK: - DeepInfra-specific Usage Fix
+
+/// Fixes incorrect token usage for Gemini/Gemma models returned by DeepInfra.
+///
+/// Mirrors `packages/deepinfra/src/deepinfra-chat-language-model.ts`.
+/// DeepInfra sometimes returns `completion_tokens` as *text-only* tokens while reporting
+/// `completion_tokens_details.reasoning_tokens` separately. In OpenAI-compatible semantics,
+/// `completion_tokens` must include reasoning tokens.
+@Sendable
+private func fixDeepInfraUsageForGeminiModels(_ usage: LanguageModelV3Usage) -> LanguageModelV3Usage {
+    guard let raw = usage.raw, case .object(var dict) = raw else {
+        return usage
+    }
+
+    guard case .number(let completionNumber) = dict["completion_tokens"] else {
+        return usage
+    }
+
+    guard case .object(let completionDetails) = dict["completion_tokens_details"],
+          case .number(let reasoningNumber) = completionDetails["reasoning_tokens"] else {
+        return usage
+    }
+
+    let completionTokens = Int(completionNumber)
+    let reasoningTokens = Int(reasoningNumber)
+
+    // If reasoning tokens exceed completion tokens, DeepInfra is returning invalid OpenAI-compatible usage.
+    guard reasoningTokens > completionTokens else {
+        return usage
+    }
+
+    let correctedCompletionTokens = completionTokens + reasoningTokens
+    dict["completion_tokens"] = .number(Double(correctedCompletionTokens))
+
+    // Match upstream: only adjust total_tokens if present; remove if it was explicitly null.
+    if case .number(let totalNumber) = dict["total_tokens"] {
+        dict["total_tokens"] = .number(totalNumber + Double(reasoningTokens))
+    } else if dict["total_tokens"] == .null {
+        dict.removeValue(forKey: "total_tokens")
+    }
+
+    let promptTokens: Int
+    if case .number(let promptNumber) = dict["prompt_tokens"] {
+        promptTokens = Int(promptNumber)
+    } else {
+        promptTokens = usage.inputTokens.total ?? 0
+    }
+
+    let cacheReadTokens: Int
+    if case .object(let promptDetails) = dict["prompt_tokens_details"],
+       case .number(let cachedNumber) = promptDetails["cached_tokens"] {
+        cacheReadTokens = Int(cachedNumber)
+    } else {
+        cacheReadTokens = usage.inputTokens.cacheRead ?? 0
+    }
+
+    return LanguageModelV3Usage(
+        inputTokens: .init(
+            total: promptTokens,
+            noCache: promptTokens - cacheReadTokens,
+            cacheRead: cacheReadTokens,
+            cacheWrite: usage.inputTokens.cacheWrite
+        ),
+        outputTokens: .init(
+            total: correctedCompletionTokens,
+            text: correctedCompletionTokens - reasoningTokens,
+            reasoning: reasoningTokens
+        ),
+        raw: .object(dict)
+    )
+}
