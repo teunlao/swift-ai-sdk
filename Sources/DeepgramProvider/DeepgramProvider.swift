@@ -6,7 +6,7 @@ import AISDKProviderUtils
 //=== Upstream Reference ====================================================//
 //===----------------------------------------------------------------------===//
 // Ported from packages/deepgram/src/deepgram-provider.ts
-// Upstream commit: 77db222ee
+// Upstream commit: 73d5c5920
 //===----------------------------------------------------------------------===//
 
 public struct DeepgramProviderSettings: Sendable {
@@ -23,9 +23,14 @@ public struct DeepgramProviderSettings: Sendable {
 
 public final class DeepgramProvider: ProviderV3 {
     private let transcriptionFactory: @Sendable (DeepgramTranscriptionModelId) -> DeepgramTranscriptionModel
+    private let speechFactory: @Sendable (DeepgramSpeechModelId) -> DeepgramSpeechModel
 
-    init(transcriptionFactory: @escaping @Sendable (DeepgramTranscriptionModelId) -> DeepgramTranscriptionModel) {
+    init(
+        transcriptionFactory: @escaping @Sendable (DeepgramTranscriptionModelId) -> DeepgramTranscriptionModel,
+        speechFactory: @escaping @Sendable (DeepgramSpeechModelId) -> DeepgramSpeechModel
+    ) {
         self.transcriptionFactory = transcriptionFactory
+        self.speechFactory = speechFactory
     }
 
     public func languageModel(modelId: String) throws -> any LanguageModelV3 {
@@ -44,8 +49,16 @@ public final class DeepgramProvider: ProviderV3 {
         transcription(modelId: DeepgramTranscriptionModelId(rawValue: modelId))
     }
 
+    public func speechModel(modelId: String) throws -> (any SpeechModelV3)? {
+        speech(modelId: DeepgramSpeechModelId(rawValue: modelId))
+    }
+
     public func transcription(modelId: DeepgramTranscriptionModelId) -> DeepgramTranscriptionModel {
         transcriptionFactory(modelId)
+    }
+
+    public func speech(modelId: DeepgramSpeechModelId) -> DeepgramSpeechModel {
+        speechFactory(modelId)
     }
 
     public func callAsFunction(_ modelId: DeepgramTranscriptionModelId) -> DeepgramTranscriptionModel {
@@ -148,7 +161,25 @@ public func createDeepgramProvider(settings: DeepgramProviderSettings = .init())
         )
     }
 
-    return DeepgramProvider(transcriptionFactory: transcriptionFactory)
+    let speechFactory: @Sendable (DeepgramSpeechModelId) -> DeepgramSpeechModel = { modelId in
+        DeepgramSpeechModel(
+            modelId: modelId,
+            config: DeepgramSpeechModel.Config(
+                provider: "deepgram.speech",
+                url: { options in
+                    "https://api.deepgram.com\(options.path)"
+                },
+                headers: headersClosure,
+                fetch: fetch,
+                currentDate: { Date() }
+            )
+        )
+    }
+
+    return DeepgramProvider(
+        transcriptionFactory: transcriptionFactory,
+        speechFactory: speechFactory
+    )
 }
 
 /// Alias matching upstream naming (`createDeepgram`).

@@ -4,7 +4,8 @@ import Foundation
 //=== Upstream Reference ====================================================//
 //===----------------------------------------------------------------------===//
 // Ported from packages/deepgram/src/deepgram-transcription-options.ts
-// Upstream commit: 77db222ee
+// Ported from packages/deepgram/src/deepgram-speech-options.ts
+// Upstream commit: 73d5c5920
 //===----------------------------------------------------------------------===//
 
 public struct DeepgramTranscriptionModelId: RawRepresentable, Hashable, Sendable, ExpressibleByStringLiteral, Codable {
@@ -52,4 +53,27 @@ public extension DeepgramTranscriptionModelId {
     static let nova3: Self = "nova-3"
     static let nova3General: Self = "nova-3-general"
     static let nova3Medical: Self = "nova-3-medical"
+}
+
+public struct DeepgramSpeechModelId: RawRepresentable, Hashable, Sendable, ExpressibleByStringLiteral, Codable {
+    public let rawValue: String
+
+    public init(rawValue: String) {
+        self.rawValue = rawValue
+    }
+
+    public init(stringLiteral value: StringLiteralType) {
+        self.init(rawValue: value)
+    }
+}
+
+public extension DeepgramSpeechModelId {
+    static let auraAsteriaEn: Self = "aura-asteria-en"
+    static let aura2AsteriaEn: Self = "aura-2-asteria-en"
+    static let aura2ThaliaEn: Self = "aura-2-thalia-en"
+    static let aura2HelenaEn: Self = "aura-2-helena-en"
+    static let aura2OrpheusEn: Self = "aura-2-orpheus-en"
+    static let aura2ZeusEn: Self = "aura-2-zeus-en"
+    static let auraLunaEn: Self = "aura-luna-en"
+    static let auraStellaEn: Self = "aura-stella-en"
 }

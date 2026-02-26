@@ -8,16 +8,20 @@
 
 - [x] Upstream alias parity: `createDeepgram(...)`
 - [x] Transcription provider/model wiring (`.transcription`)
+- [x] Speech provider/model wiring (`.speech`) + request mapping/warnings parity
 - [x] Auth behavior: missing `DEEPGRAM_API_KEY` throws `LoadAPIKeyError` at request time (no creation-time crash), and no network call is made before failing.
 
 ## Known gaps / TODO
 
-- [ ] Upstream `speech` model surface is not ported yet in Swift (`DeepgramSpeechModel` + provider wiring).
+- [ ] (none)
 
 ## Notes
 
 - Upstream: `external/vercel-ai-sdk/packages/deepgram/src/deepgram-provider.ts`
 - Upstream: `external/vercel-ai-sdk/packages/deepgram/src/deepgram-transcription-model.ts`
+- Upstream: `external/vercel-ai-sdk/packages/deepgram/src/deepgram-speech-model.ts`
 - Swift: `Sources/DeepgramProvider/DeepgramProvider.swift`
 - Swift: `Sources/DeepgramProvider/DeepgramTranscriptionModel.swift`
+- Swift: `Sources/DeepgramProvider/DeepgramSpeechModel.swift`
 - Swift tests: `Tests/DeepgramProviderTests/DeepgramProviderTests.swift`
+- Swift tests: `Tests/DeepgramProviderTests/DeepgramSpeechModelTests.swift`
