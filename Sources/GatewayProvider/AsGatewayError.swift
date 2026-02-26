@@ -9,66 +9,29 @@ import AISDKProviderUtils
 // Upstream commit: 73d5c5920
 //===----------------------------------------------------------------------===//
 
-struct GatewayErrorResponse: Decodable, Sendable {
-    let error: GatewayErrorBody
-}
+/// Upstream `GatewayErrorResponse` shape.
+public struct GatewayErrorResponse: Decodable, Sendable {
+    public let error: GatewayErrorBody
+    public let generationId: String?
 
-struct GatewayErrorBody: Decodable, Sendable {
-    let message: String
-    let type: String?
-    let param: GatewayModelNotFoundParam?
-    let code: String?
-
-    private enum CodingKeys: String, CodingKey {
-        case message
-        case type
-        case param
-        case code
-    }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        message = (try? container.decode(String.self, forKey: .message)) ?? "Gateway request failed"
-        type = try? container.decodeIfPresent(String.self, forKey: .type)
-
-        if let nested = try? container.decodeIfPresent(GatewayModelNotFoundParam.self, forKey: .param) {
-            param = nested
-        } else {
-            param = nil
-        }
-
-        if let stringValue = try? container.decodeIfPresent(String.self, forKey: .code) {
-            code = stringValue
-        } else if let intValue = try? container.decodeIfPresent(Int.self, forKey: .code) {
-            code = String(intValue)
-        } else if let doubleValue = try? container.decodeIfPresent(Double.self, forKey: .code) {
-            code = String(doubleValue)
-        } else {
-            code = nil
-        }
+    public init(error: GatewayErrorBody, generationId: String? = nil) {
+        self.error = error
+        self.generationId = generationId
     }
 }
 
-struct GatewayModelNotFoundParam: Decodable, Sendable {
-    let modelId: String?
+/// Upstream `GatewayErrorResponse.error` shape.
+public struct GatewayErrorBody: Decodable, Sendable {
+    public let message: String
+    public let type: String?
+    public let param: JSONValue?
+    public let code: JSONValue?
 
-    private enum CodingKeys: String, CodingKey {
-        case modelId
-    }
-
-    init(modelId: String?) {
-        self.modelId = modelId
-    }
-
-    init(from decoder: Decoder) throws {
-        if let container = try? decoder.container(keyedBy: CodingKeys.self) {
-            modelId = try container.decodeIfPresent(String.self, forKey: .modelId)
-        } else if let single = try? decoder.singleValueContainer(),
-                  let raw = try? single.decode(String.self) {
-            modelId = raw
-        } else {
-            modelId = nil
-        }
+    public init(message: String, type: String? = nil, param: JSONValue? = nil, code: JSONValue? = nil) {
+        self.message = message
+        self.type = type
+        self.param = param
+        self.code = code
     }
 }
 
@@ -164,7 +127,7 @@ private func isTimeoutError(_ error: Any?) -> Bool {
 }
 
 func createGatewayErrorFromResponse(
-    response: Any,
+    response: Any?,
     statusCode: Int,
     defaultMessage: String = "Gateway request failed",
     cause: Error? = nil,
@@ -172,8 +135,9 @@ func createGatewayErrorFromResponse(
 ) -> GatewayError {
     do {
         let decoded = try decodeGatewayErrorResponse(response)
-        let message = decoded.error.message.isEmpty ? defaultMessage : decoded.error.message
+        let message = decoded.error.message
         let errorType = decoded.error.type ?? "internal_server_error"
+        let generationId = decoded.generationId
 
         switch errorType {
         case "authentication_error":
@@ -181,26 +145,31 @@ func createGatewayErrorFromResponse(
                 apiKeyProvided: authMethod == .apiKey,
                 oidcTokenProvided: authMethod == .oidc,
                 statusCode: statusCode,
-                cause: cause
+                cause: cause,
+                generationId: generationId
             )
         case "invalid_request_error":
             return GatewayInvalidRequestError(
                 message: message,
                 statusCode: statusCode,
-                cause: cause
+                cause: cause,
+                generationId: generationId
             )
         case "rate_limit_exceeded":
             return GatewayRateLimitError(
                 message: message,
                 statusCode: statusCode,
-                cause: cause
+                cause: cause,
+                generationId: generationId
             )
         case "model_not_found":
+            let modelId = gatewayModelId(from: decoded.error.param)
             return GatewayModelNotFoundError(
                 message: message,
                 statusCode: statusCode,
-                modelId: decoded.error.param?.modelId,
-                cause: cause
+                modelId: modelId,
+                cause: cause,
+                generationId: generationId
             )
         case "internal_server_error":
             fallthrough
@@ -208,7 +177,8 @@ func createGatewayErrorFromResponse(
             return GatewayInternalServerError(
                 message: message,
                 statusCode: statusCode,
-                cause: cause
+                cause: cause,
+                generationId: generationId
             )
         }
     } catch let validationError as TypeValidationError {
@@ -217,7 +187,8 @@ func createGatewayErrorFromResponse(
             statusCode: statusCode,
             response: response,
             validationError: validationError,
-            cause: cause
+            cause: cause,
+            generationId: gatewayGenerationId(from: response)
         )
     } catch {
         let wrapped = TypeValidationError.wrap(value: response, cause: error)
@@ -226,12 +197,40 @@ func createGatewayErrorFromResponse(
             statusCode: statusCode,
             response: response,
             validationError: wrapped,
-            cause: cause
+            cause: cause,
+            generationId: gatewayGenerationId(from: response)
         )
     }
 }
 
-private func decodeGatewayErrorResponse(_ response: Any) throws -> GatewayErrorResponse {
+private func gatewayGenerationId(from response: Any?) -> String? {
+    guard let response else { return nil }
+
+    if let dict = response as? [String: Any], let id = dict["generationId"] as? String {
+        return id
+    }
+
+    if let json = response as? JSONValue,
+       case .object(let dict) = json,
+       case .string(let id)? = dict["generationId"] {
+        return id
+    }
+
+    return nil
+}
+
+private func gatewayModelId(from param: JSONValue?) -> String? {
+    guard case .object(let dict) = param else { return nil }
+    guard case .string(let modelId)? = dict["modelId"] else { return nil }
+    return modelId
+}
+
+private func decodeGatewayErrorResponse(_ response: Any?) throws -> GatewayErrorResponse {
+    guard let response else {
+        let serializationError = SchemaJSONSerializationError(value: NSNull())
+        throw TypeValidationError.wrap(value: response, cause: serializationError)
+    }
+
     guard JSONSerialization.isValidJSONObject(response) else {
         let serializationError = SchemaJSONSerializationError(value: response)
         throw TypeValidationError.wrap(value: response, cause: serializationError)

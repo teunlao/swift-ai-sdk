@@ -4,7 +4,7 @@ import Foundation
 //=== Upstream Reference ====================================================//
 //===----------------------------------------------------------------------===//
 // Ported from packages/gateway/src/errors/parse-auth-method.ts
-// Upstream commit: 77db222ee
+// Upstream commit: 73d5c5920
 //===----------------------------------------------------------------------===//
 
 public enum GatewayAuthMethod: String, Sendable {

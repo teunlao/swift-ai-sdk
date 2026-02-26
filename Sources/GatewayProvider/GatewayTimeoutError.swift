@@ -16,13 +16,16 @@ public struct GatewayTimeoutError: GatewayError, GatewayErrorMarker, @unchecked 
     public let statusCode: Int
     public let message: String
     public let cause: Error?
+    public let generationId: String?
 
     public init(
         message: String = "Request timed out",
         statusCode: Int = 408,
-        cause: Error? = nil
+        cause: Error? = nil,
+        generationId: String? = nil
     ) {
-        self.message = message
+        self.generationId = generationId
+        self.message = generationId.map { "\(message) [\($0)]" } ?? message
         self.statusCode = statusCode
         self.cause = cause
     }
@@ -35,19 +38,16 @@ public struct GatewayTimeoutError: GatewayError, GatewayErrorMarker, @unchecked 
     public static func createTimeoutError(
         originalMessage: String,
         statusCode: Int = 408,
-        cause: Error? = nil
+        cause: Error? = nil,
+        generationId: String? = nil
     ) -> GatewayTimeoutError {
-        let message = """
-        Gateway request timed out: \(originalMessage)
-
-            This is a client-side timeout. To resolve this, increase your timeout configuration: https://vercel.com/docs/ai-gateway/capabilities/video-generation#extending-timeouts-for-node.js
-        """
+        let message = "Gateway request timed out: \(originalMessage)\n\n    This is a client-side timeout. To resolve this, increase your timeout configuration: https://vercel.com/docs/ai-gateway/capabilities/video-generation#extending-timeouts-for-node.js"
 
         return GatewayTimeoutError(
             message: message,
             statusCode: statusCode,
-            cause: cause
+            cause: cause,
+            generationId: generationId
         )
     }
 }
-

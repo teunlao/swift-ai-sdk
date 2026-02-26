@@ -9,7 +9,7 @@ import AISDKProviderUtils
 // Upstream commit: 73d5c5920
 //===----------------------------------------------------------------------===//
 
-public struct GatewayProviderOptions: Sendable, Codable, Equatable {
+public struct GatewayLanguageModelOptions: Sendable, Codable, Equatable {
     /// Array of provider slugs that are the only ones allowed to be used.
     public let only: [String]?
 
@@ -49,3 +49,7 @@ public struct GatewayProviderOptions: Sendable, Codable, Equatable {
         self.zeroDataRetention = zeroDataRetention
     }
 }
+
+/// Deprecated upstream alias.
+@available(*, deprecated, renamed: "GatewayLanguageModelOptions")
+public typealias GatewayProviderOptions = GatewayLanguageModelOptions

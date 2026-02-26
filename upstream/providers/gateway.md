@@ -38,6 +38,14 @@
 - [x] `asGatewayError` parity (timeout detection):
   - Undici timeout error codes (`UND_ERR_*_TIMEOUT`) and `URLError.timedOut` map to `GatewayTimeoutError`.
   - `APICallError` with a timeout cause maps to `GatewayTimeoutError` (with helpful message).
+- [x] Vercel environment / o11y headers parity:
+  - `VERCEL_DEPLOYMENT_ID` / `VERCEL_ENV` / `VERCEL_REGION` are forwarded as `ai-o11y-*` headers.
+  - Request ID (`x-vercel-id`) is forwarded as `ai-o11y-request-id`.
+- [x] Auth token resolution parity:
+  - `AI_GATEWAY_API_KEY` takes precedence over OIDC; export `getGatewayAuthToken(...)`.
+- [x] Gateway error mapping parity:
+  - `generationId` is captured from error responses and appended to `error.message` (`"… [generationId]"`).
+  - Invalid error response shapes return `GatewayResponseError` with `generationId` extracted when present.
 
 Tests live under:
 - `Tests/GatewayProviderTests/GatewayFetchMetadataTests.swift`
@@ -51,8 +59,7 @@ Tests live under:
 
 ## Known gaps / TODO
 
-- [ ] Error mapping parity for all Gateway error shapes/status codes (e.g. generationId passthrough, less-common response shapes).
-- [ ] Vercel environment parity (`vercel-environment.ts`) and provider options parsing.
+- [ ] None known.
 
 ## Notes
 

@@ -44,9 +44,14 @@ public struct GatewayProviderSettings: Sendable {
     }
 }
 
-private struct GatewayAuthToken: Sendable {
-    let token: String
-    let authMethod: GatewayAuthMethod
+public struct GatewayAuthToken: Sendable {
+    public let token: String
+    public let authMethod: GatewayAuthMethod
+
+    public init(token: String, authMethod: GatewayAuthMethod) {
+        self.token = token
+        self.authMethod = authMethod
+    }
 }
 
 private struct GatewayAuthContext: Sendable {
@@ -277,7 +282,24 @@ public func createGatewayProvider(settings: GatewayProviderSettings = .init()) -
     )
 }
 
+/// Alias matching the upstream naming (`createGateway`).
+public func createGateway(settings: GatewayProviderSettings = .init()) -> GatewayProvider {
+    createGatewayProvider(settings: settings)
+}
+
 public let gateway = createGatewayProvider()
+
+/// Resolves the Gateway auth token using the same precedence as upstream:
+/// 1) `settings.apiKey` / `AI_GATEWAY_API_KEY`
+/// 2) Vercel OIDC token (`VERCEL_OIDC_TOKEN`)
+public func getGatewayAuthToken(settings: GatewayProviderSettings) async throws -> GatewayAuthToken {
+    if let apiKey = loadOptionalSetting(settingValue: settings.apiKey, environmentVariableName: "AI_GATEWAY_API_KEY"), !apiKey.isEmpty {
+        return GatewayAuthToken(token: apiKey, authMethod: .apiKey)
+    }
+
+    let oidcToken = try await getVercelOidcToken()
+    return GatewayAuthToken(token: oidcToken, authMethod: .oidc)
+}
 
 // MARK: - Header Helpers
 
@@ -314,18 +336,14 @@ private func makeHeaderClosure(settings: GatewayProviderSettings) -> (@Sendable 
 }
 
 private func resolveAuthToken(settings: GatewayProviderSettings) async -> (GatewayAuthToken?, GatewayAuthContext, Error?) {
-    var context = GatewayAuthContext(apiKeyProvided: false, oidcTokenProvided: false)
-
-    if let apiKey = loadOptionalSetting(settingValue: settings.apiKey, environmentVariableName: "AI_GATEWAY_API_KEY"), !apiKey.isEmpty {
-        context = GatewayAuthContext(apiKeyProvided: true, oidcTokenProvided: false)
-        return (GatewayAuthToken(token: apiKey, authMethod: .apiKey), context, nil)
-    }
-
     do {
-        let token = try await getVercelOidcToken()
-        context = GatewayAuthContext(apiKeyProvided: false, oidcTokenProvided: true)
-        return (GatewayAuthToken(token: token, authMethod: .oidc), context, nil)
+        let token = try await getGatewayAuthToken(settings: settings)
+        let context = GatewayAuthContext(
+            apiKeyProvided: token.authMethod == .apiKey,
+            oidcTokenProvided: token.authMethod == .oidc
+        )
+        return (token, context, nil)
     } catch {
-        return (nil, context, error)
+        return (nil, GatewayAuthContext(apiKeyProvided: false, oidcTokenProvided: false), error)
     }
 }

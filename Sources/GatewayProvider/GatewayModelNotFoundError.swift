@@ -6,7 +6,7 @@ import AISDKProviderUtils
 //=== Upstream Reference ====================================================//
 //===----------------------------------------------------------------------===//
 // Ported from packages/gateway/src/errors/gateway-model-not-found-error.ts
-// Upstream commit: 77db222ee
+// Upstream commit: 73d5c5920
 //===----------------------------------------------------------------------===//
 
 /// Model not found or not available.
@@ -17,14 +17,17 @@ public struct GatewayModelNotFoundError: GatewayError, GatewayErrorMarker, @unch
     public let message: String
     public let modelId: String?
     public let cause: Error?
+    public let generationId: String?
 
     public init(
         message: String = "Model not found",
         statusCode: Int = 404,
         modelId: String? = nil,
-        cause: Error? = nil
+        cause: Error? = nil,
+        generationId: String? = nil
     ) {
-        self.message = message
+        self.generationId = generationId
+        self.message = generationId.map { "\(message) [\($0)]" } ?? message
         self.statusCode = statusCode
         self.modelId = modelId
         self.cause = cause

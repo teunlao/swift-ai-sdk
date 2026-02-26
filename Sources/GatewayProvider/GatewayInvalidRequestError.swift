@@ -6,7 +6,7 @@ import AISDKProviderUtils
 //=== Upstream Reference ====================================================//
 //===----------------------------------------------------------------------===//
 // Ported from packages/gateway/src/errors/gateway-invalid-request-error.ts
-// Upstream commit: 77db222ee
+// Upstream commit: 73d5c5920
 //===----------------------------------------------------------------------===//
 
 /// Invalid request - missing headers, malformed data, etc.
@@ -16,13 +16,16 @@ public struct GatewayInvalidRequestError: GatewayError, GatewayErrorMarker, @unc
     public let statusCode: Int
     public let message: String
     public let cause: Error?
+    public let generationId: String?
 
     public init(
         message: String = "Invalid request",
         statusCode: Int = 400,
-        cause: Error? = nil
+        cause: Error? = nil,
+        generationId: String? = nil
     ) {
-        self.message = message
+        self.generationId = generationId
+        self.message = generationId.map { "\(message) [\($0)]" } ?? message
         self.statusCode = statusCode
         self.cause = cause
     }
