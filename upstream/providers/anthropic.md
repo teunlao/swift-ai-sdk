@@ -8,6 +8,7 @@
 
 - [x] Auth headers + error semantics: API key is loaded lazily at request-time and missing key throws `LoadAPIKeyError` (no `fatalError`); `apiKey`/`authToken` conflict throws `InvalidArgumentError`.
 - [x] Prompt conversion (messages/system/tools) incl. JSON tool inputs (objects, not JSON strings).
+- [x] Assistant prompt conversion: `code_execution_20250825` subtool naming (`bash_code_execution` / `text_editor_code_execution`) and programmatic tool calling type stripping (`programmatic-tool-call`).
 - [x] Tool call serialization (tool_use/server_tool_use) + tool result mapping.
 - [x] Tool search tools + deferred tool references (regex/bm25).
 - [x] Provider tools: set `supportsDeferredResults` on upstream-marked tools (code execution, web tools, tool search) for correct multi-step deferred tool result handling.
@@ -20,6 +21,7 @@
 - [x] Memory tool: `memory_20250818` prepare-tools payload + `context-management-2025-06-27` beta; parses `tool_use` into V3 tool-call content.
 - [x] Programmatic tool calling: parse `caller` metadata for client `tool_use` blocks and inject `type=programmatic-tool-call` for server-side `code_execution` tool calls (upstream parity).
 - [x] Tool results parity: tool results do not set `providerExecuted`; MCP tool-call/result set `dynamic: true`.
+- [x] Error mapping parity: HTTP errors + SSE `error` events decode via `anthropicErrorDataSchema` (unknown fields tolerated), matching upstream.
 
 Tests live under:
 - `Tests/AnthropicProviderTests/ConvertToAnthropicMessagesPromptTests.swift`
@@ -34,9 +36,9 @@ Tests live under:
 
 ## Known gaps / TODO
 
-- [ ] Double-check `code_execution_20250825` caller/subtool behaviors end-to-end (beyond schema + decoding).
-- [ ] Add full end-to-end parity coverage for `memory_20250818` tool-use/tool-result behaviors (beyond prepare-tools).
-- [ ] Error mapping audit (HTTP + API shapes) for all newer beta tool blocks.
+- [x] `code_execution_20250825` caller/subtool behaviors end-to-end (request + response mapping).
+- [x] `memory_20250818` tool-use coverage (request beta + tool_use parsing).
+- None known.
 
 ## Notes
 

@@ -100,6 +100,11 @@ struct RevAITranscriptionModelTests {
         return String(tail[..<endQuote])
     }
 
+    private func parseJSONObject(_ text: String) -> [String: Any]? {
+        guard let data = text.data(using: .utf8) else { return nil }
+        return (try? JSONSerialization.jsonObject(with: data, options: [])) as? [String: Any]
+    }
+
     private func makeFetch(
         capture: RequestCapture,
         transcriptHeaders: [String: String]? = nil
@@ -188,6 +193,74 @@ struct RevAITranscriptionModelTests {
         }
 
         #expect(!mediaPart.body.isEmpty)
+    }
+
+    @Test("should pass provider options through to the config payload")
+    func passesProviderOptionsInConfig() async throws {
+        let capture = RequestCapture()
+        let fetch = makeFetch(capture: capture)
+
+        let provider = createRevAIProvider(settings: .init(apiKey: "test-api-key", fetch: fetch))
+        let model = provider.transcription(.machine)
+
+        _ = try await model.doGenerate(options: .init(
+            audio: .binary(Data([0x01])),
+            mediaType: "audio/wav",
+            providerOptions: [
+                "revai": [
+                    "notification_config": .object([
+                        "url": .string(""),
+                        "auth_headers": .object([
+                            "Authorization": .string(""),
+                        ]),
+                    ]),
+                    "custom_vocabularies": .array([
+                        .object([
+                            "should_be_stripped": .string("yes"),
+                        ]),
+                    ]),
+                ],
+            ]
+        ))
+
+        guard let request = await capture.first(),
+              let body = request.httpBody,
+              let contentType = request.value(forHTTPHeaderField: "Content-Type"),
+              let boundary = extractBoundary(from: contentType)
+        else {
+            Issue.record("Missing request capture")
+            return
+        }
+
+        let parts = parseMultipart(body, boundary: boundary)
+        let byName = Dictionary(uniqueKeysWithValues: parts.compactMap { part in
+            partName(part).map { ($0, part) }
+        })
+
+        guard let configPart = byName["config"] else {
+            Issue.record("Missing config part")
+            return
+        }
+
+        guard let configText = String(data: configPart.body, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              let config = parseJSONObject(configText)
+        else {
+            Issue.record("Failed to parse config JSON")
+            return
+        }
+
+        #expect(config["transcriber"] as? String == "machine")
+
+        let notification = config["notification_config"] as? [String: Any]
+        #expect(notification?["url"] as? String == "")
+
+        let authHeaders = (notification?["auth_headers"] as? [String: Any])
+        #expect(authHeaders?["Authorization"] as? String == "")
+
+        let vocabularies = config["custom_vocabularies"] as? [Any]
+        let first = vocabularies?.first as? [String: Any]
+        #expect(first?.isEmpty == true)
     }
 
     @Test("should pass headers")

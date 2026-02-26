@@ -464,6 +464,124 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
         ])
     }
 
+    @Test("assistant provider executed code_execution 20250825 maps subtool name for bash_code_execution")
+    func assistantProviderExecutedCodeExecutionSubtoolBash() async throws {
+        let toolCall = LanguageModelV3MessagePart.toolCall(
+            .init(
+                toolCallId: "tool-1",
+                toolName: "code_execution",
+                input: .object([
+                    "type": .string("bash_code_execution"),
+                    "command": .string("python /tmp/fibonacci.py"),
+                ]),
+                providerExecuted: true
+            )
+        )
+        let prompt: LanguageModelV3Prompt = [
+            .assistant(content: [toolCall], providerOptions: nil)
+        ]
+
+        let (result, warnings) = try await convert(prompt)
+
+        #expect(warnings.isEmpty)
+        #expect(result.betas.isEmpty)
+        #expect(result.prompt.messages == [
+            AnthropicMessage(
+                role: "assistant",
+                content: [
+                    .object([
+                        "type": .string("server_tool_use"),
+                        "id": .string("tool-1"),
+                        "name": .string("bash_code_execution"),
+                        "input": .object([
+                            "type": .string("bash_code_execution"),
+                            "command": .string("python /tmp/fibonacci.py"),
+                        ]),
+                    ])
+                ]
+            )
+        ])
+    }
+
+    @Test("assistant provider executed code_execution 20250825 maps subtool name for text_editor_code_execution")
+    func assistantProviderExecutedCodeExecutionSubtoolTextEditor() async throws {
+        let toolCall = LanguageModelV3MessagePart.toolCall(
+            .init(
+                toolCallId: "tool-1",
+                toolName: "code_execution",
+                input: .object([
+                    "type": .string("text_editor_code_execution"),
+                    "command": .string("view"),
+                    "path": .string("/tmp/file.txt"),
+                ]),
+                providerExecuted: true
+            )
+        )
+        let prompt: LanguageModelV3Prompt = [
+            .assistant(content: [toolCall], providerOptions: nil)
+        ]
+
+        let (result, warnings) = try await convert(prompt)
+
+        #expect(warnings.isEmpty)
+        #expect(result.betas.isEmpty)
+        #expect(result.prompt.messages == [
+            AnthropicMessage(
+                role: "assistant",
+                content: [
+                    .object([
+                        "type": .string("server_tool_use"),
+                        "id": .string("tool-1"),
+                        "name": .string("text_editor_code_execution"),
+                        "input": .object([
+                            "type": .string("text_editor_code_execution"),
+                            "command": .string("view"),
+                            "path": .string("/tmp/file.txt"),
+                        ]),
+                    ])
+                ]
+            )
+        ])
+    }
+
+    @Test("assistant provider executed code_execution 20250825 strips programmatic-tool-call type")
+    func assistantProviderExecutedCodeExecutionProgrammaticToolCalling() async throws {
+        let toolCall = LanguageModelV3MessagePart.toolCall(
+            .init(
+                toolCallId: "tool-1",
+                toolName: "code_execution",
+                input: .object([
+                    "type": .string("programmatic-tool-call"),
+                    "code": .string("print('hi')"),
+                ]),
+                providerExecuted: true
+            )
+        )
+        let prompt: LanguageModelV3Prompt = [
+            .assistant(content: [toolCall], providerOptions: nil)
+        ]
+
+        let (result, warnings) = try await convert(prompt)
+
+        #expect(warnings.isEmpty)
+        #expect(result.betas.isEmpty)
+        #expect(result.prompt.messages == [
+            AnthropicMessage(
+                role: "assistant",
+                content: [
+                    .object([
+                        "type": .string("server_tool_use"),
+                        "id": .string("tool-1"),
+                        "name": .string("code_execution"),
+                        "input": .object([
+                            "code": .string("print('hi')"),
+                        ]),
+                    ])
+                ]
+            )
+        ])
+    }
+
     @Test("assistant tool call mapped to tool use with object input")
     func assistantToolCallUsesObjectInput() async throws {
         let toolCall = LanguageModelV3MessagePart.toolCall(
@@ -490,6 +608,90 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
                         "id": .string("tool-1"),
                         "name": .string("read"),
                         "input": .object(["path": .string("hello.txt")])
+                    ])
+                ]
+            )
+        ])
+    }
+
+    @Test("assistant tool call includes caller metadata when present in providerOptions")
+    func assistantToolCallCallerMetadata() async throws {
+        let toolCall = LanguageModelV3MessagePart.toolCall(
+            .init(
+                toolCallId: "tool-1",
+                toolName: "rollDie",
+                input: .object(["player": .string("player1")]),
+                providerExecuted: false,
+                providerOptions: anthropicOptions([
+                    "caller": .object([
+                        "type": .string("code_execution_20250825"),
+                        "toolId": .string("srvtoolu_1"),
+                    ])
+                ])
+            )
+        )
+        let prompt: LanguageModelV3Prompt = [
+            .assistant(content: [toolCall], providerOptions: nil)
+        ]
+
+        let (result, warnings) = try await convert(prompt)
+
+        #expect(warnings.isEmpty)
+        #expect(result.betas.isEmpty)
+        #expect(result.prompt.messages == [
+            AnthropicMessage(
+                role: "assistant",
+                content: [
+                    .object([
+                        "type": .string("tool_use"),
+                        "id": .string("tool-1"),
+                        "name": .string("rollDie"),
+                        "input": .object(["player": .string("player1")]),
+                        "caller": .object([
+                            "type": .string("code_execution_20250825"),
+                            "tool_id": .string("srvtoolu_1"),
+                        ])
+                    ])
+                ]
+            )
+        ])
+    }
+
+    @Test("assistant tool call includes direct caller metadata")
+    func assistantToolCallDirectCallerMetadata() async throws {
+        let toolCall = LanguageModelV3MessagePart.toolCall(
+            .init(
+                toolCallId: "tool-1",
+                toolName: "rollDie",
+                input: .object(["player": .string("player1")]),
+                providerExecuted: false,
+                providerOptions: anthropicOptions([
+                    "caller": .object([
+                        "type": .string("direct"),
+                    ])
+                ])
+            )
+        )
+        let prompt: LanguageModelV3Prompt = [
+            .assistant(content: [toolCall], providerOptions: nil)
+        ]
+
+        let (result, warnings) = try await convert(prompt)
+
+        #expect(warnings.isEmpty)
+        #expect(result.betas.isEmpty)
+        #expect(result.prompt.messages == [
+            AnthropicMessage(
+                role: "assistant",
+                content: [
+                    .object([
+                        "type": .string("tool_use"),
+                        "id": .string("tool-1"),
+                        "name": .string("rollDie"),
+                        "input": .object(["player": .string("player1")]),
+                        "caller": .object([
+                            "type": .string("direct"),
+                        ])
                     ])
                 ]
             )

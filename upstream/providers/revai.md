@@ -10,13 +10,14 @@
 - [x] Polling loop (in_progress → transcribed) and transcript fetch
 - [x] Transcript mapping to `text` + timed segments + duration calculation
 - [x] Error schema parsing + JSON error response mapping
+- [x] Provider options schema parity: request config mapping matches upstream `revaiTranscriptionModelOptionsSchema` (incl. `notification_config` empty strings and `custom_vocabularies` stripping).
 - [x] Provider auth parity: API key now resolves at request time via `loadAPIKey`, missing key throws `LoadAPIKeyError` (no creation-time crash)
 - [x] Upstream factory alias parity: `createRevai(...)`
+- [x] Failure paths parity: submission failed / polling failed / timeout errors (covered by Swift tests).
 
 ## Known gaps / TODO
 
-- [ ] Provider options schema completeness vs upstream (revaiProviderOptionsSchema is large; current Swift port focuses on the same keys but is not exhaustively audited).
-- [x] Failure paths parity: submission failed / polling failed / timeout errors (covered by Swift tests).
+- None known.
 
 ## Notes
 

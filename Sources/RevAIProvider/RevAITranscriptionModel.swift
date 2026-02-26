@@ -6,7 +6,7 @@ import AISDKProviderUtils
 //=== Upstream Reference ====================================================//
 //===----------------------------------------------------------------------===//
 // Ported from packages/revai/src/revai-transcription-model.ts
-// Upstream commit: f3a72bc2a
+// Upstream commit: 73d5c5920e0fea7633027fdd87374adc9ba49743
 //===----------------------------------------------------------------------===//
 
 private let revaiProviderOptionsJSONSchema: JSONValue = .object([
@@ -106,7 +106,7 @@ private let revaiProviderOptionsSchema = FlexibleSchema(
                             return fail("notification_config must be an object")
                         }
 
-                        guard case .string(let url) = (obj["url"] ?? .null), !url.isEmpty else {
+                        guard case .string(let url) = (obj["url"] ?? .null) else {
                             return fail("notification_config.url must be a string")
                         }
 
@@ -117,7 +117,7 @@ private let revaiProviderOptionsSchema = FlexibleSchema(
                                 guard case .object(let authObj) = authHeaders else {
                                     return fail("notification_config.auth_headers must be an object")
                                 }
-                                guard case .string(let auth) = (authObj["Authorization"] ?? .null), !auth.isEmpty else {
+                                guard case .string(let auth) = (authObj["Authorization"] ?? .null) else {
                                     return fail("notification_config.auth_headers.Authorization must be a string")
                                 }
                                 notifOut["auth_headers"] = .object(["Authorization": .string(auth)])
@@ -244,7 +244,8 @@ private let revaiProviderOptionsSchema = FlexibleSchema(
                     outArr.reserveCapacity(arr.count)
                     for item in arr {
                         guard case .object = item else { return fail("custom_vocabularies entries must be objects") }
-                        outArr.append(item)
+                        // zod's `z.object({})` strips unknown keys, so values become `{}`.
+                        outArr.append(.object([:]))
                     }
                     out["custom_vocabularies"] = .array(outArr)
                 }
