@@ -13,6 +13,10 @@
 - [x] Missing API key throws request-time `LoadAPIKeyError` (no process crash)
 - [x] Added upstream alias `createMistral(...)` in Swift (`createMistralProvider(...)` remains supported)
 - [x] Unsupported image model path throws `NoSuchModelError`
+- [x] `supportedUrls` parity: PDF URLs only allow lowercase `https://` (case-sensitive), matching upstream regex.
+- [x] Usage parity: `usage.raw` is populated with the provider usage object for generate + stream.
+- [x] Stream parse-error parity: invalid SSE chunks emit structured JSON error payload (`name`/`message`/`value`) instead of stringifying the error.
+- [x] Tool-call schema parity: tool-call `id` and `function.arguments` are required in chunk/response decoding (missing fields yield stream parse errors).
 
 ## Known gaps / TODO
 

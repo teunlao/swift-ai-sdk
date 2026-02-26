@@ -98,7 +98,12 @@ struct MistralChatLanguageModelGenerateTests {
                         "content": "prefix and more content"
                     ],
                     "finish_reason": "stop"
-                ]]
+                ]],
+                "usage": [
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "total_tokens": 0,
+                ],
             ]
         )
 
@@ -130,7 +135,12 @@ struct MistralChatLanguageModelGenerateTests {
                         ]]
                     ],
                     "finish_reason": "tool_calls"
-                ]]
+                ]],
+                "usage": [
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "total_tokens": 0,
+                ],
             ]
         )
 
@@ -163,7 +173,12 @@ struct MistralChatLanguageModelGenerateTests {
                         ]
                     ],
                     "finish_reason": "stop"
-                ]]
+                ]],
+                "usage": [
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "total_tokens": 0,
+                ],
             ]
         )
 
@@ -192,7 +207,12 @@ struct MistralChatLanguageModelGenerateTests {
                         ]
                     ],
                     "finish_reason": "stop"
-                ]]
+                ]],
+                "usage": [
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "total_tokens": 0,
+                ],
             ]
         )
 
@@ -221,7 +241,12 @@ struct MistralChatLanguageModelGenerateTests {
                         ]
                     ],
                     "finish_reason": "stop"
-                ]]
+                ]],
+                "usage": [
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "total_tokens": 0,
+                ],
             ]
         )
 
@@ -252,6 +277,33 @@ struct MistralChatLanguageModelGenerateTests {
         #expect(result.usage.inputTokens.total == 20)
         #expect(result.usage.outputTokens.total == 5)
         #expect((result.usage.inputTokens.total ?? 0) + (result.usage.outputTokens.total ?? 0) == 25)
+
+        guard let raw = result.usage.raw, case .object(let object) = raw else {
+            Issue.record("Expected raw usage payload")
+            return
+        }
+        #expect(object["prompt_tokens"] == .number(20))
+        #expect(object["completion_tokens"] == .number(5))
+        #expect(object["total_tokens"] == .number(25))
+    }
+
+    @Test("supportedUrls PDF regex is case-sensitive")
+    func supportedUrlsCaseSensitive() async throws {
+        let (model, _, _) = makeChatModel()
+        let supported = try await model.supportedUrls
+        guard let regex = supported["application/pdf"]?.first else {
+            Issue.record("Missing supportedUrls PDF regex")
+            return
+        }
+
+        let lower = "https://example.com/file.pdf"
+        let upper = "HTTPS://example.com/file.pdf"
+
+        let lowerRange = NSRange(lower.startIndex..<lower.endIndex, in: lower)
+        let upperRange = NSRange(upper.startIndex..<upper.endIndex, in: upper)
+
+        #expect(regex.firstMatch(in: lower, options: [], range: lowerRange) != nil)
+        #expect(regex.firstMatch(in: upper, options: [], range: upperRange) == nil)
     }
 
     @Test("includes response metadata")
@@ -267,7 +319,12 @@ struct MistralChatLanguageModelGenerateTests {
                     "index": 0,
                     "message": ["role": "assistant", "content": "hi"],
                     "finish_reason": "stop"
-                ]]
+                ]],
+                "usage": [
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "total_tokens": 0,
+                ],
             ]
         )
 
@@ -287,7 +344,12 @@ struct MistralChatLanguageModelGenerateTests {
                     "index": 0,
                     "message": ["role": "assistant", "content": "hi"],
                     "finish_reason": "stop"
-                ]]
+                ]],
+                "usage": [
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "total_tokens": 0,
+                ],
             ],
             headers: ["Test-Header": "test-value"]
         )
@@ -308,7 +370,12 @@ struct MistralChatLanguageModelGenerateTests {
                     "index": 0,
                     "message": ["role": "assistant", "content": ""],
                     "finish_reason": "stop"
-                ]]
+                ]],
+                "usage": [
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "total_tokens": 0,
+                ],
             ]
         )
 
@@ -341,7 +408,12 @@ struct MistralChatLanguageModelGenerateTests {
                     "index": 0,
                     "message": ["role": "assistant", "content": ""],
                     "finish_reason": "stop"
-                ]]
+                ]],
+                "usage": [
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "total_tokens": 0,
+                ],
             ]
         )
 
@@ -372,7 +444,12 @@ struct MistralChatLanguageModelGenerateTests {
                     "index": 0,
                     "message": ["role": "assistant", "content": ""],
                     "finish_reason": "stop"
-                ]]
+                ]],
+                "usage": [
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "total_tokens": 0,
+                ],
             ]
         )
 
@@ -406,7 +483,12 @@ struct MistralChatLanguageModelGenerateTests {
                         "content": [["type": "text", "text": "Hello"]]
                     ],
                     "finish_reason": "stop"
-                ]]
+                ]],
+                "usage": [
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "total_tokens": 0,
+                ],
             ]
         )
 
@@ -428,7 +510,12 @@ struct MistralChatLanguageModelGenerateTests {
                         "content": "<think>Reasoning</think> Response"
                     ],
                     "finish_reason": "stop"
-                ]]
+                ]],
+                "usage": [
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "total_tokens": 0,
+                ],
             ]
         )
 
@@ -446,7 +533,12 @@ struct MistralChatLanguageModelGenerateTests {
                     "index": 0,
                     "message": ["role": "assistant", "content": ""],
                     "finish_reason": "stop"
-                ]]
+                ]],
+                "usage": [
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "total_tokens": 0,
+                ],
             ]
         )
 
@@ -483,7 +575,12 @@ struct MistralChatLanguageModelGenerateTests {
                     "index": 0,
                     "message": ["role": "assistant", "content": ""],
                     "finish_reason": "stop"
-                ]]
+                ]],
+                "usage": [
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "total_tokens": 0,
+                ],
             ]
         )
 
@@ -555,7 +652,12 @@ struct MistralChatLanguageModelGenerateTests {
                     "index": 0,
                     "message": ["role": "assistant", "content": ""],
                     "finish_reason": "stop"
-                ]]
+                ]],
+                "usage": [
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "total_tokens": 0,
+                ],
             ]
         )
 
@@ -589,7 +691,12 @@ struct MistralChatLanguageModelGenerateTests {
                     "index": 0,
                     "message": ["role": "assistant", "content": ""],
                     "finish_reason": "stop"
-                ]]
+                ]],
+                "usage": [
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "total_tokens": 0,
+                ],
             ]
         )
 
@@ -669,6 +776,50 @@ struct MistralChatLanguageModelStreamTests {
         } else {
             Issue.record("Missing finish part")
         }
+    }
+
+    @Test("emits structured error part for invalid SSE chunk")
+    func streamParseErrorPayload() async throws {
+        let (model, _, responseBox) = makeStreamingModel()
+
+        let payloads: [Any] = [
+            ["id": "invalid-chunk"],
+            [
+                "id": "chunk-ok",
+                "choices": [[
+                    "index": 0,
+                    "delta": ["role": "assistant", "content": ""],
+                    "finish_reason": "stop",
+                ]],
+                "usage": ["prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2],
+            ],
+        ]
+
+        await responseBox.setStream(url: HTTPTestHelpers.chatURL, chunks: makeSSEChunks(payloads))
+
+        let result = try await model.doStream(options: .init(prompt: defaultPrompt(), includeRawChunks: false))
+        let parts = try await collectParts(result.stream)
+
+        guard let errorPart = parts.first(where: { part in
+            if case .error = part { return true }
+            return false
+        }) else {
+            Issue.record("Expected error part")
+            return
+        }
+
+        guard case .error(let error) = errorPart, case .object(let object) = error else {
+            Issue.record("Expected structured error object payload")
+            return
+        }
+
+        #expect(object["name"] == .string("AI_TypeValidationError"))
+        if case .string(let message) = object["message"] {
+            #expect(message.contains("Type validation failed"))
+        } else {
+            Issue.record("Expected error.message")
+        }
+        #expect(object["value"] != nil)
     }
 
     @Test("avoids duplication when trailing assistant message present")

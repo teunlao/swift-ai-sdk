@@ -27,7 +27,8 @@ public final class MistralChatLanguageModel: LanguageModelV3 {
     private let config: Config
 
     private static let pdfRegex: NSRegularExpression = {
-        try! NSRegularExpression(pattern: "^https://.*$", options: [.caseInsensitive])
+        // Upstream is case-sensitive: /^https:\\/\\/.*$/
+        try! NSRegularExpression(pattern: "^https://.*$", options: [])
     }()
 
     init(modelId: MistralChatModelId, config: Config) {
@@ -93,22 +94,17 @@ public final class MistralChatLanguageModel: LanguageModelV3 {
                 content.append(.toolCall(LanguageModelV3ToolCall(
                     toolCallId: call.id,
                     toolName: call.function.name,
-                    input: call.function.arguments ?? ""
+                    input: call.function.arguments
                 )))
             }
         }
 
-        let usage: LanguageModelV3Usage = {
-            guard let usage = response.value.usage else {
-                return LanguageModelV3Usage()
-            }
-
-            return LanguageModelV3Usage(
-                inputTokens: .init(total: usage.promptTokens, noCache: usage.promptTokens),
-                outputTokens: .init(total: usage.completionTokens, text: usage.completionTokens, reasoning: nil),
-                raw: try? jsonValue(from: usage)
-            )
-        }()
+        let usageMeta = response.value.usage
+        let usage = LanguageModelV3Usage(
+            inputTokens: .init(total: usageMeta.promptTokens, noCache: usageMeta.promptTokens),
+            outputTokens: .init(total: usageMeta.completionTokens, text: usageMeta.completionTokens, reasoning: nil),
+            raw: try? JSONEncoder().encodeToJSONValue(usageMeta)
+        )
 
         let metadata = mistralResponseMetadata(id: response.value.id, model: response.value.model, created: response.value.created)
 
@@ -162,8 +158,8 @@ public final class MistralChatLanguageModel: LanguageModelV3 {
                         }
 
                         switch parseResult {
-                        case .failure(let error, _):
-                            continuation.yield(.error(error: .string(String(describing: error))))
+                        case .failure:
+                            continuation.yield(.error(error: parseResult.streamErrorPayload))
                             continue
 
                         case .success(let chunk, _):
@@ -173,16 +169,13 @@ public final class MistralChatLanguageModel: LanguageModelV3 {
                                 continuation.yield(.responseMetadata(id: metadata.id, modelId: metadata.modelId, timestamp: metadata.timestamp))
                             }
 
-                                if let usageMeta = chunk.usage {
-                                    let promptTokens = usageMeta.promptTokens ?? 0
-                                    let completionTokens = usageMeta.completionTokens ?? 0
-
-                                    usage = LanguageModelV3Usage(
-                                        inputTokens: .init(total: promptTokens, noCache: promptTokens),
-                                        outputTokens: .init(total: completionTokens, text: completionTokens, reasoning: nil),
-                                        raw: try? jsonValue(from: usageMeta)
-                                    )
-                                }
+                            if let usageMeta = chunk.usage {
+                                usage = LanguageModelV3Usage(
+                                    inputTokens: .init(total: usageMeta.promptTokens, noCache: usageMeta.promptTokens),
+                                    outputTokens: .init(total: usageMeta.completionTokens, text: usageMeta.completionTokens, reasoning: nil),
+                                    raw: try? JSONEncoder().encodeToJSONValue(usageMeta)
+                                )
+                            }
 
                             guard let choice = chunk.choices.first else { continue }
 
@@ -231,8 +224,8 @@ public final class MistralChatLanguageModel: LanguageModelV3 {
 
                                 if let toolCalls = delta.toolCalls {
                                     for call in toolCalls {
-                                        let callId = call.id ?? generateId()
-                                        let arguments = call.function.arguments ?? ""
+                                        let callId = call.id
+                                        let arguments = call.function.arguments
 
                                         continuation.yield(.toolInputStart(
                                             id: callId,
@@ -242,9 +235,7 @@ public final class MistralChatLanguageModel: LanguageModelV3 {
                                             dynamic: nil,
                                             title: nil
                                         ))
-                                        if !arguments.isEmpty {
-                                            continuation.yield(.toolInputDelta(id: callId, delta: arguments, providerMetadata: nil))
-                                        }
+                                        continuation.yield(.toolInputDelta(id: callId, delta: arguments, providerMetadata: nil))
                                         continuation.yield(.toolInputEnd(id: callId, providerMetadata: nil))
                                         continuation.yield(.toolCall(LanguageModelV3ToolCall(toolCallId: callId, toolName: call.function.name, input: arguments)))
                                     }
@@ -409,14 +400,27 @@ private extension ParseJSONResult where Output == MistralChatChunk {
             return raw.flatMap { try? jsonValue(from: $0) }
         }
     }
+
+    var streamErrorPayload: JSONValue {
+        switch self {
+        case .failure(let error, let raw):
+            return serializeStreamParseError(error: error, raw: raw)
+        case .success:
+            return .string("Unknown stream parsing error")
+        }
+    }
 }
 
 // MARK: - Models
 
 private struct MistralChatResponse: Codable {
     struct Choice: Codable {
+        enum Role: String, Codable {
+            case assistant
+        }
+
         struct Message: Codable {
-            let role: String?
+            let role: Role
             let content: MistralMessageContent?
             let toolCalls: [ToolCall]?
 
@@ -430,7 +434,7 @@ private struct MistralChatResponse: Codable {
         struct ToolCall: Codable {
             struct Function: Codable {
                 let name: String
-                let arguments: String?
+                let arguments: String
             }
 
             let id: String
@@ -464,16 +468,22 @@ private struct MistralChatResponse: Codable {
     let created: Double?
     let model: String?
     let choices: [Choice]
-    let usage: Usage?
+    let usage: Usage
 }
 
 private struct MistralChatChunk: Codable {
     struct Choice: Codable {
+        enum Role: String, Codable {
+            case assistant
+        }
+
         struct Delta: Codable {
+            let role: Role?
             let content: MistralMessageContent?
             let toolCalls: [ToolCall]?
 
             enum CodingKeys: String, CodingKey {
+                case role
                 case content
                 case toolCalls = "tool_calls"
             }
@@ -482,26 +492,28 @@ private struct MistralChatChunk: Codable {
         struct ToolCall: Codable {
             struct Function: Codable {
                 let name: String
-                let arguments: String?
+                let arguments: String
             }
 
-            let id: String?
+            let id: String
             let function: Function
         }
 
+        let index: Int
         let delta: Delta?
         let finishReason: String?
 
         enum CodingKeys: String, CodingKey {
+            case index
             case delta
             case finishReason = "finish_reason"
         }
     }
 
     struct Usage: Codable {
-        let promptTokens: Int?
-        let completionTokens: Int?
-        let totalTokens: Int?
+        let promptTokens: Int
+        let completionTokens: Int
+        let totalTokens: Int
 
         enum CodingKeys: String, CodingKey {
             case promptTokens = "prompt_tokens"
@@ -607,7 +619,7 @@ private enum MistralContentPart: Codable {
 
     struct ReferencePart: Codable {
         let type: String
-        let referenceIds: [Int]
+        let referenceIds: [JSONValue]
 
         enum CodingKeys: String, CodingKey {
             case type
@@ -707,4 +719,48 @@ private enum MistralContentPart: Codable {
 
 private func extractReasoningText(_ segments: [MistralContentPart.ThinkingSegment]) -> String {
     segments.filter { $0.type == "text" }.map { $0.text }.joined()
+}
+
+private func serializeStreamParseError(error: Error, raw: Any?) -> JSONValue {
+    if let typeValidationError = error as? TypeValidationError {
+        var payload: [String: JSONValue] = [
+            "name": .string(typeValidationError.name),
+            "message": .string(typeValidationError.message)
+        ]
+
+        if let value = typeValidationError.value {
+            payload["value"] = (try? jsonValue(from: value)) ?? .string(String(describing: value))
+        } else if let raw {
+            payload["value"] = (try? jsonValue(from: raw)) ?? .null
+        }
+
+        return .object(payload)
+    }
+
+    if let jsonParseError = error as? JSONParseError {
+        return .object([
+            "name": .string(jsonParseError.name),
+            "message": .string(jsonParseError.message),
+            "text": .string(jsonParseError.text)
+        ])
+    }
+
+    var payload: [String: JSONValue] = [
+        "name": .string("Error"),
+        "message": .string(AISDKProvider.getErrorMessage(error))
+    ]
+
+    if let raw {
+        payload["value"] = (try? jsonValue(from: raw)) ?? .null
+    }
+
+    return .object(payload)
+}
+
+private extension JSONEncoder {
+    func encodeToJSONValue<T: Encodable>(_ value: T) throws -> JSONValue {
+        let data = try encode(value)
+        let raw = try JSONSerialization.jsonObject(with: data, options: [])
+        return try jsonValue(from: raw)
+    }
 }
