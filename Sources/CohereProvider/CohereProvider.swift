@@ -83,23 +83,77 @@ public final class CohereProvider: ProviderV3 {
     }
 }
 
+private func defaultCohereFetchFunction() -> FetchFunction {
+    { request in
+        let session = URLSession.shared
+
+        if #available(macOS 12.0, iOS 15.0, tvOS 15.0, watchOS 8.0, *) {
+            let (bytes, response) = try await session.bytes(for: request)
+            let stream = AsyncThrowingStream<Data, Error> { continuation in
+                Task {
+                    var buffer = Data()
+                    buffer.reserveCapacity(16_384)
+
+                    do {
+                        for try await byte in bytes {
+                            buffer.append(byte)
+
+                            if buffer.count >= 16_384 {
+                                continuation.yield(buffer)
+                                buffer.removeAll(keepingCapacity: true)
+                            }
+                        }
+
+                        if !buffer.isEmpty {
+                            continuation.yield(buffer)
+                        }
+
+                        continuation.finish()
+                    } catch {
+                        continuation.finish(throwing: error)
+                    }
+                }
+            }
+
+            return FetchResponse(body: .stream(stream), urlResponse: response)
+        } else {
+            let (data, response) = try await session.data(for: request)
+            return FetchResponse(body: .data(data), urlResponse: response)
+        }
+    }
+}
+
+private func createCohereAuthFetch(
+    apiKey: String?,
+    customFetch: FetchFunction?
+) -> FetchFunction {
+    let baseFetch = customFetch ?? defaultCohereFetchFunction()
+
+    return { request in
+        var modified = request
+        var headers = modified.allHTTPHeaderFields ?? [:]
+
+        let resolved = try loadAPIKey(
+            apiKey: apiKey,
+            environmentVariableName: "COHERE_API_KEY",
+            description: "Cohere"
+        )
+
+        let hasAuthorization = headers.keys.contains { $0.lowercased() == "authorization" }
+        if !hasAuthorization {
+            headers["Authorization"] = "Bearer \(resolved)"
+            modified.allHTTPHeaderFields = headers
+        }
+
+        return try await baseFetch(modified)
+    }
+}
+
 public func createCohereProvider(settings: CohereProviderSettings = .init()) -> CohereProvider {
     let baseURL = withoutTrailingSlash(settings.baseURL) ?? "https://api.cohere.com/v2"
 
     let headersClosure: @Sendable () -> [String: String?] = {
         var computed: [String: String?] = [:]
-        let apiKey: String
-        do {
-            apiKey = try loadAPIKey(
-                apiKey: settings.apiKey,
-                environmentVariableName: "COHERE_API_KEY",
-                description: "Cohere"
-            )
-        } catch {
-            fatalError("Cohere API key is missing: \(error)")
-        }
-
-        computed["Authorization"] = "Bearer \(apiKey)"
         if let headers = settings.headers {
             for (key, value) in headers {
                 computed[key] = value
@@ -110,6 +164,11 @@ public func createCohereProvider(settings: CohereProviderSettings = .init()) -> 
         return withUA.mapValues { Optional($0) }
     }
 
+    let fetch = createCohereAuthFetch(
+        apiKey: settings.apiKey,
+        customFetch: settings.fetch
+    )
+
     let chatFactory: @Sendable (CohereChatModelId) -> CohereChatLanguageModel = { modelId in
         CohereChatLanguageModel(
             modelId: modelId,
@@ -117,7 +176,7 @@ public func createCohereProvider(settings: CohereProviderSettings = .init()) -> 
                 provider: "cohere.chat",
                 baseURL: baseURL,
                 headers: headersClosure,
-                fetch: settings.fetch,
+                fetch: fetch,
                 generateId: settings.generateId ?? generateID
             )
         )
@@ -130,7 +189,7 @@ public func createCohereProvider(settings: CohereProviderSettings = .init()) -> 
                 provider: "cohere.textEmbedding",
                 baseURL: baseURL,
                 headers: headersClosure,
-                fetch: settings.fetch
+                fetch: fetch
             )
         )
     }
@@ -142,7 +201,7 @@ public func createCohereProvider(settings: CohereProviderSettings = .init()) -> 
                 provider: "cohere.reranking",
                 baseURL: baseURL,
                 headers: headersClosure,
-                fetch: settings.fetch
+                fetch: fetch
             )
         )
     }
@@ -152,6 +211,11 @@ public func createCohereProvider(settings: CohereProviderSettings = .init()) -> 
         embeddingFactory: embeddingFactory,
         rerankingFactory: rerankingFactory
     )
+}
+
+/// Alias matching the upstream naming (`createCohere`).
+public func createCohere(settings: CohereProviderSettings = .init()) -> CohereProvider {
+    createCohereProvider(settings: settings)
 }
 
 public let cohere = createCohereProvider()

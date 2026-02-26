@@ -88,24 +88,77 @@ public final class DeepInfraProvider: ProviderV3 {
     }
 }
 
+private func defaultDeepInfraFetchFunction() -> FetchFunction {
+    { request in
+        let session = URLSession.shared
+
+        if #available(macOS 12.0, iOS 15.0, tvOS 15.0, watchOS 8.0, *) {
+            let (bytes, response) = try await session.bytes(for: request)
+            let stream = AsyncThrowingStream<Data, Error> { continuation in
+                Task {
+                    var buffer = Data()
+                    buffer.reserveCapacity(16_384)
+
+                    do {
+                        for try await byte in bytes {
+                            buffer.append(byte)
+
+                            if buffer.count >= 16_384 {
+                                continuation.yield(buffer)
+                                buffer.removeAll(keepingCapacity: true)
+                            }
+                        }
+
+                        if !buffer.isEmpty {
+                            continuation.yield(buffer)
+                        }
+
+                        continuation.finish()
+                    } catch {
+                        continuation.finish(throwing: error)
+                    }
+                }
+            }
+
+            return FetchResponse(body: .stream(stream), urlResponse: response)
+        } else {
+            let (data, response) = try await session.data(for: request)
+            return FetchResponse(body: .data(data), urlResponse: response)
+        }
+    }
+}
+
+private func createDeepInfraAuthFetch(
+    apiKey: String?,
+    customFetch: FetchFunction?
+) -> FetchFunction {
+    let baseFetch = customFetch ?? defaultDeepInfraFetchFunction()
+
+    return { request in
+        var modified = request
+        var headers = modified.allHTTPHeaderFields ?? [:]
+
+        let resolved = try loadAPIKey(
+            apiKey: apiKey,
+            environmentVariableName: "DEEPINFRA_API_KEY",
+            description: "DeepInfra API key"
+        )
+
+        let hasAuthorization = headers.keys.contains { $0.lowercased() == "authorization" }
+        if !hasAuthorization {
+            headers["Authorization"] = "Bearer \(resolved)"
+            modified.allHTTPHeaderFields = headers
+        }
+
+        return try await baseFetch(modified)
+    }
+}
+
 public func createDeepInfraProvider(settings: DeepInfraProviderSettings = .init()) -> DeepInfraProvider {
     let baseURL = withoutTrailingSlash(settings.baseURL) ?? "https://api.deepinfra.com/v1"
 
     let headersClosure: @Sendable () -> [String: String] = {
-        let apiKey: String
-        do {
-            apiKey = try loadAPIKey(
-                apiKey: settings.apiKey,
-                environmentVariableName: "DEEPINFRA_API_KEY",
-                description: "DeepInfra API key"
-            )
-        } catch {
-            fatalError("DeepInfra API key is missing: \(error)")
-        }
-
-        var baseHeaders: [String: String?] = [
-            "Authorization": "Bearer \(apiKey)"
-        ]
+        var baseHeaders: [String: String?] = [:]
 
         if let customHeaders = settings.headers {
             for (key, value) in customHeaders {
@@ -116,7 +169,10 @@ public func createDeepInfraProvider(settings: DeepInfraProviderSettings = .init(
         return withUserAgentSuffix(baseHeaders, "ai-sdk/deepinfra/\(DEEPINFRA_VERSION)")
     }
 
-    let fetch = settings.fetch
+    let fetch = createDeepInfraAuthFetch(
+        apiKey: settings.apiKey,
+        customFetch: settings.fetch
+    )
 
     let urlBuilder: @Sendable (OpenAICompatibleURLOptions) -> String = { options in
         "\(baseURL)/openai\(options.path)"
@@ -169,6 +225,11 @@ public func createDeepInfraProvider(settings: DeepInfraProviderSettings = .init(
         embeddingFactory: embeddingFactory,
         imageFactory: imageFactory
     )
+}
+
+/// Alias matching the upstream naming (`createDeepInfra`).
+public func createDeepInfra(settings: DeepInfraProviderSettings = .init()) -> DeepInfraProvider {
+    createDeepInfraProvider(settings: settings)
 }
 
 public let deepinfra = createDeepInfraProvider()

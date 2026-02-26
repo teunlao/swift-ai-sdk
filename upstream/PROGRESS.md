@@ -30,6 +30,12 @@ For source-of-truth code, always follow the commits and tests.
 ### Unreleased (main)
 
 - 2026-02-26
+  - Rev.ai: provider auth parity fix — removed creation-time `fatalError` for missing API key; auth now resolves at request time (`LoadAPIKeyError`) via fetch wrapper; added regression coverage in `RevAIProviderAuthTests`.
+  - Cerebras: provider auth parity fix — removed creation-time `fatalError` for missing API key; auth now resolves at request time (`LoadAPIKeyError`) via fetch wrapper, with added provider regression coverage for missing key behavior.
+  - AssemblyAI: provider parity fix — removed creation-time `fatalError` for missing API key; auth now resolves at request time (`LoadAPIKeyError`) via fetch wrapper, added upstream alias `createAssemblyAI(...)`, and added provider regression tests (alias + endpoint flow + missing key).
+  - DeepInfra: provider parity fix — removed creation-time `fatalError` for missing API key; auth now resolves at request time (`LoadAPIKeyError`) via fetch wrapper, added upstream alias `createDeepInfra(...)`, and added provider regression tests (alias + default chat base URL + missing key).
+  - Cohere: provider parity fix — removed creation-time `fatalError` for missing API key; auth now resolves at request time (`LoadAPIKeyError`) via fetch wrapper, added upstream alias `createCohere(...)`, and added provider regression tests (alias + default base URL + missing key).
+  - Perplexity: provider parity fix — removed creation-time `fatalError` for missing API key; auth now resolves at request time (`LoadAPIKeyError`) via fetch wrapper, added upstream alias `createPerplexity(...)`, and added provider regression tests (alias + default base URL + missing key).
   - Mistral: provider auth parity fix — API key now loads at request time via auth fetch wrapper, missing key throws `LoadAPIKeyError` instead of crashing; added upstream alias `createMistral(...)` and provider-level regression tests.
   - Groq: provider auth parity fix — API key now loads at request time via auth fetch wrapper, missing key throws `LoadAPIKeyError` instead of crashing; added `createGroq(...)` alias for upstream API parity and provider-level regression tests.
   - DeepSeek: provider auth/baseURL parity fix — default base URL aligned to upstream (`https://api.deepseek.com`), API key now loads at request time via auth fetch wrapper, and missing key throws `LoadAPIKeyError` instead of crashing; added regression tests.

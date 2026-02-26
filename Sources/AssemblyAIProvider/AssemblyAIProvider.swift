@@ -53,21 +53,75 @@ public final class AssemblyAIProvider: ProviderV3 {
     }
 }
 
+private func defaultAssemblyAIFetchFunction() -> FetchFunction {
+    { request in
+        let session = URLSession.shared
+
+        if #available(macOS 12.0, iOS 15.0, tvOS 15.0, watchOS 8.0, *) {
+            let (bytes, response) = try await session.bytes(for: request)
+            let stream = AsyncThrowingStream<Data, Error> { continuation in
+                Task {
+                    var buffer = Data()
+                    buffer.reserveCapacity(16_384)
+
+                    do {
+                        for try await byte in bytes {
+                            buffer.append(byte)
+
+                            if buffer.count >= 16_384 {
+                                continuation.yield(buffer)
+                                buffer.removeAll(keepingCapacity: true)
+                            }
+                        }
+
+                        if !buffer.isEmpty {
+                            continuation.yield(buffer)
+                        }
+
+                        continuation.finish()
+                    } catch {
+                        continuation.finish(throwing: error)
+                    }
+                }
+            }
+
+            return FetchResponse(body: .stream(stream), urlResponse: response)
+        } else {
+            let (data, response) = try await session.data(for: request)
+            return FetchResponse(body: .data(data), urlResponse: response)
+        }
+    }
+}
+
+private func createAssemblyAIAuthFetch(
+    apiKey: String?,
+    customFetch: FetchFunction?
+) -> FetchFunction {
+    let baseFetch = customFetch ?? defaultAssemblyAIFetchFunction()
+
+    return { request in
+        var modified = request
+        var headers = modified.allHTTPHeaderFields ?? [:]
+
+        let resolved = try loadAPIKey(
+            apiKey: apiKey,
+            environmentVariableName: "ASSEMBLYAI_API_KEY",
+            description: "AssemblyAI"
+        )
+
+        let hasAuthorization = headers.keys.contains { $0.lowercased() == "authorization" }
+        if !hasAuthorization {
+            headers["authorization"] = resolved
+            modified.allHTTPHeaderFields = headers
+        }
+
+        return try await baseFetch(modified)
+    }
+}
+
 public func createAssemblyAIProvider(settings: AssemblyAIProviderSettings = .init()) -> AssemblyAIProvider {
     let headersClosure: @Sendable () -> [String: String?] = {
         var computed: [String: String?] = [:]
-        let apiKey: String
-        do {
-            apiKey = try loadAPIKey(
-                apiKey: settings.apiKey,
-                environmentVariableName: "ASSEMBLYAI_API_KEY",
-                description: "AssemblyAI"
-            )
-        } catch {
-            fatalError("AssemblyAI API key is missing: \(error)")
-        }
-
-        computed["authorization"] = apiKey
         if let custom = settings.headers {
             for (key, value) in custom {
                 computed[key] = value
@@ -78,6 +132,11 @@ public func createAssemblyAIProvider(settings: AssemblyAIProviderSettings = .ini
         return withUA.mapValues { Optional($0) }
     }
 
+    let fetch = createAssemblyAIAuthFetch(
+        apiKey: settings.apiKey,
+        customFetch: settings.fetch
+    )
+
     let transcriptionFactory: @Sendable (AssemblyAITranscriptionModelId) -> AssemblyAITranscriptionModel = { modelId in
         AssemblyAITranscriptionModel(
             modelId: modelId,
@@ -87,13 +146,18 @@ public func createAssemblyAIProvider(settings: AssemblyAIProviderSettings = .ini
                     "https://api.assemblyai.com\(options.path)"
                 },
                 headers: headersClosure,
-                fetch: settings.fetch,
+                fetch: fetch,
                 currentDate: { Date() }
             )
         )
     }
 
     return AssemblyAIProvider(transcriptionFactory: transcriptionFactory)
+}
+
+/// Alias matching the upstream naming (`createAssemblyAI`).
+public func createAssemblyAI(settings: AssemblyAIProviderSettings = .init()) -> AssemblyAIProvider {
+    createAssemblyAIProvider(settings: settings)
 }
 
 public let assemblyai = createAssemblyAIProvider()

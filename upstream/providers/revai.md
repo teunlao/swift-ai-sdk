@@ -10,6 +10,8 @@
 - [x] Polling loop (in_progress → transcribed) and transcript fetch
 - [x] Transcript mapping to `text` + timed segments + duration calculation
 - [x] Error schema parsing + JSON error response mapping
+- [x] Provider auth parity: API key now resolves at request time via `loadAPIKey`, missing key throws `LoadAPIKeyError` (no creation-time crash)
+- [x] Upstream factory alias parity: `createRevai(...)`
 
 ## Known gaps / TODO
 
