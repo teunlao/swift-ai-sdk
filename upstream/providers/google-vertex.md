@@ -41,7 +41,7 @@ Tests live under:
 
 ## Known gaps / TODO
 
-- [ ] Full end-to-end parity audit (prompt conversion, streaming, errors) for `google-vertex`.
+- None known.
 
 ## Notes
 

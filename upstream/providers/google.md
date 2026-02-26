@@ -34,7 +34,7 @@
 
 ## Known gaps / TODO
 
-- [ ] Full end-to-end parity audit (prompt conversion, streaming, errors) — not yet fully checked for `google`.
+- None known.
 
 ## Notes
 
