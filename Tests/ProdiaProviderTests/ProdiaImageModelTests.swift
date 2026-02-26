@@ -13,7 +13,9 @@ struct ProdiaImageModelTests {
 
     private func createMultipartResponse(
         jobResult: [String: Any],
-        imageContent: String = "test-binary-content"
+        imageContent: String = "test-binary-content",
+        lineEnding: String = "\r\n",
+        contentTypeSuffix: String = ""
     ) throws -> MultipartResponse {
         let boundary = "test-boundary-12345"
         let jobJsonData = try JSONSerialization.data(withJSONObject: jobResult)
@@ -24,22 +26,22 @@ struct ProdiaImageModelTests {
             body.append(Data(string.utf8))
         }
 
-        append("--\(boundary)\r\n")
-        append("Content-Disposition: form-data; name=\"job\"; filename=\"job.json\"\r\n")
-        append("Content-Type: application/json\r\n")
-        append("\r\n")
+        append("--\(boundary)\(lineEnding)")
+        append("Content-Disposition: form-data; name=\"job\"; filename=\"job.json\"\(lineEnding)")
+        append("Content-Type: application/json\(lineEnding)")
+        append(lineEnding)
         body.append(jobJsonData)
-        append("\r\n")
-        append("--\(boundary)\r\n")
-        append("Content-Disposition: form-data; name=\"output\"; filename=\"output.png\"\r\n")
-        append("Content-Type: image/png\r\n")
-        append("\r\n")
+        append(lineEnding)
+        append("--\(boundary)\(lineEnding)")
+        append("Content-Disposition: form-data; name=\"output\"; filename=\"output.png\"\(lineEnding)")
+        append("Content-Type: image/png\(lineEnding)")
+        append(lineEnding)
         body.append(imageBuffer)
-        append("\r\n--\(boundary)--\r\n")
+        append("\(lineEnding)--\(boundary)--\(lineEnding)")
 
         return MultipartResponse(
             body: body,
-            contentType: "multipart/form-data; boundary=\(boundary)"
+            contentType: "multipart/form-data; boundary=\(boundary)\(contentTypeSuffix)"
         )
     }
 
@@ -578,6 +580,74 @@ struct ProdiaImageModelTests {
             "state": ["current": "completed"],
             "config": ["prompt": "test"],
         ])
+
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.example.com/v2/job")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": multipart.contentType]
+        )!
+
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .data(multipart.body), urlResponse: httpResponse)
+        }
+
+        let model = makeModel(fetch: fetch)
+        let result = try await model.doGenerate(options: .init(prompt: "p", n: 1, providerOptions: [:]))
+
+        switch result.images {
+        case .binary(let images):
+            #expect(images.count == 1)
+            #expect(String(data: images[0], encoding: .utf8) == "test-binary-content")
+        default:
+            Issue.record("Expected binary images")
+        }
+    }
+
+    @Test("parses multipart response with LF line endings")
+    func parsesMultipartWithLFLineEndings() async throws {
+        let multipart = try createMultipartResponse(
+            jobResult: [
+                "id": "job-123",
+                "state": ["current": "completed"],
+                "config": ["prompt": "test"],
+            ],
+            lineEnding: "\n"
+        )
+
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.example.com/v2/job")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": multipart.contentType]
+        )!
+
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .data(multipart.body), urlResponse: httpResponse)
+        }
+
+        let model = makeModel(fetch: fetch)
+        let result = try await model.doGenerate(options: .init(prompt: "p", n: 1, providerOptions: [:]))
+
+        switch result.images {
+        case .binary(let images):
+            #expect(images.count == 1)
+            #expect(String(data: images[0], encoding: .utf8) == "test-binary-content")
+        default:
+            Issue.record("Expected binary images")
+        }
+    }
+
+    @Test("parses boundary from content-type with additional parameters")
+    func parsesBoundaryFromContentTypeWithExtraParameters() async throws {
+        let multipart = try createMultipartResponse(
+            jobResult: [
+                "id": "job-123",
+                "state": ["current": "completed"],
+                "config": ["prompt": "test"],
+            ],
+            contentTypeSuffix: "; charset=utf-8"
+        )
 
         let httpResponse = HTTPURLResponse(
             url: URL(string: "https://api.example.com/v2/job")!,

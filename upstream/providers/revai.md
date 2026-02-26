@@ -1,6 +1,6 @@
 # Provider: Rev.ai
 
-- Audited against upstream commit: `f3a72bc2a0433fda9506b7c7ac1b28b4adafcfc9`
+- Audited against upstream commit: `73d5c5920e0fea7633027fdd87374adc9ba49743`
 - Upstream package: `external/vercel-ai-sdk/packages/revai/src/**`
 - Swift implementation: `Sources/RevAIProvider/**`
 
@@ -14,7 +14,7 @@
 ## Known gaps / TODO
 
 - [ ] Provider options schema completeness vs upstream (revaiProviderOptionsSchema is large; current Swift port focuses on the same keys but is not exhaustively audited).
-- [ ] Failure paths parity: submission failed / polling failed / timeout errors (not yet covered by tests).
+- [x] Failure paths parity: submission failed / polling failed / timeout errors (covered by Swift tests).
 
 ## Notes
 
@@ -24,4 +24,3 @@
 - Swift: `Sources/RevAIProvider/RevAIProvider.swift`
 - Swift: `Sources/RevAIProvider/RevAITranscriptionModel.swift`
 - Swift: `Sources/RevAIProvider/RevAIError.swift`
-

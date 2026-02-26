@@ -8,7 +8,7 @@ public final class XAIResponsesLanguageModel: LanguageModelV3 {
     struct Config: Sendable {
         let provider: String
         let baseURL: String
-        let headers: @Sendable () -> [String: String?]
+        let headers: @Sendable () throws -> [String: String?]
         let generateId: @Sendable () -> String
         let fetch: FetchFunction?
     }
@@ -50,7 +50,7 @@ public final class XAIResponsesLanguageModel: LanguageModelV3 {
 
         let response = try await postJsonToAPI(
             url: "\(config.baseURL)/responses",
-            headers: combineHeaders(config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 },
+            headers: combineHeaders(try config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 },
             body: JSONValue.object(prepared.body),
             failedResponseHandler: xaiFailedResponseHandler,
             successfulResponseHandler: createJsonResponseHandler(responseSchema: xaiResponsesResponseSchema),
@@ -254,7 +254,7 @@ public final class XAIResponsesLanguageModel: LanguageModelV3 {
 
         let streamResponse = try await postJsonToAPI(
             url: "\(config.baseURL)/responses",
-            headers: combineHeaders(config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 },
+            headers: combineHeaders(try config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 },
             body: JSONValue.object(streamBody),
             failedResponseHandler: xaiFailedResponseHandler,
             successfulResponseHandler: createEventSourceResponseHandler(chunkSchema: xaiResponsesChunkSchema),

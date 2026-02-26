@@ -487,7 +487,7 @@ public final class RevAITranscriptionModel: TranscriptionModelV3 {
 
         let timeoutMs = 60_000
         let pollingIntervalMs = 1_000
-        let start = Date()
+        let start = config.currentDate()
         var jobResponse = submissionResponse
 
         while jobResponse.status != "transcribed" {
@@ -495,7 +495,7 @@ public final class RevAITranscriptionModel: TranscriptionModelV3 {
                 throw CancellationError()
             }
 
-            let elapsedMs = Int(Date().timeIntervalSince(start) * 1000)
+            let elapsedMs = Int(config.currentDate().timeIntervalSince(start) * 1000)
             if elapsedMs > timeoutMs {
                 throw RevAITranscriptionJobError(
                     name: "TranscriptionJobPollingTimedOut",

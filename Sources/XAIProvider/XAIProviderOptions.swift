@@ -6,11 +6,17 @@ import AISDKProviderUtils
 /// Mirrors `packages/xai/src/xai-chat-options.ts`.
 public struct XAIProviderOptions: Sendable, Equatable {
     public var reasoningEffort: XAIReasoningEffort?
+    public var parallelFunctionCalling: Bool?
     public var searchParameters: XAISearchParameters?
 
-    public init(reasoningEffort: XAIReasoningEffort? = nil, searchParameters: XAISearchParameters? = nil) {
+    public init(
+        reasoningEffort: XAIReasoningEffort? = nil,
+        searchParameters: XAISearchParameters? = nil,
+        parallelFunctionCalling: Bool? = nil
+    ) {
         self.reasoningEffort = reasoningEffort
         self.searchParameters = searchParameters
+        self.parallelFunctionCalling = parallelFunctionCalling
     }
 }
 
@@ -187,6 +193,18 @@ public let xaiProviderOptionsSchema = FlexibleSchema(
                         return .failure(error: TypeValidationError.wrap(value: effortValue, cause: error))
                     }
                     reasoningEffort = parsed
+                }
+
+                var parallelFunctionCalling: Bool? = nil
+                if let parallelValue = dict["parallel_function_calling"], parallelValue != .null {
+                    guard case .bool(let bool) = parallelValue else {
+                        let error = SchemaValidationIssuesError(
+                            vendor: "xai",
+                            issues: "parallel_function_calling must be a boolean"
+                        )
+                        return .failure(error: TypeValidationError.wrap(value: parallelValue, cause: error))
+                    }
+                    parallelFunctionCalling = bool
                 }
 
                 var searchParameters: XAISearchParameters? = nil
@@ -488,7 +506,11 @@ public let xaiProviderOptionsSchema = FlexibleSchema(
                     searchParameters = params
                 }
 
-                return .success(value: XAIProviderOptions(reasoningEffort: reasoningEffort, searchParameters: searchParameters))
+                return .success(value: XAIProviderOptions(
+                    reasoningEffort: reasoningEffort,
+                    searchParameters: searchParameters,
+                    parallelFunctionCalling: parallelFunctionCalling
+                ))
             } catch {
                 return .failure(error: TypeValidationError.wrap(value: value, cause: error))
             }

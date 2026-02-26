@@ -54,6 +54,8 @@ public struct XAIResponsesModelId: RawRepresentable, Hashable, Sendable, Express
 // MARK: - Known model identifiers (mirrors packages/xai/src/xai-chat-options.ts)
 
 public extension XAIChatModelId {
+    static let grok41FastReasoning: Self = "grok-4-1-fast-reasoning"
+    static let grok41FastNonReasoning: Self = "grok-4-1-fast-non-reasoning"
     static let grok4FastNonReasoning: Self = "grok-4-fast-non-reasoning"
     static let grok4FastReasoning: Self = "grok-4-fast-reasoning"
     static let grokCodeFast1: Self = "grok-code-fast-1"
@@ -83,6 +85,7 @@ public extension XAIChatModelId {
 
 public extension XAIImageModelId {
     static let grok2Image: Self = "grok-2-image"
+    static let grokImagineImage: Self = "grok-imagine-image"
 }
 
 public extension XAIVideoModelId {

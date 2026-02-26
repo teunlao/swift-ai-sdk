@@ -12,6 +12,49 @@ import Testing
 
 @Suite("XAIProvider")
 struct XAIProviderTests {
+    @Test("missing API key throws LoadAPIKeyError at request-time (no crash)")
+    func missingAPIKeyThrowsAtRequestTime() async throws {
+        let original = getenv("XAI_API_KEY").flatMap { String(validatingCString: $0) }
+        defer {
+            if let original {
+                setenv("XAI_API_KEY", original, 1)
+            } else {
+                unsetenv("XAI_API_KEY")
+            }
+        }
+
+        unsetenv("XAI_API_KEY")
+
+        actor URLCapture {
+            private(set) var url: String?
+            func store(_ url: String?) { self.url = url }
+        }
+
+        let capture = URLCapture()
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request.url?.absoluteString)
+            throw CancellationError()
+        }
+
+        let provider = createXai(settings: XAIProviderSettings(fetch: fetch))
+        let model = provider.chat(modelId: "grok-beta")
+
+        let prompt: LanguageModelV3Prompt = [
+            .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
+        ]
+
+        do {
+            _ = try await model.doGenerate(options: .init(prompt: prompt))
+            Issue.record("Expected missing API key error")
+        } catch let error as LoadAPIKeyError {
+            #expect(error.message.contains("xAI API key API key is missing"))
+        } catch {
+            Issue.record("Expected LoadAPIKeyError, got: \(error)")
+        }
+
+        #expect(await capture.url == nil)
+    }
 
     @Test("creates a language model with default settings")
     func createLanguageModelWithDefaults() throws {

@@ -10,6 +10,7 @@ struct RevAITranscriptionModelTests {
         var requests: [URLRequest] = []
         func append(_ request: URLRequest) { requests.append(request) }
         func first() -> URLRequest? { requests.first }
+        func all() -> [URLRequest] { requests }
     }
 
     private struct MultipartPart {
@@ -267,5 +268,169 @@ struct RevAITranscriptionModelTests {
         #expect(responseHeaders["content-type"] == "application/json")
         #expect(responseHeaders["x-request-id"] == "test-request-id")
         #expect(responseHeaders["x-ratelimit-remaining"] == "123")
+    }
+
+    @Test("throws TranscriptionJobSubmissionFailed when submission status is failed")
+    func submissionFailedThrows() async throws {
+        let capture = RequestCapture()
+
+        let submitData = Data(#"{"id":"test-id","status":"failed"}"#.utf8)
+        let response = HTTPURLResponse(
+            url: URL(string: "https://api.rev.ai/speechtotext/v1/jobs")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { request in
+            await capture.append(request)
+            let url = request.url?.absoluteString ?? ""
+            if url == "https://api.rev.ai/speechtotext/v1/jobs" {
+                return FetchResponse(body: .data(submitData), urlResponse: response)
+            }
+            return FetchResponse(body: .data(Data()), urlResponse: response)
+        }
+
+        let model = RevAITranscriptionModel(
+            modelId: .machine,
+            config: RevAIConfig(
+                provider: "test-provider",
+                url: { options in "https://api.rev.ai\(options.path)" },
+                headers: { [:] },
+                fetch: fetch
+            )
+        )
+
+        do {
+            _ = try await model.doGenerate(options: .init(audio: .binary(Data([0x01])), mediaType: "audio/wav"))
+            Issue.record("Expected AISDKError")
+        } catch let error as any AISDKError {
+            #expect(error.name == "TranscriptionJobSubmissionFailed")
+            #expect(error.message == "Failed to submit transcription job to Rev.ai")
+            #expect(hasMarker(error, marker: "vercel.ai.error.AI_RevAITranscriptionJobError"))
+        } catch {
+            Issue.record("Expected AISDKError, got: \(error)")
+        }
+    }
+
+    @Test("throws TranscriptionJobFailed when polling returns failed status")
+    func pollingFailedThrows() async throws {
+        let capture = RequestCapture()
+
+        let submitData = Data(#"{"id":"test-id","status":"in_progress"}"#.utf8)
+        let pollData = Data(#"{"id":"test-id","status":"failed"}"#.utf8)
+
+        let makeResponse: @Sendable (_ url: String, _ body: Data) -> FetchResponse = { url, body in
+            let response = HTTPURLResponse(
+                url: URL(string: url)!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(body), urlResponse: response)
+        }
+
+        let fetch: FetchFunction = { request in
+            await capture.append(request)
+            let url = request.url?.absoluteString ?? ""
+            switch url {
+            case "https://api.rev.ai/speechtotext/v1/jobs":
+                return makeResponse(url, submitData)
+            case "https://api.rev.ai/speechtotext/v1/jobs/test-id":
+                return makeResponse(url, pollData)
+            default:
+                return makeResponse(url, Data())
+            }
+        }
+
+        let model = RevAITranscriptionModel(
+            modelId: .machine,
+            config: RevAIConfig(
+                provider: "test-provider",
+                url: { options in "https://api.rev.ai\(options.path)" },
+                headers: { [:] },
+                fetch: fetch
+            )
+        )
+
+        do {
+            _ = try await model.doGenerate(options: .init(audio: .binary(Data([0x01])), mediaType: "audio/wav"))
+            Issue.record("Expected AISDKError")
+        } catch let error as any AISDKError {
+            #expect(error.name == "TranscriptionJobFailed")
+            #expect(error.message == "Transcription job failed")
+            #expect(hasMarker(error, marker: "vercel.ai.error.AI_RevAITranscriptionJobError"))
+        } catch {
+            Issue.record("Expected AISDKError, got: \(error)")
+        }
+    }
+
+    @Test("throws TranscriptionJobPollingTimedOut when polling exceeds timeout")
+    func pollingTimedOutThrows() async throws {
+        final class DateSequence: @unchecked Sendable {
+            private let start: Date
+            private var index: Int = 0
+            private let lock = NSLock()
+
+            init(start: Date) { self.start = start }
+
+            func next() -> Date {
+                lock.lock()
+                defer { lock.unlock() }
+                index += 1
+                // Call order:
+                // 1) response timestamp
+                // 2) polling start time
+                // 3) elapsed check (force timeout)
+                if index <= 2 { return start }
+                return start.addingTimeInterval(61)
+            }
+        }
+
+        let capture = RequestCapture()
+        let dates = DateSequence(start: Date(timeIntervalSince1970: 0))
+
+        let submitData = Data(#"{"id":"test-id","status":"in_progress"}"#.utf8)
+        let response = HTTPURLResponse(
+            url: URL(string: "https://api.rev.ai/speechtotext/v1/jobs")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { request in
+            await capture.append(request)
+            let url = request.url?.absoluteString ?? ""
+            if url == "https://api.rev.ai/speechtotext/v1/jobs" {
+                return FetchResponse(body: .data(submitData), urlResponse: response)
+            }
+            Issue.record("Unexpected URL: \(url)")
+            return FetchResponse(body: .data(Data()), urlResponse: response)
+        }
+
+        let model = RevAITranscriptionModel(
+            modelId: .machine,
+            config: RevAIConfig(
+                provider: "test-provider",
+                url: { options in "https://api.rev.ai\(options.path)" },
+                headers: { [:] },
+                fetch: fetch,
+                currentDate: { dates.next() }
+            )
+        )
+
+        do {
+            _ = try await model.doGenerate(options: .init(audio: .binary(Data([0x01])), mediaType: "audio/wav"))
+            Issue.record("Expected AISDKError")
+        } catch let error as any AISDKError {
+            #expect(error.name == "TranscriptionJobPollingTimedOut")
+            #expect(error.message == "Transcription job polling timed out")
+            #expect(hasMarker(error, marker: "vercel.ai.error.AI_RevAITranscriptionJobError"))
+        } catch {
+            Issue.record("Expected AISDKError, got: \(error)")
+        }
+
+        // Should time out before the first poll request.
+        #expect((await capture.all()).count == 1)
     }
 }

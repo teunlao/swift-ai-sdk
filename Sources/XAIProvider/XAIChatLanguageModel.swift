@@ -8,7 +8,7 @@ public final class XAIChatLanguageModel: LanguageModelV3 {
     struct Config: Sendable {
         let provider: String
         let baseURL: String
-        let headers: @Sendable () -> [String: String?]
+        let headers: @Sendable () throws -> [String: String?]
         let generateId: @Sendable () -> String
         let fetch: FetchFunction?
     }
@@ -46,9 +46,11 @@ public final class XAIChatLanguageModel: LanguageModelV3 {
     public func doGenerate(options: LanguageModelV3CallOptions) async throws -> LanguageModelV3GenerateResult {
         let prepared = try await prepareRequest(options: options)
 
+        let url = "\(config.baseURL)/chat/completions"
+
         let response = try await postJsonToAPI(
-            url: "\(config.baseURL)/chat/completions",
-            headers: combineHeaders(config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 },
+            url: url,
+            headers: combineHeaders(try config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 },
             body: JSONValue.object(prepared.body),
             failedResponseHandler: xaiFailedResponseHandler,
             successfulResponseHandler: createJsonResponseHandler(responseSchema: xaiChatResponseSchema),
@@ -56,9 +58,22 @@ public final class XAIChatLanguageModel: LanguageModelV3 {
             fetch: config.fetch
         )
 
+        if let errorMessage = response.value.error {
+            let responseBody = stringifyJSON(response.rawValue)
+            throw APICallError(
+                message: errorMessage,
+                url: url,
+                requestBodyValues: prepared.body,
+                statusCode: 200,
+                responseHeaders: response.responseHeaders,
+                responseBody: responseBody,
+                isRetryable: response.value.code == "The service is currently unavailable"
+            )
+        }
+
         var contents: [LanguageModelV3Content] = []
         let lastMessage = prepared.messages.last
-        if let choice = response.value.choices.first {
+        if let choice = response.value.choices?.first {
             if let text = choice.message.content, !text.isEmpty {
                 let shouldEmit = !(lastMessage?.role == .assistant && lastMessage?.assistantContent == text)
                 if shouldEmit {
@@ -89,8 +104,8 @@ public final class XAIChatLanguageModel: LanguageModelV3 {
             }
         }
 
-        let usage = convertXaiChatUsage(response.value.usage)
-        let rawFinishReason = response.value.choices.first?.finishReason
+        let usage = response.value.usage.map(convertXaiChatUsage) ?? defaultXaiChatUsage()
+        let rawFinishReason = response.value.choices?.first?.finishReason
         let finishReason = LanguageModelV3FinishReason(
             unified: mapXaiFinishReason(rawFinishReason),
             raw: rawFinishReason
@@ -128,12 +143,48 @@ public final class XAIChatLanguageModel: LanguageModelV3 {
             "include_usage": .bool(true)
         ])
 
+        let requestBody = streamBody
+        let url = "\(config.baseURL)/chat/completions"
+
         let streamResponse = try await postJsonToAPI(
-            url: "\(config.baseURL)/chat/completions",
-            headers: combineHeaders(config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 },
-            body: JSONValue.object(streamBody),
+            url: url,
+            headers: combineHeaders(try config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 },
+            body: JSONValue.object(requestBody),
             failedResponseHandler: xaiFailedResponseHandler,
-            successfulResponseHandler: createEventSourceResponseHandler(chunkSchema: xaiChatChunkSchema),
+            successfulResponseHandler: { input in
+                let headers = extractResponseHeaders(from: input.response.httpResponse)
+                let contentType = headers["content-type"] ?? ""
+
+                if contentType.contains("application/json") {
+                    let data = try await input.response.body.collectData()
+                    let bodyText = String(data: data, encoding: .utf8) ?? ""
+
+                    let parsedError = await safeParseJSON(ParseJSONWithSchemaOptions(text: bodyText, schema: xaiStreamErrorSchema))
+                    switch parsedError {
+                    case .success(let value, _):
+                        throw APICallError(
+                            message: value.error,
+                            url: url,
+                            requestBodyValues: requestBody,
+                            statusCode: 200,
+                            responseHeaders: headers,
+                            responseBody: bodyText,
+                            isRetryable: value.code == "The service is currently unavailable"
+                        )
+                    case .failure:
+                        throw APICallError(
+                            message: "Invalid JSON response",
+                            url: url,
+                            requestBodyValues: requestBody,
+                            statusCode: 200,
+                            responseHeaders: headers,
+                            responseBody: bodyText
+                        )
+                    }
+                }
+
+                return try await createEventSourceResponseHandler(chunkSchema: xaiChatChunkSchema)(input)
+            },
             isAborted: options.abortSignal,
             fetch: config.fetch
         )
@@ -145,10 +196,12 @@ public final class XAIChatLanguageModel: LanguageModelV3 {
 
             Task {
                 var finishReason: LanguageModelV3FinishReason = .init(unified: .other, raw: nil)
-                var usage = LanguageModelV3Usage()
+                var usage: LanguageModelV3Usage? = nil
                 var isFirstChunk = true
-                var contentBlocks: [String: ContentBlockType] = [:]
+                var contentBlocks: [String: ContentBlockState] = [:]
+                var contentBlockOrder: [String] = []
                 var lastReasoningDeltas: [String: String] = [:]
+                var activeReasoningBlockId: String? = nil
 
                 do {
                     for try await parseResult in streamResponse.value {
@@ -188,15 +241,28 @@ public final class XAIChatLanguageModel: LanguageModelV3 {
                             guard let delta = choice.delta else { continue }
 
                             if let text = delta.content, !text.isEmpty {
-                                let shouldEmit = !(messages.last?.role == .assistant && messages.last?.assistantContent == text)
-                                if shouldEmit {
-                                    let blockId = "text-\(chunk.id ?? String(choice.index))"
-                                    if contentBlocks[blockId] == nil {
-                                        contentBlocks[blockId] = .text
-                                        continuation.yield(.textStart(id: blockId, providerMetadata: nil))
-                                    }
-                                    continuation.yield(.textDelta(id: blockId, delta: text, providerMetadata: nil))
+                                // End active reasoning block when text content arrives.
+                                if let activeId = activeReasoningBlockId,
+                                   let block = contentBlocks[activeId],
+                                   block.ended == false {
+                                    continuation.yield(.reasoningEnd(id: activeId, providerMetadata: nil))
+                                    contentBlocks[activeId] = block.ending()
+                                    activeReasoningBlockId = nil
                                 }
+
+                                // Skip if this content duplicates the last assistant message.
+                                if messages.last?.role == .assistant && messages.last?.assistantContent == text {
+                                    continue
+                                }
+
+                                let blockId = "text-\(chunk.id ?? String(choice.index))"
+                                if contentBlocks[blockId] == nil {
+                                    contentBlocks[blockId] = ContentBlockState(type: .text, ended: false)
+                                    contentBlockOrder.append(blockId)
+                                    continuation.yield(.textStart(id: blockId, providerMetadata: nil))
+                                }
+
+                                continuation.yield(.textDelta(id: blockId, delta: text, providerMetadata: nil))
                             }
 
                             if let reasoning = delta.reasoningContent, !reasoning.isEmpty {
@@ -204,7 +270,9 @@ public final class XAIChatLanguageModel: LanguageModelV3 {
                                 if lastReasoningDeltas[blockId] != reasoning {
                                     lastReasoningDeltas[blockId] = reasoning
                                     if contentBlocks[blockId] == nil {
-                                        contentBlocks[blockId] = .reasoning
+                                        contentBlocks[blockId] = ContentBlockState(type: .reasoning, ended: false)
+                                        contentBlockOrder.append(blockId)
+                                        activeReasoningBlockId = blockId
                                         continuation.yield(.reasoningStart(id: blockId, providerMetadata: nil))
                                     }
                                     continuation.yield(.reasoningDelta(id: blockId, delta: reasoning, providerMetadata: nil))
@@ -212,6 +280,15 @@ public final class XAIChatLanguageModel: LanguageModelV3 {
                             }
 
                             if let toolCalls = delta.toolCalls {
+                                // End active reasoning block before tool calls start.
+                                if let activeId = activeReasoningBlockId,
+                                   let block = contentBlocks[activeId],
+                                   block.ended == false {
+                                    continuation.yield(.reasoningEnd(id: activeId, providerMetadata: nil))
+                                    contentBlocks[activeId] = block.ending()
+                                    activeReasoningBlockId = nil
+                                }
+
                                 for call in toolCalls {
                                     continuation.yield(.toolInputStart(
                                         id: call.id,
@@ -229,8 +306,9 @@ public final class XAIChatLanguageModel: LanguageModelV3 {
                         }
                     }
 
-                    for (blockId, blockType) in contentBlocks {
-                        switch blockType {
+                    for blockId in contentBlockOrder {
+                        guard let block = contentBlocks[blockId], block.ended == false else { continue }
+                        switch block.type {
                         case .text:
                             continuation.yield(.textEnd(id: blockId, providerMetadata: nil))
                         case .reasoning:
@@ -238,7 +316,11 @@ public final class XAIChatLanguageModel: LanguageModelV3 {
                         }
                     }
 
-                    continuation.yield(.finish(finishReason: finishReason, usage: usage, providerMetadata: nil))
+                    continuation.yield(.finish(
+                        finishReason: finishReason,
+                        usage: usage ?? defaultXaiChatUsage(),
+                        providerMetadata: nil
+                    ))
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)
@@ -248,7 +330,7 @@ public final class XAIChatLanguageModel: LanguageModelV3 {
 
         return LanguageModelV3StreamResult(
             stream: stream,
-            request: LanguageModelV3RequestInfo(body: streamBody),
+            request: LanguageModelV3RequestInfo(body: requestBody),
             response: LanguageModelV3StreamResponseInfo(headers: streamResponse.responseHeaders)
         )
     }
@@ -289,7 +371,7 @@ public final class XAIChatLanguageModel: LanguageModelV3 {
         ]
 
         if let maxTokens = options.maxOutputTokens {
-            body["max_tokens"] = .number(Double(maxTokens))
+            body["max_completion_tokens"] = .number(Double(maxTokens))
         }
         if let temperature = options.temperature {
             body["temperature"] = .number(temperature)
@@ -302,6 +384,9 @@ public final class XAIChatLanguageModel: LanguageModelV3 {
         }
         if let reasoningEffort = providerOptions?.reasoningEffort {
             body["reasoning_effort"] = .string(reasoningEffort.rawValue)
+        }
+        if let parallelFunctionCalling = providerOptions?.parallelFunctionCalling {
+            body["parallel_function_calling"] = .bool(parallelFunctionCalling)
         }
 
         if let responseFormat = options.responseFormat {
@@ -346,21 +431,67 @@ private enum ContentBlockType {
     case reasoning
 }
 
+private struct ContentBlockState {
+    let type: ContentBlockType
+    let ended: Bool
+
+    func ending() -> Self {
+        Self(type: type, ended: true)
+    }
+}
+
+private func defaultXaiChatUsage() -> LanguageModelV3Usage {
+    LanguageModelV3Usage(
+        inputTokens: .init(
+            total: 0,
+            noCache: 0,
+            cacheRead: 0,
+            cacheWrite: 0
+        ),
+        outputTokens: .init(
+            total: 0,
+            text: 0,
+            reasoning: 0
+        )
+    )
+}
+
+private func stringifyJSON(_ raw: Any?) -> String? {
+    guard let raw else { return nil }
+
+    if raw is NSNull {
+        return "null"
+    }
+
+    if let string = raw as? String {
+        return string
+    }
+
+    if JSONSerialization.isValidJSONObject(raw),
+       let data = try? JSONSerialization.data(withJSONObject: raw, options: []),
+       let string = String(data: data, encoding: .utf8) {
+        return string
+    }
+
+    return String(describing: raw)
+}
+
 private func convertXaiChatUsage(_ usage: XAIChatResponse.Usage) -> LanguageModelV3Usage {
     // Port of `packages/xai/src/convert-xai-chat-usage.ts`
     let cacheReadTokens = usage.promptTokensDetails?.cachedTokens ?? 0
     let reasoningTokens = usage.completionTokensDetails?.reasoningTokens ?? 0
+    let promptTokensIncludesCached = cacheReadTokens <= usage.promptTokens
 
     return LanguageModelV3Usage(
         inputTokens: .init(
-            total: usage.promptTokens,
-            noCache: usage.promptTokens - cacheReadTokens,
+            total: promptTokensIncludesCached ? usage.promptTokens : usage.promptTokens + cacheReadTokens,
+            noCache: promptTokensIncludesCached ? usage.promptTokens - cacheReadTokens : usage.promptTokens,
             cacheRead: cacheReadTokens,
             cacheWrite: nil
         ),
         outputTokens: .init(
-            total: usage.completionTokens,
-            text: usage.completionTokens - reasoningTokens,
+            total: usage.completionTokens + reasoningTokens,
+            text: usage.completionTokens,
             reasoning: reasoningTokens
         ),
         raw: try? JSONEncoder().encodeToJSONValue(usage)
@@ -369,21 +500,20 @@ private func convertXaiChatUsage(_ usage: XAIChatResponse.Usage) -> LanguageMode
 
 private func convertXaiChatUsage(_ usage: XAIChatChunk.Usage) -> LanguageModelV3Usage {
     // Port of `packages/xai/src/convert-xai-chat-usage.ts`
-    let promptTokens = usage.promptTokens
-    let completionTokens = usage.completionTokens
     let cacheReadTokens = usage.promptTokensDetails?.cachedTokens ?? 0
     let reasoningTokens = usage.completionTokensDetails?.reasoningTokens ?? 0
+    let promptTokensIncludesCached = cacheReadTokens <= usage.promptTokens
 
     return LanguageModelV3Usage(
         inputTokens: .init(
-            total: promptTokens,
-            noCache: promptTokens.map { $0 - cacheReadTokens },
+            total: promptTokensIncludesCached ? usage.promptTokens : usage.promptTokens + cacheReadTokens,
+            noCache: promptTokensIncludesCached ? usage.promptTokens - cacheReadTokens : usage.promptTokens,
             cacheRead: cacheReadTokens,
             cacheWrite: nil
         ),
         outputTokens: .init(
-            total: completionTokens,
-            text: completionTokens.map { $0 - reasoningTokens },
+            total: usage.completionTokens + reasoningTokens,
+            text: usage.completionTokens,
             reasoning: reasoningTokens
         ),
         raw: try? JSONEncoder().encodeToJSONValue(usage)
@@ -492,10 +622,12 @@ private struct XAIChatResponse: Codable {
     let id: String?
     let created: Double?
     let model: String?
-    let choices: [Choice]
+    let choices: [Choice]?
     let object: String?
-    let usage: Usage
+    let usage: Usage?
     let citations: [String]?
+    let code: String?
+    let error: String?
 
     private enum CodingKeys: String, CodingKey {
         case id
@@ -505,6 +637,8 @@ private struct XAIChatResponse: Codable {
         case object
         case usage
         case citations
+        case code
+        case error
     }
 }
 
@@ -584,9 +718,9 @@ private struct XAIChatChunk: Codable {
             }
         }
 
-        let promptTokens: Int?
-        let completionTokens: Int?
-        let totalTokens: Int?
+        let promptTokens: Int
+        let completionTokens: Int
+        let totalTokens: Int
         let promptTokensDetails: PromptDetails?
         let completionTokensDetails: CompletionDetails?
 
@@ -630,6 +764,18 @@ private let xaiChatResponseSchema = FlexibleSchema(
 private let xaiChatChunkSchema = FlexibleSchema(
     Schema<XAIChatChunk>.codable(
         XAIChatChunk.self,
+        jsonSchema: genericJSONObjectSchema
+    )
+)
+
+private struct XAIStreamError: Codable {
+    let code: String
+    let error: String
+}
+
+private let xaiStreamErrorSchema = FlexibleSchema(
+    Schema<XAIStreamError>.codable(
+        XAIStreamError.self,
         jsonSchema: genericJSONObjectSchema
     )
 )

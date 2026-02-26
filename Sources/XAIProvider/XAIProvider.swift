@@ -1,7 +1,6 @@
 import Foundation
 import AISDKProvider
 import AISDKProviderUtils
-import OpenAICompatibleProvider
 
 /// Settings for creating an xAI provider.
 /// Mirrors `packages/xai/src/xai-provider.ts`.
@@ -29,14 +28,14 @@ public struct XAIProviderSettings: Sendable {
 public final class XAIProvider: ProviderV3 {
     private let languageModelFactory: @Sendable (XAIChatModelId) -> XAIChatLanguageModel
     private let responsesModelFactory: @Sendable (XAIResponsesModelId) -> XAIResponsesLanguageModel
-    private let imageModelFactory: @Sendable (XAIImageModelId) -> OpenAICompatibleImageModel
+    private let imageModelFactory: @Sendable (XAIImageModelId) -> XAIImageModel
     private let videoModelFactory: @Sendable (XAIVideoModelId) -> XAIVideoModel
     public let tools: XAITools
 
     init(
         languageModelFactory: @escaping @Sendable (XAIChatModelId) -> XAIChatLanguageModel,
         responsesModelFactory: @escaping @Sendable (XAIResponsesModelId) -> XAIResponsesLanguageModel,
-        imageModelFactory: @escaping @Sendable (XAIImageModelId) -> OpenAICompatibleImageModel,
+        imageModelFactory: @escaping @Sendable (XAIImageModelId) -> XAIImageModel,
         videoModelFactory: @escaping @Sendable (XAIVideoModelId) -> XAIVideoModel,
         tools: XAITools
     ) {
@@ -75,7 +74,7 @@ public final class XAIProvider: ProviderV3 {
         imageModelFactory(XAIImageModelId(rawValue: modelId))
     }
 
-    public func image(modelId: XAIImageModelId) -> OpenAICompatibleImageModel {
+    public func image(modelId: XAIImageModelId) -> XAIImageModel {
         imageModelFactory(modelId)
     }
 
@@ -103,27 +102,20 @@ public final class XAIProvider: ProviderV3 {
 public func createXAIProvider(settings: XAIProviderSettings = .init()) -> XAIProvider {
     let baseURL = withoutTrailingSlash(settings.baseURL) ?? "https://api.x.ai/v1"
 
-    let headersClosure: @Sendable () -> [String: String?] = {
-        var baseHeaders: [String: String?] = [:]
-        let apiKey: String
-        do {
-            apiKey = try loadAPIKey(
-                apiKey: settings.apiKey,
-                environmentVariableName: "XAI_API_KEY",
-                description: "xAI API key"
-            )
-        } catch {
-            fatalError("xAI API key is missing: \(error)")
-        }
-        baseHeaders["Authorization"] = "Bearer \(apiKey)"
+    let headersClosure: @Sendable () throws -> [String: String?] = {
+        // Lazily load API key on first request to mirror upstream behavior.
+        let apiKey = try loadAPIKey(
+            apiKey: settings.apiKey,
+            environmentVariableName: "XAI_API_KEY",
+            description: "xAI API key"
+        )
 
-        if let custom = settings.headers {
-            for (key, value) in custom {
-                baseHeaders[key] = value
-            }
-        }
+        let baseHeaders: [String: String?] = [
+            "Authorization": "Bearer \(apiKey)"
+        ]
 
-        let withUA = withUserAgentSuffix(baseHeaders, "ai-sdk/xai/\(XAI_PROVIDER_VERSION)")
+        let merged = combineHeaders(baseHeaders, settings.headers?.mapValues { Optional($0) })
+        let withUA = withUserAgentSuffix(merged, "ai-sdk/xai/\(XAI_PROVIDER_VERSION)")
         return withUA.mapValues { Optional($0) }
     }
 
@@ -153,15 +145,14 @@ public func createXAIProvider(settings: XAIProviderSettings = .init()) -> XAIPro
         )
     }
 
-    let imageModelFactory: @Sendable (XAIImageModelId) -> OpenAICompatibleImageModel = { modelId in
-        OpenAICompatibleImageModel(
-            modelId: OpenAICompatibleImageModelId(rawValue: modelId.rawValue),
-            config: OpenAICompatibleImageModelConfig(
+    let imageModelFactory: @Sendable (XAIImageModelId) -> XAIImageModel = { modelId in
+        XAIImageModel(
+            modelId: modelId,
+            config: XAIImageModelConfig(
                 provider: "xai.image",
-                headers: { headersClosure().compactMapValues { $0 } },
-                url: { options in "\(baseURL)\(options.path)" },
-                fetch: settings.fetch,
-                errorConfiguration: xaiErrorConfiguration
+                baseURL: baseURL,
+                headers: headersClosure,
+                fetch: settings.fetch
             )
         )
     }

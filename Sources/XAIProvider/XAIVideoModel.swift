@@ -12,14 +12,14 @@ import AISDKProviderUtils
 struct XAIVideoModelConfig: Sendable {
     let provider: String
     let baseURL: String?
-    let headers: @Sendable () -> [String: String?]
+    let headers: @Sendable () throws -> [String: String?]
     let fetch: FetchFunction?
     let currentDate: @Sendable () -> Date
 
     init(
         provider: String,
         baseURL: String?,
-        headers: @escaping @Sendable () -> [String: String?],
+        headers: @escaping @Sendable () throws -> [String: String?],
         fetch: FetchFunction? = nil,
         currentDate: @escaping @Sendable () -> Date = { Date() }
     ) {
@@ -209,7 +209,7 @@ public final class XAIVideoModel: VideoModelV3 {
         let baseURL = config.baseURL ?? "https://api.x.ai/v1"
 
         let createHeaders = combineHeaders(
-            config.headers(),
+            try config.headers(),
             options.headers?.mapValues { Optional($0) }
         ).compactMapValues { $0 }
 
@@ -247,7 +247,7 @@ public final class XAIVideoModel: VideoModelV3 {
             }
 
             let statusHeaders = combineHeaders(
-                config.headers(),
+                try config.headers(),
                 options.headers?.mapValues { Optional($0) }
             ).compactMapValues { $0 }
 
@@ -334,4 +334,3 @@ private func encodeJSONString<T: Encodable>(_ value: T) -> String {
         return "{}"
     }
 }
-

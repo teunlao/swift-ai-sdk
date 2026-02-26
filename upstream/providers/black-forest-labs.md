@@ -1,6 +1,6 @@
 # Provider: Black Forest Labs
 
-- Audited against upstream commit: `f3a72bc2a0433fda9506b7c7ac1b28b4adafcfc9`
+- Audited against upstream commit: `73d5c5920e0fea7633027fdd87374adc9ba49743`
 - Upstream package: `external/vercel-ai-sdk/packages/black-forest-labs/src/**`
 - Swift implementation: `Sources/BlackForestLabsProvider/**`
 
@@ -10,10 +10,11 @@
 - [x] Polling behavior (interval/timeout overrides, abort) + result mapping
 - [x] Final image download + binary response handling
 - [x] Error mapping via JSON error envelope
+- [x] Edge-case parity coverage: webhook fields, `state` vs `status` poll responses, polling retries/timeouts, Error/Failed statuses, URL/id query injection, and merged headers to polling.
 
 ## Known gaps / TODO
 
-- [ ] Expand edge-case parity vs upstream tests (webhook fields, more poll statuses).
+- [ ] None known.
 
 ## Notes
 
@@ -21,4 +22,3 @@
 - Upstream: `external/vercel-ai-sdk/packages/black-forest-labs/src/black-forest-labs-image-model.ts`
 - Swift: `Sources/BlackForestLabsProvider/BlackForestLabsProvider.swift`
 - Swift: `Sources/BlackForestLabsProvider/BlackForestLabsImageModel.swift`
-
