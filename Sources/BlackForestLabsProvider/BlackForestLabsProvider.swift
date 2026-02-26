@@ -47,6 +47,71 @@ public struct BlackForestLabsProviderSettings: Sendable {
 
 private let defaultBaseURL = "https://api.bfl.ai/v1"
 
+private func defaultBlackForestLabsFetchFunction() -> FetchFunction {
+    { request in
+        let session = URLSession.shared
+
+        if #available(macOS 12.0, iOS 15.0, tvOS 15.0, watchOS 8.0, *) {
+            let (bytes, response) = try await session.bytes(for: request)
+            let stream = AsyncThrowingStream<Data, Error> { continuation in
+                Task {
+                    var buffer = Data()
+                    buffer.reserveCapacity(16_384)
+
+                    do {
+                        for try await byte in bytes {
+                            buffer.append(byte)
+
+                            if buffer.count >= 16_384 {
+                                continuation.yield(buffer)
+                                buffer.removeAll(keepingCapacity: true)
+                            }
+                        }
+
+                        if !buffer.isEmpty {
+                            continuation.yield(buffer)
+                        }
+
+                        continuation.finish()
+                    } catch {
+                        continuation.finish(throwing: error)
+                    }
+                }
+            }
+
+            return FetchResponse(body: .stream(stream), urlResponse: response)
+        } else {
+            let (data, response) = try await session.data(for: request)
+            return FetchResponse(body: .data(data), urlResponse: response)
+        }
+    }
+}
+
+private func createBlackForestLabsAuthFetch(
+    apiKey: String?,
+    customFetch: FetchFunction?
+) -> FetchFunction {
+    let baseFetch = customFetch ?? defaultBlackForestLabsFetchFunction()
+
+    return { request in
+        var modified = request
+        var headers = modified.allHTTPHeaderFields ?? [:]
+
+        let hasXKey = headers.keys.contains { $0.lowercased() == "x-key" }
+        if !hasXKey {
+            let resolved = try loadAPIKey(
+                apiKey: apiKey,
+                environmentVariableName: "BFL_API_KEY",
+                description: "Black Forest Labs"
+            )
+            headers["x-key"] = resolved
+            modified.allHTTPHeaderFields = headers
+        }
+
+        return try await baseFetch(modified)
+    }
+}
+
 public final class BlackForestLabsProvider: ProviderV3 {
     private let imageFactory: @Sendable (BlackForestLabsImageModelId) -> BlackForestLabsImageModel
 
@@ -87,20 +152,7 @@ public func createBlackForestLabsProvider(settings: BlackForestLabsProviderSetti
     let baseURL = withoutTrailingSlash(settings.baseURL) ?? defaultBaseURL
 
     let headersClosure: @Sendable () -> [String: String?] = {
-        let apiKey: String
-        do {
-            apiKey = try loadAPIKey(
-                apiKey: settings.apiKey,
-                environmentVariableName: "BFL_API_KEY",
-                description: "Black Forest Labs"
-            )
-        } catch {
-            fatalError("Black Forest Labs API key is missing: \(error)")
-        }
-
-        var computed: [String: String?] = [
-            "x-key": apiKey
-        ]
+        var computed: [String: String?] = [:]
 
         if let customHeaders = settings.headers {
             for (key, value) in customHeaders {
@@ -112,6 +164,11 @@ public func createBlackForestLabsProvider(settings: BlackForestLabsProviderSetti
         return withUA.mapValues { Optional($0) }
     }
 
+    let fetch = createBlackForestLabsAuthFetch(
+        apiKey: settings.apiKey,
+        customFetch: settings.fetch
+    )
+
     let imageFactory: @Sendable (BlackForestLabsImageModelId) -> BlackForestLabsImageModel = { modelId in
         BlackForestLabsImageModel(
             modelId: modelId,
@@ -119,7 +176,7 @@ public func createBlackForestLabsProvider(settings: BlackForestLabsProviderSetti
                 provider: "black-forest-labs.image",
                 baseURL: baseURL,
                 headers: headersClosure,
-                fetch: settings.fetch,
+                fetch: fetch,
                 pollIntervalMillis: settings.pollIntervalMillis,
                 pollTimeoutMillis: settings.pollTimeoutMillis
             )

@@ -11,6 +11,7 @@
 - [x] Final image download + binary response handling
 - [x] Error mapping via JSON error envelope
 - [x] Edge-case parity coverage: webhook fields, `state` vs `status` poll responses, polling retries/timeouts, Error/Failed statuses, URL/id query injection, and merged headers to polling.
+- [x] Auth behavior: missing `BFL_API_KEY` now throws `LoadAPIKeyError` at request time (no creation-time crash), and does not perform network calls before failing.
 
 ## Known gaps / TODO
 

@@ -30,6 +30,7 @@ For source-of-truth code, always follow the commits and tests.
 ### Unreleased (main)
 
 - 2026-02-26
+  - Black Forest Labs: provider auth parity fix — removed creation-time `fatalError` for missing API key; auth now resolves at request time (`LoadAPIKeyError`) via fetch wrapper; added provider regression coverage for missing key behavior and no-network-before-fail semantics.
   - Rev.ai: provider auth parity fix — removed creation-time `fatalError` for missing API key; auth now resolves at request time (`LoadAPIKeyError`) via fetch wrapper; added regression coverage in `RevAIProviderAuthTests`.
   - Cerebras: provider auth parity fix — removed creation-time `fatalError` for missing API key; auth now resolves at request time (`LoadAPIKeyError`) via fetch wrapper, with added provider regression coverage for missing key behavior.
   - AssemblyAI: provider parity fix — removed creation-time `fatalError` for missing API key; auth now resolves at request time (`LoadAPIKeyError`) via fetch wrapper, added upstream alias `createAssemblyAI(...)`, and added provider regression tests (alias + endpoint flow + missing key).
