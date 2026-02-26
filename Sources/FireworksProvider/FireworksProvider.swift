@@ -12,6 +12,71 @@ import OpenAICompatibleProvider
 
 private let FIREWORKS_DEFAULT_BASE_URL = "https://api.fireworks.ai/inference/v1"
 
+private func defaultFireworksFetchFunction() -> FetchFunction {
+    { request in
+        let session = URLSession.shared
+
+        if #available(macOS 12.0, iOS 15.0, tvOS 15.0, watchOS 8.0, *) {
+            let (bytes, response) = try await session.bytes(for: request)
+            let stream = AsyncThrowingStream<Data, Error> { continuation in
+                Task {
+                    var buffer = Data()
+                    buffer.reserveCapacity(16_384)
+
+                    do {
+                        for try await byte in bytes {
+                            buffer.append(byte)
+
+                            if buffer.count >= 16_384 {
+                                continuation.yield(buffer)
+                                buffer.removeAll(keepingCapacity: true)
+                            }
+                        }
+
+                        if !buffer.isEmpty {
+                            continuation.yield(buffer)
+                        }
+
+                        continuation.finish()
+                    } catch {
+                        continuation.finish(throwing: error)
+                    }
+                }
+            }
+
+            return FetchResponse(body: .stream(stream), urlResponse: response)
+        } else {
+            let (data, response) = try await session.data(for: request)
+            return FetchResponse(body: .data(data), urlResponse: response)
+        }
+    }
+}
+
+private func createFireworksAuthFetch(
+    apiKey: String?,
+    customFetch: FetchFunction?
+) -> FetchFunction {
+    let baseFetch = customFetch ?? defaultFireworksFetchFunction()
+
+    return { request in
+        var modified = request
+        var headers = modified.allHTTPHeaderFields ?? [:]
+
+        let hasAuthorization = headers.keys.contains { $0.lowercased() == "authorization" }
+        if !hasAuthorization {
+            let resolved = try loadAPIKey(
+                apiKey: apiKey,
+                environmentVariableName: "FIREWORKS_API_KEY",
+                description: "Fireworks API key"
+            )
+            headers["Authorization"] = "Bearer \(resolved)"
+            modified.allHTTPHeaderFields = headers
+        }
+
+        return try await baseFetch(modified)
+    }
+}
+
 public struct FireworksProviderSettings: Sendable {
     public var apiKey: String?
     public var baseURL: String?
@@ -100,20 +165,7 @@ public func createFireworksProvider(settings: FireworksProviderSettings = .init(
     let baseURL = withoutTrailingSlash(settings.baseURL) ?? FIREWORKS_DEFAULT_BASE_URL
 
     let headersClosure: @Sendable () -> [String: String] = {
-        let apiKey: String
-        do {
-            apiKey = try loadAPIKey(
-                apiKey: settings.apiKey,
-                environmentVariableName: "FIREWORKS_API_KEY",
-                description: "Fireworks API key"
-            )
-        } catch {
-            fatalError("Fireworks API key is missing: \(error)")
-        }
-
-        var baseHeaders: [String: String?] = [
-            "Authorization": "Bearer \(apiKey)"
-        ]
+        var baseHeaders: [String: String?] = [:]
 
         if let customHeaders = settings.headers {
             for (key, value) in customHeaders {
@@ -124,7 +176,10 @@ public func createFireworksProvider(settings: FireworksProviderSettings = .init(
         return withUserAgentSuffix(baseHeaders, "ai-sdk/fireworks/\(FIREWORKS_VERSION)")
     }
 
-    let fetch = settings.fetch
+    let fetch = createFireworksAuthFetch(
+        apiKey: settings.apiKey,
+        customFetch: settings.fetch
+    )
 
     let urlBuilder: @Sendable (OpenAICompatibleURLOptions) -> String = { options in
         "\(baseURL)\(options.path)"
@@ -189,6 +244,11 @@ public func createFireworksProvider(settings: FireworksProviderSettings = .init(
         embeddingFactory: embeddingFactory,
         imageFactory: imageFactory
     )
+}
+
+/// Alias matching upstream naming (`createFireworks`).
+public func createFireworks(settings: FireworksProviderSettings = .init()) -> FireworksProvider {
+    createFireworksProvider(settings: settings)
 }
 
 public let fireworks = createFireworksProvider()
