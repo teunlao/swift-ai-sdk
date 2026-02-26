@@ -152,5 +152,53 @@ struct LMNTSpeechModelTests {
         let result = try await provider.speech(.aurora).doGenerate(options: SpeechModelV3CallOptions(text: "Hello from the AI SDK!"))
         #expect(result.warnings.isEmpty)
     }
-}
 
+    @Suite("auth behavior", .serialized)
+    struct AuthBehaviorTests {
+        @Test("missing API key throws LoadAPIKeyError at request time")
+        func missingAPIKeyThrowsAtRequestTime() async throws {
+            actor RequestCapture {
+                var count: Int = 0
+                func increment() { count += 1 }
+                func value() -> Int { count }
+            }
+
+            let original = getenv("LMNT_API_KEY").flatMap { String(validatingCString: $0) }
+            defer {
+                if let original {
+                    setenv("LMNT_API_KEY", original, 1)
+                } else {
+                    unsetenv("LMNT_API_KEY")
+                }
+            }
+
+            unsetenv("LMNT_API_KEY")
+
+            let capture = RequestCapture()
+            let fetch: FetchFunction = { request in
+                await capture.increment()
+                let response = HTTPURLResponse(
+                    url: request.url ?? URL(string: "https://api.lmnt.com/v1/ai/speech/bytes")!,
+                    statusCode: 200,
+                    httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "audio/mp3"]
+                )!
+                return FetchResponse(body: .data(Data()), urlResponse: response)
+            }
+
+            let provider = createLMNT(settings: .init(fetch: fetch))
+            let model = provider.speech(.aurora)
+
+            do {
+                _ = try await model.doGenerate(options: .init(text: "Auth regression"))
+                Issue.record("Expected missing API key error")
+            } catch let error as LoadAPIKeyError {
+                #expect(error.message.contains("LMNT_API_KEY environment variable"))
+            } catch {
+                Issue.record("Expected LoadAPIKeyError, got: \(error)")
+            }
+
+            #expect(await capture.value() == 0)
+        }
+    }
+}

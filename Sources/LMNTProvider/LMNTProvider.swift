@@ -52,19 +52,75 @@ public final class LMNTProvider: ProviderV3 {
 
 /// Create an LMNT provider instance.
 public func createLMNT(settings: LMNTProviderSettings = .init()) -> LMNTProvider {
+    func defaultLMNTFetchFunction() -> FetchFunction {
+        { request in
+            let session = URLSession.shared
+
+            if #available(macOS 12.0, iOS 15.0, tvOS 15.0, watchOS 8.0, *) {
+                let (bytes, response) = try await session.bytes(for: request)
+                let stream = AsyncThrowingStream<Data, Error> { continuation in
+                    Task {
+                        var buffer = Data()
+                        buffer.reserveCapacity(16_384)
+
+                        do {
+                            for try await byte in bytes {
+                                buffer.append(byte)
+
+                                if buffer.count >= 16_384 {
+                                    continuation.yield(buffer)
+                                    buffer.removeAll(keepingCapacity: true)
+                                }
+                            }
+
+                            if !buffer.isEmpty {
+                                continuation.yield(buffer)
+                            }
+
+                            continuation.finish()
+                        } catch {
+                            continuation.finish(throwing: error)
+                        }
+                    }
+                }
+
+                return FetchResponse(body: .stream(stream), urlResponse: response)
+            } else {
+                let (data, response) = try await session.data(for: request)
+                return FetchResponse(body: .data(data), urlResponse: response)
+            }
+        }
+    }
+
+    func createLMNTAuthFetch(apiKey: String?, customFetch: FetchFunction?) -> FetchFunction {
+        let baseFetch = customFetch ?? defaultLMNTFetchFunction()
+
+        return { request in
+            var modified = request
+            var headers = modified.allHTTPHeaderFields ?? [:]
+
+            let hasAPIKey = headers.keys.contains { $0.lowercased() == "x-api-key" }
+            if !hasAPIKey {
+                let resolved = try loadAPIKey(
+                    apiKey: apiKey,
+                    environmentVariableName: "LMNT_API_KEY",
+                    description: "LMNT"
+                )
+                headers["x-api-key"] = resolved
+                modified.allHTTPHeaderFields = headers
+            }
+
+            return try await baseFetch(modified)
+        }
+    }
+
+    let fetch = createLMNTAuthFetch(
+        apiKey: settings.apiKey,
+        customFetch: settings.fetch
+    )
+
     let headersClosure: @Sendable () -> [String: String?] = {
         var base: [String: String?] = [:]
-        let key: String
-        do {
-            key = try loadAPIKey(
-                apiKey: settings.apiKey,
-                environmentVariableName: "LMNT_API_KEY",
-                description: "LMNT"
-            )
-        } catch {
-            fatalError("LMNT API key is missing: \(error)")
-        }
-        base["x-api-key"] = key
         if let custom = settings.headers {
             for (k, v) in custom { base[k] = v }
         }
@@ -79,7 +135,7 @@ public func createLMNT(settings: LMNTProviderSettings = .init()) -> LMNTProvider
                 provider: "lmnt.speech",
                 url: { opts in "https://api.lmnt.com\(opts.path)" },
                 headers: headersClosure,
-                fetch: settings.fetch
+                fetch: fetch
             )
         )
     }
