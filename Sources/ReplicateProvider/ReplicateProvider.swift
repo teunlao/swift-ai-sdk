@@ -64,21 +64,75 @@ public final class ReplicateProvider: ProviderV3 {
 public func createReplicate(settings: ReplicateProviderSettings = .init()) -> ReplicateProvider {
     let baseURL = withoutTrailingSlash(settings.baseURL) ?? "https://api.replicate.com/v1"
 
+    func defaultReplicateFetchFunction() -> FetchFunction {
+        { request in
+            let session = URLSession.shared
+
+            if #available(macOS 12.0, iOS 15.0, tvOS 15.0, watchOS 8.0, *) {
+                let (bytes, response) = try await session.bytes(for: request)
+                let stream = AsyncThrowingStream<Data, Error> { continuation in
+                    Task {
+                        var buffer = Data()
+                        buffer.reserveCapacity(16_384)
+
+                        do {
+                            for try await byte in bytes {
+                                buffer.append(byte)
+
+                                if buffer.count >= 16_384 {
+                                    continuation.yield(buffer)
+                                    buffer.removeAll(keepingCapacity: true)
+                                }
+                            }
+
+                            if !buffer.isEmpty {
+                                continuation.yield(buffer)
+                            }
+
+                            continuation.finish()
+                        } catch {
+                            continuation.finish(throwing: error)
+                        }
+                    }
+                }
+
+                return FetchResponse(body: .stream(stream), urlResponse: response)
+            } else {
+                let (data, response) = try await session.data(for: request)
+                return FetchResponse(body: .data(data), urlResponse: response)
+            }
+        }
+    }
+
+    func createReplicateAuthFetch(apiToken: String?, customFetch: FetchFunction?) -> FetchFunction {
+        let baseFetch = customFetch ?? defaultReplicateFetchFunction()
+
+        return { request in
+            var modified = request
+            var headers = modified.allHTTPHeaderFields ?? [:]
+
+            let hasAuthorization = headers.keys.contains { $0.lowercased() == "authorization" }
+            if !hasAuthorization {
+                let resolved = try loadAPIKey(
+                    apiKey: apiToken,
+                    environmentVariableName: "REPLICATE_API_TOKEN",
+                    description: "Replicate"
+                )
+                headers["Authorization"] = "Bearer \(resolved)"
+                modified.allHTTPHeaderFields = headers
+            }
+
+            return try await baseFetch(modified)
+        }
+    }
+
+    let fetch = createReplicateAuthFetch(
+        apiToken: settings.apiToken,
+        customFetch: settings.fetch
+    )
+
     let headersClosure: @Sendable () -> [String: String?] = {
         var headers: [String: String?] = [:]
-
-        let token: String
-        do {
-            token = try loadAPIKey(
-                apiKey: settings.apiToken,
-                environmentVariableName: "REPLICATE_API_TOKEN",
-                description: "Replicate"
-            )
-        } catch {
-            fatalError("Replicate API token is missing: \(error)")
-        }
-
-        headers["Authorization"] = "Bearer \(token)"
 
         if let extra = settings.headers {
             for (k, v) in extra { headers[k] = v }
@@ -95,7 +149,7 @@ public func createReplicate(settings: ReplicateProviderSettings = .init()) -> Re
                 provider: "replicate",
                 baseURL: baseURL,
                 headers: headersClosure,
-                fetch: settings.fetch
+                fetch: fetch
             )
         )
     }
@@ -105,4 +159,3 @@ public func createReplicate(settings: ReplicateProviderSettings = .init()) -> Re
 
 /// Default Replicate provider instance.
 public let replicate: ReplicateProvider = createReplicate()
-
