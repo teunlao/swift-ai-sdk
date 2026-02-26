@@ -90,7 +90,7 @@ public func handleUIMessageStreamFinish<Message: UIMessageConvertible>(
         )
     }
 
-    let processedStream = processUIMessageStream(
+    let processedStream = processUIMessageStreamInternal(
         stream: idInjectedStream,
         runUpdateMessageJob: runUpdateMessageJob,
         onError: onError,

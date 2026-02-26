@@ -84,6 +84,9 @@ public func createStreamingUIMessageState<Message: UIMessageConvertible>(
 
 public typealias UIMessageToolCallHandler = @Sendable (AnyUIMessageChunk) async -> Void
 
+/// Processes a UI message stream and yields the original chunks while updating UI message state.
+///
+/// Port of `@ai-sdk/ai/src/ui/process-ui-message-stream.ts`.
 public func processUIMessageStream<Message: UIMessageConvertible>(
     stream: AsyncThrowingStream<AnyUIMessageChunk, Error>,
     runUpdateMessageJob: @escaping @Sendable (_ job: @escaping StreamingUIMessageJob<Message>) async throws -> Void,
@@ -91,8 +94,53 @@ public func processUIMessageStream<Message: UIMessageConvertible>(
     messageMetadataSchema: FlexibleSchema<JSONValue>? = nil,
     dataPartSchemas: [String: FlexibleSchema<JSONValue>]? = nil,
     onToolCall: UIMessageToolCallHandler? = nil,
+    onData: (@Sendable (DataUIPart) -> Void)? = nil
+) -> AsyncThrowingStream<AnyUIMessageChunk, Error> {
+    processUIMessageStreamImpl(
+        stream: stream,
+        runUpdateMessageJob: runUpdateMessageJob,
+        onError: onError,
+        messageMetadataSchema: messageMetadataSchema,
+        dataPartSchemas: dataPartSchemas,
+        onToolCall: onToolCall,
+        onData: onData,
+        onChunk: nil
+    )
+}
+
+// Internal-only hook used by stream wrappers that need to run side effects in the
+// processing task (e.g. to preserve upstream backpressure semantics).
+func processUIMessageStreamInternal<Message: UIMessageConvertible>(
+    stream: AsyncThrowingStream<AnyUIMessageChunk, Error>,
+    runUpdateMessageJob: @escaping @Sendable (_ job: @escaping StreamingUIMessageJob<Message>) async throws -> Void,
+    onError: ErrorHandler?,
+    messageMetadataSchema: FlexibleSchema<JSONValue>? = nil,
+    dataPartSchemas: [String: FlexibleSchema<JSONValue>]? = nil,
+    onToolCall: UIMessageToolCallHandler? = nil,
     onData: (@Sendable (DataUIPart) -> Void)? = nil,
-    onChunk: (@Sendable (AnyUIMessageChunk) async -> Void)? = nil
+    onChunk: (@Sendable (AnyUIMessageChunk) async -> Void)?
+) -> AsyncThrowingStream<AnyUIMessageChunk, Error> {
+    processUIMessageStreamImpl(
+        stream: stream,
+        runUpdateMessageJob: runUpdateMessageJob,
+        onError: onError,
+        messageMetadataSchema: messageMetadataSchema,
+        dataPartSchemas: dataPartSchemas,
+        onToolCall: onToolCall,
+        onData: onData,
+        onChunk: onChunk
+    )
+}
+
+private func processUIMessageStreamImpl<Message: UIMessageConvertible>(
+    stream: AsyncThrowingStream<AnyUIMessageChunk, Error>,
+    runUpdateMessageJob: @escaping @Sendable (_ job: @escaping StreamingUIMessageJob<Message>) async throws -> Void,
+    onError: ErrorHandler?,
+    messageMetadataSchema: FlexibleSchema<JSONValue>?,
+    dataPartSchemas: [String: FlexibleSchema<JSONValue>]?,
+    onToolCall: UIMessageToolCallHandler?,
+    onData: (@Sendable (DataUIPart) -> Void)?,
+    onChunk: (@Sendable (AnyUIMessageChunk) async -> Void)?
 ) -> AsyncThrowingStream<AnyUIMessageChunk, Error> {
     return AsyncThrowingStream { continuation in
         let task = Task {
