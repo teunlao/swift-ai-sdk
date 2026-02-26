@@ -55,6 +55,16 @@ struct AssemblyAIProviderTests {
                 return Self.makeResponse(
                     url: url,
                     json: [
+                        "id": "test-transcript-id",
+                        "status": "queued",
+                    ]
+                )
+            case "/v2/transcript/test-transcript-id":
+                return Self.makeResponse(
+                    url: url,
+                    json: [
+                        "id": "test-transcript-id",
+                        "status": "completed",
                         "text": "ok",
                         "language_code": "en",
                         "audio_duration": 1,
@@ -73,9 +83,10 @@ struct AssemblyAIProviderTests {
         )
 
         let urls = await capture.all().compactMap(\.url?.absoluteString)
-        #expect(urls.count == 2)
+        #expect(urls.count == 3)
         #expect(urls.first == "https://api.assemblyai.com/v2/upload")
-        #expect(urls.last == "https://api.assemblyai.com/v2/transcript")
+        #expect(urls[1] == "https://api.assemblyai.com/v2/transcript")
+        #expect(urls.last == "https://api.assemblyai.com/v2/transcript/test-transcript-id")
     }
 
     @Suite("auth behavior", .serialized)

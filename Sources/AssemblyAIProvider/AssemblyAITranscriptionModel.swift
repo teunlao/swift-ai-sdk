@@ -6,7 +6,7 @@ import AISDKProviderUtils
 //=== Upstream Reference ====================================================//
 //===----------------------------------------------------------------------===//
 // Ported from packages/assemblyai/src/assemblyai-transcription-model.ts
-// Upstream commit: 77db222ee
+// Upstream commit: 73d5c5920e
 //===----------------------------------------------------------------------===//
 
 public final class AssemblyAITranscriptionModel: TranscriptionModelV3 {
@@ -26,19 +26,24 @@ public final class AssemblyAITranscriptionModel: TranscriptionModelV3 {
         public let headers: @Sendable () -> [String: String?]
         public let fetch: FetchFunction?
         public let currentDate: @Sendable () -> Date
+        /// The polling interval for checking transcript status, in milliseconds.
+        /// Matches upstream `pollingInterval` (default: 3000ms).
+        public let pollingIntervalMs: Int?
 
         public init(
             provider: String,
             url: @escaping @Sendable (RequestOptions) -> String,
             headers: @escaping @Sendable () -> [String: String?],
-            fetch: FetchFunction?,
-            currentDate: @escaping @Sendable () -> Date
+            fetch: FetchFunction? = nil,
+            currentDate: @escaping @Sendable () -> Date = { Date() },
+            pollingIntervalMs: Int? = nil
         ) {
             self.provider = provider
             self.url = url
             self.headers = headers
             self.fetch = fetch
             self.currentDate = currentDate
+            self.pollingIntervalMs = pollingIntervalMs
         }
     }
 
@@ -46,6 +51,8 @@ public final class AssemblyAITranscriptionModel: TranscriptionModelV3 {
         let body: [String: JSONValue]
         let warnings: [SharedV3Warning]
     }
+
+    private static let defaultPollingIntervalMs = 3000
 
     private let modelIdentifier: AssemblyAITranscriptionModelId
     private let config: Config
@@ -90,17 +97,23 @@ public final class AssemblyAITranscriptionModel: TranscriptionModelV3 {
         var payload = prepared.body
         payload["audio_url"] = .string(uploadResponse.value.upload_url)
 
-        let transcriptResponse = try await postJsonToAPI(
+        let submitResponse = try await postJsonToAPI(
             url: config.url(.init(modelId: modelIdentifier, path: "/v2/transcript")),
             headers: combineHeaders(config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 },
             body: JSONValue.object(payload),
             failedResponseHandler: assemblyaiFailedResponseHandler,
-            successfulResponseHandler: createJsonResponseHandler(responseSchema: assemblyaiTranscriptionResponseSchema),
+            successfulResponseHandler: createJsonResponseHandler(responseSchema: assemblyaiSubmitResponseSchema),
             isAborted: options.abortSignal,
             fetch: config.fetch
         )
 
-        let result = transcriptResponse.value
+        let completion = try await waitForCompletion(
+            transcriptId: submitResponse.value.id,
+            headers: options.headers,
+            abortSignal: options.abortSignal
+        )
+
+        let result = completion.transcript
         let segments = (result.words ?? []).map {
             TranscriptionModelV3Result.Segment(text: $0.text, startSecond: $0.start, endSecond: $0.end)
         }
@@ -117,11 +130,63 @@ public final class AssemblyAITranscriptionModel: TranscriptionModelV3 {
             response: TranscriptionModelV3Result.ResponseInfo(
                 timestamp: timestamp,
                 modelId: modelIdentifier.rawValue,
-                headers: transcriptResponse.responseHeaders,
-                body: transcriptResponse.rawValue
+                headers: completion.responseHeaders,
+                body: completion.rawValue
             ),
             providerMetadata: nil
         )
+    }
+
+    private struct CompletionResult {
+        let transcript: AssemblyAITranscriptResponse
+        let responseHeaders: SharedV3Headers
+        let rawValue: Any?
+    }
+
+    private func waitForCompletion(
+        transcriptId: String,
+        headers: [String: String]?,
+        abortSignal: (@Sendable () -> Bool)?
+    ) async throws -> CompletionResult {
+        let pollingIntervalMs = config.pollingIntervalMs ?? Self.defaultPollingIntervalMs
+
+        while true {
+            if abortSignal?() == true {
+                throw CancellationError()
+            }
+
+            let response = try await getFromAPI(
+                url: config.url(.init(modelId: modelIdentifier, path: "/v2/transcript/\(transcriptId)")),
+                headers: combineHeaders(
+                    config.headers(),
+                    headers?.mapValues { Optional($0) }
+                ).compactMapValues { $0 },
+                failedResponseHandler: assemblyaiFailedResponseHandler,
+                successfulResponseHandler: createJsonResponseHandler(responseSchema: assemblyaiTranscriptionResponseSchema),
+                isAborted: abortSignal,
+                fetch: config.fetch
+            )
+
+            let transcript = response.value
+
+            if transcript.status == "completed" {
+                return CompletionResult(
+                    transcript: transcript,
+                    responseHeaders: response.responseHeaders,
+                    rawValue: response.rawValue
+                )
+            }
+
+            if transcript.status == "error" {
+                throw AssemblyAITranscriptionFailedError(message: "Transcription failed: \(transcript.error ?? "Unknown error")")
+            }
+
+            if pollingIntervalMs > 0 {
+                try await Task.sleep(nanoseconds: UInt64(pollingIntervalMs) * 1_000_000)
+            } else {
+                await Task.yield()
+            }
+        }
     }
 
     private func prepareRequest(options: TranscriptionModelV3CallOptions) async throws -> PreparedRequest {
@@ -265,24 +330,46 @@ private let assemblyaiUploadResponseSchema = FlexibleSchema(
     )
 )
 
+private struct AssemblyAISubmitResponse: Codable, Sendable {
+    let id: String
+    let status: String
+}
+
+private let assemblyaiSubmitResponseSchema = FlexibleSchema(
+    Schema<AssemblyAISubmitResponse>.codable(
+        AssemblyAISubmitResponse.self,
+        jsonSchema: .object([
+            "type": .string("object")
+        ])
+    )
+)
+
 private struct AssemblyAITranscriptionWord: Codable, Sendable {
     let start: Double
     let end: Double
     let text: String
 }
 
-private struct AssemblyAITranscriptionResponse: Codable, Sendable {
+private struct AssemblyAITranscriptResponse: Codable, Sendable {
+    let id: String
+    let status: String
     let text: String?
     let language_code: String?
     let words: [AssemblyAITranscriptionWord]?
     let audio_duration: Double?
+    let error: String?
 }
 
 private let assemblyaiTranscriptionResponseSchema = FlexibleSchema(
-    Schema<AssemblyAITranscriptionResponse>.codable(
-        AssemblyAITranscriptionResponse.self,
+    Schema<AssemblyAITranscriptResponse>.codable(
+        AssemblyAITranscriptResponse.self,
         jsonSchema: .object([
             "type": .string("object")
         ])
     )
 )
+
+private struct AssemblyAITranscriptionFailedError: LocalizedError, Sendable {
+    let message: String
+    var errorDescription: String? { message }
+}
