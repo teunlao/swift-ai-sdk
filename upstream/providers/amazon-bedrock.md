@@ -17,11 +17,15 @@ Tests live under:
 - `Tests/SwiftAISDKTests/Rerank/RerankTests.swift`
 - `Tests/AmazonBedrockProviderTests/BedrockEmbeddingModelTests.swift`
 - `Tests/AmazonBedrockProviderTests/BedrockImageModelTests.swift`
+- `Tests/AmazonBedrockProviderTests/BedrockEventStreamResponseHandlerTests.swift`
+- `Tests/AmazonBedrockProviderTests/ConvertToBedrockChatMessagesTests.swift`
+- `Tests/AmazonBedrockProviderTests/BedrockPrepareToolsTests.swift`
+- `Tests/AmazonBedrockProviderTests/BedrockChatLanguageModelTests.swift`
 - `Tests/AmazonBedrockProviderTests/BedrockSigV4FetchTests.swift`
 
 ## Known gaps / TODO
 
-- [ ] Chat language model parity (tool prep, prompt conversion, streaming event stream decoder, finish reasons).
+- [x] Chat language model parity (tool prep, prompt conversion, streaming event stream decoder, finish reasons).
 
 ## Notes
 
