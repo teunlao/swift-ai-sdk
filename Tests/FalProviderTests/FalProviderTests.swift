@@ -153,4 +153,65 @@ struct FalProviderTests {
             _ = try provider.textEmbeddingModel(modelId: "some-id")
         }
     }
+
+    @Suite("auth behavior", .serialized)
+    struct AuthBehaviorTests {
+        @Test("missing API key throws LoadAPIKeyError at request time")
+        func missingAPIKeyThrowsAtRequestTime() async throws {
+            actor RequestCapture {
+                var count: Int = 0
+                func increment() { count += 1 }
+                func value() -> Int { count }
+            }
+
+            let originalFalAPIKey = getenv("FAL_API_KEY").flatMap { String(validatingCString: $0) }
+            let originalFalKey = getenv("FAL_KEY").flatMap { String(validatingCString: $0) }
+            defer {
+                if let originalFalAPIKey {
+                    setenv("FAL_API_KEY", originalFalAPIKey, 1)
+                } else {
+                    unsetenv("FAL_API_KEY")
+                }
+
+                if let originalFalKey {
+                    setenv("FAL_KEY", originalFalKey, 1)
+                } else {
+                    unsetenv("FAL_KEY")
+                }
+            }
+
+            unsetenv("FAL_API_KEY")
+            unsetenv("FAL_KEY")
+
+            let capture = RequestCapture()
+            let fetch: FetchFunction = { request in
+                await capture.increment()
+                let response = HTTPURLResponse(
+                    url: request.url ?? URL(string: "https://fal.run/fal-ai/flux/dev")!,
+                    statusCode: 200,
+                    httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "application/json"]
+                )!
+                return FetchResponse(body: .data(Data("{}".utf8)), urlResponse: response)
+            }
+
+            let provider = createFal(settings: .init(fetch: fetch))
+            let model = provider.image("fal-ai/flux/dev")
+
+            do {
+                _ = try await model.doGenerate(options: .init(
+                    prompt: "Auth regression",
+                    n: 1,
+                    providerOptions: [:]
+                ))
+                Issue.record("Expected missing API key error")
+            } catch let error as LoadAPIKeyError {
+                #expect(error.message.contains("FAL_API_KEY or FAL_KEY"))
+            } catch {
+                Issue.record("Expected LoadAPIKeyError, got: \(error)")
+            }
+
+            #expect(await capture.value() == 0)
+        }
+    }
 }

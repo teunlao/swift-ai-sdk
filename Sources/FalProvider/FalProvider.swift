@@ -98,19 +98,72 @@ public final class FalProvider: ProviderV3 {
     }
 }
 
+private func defaultFalFetchFunction() -> FetchFunction {
+    { request in
+        let session = URLSession.shared
+
+        if #available(macOS 12.0, iOS 15.0, tvOS 15.0, watchOS 8.0, *) {
+            let (bytes, response) = try await session.bytes(for: request)
+            let stream = AsyncThrowingStream<Data, Error> { continuation in
+                Task {
+                    var buffer = Data()
+                    buffer.reserveCapacity(16_384)
+
+                    do {
+                        for try await byte in bytes {
+                            buffer.append(byte)
+
+                            if buffer.count >= 16_384 {
+                                continuation.yield(buffer)
+                                buffer.removeAll(keepingCapacity: true)
+                            }
+                        }
+
+                        if !buffer.isEmpty {
+                            continuation.yield(buffer)
+                        }
+
+                        continuation.finish()
+                    } catch {
+                        continuation.finish(throwing: error)
+                    }
+                }
+            }
+
+            return FetchResponse(body: .stream(stream), urlResponse: response)
+        } else {
+            let (data, response) = try await session.data(for: request)
+            return FetchResponse(body: .data(data), urlResponse: response)
+        }
+    }
+}
+
+private func createFalAuthFetch(
+    apiKey: String?,
+    customFetch: FetchFunction?
+) -> FetchFunction {
+    let baseFetch = customFetch ?? defaultFalFetchFunction()
+
+    return { request in
+        var modified = request
+        var headers = modified.allHTTPHeaderFields ?? [:]
+
+        let hasAuthorization = headers.keys.contains { $0.lowercased() == "authorization" }
+        if !hasAuthorization {
+            let resolved = try loadFalAPIKey(apiKey: apiKey)
+            headers["Authorization"] = "Key \(resolved)"
+            modified.allHTTPHeaderFields = headers
+        }
+
+        return try await baseFetch(modified)
+    }
+}
+
 public func createFalProvider(settings: FalProviderSettings = .init()) -> FalProvider {
     let baseURL = withoutTrailingSlash(settings.baseURL ?? "https://fal.run") ?? "https://fal.run"
 
     let headersClosure: @Sendable () -> [String: String?] = {
         var values: [String: String?] = [:]
-        let apiKey: String
-        do {
-            apiKey = try loadFalAPIKey(apiKey: settings.apiKey)
-        } catch {
-            fatalError("Fal API key is missing: \(error)")
-        }
-
-        values["Authorization"] = "Key \(apiKey)"
         if let custom = settings.headers {
             for (key, value) in custom {
                 values[key] = value
@@ -121,7 +174,10 @@ public func createFalProvider(settings: FalProviderSettings = .init()) -> FalPro
         return withUA.mapValues { Optional($0) }
     }
 
-    let fetch = settings.fetch
+    let fetch = createFalAuthFetch(
+        apiKey: settings.apiKey,
+        customFetch: settings.fetch
+    )
 
     let imageFactory: @Sendable (FalImageModelId) -> FalImageModel = { modelId in
         FalImageModel(

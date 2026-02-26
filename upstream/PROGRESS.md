@@ -30,6 +30,7 @@ For source-of-truth code, always follow the commits and tests.
 ### Unreleased (main)
 
 - 2026-02-26
+  - Fal: provider auth parity fix — removed creation-time `fatalError` for missing API key; auth now resolves at request time (`LoadAPIKeyError`) via fetch wrapper; added provider regression coverage for missing key behavior and no-network-before-fail semantics.
   - Replicate: provider auth parity fix — removed creation-time `fatalError` for missing API token; auth now resolves at request time (`LoadAPIKeyError`) via fetch wrapper; added provider regression coverage for missing token behavior and no-network-before-fail semantics.
   - Prodia: provider auth parity fix — removed creation-time `fatalError` for missing API key; auth now resolves at request time (`LoadAPIKeyError`) via fetch wrapper; added provider regression coverage for missing key behavior and no-network-before-fail semantics.
   - Black Forest Labs: provider auth parity fix — removed creation-time `fatalError` for missing API key; auth now resolves at request time (`LoadAPIKeyError`) via fetch wrapper; added provider regression coverage for missing key behavior and no-network-before-fail semantics.
