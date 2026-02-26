@@ -6,7 +6,7 @@ import AISDKProviderUtils
 //=== Upstream Reference ====================================================//
 //===----------------------------------------------------------------------===//
 // Ported from packages/cohere/src/cohere-chat-language-model.ts
-// Upstream commit: 77db222ee
+// Upstream commit: 73d5c5920e
 //===----------------------------------------------------------------------===//
 
 public final class CohereChatLanguageModel: LanguageModelV3 {
@@ -69,7 +69,6 @@ public final class CohereChatLanguageModel: LanguageModelV3 {
                 ]
 
                 let title = citation.sources.first?.document.title ?? "Document"
-                let filename = citation.sources.first?.document.id
 
                 content.append(
                     .source(
@@ -77,7 +76,7 @@ public final class CohereChatLanguageModel: LanguageModelV3 {
                             id: config.generateId(),
                             mediaType: "text/plain",
                             title: title,
-                            filename: filename,
+                            filename: nil,
                             providerMetadata: providerMetadata
                         )
                     )

@@ -7,6 +7,7 @@ import Testing
 enum HTTPTestHelpers {
     static let chatURL = URL(string: "https://api.cohere.com/v2/chat")!
     static let embeddingURL = URL(string: "https://api.cohere.com/v2/embed")!
+    static let rerankURL = URL(string: "https://api.cohere.com/v2/rerank")!
 }
 
 actor RequestRecorder {
@@ -97,3 +98,10 @@ func lowercaseHeaders(_ request: URLRequest) -> [String: String] {
     )
 }
 
+func collectStream(_ stream: AsyncThrowingStream<LanguageModelV3StreamPart, Error>) async throws -> [LanguageModelV3StreamPart] {
+    var parts: [LanguageModelV3StreamPart] = []
+    for try await part in stream {
+        parts.append(part)
+    }
+    return parts
+}

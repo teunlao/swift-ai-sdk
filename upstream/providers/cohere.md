@@ -12,11 +12,12 @@
 - [x] `convertToCohereChatPrompt` parity: file parts → `documents` extraction + tool call/result message mapping.
 - [x] `prepareTools` parity: provider-defined tool warnings and tool choice mapping (including empty `tools: []` behavior).
 - [x] Embedding model parity: request mapping (`input_type`, `truncate`, `output_dimension`), headers merge + user-agent suffix, usage/response exposure.
+- [x] Chat language model parity: request mapping (tools, response format, thinking, documents) + response mapping + SSE streaming (raw chunks, reasoning, tool calls).
+- [x] Reranking model parity: request mapping (text/object docs) + warnings + response mapping.
 
 ## Known gaps / TODO
 
-- [ ] Chat language model parity (`doGenerate` + `doStream`): request mapping coverage + streaming edge-cases.
-- [ ] Reranking model parity (`rerank`): request mapping + response mapping + tests.
+- None known.
 
 ## Notes
 
