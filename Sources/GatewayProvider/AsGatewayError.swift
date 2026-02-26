@@ -6,7 +6,7 @@ import AISDKProviderUtils
 //=== Upstream Reference ====================================================//
 //===----------------------------------------------------------------------===//
 // Ported from packages/gateway/src/errors/as-gateway-error.ts
-// Upstream commit: 77db222ee
+// Upstream commit: 73d5c5920
 //===----------------------------------------------------------------------===//
 
 struct GatewayErrorResponse: Decodable, Sendable {
@@ -77,7 +77,23 @@ func asGatewayError(_ error: Any?, authMethod: GatewayAuthMethod? = nil) -> Gate
         return gatewayError
     }
 
+    // Timeout error detection (undici codes in upstream, URLError.timedOut in Swift).
+    if isTimeoutError(error) {
+        let originalMessage = (error as? Error)?.localizedDescription ?? "Unknown error"
+        return GatewayTimeoutError.createTimeoutError(
+            originalMessage: originalMessage,
+            cause: error as? Error
+        )
+    }
+
     if let apiError = error as? APICallError {
+        if let cause = apiError.cause, isTimeoutError(cause) {
+            return GatewayTimeoutError.createTimeoutError(
+                originalMessage: apiError.message,
+                cause: apiError
+            )
+        }
+
         return createGatewayErrorFromResponse(
             response: extractApiCallResponse(apiError),
             statusCode: apiError.statusCode ?? 500,
@@ -105,6 +121,46 @@ func asGatewayError(_ error: Any?, authMethod: GatewayAuthMethod? = nil) -> Gate
         cause: underlying,
         authMethod: authMethod
     )
+}
+
+private protocol ErrorCodeProviding {
+    var code: String { get }
+}
+
+private func isTimeoutError(_ error: Any?) -> Bool {
+    guard let error = error as? Error else {
+        return false
+    }
+
+    // Swift runtime timeouts.
+    if let urlError = error as? URLError, urlError.code == .timedOut {
+        return true
+    }
+
+    let nsError = error as NSError
+    if nsError.domain == NSURLErrorDomain && nsError.code == URLError.timedOut.rawValue {
+        return true
+    }
+
+    // Upstream checks undici-specific timeout codes to avoid false positives.
+    let undiciTimeoutCodes: Set<String> = [
+        "UND_ERR_HEADERS_TIMEOUT",
+        "UND_ERR_BODY_TIMEOUT",
+        "UND_ERR_CONNECT_TIMEOUT",
+    ]
+
+    if let coded = error as? ErrorCodeProviding {
+        return undiciTimeoutCodes.contains(coded.code)
+    }
+
+    // Best-effort reflection for error types that expose a string `code` property.
+    let mirror = Mirror(reflecting: error)
+    if let child = mirror.children.first(where: { $0.label == "code" }),
+       let code = child.value as? String {
+        return undiciTimeoutCodes.contains(code)
+    }
+
+    return false
 }
 
 func createGatewayErrorFromResponse(

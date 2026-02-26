@@ -29,3 +29,19 @@ struct GatewayEmbeddingModelConfig: Sendable {
     let fetch: FetchFunction?
     let o11yHeaders: @Sendable () async throws -> [String: String?]
 }
+
+struct GatewayImageModelConfig: Sendable {
+    let provider: String
+    let baseURL: String
+    let headers: @Sendable () async throws -> [String: String?]
+    let fetch: FetchFunction?
+    let o11yHeaders: @Sendable () async throws -> [String: String?]
+}
+
+struct GatewayVideoModelConfig: Sendable {
+    let provider: String
+    let baseURL: String
+    let headers: @Sendable () async throws -> [String: String?]
+    let fetch: FetchFunction?
+    let o11yHeaders: @Sendable () async throws -> [String: String?]
+}

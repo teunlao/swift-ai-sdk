@@ -6,7 +6,7 @@ import AISDKProviderUtils
 //=== Upstream Reference ====================================================//
 //===----------------------------------------------------------------------===//
 // Ported from packages/gateway/src/gateway-provider.ts
-// Upstream commit: 77db222ee
+// Upstream commit: 73d5c5920
 //===----------------------------------------------------------------------===//
 
 private let AI_GATEWAY_PROTOCOL_VERSION = "0.0.1"
@@ -94,14 +94,20 @@ actor GatewayMetadataCache {
 public final class GatewayProvider: ProviderV3 {
     private let languageFactory: @Sendable (GatewayModelId) -> GatewayLanguageModel
     private let embeddingFactory: @Sendable (GatewayEmbeddingModelId) -> GatewayEmbeddingModel
+    private let imageFactory: @Sendable (GatewayImageModelId) -> GatewayImageModel
+    private let videoFactory: @Sendable (GatewayVideoModelId) -> GatewayVideoModel
     private let metadataFetcher: GatewayFetchMetadata
     private let metadataCache: GatewayMetadataCache
     private let metadataRefreshInterval: TimeInterval
     private let currentDate: @Sendable () -> Date
+    public let tools: GatewayTools
 
     init(
         languageFactory: @escaping @Sendable (GatewayModelId) -> GatewayLanguageModel,
         embeddingFactory: @escaping @Sendable (GatewayEmbeddingModelId) -> GatewayEmbeddingModel,
+        imageFactory: @escaping @Sendable (GatewayImageModelId) -> GatewayImageModel,
+        videoFactory: @escaping @Sendable (GatewayVideoModelId) -> GatewayVideoModel,
+        tools: GatewayTools,
         metadataFetcher: GatewayFetchMetadata,
         metadataCache: GatewayMetadataCache,
         metadataRefreshInterval: TimeInterval,
@@ -109,6 +115,9 @@ public final class GatewayProvider: ProviderV3 {
     ) {
         self.languageFactory = languageFactory
         self.embeddingFactory = embeddingFactory
+        self.imageFactory = imageFactory
+        self.videoFactory = videoFactory
+        self.tools = tools
         self.metadataFetcher = metadataFetcher
         self.metadataCache = metadataCache
         self.metadataRefreshInterval = metadataRefreshInterval
@@ -124,7 +133,11 @@ public final class GatewayProvider: ProviderV3 {
     }
 
     public func imageModel(modelId: String) throws -> any ImageModelV3 {
-        throw NoSuchModelError(modelId: modelId, modelType: .imageModel)
+        imageFactory(GatewayImageModelId(rawValue: modelId))
+    }
+
+    public func videoModel(modelId: String) throws -> (any VideoModelV3)? {
+        videoFactory(GatewayVideoModelId(rawValue: modelId))
     }
 
     public func callAsFunction(_ modelId: String) throws -> any LanguageModelV3 {
@@ -139,6 +152,14 @@ public final class GatewayProvider: ProviderV3 {
 
     public func textEmbedding(modelId: GatewayEmbeddingModelId) -> GatewayEmbeddingModel {
         embeddingFactory(modelId)
+    }
+
+    public func imageModel(modelId: GatewayImageModelId) -> GatewayImageModel {
+        imageFactory(modelId)
+    }
+
+    public func videoModel(modelId: GatewayVideoModelId) -> GatewayVideoModel {
+        videoFactory(modelId)
     }
 
     // MARK: - Metadata
@@ -157,7 +178,7 @@ public final class GatewayProvider: ProviderV3 {
 }
 
 public func createGatewayProvider(settings: GatewayProviderSettings = .init()) -> GatewayProvider {
-    let baseURL = withoutTrailingSlash(settings.baseURL) ?? "https://ai-gateway.vercel.sh/v1/ai"
+    let baseURL = withoutTrailingSlash(settings.baseURL) ?? "https://ai-gateway.vercel.sh/v3/ai"
     let fetch = settings.fetch
     let currentDateClosure: @Sendable () -> Date
     if let custom = settings._internal?.currentDate {
@@ -202,6 +223,22 @@ public func createGatewayProvider(settings: GatewayProviderSettings = .init()) -
         o11yHeaders: o11yHeaders
     )
 
+    let imageConfig = GatewayImageModelConfig(
+        provider: "gateway",
+        baseURL: baseURL,
+        headers: getHeadersClosure,
+        fetch: fetch,
+        o11yHeaders: o11yHeaders
+    )
+
+    let videoConfig = GatewayVideoModelConfig(
+        provider: "gateway",
+        baseURL: baseURL,
+        headers: getHeadersClosure,
+        fetch: fetch,
+        o11yHeaders: o11yHeaders
+    )
+
     let metadataConfig = GatewayConfig(
         baseURL: baseURL,
         headers: getHeadersClosure,
@@ -219,9 +256,20 @@ public func createGatewayProvider(settings: GatewayProviderSettings = .init()) -
         GatewayEmbeddingModel(modelId: modelId, config: embeddingConfig)
     }
 
+    let imageFactory: @Sendable (GatewayImageModelId) -> GatewayImageModel = { modelId in
+        GatewayImageModel(modelId: modelId, config: imageConfig)
+    }
+
+    let videoFactory: @Sendable (GatewayVideoModelId) -> GatewayVideoModel = { modelId in
+        GatewayVideoModel(modelId: modelId, config: videoConfig)
+    }
+
     return GatewayProvider(
         languageFactory: languageFactory,
         embeddingFactory: embeddingFactory,
+        imageFactory: imageFactory,
+        videoFactory: videoFactory,
+        tools: gatewayTools,
         metadataFetcher: metadataFetcher,
         metadataCache: metadataCache,
         metadataRefreshInterval: refreshInterval,

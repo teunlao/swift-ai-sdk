@@ -5,7 +5,9 @@ import Foundation
 //===----------------------------------------------------------------------===//
 // Ported from packages/gateway/src/gateway-language-model-settings.ts
 // Ported from packages/gateway/src/gateway-embedding-model-settings.ts
-// Upstream commit: 77db222ee
+// Ported from packages/gateway/src/gateway-image-model-settings.ts
+// Ported from packages/gateway/src/gateway-video-model-settings.ts
+// Upstream commit: 73d5c5920
 //===----------------------------------------------------------------------===//
 
 public struct GatewayModelId: RawRepresentable, Hashable, Sendable, ExpressibleByStringLiteral, Codable {
@@ -170,4 +172,65 @@ public extension GatewayEmbeddingModelId {
     static let voyageVoyageFinance2: Self = "voyage/voyage-finance-2"
     static let voyageVoyageLaw2: Self = "voyage/voyage-law-2"
     static let voyageVoyageCode2: Self = "voyage/voyage-code-2"
+}
+
+public struct GatewayImageModelId: RawRepresentable, Hashable, Sendable, ExpressibleByStringLiteral, Codable {
+    public let rawValue: String
+
+    public init(rawValue: String) {
+        self.rawValue = rawValue
+    }
+
+    public init(stringLiteral value: StringLiteralType) {
+        self.init(rawValue: value)
+    }
+}
+
+public extension GatewayImageModelId {
+    static let bflFluxKontextMax: Self = "bfl/flux-kontext-max"
+    static let bflFluxKontextPro: Self = "bfl/flux-kontext-pro"
+    static let bflFluxPro10Fill: Self = "bfl/flux-pro-1.0-fill"
+    static let bflFluxPro11: Self = "bfl/flux-pro-1.1"
+    static let bflFluxPro11Ultra: Self = "bfl/flux-pro-1.1-ultra"
+    static let googleImagen40FastGenerate001: Self = "google/imagen-4.0-fast-generate-001"
+    static let googleImagen40Generate001: Self = "google/imagen-4.0-generate-001"
+    static let googleImagen40UltraGenerate001: Self = "google/imagen-4.0-ultra-generate-001"
+    static let recraftRecraftV2: Self = "recraft/recraft-v2"
+    static let recraftRecraftV3: Self = "recraft/recraft-v3"
+    static let recraftRecraftV4: Self = "recraft/recraft-v4"
+    static let recraftRecraftV4Pro: Self = "recraft/recraft-v4-pro"
+    static let xaiGrokImagineImage: Self = "xai/grok-imagine-image"
+    static let xaiGrokImagineImagePro: Self = "xai/grok-imagine-image-pro"
+}
+
+public struct GatewayVideoModelId: RawRepresentable, Hashable, Sendable, ExpressibleByStringLiteral, Codable {
+    public let rawValue: String
+
+    public init(rawValue: String) {
+        self.rawValue = rawValue
+    }
+
+    public init(stringLiteral value: StringLiteralType) {
+        self.init(rawValue: value)
+    }
+}
+
+public extension GatewayVideoModelId {
+    static let alibabaWanV25T2vPreview: Self = "alibaba/wan-v2.5-t2v-preview"
+    static let alibabaWanV26I2v: Self = "alibaba/wan-v2.6-i2v"
+    static let alibabaWanV26I2vFlash: Self = "alibaba/wan-v2.6-i2v-flash"
+    static let alibabaWanV26R2v: Self = "alibaba/wan-v2.6-r2v"
+    static let alibabaWanV26R2vFlash: Self = "alibaba/wan-v2.6-r2v-flash"
+    static let alibabaWanV26T2v: Self = "alibaba/wan-v2.6-t2v"
+    static let googleVeo30FastGenerate001: Self = "google/veo-3.0-fast-generate-001"
+    static let googleVeo30Generate001: Self = "google/veo-3.0-generate-001"
+    static let googleVeo31FastGenerate001: Self = "google/veo-3.1-fast-generate-001"
+    static let googleVeo31Generate001: Self = "google/veo-3.1-generate-001"
+    static let klingaiKlingV25TurboI2v: Self = "klingai/kling-v2.5-turbo-i2v"
+    static let klingaiKlingV25TurboT2v: Self = "klingai/kling-v2.5-turbo-t2v"
+    static let klingaiKlingV26I2v: Self = "klingai/kling-v2.6-i2v"
+    static let klingaiKlingV26T2v: Self = "klingai/kling-v2.6-t2v"
+    static let klingaiKlingV30I2v: Self = "klingai/kling-v3.0-i2v"
+    static let klingaiKlingV30T2v: Self = "klingai/kling-v3.0-t2v"
+    static let xaiGrokImagineVideo: Self = "xai/grok-imagine-video"
 }

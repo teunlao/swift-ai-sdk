@@ -6,7 +6,7 @@ import AISDKProviderUtils
 //=== Upstream Reference ====================================================//
 //===----------------------------------------------------------------------===//
 // Ported from packages/gateway/src/gateway-language-model.ts
-// Upstream commit: 77db222ee
+// Upstream commit: 73d5c5920
 //===----------------------------------------------------------------------===//
 
 public final class GatewayLanguageModel: LanguageModelV3 {
@@ -52,26 +52,26 @@ public final class GatewayLanguageModel: LanguageModelV3 {
                 headers: requestHeaders,
                 body: prepared.body,
                 failedResponseHandler: makeGatewayFailedResponseHandler(),
-                successfulResponseHandler: createJsonResponseHandler(responseSchema: gatewayGenerateResponseSchema),
+                successfulResponseHandler: createJsonResponseHandler(responseSchema: gatewayJSONSchema),
                 isAborted: options.abortSignal,
                 fetch: config.fetch
             )
 
-            let providerMetadata = response.value.providerMetadata
+            let parsed = try parseGatewayGeneratePayload(from: response.value)
             let requestInfo = LanguageModelV3RequestInfo(body: jsonValueToFoundation(prepared.body))
             let responseInfo = LanguageModelV3ResponseInfo(
-                id: response.value.id,
-                timestamp: response.value.created,
-                modelId: response.value.model,
+                id: parsed.id,
+                timestamp: parsed.created,
+                modelId: parsed.model,
                 headers: response.responseHeaders,
                 body: response.rawValue
             )
 
             return LanguageModelV3GenerateResult(
-                content: response.value.content,
-                finishReason: response.value.finishReason,
-                usage: response.value.usage,
-                providerMetadata: providerMetadata,
+                content: parsed.content,
+                finishReason: parsed.finishReason,
+                usage: parsed.usage,
+                providerMetadata: parsed.providerMetadata,
                 request: requestInfo,
                 response: responseInfo,
                 warnings: prepared.warnings
@@ -94,14 +94,14 @@ public final class GatewayLanguageModel: LanguageModelV3 {
             o11yHeaders
         ).compactMapValues { $0 }
 
-        let streamResponse: ResponseHandlerResult<AsyncThrowingStream<ParseJSONResult<LanguageModelV3StreamPart>, Error>>
+        let streamResponse: ResponseHandlerResult<AsyncThrowingStream<ParseJSONResult<JSONValue>, Error>>
         do {
             streamResponse = try await postJsonToAPI(
                 url: getUrl(),
                 headers: requestHeaders,
                 body: prepared.body,
                 failedResponseHandler: makeGatewayFailedResponseHandler(),
-                successfulResponseHandler: createEventSourceResponseHandler(chunkSchema: gatewayStreamSchema),
+                successfulResponseHandler: createEventSourceResponseHandler(chunkSchema: gatewayJSONSchema),
                 isAborted: options.abortSignal,
                 fetch: config.fetch
             )
@@ -117,20 +117,13 @@ public final class GatewayLanguageModel: LanguageModelV3 {
             Task {
                 do {
                     for try await chunk in streamResponse.value {
-                        if options.includeRawChunks == true, let raw = chunk.rawJSONValue {
-                            continuation.yield(.raw(rawValue: raw))
-                        }
-
                         switch chunk {
-                        case .success(let part, _):
-                            if case .raw = part, options.includeRawChunks != true {
-                                continue
+                        case .success(let value, _):
+                            if let part = try mapGatewayStreamPart(from: value, includeRawChunks: options.includeRawChunks == true) {
+                                continuation.yield(part)
                             }
-                            continuation.yield(part)
                         case .failure(let error, let raw):
-                            if let raw, let json = try? jsonValue(from: raw) {
-                                continuation.yield(.error(error: json))
-                            }
+                            _ = raw
                             throw error
                         }
                     }
@@ -156,7 +149,7 @@ public final class GatewayLanguageModel: LanguageModelV3 {
 
     private func getModelConfigHeaders(streaming: Bool) -> [String: String?] {
         [
-            "ai-language-model-specification-version": "2",
+            "ai-language-model-specification-version": "3",
             "ai-language-model-id": modelIdentifier.rawValue,
             "ai-language-model-streaming": String(streaming)
         ]
@@ -288,33 +281,14 @@ private struct GatewayLanguageModelRequestBody: Encodable {
 
 // MARK: - Streaming Schema
 
-private let gatewayStreamSchema = FlexibleSchema(
-    Schema<LanguageModelV3StreamPart>.codable(
-        LanguageModelV3StreamPart.self,
-        jsonSchema: .object(["type": .string("object")]),
-        configureDecoder: { decoder in
-            decoder.dateDecodingStrategy = .iso8601
-            decoder.keyDecodingStrategy = .convertFromSnakeCase
-            return decoder
-        }
+private let gatewayJSONSchema = FlexibleSchema(
+    Schema<JSONValue>.codable(
+        JSONValue.self,
+        jsonSchema: .object(["type": .string("object")])
     )
 )
 
-private extension ParseJSONResult where Output == LanguageModelV3StreamPart {
-    var rawJSONValue: JSONValue? {
-        switch self {
-        case .success(_, let raw):
-            return try? jsonValue(from: raw)
-        case .failure(_, let raw):
-            guard let raw else { return nil }
-            return try? jsonValue(from: raw)
-        }
-    }
-}
-
-// MARK: - Response Schema
-
-private struct GatewayGenerateResponse: Decodable, Sendable {
+private struct GatewayParsedGeneratePayload: Sendable {
     let id: String?
     let model: String?
     let created: Date?
@@ -322,26 +296,225 @@ private struct GatewayGenerateResponse: Decodable, Sendable {
     let finishReason: LanguageModelV3FinishReason
     let usage: LanguageModelV3Usage
     let providerMetadata: SharedV3ProviderMetadata?
+}
 
-    enum CodingKeys: String, CodingKey {
-        case id
-        case model
-        case created
-        case content
-        case finishReason = "finish_reason"
-        case usage
-        case providerMetadata = "provider_metadata"
+private func parseGatewayGeneratePayload(from value: JSONValue) throws -> GatewayParsedGeneratePayload {
+    guard case .object(let dict) = value else {
+        return GatewayParsedGeneratePayload(
+            id: nil,
+            model: nil,
+            created: nil,
+            content: [],
+            finishReason: .init(unified: .other),
+            usage: .init(),
+            providerMetadata: nil
+        )
+    }
+
+    let id = dict["id"].flatMap(stringValue)
+    let model = dict["model"].flatMap(stringValue)
+    let created = dict["created"].flatMap(parseGatewayTimestamp)
+
+    let content: [LanguageModelV3Content]
+    if let rawContent = dict["content"] {
+        content = (try? decodeGatewayContentArray(from: rawContent)) ?? []
+    } else {
+        content = []
+    }
+
+    let finishValue = dict["finish_reason"] ?? dict["finishReason"]
+    let finishReason = parseGatewayFinishReason(from: finishValue)
+
+    let usageValue = dict["usage"]
+    let usage = parseGatewayUsage(from: usageValue)
+
+    let providerMetadataValue = dict["provider_metadata"] ?? dict["providerMetadata"]
+    let providerMetadata = providerMetadataValue.flatMap { try? decodeGatewayProviderMetadata(from: $0) }
+
+    return GatewayParsedGeneratePayload(
+        id: id,
+        model: model,
+        created: created,
+        content: content,
+        finishReason: finishReason,
+        usage: usage,
+        providerMetadata: providerMetadata
+    )
+}
+
+private func mapGatewayStreamPart(
+    from value: JSONValue,
+    includeRawChunks: Bool
+) throws -> LanguageModelV3StreamPart? {
+    guard case .object(let dict) = value else {
+        return nil
+    }
+
+    guard let type = dict["type"].flatMap(stringValue) else {
+        return nil
+    }
+
+    switch type {
+    case "raw":
+        guard includeRawChunks else { return nil }
+        let rawValue = dict["rawValue"] ?? .null
+        return .raw(rawValue: rawValue)
+
+    case "stream-start":
+        let warnings = (dict["warnings"].flatMap { try? decodeGatewayCodable([SharedV3Warning].self, from: $0) }) ?? []
+        return .streamStart(warnings: warnings)
+
+    case "text-start":
+        let id = dict["id"].flatMap(stringValue) ?? "text"
+        let providerMetadata = dict["providerMetadata"].flatMap { try? decodeGatewayProviderMetadata(from: $0) }
+        return .textStart(id: id, providerMetadata: providerMetadata)
+
+    case "text-delta":
+        let id = dict["id"].flatMap(stringValue) ?? "text"
+        let delta = dict["delta"].flatMap(stringValue) ?? dict["textDelta"].flatMap(stringValue) ?? ""
+        let providerMetadata = dict["providerMetadata"].flatMap { try? decodeGatewayProviderMetadata(from: $0) }
+        return .textDelta(id: id, delta: delta, providerMetadata: providerMetadata)
+
+    case "text-end":
+        let id = dict["id"].flatMap(stringValue) ?? "text"
+        let providerMetadata = dict["providerMetadata"].flatMap { try? decodeGatewayProviderMetadata(from: $0) }
+        return .textEnd(id: id, providerMetadata: providerMetadata)
+
+    case "response-metadata":
+        let id = dict["id"].flatMap(stringValue)
+        let modelId = dict["modelId"].flatMap(stringValue)
+        let timestamp = dict["timestamp"].flatMap(parseGatewayTimestamp)
+        return .responseMetadata(id: id, modelId: modelId, timestamp: timestamp)
+
+    case "finish":
+        let finishValue = dict["finishReason"] ?? dict["finish_reason"]
+        let finishReason = parseGatewayFinishReason(from: finishValue)
+        let usage = parseGatewayUsage(from: dict["usage"])
+        let providerMetadata = dict["providerMetadata"].flatMap { try? decodeGatewayProviderMetadata(from: $0) }
+        return .finish(finishReason: finishReason, usage: usage, providerMetadata: providerMetadata)
+
+    case "error":
+        let errorValue = dict["error"] ?? .null
+        return .error(error: errorValue)
+
+    default:
+        // Best-effort decode for fully-formed V3 chunks (tool calls/results, sources, etc).
+        if let decoded = try? decodeGatewayCodable(LanguageModelV3StreamPart.self, from: value) {
+            if case .raw = decoded, !includeRawChunks {
+                return nil
+            }
+            return decoded
+        }
+        return nil
     }
 }
 
-private let gatewayGenerateResponseSchema = FlexibleSchema(
-    Schema<GatewayGenerateResponse>.codable(
-        GatewayGenerateResponse.self,
-        jsonSchema: .object(["type": .string("object")]),
-        configureDecoder: { decoder in
-            decoder.dateDecodingStrategy = .iso8601
-            decoder.keyDecodingStrategy = .convertFromSnakeCase
-            return decoder
+private func decodeGatewayContentArray(from value: JSONValue) throws -> [LanguageModelV3Content] {
+    switch value {
+    case .array(let array):
+        return try array.map { try decodeGatewayCodable(LanguageModelV3Content.self, from: $0) }
+    default:
+        return [try decodeGatewayCodable(LanguageModelV3Content.self, from: value)]
+    }
+}
+
+private func decodeGatewayProviderMetadata(from value: JSONValue) throws -> SharedV3ProviderMetadata {
+    try decodeGatewayCodable(SharedV3ProviderMetadata.self, from: value)
+}
+
+private func decodeGatewayCodable<T: Decodable>(_ type: T.Type, from value: JSONValue) throws -> T {
+    let data = try JSONSerialization.data(withJSONObject: jsonValueToFoundation(value), options: [])
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .iso8601
+    decoder.keyDecodingStrategy = .convertFromSnakeCase
+    return try decoder.decode(T.self, from: data)
+}
+
+private func stringValue(_ value: JSONValue) -> String? {
+    guard case .string(let text) = value else { return nil }
+    return text
+}
+
+private func intValue(_ value: JSONValue?) -> Int? {
+    guard let value else { return nil }
+    switch value {
+    case .number(let number):
+        return Int(number)
+    case .string(let text):
+        return Int(text)
+    default:
+        return nil
+    }
+}
+
+private func parseGatewayTimestamp(_ value: JSONValue) -> Date? {
+    switch value {
+    case .number(let seconds):
+        return Date(timeIntervalSince1970: seconds)
+    case .string(let text):
+        if let date = ISO8601DateFormatter().date(from: text) {
+            return date
         }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter.date(from: text)
+    default:
+        return nil
+    }
+}
+
+private func parseGatewayFinishReason(from value: JSONValue?) -> LanguageModelV3FinishReason {
+    guard let value else {
+        return LanguageModelV3FinishReason(unified: .other)
+    }
+
+    if case .string(let raw) = value {
+        return LanguageModelV3FinishReason(unified: unifiedFinishReason(from: raw), raw: raw)
+    }
+
+    if let decoded = try? decodeGatewayCodable(LanguageModelV3FinishReason.self, from: value) {
+        return decoded
+    }
+
+    return LanguageModelV3FinishReason(unified: .other)
+}
+
+private func unifiedFinishReason(from raw: String) -> LanguageModelV3FinishReason.Unified {
+    switch raw {
+    case "stop":
+        return .stop
+    case "length":
+        return .length
+    case "content-filter", "content_filter":
+        return .contentFilter
+    case "tool-calls", "tool_calls":
+        return .toolCalls
+    case "error":
+        return .error
+    default:
+        return .other
+    }
+}
+
+private func parseGatewayUsage(from value: JSONValue?) -> LanguageModelV3Usage {
+    guard let value else {
+        return LanguageModelV3Usage()
+    }
+
+    if let decoded = try? decodeGatewayCodable(LanguageModelV3Usage.self, from: value) {
+        return decoded
+    }
+
+    guard case .object(let dict) = value else {
+        return LanguageModelV3Usage(raw: value)
+    }
+
+    let promptTokens = intValue(dict["prompt_tokens"] ?? dict["promptTokens"])
+    let completionTokens = intValue(dict["completion_tokens"] ?? dict["completionTokens"])
+
+    return LanguageModelV3Usage(
+        inputTokens: .init(total: promptTokens, noCache: promptTokens),
+        outputTokens: .init(total: completionTokens, text: completionTokens),
+        raw: value
     )
-)
+}

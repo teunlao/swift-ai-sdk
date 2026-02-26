@@ -1,5 +1,6 @@
 import Foundation
 import AISDKProvider
+import AISDKProviderUtils
 
 //===----------------------------------------------------------------------===//
 //=== Upstream Reference ====================================================//
@@ -10,6 +11,9 @@ import AISDKProvider
 
 func extractApiCallResponse(_ error: APICallError) -> Any {
     if let data = error.data {
+        if let json = data as? JSONValue {
+            return jsonValueToFoundation(json)
+        }
         return data
     }
 

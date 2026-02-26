@@ -1,11 +1,12 @@
 import Foundation
+import AISDKProvider
 import AISDKProviderUtils
 
 //===----------------------------------------------------------------------===//
 //=== Upstream Reference ====================================================//
 //===----------------------------------------------------------------------===//
 // Ported from packages/gateway/src/gateway-provider-options.ts
-// Upstream commit: 77db222ee
+// Upstream commit: 73d5c5920
 //===----------------------------------------------------------------------===//
 
 public struct GatewayProviderOptions: Sendable, Codable, Equatable {
@@ -21,10 +22,30 @@ public struct GatewayProviderOptions: Sendable, Codable, Equatable {
     /// User-specified tags for reporting and usage filtering.
     public let tags: [String]?
 
-    public init(only: [String]? = nil, order: [String]? = nil, user: String? = nil, tags: [String]? = nil) {
+    /// Array of model slugs specifying fallback models to use in order.
+    public let models: [String]?
+
+    /// Request-scoped BYOK credentials (provider -> credential list).
+    public let byok: [String: [[String: JSONValue]] ]?
+
+    /// Whether to filter by only providers that state they have zero data retention.
+    public let zeroDataRetention: Bool?
+
+    public init(
+        only: [String]? = nil,
+        order: [String]? = nil,
+        user: String? = nil,
+        tags: [String]? = nil,
+        models: [String]? = nil,
+        byok: [String: [[String: JSONValue]]]? = nil,
+        zeroDataRetention: Bool? = nil
+    ) {
         self.only = only
         self.order = order
         self.user = user
         self.tags = tags
+        self.models = models
+        self.byok = byok
+        self.zeroDataRetention = zeroDataRetention
     }
 }

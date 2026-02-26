@@ -6,7 +6,7 @@ import AISDKProviderUtils
 //=== Upstream Reference ====================================================//
 //===----------------------------------------------------------------------===//
 // Ported from packages/gateway/src/gateway-embedding-model.ts
-// Upstream commit: 77db222ee
+// Upstream commit: 73d5c5920
 //===----------------------------------------------------------------------===//
 
 public final class GatewayEmbeddingModel: EmbeddingModelV3 {
@@ -34,9 +34,6 @@ public final class GatewayEmbeddingModel: EmbeddingModelV3 {
 
     public func doEmbed(options: EmbeddingModelV3DoEmbedOptions<String>) async throws -> EmbeddingModelV3DoEmbedResult {
         let values = options.values
-        guard !values.isEmpty else {
-            return EmbeddingModelV3DoEmbedResult(embeddings: [], usage: nil, providerMetadata: nil, response: nil)
-        }
 
         let resolvedHeaders = try await resolve(config.headers)
         let authMethod = parseAuthMethod(from: resolvedHeaders.compactMapValues { $0 })
@@ -49,7 +46,7 @@ public final class GatewayEmbeddingModel: EmbeddingModelV3 {
         ).compactMapValues { $0 }
 
         var body: [String: JSONValue] = [
-            "input": values.count == 1 ? .string(values[0]) : .array(values.map { .string($0) })
+            "values": .array(values.map { .string($0) })
         ]
 
         if let providerOptions = options.providerOptions {
@@ -89,7 +86,7 @@ public final class GatewayEmbeddingModel: EmbeddingModelV3 {
 
     private func getModelConfigHeaders() -> [String: String?] {
         [
-            "ai-embedding-model-specification-version": "2",
+            "ai-embedding-model-specification-version": "3",
             "ai-model-id": modelIdentifier.rawValue
         ]
     }
@@ -103,7 +100,7 @@ private struct GatewayEmbeddingResponse: Decodable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case embeddings
         case usage
-        case providerMetadata = "provider_metadata"
+        case providerMetadata
     }
 
     private enum UsageCodingKeys: String, CodingKey {
