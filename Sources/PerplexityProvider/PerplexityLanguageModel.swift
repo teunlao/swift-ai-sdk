@@ -66,17 +66,6 @@ public final class PerplexityLanguageModel: LanguageModelV3 {
             }
         }
 
-        let usage = LanguageModelV3Usage(
-            inputTokens: .init(
-                total: response.value.usage?.promptTokens,
-                noCache: response.value.usage?.promptTokens
-            ),
-            outputTokens: .init(
-                total: response.value.usage?.completionTokens
-            ),
-            raw: response.value.usage.flatMap { try? jsonValue(from: $0) }
-        )
-
         let metadata = perplexityResponseMetadata(id: response.value.id, model: response.value.model, created: response.value.created)
         let providerMetadata = makePerplexityProviderMetadata(images: response.value.images, usage: response.value.usage)
 
@@ -86,7 +75,7 @@ public final class PerplexityLanguageModel: LanguageModelV3 {
                 unified: mapPerplexityFinishReason(choice.finishReason),
                 raw: choice.finishReason
             ),
-            usage: usage,
+            usage: convertPerplexityUsage(response.value.usage),
             providerMetadata: providerMetadata,
             request: LanguageModelV3RequestInfo(body: prepared.body),
             response: LanguageModelV3ResponseInfo(
@@ -146,11 +135,7 @@ public final class PerplexityLanguageModel: LanguageModelV3 {
                             }
 
                             if let usageData = chunk.usage {
-                                usage = LanguageModelV3Usage(
-                                    inputTokens: .init(total: usageData.promptTokens, noCache: usageData.promptTokens),
-                                    outputTokens: .init(total: usageData.completionTokens),
-                                    raw: try? jsonValue(from: usageData)
-                                )
+                                usage = convertPerplexityUsage(usageData)
                                 metadataAccumulator.citationTokens = usageData.citationTokens
                                 metadataAccumulator.numSearchQueries = usageData.numSearchQueries
                             }
@@ -167,14 +152,13 @@ public final class PerplexityLanguageModel: LanguageModelV3 {
                                     )
                                 }
 
-                                if let delta = choice.delta, let text = delta.content, !text.isEmpty {
-                                    if !isActiveText {
-                                        isActiveText = true
-                                        continuation.yield(.textStart(id: "0", providerMetadata: nil))
-                                    }
-
-                                    continuation.yield(.textDelta(id: "0", delta: text, providerMetadata: nil))
+                                let text = choice.delta.content
+                                if !isActiveText {
+                                    isActiveText = true
+                                    continuation.yield(.textStart(id: "0", providerMetadata: nil))
                                 }
+
+                                continuation.yield(.textDelta(id: "0", delta: text, providerMetadata: nil))
                             }
                         }
                     }
@@ -307,6 +291,7 @@ private struct PerplexityStreamingMetadata {
         makePerplexityProviderMetadata(images: images, usage: PerplexityUsage(
             promptTokens: nil,
             completionTokens: nil,
+            reasoningTokens: nil,
             totalTokens: nil,
             citationTokens: citationTokens,
             numSearchQueries: numSearchQueries
@@ -326,6 +311,29 @@ private func encodeMessages(_ messages: [PerplexityMessage]) throws -> JSONValue
 private func perplexityResponseMetadata(id: String?, model: String?, created: Double?) -> (id: String?, modelId: String?, timestamp: Date?) {
     let timestamp = created.map { Date(timeIntervalSince1970: $0) }
     return (id: id, modelId: model, timestamp: timestamp)
+}
+
+private func convertPerplexityUsage(_ usage: PerplexityUsage?) -> LanguageModelV3Usage {
+    guard let usage else {
+        return LanguageModelV3Usage()
+    }
+
+    let promptTokens = usage.promptTokens ?? 0
+    let completionTokens = usage.completionTokens ?? 0
+    let reasoningTokens = usage.reasoningTokens ?? 0
+
+    return LanguageModelV3Usage(
+        inputTokens: .init(
+            total: promptTokens,
+            noCache: promptTokens
+        ),
+        outputTokens: .init(
+            total: completionTokens,
+            text: completionTokens - reasoningTokens,
+            reasoning: reasoningTokens
+        ),
+        raw: try? jsonValue(from: usage)
+    )
 }
 
 // MARK: - Schemas & Models
@@ -348,10 +356,14 @@ private let perplexityChunkSchema = FlexibleSchema(
     )
 )
 
+private enum PerplexityAssistantRole: String, Codable, Sendable {
+    case assistant
+}
+
 private struct PerplexityResponse: Codable, Sendable {
     struct Choice: Codable, Sendable {
         struct Message: Codable, Sendable {
-            let role: String
+            let role: PerplexityAssistantRole
             let content: String
         }
 
@@ -364,9 +376,9 @@ private struct PerplexityResponse: Codable, Sendable {
         }
     }
 
-    let id: String?
-    let created: Double?
-    let model: String?
+    let id: String
+    let created: Double
+    let model: String
     let choices: [Choice]
     let citations: [String]?
     let images: [PerplexityImage]?
@@ -376,11 +388,11 @@ private struct PerplexityResponse: Codable, Sendable {
 private struct PerplexityStreamChunk: Codable, Sendable {
     struct Choice: Codable, Sendable {
         struct Delta: Codable, Sendable {
-            let role: String
-            let content: String?
+            let role: PerplexityAssistantRole
+            let content: String
         }
 
-        let delta: Delta?
+        let delta: Delta
         let finishReason: String?
 
         enum CodingKeys: String, CodingKey {
@@ -389,9 +401,9 @@ private struct PerplexityStreamChunk: Codable, Sendable {
         }
     }
 
-    let id: String?
-    let created: Double?
-    let model: String?
+    let id: String
+    let created: Double
+    let model: String
     let choices: [Choice]
     let citations: [String]?
     let images: [PerplexityImage]?
@@ -401,6 +413,7 @@ private struct PerplexityStreamChunk: Codable, Sendable {
 private struct PerplexityUsage: Codable, Sendable {
     let promptTokens: Int?
     let completionTokens: Int?
+    let reasoningTokens: Int?
     let totalTokens: Int?
     let citationTokens: Int?
     let numSearchQueries: Int?
@@ -408,6 +421,7 @@ private struct PerplexityUsage: Codable, Sendable {
     enum CodingKeys: String, CodingKey {
         case promptTokens = "prompt_tokens"
         case completionTokens = "completion_tokens"
+        case reasoningTokens = "reasoning_tokens"
         case totalTokens = "total_tokens"
         case citationTokens = "citation_tokens"
         case numSearchQueries = "num_search_queries"

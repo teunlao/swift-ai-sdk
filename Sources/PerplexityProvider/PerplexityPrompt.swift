@@ -57,6 +57,7 @@ struct PerplexityMessageContent: Encodable, Sendable {
     enum Kind {
         case text(String)
         case imageURL(String)
+        case fileURL(url: String, fileName: String?)
     }
 
     let kind: Kind
@@ -70,6 +71,10 @@ struct PerplexityMessageContent: Encodable, Sendable {
         case .imageURL(let url):
             try container.encode("image_url", forKey: .type)
             try container.encode(ImageURL(url: url), forKey: .imageURL)
+        case let .fileURL(url, fileName):
+            try container.encode("file_url", forKey: .type)
+            try container.encode(FileURL(url: url), forKey: .fileURL)
+            try container.encodeIfPresent(fileName, forKey: .fileName)
         }
     }
 
@@ -77,9 +82,15 @@ struct PerplexityMessageContent: Encodable, Sendable {
         case type
         case text
         case imageURL = "image_url"
+        case fileURL = "file_url"
+        case fileName = "file_name"
     }
 
     private struct ImageURL: Encodable, Sendable {
+        let url: String
+    }
+
+    private struct FileURL: Encodable, Sendable {
         let url: String
     }
 }
