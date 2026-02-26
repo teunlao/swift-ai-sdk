@@ -31,6 +31,7 @@ For source-of-truth code, always follow the commits and tests.
 
 - 2026-02-26
   - Fireworks: provider auth parity fix — removed creation-time `fatalError` for missing API key; auth now resolves at request time (`LoadAPIKeyError`) via fetch wrapper; added upstream alias parity (`createFireworks`) and regression coverage for no-network-before-fail semantics.
+  - Luma: provider auth parity fix — removed creation-time `fatalError` for missing API key; auth now resolves at request time (`LoadAPIKeyError`) via fetch wrapper; added upstream alias parity (`createLuma`) and regression coverage for no-network-before-fail semantics.
   - Hume: provider auth parity fix — removed creation-time `fatalError` for missing API key; auth now resolves at request time (`LoadAPIKeyError`) via fetch wrapper; added regression coverage for no-network-before-fail semantics.
   - Hugging Face: provider auth parity fix — removed creation-time `fatalError` for missing API key; auth now resolves at request time (`LoadAPIKeyError`) via fetch wrapper; added upstream alias parity (`createHuggingFace`) and regression coverage for no-network-before-fail semantics.
   - Gladia: provider auth parity fix — removed creation-time `fatalError` for missing API key; auth now resolves at request time (`LoadAPIKeyError`) via fetch wrapper; added upstream alias parity (`createGladia`) and regression coverage for no-network-before-fail semantics.

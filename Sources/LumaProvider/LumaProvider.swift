@@ -54,24 +54,77 @@ public final class LumaProvider: ProviderV3 {
 
 private let defaultLumaBaseURL = "https://api.lumalabs.ai"
 
-public func createLumaProvider(settings: LumaProviderSettings = .init()) -> LumaProvider {
-    let normalizedBaseURL = withoutTrailingSlash(settings.baseURL ?? defaultLumaBaseURL) ?? defaultLumaBaseURL
+private func defaultLumaFetchFunction() -> FetchFunction {
+    { request in
+        let session = URLSession.shared
 
-    let headersClosure: @Sendable () -> [String: String?] = {
-        let apiKey: String
-        do {
-            apiKey = try loadAPIKey(
-                apiKey: settings.apiKey,
+        if #available(macOS 12.0, iOS 15.0, tvOS 15.0, watchOS 8.0, *) {
+            let (bytes, response) = try await session.bytes(for: request)
+            let stream = AsyncThrowingStream<Data, Error> { continuation in
+                Task {
+                    var buffer = Data()
+                    buffer.reserveCapacity(16_384)
+
+                    do {
+                        for try await byte in bytes {
+                            buffer.append(byte)
+
+                            if buffer.count >= 16_384 {
+                                continuation.yield(buffer)
+                                buffer.removeAll(keepingCapacity: true)
+                            }
+                        }
+
+                        if !buffer.isEmpty {
+                            continuation.yield(buffer)
+                        }
+
+                        continuation.finish()
+                    } catch {
+                        continuation.finish(throwing: error)
+                    }
+                }
+            }
+
+            return FetchResponse(body: .stream(stream), urlResponse: response)
+        } else {
+            let (data, response) = try await session.data(for: request)
+            return FetchResponse(body: .data(data), urlResponse: response)
+        }
+    }
+}
+
+private func createLumaAuthFetch(apiKey: String?, customFetch: FetchFunction?) -> FetchFunction {
+    let baseFetch = customFetch ?? defaultLumaFetchFunction()
+
+    return { request in
+        var modified = request
+        var headers = modified.allHTTPHeaderFields ?? [:]
+
+        let hasAuthorization = headers.keys.contains { $0.lowercased() == "authorization" }
+        if !hasAuthorization {
+            let resolved = try loadAPIKey(
+                apiKey: apiKey,
                 environmentVariableName: "LUMA_API_KEY",
                 description: "Luma"
             )
-        } catch {
-            fatalError("Luma API key is missing: \(error)")
+            headers["Authorization"] = "Bearer \(resolved)"
+            modified.allHTTPHeaderFields = headers
         }
 
-        var baseHeaders: [String: String?] = [
-            "Authorization": "Bearer \(apiKey)"
-        ]
+        return try await baseFetch(modified)
+    }
+}
+
+public func createLumaProvider(settings: LumaProviderSettings = .init()) -> LumaProvider {
+    let normalizedBaseURL = withoutTrailingSlash(settings.baseURL ?? defaultLumaBaseURL) ?? defaultLumaBaseURL
+    let fetch = createLumaAuthFetch(
+        apiKey: settings.apiKey,
+        customFetch: settings.fetch
+    )
+
+    let headersClosure: @Sendable () -> [String: String?] = {
+        var baseHeaders: [String: String?] = [:]
 
         if let headers = settings.headers {
             for (key, value) in headers {
@@ -82,8 +135,6 @@ public func createLumaProvider(settings: LumaProviderSettings = .init()) -> Luma
         let withUA = withUserAgentSuffix(baseHeaders, "ai-sdk/luma/\(LUMA_VERSION)")
         return withUA.mapValues { Optional($0) }
     }
-
-    let fetch = settings.fetch
 
     let imageFactory: @Sendable (LumaImageModelId) -> LumaImageModel = { modelId in
         LumaImageModel(
@@ -98,6 +149,11 @@ public func createLumaProvider(settings: LumaProviderSettings = .init()) -> Luma
     }
 
     return LumaProvider(imageFactory: imageFactory)
+}
+
+/// Alias matching upstream naming (`createLuma`).
+public func createLuma(settings: LumaProviderSettings = .init()) -> LumaProvider {
+    createLumaProvider(settings: settings)
 }
 
 public let luma = createLumaProvider()
