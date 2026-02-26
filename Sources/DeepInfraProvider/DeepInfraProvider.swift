@@ -7,7 +7,7 @@ import OpenAICompatibleProvider
 //=== Upstream Reference ====================================================//
 //===----------------------------------------------------------------------===//
 // Ported from packages/deepinfra/src/deepinfra-provider.ts
-// Upstream commit: 77db222ee
+// Upstream commit: 73d5c5920e
 //===----------------------------------------------------------------------===//
 
 public struct DeepInfraProviderSettings: Sendable {
