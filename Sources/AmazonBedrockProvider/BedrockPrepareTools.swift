@@ -7,7 +7,7 @@ import AnthropicProvider
 //=== Upstream Reference ====================================================//
 //===----------------------------------------------------------------------===//
 // Ported from packages/amazon-bedrock/src/bedrock-prepare-tools.ts
-// Upstream commit: 77db222ee
+// Upstream commit: 73d5c5920
 //===----------------------------------------------------------------------===//
 
 struct BedrockPreparedTools: Sendable {
@@ -21,7 +21,7 @@ func prepareBedrockTools(
     tools: [LanguageModelV3Tool]?,
     toolChoice: LanguageModelV3ToolChoice?,
     modelId: String
-) async -> BedrockPreparedTools {
+) async throws -> BedrockPreparedTools {
     var warnings: [SharedV3Warning] = []
     var betas: Set<String> = []
     var additionalTools: [String: JSONValue]? = nil
@@ -50,7 +50,7 @@ func prepareBedrockTools(
         return BedrockPreparedTools(toolConfig: [:], additionalTools: nil, betas: betas, warnings: warnings)
     }
 
-    let isAnthropicModel = modelId.contains("anthropic.") || modelId.contains("us.anthropic.")
+    let isAnthropicModel = modelId.contains("anthropic.")
 
     var providerTools: [LanguageModelV3ProviderTool] = []
     var providerToolWrappers: [LanguageModelV3Tool] = []
@@ -66,41 +66,27 @@ func prepareBedrockTools(
         }
     }
 
-    if isAnthropicModel && !providerTools.isEmpty {
-        do {
-            let prepared = try await prepareAnthropicTools(
-                tools: providerToolWrappers,
-                toolChoice: toolChoice,
-                disableParallelToolUse: nil
-            )
-            warnings.append(contentsOf: prepared.warnings)
-            betas.formUnion(prepared.betas)
-            if let toolChoiceJSON = prepared.toolChoice {
-                additionalTools = ["tool_choice": toolChoiceJSON]
-            }
+    let usingAnthropicTools = isAnthropicModel && !providerTools.isEmpty
 
-            for providerTool in providerTools {
-                if let bedrockTool = try await makeAnthropicBedrockTool(providerTool) {
-                    bedrockTools.append(bedrockTool)
-                } else {
-                    warnings.append(.unsupported(feature: "tool \(providerTool.id)", details: nil))
-                }
-            }
-        } catch {
-            warnings.append(.other(message: "Failed to prepare Anthropic tools: \(error)"))
+    if usingAnthropicTools {
+        let prepared = try await prepareAnthropicTools(
+            tools: providerToolWrappers,
+            toolChoice: toolChoice,
+            disableParallelToolUse: nil
+        )
+        warnings.append(contentsOf: prepared.warnings)
+        betas.formUnion(prepared.betas)
+        if let toolChoiceJSON = prepared.toolChoice {
+            additionalTools = ["tool_choice": toolChoiceJSON]
         }
 
-        if !functionTools.isEmpty {
-            warnings.append(
-                .unsupported(
-                    feature: "mixing Anthropic provider tools and standard function tools",
-                    details: "Mixed Anthropic provider tools and standard function tools are not supported in a single Bedrock call. Only Anthropic tools will be used."
-                )
-            )
+        for providerTool in providerTools {
+            if let bedrockTool = try await makeAnthropicBedrockTool(providerTool) {
+                bedrockTools.append(bedrockTool)
+            } else {
+                warnings.append(.unsupported(feature: "tool \(providerTool.id)", details: nil))
+            }
         }
-
-        // Anthropic scenario ignores standard function tools
-        functionTools.removeAll()
     } else {
         // Provider-defined tools are unsupported for non-Anthropic models
         for providerTool in providerTools {
@@ -113,26 +99,24 @@ func prepareBedrockTools(
             "name": .string(functionTool.name),
             "inputSchema": .object(["json": functionTool.inputSchema])
         ]
-        if let description = functionTool.description {
+        if let description = functionTool.description, !description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             toolSpec["description"] = .string(description)
         }
         bedrockTools.append(.object(["toolSpec": .object(toolSpec)]))
     }
 
     var toolChoiceJSON: JSONValue? = nil
-    if !isAnthropicModel {
+    if !usingAnthropicTools, !bedrockTools.isEmpty, let toolChoice {
         switch toolChoice {
-        case .some(.none):
+        case .auto:
+            toolChoiceJSON = .object(["auto": .object([:])])
+        case .required:
+            toolChoiceJSON = .object(["any": .object([:])])
+        case .none:
             bedrockTools.removeAll()
             toolChoiceJSON = nil
-        case .some(.auto):
-            toolChoiceJSON = nil
-        case .some(.required):
-            toolChoiceJSON = .object(["any": .object([:])])
-        case .some(.tool(let toolName)):
+        case .tool(let toolName):
             toolChoiceJSON = .object(["tool": .object(["name": .string(toolName)])])
-        case Optional<LanguageModelV3ToolChoice>.none:
-            break
         }
     }
 
@@ -140,7 +124,7 @@ func prepareBedrockTools(
     if !bedrockTools.isEmpty {
         toolConfig["tools"] = .array(bedrockTools)
     }
-    if let toolChoiceJSON, !isAnthropicModel {
+    if let toolChoiceJSON, !usingAnthropicTools {
         toolConfig["toolChoice"] = toolChoiceJSON
     }
 
@@ -182,7 +166,7 @@ private func makeAnthropicBedrockTool(
     }
 
     let schema = try await asSchema(definition.inputSchema).jsonSchema()
-    let name = definition.name ?? tool.name
+    let name = tool.name
 
     let toolSpec: [String: JSONValue] = [
         "name": .string(name),

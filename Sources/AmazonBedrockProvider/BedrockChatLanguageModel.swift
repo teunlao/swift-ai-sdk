@@ -6,8 +6,24 @@ import AISDKProviderUtils
 //=== Upstream Reference ====================================================//
 //===----------------------------------------------------------------------===//
 // Ported from packages/amazon-bedrock/src/bedrock-chat-language-model.ts
-// Upstream commit: 77db222ee
+// Upstream commit: 73d5c5920
 //===----------------------------------------------------------------------===//
+
+private let bedrockGenerateFailedResponseHandler: ResponseHandler<APICallError> = createJsonErrorResponseHandler(
+    errorSchema: BedrockErrorSchema,
+    errorToMessage: { error in
+        error.message.isEmpty ? "Unknown error" : error.message
+    }
+)
+
+private func parseHTTPDate(_ headerValue: String?) -> Date? {
+    guard let headerValue else { return nil }
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
+    formatter.timeZone = TimeZone(abbreviation: "GMT")
+    return formatter.date(from: headerValue)
+}
 
 public final class BedrockChatLanguageModel: LanguageModelV3 {
     struct Config: Sendable {
@@ -21,7 +37,6 @@ public final class BedrockChatLanguageModel: LanguageModelV3 {
         let command: [String: JSONValue]
         let warnings: [SharedV3Warning]
         let usesJsonResponseTool: Bool
-        let betas: Set<String>
     }
 
     private let modelIdentifier: BedrockChatModelId
@@ -45,38 +60,46 @@ public final class BedrockChatLanguageModel: LanguageModelV3 {
         let url = chatURL(for: modelIdentifier.rawValue, path: "converse")
         let response = try await postJsonToAPI(
             url: url,
-            headers: mergeHeaders(betas: prepared.betas, overrides: options.headers),
+            headers: mergeHeaders(overrides: options.headers),
             body: JSONValue.object(prepared.command),
-            failedResponseHandler: bedrockFailedResponseHandler,
+            failedResponseHandler: bedrockGenerateFailedResponseHandler,
             successfulResponseHandler: createJsonResponseHandler(responseSchema: bedrockGenerateResponseSchema),
             isAborted: options.abortSignal,
             fetch: config.fetch
         )
 
-        let content = mapGenerateContent(
+        let isMistral = isMistralModel(modelIdentifier.rawValue)
+        let mapped = mapGenerateContent(
             response: response.value,
-            usesJsonResponseTool: prepared.usesJsonResponseTool
+            usesJsonResponseTool: prepared.usesJsonResponseTool,
+            isMistral: isMistral
         )
 
-        let usage = convertBedrockUsage(response.value.usage)
-
-        let providerMetadata = buildProviderMetadata(
-            trace: response.value.trace,
-            cacheWriteTokens: response.value.usage?.cacheWriteInputTokens,
-            usesJsonResponseTool: prepared.usesJsonResponseTool
+        let stopSequence = response.value.additionalModelResponseFields?.delta?.stop_sequence
+        let providerMetadata = buildGenerateProviderMetadata(
+            response: response.value,
+            isJsonResponseFromTool: mapped.isJsonResponseFromTool,
+            stopSequence: stopSequence
         )
 
+        let responseHeaders = response.responseHeaders
         let result = LanguageModelV3GenerateResult(
-            content: content,
+            content: mapped.content,
             finishReason: LanguageModelV3FinishReason(
-                unified: mapBedrockFinishReason(response.value.stopReason),
+                unified: mapBedrockFinishReason(
+                    response.value.stopReason,
+                    isJsonResponseFromTool: mapped.isJsonResponseFromTool
+                ),
                 raw: response.value.stopReason
             ),
-            usage: usage,
+            usage: convertBedrockUsage(response.value.usage),
             providerMetadata: providerMetadata,
             request: LanguageModelV3RequestInfo(body: prepared.command),
             response: LanguageModelV3ResponseInfo(
-                headers: response.responseHeaders,
+                id: responseHeaders["x-amzn-requestid"],
+                timestamp: parseHTTPDate(responseHeaders["date"]),
+                modelId: modelIdentifier.rawValue,
+                headers: responseHeaders,
                 body: response.rawValue
             ),
             warnings: prepared.warnings
@@ -90,7 +113,7 @@ public final class BedrockChatLanguageModel: LanguageModelV3 {
         let url = chatURL(for: modelIdentifier.rawValue, path: "converse-stream")
         let streamResponse = try await postJsonToAPI(
             url: url,
-            headers: mergeHeaders(betas: prepared.betas, overrides: options.headers),
+            headers: mergeHeaders(overrides: options.headers),
             body: JSONValue.object(prepared.command),
             failedResponseHandler: bedrockFailedResponseHandler,
             successfulResponseHandler: createBedrockEventStreamResponseHandler(chunkSchema: bedrockStreamSchema),
@@ -98,14 +121,23 @@ public final class BedrockChatLanguageModel: LanguageModelV3 {
             fetch: config.fetch
         )
 
+        let responseHeaders = streamResponse.responseHeaders
+        let responseId = responseHeaders["x-amzn-requestid"]
+        let responseTimestamp = parseHTTPDate(responseHeaders["date"])
+        let modelId = modelIdentifier.rawValue
+        let isMistral = isMistralModel(modelId)
+
         let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error>(bufferingPolicy: .unbounded) { continuation in
             continuation.yield(.streamStart(warnings: prepared.warnings))
+            continuation.yield(.responseMetadata(id: responseId, modelId: modelId, timestamp: responseTimestamp))
 
             Task {
                 var finishReason = LanguageModelV3FinishReason(unified: .other, raw: nil)
                 var usageMetrics: BedrockStreamEnvelope.Metadata.Usage?
-                var providerMetadataPayload: [String: JSONValue] = [:]
-                var contentBlocks: [Int: ContentBlockState] = [:]
+                var providerMetadata: SharedV3ProviderMetadata?
+                var isJsonResponseFromTool = false
+                var stopSequence: String?
+                var contentBlocks: [Int: StreamContentBlockState] = [:]
 
                 do {
                     for try await chunkResult in streamResponse.value {
@@ -115,169 +147,192 @@ public final class BedrockChatLanguageModel: LanguageModelV3 {
 
                         switch chunkResult {
                         case .failure(let error, let raw):
+                            finishReason = LanguageModelV3FinishReason(unified: .error, raw: nil)
                             let errorJSON = raw.flatMap { try? jsonValue(from: $0) } ?? .string(String(describing: error))
                             continuation.yield(.error(error: errorJSON))
-                            finishReason = LanguageModelV3FinishReason(unified: .error, raw: nil)
                             continue
 
                         case .success(let chunk, _):
                             if let errorPayload = chunk.firstError {
-                                continuation.yield(.error(error: .object(errorPayload)))
                                 finishReason = LanguageModelV3FinishReason(unified: .error, raw: nil)
+                                continuation.yield(.error(error: .object(errorPayload)))
                                 continue
-                            }
-
-                            if let metadata = chunk.metadata {
-                                if let metrics = metadata.usage {
-                                    usageMetrics = metrics
-
-                                    if let cacheWrite = metrics.cacheWriteInputTokens {
-                                        providerMetadataPayload["usage"] = .object([
-                                            "cacheWriteInputTokens": .number(Double(cacheWrite))
-                                        ])
-                                    }
-                                }
-
-                                if let trace = metadata.trace {
-                                    providerMetadataPayload["trace"] = trace
-                                }
                             }
 
                             if let messageStop = chunk.messageStop {
                                 finishReason = LanguageModelV3FinishReason(
-                                    unified: mapBedrockFinishReason(messageStop.stopReason),
+                                    unified: mapBedrockFinishReason(
+                                        messageStop.stopReason,
+                                        isJsonResponseFromTool: isJsonResponseFromTool
+                                    ),
                                     raw: messageStop.stopReason
                                 )
-                                if let additional = messageStop.additionalModelResponseFields, !additional.isEmpty {
-                                    providerMetadataPayload["additionalModelResponseFields"] = .object(additional)
-                                }
+                                stopSequence = messageStop.additionalModelResponseFields?.delta?.stop_sequence
                             }
 
-                            if let contentStart = chunk.contentBlockStart {
-                                let blockIndex = contentStart.contentBlockIndex
-                                if let toolUse = contentStart.start?.toolUse {
-                                    let toolCallId = toolUse.toolUseId ?? config.generateId()
-                                    let toolName = toolUse.name ?? "tool-\(config.generateId())"
-                                    contentBlocks[blockIndex] = .toolCall(
-                                        ToolBlockState(
-                                            id: toolCallId,
-                                            name: toolName,
-                                            buffer: ""
-                                        )
-                                    )
+                            if let metadata = chunk.metadata {
+                                if let usage = metadata.usage {
+                                    usageMetrics = usage
+                                }
 
-                                    if !prepared.usesJsonResponseTool {
-                                        continuation.yield(.toolInputStart(
-                                            id: toolCallId,
-                                            toolName: toolName,
-                                            providerMetadata: nil,
-                                            providerExecuted: nil,
-                                            dynamic: nil,
-                                            title: nil
-                                        ))
-                                    }
+                                let hasCacheUsage = metadata.usage?.cacheWriteInputTokens != nil || metadata.usage?.cacheDetails != nil
+                                let traceValue = metadata.trace
+                                let traceIsObject: Bool
+                                if let traceValue, case .object = traceValue {
+                                    traceIsObject = true
                                 } else {
-                                    contentBlocks[blockIndex] = .text
-                                    if !prepared.usesJsonResponseTool {
-                                        continuation.yield(.textStart(id: String(blockIndex), providerMetadata: nil))
+                                    traceIsObject = false
+                                }
+
+                                if hasCacheUsage || traceIsObject || metadata.performanceConfig != nil || metadata.serviceTier != nil {
+                                    var payload: [String: JSONValue] = [:]
+
+                                    if hasCacheUsage, let usage = metadata.usage {
+                                        var usagePayload: [String: JSONValue] = [:]
+                                        if let cacheWrite = usage.cacheWriteInputTokens {
+                                            usagePayload["cacheWriteInputTokens"] = .number(Double(cacheWrite))
+                                        }
+                                        if let cacheDetails = usage.cacheDetails {
+                                            usagePayload["cacheDetails"] = cacheDetails
+                                        }
+                                        payload["usage"] = .object(usagePayload)
                                     }
+
+                                    if traceIsObject, let traceValue {
+                                        payload["trace"] = traceValue
+                                    }
+
+                                    if let performanceConfig = metadata.performanceConfig {
+                                        payload["performanceConfig"] = performanceConfig
+                                    }
+
+                                    if let serviceTier = metadata.serviceTier {
+                                        payload["serviceTier"] = serviceTier
+                                    }
+
+                                    providerMetadata = ["bedrock": payload]
                                 }
                             }
 
-                            if let delta = chunk.contentBlockDelta {
-                                let blockIndex = delta.contentBlockIndex
-                                if let reasoning = delta.delta?.reasoningContent {
-                                    let shouldEmitStart: Bool
-                                    if case .reasoning(let started) = contentBlocks[blockIndex] {
-                                        shouldEmitStart = !started
-                                    } else {
-                                        shouldEmitStart = true
-                                    }
+                            if let contentStart = chunk.contentBlockStart,
+                               contentStart.start?.toolUse == nil {
+                                let blockIndex = contentStart.contentBlockIndex
+                                contentBlocks[blockIndex] = .text
+                                continuation.yield(.textStart(id: String(blockIndex), providerMetadata: nil))
+                            }
 
-                                    if shouldEmitStart {
-                                        var reasoningState = ContentBlockState.reasoning(started: false)
-                                        reasoningState.markStarted()
-                                        contentBlocks[blockIndex] = reasoningState
-                                        continuation.yield(.reasoningStart(id: String(blockIndex), providerMetadata: nil))
-                                    } else if var existing = contentBlocks[blockIndex] {
-                                        existing.markStarted()
-                                        contentBlocks[blockIndex] = existing
-                                    }
-
-                                    if let text = reasoning.text, !text.isEmpty {
-                                        continuation.yield(.reasoningDelta(id: String(blockIndex), delta: text, providerMetadata: nil))
-                                    } else if let signature = reasoning.signature {
-                                        let metadata: SharedV3ProviderMetadata = [
-                                            "bedrock": ["signature": .string(signature)]
-                                        ]
-                                        continuation.yield(.reasoningDelta(id: String(blockIndex), delta: "", providerMetadata: metadata))
-                                    } else if let data = reasoning.data {
-                                        let metadata: SharedV3ProviderMetadata = [
-                                            "bedrock": ["redactedData": .string(data)]
-                                        ]
-                                        continuation.yield(.reasoningDelta(id: String(blockIndex), delta: "", providerMetadata: metadata))
-                                    }
+                            if let contentDelta = chunk.contentBlockDelta,
+                               let delta = contentDelta.delta,
+                               let textDelta = delta.text,
+                               !textDelta.isEmpty {
+                                let blockIndex = contentDelta.contentBlockIndex
+                                if contentBlocks[blockIndex] == nil {
+                                    contentBlocks[blockIndex] = .text
+                                    continuation.yield(.textStart(id: String(blockIndex), providerMetadata: nil))
                                 }
-
-                                if let textDelta = delta.delta?.text, !textDelta.isEmpty {
-                                    if contentBlocks[blockIndex] == nil {
-                                        contentBlocks[blockIndex] = .text
-                                        if !prepared.usesJsonResponseTool {
-                                            continuation.yield(.textStart(id: String(blockIndex), providerMetadata: nil))
-                                        }
-                                    }
-
-                                    if !prepared.usesJsonResponseTool {
-                                        continuation.yield(.textDelta(id: String(blockIndex), delta: textDelta, providerMetadata: nil))
-                                    }
-                                }
-
-                                if let toolDelta = delta.delta?.toolUse, var state = contentBlocks[blockIndex], state.isToolCall {
-                                    let deltaText = toolDelta.input ?? ""
-                                    state.append(delta: deltaText)
-                                    contentBlocks[blockIndex] = state
-                                    if !prepared.usesJsonResponseTool {
-                                        continuation.yield(.toolInputDelta(id: state.id, delta: deltaText, providerMetadata: nil))
-                                    }
-                                }
+                                continuation.yield(.textDelta(id: String(blockIndex), delta: textDelta, providerMetadata: nil))
                             }
 
                             if let stop = chunk.contentBlockStop {
                                 let blockIndex = stop.contentBlockIndex
-                                guard let state = contentBlocks.removeValue(forKey: blockIndex) else { continue }
-
-                                switch state {
-                                case .text:
-                                    if !prepared.usesJsonResponseTool {
+                                if let state = contentBlocks.removeValue(forKey: blockIndex) {
+                                    switch state {
+                                    case .reasoning:
+                                        continuation.yield(.reasoningEnd(id: String(blockIndex), providerMetadata: nil))
+                                    case .text:
                                         continuation.yield(.textEnd(id: String(blockIndex), providerMetadata: nil))
-                                    }
-                                case .reasoning:
-                                    continuation.yield(.reasoningEnd(id: String(blockIndex), providerMetadata: nil))
-                                case .toolCall(let toolState):
-                                    if prepared.usesJsonResponseTool {
-                                        if !toolState.buffer.isEmpty {
+                                    case .toolCall(let toolState):
+                                        if toolState.isJsonResponseTool {
+                                            isJsonResponseFromTool = true
                                             continuation.yield(.textStart(id: String(blockIndex), providerMetadata: nil))
-                                            continuation.yield(.textDelta(id: String(blockIndex), delta: toolState.buffer, providerMetadata: nil))
+                                            continuation.yield(.textDelta(id: String(blockIndex), delta: toolState.jsonText, providerMetadata: nil))
                                             continuation.yield(.textEnd(id: String(blockIndex), providerMetadata: nil))
+                                        } else {
+                                            continuation.yield(.toolInputEnd(id: toolState.toolCallId, providerMetadata: nil))
+                                            continuation.yield(.toolCall(LanguageModelV3ToolCall(
+                                                toolCallId: toolState.toolCallId,
+                                                toolName: toolState.toolName,
+                                                input: toolState.jsonText.isEmpty ? "{}" : toolState.jsonText
+                                            )))
                                         }
-                                    } else {
-                                        continuation.yield(.toolInputEnd(id: toolState.id, providerMetadata: nil))
-                                        continuation.yield(.toolCall(LanguageModelV3ToolCall(
-                                            toolCallId: toolState.id,
-                                            toolName: toolState.name,
-                                            input: toolState.buffer
-                                        )))
                                     }
+                                }
+                            }
+
+                            if let contentDelta = chunk.contentBlockDelta,
+                               let reasoningContent = contentDelta.delta?.reasoningContent {
+                                let blockIndex = contentDelta.contentBlockIndex
+                                if let text = reasoningContent.text, !text.isEmpty {
+                                    if contentBlocks[blockIndex] == nil {
+                                        contentBlocks[blockIndex] = .reasoning
+                                        continuation.yield(.reasoningStart(id: String(blockIndex), providerMetadata: nil))
+                                    }
+                                    continuation.yield(.reasoningDelta(id: String(blockIndex), delta: text, providerMetadata: nil))
+                                } else if let signature = reasoningContent.signature, !signature.isEmpty {
+                                    continuation.yield(.reasoningDelta(
+                                        id: String(blockIndex),
+                                        delta: "",
+                                        providerMetadata: ["bedrock": ["signature": .string(signature)]]
+                                    ))
+                                } else if let data = reasoningContent.data, !data.isEmpty {
+                                    continuation.yield(.reasoningDelta(
+                                        id: String(blockIndex),
+                                        delta: "",
+                                        providerMetadata: ["bedrock": ["redactedData": .string(data)]]
+                                    ))
+                                }
+                            }
+
+                            if let contentStart = chunk.contentBlockStart,
+                               let toolUse = contentStart.start?.toolUse {
+                                let blockIndex = contentStart.contentBlockIndex
+                                let isJsonResponseTool = prepared.usesJsonResponseTool && toolUse.name == "json"
+
+                                let normalizedId = normalizeToolCallId(toolUse.toolUseId, isMistral: isMistral)
+                                contentBlocks[blockIndex] = .toolCall(.init(
+                                    toolCallId: normalizedId,
+                                    toolName: toolUse.name,
+                                    jsonText: "",
+                                    isJsonResponseTool: isJsonResponseTool
+                                ))
+
+                                if !isJsonResponseTool {
+                                    continuation.yield(.toolInputStart(
+                                        id: normalizedId,
+                                        toolName: toolUse.name,
+                                        providerMetadata: nil,
+                                        providerExecuted: nil,
+                                        dynamic: nil,
+                                        title: nil
+                                    ))
+                                }
+                            }
+
+                            if let contentDelta = chunk.contentBlockDelta,
+                               let toolUseDelta = contentDelta.delta?.toolUse {
+                                let blockIndex = contentDelta.contentBlockIndex
+                                if case .toolCall(var toolState) = contentBlocks[blockIndex] {
+                                    let delta = toolUseDelta.input ?? ""
+                                    if !toolState.isJsonResponseTool {
+                                        continuation.yield(.toolInputDelta(id: toolState.toolCallId, delta: delta, providerMetadata: nil))
+                                    }
+                                    toolState.jsonText.append(delta)
+                                    contentBlocks[blockIndex] = .toolCall(toolState)
                                 }
                             }
                         }
                     }
 
-                    if prepared.usesJsonResponseTool {
-                        providerMetadataPayload["isJsonResponseFromTool"] = .bool(true)
+                    if isJsonResponseFromTool || stopSequence != nil {
+                        var bedrockPayload = providerMetadata?["bedrock"] ?? [:]
+                        if isJsonResponseFromTool {
+                            bedrockPayload["isJsonResponseFromTool"] = .bool(true)
+                            bedrockPayload["stopSequence"] = stopSequence.map { .string($0) } ?? .null
+                        } else if let stopSequence {
+                            bedrockPayload["stopSequence"] = .string(stopSequence)
+                        }
+                        providerMetadata = ["bedrock": bedrockPayload]
                     }
-
-                    let providerMetadata = providerMetadataPayload.isEmpty ? nil : ["bedrock": providerMetadataPayload]
 
                     continuation.yield(.finish(
                         finishReason: finishReason,
@@ -303,11 +358,11 @@ public final class BedrockChatLanguageModel: LanguageModelV3 {
     private func prepareRequest(options: LanguageModelV3CallOptions) async throws -> PreparedRequest {
         var warnings: [SharedV3Warning] = []
 
-        let bedrockOptions = try await parseProviderOptions(
+        var bedrockOptions = (try await parseProviderOptions(
             provider: "bedrock",
             providerOptions: options.providerOptions,
             schema: bedrockProviderOptionsSchema
-        )
+        )) ?? BedrockProviderOptions()
 
         if options.frequencyPenalty != nil {
             warnings.append(.unsupported(feature: "frequencyPenalty", details: nil))
@@ -321,56 +376,75 @@ public final class BedrockChatLanguageModel: LanguageModelV3 {
             warnings.append(.unsupported(feature: "seed", details: nil))
         }
 
-        if let responseFormat = options.responseFormat,
-           case .json(_, _, _) = responseFormat,
-           options.tools != nil && !(options.tools?.isEmpty ?? true) {
-            warnings.append(.other(message: "JSON response format does not support tools. The provided tools are ignored."))
-        }
-
-        var jsonResponseTool: LanguageModelV3Tool?
-        if let responseFormat = options.responseFormat,
-           case .json(let schema, _, _) = responseFormat {
-            let effectiveSchema = schema ?? .object([
-                "type": .string("object"),
-                "additionalProperties": .bool(true)
-            ])
-
-            jsonResponseTool = .function(LanguageModelV3FunctionTool(
-                name: "json",
-                inputSchema: effectiveSchema,
-                description: "Respond with a JSON object."
+        var temperature = options.temperature
+        if let value = temperature, value > 1 {
+            warnings.append(.unsupported(
+                feature: "temperature",
+                details: "\(value) exceeds bedrock maximum of 1.0. clamped to 1.0"
             ))
+            temperature = 1
+        } else if let value = temperature, value < 0 {
+            warnings.append(.unsupported(
+                feature: "temperature",
+                details: "\(value) is below bedrock minimum of 0. clamped to 0"
+            ))
+            temperature = 0
         }
 
-        var tools: [LanguageModelV3Tool]? = options.tools
-        var toolChoice = options.toolChoice
-        var usesJsonResponseTool = false
+        var jsonResponseTool: LanguageModelV3FunctionTool?
+        if let responseFormat = options.responseFormat,
+           case .json(let schema, _, _) = responseFormat,
+           let schema {
+            jsonResponseTool = LanguageModelV3FunctionTool(
+                name: "json",
+                inputSchema: schema,
+                description: "Respond with a JSON object."
+            )
+        }
+
+        var tools = options.tools
         if let jsonResponseTool {
-            usesJsonResponseTool = true
             if tools == nil { tools = [] }
-            tools?.insert(jsonResponseTool, at: 0)
-            toolChoice = .tool(toolName: "json")
+            tools?.append(.function(jsonResponseTool))
         }
 
-        let preparedTools = await prepareBedrockTools(
+        let effectiveToolChoice: LanguageModelV3ToolChoice? = jsonResponseTool != nil ? .required : options.toolChoice
+        let preparedTools = try await prepareBedrockTools(
             tools: tools,
-            toolChoice: toolChoice,
+            toolChoice: effectiveToolChoice,
             modelId: modelIdentifier.rawValue
         )
 
         warnings.append(contentsOf: preparedTools.warnings)
 
-        let hasAnyTools = (preparedTools.toolConfig["tools"] != nil) || preparedTools.additionalTools != nil
+        if let additionalTools = preparedTools.additionalTools {
+            var existing = bedrockOptions.additionalModelRequestFields ?? [:]
+            existing.merge(additionalTools) { _, new in new }
+            bedrockOptions.additionalModelRequestFields = existing
+        }
 
-        let prompt = hasAnyTools ? options.prompt : stripToolContent(from: options.prompt, warnings: &warnings)
+        if !preparedTools.betas.isEmpty || bedrockOptions.anthropicBeta != nil {
+            let existingBetas = bedrockOptions.anthropicBeta ?? []
+            let mergedBetas = !preparedTools.betas.isEmpty
+                ? existingBetas + preparedTools.betas.sorted()
+                : existingBetas
+            var additional = bedrockOptions.additionalModelRequestFields ?? [:]
+            additional["anthropic_beta"] = .array(mergedBetas.map { .string($0) })
+            bedrockOptions.additionalModelRequestFields = additional
+        }
 
-        let bedrockMessages = try await convertToBedrockChatMessages(prompt)
+        let modelId = modelIdentifier.rawValue
+        let isAnthropicModel = modelId.contains("anthropic")
+        let thinkingType = bedrockOptions.reasoningConfig?.type
+        let isThinkingRequested = thinkingType == .enabled || thinkingType == .adaptive
+        let thinkingBudget = thinkingType == .enabled ? bedrockOptions.reasoningConfig?.budgetTokens : nil
+        let isAnthropicThinkingEnabled = isAnthropicModel && isThinkingRequested
 
         var inferenceConfig: [String: JSONValue] = [:]
         if let maxOutputTokens = options.maxOutputTokens {
             inferenceConfig["maxTokens"] = .number(Double(maxOutputTokens))
         }
-        if let temperature = options.temperature {
+        if let temperature {
             inferenceConfig["temperature"] = .number(temperature)
         }
         if let topP = options.topP {
@@ -383,101 +457,203 @@ public final class BedrockChatLanguageModel: LanguageModelV3 {
             inferenceConfig["stopSequences"] = .array(stopSequences.map { .string($0) })
         }
 
-        var additionalModelRequestFields = bedrockOptions?.additionalModelRequestFields ?? [:]
-
-        if bedrockOptions?.reasoningConfig?.type == .enabled {
-            let budget = bedrockOptions?.reasoningConfig?.budgetTokens
-            if let budget {
+        if isAnthropicThinkingEnabled {
+            if let thinkingBudget {
                 if let existing = inferenceConfig["maxTokens"], case .number(let value) = existing {
-                    inferenceConfig["maxTokens"] = .number(value + Double(budget))
+                    inferenceConfig["maxTokens"] = .number(value + Double(thinkingBudget))
                 } else {
-                    inferenceConfig["maxTokens"] = .number(Double(budget + 4096))
+                    inferenceConfig["maxTokens"] = .number(Double(thinkingBudget + 4096))
                 }
 
-                additionalModelRequestFields["thinking"] = .object([
+                var additional = bedrockOptions.additionalModelRequestFields ?? [:]
+                additional["thinking"] = .object([
                     "type": .string("enabled"),
-                    "budget_tokens": .number(Double(budget))
+                    "budget_tokens": .number(Double(thinkingBudget))
                 ])
+                bedrockOptions.additionalModelRequestFields = additional
+            } else if thinkingType == .adaptive {
+                var additional = bedrockOptions.additionalModelRequestFields ?? [:]
+                additional["thinking"] = .object(["type": .string("adaptive")])
+                bedrockOptions.additionalModelRequestFields = additional
             }
-
-            if inferenceConfig.removeValue(forKey: "temperature") != nil {
-                warnings.append(.unsupported(feature: "temperature", details: "temperature is not supported when thinking is enabled"))
+        } else if !isAnthropicModel {
+            if bedrockOptions.reasoningConfig?.budgetTokens != nil {
+                warnings.append(.unsupported(
+                    feature: "budgetTokens",
+                    details: "budgetTokens applies only to Anthropic models on Bedrock and will be ignored for this model."
+                ))
             }
-            if inferenceConfig.removeValue(forKey: "topP") != nil {
-                warnings.append(.unsupported(feature: "topP", details: "topP is not supported when thinking is enabled"))
-            }
-            if inferenceConfig.removeValue(forKey: "topK") != nil {
-                warnings.append(.unsupported(feature: "topK", details: "topK is not supported when thinking is enabled"))
+            if thinkingType == .adaptive {
+                warnings.append(.unsupported(
+                    feature: "adaptive thinking",
+                    details: "adaptive thinking type applies only to Anthropic models on Bedrock."
+                ))
             }
         }
+
+        if let maxReasoningEffort = bedrockOptions.reasoningConfig?.maxReasoningEffort {
+            if isAnthropicModel {
+                var additional = bedrockOptions.additionalModelRequestFields ?? [:]
+                additional["output_config"] = .object([
+                    "effort": .string(maxReasoningEffort.rawValue)
+                ])
+                bedrockOptions.additionalModelRequestFields = additional
+            } else if modelId.hasPrefix("openai.") {
+                var additional = bedrockOptions.additionalModelRequestFields ?? [:]
+                additional["reasoning_effort"] = .string(maxReasoningEffort.rawValue)
+                bedrockOptions.additionalModelRequestFields = additional
+            } else {
+                var payload: [String: JSONValue] = [
+                    "maxReasoningEffort": .string(maxReasoningEffort.rawValue)
+                ]
+                if let thinkingType, thinkingType != .adaptive {
+                    payload["type"] = .string(thinkingType.rawValue)
+                }
+                if let thinkingBudget {
+                    payload["budgetTokens"] = .number(Double(thinkingBudget))
+                }
+                var additional = bedrockOptions.additionalModelRequestFields ?? [:]
+                additional["reasoningConfig"] = .object(payload)
+                bedrockOptions.additionalModelRequestFields = additional
+            }
+        }
+
+        if isAnthropicThinkingEnabled && inferenceConfig.removeValue(forKey: "temperature") != nil {
+            warnings.append(.unsupported(
+                feature: "temperature",
+                details: "temperature is not supported when thinking is enabled"
+            ))
+        }
+        if isAnthropicThinkingEnabled && inferenceConfig.removeValue(forKey: "topP") != nil {
+            warnings.append(.unsupported(
+                feature: "topP",
+                details: "topP is not supported when thinking is enabled"
+            ))
+        }
+        if isAnthropicThinkingEnabled && inferenceConfig.removeValue(forKey: "topK") != nil {
+            warnings.append(.unsupported(
+                feature: "topK",
+                details: "topK is not supported when thinking is enabled"
+            ))
+        }
+
+        let toolsCount: Int = {
+            guard let toolsValue = preparedTools.toolConfig["tools"],
+                  case .array(let toolsArray) = toolsValue
+            else { return 0 }
+            return toolsArray.count
+        }()
+        let hasAnyTools = toolsCount > 0 || preparedTools.additionalTools != nil
+
+        let filteredPrompt = hasAnyTools ? options.prompt : stripToolContent(from: options.prompt, warnings: &warnings)
+        let isMistral = isMistralModel(modelId)
+        let bedrockMessages = try await convertToBedrockChatMessages(filteredPrompt, isMistral: isMistral)
+
+        // Filter out reasoningConfig and additionalModelRequestFields from providerOptions.bedrock.
+        var filteredBedrockOptions = options.providerOptions?["bedrock"] ?? [:]
+        filteredBedrockOptions.removeValue(forKey: "reasoningConfig")
+        filteredBedrockOptions.removeValue(forKey: "additionalModelRequestFields")
+
+        let additionalModelResponseFieldPaths: [JSONValue]? = isAnthropicModel
+            ? [.string("/delta/stop_sequence")]
+            : nil
 
         var command: [String: JSONValue] = [
-            "messages": .array(bedrockMessages.messages)
+            "system": .array(bedrockMessages.system),
+            "messages": .array(bedrockMessages.messages),
         ]
 
-        if !bedrockMessages.system.isEmpty {
-            command["system"] = .array(bedrockMessages.system)
+        if let additionalModelResponseFieldPaths {
+            command["additionalModelResponseFieldPaths"] = .array(additionalModelResponseFieldPaths)
         }
+
+        if let additional = bedrockOptions.additionalModelRequestFields, !additional.isEmpty {
+            command["additionalModelRequestFields"] = .object(additional)
+        }
+
         if !inferenceConfig.isEmpty {
             command["inferenceConfig"] = .object(inferenceConfig)
         }
-        if !additionalModelRequestFields.isEmpty {
-            command["additionalModelRequestFields"] = .object(additionalModelRequestFields)
+
+        for (key, value) in filteredBedrockOptions {
+            command[key] = value
         }
-        if let guardrailConfig = bedrockOptions?.guardrailConfig {
-            command["guardrailConfig"] = guardrailConfig
-        }
-        if !preparedTools.toolConfig.isEmpty {
+
+        if toolsCount > 0 {
             command["toolConfig"] = .object(preparedTools.toolConfig)
-        }
-        if let extra = preparedTools.additionalTools {
-            for (key, value) in extra {
-                command[key] = value
-            }
         }
 
         return PreparedRequest(
             command: command,
             warnings: warnings,
-            usesJsonResponseTool: usesJsonResponseTool,
-            betas: preparedTools.betas
+            usesJsonResponseTool: jsonResponseTool != nil
         )
     }
 
     private func stripToolContent(from prompt: LanguageModelV3Prompt, warnings: inout [SharedV3Warning]) -> LanguageModelV3Prompt {
+        let hasToolContent = prompt.contains { message in
+            switch message {
+            case .assistant(let parts, _):
+                return parts.contains { part in
+                    switch part {
+                    case .toolCall, .toolResult:
+                        return true
+                    default:
+                        return false
+                    }
+                }
+            case .tool(let parts, _):
+                return parts.contains { part in
+                    if case .toolResult = part { return true }
+                    return false
+                }
+            case .system, .user:
+                return false
+            }
+        }
+
+        guard hasToolContent else {
+            return prompt
+        }
+
         var modified: LanguageModelV3Prompt = []
-        var removed = false
 
         for message in prompt {
             switch message {
-            case .tool:
-                removed = true
-                continue
+            case .system:
+                modified.append(message)
+
+            case .user:
+                modified.append(message)
+
             case .assistant(let parts, let providerOptions):
-                let filteredParts = parts.filter { part in
+                let filtered = parts.filter { part in
                     switch part {
                     case .toolCall, .toolResult:
-                        removed = true
                         return false
                     default:
                         return true
                     }
                 }
-                if filteredParts.isEmpty {
-                    continue
+                if !filtered.isEmpty {
+                    modified.append(.assistant(content: filtered, providerOptions: providerOptions))
                 }
-                modified.append(.assistant(content: filteredParts, providerOptions: providerOptions))
-            default:
-                modified.append(message)
+
+            case .tool(let parts, let providerOptions):
+                let filtered = parts.filter { part in
+                    if case .toolResult = part { return false }
+                    return true // keep tool-approval-response
+                }
+                if !filtered.isEmpty {
+                    modified.append(.tool(content: filtered, providerOptions: providerOptions))
+                }
             }
         }
 
-        if removed {
-            warnings.append(.unsupported(
-                feature: "toolContent",
-                details: "Tool calls and results removed from conversation because Bedrock does not support tool content without active tools."
-            ))
-        }
+        warnings.append(.unsupported(
+            feature: "toolContent",
+            details: "Tool calls and results removed from conversation because Bedrock does not support tool content without active tools."
+        ))
 
         return modified
     }
@@ -489,27 +665,29 @@ public final class BedrockChatLanguageModel: LanguageModelV3 {
         return "\(config.baseURL())/model/\(encoded)/\(path)"
     }
 
-    private func mergeHeaders(betas: Set<String>, overrides: [String: String]?) -> [String: String] {
-        var betaHeaders: [String: String?] = config.headers()
-        if !betas.isEmpty {
-            betaHeaders["anthropic-beta"] = betas.sorted().joined(separator: ",")
-        }
-
+    private func mergeHeaders(overrides: [String: String]?) -> [String: String] {
         let merged = combineHeaders(
-            betaHeaders,
+            config.headers(),
             overrides?.mapValues { Optional($0) }
         )
         return merged.compactMapValues { $0 }
     }
 
+    private struct GenerateContentMapping: Sendable {
+        let content: [LanguageModelV3Content]
+        let isJsonResponseFromTool: Bool
+    }
+
     private func mapGenerateContent(
         response: BedrockGenerateResponse,
-        usesJsonResponseTool: Bool
-    ) -> [LanguageModelV3Content] {
+        usesJsonResponseTool: Bool,
+        isMistral: Bool
+    ) -> GenerateContentMapping {
         var items: [LanguageModelV3Content] = []
+        var isJsonResponseFromTool = false
 
         for part in response.output.message.content {
-            if let text = part.text, !usesJsonResponseTool {
+            if let text = part.text {
                 items.append(.text(LanguageModelV3Text(text: text)))
             }
 
@@ -527,43 +705,85 @@ public final class BedrockChatLanguageModel: LanguageModelV3 {
             }
 
             if let toolUse = part.toolUse {
-                let id = toolUse.toolUseId ?? config.generateId()
-                let name = toolUse.name ?? "tool-\(config.generateId())"
-                let inputJSON = (try? canonicalJSONString(from: toolUse.input ?? .object([:]))) ?? "{}"
+                let isJsonTool = usesJsonResponseTool && toolUse.name == "json"
+                let inputText = (try? canonicalJSONString(from: toolUse.input ?? .object([:]))) ?? "{}"
 
-                if usesJsonResponseTool {
-                    items.append(.text(LanguageModelV3Text(text: inputJSON)))
+                if isJsonTool {
+                    isJsonResponseFromTool = true
+                    items.append(.text(LanguageModelV3Text(text: inputText)))
                 } else {
+                    let rawToolCallId = toolUse.toolUseId
+                    let toolCallId = normalizeToolCallId(rawToolCallId, isMistral: isMistral)
+                    let toolName = toolUse.name
                     items.append(.toolCall(LanguageModelV3ToolCall(
-                        toolCallId: id,
-                        toolName: name,
-                        input: inputJSON
+                        toolCallId: toolCallId,
+                        toolName: toolName,
+                        input: inputText
                     )))
                 }
             }
         }
 
-        return items
+        return GenerateContentMapping(content: items, isJsonResponseFromTool: isJsonResponseFromTool)
     }
 
-    private func buildProviderMetadata(
-        trace: JSONValue?,
-        cacheWriteTokens: Int?,
-        usesJsonResponseTool: Bool
+    private func buildGenerateProviderMetadata(
+        response: BedrockGenerateResponse,
+        isJsonResponseFromTool: Bool,
+        stopSequence: String?
     ) -> SharedV3ProviderMetadata? {
-        var metadata: [String: JSONValue] = [:]
-        if let trace {
-            metadata["trace"] = trace
+        let traceValue = response.trace
+        let traceIsObject: Bool
+        if let traceValue, case .object = traceValue {
+            traceIsObject = true
+        } else {
+            traceIsObject = false
         }
-        if let cacheWriteTokens {
-            metadata["usage"] = .object([
-                "cacheWriteInputTokens": .number(Double(cacheWriteTokens))
-            ])
+
+        let hasCacheUsage = response.usage?.cacheWriteInputTokens != nil || response.usage?.cacheDetails != nil
+        let shouldIncludeMetadata = response.trace != nil
+            || response.usage != nil
+            || response.performanceConfig != nil
+            || response.serviceTier != nil
+            || isJsonResponseFromTool
+            || stopSequence != nil
+
+        guard shouldIncludeMetadata else {
+            return nil
         }
-        if usesJsonResponseTool {
-            metadata["isJsonResponseFromTool"] = .bool(true)
+
+        var payload: [String: JSONValue] = [:]
+
+        if traceIsObject, let traceValue {
+            payload["trace"] = traceValue
         }
-        return metadata.isEmpty ? nil : ["bedrock": metadata]
+
+        if let performanceConfig = response.performanceConfig {
+            payload["performanceConfig"] = performanceConfig
+        }
+
+        if let serviceTier = response.serviceTier {
+            payload["serviceTier"] = serviceTier
+        }
+
+        if hasCacheUsage, let usage = response.usage {
+            var usagePayload: [String: JSONValue] = [:]
+            if let cacheWrite = usage.cacheWriteInputTokens {
+                usagePayload["cacheWriteInputTokens"] = .number(Double(cacheWrite))
+            }
+            if let cacheDetails = usage.cacheDetails {
+                usagePayload["cacheDetails"] = cacheDetails
+            }
+            payload["usage"] = .object(usagePayload)
+        }
+
+        if isJsonResponseFromTool {
+            payload["isJsonResponseFromTool"] = .bool(true)
+        }
+
+        payload["stopSequence"] = stopSequence.map { .string($0) } ?? .null
+
+        return ["bedrock": payload]
     }
 
     private func canonicalJSONString(from value: JSONValue) throws -> String {
@@ -636,51 +856,18 @@ private extension JSONEncoder {
 
 // MARK: - Content Block State
 
-private enum ContentBlockState {
-    case text
-    case reasoning(started: Bool)
-    case toolCall(ToolBlockState)
-
-    var isToolCall: Bool {
-        if case .toolCall = self { return true }
-        return false
+    private enum StreamContentBlockState {
+        case text
+        case reasoning
+        case toolCall(ToolBlockState)
     }
 
-    var id: String {
-        switch self {
-        case .toolCall(let state):
-            return state.id
-        case .text, .reasoning:
-            return ""
-        }
+    private struct ToolBlockState: Sendable {
+        let toolCallId: String
+        let toolName: String
+        var jsonText: String
+        let isJsonResponseTool: Bool
     }
-
-    mutating func markStarted() {
-        if case .reasoning = self {
-            self = .reasoning(started: true)
-        }
-    }
-
-    var started: Bool {
-        if case .reasoning(let started) = self {
-            return started
-        }
-        return false
-    }
-
-    mutating func append(delta: String) {
-        if case .toolCall(var state) = self {
-            state.buffer.append(delta)
-            self = .toolCall(state)
-        }
-    }
-}
-
-private struct ToolBlockState: Sendable {
-    let id: String
-    let name: String
-    var buffer: String
-}
 
 private extension ParseJSONResult where Output == BedrockStreamEnvelope {
     var rawJSONValue: JSONValue? {
@@ -697,6 +884,20 @@ private extension ParseJSONResult where Output == BedrockStreamEnvelope {
 
 // MARK: - Streaming Schema
 
+private struct BedrockAdditionalModelResponseFields: Codable, Sendable {
+    struct Delta: Codable, Sendable {
+        let stop_sequence: String?
+    }
+
+    let delta: Delta?
+}
+
+private struct BedrockToolUse: Codable, Sendable {
+    let toolUseId: String
+    let name: String
+    let input: JSONValue?
+}
+
 private struct BedrockStreamEnvelope: Codable, Sendable {
     struct ContentBlockDelta: Codable, Sendable {
         struct Delta: Codable, Sendable {
@@ -704,27 +905,15 @@ private struct BedrockStreamEnvelope: Codable, Sendable {
                 let input: String?
             }
 
-            struct Reasoning: Codable, Sendable {
-                struct ReasoningText: Codable, Sendable {
-                    let text: String
-                    let signature: String?
-                }
-
-                struct RedactedReasoning: Codable, Sendable {
-                    let data: String?
-                }
-
-                let reasoningText: ReasoningText?
-                let redactedReasoning: RedactedReasoning?
-
-                var text: String? { reasoningText?.text }
-                var signature: String? { reasoningText?.signature }
-                var data: String? { redactedReasoning?.data }
+            struct ReasoningContent: Codable, Sendable {
+                let text: String?
+                let signature: String?
+                let data: String?
             }
 
             let text: String?
             let toolUse: ToolUse?
-            let reasoningContent: Reasoning?
+            let reasoningContent: ReasoningContent?
         }
         let contentBlockIndex: Int
         let delta: Delta?
@@ -732,7 +921,7 @@ private struct BedrockStreamEnvelope: Codable, Sendable {
 
     struct ContentBlockStart: Codable, Sendable {
         struct Start: Codable, Sendable {
-            let toolUse: BedrockGenerateResponse.ToolUse?
+            let toolUse: BedrockToolUse?
         }
 
         let contentBlockIndex: Int
@@ -747,17 +936,21 @@ private struct BedrockStreamEnvelope: Codable, Sendable {
         struct Usage: Codable, Sendable {
             let cacheReadInputTokens: Int?
             let cacheWriteInputTokens: Int?
+            let cacheDetails: JSONValue?
             let inputTokens: Int?
             let outputTokens: Int?
+            let totalTokens: Int?
         }
 
         let trace: JSONValue?
+        let performanceConfig: JSONValue?
+        let serviceTier: JSONValue?
         let usage: Usage?
     }
 
     struct MessageStop: Codable, Sendable {
-        let stopReason: String?
-        let additionalModelResponseFields: [String: JSONValue]?
+        let additionalModelResponseFields: BedrockAdditionalModelResponseFields?
+        let stopReason: String
     }
 
     let contentBlockDelta: ContentBlockDelta?
@@ -811,7 +1004,7 @@ private struct BedrockGenerateResponse: Codable, Sendable {
                 }
 
                 let text: String?
-                let toolUse: ToolUse?
+                let toolUse: BedrockToolUse?
                 let reasoningContent: ReasoningContent?
             }
 
@@ -822,18 +1015,13 @@ private struct BedrockGenerateResponse: Codable, Sendable {
         let message: Message
     }
 
-    struct ToolUse: Codable, Sendable {
-        let toolUseId: String?
-        let name: String?
-        let input: JSONValue?
-    }
-
     struct Usage: Codable, Sendable {
         let inputTokens: Int?
         let outputTokens: Int?
         let totalTokens: Int?
         let cacheReadInputTokens: Int?
         let cacheWriteInputTokens: Int?
+        let cacheDetails: JSONValue?
     }
 
     struct Metrics: Codable, Sendable {
@@ -842,8 +1030,11 @@ private struct BedrockGenerateResponse: Codable, Sendable {
 
     let metrics: Metrics?
     let output: Output
-    let stopReason: String?
+    let stopReason: String
+    let additionalModelResponseFields: BedrockAdditionalModelResponseFields?
     let trace: JSONValue?
+    let performanceConfig: JSONValue?
+    let serviceTier: JSONValue?
     let usage: Usage?
 }
 

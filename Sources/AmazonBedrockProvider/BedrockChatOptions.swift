@@ -6,37 +6,51 @@ import AISDKProviderUtils
 //=== Upstream Reference ====================================================//
 //===----------------------------------------------------------------------===//
 // Ported from packages/amazon-bedrock/src/bedrock-chat-options.ts
-// Upstream commit: 77db222ee
+// Upstream commit: 73d5c5920
 //===----------------------------------------------------------------------===//
 
 public enum BedrockReasoningType: String, Sendable, Equatable {
     case enabled
     case disabled
+    case adaptive
+}
+
+public enum BedrockMaxReasoningEffort: String, Sendable, Equatable {
+    case low
+    case medium
+    case high
+    case max
 }
 
 public struct BedrockReasoningConfig: Sendable, Equatable {
     public var type: BedrockReasoningType?
     public var budgetTokens: Int?
+    public var maxReasoningEffort: BedrockMaxReasoningEffort?
 
-    public init(type: BedrockReasoningType? = nil, budgetTokens: Int? = nil) {
+    public init(
+        type: BedrockReasoningType? = nil,
+        budgetTokens: Int? = nil,
+        maxReasoningEffort: BedrockMaxReasoningEffort? = nil
+    ) {
         self.type = type
         self.budgetTokens = budgetTokens
+        self.maxReasoningEffort = maxReasoningEffort
     }
 }
 
 public struct BedrockProviderOptions: Sendable, Equatable {
     public var additionalModelRequestFields: [String: JSONValue]?
     public var reasoningConfig: BedrockReasoningConfig?
-    public var guardrailConfig: JSONValue?
+    public var anthropicBeta: [String]?
 
     public init(
         additionalModelRequestFields: [String: JSONValue]? = nil,
         reasoningConfig: BedrockReasoningConfig? = nil,
-        guardrailConfig: JSONValue? = nil
+        anthropicBeta: [String]? = nil
     ) {
         self.additionalModelRequestFields = additionalModelRequestFields
         self.reasoningConfig = reasoningConfig
-        self.guardrailConfig = guardrailConfig
+        self.anthropicBeta = anthropicBeta
     }
 }
 
@@ -108,7 +122,7 @@ public let bedrockProviderOptionsSchema = FlexibleSchema(
                               let type = BedrockReasoningType(rawValue: typeString) else {
                             let error = SchemaValidationIssuesError(
                                 vendor: "bedrock",
-                                issues: "reasoningConfig.type must be 'enabled' or 'disabled'"
+                                issues: "reasoningConfig.type must be 'enabled', 'disabled', or 'adaptive'"
                             )
                             return .failure(error: TypeValidationError.wrap(value: rawType, cause: error))
                         }
@@ -134,26 +148,51 @@ public let bedrockProviderOptionsSchema = FlexibleSchema(
                         parsed.budgetTokens = intValue
                     }
 
+                    if let rawMaxEffort = reasoningDict["maxReasoningEffort"], rawMaxEffort != .null {
+                        guard case .string(let effortString) = rawMaxEffort,
+                              let effort = BedrockMaxReasoningEffort(rawValue: effortString) else {
+                            let error = SchemaValidationIssuesError(
+                                vendor: "bedrock",
+                                issues: "reasoningConfig.maxReasoningEffort must be 'low', 'medium', 'high', or 'max'"
+                            )
+                            return .failure(error: TypeValidationError.wrap(value: rawMaxEffort, cause: error))
+                        }
+                        parsed.maxReasoningEffort = effort
+                    }
+
                     reasoningConfig = parsed
                 }
 
-                var guardrailConfig: JSONValue? = nil
-                if let rawGuardrail = dict["guardrailConfig"], rawGuardrail != .null {
-                    guard case .object = rawGuardrail else {
+                var anthropicBeta: [String]? = nil
+                if let rawAnthropicBeta = dict["anthropicBeta"], rawAnthropicBeta != .null {
+                    guard case .array(let values) = rawAnthropicBeta else {
                         let error = SchemaValidationIssuesError(
                             vendor: "bedrock",
-                            issues: "guardrailConfig must be an object"
+                            issues: "anthropicBeta must be an array"
                         )
-                        return .failure(error: TypeValidationError.wrap(value: rawGuardrail, cause: error))
+                        return .failure(error: TypeValidationError.wrap(value: rawAnthropicBeta, cause: error))
                     }
-                    guardrailConfig = rawGuardrail
+
+                    var parsed: [String] = []
+                    parsed.reserveCapacity(values.count)
+                    for item in values {
+                        guard case .string(let string) = item else {
+                            let error = SchemaValidationIssuesError(
+                                vendor: "bedrock",
+                                issues: "anthropicBeta must be an array of strings"
+                            )
+                            return .failure(error: TypeValidationError.wrap(value: rawAnthropicBeta, cause: error))
+                        }
+                        parsed.append(string)
+                    }
+                    anthropicBeta = parsed
                 }
 
                 return .success(
                     value: BedrockProviderOptions(
                         additionalModelRequestFields: additionalFields,
                         reasoningConfig: reasoningConfig,
-                        guardrailConfig: guardrailConfig
+                        anthropicBeta: anthropicBeta
                     )
                 )
             } catch {

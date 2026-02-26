@@ -5,15 +5,15 @@ import AISDKProviderUtils
 //=== Upstream Reference ====================================================//
 //===----------------------------------------------------------------------===//
 // Ported from packages/amazon-bedrock/src/bedrock-error.ts
-// Upstream commit: 77db222ee
+// Upstream commit: 73d5c5920
 //===----------------------------------------------------------------------===//
 
-private struct BedrockErrorPayload: Codable, Sendable {
+struct BedrockErrorPayload: Codable, Sendable {
     let message: String
     let type: String?
 }
 
-private let bedrockErrorSchema = FlexibleSchema(
+let BedrockErrorSchema = FlexibleSchema(
     Schema.codable(
         BedrockErrorPayload.self,
         jsonSchema: .object(["type": .string("object")])
@@ -21,7 +21,7 @@ private let bedrockErrorSchema = FlexibleSchema(
 )
 
 public let bedrockFailedResponseHandler: ResponseHandler<APICallError> = createJsonErrorResponseHandler(
-    errorSchema: bedrockErrorSchema,
+    errorSchema: BedrockErrorSchema,
     errorToMessage: { error in
         if let type = error.type {
             return "\(type): \(error.message)"

@@ -6,7 +6,7 @@ import AISDKProviderUtils
 //=== Upstream Reference ====================================================//
 //===----------------------------------------------------------------------===//
 // Ported from packages/amazon-bedrock/src/bedrock-event-stream-response-handler.ts
-// Upstream commit: 77db222ee
+// Upstream commit: 73d5c5920
 //===----------------------------------------------------------------------===//
 
 public func createBedrockEventStreamResponseHandler<T>(
@@ -164,11 +164,16 @@ private struct BedrockEventStreamDecoder {
         let payloadLength = Int(totalLength) - Int(headersLength) - 16
         guard payloadLength >= 0 else { throw BedrockEventStreamError.invalidFrame }
 
-        let headersStart = 12
-        let headersEnd = headersStart + Int(headersLength)
-        let payloadStart = headersEnd
-        let payloadEnd = payloadStart + payloadLength
-        guard payloadEnd + 4 <= Int(totalLength) else { throw BedrockEventStreamError.invalidFrame }
+        let headersStartOffset = 12
+        let headersEndOffset = headersStartOffset + Int(headersLength)
+        let payloadStartOffset = headersEndOffset
+        let payloadEndOffset = payloadStartOffset + payloadLength
+        guard payloadEndOffset + 4 <= Int(totalLength) else { throw BedrockEventStreamError.invalidFrame }
+
+        let headersStart = buffer.index(buffer.startIndex, offsetBy: headersStartOffset)
+        let headersEnd = buffer.index(buffer.startIndex, offsetBy: headersEndOffset)
+        let payloadStart = buffer.index(buffer.startIndex, offsetBy: payloadStartOffset)
+        let payloadEnd = buffer.index(buffer.startIndex, offsetBy: payloadEndOffset)
 
         let headerData = buffer.subdata(in: headersStart..<headersEnd)
         let payloadData = buffer.subdata(in: payloadStart..<payloadEnd)
@@ -239,8 +244,9 @@ private struct BedrockEventStreamDecoder {
 private func readUInt32(from data: Data, offset: Int) throws -> Int {
     guard offset + 4 <= data.count else { throw BedrockEventStreamError.invalidFrame }
     var value: UInt32 = 0
-    for byte in data[offset..<offset + 4] {
-        value = (value << 8) | UInt32(byte)
+    for i in 0..<4 {
+        let index = data.index(data.startIndex, offsetBy: offset + i)
+        value = (value << 8) | UInt32(data[index])
     }
     return Int(value)
 }

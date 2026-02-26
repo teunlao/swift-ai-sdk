@@ -6,17 +6,13 @@ import AISDKProviderUtils
 //=== Upstream Reference ====================================================//
 //===----------------------------------------------------------------------===//
 // Ported from packages/amazon-bedrock/src/convert-to-bedrock-chat-messages.ts
-// Upstream commit: 77db222ee
+// Upstream commit: 73d5c5920
 //===----------------------------------------------------------------------===//
 
 struct BedrockChatMessages: Sendable {
     let system: [JSONValue]
     let messages: [JSONValue]
 }
-
-private let bedrockCachePointJSON: JSONValue = .object([
-    "cachePoint": .object(["type": .string("default")])
-])
 
 private let bedrockImageMimeTypes: [String: String] = [
     "image/jpeg": "jpeg",
@@ -60,7 +56,10 @@ public struct BedrockReasoningMetadata: Codable, Sendable, Equatable {
     public let redactedData: String?
 }
 
-func convertToBedrockChatMessages(_ prompt: LanguageModelV3Prompt) async throws -> BedrockChatMessages {
+func convertToBedrockChatMessages(
+    _ prompt: LanguageModelV3Prompt,
+    isMistral: Bool = false
+) async throws -> BedrockChatMessages {
     let blocks = groupIntoBlocks(prompt)
     var system: [JSONValue] = []
     var messages: [JSONValue] = []
@@ -76,6 +75,11 @@ func convertToBedrockChatMessages(_ prompt: LanguageModelV3Prompt) async throws 
 
         switch block {
         case .system(let systemMessages):
+            if !messages.isEmpty {
+                throw UnsupportedFunctionalityError(
+                    functionality: "Multiple system messages that are separated by user/assistant messages"
+                )
+            }
             for message in systemMessages {
                 system.append(.object(["text": .string(message.content)]))
                 if let cachePoint = cachePoint(from: message.providerOptions) {
@@ -142,7 +146,7 @@ func convertToBedrockChatMessages(_ prompt: LanguageModelV3Prompt) async throws 
                         content.append(
                             .object([
                                 "toolResult": .object([
-                                    "toolUseId": .string(toolResult.toolCallId),
+                                    "toolUseId": .string(normalizeToolCallId(toolResult.toolCallId, isMistral: isMistral)),
                                     "content": .array(converted)
                                 ])
                             ])
@@ -181,59 +185,34 @@ func convertToBedrockChatMessages(_ prompt: LanguageModelV3Prompt) async throws 
 
                     case .reasoning(let reasoningPart):
                         let trimmed = trimIfNeeded(reasoningPart.text, isLastBlock: isLastBlock, isLastMessage: isLastMessage, isLastPart: isLastPart)
-                        if trimmed.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                            continue
-                        }
-
                         let metadata = try await parseReasoningMetadata(reasoningPart.providerOptions)
-                        if let metadata {
-                            if let signature = metadata.signature {
-                                content.append(
-                                    .object([
-                                        "reasoningContent": .object([
-                                            "reasoningText": .object([
-                                                "text": .string(trimmed),
-                                                "signature": .string(signature)
-                                            ])
-                                        ])
-                                    ])
-                                )
-                            } else if let redacted = metadata.redactedData {
-                                content.append(
-                                    .object([
-                                        "reasoningContent": .object([
-                                            "redactedReasoning": .object([
-                                                "data": .string(redacted)
-                                            ])
-                                        ])
-                                    ])
-                                )
-                            } else {
-                                content.append(.object([
-                                    "reasoningContent": .object([
-                                        "reasoningText": .object([
-                                            "text": .string(trimmed)
-                                        ])
-                                    ])
-                                ]))
-                            }
-                        } else {
+                        guard let metadata else { break }
+
+                        if let signature = metadata.signature {
                             content.append(.object([
                                 "reasoningContent": .object([
                                     "reasoningText": .object([
-                                        "text": .string(trimmed)
+                                        "text": .string(trimmed),
+                                        "signature": .string(signature)
+                                    ])
+                                ])
+                            ]))
+                        } else if let redacted = metadata.redactedData {
+                            content.append(.object([
+                                "reasoningContent": .object([
+                                    "redactedReasoning": .object([
+                                        "data": .string(redacted)
                                     ])
                                 ])
                             ]))
                         }
 
                     case .toolCall(let toolCallPart):
-                        let inputText = try canonicalJSONString(from: toolCallPart.input)
                         content.append(.object([
                             "toolUse": .object([
-                                "toolUseId": .string(toolCallPart.toolCallId),
+                                "toolUseId": .string(normalizeToolCallId(toolCallPart.toolCallId, isMistral: isMistral)),
                                 "name": .string(toolCallPart.toolName),
-                                "input": .string(inputText)
+                                "input": toolCallPart.input
                             ])
                         ]))
 
@@ -337,7 +316,7 @@ private func cachePoint(from providerOptions: SharedV3ProviderOptions?) -> JSONV
     guard let value = providerOptions?["bedrock"]?["cachePoint"], value != .null else {
         return nil
     }
-    return bedrockCachePointJSON
+    return .object(["cachePoint": value])
 }
 
 private func shouldEnableCitations(providerMetadata: SharedV3ProviderOptions?) async throws -> Bool {
