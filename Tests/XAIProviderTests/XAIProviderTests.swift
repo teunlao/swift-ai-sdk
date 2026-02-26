@@ -40,6 +40,25 @@ struct XAIProviderTests {
         #expect(model.modelId == "grok-3")
     }
 
+    @Test("creates a responses model with correct settings")
+    func createResponsesModel() throws {
+        let provider = createXai(settings: XAIProviderSettings(apiKey: "test-api-key"))
+        let model = provider.responses("grok-4-fast")
+
+        #expect(model.provider == "xai.responses")
+        #expect(model.modelId == "grok-4-fast")
+    }
+
+    @Test("exposes xAI server-side tools")
+    func exposesTools() throws {
+        let provider = createXai(settings: XAIProviderSettings(apiKey: "test-api-key"))
+        let tool = provider.tools.webSearch()
+
+        #expect(tool.id == "xai.web_search")
+        #expect(tool.name == "web_search")
+        #expect(tool.type?.rawValue == "provider")
+    }
+
     @Test("creates an image model with correct settings")
     func createImageModel() throws {
         let provider = createXai(settings: XAIProviderSettings(apiKey: "test-api-key"))

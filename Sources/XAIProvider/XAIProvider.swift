@@ -28,17 +28,23 @@ public struct XAIProviderSettings: Sendable {
 /// Mirrors `packages/xai/src/xai-provider.ts`.
 public final class XAIProvider: ProviderV3 {
     private let languageModelFactory: @Sendable (XAIChatModelId) -> XAIChatLanguageModel
+    private let responsesModelFactory: @Sendable (XAIResponsesModelId) -> XAIResponsesLanguageModel
     private let imageModelFactory: @Sendable (XAIImageModelId) -> OpenAICompatibleImageModel
     private let videoModelFactory: @Sendable (XAIVideoModelId) -> XAIVideoModel
+    public let tools: XAITools
 
     init(
         languageModelFactory: @escaping @Sendable (XAIChatModelId) -> XAIChatLanguageModel,
+        responsesModelFactory: @escaping @Sendable (XAIResponsesModelId) -> XAIResponsesLanguageModel,
         imageModelFactory: @escaping @Sendable (XAIImageModelId) -> OpenAICompatibleImageModel,
-        videoModelFactory: @escaping @Sendable (XAIVideoModelId) -> XAIVideoModel
+        videoModelFactory: @escaping @Sendable (XAIVideoModelId) -> XAIVideoModel,
+        tools: XAITools
     ) {
         self.languageModelFactory = languageModelFactory
+        self.responsesModelFactory = responsesModelFactory
         self.imageModelFactory = imageModelFactory
         self.videoModelFactory = videoModelFactory
+        self.tools = tools
     }
 
     public func languageModel(modelId: String) throws -> any LanguageModelV3 {
@@ -51,6 +57,14 @@ public final class XAIProvider: ProviderV3 {
 
     public func chat(modelId: XAIChatModelId) -> XAIChatLanguageModel {
         languageModelFactory(modelId)
+    }
+
+    public func responses(modelId: XAIResponsesModelId) -> XAIResponsesLanguageModel {
+        responsesModelFactory(modelId)
+    }
+
+    public func responses(_ modelId: String) -> XAIResponsesLanguageModel {
+        responsesModelFactory(XAIResponsesModelId(rawValue: modelId))
     }
 
     public func textEmbeddingModel(modelId: String) throws -> any EmbeddingModelV3<String> {
@@ -126,6 +140,19 @@ public func createXAIProvider(settings: XAIProviderSettings = .init()) -> XAIPro
         )
     }
 
+    let responsesModelFactory: @Sendable (XAIResponsesModelId) -> XAIResponsesLanguageModel = { modelId in
+        XAIResponsesLanguageModel(
+            modelId: modelId,
+            config: XAIResponsesLanguageModel.Config(
+                provider: "xai.responses",
+                baseURL: baseURL,
+                headers: headersClosure,
+                generateId: generateID,
+                fetch: settings.fetch
+            )
+        )
+    }
+
     let imageModelFactory: @Sendable (XAIImageModelId) -> OpenAICompatibleImageModel = { modelId in
         OpenAICompatibleImageModel(
             modelId: OpenAICompatibleImageModelId(rawValue: modelId.rawValue),
@@ -153,8 +180,10 @@ public func createXAIProvider(settings: XAIProviderSettings = .init()) -> XAIPro
 
     return XAIProvider(
         languageModelFactory: languageModelFactory,
+        responsesModelFactory: responsesModelFactory,
         imageModelFactory: imageModelFactory,
-        videoModelFactory: videoModelFactory
+        videoModelFactory: videoModelFactory,
+        tools: xaiTools
     )
 }
 

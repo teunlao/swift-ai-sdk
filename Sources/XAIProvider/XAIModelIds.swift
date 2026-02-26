@@ -39,6 +39,18 @@ public struct XAIVideoModelId: RawRepresentable, Hashable, Sendable, Expressible
     }
 }
 
+public struct XAIResponsesModelId: RawRepresentable, Hashable, Sendable, ExpressibleByStringLiteral {
+    public let rawValue: String
+
+    public init(rawValue: String) {
+        self.rawValue = rawValue
+    }
+
+    public init(stringLiteral value: StringLiteralType) {
+        self.init(rawValue: value)
+    }
+}
+
 // MARK: - Known model identifiers (mirrors packages/xai/src/xai-chat-options.ts)
 
 public extension XAIChatModelId {
@@ -75,4 +87,14 @@ public extension XAIImageModelId {
 
 public extension XAIVideoModelId {
     static let grokImagineVideo: Self = "grok-imagine-video"
+}
+
+// MARK: - Known responses identifiers (mirrors packages/xai/src/responses/xai-responses-options.ts)
+
+public extension XAIResponsesModelId {
+    static let grok41FastReasoning: Self = "grok-4-1-fast-reasoning"
+    static let grok41FastNonReasoning: Self = "grok-4-1-fast-non-reasoning"
+    static let grok4: Self = "grok-4"
+    static let grok4Fast: Self = "grok-4-fast"
+    static let grok4FastNonReasoning: Self = "grok-4-fast-non-reasoning"
 }
