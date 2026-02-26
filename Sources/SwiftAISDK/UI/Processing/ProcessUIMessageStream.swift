@@ -91,7 +91,8 @@ public func processUIMessageStream<Message: UIMessageConvertible>(
     messageMetadataSchema: FlexibleSchema<JSONValue>? = nil,
     dataPartSchemas: [String: FlexibleSchema<JSONValue>]? = nil,
     onToolCall: UIMessageToolCallHandler? = nil,
-    onData: (@Sendable (DataUIPart) -> Void)? = nil
+    onData: (@Sendable (DataUIPart) -> Void)? = nil,
+    onChunk: (@Sendable (AnyUIMessageChunk) async -> Void)? = nil
 ) -> AsyncThrowingStream<AnyUIMessageChunk, Error> {
     return AsyncThrowingStream { continuation in
         let task = Task {
@@ -107,6 +108,10 @@ public func processUIMessageStream<Message: UIMessageConvertible>(
                             onToolCall: onToolCall,
                             onData: onData
                         )
+                    }
+
+                    if let onChunk {
+                        await onChunk(chunk)
                     }
 
                     continuation.yield(chunk)

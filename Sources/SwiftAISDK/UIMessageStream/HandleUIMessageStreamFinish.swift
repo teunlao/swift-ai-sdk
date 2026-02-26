@@ -11,7 +11,8 @@ public func handleUIMessageStreamFinish<Message: UIMessageConvertible>(
     stream: AsyncThrowingStream<AnyUIMessageChunk, Error>,
     messageId: String?,
     originalMessages: [Message] = [],
-    onFinish: UIMessageStreamOnFinishCallback<Message>?,
+    onStepFinish: UIMessageStreamOnStepFinishCallback<Message>? = nil,
+    onFinish: UIMessageStreamOnFinishCallback<Message>? = nil,
     onError: @escaping ErrorHandler
 ) -> AsyncThrowingStream<AnyUIMessageChunk, Error> {
     var mutableMessageId = messageId
@@ -56,7 +57,7 @@ public func handleUIMessageStreamFinish<Message: UIMessageConvertible>(
         }
     }
 
-    guard let onFinishElse = onFinish else {
+    if onFinish == nil && onStepFinish == nil {
         return idInjectedStream
     }
 
@@ -69,18 +70,36 @@ public func handleUIMessageStreamFinish<Message: UIMessageConvertible>(
         try await job(StreamingUIMessageJobContext(state: state, write: {}))
     }
 
+    let finishInvoker: FinishInvoker<Message>? = onFinish.map { callback in
+        FinishInvoker(
+            onFinish: callback,
+            state: state,
+            originalMessages: originalMessages.map { $0.clone() },
+            lastAssistantMessage: lastAssistantMessage,
+            isAborted: { await abortFlag.isAborted() }
+        )
+    }
+
+    let stepFinishInvoker: StepFinishInvoker<Message>? = onStepFinish.map { callback in
+        StepFinishInvoker(
+            onStepFinish: callback,
+            state: state,
+            originalMessages: originalMessages.map { $0.clone() },
+            lastAssistantMessage: lastAssistantMessage,
+            onError: onError
+        )
+    }
+
     let processedStream = processUIMessageStream(
         stream: idInjectedStream,
         runUpdateMessageJob: runUpdateMessageJob,
-        onError: onError
-    )
-
-    let finishInvoker = FinishInvoker(
-        onFinish: onFinishElse,
-        state: state,
-        originalMessages: originalMessages.map { $0.clone() },
-        lastAssistantMessage: lastAssistantMessage,
-        isAborted: { await abortFlag.isAborted() }
+        onError: onError,
+        onChunk: { chunk in
+            // Mirror upstream: `onStepFinish` runs as the stream processes a `finish-step` chunk.
+            if case .finishStep = chunk {
+                await stepFinishInvoker?.call()
+            }
+        }
     )
 
     return AsyncThrowingStream { continuation in
@@ -89,10 +108,10 @@ public func handleUIMessageStreamFinish<Message: UIMessageConvertible>(
                 for try await chunk in processedStream {
                     continuation.yield(chunk)
                 }
-                await finishInvoker.callIfNeeded()
+                await finishInvoker?.callIfNeeded()
                 continuation.finish()
             } catch {
-                await finishInvoker.callIfNeeded()
+                await finishInvoker?.callIfNeeded()
                 continuation.finish(throwing: error)
             }
         }
@@ -157,6 +176,56 @@ private actor FinishInvoker<Message: UIMessageConvertible> {
                 finishReason: state.finishReason
             )
         )
+    }
+}
+
+private actor StepFinishInvoker<Message: UIMessageConvertible> {
+    private let onStepFinish: UIMessageStreamOnStepFinishCallback<Message>
+    private let state: StreamingUIMessageState<Message>
+    private let originalMessages: [Message]
+    private let lastAssistantMessage: Message?
+    private let onError: ErrorHandler
+
+    init(
+        onStepFinish: @escaping UIMessageStreamOnStepFinishCallback<Message>,
+        state: StreamingUIMessageState<Message>,
+        originalMessages: [Message],
+        lastAssistantMessage: Message?,
+        onError: @escaping ErrorHandler
+    ) {
+        self.onStepFinish = onStepFinish
+        self.state = state
+        self.originalMessages = originalMessages
+        self.lastAssistantMessage = lastAssistantMessage
+        self.onError = onError
+    }
+
+    func call() async {
+        let responseMessage = state.message.clone()
+        let isContinuation = responseMessage.id == lastAssistantMessage?.id
+
+        var messages = originalMessages.map { $0.clone() }
+        if isContinuation {
+            if !messages.isEmpty {
+                messages[messages.count - 1] = responseMessage
+            } else {
+                messages = [responseMessage]
+            }
+        } else {
+            messages.append(responseMessage)
+        }
+
+        do {
+            try await onStepFinish(
+                UIMessageStreamStepFinishEvent(
+                    messages: messages,
+                    isContinuation: isContinuation,
+                    responseMessage: responseMessage
+                )
+            )
+        } catch {
+            onError(error)
+        }
     }
 }
 
