@@ -22,7 +22,7 @@
 
 ## Known gaps / TODO
 
-- [ ] JSON Schema validation is still subset-only (notably: `$ref` resolution and conditional keywords). Tuple schemas (`items: [...]` + `additionalItems`), `uniqueItems`, `multipleOf`, `format`, and `contentEncoding: base64` are supported by Swift `JSONSchemaValidator`.
+- None known.
 
 ## Notes
 
@@ -35,3 +35,5 @@
   - `Sources/OpenAIProvider/OpenAIResponsesModel.swift`
   - `Sources/OpenAIProvider/OpenAIResponsesPrepareTools.swift`
   - `Sources/OpenAIProvider/Tool/OpenAIShellTool.swift`
+
+- JSON Schema validation: Swift `JSONSchemaValidator` supports `$ref` (local `#/...`) and conditional keywords (`if`/`then`/`else`). Unsupported keywords remain permissive by design.

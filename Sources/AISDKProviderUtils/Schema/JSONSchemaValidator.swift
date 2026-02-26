@@ -21,6 +21,11 @@ import Glibc
 struct JSONSchemaValidator: Sendable {
     private let schema: JSONValue
 
+    private enum RefResolution {
+        case resolved(JSONValue)
+        case invalid(JSONSchemaValidationIssue)
+    }
+
     init(schema: JSONValue) {
         self.schema = schema
     }
@@ -34,6 +39,15 @@ struct JSONSchemaValidator: Sendable {
         schema: JSONValue,
         path: [String]
     ) -> [JSONSchemaValidationIssue] {
+        if let resolution = dereference(schema: schema, path: path) {
+            switch resolution {
+            case .resolved(let resolved):
+                return validate(value: value, schema: resolved, path: path)
+            case .invalid(let issue):
+                return [issue]
+            }
+        }
+
         guard case .object(let schemaObject) = schema else {
             // Non-object schemas are treated as permissive for now.
             return []
@@ -86,7 +100,113 @@ struct JSONSchemaValidator: Sendable {
             }
         }
 
+        if let ifSchema = schemaObject["if"] {
+            let ifIssues = validate(value: value, schema: ifSchema, path: path)
+
+            if ifIssues.isEmpty {
+                if let thenSchema = schemaObject["then"] {
+                    let issues = validate(value: value, schema: thenSchema, path: path)
+                    if !issues.isEmpty {
+                        return issues
+                    }
+                }
+            } else if let elseSchema = schemaObject["else"] {
+                let issues = validate(value: value, schema: elseSchema, path: path)
+                if !issues.isEmpty {
+                    return issues
+                }
+            }
+        }
+
         return []
+    }
+
+    private func dereference(
+        schema: JSONValue,
+        path: [String]
+    ) -> RefResolution? {
+        guard case .object(let schemaObject) = schema,
+              let initialRef = schemaObject["$ref"]?.stringValue
+        else {
+            return nil
+        }
+
+        var ref = initialRef
+        var visited: Set<String> = []
+
+        while true {
+            if visited.contains(ref) {
+                return .invalid(JSONSchemaValidationIssue(
+                    path: path,
+                    message: "Invalid schema: recursive $ref loop at \(ref)."
+                ))
+            }
+            visited.insert(ref)
+
+            guard let resolved = resolve(ref: ref) else {
+                return .invalid(JSONSchemaValidationIssue(
+                    path: path,
+                    message: "Invalid schema: unable to resolve $ref \(ref)."
+                ))
+            }
+
+            if case .object(let resolvedObject) = resolved,
+               let nextRef = resolvedObject["$ref"]?.stringValue {
+                ref = nextRef
+                continue
+            }
+
+            return .resolved(resolved)
+        }
+    }
+
+    private func resolve(ref: String) -> JSONValue? {
+        // We only support local fragment references, e.g. "#/definitions/__schema0".
+        guard ref.hasPrefix("#") else {
+            return nil
+        }
+
+        if ref == "#" {
+            return schema
+        }
+
+        guard ref.hasPrefix("#/") else {
+            return nil
+        }
+
+        let pointer = ref.dropFirst(2)
+        let components = pointer
+            .split(separator: "/")
+            .map { decodeJSONPointerToken(String($0)) }
+
+        var current: JSONValue = schema
+        for component in components {
+            switch current {
+            case .object(let object):
+                guard let next = object[component] else {
+                    return nil
+                }
+                current = next
+            case .array(let array):
+                guard let index = Int(component),
+                      index >= 0,
+                      index < array.count
+                else {
+                    return nil
+                }
+                current = array[index]
+            default:
+                return nil
+            }
+        }
+
+        return current
+    }
+
+    private func decodeJSONPointerToken(_ token: String) -> String {
+        token
+            .replacingOccurrences(of: "~1", with: "/")
+            .replacingOccurrences(of: "~0", with: "~")
     }
 
     private func validate(

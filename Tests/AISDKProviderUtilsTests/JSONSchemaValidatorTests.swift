@@ -277,4 +277,147 @@ struct JSONSchemaValidatorTests {
         #expect(!validator.validate(value: .object(["a": .string("1")])).isEmpty)
         #expect(!validator.validate(value: .object(["a": .string("1"), "b": .string("2"), "c": .string("3")])).isEmpty)
     }
+
+    @Test("resolves $ref pointers into definitions")
+    func refValidation() async throws {
+        let schema: JSONValue = .object([
+            "type": .string("object"),
+            "definitions": .object([
+                "__schema0": .object([
+                    "type": .string("object"),
+                    "properties": .object([
+                        "text": .object(["type": .string("string")]),
+                        "number": .object(["type": .string("number")]),
+                    ]),
+                    "required": .array([.string("text"), .string("number")]),
+                    "additionalProperties": .bool(false),
+                ]),
+            ]),
+            "properties": .object([
+                "group1": .object(["$ref": .string("#/definitions/__schema0")]),
+            ]),
+            "required": .array([.string("group1")]),
+            "additionalProperties": .bool(false),
+        ])
+
+        let validator = JSONSchemaValidator(schema: schema)
+
+        #expect(validator.validate(value: .object([
+            "group1": .object(["text": .string("hi"), "number": .number(1)]),
+        ])).isEmpty)
+
+        #expect(!validator.validate(value: .object([
+            "group1": .object(["text": .string("hi")]),
+        ])).isEmpty)
+    }
+
+    @Test("supports recursive $ref schemas")
+    func recursiveRefValidation() async throws {
+        let schema: JSONValue = .object([
+            "type": .string("object"),
+            "definitions": .object([
+                "__schema0": .object([
+                    "type": .string("object"),
+                    "properties": .object([
+                        "name": .object(["type": .string("string")]),
+                        "subcategories": .object([
+                            "type": .string("array"),
+                            "items": .object(["$ref": .string("#/definitions/__schema0")]),
+                        ]),
+                    ]),
+                    "required": .array([.string("name"), .string("subcategories")]),
+                    "additionalProperties": .bool(false),
+                ]),
+            ]),
+            "properties": .object([
+                "category": .object(["$ref": .string("#/definitions/__schema0")]),
+            ]),
+            "required": .array([.string("category")]),
+            "additionalProperties": .bool(false),
+        ])
+
+        let validator = JSONSchemaValidator(schema: schema)
+
+        #expect(validator.validate(value: .object([
+            "category": .object([
+                "name": .string("root"),
+                "subcategories": .array([
+                    .object([
+                        "name": .string("child"),
+                        "subcategories": .array([]),
+                    ]),
+                ]),
+            ]),
+        ])).isEmpty)
+
+        #expect(!validator.validate(value: .object([
+            "category": .object([
+                "name": .string("root"),
+                "subcategories": .array([
+                    .object([
+                        "subcategories": .array([]),
+                    ]),
+                ]),
+            ]),
+        ])).isEmpty)
+    }
+
+    @Test("supports if/then/else conditional keywords")
+    func conditionalKeywordsValidation() async throws {
+        let schema: JSONValue = .object([
+            "type": .string("object"),
+            "properties": .object([
+                "kind": .object(["type": .string("string")]),
+                "value": .object(["type": .string("string")]),
+                "count": .object(["type": .string("number")]),
+            ]),
+            "if": .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "kind": .object(["const": .string("text")]),
+                ]),
+                "required": .array([.string("kind")]),
+            ]),
+            "then": .object([
+                "type": .string("object"),
+                "required": .array([.string("value")]),
+            ]),
+            "else": .object([
+                "type": .string("object"),
+                "required": .array([.string("count")]),
+            ]),
+            "additionalProperties": .bool(false),
+        ])
+
+        let validator = JSONSchemaValidator(schema: schema)
+
+        #expect(validator.validate(value: .object([
+            "kind": .string("text"),
+            "value": .string("ok"),
+        ])).isEmpty)
+
+        #expect(!validator.validate(value: .object([
+            "kind": .string("text"),
+        ])).isEmpty)
+
+        #expect(validator.validate(value: .object([
+            "kind": .string("num"),
+            "count": .number(3),
+        ])).isEmpty)
+
+        #expect(!validator.validate(value: .object([
+            "kind": .string("num"),
+        ])).isEmpty)
+    }
+
+    @Test("reports unresolved $ref pointers as issues")
+    func unresolvedRefValidation() async throws {
+        let schema: JSONValue = .object([
+            "$ref": .string("#/definitions/does_not_exist"),
+            "definitions": .object([:]),
+        ])
+
+        let validator = JSONSchemaValidator(schema: schema)
+        #expect(!validator.validate(value: .object([:])).isEmpty)
+    }
 }
