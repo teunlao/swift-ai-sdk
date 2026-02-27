@@ -152,7 +152,11 @@ let package = Package(
         .testTarget(name: "GroqProviderTests", dependencies: ["GroqProvider", "AISDKProvider", "AISDKProviderUtils"]),
         .testTarget(name: "MistralProviderTests", dependencies: ["MistralProvider", "AISDKProvider", "AISDKProviderUtils"]),
         .testTarget(name: "PerplexityProviderTests", dependencies: ["PerplexityProvider", "AISDKProvider", "AISDKProviderUtils"]),
-        .testTarget(name: "CohereProviderTests", dependencies: ["CohereProvider", "AISDKProvider", "AISDKProviderUtils"]),
+        .testTarget(
+            name: "CohereProviderTests",
+            dependencies: ["CohereProvider", "AISDKProvider", "AISDKProviderUtils"],
+            resources: [.copy("__fixtures__")]
+        ),
         .testTarget(name: "DeepInfraProviderTests", dependencies: ["DeepInfraProvider", "AISDKProvider", "AISDKProviderUtils", "OpenAICompatibleProvider"]),
         .testTarget(name: "DeepgramProviderTests", dependencies: ["DeepgramProvider", "AISDKProvider", "AISDKProviderUtils"]),
         .testTarget(name: "ElevenLabsProviderTests", dependencies: ["ElevenLabsProvider", "AISDKProvider", "AISDKProviderUtils"]),

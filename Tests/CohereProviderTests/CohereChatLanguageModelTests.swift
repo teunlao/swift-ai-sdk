@@ -45,9 +45,7 @@ struct CohereChatLanguageModelTests {
     private func fixturesDirectory() -> URL {
         URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent("external/vercel-ai-sdk/packages/cohere/src/__fixtures__")
+            .appendingPathComponent("__fixtures__")
     }
 
     private func loadJSONFixture(_ name: String) throws -> Any {
