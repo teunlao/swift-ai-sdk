@@ -59,6 +59,7 @@ actor StreamTextActor {
     }
 
     private var pendingApprovals: [PendingApproval] = []
+    private var inFlightToolTasks: [String: Task<Void, Never>] = [:]
 
     private let totalUsagePromise: DelayedPromise<LanguageModelUsage>
     private let finishReasonPromise: DelayedPromise<FinishReason>
@@ -448,7 +449,10 @@ actor StreamTextActor {
                 if Task.isCancelled { break }
                 switch decision {
                 case .approve:
-                    await executeToolAfterApproval(pending)
+                    // Execute concurrently so multiple approved tools run in parallel
+                    inFlightToolTasks[pending.toolCallId] = Task { [weak self] in
+                        await self?.executeToolAfterApproval(pending)
+                    }
                 case .deny:
                     await emitToolOutputDenied(callId: pending.toolCallId, toolName: pending.toolName)
                 }
@@ -523,6 +527,7 @@ actor StreamTextActor {
         openReasoningIds.removeAll()
         activeToolInputs.removeAll()
         activeToolNames.removeAll()
+        inFlightToolTasks.removeAll()
         capturedResponseId = configuration.generateId()
         capturedModelId = model.modelId
         capturedTimestamp = configuration.currentDate()
@@ -959,7 +964,10 @@ case let .toolInputStart(id, toolName, providerMetadata, providerExecuted, dynam
                         tool: tool,
                         providerMetadata: typed.providerMetadata
                     )
-                    await executeToolAfterApproval(pending)
+                    // Execute concurrently so the stream loop can continue reading subsequent tool calls
+                    inFlightToolTasks[typed.toolCallId] = Task { [weak self] in
+                        await self?.executeToolAfterApproval(pending)
+                    }
                 }
 
             case .toolApprovalRequest(let request):
@@ -1091,6 +1099,14 @@ case let .toolInputStart(id, toolName, providerMetadata, providerExecuted, dynam
                 openReasoningIds.removeAll()
                 finalizePendingContent()
                 await resolvePendingApprovals()
+
+                // Wait for all concurrently-executing tool handlers to complete before finalizing the step.
+                // This includes tasks spawned in the stream loop and by resolvePendingApprovals
+                for (_, task) in inFlightToolTasks {
+                    await task.value
+                }
+                inFlightToolTasks.removeAll()
+
                 let response = LanguageModelResponseMetadata(
                     id: capturedResponseId ?? configuration.generateId(),
                     timestamp: capturedTimestamp ?? configuration.currentDate(),
