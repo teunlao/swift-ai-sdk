@@ -92,4 +92,93 @@ struct StreamTextConcurrencyTests {
         let idxFinish = partsCollected.firstIndex { if case .finish = $0 { return true } else { return false } }
         #expect(idxAbort != nil && idxFinish != nil && idxAbort! < idxFinish!)
     }
+
+    actor EventLog {
+        private(set) var events: [String] = []
+        func record(_ event: String) { events.append(event) }
+    }
+
+    @Test("two tool calls in one response execute concurrently, not sequentially",
+          .timeLimit(.minutes(1)))
+    func twoToolCallsExecuteConcurrently() async throws {
+        let log = EventLog()
+
+        // Provider stream emits two toolCalls before .finish — mimics a model
+        // requesting parallel tool use in one response
+        let parts: [LanguageModelV3StreamPart] = [
+            .streamStart(warnings: []),
+            .responseMetadata(id: "step-1", modelId: "mock-model", timestamp: Date(timeIntervalSince1970: 0)),
+            .toolCall(LanguageModelV3ToolCall(
+                toolCallId: "call-A",
+                toolName: "slow_tool",
+                input: "{\"id\":\"A\"}",
+                providerExecuted: false,
+                providerMetadata: nil
+            )),
+            .toolCall(LanguageModelV3ToolCall(
+                toolCallId: "call-B",
+                toolName: "slow_tool",
+                input: "{\"id\":\"B\"}",
+                providerExecuted: false,
+                providerMetadata: nil
+            )),
+            .finish(
+                finishReason: LanguageModelV3FinishReason(unified: .toolCalls),
+                usage: defaultUsage,
+                providerMetadata: nil
+            ),
+        ]
+
+        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
+            for p in parts { c.yield(p) }
+            c.finish()
+        }
+
+        let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
+
+        let tools: ToolSet = [
+            "slow_tool": Tool(
+                description: "Sleeps then returns",
+                inputSchema: FlexibleSchema(jsonSchema(.object([
+                    "type": .string("object"),
+                    "properties": .object(["id": .object(["type": .string("string")])]),
+                    "required": .array([.string("id")])
+                ]))),
+                needsApproval: .never,
+                execute: { input, _ in
+                    let id: String
+                    if case .object(let obj) = input, case .string(let s) = obj["id"] {
+                        id = s
+                    } else {
+                        id = "unknown"
+                    }
+                    await log.record("start-\(id)")
+                    try await Task.sleep(for: .seconds(1))
+                    await log.record("end-\(id)")
+                    return .value(.object(["id": .string(id), "done": .bool(true)]))
+                }
+            )
+        ]
+
+        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+            model: .v3(model),
+            prompt: "hello",
+            tools: tools
+        )
+
+        _ = try await result.collectFullStream()
+
+        // If concurrent: [start-A, start-B, end-A, end-B] (both starts before any end)
+        // If sequential: [start-A, end-A, start-B, end-B] (an end appears before the second start)
+        let events = await log.events
+        let starts = events.filter { $0.hasPrefix("start-") }
+        let firstEnd = events.firstIndex { $0.hasPrefix("end-") }
+        let lastStart = events.lastIndex { $0.hasPrefix("start-") }
+
+        #expect(starts.count == 2, "Expected 2 starts, got \(starts.count). Events: \(events)")
+        #expect(
+            lastStart! < firstEnd!,
+            "Tool calls ran sequentially — an end arrived before both starts. Events: \(events)"
+        )
+    }
 }
