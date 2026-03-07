@@ -34,6 +34,7 @@ insights/
 
 # Parity tracking (moved to archive)
 parity/
+upstream/
 
 # Agent and project configuration (moved to archive)
 git-local-config.md
