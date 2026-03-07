@@ -304,7 +304,7 @@ private func buildToolMessageParts(
 
     for part in block {
         switch part {
-        case .tool(let toolPart) where toolPart.providerExecuted != true:
+        case .tool(let toolPart):
             if let approval = toolPart.approval, let approved = approval.approved {
                 outputs.append(.toolApprovalResponse(ToolApprovalResponse(
                     approvalId: approval.id,
@@ -312,6 +312,10 @@ private func buildToolMessageParts(
                     reason: approval.reason,
                     providerExecuted: toolPart.providerExecuted
                 )))
+            }
+
+            if toolPart.providerExecuted == true {
+                break
             }
 
             switch toolPart.state {

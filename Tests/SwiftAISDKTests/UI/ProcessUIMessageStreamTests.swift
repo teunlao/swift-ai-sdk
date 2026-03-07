@@ -106,6 +106,71 @@ struct ProcessUIMessageStreamTests {
         #expect(toolPart.resultProviderMetadata == resultMetadata)
     }
 
+    @Test("tool input error with dynamic flag mismatch updates existing static part")
+    func toolInputErrorWithDynamicFlagMismatchUpdatesExistingStaticPart() async throws {
+        let rawInput = "{ \"foo\": \"bar\" }"
+
+        let state = try await process(chunks: [
+            .start(messageId: "msg-123", messageMetadata: nil),
+            .startStep,
+            .toolInputStart(
+                toolCallId: "call-1",
+                toolName: "nonExistentTool",
+                providerExecuted: nil,
+                providerMetadata: nil,
+                dynamic: nil,
+                title: nil
+            ),
+            .toolInputDelta(
+                toolCallId: "call-1",
+                inputTextDelta: rawInput
+            ),
+            .toolInputError(
+                toolCallId: "call-1",
+                toolName: "nonExistentTool",
+                input: .string(rawInput),
+                providerExecuted: nil,
+                providerMetadata: nil,
+                dynamic: true,
+                errorText: "Model tried to call unavailable tool 'nonExistentTool'.",
+                title: nil
+            ),
+            .finishStep,
+            .finish(finishReason: nil, messageMetadata: nil)
+        ])
+
+        #expect(state.message.parts.count == 2)
+
+        let staticToolParts = state.message.parts.compactMap { part -> UIToolUIPart? in
+            if case .tool(let toolPart) = part {
+                return toolPart
+            }
+            return nil
+        }
+
+        let dynamicToolParts = state.message.parts.compactMap { part -> UIDynamicToolUIPart? in
+            if case .dynamicTool(let toolPart) = part {
+                return toolPart
+            }
+            return nil
+        }
+
+        #expect(staticToolParts.count == 1)
+        #expect(dynamicToolParts.isEmpty)
+
+        guard let toolPart = staticToolParts.first else {
+            Issue.record("Expected static tool part")
+            return
+        }
+
+        #expect(toolPart.toolCallId == "call-1")
+        #expect(toolPart.toolName == "nonExistentTool")
+        #expect(toolPart.state == .outputError)
+        #expect(toolPart.input == nil)
+        #expect(toolPart.rawInput == .string(rawInput))
+        #expect(toolPart.errorText == "Model tried to call unavailable tool 'nonExistentTool'.")
+    }
+
     private func process(
         chunks: [AnyUIMessageChunk]
     ) async throws -> StreamingUIMessageState<UIMessage> {

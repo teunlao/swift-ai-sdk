@@ -401,4 +401,69 @@ struct ConvertToModelMessagesTests {
         #expect(approvalResponse.approvalId == "approval-1")
         #expect(approvalResponse.providerExecuted == false)
     }
+
+    @Test("provider-executed static tool approvals stay in tool messages without duplicate results")
+    func providerExecutedStaticToolApprovalsStayInToolMessages() throws {
+        let toolPart = UIToolUIPart(
+            toolName: "weather",
+            toolCallId: "call-7",
+            state: .outputAvailable,
+            input: .object(["city": .string("Tokyo")]),
+            output: .object(["weather": .string("Sunny")]),
+            rawInput: nil,
+            errorText: nil,
+            providerExecuted: true,
+            callProviderMetadata: nil,
+            resultProviderMetadata: nil,
+            preliminary: nil,
+            approval: UIToolApproval(id: "approval-2", approved: true, reason: nil)
+        )
+
+        let message = UIMessage(
+            id: "assistant-7",
+            role: .assistant,
+            parts: [
+                .stepStart,
+                .tool(toolPart)
+            ]
+        )
+
+        let result = try convertToModelMessages(messages: [message])
+        #expect(result.count == 2)
+
+        guard case let .assistant(assistantMessage) = result.first else {
+            Issue.record("Expected assistant message")
+            return
+        }
+
+        guard case let .parts(assistantParts) = assistantMessage.content else {
+            Issue.record("Expected assistant parts")
+            return
+        }
+
+        #expect(assistantParts.count == 3)
+
+        guard case let .toolResult(assistantToolResult) = assistantParts.last else {
+            Issue.record("Expected provider-executed tool result in assistant message")
+            return
+        }
+
+        #expect(assistantToolResult.toolCallId == "call-7")
+
+        guard case let .tool(toolMessage) = result.last else {
+            Issue.record("Expected tool message")
+            return
+        }
+
+        #expect(toolMessage.content.count == 1)
+
+        guard case let .toolApprovalResponse(approvalResponse) = toolMessage.content.first else {
+            Issue.record("Expected tool approval response")
+            return
+        }
+
+        #expect(approvalResponse.approvalId == "approval-2")
+        #expect(approvalResponse.approved == true)
+        #expect(approvalResponse.providerExecuted == true)
+    }
 }

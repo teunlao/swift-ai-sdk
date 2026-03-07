@@ -424,7 +424,7 @@ private func handleChunk<Message: UIMessageConvertible>(
         let errorText,
         _
     ):
-        let isDynamic = dynamic ?? false
+        let isDynamic = context.state.isDynamicToolInvocation(for: toolCallId) ?? (dynamic ?? false)
         if isDynamic {
             context.state.upsertDynamicToolPart(
                 toolCallId: toolCallId,
@@ -810,6 +810,21 @@ private extension StreamingUIMessageState {
             return nil
         }
         return part
+    }
+
+    func isDynamicToolInvocation(for toolCallId: String) -> Bool? {
+        for part in message.parts {
+            switch part {
+            case .tool(let toolPart) where toolPart.toolCallId == toolCallId:
+                return false
+            case .dynamicTool(let dynamicToolPart) where dynamicToolPart.toolCallId == toolCallId:
+                return true
+            default:
+                continue
+            }
+        }
+
+        return nil
     }
 
     func upsertToolPart(
