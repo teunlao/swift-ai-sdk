@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.17.2] - 2026-03-07
+
+Upstream parity refresh against Vercel AI SDK commit `a921fbb381cf2d19ef75ae27906f8d1cb0b8325b`.
+
+### Fixed
+- OpenAI: add `gpt-5.4`, `gpt-5.4-pro`, `gpt-5.4-2026-03-05`, and `gpt-5.3-codex` model-id parity for Responses reasoning support and capability detection.
+- OpenAI: preserve `providerMetadata.openai.phase` (`commentary` / `final_answer`) through Responses input mapping and streaming/non-streaming response parsing.
+
+### Docs
+- OpenAI: refresh provider documentation for the latest GPT-5.4 / GPT-5.3-codex model surface, reasoning-effort guidance, and `phase` metadata behavior.
+
 ## [0.17.1] - 2026-03-07
 
 Upstream parity refresh against Vercel AI SDK commit `a921fbb381cf2d19ef75ae27906f8d1cb0b8325b`.
