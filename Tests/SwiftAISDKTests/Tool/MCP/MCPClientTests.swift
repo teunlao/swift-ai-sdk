@@ -13,6 +13,18 @@ import Testing
 
 @Suite("MCPClient")
 struct MCPClientTests {
+    private func eventually(
+        timeout: TimeInterval = 1.0,
+        intervalNanoseconds: UInt64 = 10_000_000,
+        _ predicate: @escaping @Sendable () -> Bool
+    ) async -> Bool {
+        let start = Date()
+        while Date().timeIntervalSince(start) < timeout {
+            if predicate() { return true }
+            try? await Task.sleep(nanoseconds: intervalNanoseconds)
+        }
+        return predicate()
+    }
 
     @Test("should return AI SDK compatible tool set")
     func toolSetDynamicTools() async throws {
@@ -627,8 +639,19 @@ struct MCPClientTests {
 
         transport.onmessage?(.request(serverRequest))
 
-        // Give the async handler time to run.
-        try await Task.sleep(nanoseconds: 50_000_000)
+        let responseWasSent = await eventually {
+            transport.sentMessages.contains { message in
+                if case .response(let response) = message, response.id == .int(42) {
+                    return true
+                }
+                return false
+            }
+        }
+
+        guard responseWasSent else {
+            Issue.record("Expected elicitation response to be sent")
+            return
+        }
 
         let sentResponseMessage = transport.sentMessages.first { message in
             if case .response(let response) = message, response.id == .int(42) {
