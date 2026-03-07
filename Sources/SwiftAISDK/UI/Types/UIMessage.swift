@@ -330,12 +330,48 @@ public struct UIDynamicToolUIPart: Sendable, Equatable {
 
 // MARK: - Tool helpers
 
-public func isToolUIPart(_ part: UIMessagePart) -> Bool {
+public func isDataUIPart(_ part: UIMessagePart) -> Bool {
+    if case .data = part {
+        return true
+    } else {
+        return false
+    }
+}
+
+public func isTextUIPart(_ part: UIMessagePart) -> Bool {
+    if case .text = part {
+        return true
+    } else {
+        return false
+    }
+}
+
+public func isFileUIPart(_ part: UIMessagePart) -> Bool {
+    if case .file = part {
+        return true
+    } else {
+        return false
+    }
+}
+
+public func isReasoningUIPart(_ part: UIMessagePart) -> Bool {
+    if case .reasoning = part {
+        return true
+    } else {
+        return false
+    }
+}
+
+public func isStaticToolUIPart(_ part: UIMessagePart) -> Bool {
     if case .tool = part {
         return true
     } else {
         return false
     }
+}
+
+public func isToolUIPart(_ part: UIMessagePart) -> Bool {
+    return isStaticToolUIPart(part) || isDynamicToolUIPart(part)
 }
 
 public func isDynamicToolUIPart(_ part: UIMessagePart) -> Bool {
@@ -347,20 +383,117 @@ public func isDynamicToolUIPart(_ part: UIMessagePart) -> Bool {
 }
 
 public func isToolOrDynamicToolUIPart(_ part: UIMessagePart) -> Bool {
-    return isToolUIPart(part) || isDynamicToolUIPart(part)
+    return isToolUIPart(part)
 }
 
-public func getToolName(_ part: UIToolUIPart) -> String {
+public func getStaticToolName(_ part: UIToolUIPart) -> String {
     part.toolName
 }
 
-public func getToolOrDynamicToolName(_ part: UIMessagePart) -> String? {
+public func getToolName(_ part: UIToolUIPart) -> String {
+    getStaticToolName(part)
+}
+
+public func getToolName(_ part: UIDynamicToolUIPart) -> String {
+    part.toolName
+}
+
+public func getToolName(_ part: UIMessagePart) -> String? {
     switch part {
     case .tool(let toolPart):
-        return toolPart.toolName
-    case .dynamicTool(let dynamicPart):
-        return dynamicPart.toolName
+        return getStaticToolName(toolPart)
+    case .dynamicTool(let dynamicToolPart):
+        return getToolName(dynamicToolPart)
     default:
         return nil
+    }
+}
+
+public func getToolOrDynamicToolName(_ part: UIMessagePart) -> String? {
+    getToolName(part)
+}
+
+public func lastAssistantMessageIsCompleteWithToolCalls<Message: UIMessageConvertible>(
+    messages: [Message]
+) -> Bool {
+    guard let message = messages.last, message.role == .assistant else {
+        return false
+    }
+
+    let lastStepToolInvocations = toolInvocationsInLastStep(of: message)
+    return !lastStepToolInvocations.isEmpty && lastStepToolInvocations.allSatisfy(isToolInvocationComplete)
+}
+
+public func lastAssistantMessageIsCompleteWithApprovalResponses<Message: UIMessageConvertible>(
+    messages: [Message]
+) -> Bool {
+    guard let message = messages.last, message.role == .assistant else {
+        return false
+    }
+
+    let lastStepToolInvocations = toolInvocationsInLastStep(of: message)
+    return lastStepToolInvocations.contains(where: isToolInvocationApprovalResponse)
+        && lastStepToolInvocations.allSatisfy(isToolInvocationApprovalComplete)
+}
+
+private func toolInvocationsInLastStep<Message: UIMessageConvertible>(of message: Message) -> [UIMessagePart] {
+    let lastStepStartIndex = message.parts.lastIndex {
+        if case .stepStart = $0 {
+            return true
+        } else {
+            return false
+        }
+    }
+
+    let startIndex = (lastStepStartIndex ?? -1) + 1
+
+    return message.parts
+        .dropFirst(startIndex)
+        .compactMap { part in
+            switch part {
+            case .tool(let toolPart) where toolPart.providerExecuted != true:
+                return .tool(toolPart)
+            case .dynamicTool(let dynamicToolPart) where dynamicToolPart.providerExecuted != true:
+                return .dynamicTool(dynamicToolPart)
+            default:
+                return nil
+            }
+        }
+}
+
+private func isToolInvocationComplete(_ part: UIMessagePart) -> Bool {
+    switch part {
+    case .tool(let toolPart):
+        return toolPart.state == .outputAvailable || toolPart.state == .outputError
+    case .dynamicTool(let dynamicToolPart):
+        return dynamicToolPart.state == .outputAvailable || dynamicToolPart.state == .outputError
+    default:
+        return false
+    }
+}
+
+private func isToolInvocationApprovalResponse(_ part: UIMessagePart) -> Bool {
+    switch part {
+    case .tool(let toolPart):
+        return toolPart.state == .approvalResponded
+    case .dynamicTool(let dynamicToolPart):
+        return dynamicToolPart.state == .approvalResponded
+    default:
+        return false
+    }
+}
+
+private func isToolInvocationApprovalComplete(_ part: UIMessagePart) -> Bool {
+    switch part {
+    case .tool(let toolPart):
+        return toolPart.state == .outputAvailable
+            || toolPart.state == .outputError
+            || toolPart.state == .approvalResponded
+    case .dynamicTool(let dynamicToolPart):
+        return dynamicToolPart.state == .outputAvailable
+            || dynamicToolPart.state == .outputError
+            || dynamicToolPart.state == .approvalResponded
+    default:
+        return false
     }
 }

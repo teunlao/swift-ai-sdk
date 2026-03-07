@@ -105,6 +105,13 @@ private func parseMessages<Message: UIMessageConvertible>(
         )
     }
 
+    if items.isEmpty {
+        throw typeValidationError(
+            value: rawMessages,
+            message: "Messages array must not be empty"
+        )
+    }
+
     var result: [Message] = []
     result.reserveCapacity(items.count)
 
@@ -151,6 +158,13 @@ private func parseParts(
         throw typeValidationError(
             value: parentContext,
             message: "message parts must be provided as an array"
+        )
+    }
+
+    if entries.isEmpty {
+        throw typeValidationError(
+            value: parentContext,
+            message: "Message must contain at least one part"
         )
     }
 
@@ -749,10 +763,11 @@ private func typeValidationError(
     )
 }
 
-private struct ValidationMessageError: Error, CustomStringConvertible, Sendable {
+private struct ValidationMessageError: LocalizedError, CustomStringConvertible, Sendable {
     let message: String
 
     var description: String { message }
+    var errorDescription: String? { message }
 }
 
 private func jsonValueToAny(_ value: JSONValue) -> Any {

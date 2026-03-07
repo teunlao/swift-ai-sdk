@@ -173,37 +173,61 @@ struct ProcessUIMessageStreamTests {
 
     @Test("text delta without text start throws descriptive error")
     func textDeltaWithoutTextStartThrowsDescriptiveError() async throws {
-        let message = await processErrorMessage(chunks: [
+        let error = await processError(chunks: [
             .start(messageId: "msg-123", messageMetadata: nil),
             .textDelta(id: "text-1", delta: "Hello", providerMetadata: nil)
         ])
 
-        #expect(message == "Received text-delta for missing text part with ID \"text-1\". Ensure a \"text-start\" chunk is sent before any \"text-delta\" chunks.")
+        guard let typed = error as? UIMessageStreamError else {
+            Issue.record("Expected UIMessageStreamError")
+            return
+        }
+
+        #expect(UIMessageStreamError.isInstance(typed))
+        #expect(typed.chunkType == "text-delta")
+        #expect(typed.chunkId == "text-1")
+        #expect(typed.message == "Received text-delta for missing text part with ID \"text-1\". Ensure a \"text-start\" chunk is sent before any \"text-delta\" chunks.")
     }
 
     @Test("reasoning end without reasoning start throws descriptive error")
     func reasoningEndWithoutReasoningStartThrowsDescriptiveError() async throws {
-        let message = await processErrorMessage(chunks: [
+        let error = await processError(chunks: [
             .start(messageId: "msg-123", messageMetadata: nil),
             .reasoningEnd(id: "reasoning-1", providerMetadata: nil)
         ])
 
-        #expect(message == "Received reasoning-end for missing reasoning part with ID \"reasoning-1\". Ensure a \"reasoning-start\" chunk is sent before any \"reasoning-end\" chunks.")
+        guard let typed = error as? UIMessageStreamError else {
+            Issue.record("Expected UIMessageStreamError")
+            return
+        }
+
+        #expect(UIMessageStreamError.isInstance(typed))
+        #expect(typed.chunkType == "reasoning-end")
+        #expect(typed.chunkId == "reasoning-1")
+        #expect(typed.message == "Received reasoning-end for missing reasoning part with ID \"reasoning-1\". Ensure a \"reasoning-start\" chunk is sent before any \"reasoning-end\" chunks.")
     }
 
     @Test("tool input delta without tool input start throws descriptive error")
     func toolInputDeltaWithoutToolInputStartThrowsDescriptiveError() async throws {
-        let message = await processErrorMessage(chunks: [
+        let error = await processError(chunks: [
             .start(messageId: "msg-123", messageMetadata: nil),
             .toolInputDelta(toolCallId: "tool-1", inputTextDelta: "{}")
         ])
 
-        #expect(message == "Received tool-input-delta for missing tool call with ID \"tool-1\". Ensure a \"tool-input-start\" chunk is sent before any \"tool-input-delta\" chunks.")
+        guard let typed = error as? UIMessageStreamError else {
+            Issue.record("Expected UIMessageStreamError")
+            return
+        }
+
+        #expect(UIMessageStreamError.isInstance(typed))
+        #expect(typed.chunkType == "tool-input-delta")
+        #expect(typed.chunkId == "tool-1")
+        #expect(typed.message == "Received tool-input-delta for missing tool call with ID \"tool-1\". Ensure a \"tool-input-start\" chunk is sent before any \"tool-input-delta\" chunks.")
     }
 
     @Test("tool output available without tool invocation throws descriptive error")
     func toolOutputAvailableWithoutToolInvocationThrowsDescriptiveError() async throws {
-        let message = await processErrorMessage(chunks: [
+        let error = await processError(chunks: [
             .start(messageId: "msg-123", messageMetadata: nil),
             .toolOutputAvailable(
                 toolCallId: "tool-1",
@@ -215,7 +239,15 @@ struct ProcessUIMessageStreamTests {
             )
         ])
 
-        #expect(message == "No tool invocation found for tool call ID \"tool-1\".")
+        guard let typed = error as? UIMessageStreamError else {
+            Issue.record("Expected UIMessageStreamError")
+            return
+        }
+
+        #expect(UIMessageStreamError.isInstance(typed))
+        #expect(typed.chunkType == "tool-invocation")
+        #expect(typed.chunkId == "tool-1")
+        #expect(typed.message == "No tool invocation found for tool call ID \"tool-1\".")
     }
 
     @Test("tool output available with dynamic flag mismatch updates existing static part")
@@ -296,15 +328,15 @@ struct ProcessUIMessageStreamTests {
         return state
     }
 
-    private func processErrorMessage(
+    private func processError(
         chunks: [AnyUIMessageChunk]
-    ) async -> String? {
+    ) async -> Error? {
         do {
             _ = try await process(chunks: chunks)
             Issue.record("Expected processing to fail")
             return nil
         } catch {
-            return String(describing: error)
+            return error
         }
     }
 }

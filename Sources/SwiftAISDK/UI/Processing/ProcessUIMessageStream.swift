@@ -697,7 +697,7 @@ private func handleChunk<Message: UIMessageConvertible>(
         }
 
     case .error(let errorText):
-        onError?(UIMessageStreamError(message: errorText))
+        onError?(UIMessageChunkError(message: errorText))
 
     case .data(let dataChunk):
         if let schema = dataPartSchemas?[dataChunk.typeIdentifier] {
@@ -810,18 +810,15 @@ private func jsonValueToAny(_ value: JSONValue) -> Any {
     }
 }
 
-private struct UIMessageStreamError: Error, CustomStringConvertible {
-    let chunkType: String?
-    let chunkId: String?
+private struct UIMessageChunkError: Error, LocalizedError, CustomStringConvertible {
     let message: String
 
-    init(chunkType: String? = nil, chunkId: String? = nil, message: String) {
-        self.chunkType = chunkType
-        self.chunkId = chunkId
+    init(message: String) {
         self.message = message
     }
 
     var description: String { message }
+    var errorDescription: String? { message }
 }
 
 private extension StreamingUIMessageState {

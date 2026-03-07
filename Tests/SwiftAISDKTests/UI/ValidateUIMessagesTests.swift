@@ -43,6 +43,46 @@ struct ValidateUIMessagesTests {
         }
     }
 
+    @Test("throws when messages array is empty")
+    func throwsWhenMessagesArrayEmpty() async {
+        let messages: [Any] = []
+
+        do {
+            let _: [UIMessage] = try await validateUIMessages(messages: messages)
+            Issue.record("Expected validateUIMessages to throw")
+        } catch {
+            #expect(TypeValidationError.isInstance(error))
+            guard let typeError = error as? TypeValidationError else {
+                Issue.record("Expected TypeValidationError")
+                return
+            }
+            #expect(typeError.message.contains("Messages array must not be empty"))
+        }
+    }
+
+    @Test("throws when parts array is empty")
+    func throwsWhenPartsArrayEmpty() async {
+        let messages: [[String: Any]] = [
+            [
+                "id": "1",
+                "role": "user",
+                "parts": [Any]()
+            ]
+        ]
+
+        do {
+            let _: [UIMessage] = try await validateUIMessages(messages: messages)
+            Issue.record("Expected validateUIMessages to throw")
+        } catch {
+            #expect(TypeValidationError.isInstance(error))
+            guard let typeError = error as? TypeValidationError else {
+                Issue.record("Expected TypeValidationError")
+                return
+            }
+            #expect(typeError.message.contains("Message must contain at least one part"))
+        }
+    }
+
     // MARK: - Metadata
 
     @Test("validates metadata without schema")

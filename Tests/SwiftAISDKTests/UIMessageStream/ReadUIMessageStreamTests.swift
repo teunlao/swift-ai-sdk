@@ -66,6 +66,34 @@ struct ReadUIMessageStreamTests {
             #expect(String(describing: error) == "Test error message")
         }
     }
+
+    @Test("should throw typed UIMessageStreamError for malformed stream with terminateOnError")
+    func throwsTypedUIMessageStreamErrorOnMalformedStream() async {
+        let stream = makeChunkStream([
+            .start(messageId: "msg-123", messageMetadata: nil),
+            .textDelta(id: "text-1", delta: "Hello", providerMetadata: nil)
+        ])
+
+        let sequence: AsyncIterableStream<UIMessage> = readUIMessageStream(
+            stream: stream,
+            terminateOnError: true
+        )
+
+        do {
+            let _: [UIMessage] = try await collectAsyncSequence(sequence)
+            Issue.record("Expected readUIMessageStream to throw")
+        } catch {
+            guard let typed = error as? UIMessageStreamError else {
+                Issue.record("Expected UIMessageStreamError")
+                return
+            }
+
+            #expect(UIMessageStreamError.isInstance(typed))
+            #expect(typed.chunkType == "text-delta")
+            #expect(typed.chunkId == "text-1")
+            #expect(typed.message == "Received text-delta for missing text part with ID \"text-1\". Ensure a \"text-start\" chunk is sent before any \"text-delta\" chunks.")
+        }
+    }
 }
 
 // MARK: - Helpers
