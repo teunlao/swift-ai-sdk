@@ -121,10 +121,53 @@ public func convertToModelMessages<Message: UIMessageConvertible>(
                                         toolCallId: dynamicPart.toolCallId,
                                         toolName: dynamicPart.toolName,
                                         input: dynamicPart.input ?? .null,
-                                        providerOptions: dynamicPart.callProviderMetadata
+                                        providerOptions: dynamicPart.callProviderMetadata,
+                                        providerExecuted: dynamicPart.providerExecuted
                                     )
                                 )
                             )
+
+                            if let approval = dynamicPart.approval {
+                                assistantParts.append(
+                                    .toolApprovalRequest(
+                                        ToolApprovalRequest(
+                                            approvalId: approval.id,
+                                            toolCallId: dynamicPart.toolCallId
+                                        )
+                                    )
+                                )
+                            }
+
+                            if dynamicPart.providerExecuted == true,
+                               dynamicPart.state == .outputAvailable || dynamicPart.state == .outputError {
+                                let tool = options.tools?[dynamicPart.toolName]
+                                let outputValue: Any?
+                                let errorMode: ToolOutputErrorMode
+                                let providerOptions = dynamicPart.resultProviderMetadata ?? dynamicPart.callProviderMetadata
+
+                                if dynamicPart.state == .outputError {
+                                    outputValue = dynamicPart.errorText
+                                    errorMode = .json
+                                } else {
+                                    outputValue = dynamicPart.output
+                                    errorMode = .none
+                                }
+
+                                assistantParts.append(
+                                    .toolResult(
+                                        ToolResultPart(
+                                            toolCallId: dynamicPart.toolCallId,
+                                            toolName: dynamicPart.toolName,
+                                            output: createToolModelOutput(
+                                                output: outputValue,
+                                                tool: tool,
+                                                errorMode: errorMode
+                                            ),
+                                            providerOptions: providerOptions
+                                        )
+                                    )
+                                )
+                            }
                         }
                     case .tool(let toolPart):
                         if toolPart.state != .inputStreaming {
@@ -266,7 +309,8 @@ private func buildToolMessageParts(
                 outputs.append(.toolApprovalResponse(ToolApprovalResponse(
                     approvalId: approval.id,
                     approved: approved,
-                    reason: approval.reason
+                    reason: approval.reason,
+                    providerExecuted: toolPart.providerExecuted
                 )))
             }
 
@@ -276,7 +320,8 @@ private func buildToolMessageParts(
                 outputs.append(.toolResult(ToolResultPart(
                     toolCallId: toolPart.toolCallId,
                     toolName: getToolName(toolPart),
-                    output: .errorText(value: reason)
+                    output: .errorText(value: reason),
+                    providerOptions: toolPart.callProviderMetadata
                 )))
 
             case .outputError, .outputAvailable:
@@ -300,7 +345,8 @@ private func buildToolMessageParts(
                         output: outputValue,
                         tool: tool,
                         errorMode: errorMode
-                    )
+                    ),
+                    providerOptions: toolPart.callProviderMetadata
                 )))
 
             default:
@@ -308,7 +354,29 @@ private func buildToolMessageParts(
             }
 
         case .dynamicTool(let dynamicPart):
+            if let approval = dynamicPart.approval, let approved = approval.approved {
+                outputs.append(.toolApprovalResponse(ToolApprovalResponse(
+                    approvalId: approval.id,
+                    approved: approved,
+                    reason: approval.reason,
+                    providerExecuted: dynamicPart.providerExecuted
+                )))
+            }
+
+            if dynamicPart.providerExecuted == true {
+                break
+            }
+
             switch dynamicPart.state {
+            case .outputDenied:
+                let reason = dynamicPart.approval?.reason ?? "Tool execution denied."
+                outputs.append(.toolResult(ToolResultPart(
+                    toolCallId: dynamicPart.toolCallId,
+                    toolName: dynamicPart.toolName,
+                    output: .errorText(value: reason),
+                    providerOptions: dynamicPart.callProviderMetadata
+                )))
+
             case .outputError, .outputAvailable:
                 let tool = tools?[dynamicPart.toolName]
                 let outputValue: Any?
@@ -329,7 +397,8 @@ private func buildToolMessageParts(
                         output: outputValue,
                         tool: tool,
                         errorMode: errorMode
-                    )
+                    ),
+                    providerOptions: dynamicPart.callProviderMetadata
                 )))
 
             default:

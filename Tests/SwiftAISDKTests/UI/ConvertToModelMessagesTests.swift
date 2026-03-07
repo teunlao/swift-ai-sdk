@@ -94,6 +94,7 @@ struct ConvertToModelMessagesTests {
             Issue.record("Expected tool result part")
             return
         }
+        #expect(toolResult.providerOptions?["openai"]?["mode"] == .string("strict"))
         if case let .json(value: value, providerOptions: _) = toolResult.output {
             #expect(value == .string("4"))
         } else {
@@ -108,6 +109,7 @@ struct ConvertToModelMessagesTests {
         }
         #expect(approvalResponse.approvalId == "approval-1")
         #expect(approvalResponse.approved == true)
+        #expect(approvalResponse.providerExecuted == false)
     }
 
     @Test("ignoring incomplete tool calls removes pending inputs")
@@ -211,5 +213,192 @@ struct ConvertToModelMessagesTests {
         }
 
         #expect(toolResultPart.providerOptions?["testProvider"]?["itemId"] == .string("result-item"))
+    }
+
+    @Test("client-executed dynamic tool results stay in tool messages with provider metadata")
+    func clientExecutedDynamicToolResultsStayInToolMessages() throws {
+        let metadata: ProviderMetadata = [
+            "testProvider": ["itemId": .string("call-item")]
+        ]
+
+        let dynamicPart = UIDynamicToolUIPart(
+            toolName: "screenshot",
+            toolCallId: "call-4",
+            state: .outputAvailable,
+            input: .object(["value": .string("value-1")]),
+            output: .string("result-1"),
+            errorText: nil,
+            providerExecuted: false,
+            callProviderMetadata: metadata,
+            preliminary: nil,
+            approval: nil
+        )
+
+        let message = UIMessage(
+            id: "assistant-4",
+            role: .assistant,
+            parts: [
+                .stepStart,
+                .dynamicTool(dynamicPart)
+            ]
+        )
+
+        let result = try convertToModelMessages(messages: [message])
+        #expect(result.count == 2)
+
+        guard case let .assistant(assistantMessage) = result.first else {
+            Issue.record("Expected assistant message")
+            return
+        }
+
+        guard case let .parts(assistantParts) = assistantMessage.content else {
+            Issue.record("Expected assistant parts")
+            return
+        }
+
+        #expect(assistantParts.count == 1)
+
+        guard case let .toolCall(toolCallPart) = assistantParts.first else {
+            Issue.record("Expected dynamic tool call part")
+            return
+        }
+
+        #expect(toolCallPart.providerExecuted == false)
+        #expect(toolCallPart.providerOptions?["testProvider"]?["itemId"] == .string("call-item"))
+
+        guard case let .tool(toolMessage) = result.last else {
+            Issue.record("Expected tool message")
+            return
+        }
+
+        guard case let .toolResult(toolResultPart) = toolMessage.content.first else {
+            Issue.record("Expected tool result part")
+            return
+        }
+
+        #expect(toolResultPart.providerOptions?["testProvider"]?["itemId"] == .string("call-item"))
+    }
+
+    @Test("provider-executed dynamic tool results stay in assistant message")
+    func providerExecutedDynamicToolResultsStayInAssistantMessage() throws {
+        let callMetadata: ProviderMetadata = [
+            "testProvider": ["itemId": .string("call-item")]
+        ]
+        let resultMetadata: ProviderMetadata = [
+            "testProvider": ["itemId": .string("result-item")]
+        ]
+
+        let dynamicPart = UIDynamicToolUIPart(
+            toolName: "screenshot",
+            toolCallId: "call-5",
+            state: .outputAvailable,
+            input: .object(["value": .string("value-1")]),
+            output: .string("result-1"),
+            errorText: nil,
+            providerExecuted: true,
+            callProviderMetadata: callMetadata,
+            resultProviderMetadata: resultMetadata,
+            preliminary: nil,
+            approval: nil
+        )
+
+        let message = UIMessage(
+            id: "assistant-5",
+            role: .assistant,
+            parts: [
+                .stepStart,
+                .dynamicTool(dynamicPart)
+            ]
+        )
+
+        let result = try convertToModelMessages(messages: [message])
+        #expect(result.count == 1)
+
+        guard case let .assistant(assistantMessage) = result.first else {
+            Issue.record("Expected assistant message")
+            return
+        }
+
+        guard case let .parts(parts) = assistantMessage.content else {
+            Issue.record("Expected assistant parts")
+            return
+        }
+
+        #expect(parts.count == 2)
+
+        guard case let .toolCall(toolCallPart) = parts.first else {
+            Issue.record("Expected tool call part")
+            return
+        }
+
+        #expect(toolCallPart.providerExecuted == true)
+        #expect(toolCallPart.providerOptions?["testProvider"]?["itemId"] == .string("call-item"))
+
+        guard case let .toolResult(toolResultPart) = parts.last else {
+            Issue.record("Expected tool result part")
+            return
+        }
+
+        #expect(toolResultPart.providerOptions?["testProvider"]?["itemId"] == .string("result-item"))
+    }
+
+    @Test("dynamic approval responses include providerExecuted in tool messages")
+    func dynamicApprovalResponsesIncludeProviderExecuted() throws {
+        let dynamicPart = UIDynamicToolUIPart(
+            toolName: "weather",
+            toolCallId: "call-6",
+            state: .approvalResponded,
+            input: .object(["city": .string("Tokyo")]),
+            output: nil,
+            errorText: nil,
+            providerExecuted: false,
+            callProviderMetadata: nil,
+            preliminary: nil,
+            approval: UIToolApproval(id: "approval-1", approved: true, reason: nil)
+        )
+
+        let message = UIMessage(
+            id: "assistant-6",
+            role: .assistant,
+            parts: [
+                .stepStart,
+                .dynamicTool(dynamicPart)
+            ]
+        )
+
+        let result = try convertToModelMessages(messages: [message])
+        #expect(result.count == 2)
+
+        guard case let .assistant(assistantMessage) = result.first else {
+            Issue.record("Expected assistant message")
+            return
+        }
+
+        guard case let .parts(assistantParts) = assistantMessage.content else {
+            Issue.record("Expected assistant parts")
+            return
+        }
+
+        #expect(assistantParts.count == 2)
+
+        guard case let .toolApprovalRequest(approvalRequest) = assistantParts.last else {
+            Issue.record("Expected tool approval request")
+            return
+        }
+
+        #expect(approvalRequest.approvalId == "approval-1")
+
+        guard case let .tool(toolMessage) = result.last else {
+            Issue.record("Expected tool message")
+            return
+        }
+
+        guard case let .toolApprovalResponse(approvalResponse) = toolMessage.content.first else {
+            Issue.record("Expected tool approval response")
+            return
+        }
+
+        #expect(approvalResponse.approvalId == "approval-1")
+        #expect(approvalResponse.providerExecuted == false)
     }
 }
