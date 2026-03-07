@@ -890,6 +890,133 @@ struct OpenAIResponsesInputBuilderTests {
         #expect(result.input == expected)
     }
 
+    @Test("should include commentary phase from providerOptions on assistant text messages")
+    func assistantTextIncludesCommentaryPhase() async throws {
+        let prompt: LanguageModelV3Prompt = [
+            .assistant(
+                content: [
+                    .text(LanguageModelV3TextPart(
+                        text: "I will search for that",
+                        providerOptions: [
+                            "openai": [
+                                "itemId": .string("msg_001"),
+                                "phase": .string("commentary")
+                            ]
+                        ]
+                    ))
+                ],
+                providerOptions: nil
+            )
+        ]
+
+        let result = try await OpenAIResponsesInputBuilder.makeInput(
+            prompt: prompt,
+            systemMessageMode: .system,
+            store: false,
+            hasLocalShellTool: false
+        )
+
+        let expected: OpenAIResponsesInput = [
+            .object([
+                "role": .string("assistant"),
+                "content": .array([
+                    .object([
+                        "type": .string("output_text"),
+                        "text": .string("I will search for that")
+                    ])
+                ]),
+                "id": .string("msg_001"),
+                "phase": .string("commentary")
+            ])
+        ]
+
+        #expect(result.input == expected)
+    }
+
+    @Test("should include final_answer phase from providerOptions on assistant text messages")
+    func assistantTextIncludesFinalAnswerPhase() async throws {
+        let prompt: LanguageModelV3Prompt = [
+            .assistant(
+                content: [
+                    .text(LanguageModelV3TextPart(
+                        text: "The capital of France is Paris.",
+                        providerOptions: [
+                            "openai": [
+                                "itemId": .string("msg_002"),
+                                "phase": .string("final_answer")
+                            ]
+                        ]
+                    ))
+                ],
+                providerOptions: nil
+            )
+        ]
+
+        let result = try await OpenAIResponsesInputBuilder.makeInput(
+            prompt: prompt,
+            systemMessageMode: .system,
+            store: false,
+            hasLocalShellTool: false
+        )
+
+        let expected: OpenAIResponsesInput = [
+            .object([
+                "role": .string("assistant"),
+                "content": .array([
+                    .object([
+                        "type": .string("output_text"),
+                        "text": .string("The capital of France is Paris.")
+                    ])
+                ]),
+                "id": .string("msg_002"),
+                "phase": .string("final_answer")
+            ])
+        ]
+
+        #expect(result.input == expected)
+    }
+
+    @Test("should omit phase when assistant text providerOptions do not include it")
+    func assistantTextOmitsPhaseWhenMissing() async throws {
+        let prompt: LanguageModelV3Prompt = [
+            .assistant(
+                content: [
+                    .text(LanguageModelV3TextPart(
+                        text: "Hello",
+                        providerOptions: [
+                            "openai": [
+                                "itemId": .string("msg_003")
+                            ]
+                        ]
+                    ))
+                ],
+                providerOptions: nil
+            )
+        ]
+
+        let result = try await OpenAIResponsesInputBuilder.makeInput(
+            prompt: prompt,
+            systemMessageMode: .system,
+            store: false,
+            hasLocalShellTool: false
+        )
+
+        let expected: OpenAIResponsesInput = [
+            .object([
+                "role": .string("assistant"),
+                "content": .array([
+                    .object([
+                        "type": .string("output_text"),
+                        "text": .string("Hello")
+                    ])
+                ]),
+                "id": .string("msg_003")
+            ])
+        ]
+
+        #expect(result.input == expected)
+    }
+
     @Test("tool call itemId supports providerMetadata fallback")
     func toolCallItemIdFromProviderMetadataFallback() async throws {
         let toolCallPart = LanguageModelV3ToolCallPart(

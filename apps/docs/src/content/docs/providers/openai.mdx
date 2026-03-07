@@ -16,7 +16,7 @@ The OpenAI provider is available in the `OpenAIProvider` module. Add it to your 
 ```swift
 // Package.swift
 dependencies: [
-    .package(url: "https://github.com/teunlao/swift-ai-sdk", from: "0.17.1")
+    .package(url: "https://github.com/teunlao/swift-ai-sdk", from: "0.17.2")
 ],
 targets: [
     .target(
@@ -199,10 +199,12 @@ The following provider options are available:
   Reasoning effort for reasoning models. Defaults to `medium`. If you use `providerOptions` to set the `reasoningEffort` option, this model setting will be ignored.
 
 <Aside type="note">
-  The 'none' type for `reasoningEffort` is only available for OpenAI's GPT-5.1
-  models. Also, the 'xhigh' type for `reasoningEffort` is only available for
-  OpenAI's GPT-5.1-Codex-Max model. Setting `reasoningEffort` to 'none' or
-  'xhigh' with unsupported models will result in an error.
+  The 'none' type for `reasoningEffort` is available for OpenAI's GPT-5.1,
+  GPT-5.2, and GPT-5.4 model families. The 'xhigh' type for
+  `reasoningEffort` is only available for OpenAI's GPT-5.1-Codex-Max model.
+  When `reasoningEffort` is set to `none`, the SDK also keeps
+  `temperature`, `topP`, and `logprobs` enabled for those supported GPT-5
+  families.
 </Aside>
 
 - **reasoningSummary** _'auto' | 'detailed'_
@@ -531,7 +533,7 @@ import SwiftAISDK
 import OpenAIProvider
 
 let result = try await generateText(
-  model: openai.responses("gpt-5-codex"),
+  model: openai.responses("gpt-5.3-codex"),
   tools: [
     "local_shell": openai.tools.localShell(.init(
       execute: { input, _ in
@@ -555,6 +557,13 @@ let result = try await generateText(
 
 <Aside type="note">
   The tool must be named `local_shell`. This name is required by OpenAI's API specification and cannot be customized.
+</Aside>
+
+<Aside type="note">
+  Codex-oriented Responses models such as `gpt-5.3-codex` can emit
+  `providerMetadata.openai.phase` with values like `commentary` and
+  `final_answer` on assistant text parts. Preserve that metadata if you send
+  the conversation back to the OpenAI Responses API for a follow-up turn.
 </Aside>
 
 #### Shell Tool
@@ -876,10 +885,12 @@ The following optional provider options are available for OpenAI chat models:
   model setting will be ignored.
 
 <Aside type="note">
-  The 'none' type for `reasoningEffort` is only available for OpenAI's GPT-5.1
-  models. Also, the 'xhigh' type for `reasoningEffort` is only available for
-  OpenAI's GPT-5.1-Codex-Max model. Setting `reasoningEffort` to 'none' or
-  'xhigh' with unsupported models will result in an error.
+  The 'none' type for `reasoningEffort` is available for OpenAI's GPT-5.1,
+  GPT-5.2, and GPT-5.4 model families. The 'xhigh' type for
+  `reasoningEffort` is only available for OpenAI's GPT-5.1-Codex-Max model.
+  When `reasoningEffort` is set to `none`, the SDK also keeps
+  `temperature`, `topP`, and `logprobs` enabled for those supported GPT-5
+  families.
 </Aside>
 
 - **maxCompletionTokens** _number_
@@ -1428,6 +1439,9 @@ The following optional provider options are available for OpenAI completion mode
 
 | Model               | Image Input         | Audio Input         | Object Generation   | Tool Usage          |
 | ------------------- | ------------------- | ------------------- | ------------------- | ------------------- |
+| `gpt-5.4-pro`       | <Check size={18} /> | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| `gpt-5.4`           | <Check size={18} /> | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| `gpt-5.3-codex`     | <Check size={18} /> | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> |
 | `gpt-5-pro`         | <Check size={18} /> | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> |
 | `gpt-5`             | <Check size={18} /> | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> |
 | `gpt-5-mini`        | <Check size={18} /> | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> |
@@ -1443,8 +1457,9 @@ The following optional provider options are available for OpenAI completion mode
 <Aside type="note">
   The table above lists popular models. Please see the [OpenAI
   docs](https://platform.openai.com/docs/models) for a full list of available
-  models. The table above lists popular models. You can also pass any available
-  provider model ID as a string if needed.
+  models. Recent additions include `gpt-5.4`, `gpt-5.4-pro`, and
+  `gpt-5.3-codex`. You can also pass any available provider model ID as a
+  string if needed.
 </Aside>
 
 ## Embedding Models

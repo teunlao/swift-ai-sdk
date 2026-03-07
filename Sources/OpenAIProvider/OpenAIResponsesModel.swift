@@ -176,6 +176,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 var hasFunctionCall = false
 
                 var ongoingAnnotations: [JSONValue] = []
+                var activeMessagePhase: String?
 
                 var ongoingToolCalls: [Int: ToolCallState] = [:]
                 var activeReasoning: [String: ReasoningState] = [:]
@@ -201,6 +202,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                                     webSearchToolName: webSearchToolName,
                                     toolNameMapping: prepared.toolNameMapping,
                                     ongoingAnnotations: &ongoingAnnotations,
+                                    activeMessagePhase: &activeMessagePhase,
                                     ongoingToolCalls: &ongoingToolCalls,
                                     activeReasoning: &activeReasoning,
                                     continuation: continuation
@@ -211,6 +213,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                                     webSearchToolName: webSearchToolName,
                                     toolNameMapping: prepared.toolNameMapping,
                                     ongoingAnnotations: &ongoingAnnotations,
+                                    activeMessagePhase: &activeMessagePhase,
                                     approvalRequestIdToToolCallIdFromPrompt: approvalRequestIdToToolCallIdFromPrompt,
                                     approvalRequestIdToDummyToolCallIdFromStream: &approvalRequestIdToDummyToolCallIdFromStream,
                                     ongoingToolCalls: &ongoingToolCalls,
@@ -727,6 +730,9 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                     let rawAnnotations = partObject["annotations"]?.arrayValue ?? []
                     let annotations = rawAnnotations.compactMap { filterOpenAIResponsesAnnotation($0) }
                     var textMetadataItems: [String: JSONValue] = ["itemId": .string(itemId)]
+                    if let phase = object["phase"]?.stringValue {
+                        textMetadataItems["phase"] = .string(phase)
+                    }
                     if !annotations.isEmpty {
                         textMetadataItems["annotations"] = .array(annotations)
                     }
@@ -1442,6 +1448,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
         webSearchToolName: String,
         toolNameMapping: OpenAIToolNameMapping,
         ongoingAnnotations: inout [JSONValue],
+        activeMessagePhase: inout String?,
         ongoingToolCalls: inout [Int: ToolCallState],
         activeReasoning: inout [String: ReasoningState],
         continuation: AsyncThrowingStream<LanguageModelV3StreamPart, Error>.Continuation
@@ -1608,7 +1615,12 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
         case "message":
             guard let id = item["id"]?.stringValue else { return }
             ongoingAnnotations.removeAll(keepingCapacity: true)
-            let metadata = openAIProviderMetadata(["itemId": .string(id)])
+            activeMessagePhase = item["phase"]?.stringValue
+            var metadataItems: [String: JSONValue] = ["itemId": .string(id)]
+            if let phase = activeMessagePhase {
+                metadataItems["phase"] = .string(phase)
+            }
+            let metadata = openAIProviderMetadata(metadataItems)
             continuation.yield(.textStart(id: id, providerMetadata: metadata))
         case "reasoning":
             guard let id = item["id"]?.stringValue else { return }
@@ -1629,6 +1641,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
         webSearchToolName: String,
         toolNameMapping: OpenAIToolNameMapping,
         ongoingAnnotations: inout [JSONValue],
+        activeMessagePhase: inout String?,
         approvalRequestIdToToolCallIdFromPrompt: [String: String],
         approvalRequestIdToDummyToolCallIdFromStream: inout [String: String],
         ongoingToolCalls: inout [Int: ToolCallState],
@@ -1982,6 +1995,11 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
         case "message":
             if let id = item["id"]?.stringValue {
                 var metadataItems: [String: JSONValue] = ["itemId": .string(id)]
+                let phase = item["phase"]?.stringValue ?? activeMessagePhase
+                activeMessagePhase = nil
+                if let phase {
+                    metadataItems["phase"] = .string(phase)
+                }
                 if !ongoingAnnotations.isEmpty {
                     metadataItems["annotations"] = .array(ongoingAnnotations)
                 }

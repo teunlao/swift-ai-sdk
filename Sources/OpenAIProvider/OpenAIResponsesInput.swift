@@ -53,7 +53,16 @@ struct OpenAIResponsesInputBuilder {
                 for part in parts {
                     switch part {
                     case .text(let textPart):
-                        let itemId = extractOpenAIItemId(from: textPart.providerOptions, providerOptionsName: providerOptionsName)
+                        let itemId = extractOpenAIStringOption(
+                            from: textPart.providerOptions,
+                            providerOptionsName: providerOptionsName,
+                            key: "itemId"
+                        )
+                        let phase = extractOpenAIStringOption(
+                            from: textPart.providerOptions,
+                            providerOptionsName: providerOptionsName,
+                            key: "phase"
+                        )
 
                         if hasConversation, itemId != nil {
                             continue
@@ -79,6 +88,9 @@ struct OpenAIResponsesInputBuilder {
 
                         if let itemId {
                             payload["id"] = .string(itemId)
+                        }
+                        if let phase {
+                            payload["phase"] = .string(phase)
                         }
 
                         items.append(.object(payload))
@@ -771,12 +783,7 @@ struct OpenAIResponsesInputBuilder {
     }
 
     private static func extractOpenAIItemId(from options: ProviderOptions?, providerOptionsName: String) -> String? {
-        guard let options,
-              let openaiOptions = options[providerOptionsName],
-              case .string(let itemId) = openaiOptions["itemId"] else {
-            return nil
-        }
-        return itemId
+        extractOpenAIStringOption(from: options, providerOptionsName: providerOptionsName, key: "itemId")
     }
 }
 

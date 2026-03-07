@@ -35,7 +35,13 @@ public let openAIResponsesReasoningModelIds: [OpenAIResponsesModelId] = [
     "gpt-5.1-codex-max",
     "gpt-5.2",
     "gpt-5.2-chat-latest",
-    "gpt-5.2-pro"
+    "gpt-5.2-pro",
+    "gpt-5.2-codex",
+    "gpt-5.4",
+    "gpt-5.4-2026-03-05",
+    "gpt-5.4-pro",
+    "gpt-5.4-pro-2026-03-05",
+    "gpt-5.3-codex"
 ].map(OpenAIResponsesModelId.init(rawValue:))
 
 public let openAIResponsesModelIds: [OpenAIResponsesModelId] = (

@@ -81,6 +81,9 @@ struct OpenAILanguageModelCapabilitiesTests {
             ("gpt-5.2", true),
             ("gpt-5.2-pro", true),
             ("gpt-5.2-chat-latest", true),
+            ("gpt-5.4", true),
+            ("gpt-5.4-pro", true),
+            ("gpt-5.4-2026-03-05", true),
             ("gpt-5", false),
             ("gpt-5-mini", false),
             ("gpt-5-nano", false),
@@ -95,5 +98,24 @@ struct OpenAILanguageModelCapabilitiesTests {
             )
         }
     }
-}
 
+    @Test("responses model lists include latest GPT-5.4 and Codex ids")
+    func responsesModelListsIncludeLatestIds() {
+        let expectedReasoningIds = [
+            "gpt-5.2-codex",
+            "gpt-5.4",
+            "gpt-5.4-2026-03-05",
+            "gpt-5.4-pro",
+            "gpt-5.4-pro-2026-03-05",
+            "gpt-5.3-codex"
+        ]
+
+        let reasoningIds = Set(openAIResponsesReasoningModelIds.map(\.rawValue))
+        let modelIds = Set(openAIResponsesModelIds.map(\.rawValue))
+
+        for modelId in expectedReasoningIds {
+            #expect(reasoningIds.contains(modelId), "Missing reasoning model id \(modelId)")
+            #expect(modelIds.contains(modelId), "Missing responses model id \(modelId)")
+        }
+    }
+}

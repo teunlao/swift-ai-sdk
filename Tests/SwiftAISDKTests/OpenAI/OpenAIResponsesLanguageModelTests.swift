@@ -4367,6 +4367,233 @@ struct OpenAIResponsesLanguageModelTests {
         }
     }
 
+    @Test("should include phase in provider metadata for message output items")
+    func testPhaseProviderMetadataInMessageOutputItems() async throws {
+        let responseJSON: [String: Any] = [
+            "id": "resp_phase",
+            "object": "response",
+            "created_at": 1_772_062_769.0,
+            "status": "completed",
+            "error": NSNull(),
+            "incomplete_details": NSNull(),
+            "model": "gpt-5.3-codex",
+            "output": [
+                [
+                    "id": "msg_commentary",
+                    "type": "message",
+                    "status": "completed",
+                    "phase": "commentary",
+                    "role": "assistant",
+                    "content": [[
+                        "type": "output_text",
+                        "annotations": [],
+                        "logprobs": [],
+                        "text": "I will check the latest sources."
+                    ]]
+                ],
+                [
+                    "id": "msg_final",
+                    "type": "message",
+                    "status": "completed",
+                    "phase": "final_answer",
+                    "role": "assistant",
+                    "content": [[
+                        "type": "output_text",
+                        "annotations": [],
+                        "logprobs": [],
+                        "text": "Here is the final answer."
+                    ]]
+                ]
+            ],
+            "usage": [
+                "input_tokens": 12,
+                "output_tokens": 8,
+                "output_tokens_details": ["reasoning_tokens": 1],
+                "total_tokens": 20
+            ],
+            "service_tier": "default",
+            "warnings": []
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let fetch: FetchFunction = { _ in
+            let httpResponse = HTTPURLResponse(
+                url: URL(string: "https://api.openai.com/v1/responses")!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-5.3-codex",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: samplePrompt))
+        let textParts = result.content.compactMap { content -> LanguageModelV3Text? in
+            if case .text(let text) = content {
+                return text
+            }
+            return nil
+        }
+
+        #expect(textParts.count == 2)
+        #expect(textParts[0].providerMetadata?["openai"]?["itemId"] == .string("msg_commentary"))
+        #expect(textParts[0].providerMetadata?["openai"]?["phase"] == .string("commentary"))
+        #expect(textParts[1].providerMetadata?["openai"]?["itemId"] == .string("msg_final"))
+        #expect(textParts[1].providerMetadata?["openai"]?["phase"] == .string("final_answer"))
+    }
+
+    @Test("should include phase in provider metadata for streamed message items")
+    func testPhaseProviderMetadataInStreamedMessageItems() async throws {
+        func chunk(_ value: Any) -> String {
+            let data = try! JSONSerialization.data(withJSONObject: value)
+            let encoded = String(data: data, encoding: .utf8)!
+            return "data:\(encoded)\n\n"
+        }
+
+        let commentaryItem: [String: Any] = [
+            "id": "msg_commentary_stream",
+            "type": "message",
+            "status": "completed",
+            "role": "assistant",
+            "phase": "commentary",
+            "content": [[
+                "type": "output_text",
+                "annotations": [],
+                "logprobs": [],
+                "text": "I will first inspect the available sources."
+            ]]
+        ]
+
+        let finalItem: [String: Any] = [
+            "id": "msg_final_stream",
+            "type": "message",
+            "status": "completed",
+            "role": "assistant",
+            "phase": "final_answer",
+            "content": [[
+                "type": "output_text",
+                "annotations": [],
+                "logprobs": [],
+                "text": "Here is the final answer."
+            ]]
+        ]
+
+        let chunks: [String] = [
+            chunk([
+                "type": "response.output_item.added",
+                "output_index": 0,
+                "item": commentaryItem
+            ]),
+            chunk([
+                "type": "response.output_text.delta",
+                "item_id": "msg_commentary_stream",
+                "output_index": 0,
+                "content_index": 0,
+                "delta": "I will first inspect the available sources."
+            ]),
+            chunk([
+                "type": "response.output_item.done",
+                "output_index": 0,
+                "item": commentaryItem
+            ]),
+            chunk([
+                "type": "response.output_item.added",
+                "output_index": 1,
+                "item": finalItem
+            ]),
+            chunk([
+                "type": "response.output_text.delta",
+                "item_id": "msg_final_stream",
+                "output_index": 1,
+                "content_index": 0,
+                "delta": "Here is the final answer."
+            ]),
+            chunk([
+                "type": "response.output_item.done",
+                "output_index": 1,
+                "item": finalItem
+            ]),
+            chunk([
+                "type": "response.completed",
+                "response": [
+                    "id": "resp_phase_stream",
+                    "object": "response",
+                    "created_at": 1_772_062_769.0,
+                    "status": "completed",
+                    "model": "gpt-5.3-codex",
+                    "usage": [
+                        "input_tokens": 14,
+                        "output_tokens": 9,
+                        "output_tokens_details": ["reasoning_tokens": 2],
+                        "total_tokens": 23
+                    ],
+                    "service_tier": "default"
+                ]
+            ]),
+            "data: [DONE]\n\n"
+        ]
+
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.openai.com/v1/responses")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "text/event-stream"]
+        )!
+
+        let fetch: FetchFunction = { _ in
+            let stream = AsyncThrowingStream<Data, Error> { continuation in
+                for string in chunks {
+                    continuation.yield(Data(string.utf8))
+                }
+                continuation.finish()
+            }
+            return FetchResponse(body: .stream(stream), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-5.3-codex",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let streamResult = try await model.doStream(
+            options: LanguageModelV3CallOptions(prompt: samplePrompt)
+        )
+
+        var parts: [LanguageModelV3StreamPart] = []
+        for try await part in streamResult.stream {
+            parts.append(part)
+        }
+
+        let textStartMetadata = parts.compactMap { part -> SharedV3ProviderMetadata? in
+            if case .textStart(_, let providerMetadata) = part {
+                return providerMetadata
+            }
+            return nil
+        }
+        let textEndMetadata = parts.compactMap { part -> SharedV3ProviderMetadata? in
+            if case .textEnd(_, let providerMetadata) = part {
+                return providerMetadata
+            }
+            return nil
+        }
+
+        #expect(textStartMetadata.count == 2)
+        #expect(textStartMetadata[0]["openai"]?["itemId"] == .string("msg_commentary_stream"))
+        #expect(textStartMetadata[0]["openai"]?["phase"] == .string("commentary"))
+        #expect(textStartMetadata[1]["openai"]?["itemId"] == .string("msg_final_stream"))
+        #expect(textStartMetadata[1]["openai"]?["phase"] == .string("final_answer"))
+
+        #expect(textEndMetadata.count == 2)
+        #expect(textEndMetadata[0]["openai"]?["itemId"] == .string("msg_commentary_stream"))
+        #expect(textEndMetadata[0]["openai"]?["phase"] == .string("commentary"))
+        #expect(textEndMetadata[1]["openai"]?["itemId"] == .string("msg_final_stream"))
+        #expect(textEndMetadata[1]["openai"]?["phase"] == .string("final_answer"))
+    }
+
     @Test("should extract usage")
     func testShouldExtractUsage() async throws {
         let responseJSON: [String: Any] = [
