@@ -6,6 +6,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.17.1] - 2026-03-07
+
+Upstream parity refresh against Vercel AI SDK commit `a921fbb381cf2d19ef75ae27906f8d1cb0b8325b`.
+
+### Added
+- UI: add public `processTextStream(stream:onTextPart:)` with incremental UTF-8 chunk decoding.
+- UI: add public `convertFileListToFileUIParts(files:)` as the Swift `[URL]?` adaptation of upstream browser `FileList` conversion.
+- UI: add missing helper surface and parity exports, including `lastAssistantMessageIsCompleteWithToolCalls`, `lastAssistantMessageIsCompleteWithApprovalResponses`, `isTextUIPart`, `isFileUIPart`, `isReasoningUIPart`, `isStaticToolUIPart`, `getStaticToolName`, and public `UIMessageStreamError`.
+
+### Fixed
+- StreamText: execute multiple tool handlers concurrently inside a single stream step, matching upstream behavior when the provider emits multiple tool calls together.
+- UI message stream: restore `createUIMessageStream(..., onStepFinish:)` parity and align tool approval handling, dynamic/static tool conversion, malformed stream invariants, and validation contracts with upstream.
+- UI model-message conversion: preserve tool result provider metadata and approval responses across `full stream -> UI chunks -> processUIMessageStream -> validateUIMessages -> convertToModelMessages`.
+- Tests/CI: vendor Cohere fixtures for stable parsing coverage and replace the flaky MCP elicitation fixed-sleep check with response polling.
+
+## [0.17.0] - 2026-02-27
+
+Upstream parity update against Vercel AI SDK commit `73d5c5920e0fea7633027fdd87374adc9ba49743`.
+
+### Added
+- Providers: add Alibaba, ByteDance, KlingAI, MoonshotAI, and OpenResponses support.
+- Docs: add and wire provider documentation for ByteDance, Kling AI, MoonshotAI, and OpenResponses, plus refresh provider counts and overviews.
+
+### Fixed
+- UI message stream: align finish/cancel semantics, `onStepFinish`, and processing API behavior with upstream.
+- Provider utils: expand JSON Schema validator parity, including conditional-schema behavior.
+- OpenAI / Gateway: align Responses include/options behavior, provider/image/video/tools mapping, Vercel o11y headers, and `generationId` error handling.
+- Amazon Bedrock: align chat, embeddings, image, SigV4, and reranking host mapping with upstream.
+- Providers: move missing-key/config failures to request time and add regression coverage across Cohere, DeepInfra, Perplexity, Replicate, Deepgram, AssemblyAI, Cerebras, Anthropic, RevAI, XAI, Alibaba, and Mistral.
+
 ## [0.16.0] - 2026-02-25
 
 ### Added
