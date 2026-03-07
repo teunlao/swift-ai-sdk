@@ -171,6 +171,105 @@ struct ProcessUIMessageStreamTests {
         #expect(toolPart.errorText == "Model tried to call unavailable tool 'nonExistentTool'.")
     }
 
+    @Test("text delta without text start throws descriptive error")
+    func textDeltaWithoutTextStartThrowsDescriptiveError() async throws {
+        let message = await processErrorMessage(chunks: [
+            .start(messageId: "msg-123", messageMetadata: nil),
+            .textDelta(id: "text-1", delta: "Hello", providerMetadata: nil)
+        ])
+
+        #expect(message == "Received text-delta for missing text part with ID \"text-1\". Ensure a \"text-start\" chunk is sent before any \"text-delta\" chunks.")
+    }
+
+    @Test("reasoning end without reasoning start throws descriptive error")
+    func reasoningEndWithoutReasoningStartThrowsDescriptiveError() async throws {
+        let message = await processErrorMessage(chunks: [
+            .start(messageId: "msg-123", messageMetadata: nil),
+            .reasoningEnd(id: "reasoning-1", providerMetadata: nil)
+        ])
+
+        #expect(message == "Received reasoning-end for missing reasoning part with ID \"reasoning-1\". Ensure a \"reasoning-start\" chunk is sent before any \"reasoning-end\" chunks.")
+    }
+
+    @Test("tool input delta without tool input start throws descriptive error")
+    func toolInputDeltaWithoutToolInputStartThrowsDescriptiveError() async throws {
+        let message = await processErrorMessage(chunks: [
+            .start(messageId: "msg-123", messageMetadata: nil),
+            .toolInputDelta(toolCallId: "tool-1", inputTextDelta: "{}")
+        ])
+
+        #expect(message == "Received tool-input-delta for missing tool call with ID \"tool-1\". Ensure a \"tool-input-start\" chunk is sent before any \"tool-input-delta\" chunks.")
+    }
+
+    @Test("tool output available without tool invocation throws descriptive error")
+    func toolOutputAvailableWithoutToolInvocationThrowsDescriptiveError() async throws {
+        let message = await processErrorMessage(chunks: [
+            .start(messageId: "msg-123", messageMetadata: nil),
+            .toolOutputAvailable(
+                toolCallId: "tool-1",
+                output: .object(["value": .string("ok")]),
+                providerExecuted: nil,
+                providerMetadata: nil,
+                dynamic: false,
+                preliminary: nil
+            )
+        ])
+
+        #expect(message == "No tool invocation found for tool call ID \"tool-1\".")
+    }
+
+    @Test("tool output available with dynamic flag mismatch updates existing static part")
+    func toolOutputAvailableWithDynamicFlagMismatchUpdatesExistingStaticPart() async throws {
+        let state = try await process(chunks: [
+            .start(messageId: "msg-123", messageMetadata: nil),
+            .startStep,
+            .toolInputAvailable(
+                toolCallId: "call-9",
+                toolName: "weather",
+                input: .object(["city": .string("Tokyo")]),
+                providerExecuted: nil,
+                providerMetadata: nil,
+                dynamic: false,
+                title: nil
+            ),
+            .toolOutputAvailable(
+                toolCallId: "call-9",
+                output: .object(["weather": .string("Sunny")]),
+                providerExecuted: nil,
+                providerMetadata: nil,
+                dynamic: true,
+                preliminary: nil
+            ),
+            .finishStep,
+            .finish(finishReason: nil, messageMetadata: nil)
+        ])
+
+        let staticToolParts = state.message.parts.compactMap { part -> UIToolUIPart? in
+            if case .tool(let toolPart) = part {
+                return toolPart
+            }
+            return nil
+        }
+
+        let dynamicToolParts = state.message.parts.compactMap { part -> UIDynamicToolUIPart? in
+            if case .dynamicTool(let toolPart) = part {
+                return toolPart
+            }
+            return nil
+        }
+
+        #expect(staticToolParts.count == 1)
+        #expect(dynamicToolParts.isEmpty)
+
+        guard let toolPart = staticToolParts.first else {
+            Issue.record("Expected static tool part")
+            return
+        }
+
+        #expect(toolPart.state == .outputAvailable)
+        #expect(toolPart.output == .object(["weather": .string("Sunny")]))
+    }
+
     private func process(
         chunks: [AnyUIMessageChunk]
     ) async throws -> StreamingUIMessageState<UIMessage> {
@@ -195,5 +294,17 @@ struct ProcessUIMessageStreamTests {
 
         _ = try await collectStream(processed)
         return state
+    }
+
+    private func processErrorMessage(
+        chunks: [AnyUIMessageChunk]
+    ) async -> String? {
+        do {
+            _ = try await process(chunks: chunks)
+            Issue.record("Expected processing to fail")
+            return nil
+        } catch {
+            return String(describing: error)
+        }
     }
 }

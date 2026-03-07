@@ -199,26 +199,38 @@ private func handleChunk<Message: UIMessageConvertible>(
         context.write()
 
     case .textDelta(let id, let delta, let providerMetadata):
-        if let index = context.state.activeTextPartIndices[id] {
-            context.state.updateTextPart(at: index) { textPart in
-                textPart.text += delta
-                if let metadata = providerMetadata {
-                    textPart.providerMetadata = metadata
-                }
-            }
-            context.write()
+        guard let index = context.state.activeTextPartIndices[id] else {
+            throw UIMessageStreamError(
+                chunkType: "text-delta",
+                chunkId: id,
+                message: "Received text-delta for missing text part with ID \"\(id)\". Ensure a \"text-start\" chunk is sent before any \"text-delta\" chunks."
+            )
         }
 
-    case .textEnd(let id, let providerMetadata):
-        if let index = context.state.activeTextPartIndices.removeValue(forKey: id) {
-            context.state.updateTextPart(at: index) { textPart in
-                textPart.state = .done
-                if let metadata = providerMetadata {
-                    textPart.providerMetadata = metadata
-                }
+        context.state.updateTextPart(at: index) { textPart in
+            textPart.text += delta
+            if let metadata = providerMetadata {
+                textPart.providerMetadata = metadata
             }
-            context.write()
         }
+        context.write()
+
+    case .textEnd(let id, let providerMetadata):
+        guard let index = context.state.activeTextPartIndices.removeValue(forKey: id) else {
+            throw UIMessageStreamError(
+                chunkType: "text-end",
+                chunkId: id,
+                message: "Received text-end for missing text part with ID \"\(id)\". Ensure a \"text-start\" chunk is sent before any \"text-end\" chunks."
+            )
+        }
+
+        context.state.updateTextPart(at: index) { textPart in
+            textPart.state = .done
+            if let metadata = providerMetadata {
+                textPart.providerMetadata = metadata
+            }
+        }
+        context.write()
 
     case .reasoningStart(let id, let providerMetadata):
         let part = ReasoningUIPart(text: "", state: .streaming, providerMetadata: providerMetadata)
@@ -227,26 +239,38 @@ private func handleChunk<Message: UIMessageConvertible>(
         context.write()
 
     case .reasoningDelta(let id, let delta, let providerMetadata):
-        if let index = context.state.activeReasoningPartIndices[id] {
-            context.state.updateReasoningPart(at: index) { reasoningPart in
-                reasoningPart.text += delta
-                if let metadata = providerMetadata {
-                    reasoningPart.providerMetadata = metadata
-                }
-            }
-            context.write()
+        guard let index = context.state.activeReasoningPartIndices[id] else {
+            throw UIMessageStreamError(
+                chunkType: "reasoning-delta",
+                chunkId: id,
+                message: "Received reasoning-delta for missing reasoning part with ID \"\(id)\". Ensure a \"reasoning-start\" chunk is sent before any \"reasoning-delta\" chunks."
+            )
         }
 
-    case .reasoningEnd(let id, let providerMetadata):
-        if let index = context.state.activeReasoningPartIndices.removeValue(forKey: id) {
-            context.state.updateReasoningPart(at: index) { reasoningPart in
-                reasoningPart.state = .done
-                if let metadata = providerMetadata {
-                    reasoningPart.providerMetadata = metadata
-                }
+        context.state.updateReasoningPart(at: index) { reasoningPart in
+            reasoningPart.text += delta
+            if let metadata = providerMetadata {
+                reasoningPart.providerMetadata = metadata
             }
-            context.write()
         }
+        context.write()
+
+    case .reasoningEnd(let id, let providerMetadata):
+        guard let index = context.state.activeReasoningPartIndices.removeValue(forKey: id) else {
+            throw UIMessageStreamError(
+                chunkType: "reasoning-end",
+                chunkId: id,
+                message: "Received reasoning-end for missing reasoning part with ID \"\(id)\". Ensure a \"reasoning-start\" chunk is sent before any \"reasoning-end\" chunks."
+            )
+        }
+
+        context.state.updateReasoningPart(at: index) { reasoningPart in
+            reasoningPart.state = .done
+            if let metadata = providerMetadata {
+                reasoningPart.providerMetadata = metadata
+            }
+        }
+        context.write()
 
     case .file(let url, let mediaType, let providerMetadata):
         let part = FileUIPart(mediaType: mediaType, filename: nil, url: url, providerMetadata: providerMetadata)
@@ -325,7 +349,11 @@ private func handleChunk<Message: UIMessageConvertible>(
 
     case .toolInputDelta(let toolCallId, let inputTextDelta):
         guard var partial = context.state.partialToolCalls[toolCallId] else {
-            break
+            throw UIMessageStreamError(
+                chunkType: "tool-input-delta",
+                chunkId: toolCallId,
+                message: "Received tool-input-delta for missing tool call with ID \"\(toolCallId)\". Ensure a \"tool-input-start\" chunk is sent before any \"tool-input-delta\" chunks."
+            )
         }
 
         partial.text += inputTextDelta
@@ -424,7 +452,8 @@ private func handleChunk<Message: UIMessageConvertible>(
         let errorText,
         _
     ):
-        let isDynamic = context.state.isDynamicToolInvocation(for: toolCallId) ?? (dynamic ?? false)
+        let invocationKind = context.state.toolInvocationKind(for: toolCallId)
+        let isDynamic = invocationKind == .dynamic ? true : invocationKind == .tool ? false : (dynamic ?? false)
         if isDynamic {
             context.state.upsertDynamicToolPart(
                 toolCallId: toolCallId,
@@ -459,13 +488,25 @@ private func handleChunk<Message: UIMessageConvertible>(
         context.write()
 
     case .toolApprovalRequest(let approvalId, let toolCallId):
-        context.state.updateToolPart(with: toolCallId) { part in
-            part.state = .approvalRequested
-            part.approval = UIToolApproval(id: approvalId)
+        guard let invocationKind = context.state.toolInvocationKind(for: toolCallId) else {
+            throw UIMessageStreamError(
+                chunkType: "tool-invocation",
+                chunkId: toolCallId,
+                message: "No tool invocation found for tool call ID \"\(toolCallId)\"."
+            )
         }
-        context.state.updateDynamicToolPart(with: toolCallId) { part in
-            part.state = .approvalRequested
-            part.approval = UIToolApproval(id: approvalId)
+
+        switch invocationKind {
+        case .tool:
+            context.state.updateToolPart(with: toolCallId) { part in
+                part.state = .approvalRequested
+                part.approval = UIToolApproval(id: approvalId)
+            }
+        case .dynamic:
+            context.state.updateDynamicToolPart(with: toolCallId) { part in
+                part.state = .approvalRequested
+                part.approval = UIToolApproval(id: approvalId)
+            }
         }
         context.write()
 
@@ -474,14 +515,26 @@ private func handleChunk<Message: UIMessageConvertible>(
         let output,
         let providerExecuted,
         let providerMetadata,
-        let dynamic,
+        _,
         let preliminary
     ):
-        if dynamic ?? false {
-            guard let toolPart = context.state.dynamicToolPart(for: toolCallId) else {
-                break
-            }
+        guard let invocationKind = context.state.toolInvocationKind(for: toolCallId) else {
+            throw UIMessageStreamError(
+                chunkType: "tool-invocation",
+                chunkId: toolCallId,
+                message: "No tool invocation found for tool call ID \"\(toolCallId)\"."
+            )
+        }
 
+        switch invocationKind {
+        case .dynamic:
+            guard let toolPart = context.state.dynamicToolPart(for: toolCallId) else {
+                throw UIMessageStreamError(
+                    chunkType: "tool-invocation",
+                    chunkId: toolCallId,
+                    message: "No tool invocation found for tool call ID \"\(toolCallId)\"."
+                )
+            }
             context.state.upsertDynamicToolPart(
                 toolCallId: toolCallId,
                 toolName: toolPart.toolName,
@@ -495,11 +548,14 @@ private func handleChunk<Message: UIMessageConvertible>(
                 approval: toolPart.approval,
                 title: toolPart.title
             )
-        } else {
+        case .tool:
             guard let toolPart = context.state.toolPart(for: toolCallId) else {
-                break
+                throw UIMessageStreamError(
+                    chunkType: "tool-invocation",
+                    chunkId: toolCallId,
+                    message: "No tool invocation found for tool call ID \"\(toolCallId)\"."
+                )
             }
-
             context.state.upsertToolPart(
                 toolCallId: toolCallId,
                 toolName: toolPart.toolName,
@@ -518,12 +574,24 @@ private func handleChunk<Message: UIMessageConvertible>(
 
         context.write()
 
-    case .toolOutputError(let toolCallId, let errorText, let providerExecuted, let providerMetadata, let dynamic):
-        if dynamic ?? false {
-            guard let toolPart = context.state.dynamicToolPart(for: toolCallId) else {
-                break
-            }
+    case .toolOutputError(let toolCallId, let errorText, let providerExecuted, let providerMetadata, _):
+        guard let invocationKind = context.state.toolInvocationKind(for: toolCallId) else {
+            throw UIMessageStreamError(
+                chunkType: "tool-invocation",
+                chunkId: toolCallId,
+                message: "No tool invocation found for tool call ID \"\(toolCallId)\"."
+            )
+        }
 
+        switch invocationKind {
+        case .dynamic:
+            guard let toolPart = context.state.dynamicToolPart(for: toolCallId) else {
+                throw UIMessageStreamError(
+                    chunkType: "tool-invocation",
+                    chunkId: toolCallId,
+                    message: "No tool invocation found for tool call ID \"\(toolCallId)\"."
+                )
+            }
             context.state.upsertDynamicToolPart(
                 toolCallId: toolCallId,
                 toolName: toolPart.toolName,
@@ -537,11 +605,14 @@ private func handleChunk<Message: UIMessageConvertible>(
                 approval: toolPart.approval,
                 title: toolPart.title
             )
-        } else {
+        case .tool:
             guard let toolPart = context.state.toolPart(for: toolCallId) else {
-                break
+                throw UIMessageStreamError(
+                    chunkType: "tool-invocation",
+                    chunkId: toolCallId,
+                    message: "No tool invocation found for tool call ID \"\(toolCallId)\"."
+                )
             }
-
             context.state.upsertToolPart(
                 toolCallId: toolCallId,
                 toolName: toolPart.toolName,
@@ -561,11 +632,23 @@ private func handleChunk<Message: UIMessageConvertible>(
         context.write()
 
     case .toolOutputDenied(let toolCallId):
-        context.state.updateToolPart(with: toolCallId) { part in
-            part.state = .outputDenied
+        guard let invocationKind = context.state.toolInvocationKind(for: toolCallId) else {
+            throw UIMessageStreamError(
+                chunkType: "tool-invocation",
+                chunkId: toolCallId,
+                message: "No tool invocation found for tool call ID \"\(toolCallId)\"."
+            )
         }
-        context.state.updateDynamicToolPart(with: toolCallId) { part in
-            part.state = .outputDenied
+
+        switch invocationKind {
+        case .tool:
+            context.state.updateToolPart(with: toolCallId) { part in
+                part.state = .outputDenied
+            }
+        case .dynamic:
+            context.state.updateDynamicToolPart(with: toolCallId) { part in
+                part.state = .outputDenied
+            }
         }
         context.write()
 
@@ -728,12 +811,25 @@ private func jsonValueToAny(_ value: JSONValue) -> Any {
 }
 
 private struct UIMessageStreamError: Error, CustomStringConvertible {
+    let chunkType: String?
+    let chunkId: String?
     let message: String
+
+    init(chunkType: String? = nil, chunkId: String? = nil, message: String) {
+        self.chunkType = chunkType
+        self.chunkId = chunkId
+        self.message = message
+    }
 
     var description: String { message }
 }
 
 private extension StreamingUIMessageState {
+    enum ToolInvocationKind {
+        case tool
+        case dynamic
+    }
+
     func updateTextPart(at index: Int, _ mutate: (inout TextUIPart) -> Void) {
         guard case .text(var part) = message.parts[index] else {
             return
@@ -812,13 +908,13 @@ private extension StreamingUIMessageState {
         return part
     }
 
-    func isDynamicToolInvocation(for toolCallId: String) -> Bool? {
+    func toolInvocationKind(for toolCallId: String) -> ToolInvocationKind? {
         for part in message.parts {
             switch part {
             case .tool(let toolPart) where toolPart.toolCallId == toolCallId:
-                return false
+                return .tool
             case .dynamicTool(let dynamicToolPart) where dynamicToolPart.toolCallId == toolCallId:
-                return true
+                return .dynamic
             default:
                 continue
             }
