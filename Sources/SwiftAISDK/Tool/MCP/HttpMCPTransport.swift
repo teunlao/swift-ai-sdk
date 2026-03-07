@@ -111,9 +111,13 @@ public final class HttpMCPTransport: MCPTransport, @unchecked Sendable {
                 let isClosed = _isClosed
                 _isClosed = true
                 _inboundSseConnectionActive = false
+                let inboundTask = _inboundSseTask
+                let reconnectionTask = _reconnectionTask
+                _inboundSseTask = nil
+                _reconnectionTask = nil
                 let activeTasks = _activeTasks
                 _activeTasks.removeAll()
-                return (self.sessionId, _inboundSseTask, _reconnectionTask, activeTasks, isClosed)
+                return (self.sessionId, inboundTask, reconnectionTask, activeTasks, isClosed)
             }
 
         if isClosed {
@@ -125,6 +129,16 @@ public final class HttpMCPTransport: MCPTransport, @unchecked Sendable {
         reconnectionTask?.cancel()
         for task in activeTasks {
             task.cancel()
+        }
+
+        if let inboundTask {
+            _ = await inboundTask.result
+        }
+        if let reconnectionTask {
+            _ = await reconnectionTask.result
+        }
+        for task in activeTasks {
+            _ = await task.result
         }
 
         do {

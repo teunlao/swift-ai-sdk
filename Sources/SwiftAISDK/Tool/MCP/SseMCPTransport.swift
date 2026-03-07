@@ -171,9 +171,18 @@ public final class SseMCPTransport: MCPTransport, @unchecked Sendable {
     }
 
     public func close() async throws {
-        connected = false
-        streamTask?.cancel()
-        streamTask = nil
+        let taskToAwait = stateLock.withLock {
+            _connected = false
+            let task = _streamTask
+            _streamTask = nil
+            return task
+        }
+
+        taskToAwait?.cancel()
+        if let taskToAwait {
+            _ = await taskToAwait.result
+        }
+
         onclose?()
     }
 
