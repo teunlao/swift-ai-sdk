@@ -164,6 +164,7 @@ public func convertToModelMessages<Message: UIMessageConvertible>(
                                 let tool = options.tools?[toolName]
                                 let outputValue: Any?
                                 let errorMode: ToolOutputErrorMode
+                                let providerOptions = toolPart.resultProviderMetadata ?? toolPart.callProviderMetadata
                                 if toolPart.state == .outputError {
                                     outputValue = toolPart.errorText
                                     errorMode = .json
@@ -181,7 +182,8 @@ public func convertToModelMessages<Message: UIMessageConvertible>(
                                                 output: outputValue,
                                                 tool: tool,
                                                 errorMode: errorMode
-                                            )
+                                            ),
+                                            providerOptions: providerOptions
                                         )
                                     )
                                 )

@@ -153,4 +153,63 @@ struct ConvertToModelMessagesTests {
         )
         #expect(filtered.isEmpty)
     }
+
+    @Test("provider-executed tool results prefer result provider metadata")
+    func providerExecutedToolResultsPreferResultProviderMetadata() throws {
+        let toolPart = UIToolUIPart(
+            toolName: "calculator",
+            toolCallId: "call-3",
+            state: .outputAvailable,
+            input: .object([
+                "operation": .string("multiply"),
+                "numbers": .array([.number(3), .number(4)])
+            ]),
+            output: .string("12"),
+            rawInput: nil,
+            errorText: nil,
+            providerExecuted: true,
+            callProviderMetadata: ["testProvider": ["itemId": .string("call-item")]],
+            resultProviderMetadata: ["testProvider": ["itemId": .string("result-item")]],
+            preliminary: nil,
+            approval: nil
+        )
+
+        let message = UIMessage(
+            id: "assistant-3",
+            role: .assistant,
+            parts: [
+                .stepStart,
+                .tool(toolPart)
+            ]
+        )
+
+        let result = try convertToModelMessages(messages: [message])
+        #expect(result.count == 1)
+
+        guard case let .assistant(assistantMessage) = result.first else {
+            Issue.record("Expected assistant message")
+            return
+        }
+
+        guard case let .parts(parts) = assistantMessage.content else {
+            Issue.record("Expected assistant parts")
+            return
+        }
+
+        #expect(parts.count == 2)
+
+        guard case let .toolCall(toolCallPart) = parts.first else {
+            Issue.record("Expected tool call part")
+            return
+        }
+
+        #expect(toolCallPart.providerOptions?["testProvider"]?["itemId"] == .string("call-item"))
+
+        guard case let .toolResult(toolResultPart) = parts.last else {
+            Issue.record("Expected tool result part")
+            return
+        }
+
+        #expect(toolResultPart.providerOptions?["testProvider"]?["itemId"] == .string("result-item"))
+    }
 }

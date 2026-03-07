@@ -124,6 +124,7 @@ public func transformFullToUIMessageStream(
                             toolCallId: typedResult.toolCallId,
                             output: typedResult.output,
                             providerExecuted: typedResult.providerExecuted,
+                            providerMetadata: typedResult.providerMetadata,
                             dynamic: typedResult.isDynamic,
                             preliminary: typedResult.preliminary
                         ))
@@ -133,6 +134,7 @@ public func transformFullToUIMessageStream(
                             toolCallId: typedError.toolCallId,
                             errorText: AISDKProvider.getErrorMessage(typedError.error),
                             providerExecuted: typedError.providerExecuted,
+                            providerMetadata: typedError.providerMetadata,
                             dynamic: typedError.isDynamic
                         ))
 

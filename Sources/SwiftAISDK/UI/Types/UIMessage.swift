@@ -236,6 +236,7 @@ public struct UIToolUIPart: Sendable, Equatable {
     public var errorText: String?
     public var providerExecuted: Bool?
     public var callProviderMetadata: ProviderMetadata?
+    public var resultProviderMetadata: ProviderMetadata?
     public var preliminary: Bool?
     public var approval: UIToolApproval?
 
@@ -249,6 +250,7 @@ public struct UIToolUIPart: Sendable, Equatable {
         errorText: String? = nil,
         providerExecuted: Bool? = nil,
         callProviderMetadata: ProviderMetadata? = nil,
+        resultProviderMetadata: ProviderMetadata? = nil,
         preliminary: Bool? = nil,
         approval: UIToolApproval? = nil,
         title: String? = nil
@@ -263,6 +265,7 @@ public struct UIToolUIPart: Sendable, Equatable {
         self.errorText = errorText
         self.providerExecuted = providerExecuted
         self.callProviderMetadata = callProviderMetadata
+        self.resultProviderMetadata = resultProviderMetadata
         self.preliminary = preliminary
         self.approval = approval
     }
@@ -292,6 +295,7 @@ public struct UIDynamicToolUIPart: Sendable, Equatable {
     public var output: JSONValue?
     public var errorText: String?
     public var callProviderMetadata: ProviderMetadata?
+    public var resultProviderMetadata: ProviderMetadata?
     public var preliminary: Bool?
     public var approval: UIToolApproval?
 
@@ -304,6 +308,7 @@ public struct UIDynamicToolUIPart: Sendable, Equatable {
         errorText: String? = nil,
         providerExecuted: Bool? = nil,
         callProviderMetadata: ProviderMetadata? = nil,
+        resultProviderMetadata: ProviderMetadata? = nil,
         preliminary: Bool? = nil,
         approval: UIToolApproval? = nil,
         title: String? = nil
@@ -317,6 +322,7 @@ public struct UIDynamicToolUIPart: Sendable, Equatable {
         self.output = output
         self.errorText = errorText
         self.callProviderMetadata = callProviderMetadata
+        self.resultProviderMetadata = resultProviderMetadata
         self.preliminary = preliminary
         self.approval = approval
     }

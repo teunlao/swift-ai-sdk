@@ -79,6 +79,7 @@ public enum UIMessageChunk<MessageMetadata: Sendable & Equatable>: Sendable, Equ
         toolCallId: String,
         output: JSONValue,
         providerExecuted: Bool?,
+        providerMetadata: ProviderMetadata?,
         dynamic: Bool?,
         preliminary: Bool?
     )
@@ -87,6 +88,7 @@ public enum UIMessageChunk<MessageMetadata: Sendable & Equatable>: Sendable, Equ
         toolCallId: String,
         errorText: String,
         providerExecuted: Bool?,
+        providerMetadata: ProviderMetadata?,
         dynamic: Bool?
     )
 

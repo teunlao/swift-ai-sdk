@@ -473,6 +473,7 @@ private func handleChunk<Message: UIMessageConvertible>(
         let toolCallId,
         let output,
         let providerExecuted,
+        let providerMetadata,
         let dynamic,
         let preliminary
     ):
@@ -489,7 +490,7 @@ private func handleChunk<Message: UIMessageConvertible>(
                 output: output,
                 errorText: nil,
                 providerExecuted: providerExecuted,
-                providerMetadata: toolPart.callProviderMetadata,
+                providerMetadata: providerMetadata,
                 preliminary: preliminary,
                 approval: toolPart.approval,
                 title: toolPart.title
@@ -508,7 +509,7 @@ private func handleChunk<Message: UIMessageConvertible>(
                 rawInput: nil,
                 errorText: nil,
                 providerExecuted: providerExecuted ?? toolPart.providerExecuted,
-                providerMetadata: toolPart.callProviderMetadata,
+                providerMetadata: providerMetadata,
                 preliminary: preliminary,
                 approval: toolPart.approval,
                 title: toolPart.title
@@ -517,7 +518,7 @@ private func handleChunk<Message: UIMessageConvertible>(
 
         context.write()
 
-    case .toolOutputError(let toolCallId, let errorText, let providerExecuted, let dynamic):
+    case .toolOutputError(let toolCallId, let errorText, let providerExecuted, let providerMetadata, let dynamic):
         if dynamic ?? false {
             guard let toolPart = context.state.dynamicToolPart(for: toolCallId) else {
                 break
@@ -531,7 +532,7 @@ private func handleChunk<Message: UIMessageConvertible>(
                 output: nil,
                 errorText: errorText,
                 providerExecuted: providerExecuted,
-                providerMetadata: toolPart.callProviderMetadata,
+                providerMetadata: providerMetadata,
                 preliminary: toolPart.preliminary,
                 approval: toolPart.approval,
                 title: toolPart.title
@@ -550,7 +551,7 @@ private func handleChunk<Message: UIMessageConvertible>(
                 rawInput: toolPart.rawInput,
                 errorText: errorText,
                 providerExecuted: providerExecuted ?? toolPart.providerExecuted,
-                providerMetadata: toolPart.callProviderMetadata,
+                providerMetadata: providerMetadata,
                 preliminary: toolPart.preliminary,
                 approval: toolPart.approval,
                 title: toolPart.title
@@ -834,7 +835,11 @@ private extension StreamingUIMessageState {
             part.errorText = errorText
             if let providerExecuted { part.providerExecuted = providerExecuted }
             if let providerMetadata {
-                part.callProviderMetadata = providerMetadata
+                if state == .outputAvailable || state == .outputError {
+                    part.resultProviderMetadata = providerMetadata
+                } else {
+                    part.callProviderMetadata = providerMetadata
+                }
             }
             part.preliminary = preliminary
             if let approval { part.approval = approval }
@@ -850,7 +855,8 @@ private extension StreamingUIMessageState {
                 rawInput: rawInput,
                 errorText: errorText,
                 providerExecuted: providerExecuted,
-                callProviderMetadata: providerMetadata,
+                callProviderMetadata: state == .outputAvailable || state == .outputError ? nil : providerMetadata,
+                resultProviderMetadata: state == .outputAvailable || state == .outputError ? providerMetadata : nil,
                 preliminary: preliminary,
                 approval: approval,
                 title: title
@@ -879,7 +885,13 @@ private extension StreamingUIMessageState {
             part.output = output
             part.errorText = errorText
             if let providerExecuted { part.providerExecuted = providerExecuted }
-            if let providerMetadata { part.callProviderMetadata = providerMetadata }
+            if let providerMetadata {
+                if state == .outputAvailable || state == .outputError {
+                    part.resultProviderMetadata = providerMetadata
+                } else {
+                    part.callProviderMetadata = providerMetadata
+                }
+            }
             part.preliminary = preliminary
             if let approval { part.approval = approval }
             if let title { part.title = title }
@@ -894,7 +906,8 @@ private extension StreamingUIMessageState {
                 output: output,
                 errorText: errorText,
                 providerExecuted: providerExecuted,
-                callProviderMetadata: providerMetadata,
+                callProviderMetadata: state == .outputAvailable || state == .outputError ? nil : providerMetadata,
+                resultProviderMetadata: state == .outputAvailable || state == .outputError ? providerMetadata : nil,
                 preliminary: preliminary,
                 approval: approval,
                 title: title

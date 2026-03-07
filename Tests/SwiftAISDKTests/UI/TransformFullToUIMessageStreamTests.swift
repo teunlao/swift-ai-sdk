@@ -364,6 +364,12 @@ struct TransformFullToUIMessageStreamTests {
 
     @Test("maps tool result and error to UI chunks")
     func mapsToolResultAndError() async throws {
+        let resultMetadata: ProviderMetadata = [
+            "provider": ["itemId": .string("result-item")]
+        ]
+        let errorMetadata: ProviderMetadata = [
+            "provider": ["itemId": .string("error-item")]
+        ]
         let result = StaticToolResult(
             toolCallId: "tc-2",
             toolName: "calc",
@@ -371,14 +377,15 @@ struct TransformFullToUIMessageStreamTests {
             output: .number(3),
             providerExecuted: true,
             preliminary: false,
-            providerMetadata: nil
+            providerMetadata: resultMetadata
         )
         let err = DynamicToolError(
             toolCallId: "tc-3",
             toolName: "failing",
             input: .null,
             error: NSError(domain: "test", code: 1),
-            providerExecuted: true
+            providerExecuted: true,
+            providerMetadata: errorMetadata
         )
         let parts: [TextStreamPart] = [
             .start,
@@ -398,15 +405,19 @@ struct TransformFullToUIMessageStreamTests {
         let ui = transformFullToUIMessageStream(stream: stream)
         let chunks = try await collectStream(ui)
         let hasOutput = chunks.contains { chunk in
-            if case let .toolOutputAvailable(toolCallId, output, providerExecuted, _, preliminary) = chunk {
+            if case let .toolOutputAvailable(toolCallId, output, providerExecuted, providerMetadata, _, preliminary) = chunk {
                 if toolCallId != "tc-2" || preliminary == true || providerExecuted != true { return false }
+                if providerMetadata != resultMetadata { return false }
                 if case .number(3) = output { return true } else { return false }
             }
             return false
         }
         let hasError = chunks.contains { chunk in
-            if case let .toolOutputError(toolCallId, errorText, providerExecuted, _) = chunk {
-                return toolCallId == "tc-3" && !errorText.isEmpty && providerExecuted == true
+            if case let .toolOutputError(toolCallId, errorText, providerExecuted, providerMetadata, _) = chunk {
+                return toolCallId == "tc-3" &&
+                    !errorText.isEmpty &&
+                    providerExecuted == true &&
+                    providerMetadata == errorMetadata
             }
             return false
         }

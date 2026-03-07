@@ -2011,7 +2011,7 @@ struct StreamTextBasicTests {
         )
 
         let hasError = chunks.contains { chunk in
-            if case let .toolOutputError(toolCallId, errorText, providerExecuted, _) = chunk {
+            if case let .toolOutputError(toolCallId, errorText, providerExecuted, _, _) = chunk {
                 return toolCallId == "c2" && !errorText.isEmpty && providerExecuted == true
             }
             return false

@@ -112,6 +112,7 @@ func encodeUIMessageChunkToJSON(_ chunk: AnyUIMessageChunk) -> JSONValue {
         let toolCallId,
         let output,
         let providerExecuted,
+        let providerMetadata,
         let dynamic,
         let preliminary
     ):
@@ -120,6 +121,7 @@ func encodeUIMessageChunkToJSON(_ chunk: AnyUIMessageChunk) -> JSONValue {
             "toolCallId": .string(toolCallId),
             "output": output,
             "providerExecuted": providerExecuted.map(JSONValue.bool),
+            "providerMetadata": providerMetadataJSON(providerMetadata),
             "dynamic": dynamic.map(JSONValue.bool),
             "preliminary": preliminary.map(JSONValue.bool)
         ]))
@@ -128,6 +130,7 @@ func encodeUIMessageChunkToJSON(_ chunk: AnyUIMessageChunk) -> JSONValue {
         let toolCallId,
         let errorText,
         let providerExecuted,
+        let providerMetadata,
         let dynamic
     ):
         return .object(baseObject([
@@ -135,6 +138,7 @@ func encodeUIMessageChunkToJSON(_ chunk: AnyUIMessageChunk) -> JSONValue {
             "toolCallId": .string(toolCallId),
             "errorText": .string(errorText),
             "providerExecuted": providerExecuted.map(JSONValue.bool),
+            "providerMetadata": providerMetadataJSON(providerMetadata),
             "dynamic": dynamic.map(JSONValue.bool)
         ]))
 

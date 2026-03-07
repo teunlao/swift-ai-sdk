@@ -28,6 +28,7 @@ struct UIMessageChunkTests {
             toolCallId: "tool-1",
             errorText: "boom",
             providerExecuted: true,
+            providerMetadata: nil,
             dynamic: false
         )
         #expect(errorChunk.typeIdentifier == "tool-output-error")
@@ -49,5 +50,60 @@ struct UIMessageChunkTests {
         ]
 
         #expect(UI_MESSAGE_STREAM_HEADERS == expected)
+    }
+
+    @Test("encodes output chunk provider metadata")
+    func encodesOutputChunkProviderMetadata() throws {
+        let metadata: ProviderMetadata = [
+            "provider": ["itemId": .string("result-item")]
+        ]
+
+        let available = encodeUIMessageChunkToJSON(
+            .toolOutputAvailable(
+                toolCallId: "tool-1",
+                output: .string("ok"),
+                providerExecuted: true,
+                providerMetadata: metadata,
+                dynamic: false,
+                preliminary: false
+            )
+        )
+
+        let error = encodeUIMessageChunkToJSON(
+            .toolOutputError(
+                toolCallId: "tool-2",
+                errorText: "boom",
+                providerExecuted: true,
+                providerMetadata: metadata,
+                dynamic: true
+            )
+        )
+
+        #expect(available == .object([
+            "type": .string("tool-output-available"),
+            "toolCallId": .string("tool-1"),
+            "output": .string("ok"),
+            "providerExecuted": .bool(true),
+            "providerMetadata": .object([
+                "provider": .object([
+                    "itemId": .string("result-item")
+                ])
+            ]),
+            "dynamic": .bool(false),
+            "preliminary": .bool(false)
+        ]))
+
+        #expect(error == .object([
+            "type": .string("tool-output-error"),
+            "toolCallId": .string("tool-2"),
+            "errorText": .string("boom"),
+            "providerExecuted": .bool(true),
+            "providerMetadata": .object([
+                "provider": .object([
+                    "itemId": .string("result-item")
+                ])
+            ]),
+            "dynamic": .bool(true)
+        ]))
     }
 }

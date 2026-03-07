@@ -266,6 +266,7 @@ private func parseParts(
             let errorText = try optionalString(object, key: "errorText")
             let approval = try parseToolApprovalIfPresent(object, context: context)
             let callProviderMetadata = try parseProviderMetadataIfPresent(object, key: "callProviderMetadata", context: context)
+            var resultProviderMetadata: ProviderMetadata?
             var preliminary: Bool?
 
             switch state {
@@ -300,6 +301,7 @@ private func parseParts(
                 try ensure(output != nil, context: context, message: "dynamic-tool output must be provided when state is \"output-available\"")
                 try ensure(errorText == nil, context: context, message: "dynamic-tool errorText must be omitted when state is \"output-available\"")
                 preliminary = try optionalBool(object, key: "preliminary")
+                resultProviderMetadata = try parseProviderMetadataIfPresent(object, key: "resultProviderMetadata", context: context)
                 if let approvalValue = approval {
                     try ensure(approvalValue.approved == true, context: context, message: "dynamic-tool approval.approved must be true when provided in \"output-available\" state")
                 }
@@ -308,6 +310,7 @@ private func parseParts(
                 try ensure(output == nil, context: context, message: "dynamic-tool output must be omitted when state is \"output-error\"")
                 try ensure(errorText != nil, context: context, message: "dynamic-tool errorText must be provided when state is \"output-error\"")
                 try ensure(preliminary == nil, context: context, message: "dynamic-tool preliminary must be omitted when state is \"output-error\"")
+                resultProviderMetadata = try parseProviderMetadataIfPresent(object, key: "resultProviderMetadata", context: context)
                 if let approvalValue = approval {
                     try ensure(approvalValue.approved == true, context: context, message: "dynamic-tool approval.approved must be true when provided in \"output-error\" state")
                 }
@@ -329,6 +332,7 @@ private func parseParts(
                 errorText: errorText,
                 providerExecuted: providerExecuted,
                 callProviderMetadata: callProviderMetadata,
+                resultProviderMetadata: resultProviderMetadata,
                 preliminary: preliminary,
                 approval: approval,
                 title: title
@@ -363,6 +367,7 @@ private func parseParts(
                 let providerExecuted = try optionalBool(object, key: "providerExecuted")
                 let approval = try parseToolApprovalIfPresent(object, context: context)
                 let callProviderMetadata = try parseProviderMetadataIfPresent(object, key: "callProviderMetadata", context: context)
+                var resultProviderMetadata: ProviderMetadata?
                 var preliminary: Bool?
                 var rawInput: JSONValue?
 
@@ -397,9 +402,10 @@ private func parseParts(
                     try ensure(input != nil, context: context, message: "tool input must be provided when state is \"output-available\"")
                     try ensure(output != nil, context: context, message: "tool output must be provided when state is \"output-available\"")
                     try ensure(errorText == nil, context: context, message: "tool errorText must be omitted when state is \"output-available\"")
-                if let approvalValue = approval {
-                    try ensure(approvalValue.approved == true, context: context, message: "tool approval.approved must be true when provided in \"output-available\" state")
-                }
+                    if let approvalValue = approval {
+                        try ensure(approvalValue.approved == true, context: context, message: "tool approval.approved must be true when provided in \"output-available\" state")
+                    }
+                    resultProviderMetadata = try parseProviderMetadataIfPresent(object, key: "resultProviderMetadata", context: context)
                     preliminary = try optionalBool(object, key: "preliminary")
                     rawInput = nil
                 case .outputError:
@@ -409,6 +415,7 @@ private func parseParts(
                     if let approvalValue = approval {
                         try ensure(approvalValue.approved == true, context: context, message: "tool approval.approved must be true when provided in \"output-error\" state")
                     }
+                    resultProviderMetadata = try parseProviderMetadataIfPresent(object, key: "resultProviderMetadata", context: context)
                     rawInput = try optionalJSONValue(object, key: "rawInput")
                 case .outputDenied:
                     try ensure(input != nil, context: context, message: "tool input must be provided when state is \"output-denied\"")
@@ -429,6 +436,7 @@ private func parseParts(
                     errorText: errorText,
                     providerExecuted: providerExecuted,
                     callProviderMetadata: callProviderMetadata,
+                    resultProviderMetadata: resultProviderMetadata,
                     preliminary: preliminary,
                     approval: approval,
                     title: title

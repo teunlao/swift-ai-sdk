@@ -611,6 +611,47 @@ struct ValidateUIMessagesTests {
         ])
     }
 
+    @Test("preserves dynamic tool result provider metadata in output-available")
+    func preservesDynamicToolResultProviderMetadataInOutputAvailable() async throws {
+        let resultMetadata: ProviderMetadata = [
+            "provider": ["itemId": .string("result-item")]
+        ]
+
+        let messages: [UIMessage] = try await validateUIMessages(messages: [
+            [
+                "id": "1",
+                "role": "assistant",
+                "parts": [
+                    [
+                        "type": "dynamic-tool",
+                        "toolName": "foo",
+                        "toolCallId": "1",
+                        "state": "output-available",
+                        "input": ["foo": "bar"],
+                        "output": ["result": "ok"],
+                        "resultProviderMetadata": [
+                            "provider": ["itemId": "result-item"]
+                        ]
+                    ]
+                ]
+            ]
+        ])
+
+        #expect(messages.first?.parts.first == .dynamicTool(
+            UIDynamicToolUIPart(
+                toolName: "foo",
+                toolCallId: "1",
+                state: .outputAvailable,
+                input: .object(["foo": .string("bar")]),
+                output: .object(["result": .string("ok")]),
+                errorText: nil,
+                callProviderMetadata: nil,
+                resultProviderMetadata: resultMetadata,
+                preliminary: nil
+            )
+        ))
+    }
+
     @Test("throws when dynamic tool output-available missing output")
     func throwsDynamicToolMissingOutput() async {
         do {
@@ -799,6 +840,47 @@ struct ValidateUIMessagesTests {
         ])
     }
 
+    @Test("preserves dynamic tool result provider metadata in output-error")
+    func preservesDynamicToolResultProviderMetadataInOutputError() async throws {
+        let resultMetadata: ProviderMetadata = [
+            "provider": ["itemId": .string("result-item")]
+        ]
+
+        let messages: [UIMessage] = try await validateUIMessages(messages: [
+            [
+                "id": "1",
+                "role": "assistant",
+                "parts": [
+                    [
+                        "type": "dynamic-tool",
+                        "toolName": "foo",
+                        "toolCallId": "1",
+                        "state": "output-error",
+                        "input": ["foo": "bar"],
+                        "errorText": "Failure",
+                        "resultProviderMetadata": [
+                            "provider": ["itemId": "result-item"]
+                        ]
+                    ]
+                ]
+            ]
+        ])
+
+        #expect(messages.first?.parts.first == .dynamicTool(
+            UIDynamicToolUIPart(
+                toolName: "foo",
+                toolCallId: "1",
+                state: .outputError,
+                input: .object(["foo": .string("bar")]),
+                output: nil,
+                errorText: "Failure",
+                callProviderMetadata: nil,
+                resultProviderMetadata: resultMetadata,
+                preliminary: nil
+            )
+        ))
+    }
+
     // MARK: - Tool parts (structure)
 
     @Test("validates tool part input-streaming")
@@ -978,6 +1060,49 @@ struct ValidateUIMessagesTests {
         ))
     }
 
+    @Test("preserves tool result provider metadata in output-available")
+    func preservesToolResultProviderMetadataInOutputAvailable() async throws {
+        let resultMetadata: ProviderMetadata = [
+            "provider": ["itemId": .string("result-item")]
+        ]
+
+        let messages: [UIMessage] = try await validateUIMessages(messages: [
+            [
+                "id": "1",
+                "role": "assistant",
+                "parts": [
+                    [
+                        "type": "tool-foo",
+                        "toolCallId": "1",
+                        "state": "output-available",
+                        "input": ["foo": "bar"],
+                        "output": ["result": "success"],
+                        "resultProviderMetadata": [
+                            "provider": ["itemId": "result-item"]
+                        ]
+                    ]
+                ]
+            ]
+        ])
+
+        #expect(messages.first?.parts.first == .tool(
+            UIToolUIPart(
+                toolName: "foo",
+                toolCallId: "1",
+                state: .outputAvailable,
+                input: .object(["foo": .string("bar")]),
+                output: .object(["result": .string("success")]),
+                rawInput: nil,
+                errorText: nil,
+                providerExecuted: nil,
+                callProviderMetadata: nil,
+                resultProviderMetadata: resultMetadata,
+                preliminary: nil,
+                approval: nil
+            )
+        ))
+    }
+
     @Test("throws when tool output-available missing output")
     func throwsToolMissingOutput() async {
         do {
@@ -1060,6 +1185,49 @@ struct ValidateUIMessagesTests {
                 errorText: "Tool execution failed",
                 providerExecuted: true,
                 callProviderMetadata: nil,
+                preliminary: nil,
+                approval: nil
+            )
+        ))
+    }
+
+    @Test("preserves tool result provider metadata in output-error")
+    func preservesToolResultProviderMetadataInOutputError() async throws {
+        let resultMetadata: ProviderMetadata = [
+            "provider": ["itemId": .string("result-item")]
+        ]
+
+        let messages: [UIMessage] = try await validateUIMessages(messages: [
+            [
+                "id": "1",
+                "role": "assistant",
+                "parts": [
+                    [
+                        "type": "tool-foo",
+                        "toolCallId": "1",
+                        "state": "output-error",
+                        "input": ["foo": "bar"],
+                        "errorText": "Tool execution failed",
+                        "resultProviderMetadata": [
+                            "provider": ["itemId": "result-item"]
+                        ]
+                    ]
+                ]
+            ]
+        ])
+
+        #expect(messages.first?.parts.first == .tool(
+            UIToolUIPart(
+                toolName: "foo",
+                toolCallId: "1",
+                state: .outputError,
+                input: .object(["foo": .string("bar")]),
+                output: nil,
+                rawInput: nil,
+                errorText: "Tool execution failed",
+                providerExecuted: nil,
+                callProviderMetadata: nil,
+                resultProviderMetadata: resultMetadata,
                 preliminary: nil,
                 approval: nil
             )
