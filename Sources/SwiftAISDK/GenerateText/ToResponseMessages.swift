@@ -50,7 +50,7 @@ public func toResponseMessages(
         case .toolResult(let result, _):
             guard result.providerExecuted != true else { return nil }
             let output = createToolModelOutput(
-                output: jsonValueToAny(result.output),
+                output: result.output,
                 tool: tools?[result.toolName],
                 errorMode: .none
             )
@@ -128,7 +128,7 @@ private func assistantContentPart(
     case .toolResult(let result, let providerMetadata):
         guard result.providerExecuted == true else { return nil }
         let output = createToolModelOutput(
-            output: jsonValueToAny(result.output),
+            output: result.output,
             tool: tools?[result.toolName],
             errorMode: .none
         )
@@ -165,26 +165,5 @@ private func assistantContentPart(
 
     case .source:
         return nil
-    }
-}
-
-private func jsonValueToAny(_ value: JSONValue) -> Any {
-    switch value {
-    case .string(let string):
-        return string
-    case .number(let number):
-        return number
-    case .bool(let bool):
-        return bool
-    case .null:
-        return NSNull()
-    case .array(let array):
-        return array.map { jsonValueToAny($0) }
-    case .object(let dictionary):
-        var result: [String: Any] = [:]
-        for (key, entry) in dictionary {
-            result[key] = jsonValueToAny(entry)
-        }
-        return result
     }
 }

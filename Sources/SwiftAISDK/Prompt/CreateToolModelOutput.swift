@@ -115,6 +115,11 @@ private func toJSONValue(_ value: Any?) -> JSONValue {
         return jsonValue
     }
 
+    // Preserve Foundation nulls from JSONValue → Any roundtrips.
+    if value is NSNull {
+        return .null
+    }
+
     // Handle basic types
     if let string = value as? String {
         return .string(string)
@@ -136,13 +141,16 @@ private func toJSONValue(_ value: Any?) -> JSONValue {
     }
 
     // Fallback: try JSON serialization
-    do {
-        let data = try JSONSerialization.data(withJSONObject: value, options: [])
-        let decoded = try JSONDecoder().decode(JSONValue.self, from: data)
-        return decoded
-    } catch {
-        // If all else fails, convert to string and wrap in JSONValue
-        return .string(String(describing: value))
+    if JSONSerialization.isValidJSONObject(value) {
+        do {
+            let data = try JSONSerialization.data(withJSONObject: value, options: [])
+            let decoded = try JSONDecoder().decode(JSONValue.self, from: data)
+            return decoded
+        } catch {
+            // Fall through to string conversion below.
+        }
     }
-}
 
+    // If all else fails, convert to string and wrap in JSONValue.
+    return .string(String(describing: value))
+}
