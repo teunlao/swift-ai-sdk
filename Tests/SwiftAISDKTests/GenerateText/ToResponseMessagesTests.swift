@@ -529,6 +529,73 @@ struct ToResponseMessagesTests {
         ]))
     }
 
+    @Test("provider-executed string tool results stay text in assistant message")
+    func providerExecutedStringToolResultStaysText() throws {
+        let toolCall = makeToolCall(
+            id: "srvtoolu_text_001",
+            name: "web_search",
+            input: .object(["query": .string("swift ai sdk")]),
+            providerExecuted: true
+        )
+        let toolResult = makeToolResult(
+            id: "srvtoolu_text_001",
+            name: "web_search",
+            output: .string("done"),
+            providerExecuted: true
+        )
+
+        let providerDefinedTool = Tool(
+            description: nil,
+            providerOptions: nil,
+            inputSchema: FlexibleSchema(jsonSchema(.object(["query": .object(["type": .string("string")])]))),
+            needsApproval: nil,
+            onInputStart: nil,
+            onInputDelta: nil,
+            onInputAvailable: nil,
+            execute: nil,
+            outputSchema: nil,
+            toModelOutput: nil,
+            type: .provider,
+            id: "test.web_search",
+            name: "web_search",
+            args: [:]
+        )
+
+        let result = toResponseMessages(
+            content: [
+                .toolCall(toolCall, providerMetadata: nil),
+                toolResult
+            ],
+            tools: ["web_search": providerDefinedTool]
+        )
+
+        #expect(result.count == 1)
+        guard case .assistant(let message) = result.first else {
+            Issue.record("Expected assistant message")
+            return
+        }
+
+        #expect(message.content == .parts([
+            .toolCall(
+                ToolCallPart(
+                    toolCallId: toolCall.toolCallId,
+                    toolName: toolCall.toolName,
+                    input: toolCall.input,
+                    providerOptions: nil,
+                    providerExecuted: true
+                )
+            ),
+            .toolResult(
+                ToolResultPart(
+                    toolCallId: toolCall.toolCallId,
+                    toolName: toolCall.toolName,
+                    output: .text(value: "done"),
+                    providerOptions: nil
+                )
+            )
+        ]))
+    }
+
     @Test("include provider metadata in text parts")
     func includeProviderMetadataInText() throws {
         let metadata: ProviderMetadata = ["testProvider": ["signature": .string("sig")]]

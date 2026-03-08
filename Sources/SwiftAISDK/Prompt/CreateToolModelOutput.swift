@@ -72,12 +72,12 @@ public func createToolModelOutput(
         return toModelOutput(jsonOutput)
     }
 
-    // Default handling: string → text, other → json
+    // Default handling: string → text, other → json.
     if let stringOutput = output as? String {
         return .text(value: stringOutput)
-    } else {
-        return .json(value: toJSONValue(output))
     }
+
+    return .json(value: toJSONValue(output))
 }
 
 /**
@@ -115,6 +115,10 @@ private func toJSONValue(_ value: Any?) -> JSONValue {
         return jsonValue
     }
 
+    if value is NSNull {
+        return .null
+    }
+
     // Handle basic types
     if let string = value as? String {
         return .string(string)
@@ -135,14 +139,16 @@ private func toJSONValue(_ value: Any?) -> JSONValue {
         return .object(dict.mapValues { toJSONValue($0) })
     }
 
-    // Fallback: try JSON serialization
-    do {
-        let data = try JSONSerialization.data(withJSONObject: value, options: [])
-        let decoded = try JSONDecoder().decode(JSONValue.self, from: data)
-        return decoded
-    } catch {
-        // If all else fails, convert to string and wrap in JSONValue
-        return .string(String(describing: value))
+    // Guard JSONSerialization to avoid Objective-C exceptions on invalid top-level fragments.
+    if JSONSerialization.isValidJSONObject(value) {
+        do {
+            let data = try JSONSerialization.data(withJSONObject: value, options: [])
+            let decoded = try JSONDecoder().decode(JSONValue.self, from: data)
+            return decoded
+        } catch {
+            // Fall through to string conversion below.
+        }
     }
-}
 
+    return .string(String(describing: value))
+}

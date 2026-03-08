@@ -223,6 +223,17 @@ struct CreateToolModelOutputTests {
 
             #expect(result == .text(value: ""))
         }
+
+        @Test("should return json type for JSONValue string output")
+        func jsonTypeForJSONValueString() throws {
+            let result = createToolModelOutput(
+                output: JSONValue.string("JSONValue string output"),
+                tool: nil,
+                errorMode: .none
+            )
+
+            #expect(result == .json(value: .string("JSONValue string output")))
+        }
     }
 
     // MARK: - Non-String Output Without toModelOutput
@@ -286,6 +297,17 @@ struct CreateToolModelOutputTests {
             )
 
             #expect(result == .json(value: .bool(true)))
+        }
+
+        @Test("should return json type for JSONValue number output")
+        func jsonTypeForJSONValueNumber() throws {
+            let result = createToolModelOutput(
+                output: JSONValue.number(42),
+                tool: nil,
+                errorMode: .none
+            )
+
+            #expect(result == .json(value: .number(42)))
         }
 
         @Test("should return json type for null output")
@@ -390,6 +412,17 @@ struct CreateToolModelOutputTests {
         func usesNullForUndefinedInNonError() throws {
             let result = createToolModelOutput(
                 output: nil,
+                tool: nil,
+                errorMode: .none
+            )
+
+            #expect(result == .json(value: .null))
+        }
+
+        @Test("should use null for NSNull output in non-error case")
+        func usesNullForNSNullInNonError() throws {
+            let result = createToolModelOutput(
+                output: NSNull(),
                 tool: nil,
                 errorMode: .none
             )

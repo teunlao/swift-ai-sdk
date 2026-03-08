@@ -507,4 +507,79 @@ struct OpenAIChatMessagesConverterTests {
             Issue.record("Expected second tool message")
         }
     }
+
+    @Test("tool result json string fragment is serialized without crashing")
+    func toolResultJSONStringFragmentDoesNotCrash() throws {
+        let toolResultPart = LanguageModelV3ToolResultPart(
+            toolCallId: "string-tool",
+            toolName: "string-tool",
+            output: .json(value: .string("plain-string"))
+        )
+
+        let prompt: LanguageModelV3Prompt = [
+            .tool(content: [.toolResult(toolResultPart)], providerOptions: nil)
+        ]
+
+        let result = try OpenAIChatMessagesConverter.convert(prompt: prompt, systemMessageMode: .system)
+        #expect(result.messages.count == 1)
+
+        guard case .object(let message)? = result.messages.first else {
+            Issue.record("Expected tool message")
+            return
+        }
+
+        #expect(message["role"] == .string("tool"))
+        #expect(message["tool_call_id"] == .string("string-tool"))
+        #expect(message["content"] == .string("\"plain-string\""))
+    }
+
+    @Test("tool result json number fragment is serialized without crashing")
+    func toolResultJSONNumberFragmentDoesNotCrash() throws {
+        let toolResultPart = LanguageModelV3ToolResultPart(
+            toolCallId: "number-tool",
+            toolName: "number-tool",
+            output: .json(value: .number(42))
+        )
+
+        let prompt: LanguageModelV3Prompt = [
+            .tool(content: [.toolResult(toolResultPart)], providerOptions: nil)
+        ]
+
+        let result = try OpenAIChatMessagesConverter.convert(prompt: prompt, systemMessageMode: .system)
+        #expect(result.messages.count == 1)
+
+        guard case .object(let message)? = result.messages.first else {
+            Issue.record("Expected tool message")
+            return
+        }
+
+        #expect(message["role"] == .string("tool"))
+        #expect(message["tool_call_id"] == .string("number-tool"))
+        #expect(message["content"] == .string("42"))
+    }
+
+    @Test("tool result json null fragment is serialized without crashing")
+    func toolResultJSONNullFragmentDoesNotCrash() throws {
+        let toolResultPart = LanguageModelV3ToolResultPart(
+            toolCallId: "null-tool",
+            toolName: "null-tool",
+            output: .errorJson(value: .null)
+        )
+
+        let prompt: LanguageModelV3Prompt = [
+            .tool(content: [.toolResult(toolResultPart)], providerOptions: nil)
+        ]
+
+        let result = try OpenAIChatMessagesConverter.convert(prompt: prompt, systemMessageMode: .system)
+        #expect(result.messages.count == 1)
+
+        guard case .object(let message)? = result.messages.first else {
+            Issue.record("Expected tool message")
+            return
+        }
+
+        #expect(message["role"] == .string("tool"))
+        #expect(message["tool_call_id"] == .string("null-tool"))
+        #expect(message["content"] == .string("null"))
+    }
 }

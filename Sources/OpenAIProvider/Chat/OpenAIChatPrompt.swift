@@ -222,18 +222,9 @@ struct OpenAIChatMessagesConverter {
     }
 
     private static func encodeJSONValue(_ value: JSONValue) throws -> String {
-        func toAny(_ value: JSONValue) -> Any {
-            switch value {
-            case .null: return NSNull()
-            case .bool(let bool): return bool
-            case .number(let number): return number
-            case .string(let string): return string
-            case .array(let array): return array.map { toAny($0) }
-            case .object(let object): return object.mapValues { toAny($0) }
-            }
-        }
-
-        let data = try JSONSerialization.data(withJSONObject: toAny(value), options: [])
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.withoutEscapingSlashes]
+        let data = try encoder.encode(value)
         guard let string = String(data: data, encoding: .utf8) else {
             throw UnsupportedFunctionalityError(functionality: "Unable to encode JSON value")
         }
