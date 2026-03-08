@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.17.3] - 2026-03-08
+
+### Fixed
+- OpenAI chat: serialize tool-result top-level JSON fragments (`string`, `number`, `null`, etc.) without crashing, with regression coverage for the fragment cases.
+
 ## [0.17.2] - 2026-03-07
 
 Upstream parity refresh against Vercel AI SDK commit `a921fbb381cf2d19ef75ae27906f8d1cb0b8325b`.
