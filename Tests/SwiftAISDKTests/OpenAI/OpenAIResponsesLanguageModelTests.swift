@@ -2926,7 +2926,7 @@ struct OpenAIResponsesLanguageModelTests {
 
         #expect(parts.contains { part in
             if case .toolInputDelta(let id, let delta, _) = part {
-                return id == "code_call" && delta.hasPrefix("{\"containerId\":\"container-7\",\"code\":\"")
+                return id == "code_call" && delta.hasPrefix("{\"container_id\":\"container-7\",\"code\":\"")
             }
             return false
         })
