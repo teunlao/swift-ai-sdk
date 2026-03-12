@@ -1010,7 +1010,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                     continue
                 }
                 var inputPayload: [String: JSONValue] = [
-                    "containerId": .string(containerId)
+                    "container_id": .string(containerId)
                 ]
                 if let code = object["code"] {
                     inputPayload["code"] = code
@@ -1541,7 +1541,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 dynamic: nil,
                 title: nil
             ))
-            let initial = "{\"containerId\":\"\(containerId)\",\"code\":\""
+            let initial = "{\"container_id\":\"\(containerId)\",\"code\":\""
             continuation.yield(.toolInputDelta(id: callId, delta: initial, providerMetadata: nil))
         case "apply_patch_call":
             guard let callId = item["call_id"]?.stringValue,
@@ -2133,7 +2133,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
 
         let inputValue: JSONValue = .object([
             "code": .string(code),
-            "containerId": .string(interpreter.containerId)
+            "container_id": .string(interpreter.containerId)
         ])
         do {
             let inputString = try jsonString(from: inputValue)
