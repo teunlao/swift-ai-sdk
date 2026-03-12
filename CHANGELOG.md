@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.17.4] - 2026-03-12
+
+### Fixed
+- OpenAI: align the `code_interpreter` tool input contract with upstream by accepting normalized `containerId` instead of wire-level `container_id`, and add regression coverage for the provider-executed parse path.
+
 ## [0.17.3] - 2026-03-08
 
 ### Fixed

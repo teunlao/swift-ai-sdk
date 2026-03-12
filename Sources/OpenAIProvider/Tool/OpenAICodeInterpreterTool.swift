@@ -5,11 +5,6 @@ import AISDKProviderUtils
 public struct OpenAICodeInterpreterInput: Codable, Sendable, Equatable {
     public let code: String?
     public let containerId: String
-
-    enum CodingKeys: String, CodingKey {
-        case code
-        case containerId = "container_id"
-    }
 }
 
 public struct OpenAICodeInterpreterOutput: Codable, Sendable, Equatable {
@@ -37,13 +32,13 @@ public struct OpenAICodeInterpreterArgs: Sendable, Equatable {
 
 private let codeInterpreterInputJSONSchema: JSONValue = .object([
     "type": .string("object"),
-    "required": .array([.string("container_id")]),
+    "required": .array([.string("containerId")]),
     "additionalProperties": .bool(false),
     "properties": .object([
         "code": .object([
             "type": .array([.string("string"), .string("null")])
         ]),
-        "container_id": .object([
+        "containerId": .object([
             "type": .string("string")
         ])
     ])
