@@ -7,6 +7,7 @@ struct OpenAIResponsesInputBuilder {
         prompt: LanguageModelV3Prompt,
         providerOptionsName: String = "openai",
         toolNameMapping: OpenAIToolNameMapping = .init(),
+        customProviderToolNames: Set<String> = [],
         systemMessageMode: OpenAIResponsesSystemMessageMode = .system,
         fileIdPrefixes: [String]? = ["file-"],
         store: Bool = true,
@@ -226,6 +227,27 @@ struct OpenAIResponsesInputBuilder {
                                 payload["id"] = .string(itemId)
                             }
 
+                            items.append(.object(payload))
+                            continue
+                        }
+
+                        if customProviderToolNames.contains(resolvedToolName) {
+                            let input: String
+                            if case .string(let value) = callPart.input {
+                                input = value
+                            } else {
+                                input = try encodeJSONStringifiedValue(callPart.input)
+                            }
+
+                            var payload: [String: JSONValue] = [
+                                "type": .string("custom_tool_call"),
+                                "call_id": .string(callPart.toolCallId),
+                                "name": .string(resolvedToolName),
+                                "input": .string(input)
+                            ]
+                            if let itemId {
+                                payload["id"] = .string(itemId)
+                            }
                             items.append(.object(payload))
                             continue
                         }
@@ -465,24 +487,96 @@ struct OpenAIResponsesInputBuilder {
                                 continue
                             }
 
+                            if customProviderToolNames.contains(resolvedToolName) {
+                                items.append(.object([
+                                    "type": .string("custom_tool_call_output"),
+                                    "call_id": .string(toolResult.toolCallId),
+                                    "output": .string(try encodeJSONStringifiedValue(value))
+                                ]))
+                                continue
+                            }
+
                             let jsonString = try encodeJSONValue(value)
                             items.append(makeToolResultObject(toolCallId: toolResult.toolCallId, output: .string(jsonString)))
 
                         case .text(let value, _):
+                            if customProviderToolNames.contains(resolvedToolName) {
+                                items.append(.object([
+                                    "type": .string("custom_tool_call_output"),
+                                    "call_id": .string(toolResult.toolCallId),
+                                    "output": .string(value)
+                                ]))
+                                continue
+                            }
                             items.append(makeToolResultObject(toolCallId: toolResult.toolCallId, output: .string(value)))
 
                         case .executionDenied(let reason, _):
                             let message = reason ?? "Tool execution denied."
+                            if customProviderToolNames.contains(resolvedToolName) {
+                                items.append(.object([
+                                    "type": .string("custom_tool_call_output"),
+                                    "call_id": .string(toolResult.toolCallId),
+                                    "output": .string(message)
+                                ]))
+                                continue
+                            }
                             items.append(makeToolResultObject(toolCallId: toolResult.toolCallId, output: .string(message)))
 
                         case .errorText(let value, _):
+                            if customProviderToolNames.contains(resolvedToolName) {
+                                items.append(.object([
+                                    "type": .string("custom_tool_call_output"),
+                                    "call_id": .string(toolResult.toolCallId),
+                                    "output": .string(value)
+                                ]))
+                                continue
+                            }
                             items.append(makeToolResultObject(toolCallId: toolResult.toolCallId, output: .string(value)))
 
                         case .errorJson(let value, _):
+                            if customProviderToolNames.contains(resolvedToolName) {
+                                items.append(.object([
+                                    "type": .string("custom_tool_call_output"),
+                                    "call_id": .string(toolResult.toolCallId),
+                                    "output": .string(try encodeJSONStringifiedValue(value))
+                                ]))
+                                continue
+                            }
                             let jsonString = try encodeJSONValue(value)
                             items.append(makeToolResultObject(toolCallId: toolResult.toolCallId, output: .string(jsonString)))
 
                         case .content(let contentParts, _):
+                            if customProviderToolNames.contains(resolvedToolName) {
+                                let converted = contentParts.compactMap { item -> JSONValue? in
+                                    switch item {
+                                    case .text(let text):
+                                        return .object([
+                                            "type": .string("input_text"),
+                                            "text": .string(text)
+                                        ])
+                                    case .media(let data, let mediaType):
+                                        if mediaType.hasPrefix("image/") {
+                                            return .object([
+                                                "type": .string("input_image"),
+                                                "image_url": .string("data:\(mediaType);base64,\(data)")
+                                            ])
+                                        }
+                                        return .object([
+                                            "type": .string("input_file"),
+                                            "filename": .string("data"),
+                                            "file_data": .string("data:\(mediaType);base64,\(data)")
+                                        ])
+                                    }
+                                }
+
+                                items.append(.object([
+                                    "type": .string("custom_tool_call_output"),
+                                    "call_id": .string(toolResult.toolCallId),
+                                    "output": .array(converted)
+                                ]))
+                                continue
+                            }
+
                             let converted = contentParts.map { item -> JSONValue in
                                 switch item {
                                 case .text(let text):
@@ -725,6 +819,14 @@ struct OpenAIResponsesInputBuilder {
             }
         }
 
+        guard let string = String(data: data, encoding: .utf8) else {
+            throw UnsupportedFunctionalityError(functionality: "Unable to encode JSON value")
+        }
+        return string
+    }
+
+    private static func encodeJSONStringifiedValue(_ value: JSONValue) throws -> String {
+        let data = try JSONEncoder().encode(value)
         guard let string = String(data: data, encoding: .utf8) else {
             throw UnsupportedFunctionalityError(functionality: "Unable to encode JSON value")
         }

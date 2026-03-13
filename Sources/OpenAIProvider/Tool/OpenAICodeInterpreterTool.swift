@@ -8,10 +8,81 @@ public struct OpenAICodeInterpreterInput: Codable, Sendable, Equatable {
 }
 
 public struct OpenAICodeInterpreterOutput: Codable, Sendable, Equatable {
-    public struct Item: Codable, Sendable, Equatable {
-        public let type: String
-        public let logs: String?
-        public let url: String?
+    public enum Item: Codable, Sendable, Equatable {
+        case logs(logs: String)
+        case image(url: String)
+
+        private enum CodingKeys: String, CodingKey {
+            case type
+            case logs
+            case url
+        }
+
+        public var type: String {
+            switch self {
+            case .logs:
+                return "logs"
+            case .image:
+                return "image"
+            }
+        }
+
+        public var logs: String? {
+            guard case .logs(let logs) = self else { return nil }
+            return logs
+        }
+
+        public var url: String? {
+            guard case .image(let url) = self else { return nil }
+            return url
+        }
+
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            let type = try container.decode(String.self, forKey: .type)
+
+            switch type {
+            case "logs":
+                if container.contains(.url) {
+                    throw DecodingError.dataCorruptedError(
+                        forKey: .url,
+                        in: container,
+                        debugDescription: "logs output must not contain url"
+                    )
+                }
+                self = .logs(logs: try container.decode(String.self, forKey: .logs))
+
+            case "image":
+                if container.contains(.logs) {
+                    throw DecodingError.dataCorruptedError(
+                        forKey: .logs,
+                        in: container,
+                        debugDescription: "image output must not contain logs"
+                    )
+                }
+                self = .image(url: try container.decode(String.self, forKey: .url))
+
+            default:
+                throw DecodingError.dataCorruptedError(
+                    forKey: .type,
+                    in: container,
+                    debugDescription: "Unknown code interpreter output type: \(type)"
+                )
+            }
+        }
+
+        public func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+
+            switch self {
+            case .logs(let logs):
+                try container.encode("logs", forKey: .type)
+                try container.encode(logs, forKey: .logs)
+            case .image(let url):
+                try container.encode("image", forKey: .type)
+                try container.encode(url, forKey: .url)
+            }
+        }
     }
 
     public let outputs: [Item]?
@@ -51,19 +122,34 @@ private let codeInterpreterOutputJSONSchema: JSONValue = .object([
         "outputs": .object([
             "type": .array([.string("array"), .string("null")]),
             "items": .object([
-                "type": .string("object"),
-                "required": .array([.string("type")]),
-                "additionalProperties": .bool(false),
-                "properties": .object([
-                    "type": .object([
-                        "type": .string("string"),
-                        "enum": .array([JSONValue.string("logs"), JSONValue.string("image")])
+                "oneOf": .array([
+                    .object([
+                        "type": .string("object"),
+                        "required": .array([.string("type"), .string("logs")]),
+                        "additionalProperties": .bool(false),
+                        "properties": .object([
+                            "type": .object([
+                                "type": .string("string"),
+                                "enum": .array([.string("logs")])
+                            ]),
+                            "logs": .object([
+                                "type": .string("string")
+                            ])
+                        ])
                     ]),
-                    "logs": .object([
-                        "type": .array([.string("string"), .string("null")])
-                    ]),
-                    "url": .object([
-                        "type": .array([.string("string"), .string("null")])
+                    .object([
+                        "type": .string("object"),
+                        "required": .array([.string("type"), .string("url")]),
+                        "additionalProperties": .bool(false),
+                        "properties": .object([
+                            "type": .object([
+                                "type": .string("string"),
+                                "enum": .array([.string("image")])
+                            ]),
+                            "url": .object([
+                                "type": .string("string")
+                            ])
+                        ])
                     ])
                 ])
             ])

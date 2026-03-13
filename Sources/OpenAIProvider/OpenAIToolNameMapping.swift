@@ -18,14 +18,15 @@ struct OpenAIToolNameMapping: Sendable {
 
     static func create(
         tools: [LanguageModelV3Tool]?,
-        providerToolNames: [String: String]
+        providerToolNames: [String: String],
+        resolveProviderToolName: ((LanguageModelV3ProviderTool) -> String?)? = nil
     ) -> OpenAIToolNameMapping {
         var customToProvider: [String: String] = [:]
         var providerToCustom: [String: String] = [:]
 
         for tool in tools ?? [] {
             guard case .provider(let providerTool) = tool else { continue }
-            guard let providerToolName = providerToolNames[providerTool.id] else { continue }
+            guard let providerToolName = resolveProviderToolName?(providerTool) ?? providerToolNames[providerTool.id] else { continue }
 
             customToProvider[providerTool.name] = providerToolName
             providerToCustom[providerToolName] = providerTool.name

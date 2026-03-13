@@ -3985,6 +3985,264 @@ struct OpenAIResponsesLanguageModelTests {
         #expect(tools.first?["type"] as? String == "apply_patch")
     }
 
+    @Test("doGenerate maps aliased custom tools and tool choice")
+    func testDoGenerateMapsCustomToolAlias() async throws {
+        actor BodyCapture {
+            var request: URLRequest?
+            func store(_ request: URLRequest) { self.request = request }
+            func current() -> URLRequest? { request }
+        }
+
+        let capture = BodyCapture()
+
+        let responseJSON: [String: Any] = [
+            "id": "resp_custom_tool",
+            "created_at": 1_742_257_730.0,
+            "model": "gpt-5.2-codex",
+            "output": [
+                [
+                    "id": "ct_abc123def456",
+                    "type": "custom_tool_call",
+                    "status": "completed",
+                    "call_id": "call_custom_sql_001",
+                    "name": "write_sql",
+                    "input": "SELECT * FROM users WHERE age > 25"
+                ]
+            ],
+            "service_tier": "default",
+            "usage": [
+                "input_tokens": 50,
+                "output_tokens": 20,
+                "output_tokens_details": ["reasoning_tokens": 0],
+                "input_tokens_details": ["cached_tokens": 0]
+            ],
+            "warnings": [],
+            "incomplete_details": ["reason": NSNull()],
+            "finish_reason": NSNull(),
+            "error": NSNull()
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            let httpResponse = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-5.2-codex",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let tool = LanguageModelV3Tool.provider(.init(
+            id: "openai.custom",
+            name: "alias_name",
+            args: [
+                "name": .string("write_sql"),
+                "description": .string("Write SQL."),
+                "format": .object([
+                    "type": .string("grammar"),
+                    "syntax": .string("regex"),
+                    "definition": .string("SELECT .+")
+                ])
+            ]
+        ))
+
+        let result = try await model.doGenerate(
+            options: LanguageModelV3CallOptions(
+                prompt: samplePrompt,
+                tools: [tool],
+                toolChoice: .tool(toolName: "alias_name")
+            )
+        )
+
+        let toolCalls = result.content.compactMap { content -> LanguageModelV3ToolCall? in
+            if case .toolCall(let call) = content { return call }
+            return nil
+        }
+
+        #expect(toolCalls.count == 1)
+        #expect(toolCalls.first?.toolCallId == "call_custom_sql_001")
+        #expect(toolCalls.first?.toolName == "alias_name")
+        #expect(toolCalls.first?.input == "\"SELECT * FROM users WHERE age > 25\"")
+        #expect(toolCalls.first?.providerMetadata?["openai"]?["itemId"] == .string("ct_abc123def456"))
+
+        guard let request = await capture.current(),
+              let body = decodeRequestBody(request.httpBody),
+              let tools = body["tools"] as? [[String: Any]],
+              let toolChoice = body["tool_choice"] as? [String: Any] else {
+            Issue.record("Expected tools and tool_choice in request body")
+            return
+        }
+
+        #expect(tools.count == 1)
+        #expect(tools.first?["type"] as? String == "custom")
+        #expect(tools.first?["name"] as? String == "write_sql")
+        #expect(toolChoice["type"] as? String == "custom")
+        #expect(toolChoice["name"] as? String == "write_sql")
+    }
+
+    @Test("doStream maps aliased custom tools and streams input deltas")
+    func testDoStreamMapsCustomToolAlias() async throws {
+        actor BodyCapture {
+            var data: Data?
+            func store(_ body: Data?) { data = body }
+            func current() -> Data? { data }
+        }
+
+        let capture = BodyCapture()
+
+        func chunk(_ value: Any) -> String {
+            let data = try! JSONSerialization.data(withJSONObject: value)
+            let encoded = String(data: data, encoding: .utf8)!
+            return "data:\(encoded)\n\n"
+        }
+
+        let chunks: [String] = [
+            chunk([
+                "type": "response.output_item.added",
+                "output_index": 0,
+                "item": [
+                    "id": "ct_abc123def456",
+                    "type": "custom_tool_call",
+                    "status": "in_progress",
+                    "call_id": "call_custom_sql_001",
+                    "name": "write_sql",
+                    "input": ""
+                ]
+            ]),
+            chunk([
+                "type": "response.custom_tool_call_input.delta",
+                "item_id": "ct_abc123def456",
+                "output_index": 0,
+                "delta": "SELECT * "
+            ]),
+            chunk([
+                "type": "response.custom_tool_call_input.delta",
+                "item_id": "ct_abc123def456",
+                "output_index": 0,
+                "delta": "FROM users "
+            ]),
+            chunk([
+                "type": "response.custom_tool_call_input.delta",
+                "item_id": "ct_abc123def456",
+                "output_index": 0,
+                "delta": "WHERE age > 25"
+            ]),
+            chunk([
+                "type": "response.output_item.done",
+                "output_index": 0,
+                "item": [
+                    "id": "ct_abc123def456",
+                    "type": "custom_tool_call",
+                    "status": "completed",
+                    "call_id": "call_custom_sql_001",
+                    "name": "write_sql",
+                    "input": "SELECT * FROM users WHERE age > 25"
+                ]
+            ]),
+            chunk([
+                "type": "response.completed",
+                "response": [
+                    "id": "resp_custom_tool",
+                    "object": "response",
+                    "created_at": 1_742_257_730.0,
+                    "status": "completed",
+                    "usage": ["input_tokens": 50, "output_tokens": 20, "total_tokens": 70]
+                ]
+            ]),
+            "data: [DONE]\n\n"
+        ]
+
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.openai.com/v1/responses")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "text/event-stream"]
+        )!
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request.httpBody)
+            let stream = AsyncThrowingStream<Data, Error> { continuation in
+                for string in chunks {
+                    continuation.yield(Data(string.utf8))
+                }
+                continuation.finish()
+            }
+            return FetchResponse(body: .stream(stream), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-5.2-codex",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let tool = LanguageModelV3Tool.provider(.init(
+            id: "openai.custom",
+            name: "alias_name",
+            args: [
+                "name": .string("write_sql"),
+                "description": .string("Write SQL."),
+                "format": .object([
+                    "type": .string("grammar"),
+                    "syntax": .string("regex"),
+                    "definition": .string("SELECT .+")
+                ])
+            ]
+        ))
+
+        let streamResult = try await model.doStream(
+            options: LanguageModelV3CallOptions(
+                prompt: samplePrompt,
+                tools: [tool],
+                toolChoice: .tool(toolName: "alias_name")
+            )
+        )
+
+        var inputDeltas: [String] = []
+        var toolInputEnded = false
+        var toolCall: LanguageModelV3ToolCall?
+
+        for try await part in streamResult.stream {
+            switch part {
+            case .toolInputDelta(let id, let delta, _):
+                if id == "call_custom_sql_001" {
+                    inputDeltas.append(delta)
+                }
+            case .toolInputEnd(let id, _):
+                if id == "call_custom_sql_001" { toolInputEnded = true }
+            case .toolCall(let call):
+                if call.toolCallId == "call_custom_sql_001" {
+                    toolCall = call
+                }
+            default:
+                break
+            }
+        }
+
+        #expect(toolInputEnded)
+        #expect(inputDeltas == ["SELECT * ", "FROM users ", "WHERE age > 25"])
+        #expect(toolCall?.toolName == "alias_name")
+        #expect(toolCall?.input == "\"SELECT * FROM users WHERE age > 25\"")
+        #expect(toolCall?.providerMetadata?["openai"]?["itemId"] == .string("ct_abc123def456"))
+
+        guard let requestBody = await capture.current(),
+              let body = decodeRequestBody(requestBody),
+              let toolChoice = body["tool_choice"] as? [String: Any] else {
+            Issue.record("Expected tool_choice in request body")
+            return
+        }
+
+        #expect(toolChoice["type"] as? String == "custom")
+        #expect(toolChoice["name"] as? String == "write_sql")
+    }
+
     @Test("doStream emits apply_patch tool input and tool call")
     func testDoStreamEmitsApplyPatchToolCall() async throws {
         func chunk(_ value: Any) -> String {

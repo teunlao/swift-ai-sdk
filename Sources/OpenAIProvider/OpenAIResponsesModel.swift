@@ -228,6 +228,12 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                                     ongoingToolCalls: &ongoingToolCalls,
                                     continuation: continuation
                                 )
+                            case "response.custom_tool_call_input.delta":
+                                handleFunctionCallArgumentsDelta(
+                                    chunkObject,
+                                    ongoingToolCalls: &ongoingToolCalls,
+                                    continuation: continuation
+                                )
                             case "response.apply_patch_call_operation_diff.delta":
                                 handleApplyPatchCallOperationDiffDelta(
                                     chunkObject,
@@ -369,6 +375,28 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
         let isShellProviderExecuted: Bool
     }
 
+    private static func resolveProviderToolName(_ tool: LanguageModelV3ProviderTool) -> String? {
+        guard tool.id == "openai.custom",
+              case .string(let name)? = tool.args["name"] else {
+            return nil
+        }
+        return name
+    }
+
+    private static func collectCustomProviderToolNames(from tools: [LanguageModelV3Tool]?) -> Set<String> {
+        var names: Set<String> = []
+
+        for tool in tools ?? [] {
+            guard case .provider(let providerTool) = tool,
+                  let providerToolName = resolveProviderToolName(providerTool) else {
+                continue
+            }
+            names.insert(providerToolName)
+        }
+
+        return names
+    }
+
     private func prepareRequest(options: LanguageModelV3CallOptions) async throws -> PreparedRequest {
         var warnings: [SharedV3Warning] = []
 
@@ -409,15 +437,18 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
         let hasLocalShellTool = containsLocalShellTool(options.tools)
         let hasShellTool = containsProviderTool(options.tools, id: "openai.shell")
         let hasApplyPatchTool = containsProviderTool(options.tools, id: "openai.apply_patch")
+        let customProviderToolNames = Self.collectCustomProviderToolNames(from: options.tools)
         let toolNameMapping = OpenAIToolNameMapping.create(
             tools: options.tools,
-            providerToolNames: Self.providerToolNames
+            providerToolNames: Self.providerToolNames,
+            resolveProviderToolName: Self.resolveProviderToolName
         )
 
         let (input, inputWarnings) = try await OpenAIResponsesInputBuilder.makeInput(
             prompt: options.prompt,
             providerOptionsName: providerOptionsName,
             toolNameMapping: toolNameMapping,
+            customProviderToolNames: customProviderToolNames,
             systemMessageMode: systemMessageMode,
             fileIdPrefixes: config.fileIdPrefixes,
             store: storeForInput,
@@ -468,7 +499,9 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
 
         let preparedTools = try await prepareOpenAIResponsesTools(
             tools: options.tools,
-            toolChoice: options.toolChoice
+            toolChoice: options.toolChoice,
+            toolNameMapping: toolNameMapping,
+            customProviderToolNames: customProviderToolNames
         )
         warnings.append(contentsOf: preparedTools.warnings)
 
@@ -830,6 +863,28 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 let providerMetadata = openAIProviderMetadata([
                     "itemId": object["id"]?.stringValue.map(JSONValue.string) ?? .null
                 ])
+
+                content.append(.toolCall(LanguageModelV3ToolCall(
+                    toolCallId: toolCallId,
+                    toolName: toolName,
+                    input: input,
+                    providerExecuted: nil,
+                    providerMetadata: providerMetadata
+                )))
+
+            case "custom_tool_call":
+                guard let toolCallId = object["call_id"]?.stringValue,
+                      let providerToolName = object["name"]?.stringValue,
+                      let rawInput = object["input"]?.stringValue else {
+                    continue
+                }
+                hasFunctionCall = true
+
+                let providerMetadata = openAIProviderMetadata([
+                    "itemId": object["id"]?.stringValue.map(JSONValue.string) ?? .null
+                ])
+                let toolName = toolNameMapping.toCustomToolName(providerToolName)
+                let input = try jsonString(from: .string(rawInput))
 
                 content.append(.toolCall(LanguageModelV3ToolCall(
                     toolCallId: toolCallId,
@@ -1478,6 +1533,25 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 dynamic: nil,
                 title: nil
             ))
+        case "custom_tool_call":
+            guard let callId = item["call_id"]?.stringValue,
+                  let providerToolName = item["name"]?.stringValue else { return }
+            let toolName = toolNameMapping.toCustomToolName(providerToolName)
+            ongoingToolCalls[outputIndex] = ToolCallState(
+                toolName: toolName,
+                toolCallId: callId,
+                providerExecuted: false,
+                codeInterpreter: nil,
+                applyPatch: nil
+            )
+            continuation.yield(.toolInputStart(
+                id: callId,
+                toolName: toolName,
+                providerMetadata: nil,
+                providerExecuted: nil,
+                dynamic: nil,
+                title: nil
+            ))
         case "web_search_call":
             guard let callId = item["id"]?.stringValue else { return }
             ongoingToolCalls[outputIndex] = ToolCallState(
@@ -1671,6 +1745,25 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 toolCallId: callId,
                 toolName: name,
                 input: arguments,
+                providerExecuted: nil,
+                providerMetadata: metadata
+            )))
+        case "custom_tool_call":
+            guard let callId = item["call_id"]?.stringValue,
+                  let providerToolName = item["name"]?.stringValue,
+                  let rawInput = item["input"]?.stringValue else { return }
+            hasFunctionCall = true
+            ongoingToolCalls[outputIndex] = nil
+            continuation.yield(.toolInputEnd(id: callId, providerMetadata: nil))
+            let metadata = openAIProviderMetadata([
+                "itemId": item["id"]?.stringValue.map(JSONValue.string) ?? .null
+            ])
+            let toolName = toolNameMapping.toCustomToolName(providerToolName)
+            let input = try jsonString(from: .string(rawInput))
+            continuation.yield(.toolCall(LanguageModelV3ToolCall(
+                toolCallId: callId,
+                toolName: toolName,
+                input: input,
                 providerExecuted: nil,
                 providerMetadata: metadata
             )))

@@ -644,4 +644,81 @@ struct OpenAIResponsesPrepareToolsTests {
             "name": .string("custom_tool")
         ]))
     }
+
+    @Test("custom provider tool maps to custom tool payload and choice")
+    func customProviderToolMapping() async throws {
+        let tool = providerTool(
+            id: "openai.custom",
+            name: "custom",
+            args: [
+                "name": .string("grep_ast"),
+                "description": .string("Return an AST-shaped grep query"),
+                "format": .object([
+                    "type": .string("grammar"),
+                    "syntax": .string("lark"),
+                    "definition": .string("start: WORD")
+                ])
+            ]
+        )
+
+        let result = try await prepareOpenAIResponsesTools(
+            tools: [tool],
+            toolChoice: .tool(toolName: "grep_ast")
+        )
+
+        #expect(result.warnings.isEmpty)
+        guard let tools = result.tools,
+              case .object(let toolObject) = tools.first else {
+            Issue.record("Expected custom tool object")
+            return
+        }
+
+        #expect(toolObject["type"] == .string("custom"))
+        #expect(toolObject["name"] == .string("grep_ast"))
+        #expect(toolObject["description"] == .string("Return an AST-shaped grep query"))
+        #expect(toolObject["format"] == .object([
+            "type": .string("grammar"),
+            "syntax": .string("lark"),
+            "definition": .string("start: WORD")
+        ]))
+        #expect(result.toolChoice == .object([
+            "type": .string("custom"),
+            "name": .string("grep_ast")
+        ]))
+    }
+
+    @Test("custom provider tool rejects null optional args")
+    func customProviderToolRejectsNullOptionalArgs() async throws {
+        let nullDescriptionTool = providerTool(
+            id: "openai.custom",
+            name: "custom",
+            args: [
+                "name": .string("write_sql"),
+                "description": .null
+            ]
+        )
+
+        await #expect(throws: Error.self) {
+            _ = try await prepareOpenAIResponsesTools(
+                tools: [nullDescriptionTool],
+                toolChoice: nil
+            )
+        }
+
+        let nullFormatTool = providerTool(
+            id: "openai.custom",
+            name: "custom",
+            args: [
+                "name": .string("write_sql"),
+                "format": .null
+            ]
+        )
+
+        await #expect(throws: Error.self) {
+            _ = try await prepareOpenAIResponsesTools(
+                tools: [nullFormatTool],
+                toolChoice: nil
+            )
+        }
+    }
 }

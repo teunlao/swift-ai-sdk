@@ -10,7 +10,9 @@ struct OpenAIResponsesPreparedTools: Sendable {
 
 func prepareOpenAIResponsesTools(
     tools: [LanguageModelV3Tool]?,
-    toolChoice: LanguageModelV3ToolChoice?
+    toolChoice: LanguageModelV3ToolChoice?,
+    toolNameMapping: OpenAIToolNameMapping = .init(),
+    customProviderToolNames: Set<String> = []
 ) async throws -> OpenAIResponsesPreparedTools {
     guard let tools, !tools.isEmpty else {
         return OpenAIResponsesPreparedTools(tools: nil, toolChoice: nil, warnings: [])
@@ -18,6 +20,7 @@ func prepareOpenAIResponsesTools(
 
     var warnings: [SharedV3Warning] = []
     var openAITools: [JSONValue] = []
+    var resolvedCustomProviderToolNames = customProviderToolNames
 
     for tool in tools {
         switch tool {
@@ -282,6 +285,35 @@ func prepareOpenAIResponsesTools(
                 }
                 openAITools.append(.object(payload))
 
+            case "openai.custom":
+                let parsed: OpenAICustomToolArgs = try await validateTypes(
+                    ValidateTypesOptions(value: providerTool.args, schema: openaiCustomArgsSchema)
+                )
+
+                var payload: [String: JSONValue] = [
+                    "type": .string("custom"),
+                    "name": .string(parsed.name)
+                ]
+                if let description = parsed.description {
+                    payload["description"] = .string(description)
+                }
+                if let format = parsed.format {
+                    switch format {
+                    case .grammar(let syntax, let definition):
+                        payload["format"] = .object([
+                            "type": .string("grammar"),
+                            "syntax": .string(syntax.rawValue),
+                            "definition": .string(definition)
+                        ])
+                    case .text:
+                        payload["format"] = .object([
+                            "type": .string("text")
+                        ])
+                    }
+                }
+                openAITools.append(.object(payload))
+                resolvedCustomProviderToolNames.insert(parsed.name)
+
             default:
                 warnings.append(.unsupported(feature: "provider-defined tool \(providerTool.id)", details: nil))
             }
@@ -289,7 +321,11 @@ func prepareOpenAIResponsesTools(
     }
 
     let finalTools = openAITools
-    let finalToolChoice = try mapToolChoice(toolChoice)
+    let finalToolChoice = try mapToolChoice(
+        toolChoice,
+        toolNameMapping: toolNameMapping,
+        customProviderToolNames: resolvedCustomProviderToolNames
+    )
 
     return OpenAIResponsesPreparedTools(tools: finalTools, toolChoice: finalToolChoice, warnings: warnings)
 }
@@ -445,7 +481,11 @@ private extension JSONValue {
     }
 }
 
-private func mapToolChoice(_ choice: LanguageModelV3ToolChoice?) throws -> JSONValue? {
+private func mapToolChoice(
+    _ choice: LanguageModelV3ToolChoice?,
+    toolNameMapping: OpenAIToolNameMapping,
+    customProviderToolNames: Set<String>
+) throws -> JSONValue? {
     guard let choice else { return nil }
 
     switch choice {
@@ -456,12 +496,19 @@ private func mapToolChoice(_ choice: LanguageModelV3ToolChoice?) throws -> JSONV
     case .required:
         return .string("required")
     case .tool(let toolName):
-        if ["code_interpreter", "file_search", "image_generation", "web_search_preview", "web_search", "mcp", "apply_patch"].contains(toolName) {
-            return .object(["type": .string(toolName)])
+        let resolvedToolName = toolNameMapping.toProviderToolName(toolName)
+        if ["code_interpreter", "file_search", "image_generation", "web_search_preview", "web_search", "mcp", "apply_patch"].contains(resolvedToolName) {
+            return .object(["type": .string(resolvedToolName)])
+        }
+        if customProviderToolNames.contains(resolvedToolName) {
+            return .object([
+                "type": .string("custom"),
+                "name": .string(resolvedToolName)
+            ])
         }
         return .object([
             "type": .string("function"),
-            "name": .string(toolName)
+            "name": .string(resolvedToolName)
         ])
     }
 }

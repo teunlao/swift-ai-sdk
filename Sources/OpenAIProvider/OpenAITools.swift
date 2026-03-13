@@ -41,6 +41,11 @@ public struct OpenAITools: Sendable {
     }
 
     @discardableResult
+    public func customTool(_ args: OpenAICustomToolArgs) -> Tool {
+        openaiCustomToolFactory(args)
+    }
+
+    @discardableResult
     public func webSearch(_ args: OpenAIWebSearchArgs = .init()) -> Tool {
         openaiWebSearchToolFactory(args)
     }

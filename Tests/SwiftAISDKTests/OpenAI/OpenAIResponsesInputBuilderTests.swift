@@ -2548,6 +2548,48 @@ struct OpenAIResponsesInputBuilderTests {
         }
     }
 
+    @Test("should convert aliased custom tool call to custom_tool_call")
+    func customToolCallConversion() async throws {
+        let toolNameMapping = OpenAIToolNameMapping(
+            customToolNameToProviderToolName: ["alias_name": "write_sql"],
+            providerToolNameToCustomToolName: ["write_sql": "alias_name"]
+        )
+
+        let prompt: LanguageModelV3Prompt = [
+            .assistant(
+                content: [
+                    .toolCall(LanguageModelV3ToolCallPart(
+                        toolCallId: "call-custom-1",
+                        toolName: "alias_name",
+                        input: .string("SELECT 1"),
+                        providerExecuted: nil
+                    ))
+                ],
+                providerOptions: nil
+            )
+        ]
+
+        let result = try await OpenAIResponsesInputBuilder.makeInput(
+            prompt: prompt,
+            toolNameMapping: toolNameMapping,
+            customProviderToolNames: ["write_sql"],
+            systemMessageMode: .system,
+            store: false
+        )
+
+        #expect(result.warnings.isEmpty)
+        #expect(result.input.count == 1)
+
+        guard case .object(let obj) = result.input[0],
+              case .string("custom_tool_call") = obj["type"],
+              case .string("call-custom-1") = obj["call_id"],
+              case .string("write_sql") = obj["name"],
+              case .string("SELECT 1") = obj["input"] else {
+            Issue.record("Unexpected custom tool call output structure")
+            return
+        }
+    }
+
     // MARK: - Tool Outputs
 
     @Test("should convert shell tool output json to shell_call_output")
@@ -2617,6 +2659,52 @@ struct OpenAIResponsesInputBuilderTests {
         ]
 
         #expect(result.input == expected)
+    }
+
+    @Test("should convert custom tool result json to custom_tool_call_output")
+    func customToolResultOutput() async throws {
+        let toolNameMapping = OpenAIToolNameMapping(
+            customToolNameToProviderToolName: ["alias_name": "write_sql"],
+            providerToolNameToCustomToolName: ["write_sql": "alias_name"]
+        )
+
+        let prompt: LanguageModelV3Prompt = [
+            .tool(
+                content: [
+                    .toolResult(LanguageModelV3ToolResultPart(
+                        toolCallId: "call-custom-2",
+                        toolName: "alias_name",
+                        output: .json(value: .object([
+                            "rows": .number(42),
+                            "status": .string("ok")
+                        ]))
+                    ))
+                ],
+                providerOptions: nil
+            )
+        ]
+
+        let result = try await OpenAIResponsesInputBuilder.makeInput(
+            prompt: prompt,
+            toolNameMapping: toolNameMapping,
+            customProviderToolNames: ["write_sql"],
+            systemMessageMode: .system,
+            store: true
+        )
+
+        #expect(result.warnings.isEmpty)
+        #expect(result.input.count == 1)
+
+        guard case .object(let obj) = result.input[0],
+              case .string("custom_tool_call_output") = obj["type"],
+              case .string("call-custom-2") = obj["call_id"],
+              case .string(let output) = obj["output"] else {
+            Issue.record("Unexpected custom tool result output structure")
+            return
+        }
+
+        #expect(output.contains("\"rows\":42"))
+        #expect(output.contains("\"status\":\"ok\""))
     }
 
     @Test("should throw when shell tool exit outcome is missing exitCode")
