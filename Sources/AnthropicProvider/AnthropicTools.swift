@@ -60,6 +60,18 @@ public struct AnthropicTools: Sendable {
         anthropicCodeExecution20250825()
     }
 
+    /// Claude can analyze data, create visualizations, perform complex calculations,
+    /// run system commands, create and edit files, and process uploaded files directly within
+    /// the API conversation.
+    ///
+    /// This version extends the 20250825 contract with encrypted code execution results.
+    ///
+    /// Tool name must be `code_execution`.
+    @discardableResult
+    public func codeExecution20260120() -> Tool {
+        anthropicCodeExecution20260120()
+    }
+
     /// The memory tool enables Claude to view and modify long-term memory content.
     ///
     /// Tool name must be `memory`.
@@ -189,6 +201,17 @@ public struct AnthropicTools: Sendable {
         anthropicWebFetch20250910(options)
     }
 
+    /// Creates a web fetch tool that gives Claude direct access to real-time web content.
+    ///
+    /// This version is paired with the `code-execution-web-tools-2026-02-09` beta and
+    /// can emit encrypted results for multi-turn citation workflows.
+    ///
+    /// Tool name must be `web_fetch`.
+    @discardableResult
+    public func webFetch20260209(_ options: AnthropicWebFetchOptions = .init()) -> Tool {
+        anthropicWebFetch20260209(options)
+    }
+
     /// Creates a web search tool that gives Claude direct access to real-time web content.
     ///
     /// Tool name must be `web_search`.
@@ -201,6 +224,17 @@ public struct AnthropicTools: Sendable {
     @discardableResult
     public func webSearch20250305(_ options: AnthropicWebSearchOptions = .init()) -> Tool {
         anthropicWebSearch20250305(options)
+    }
+
+    /// Creates a web search tool that gives Claude direct access to real-time web content.
+    ///
+    /// This version is paired with the `code-execution-web-tools-2026-02-09` beta and
+    /// can emit encrypted results for multi-turn citation workflows.
+    ///
+    /// Tool name must be `web_search`.
+    @discardableResult
+    public func webSearch20260209(_ options: AnthropicWebSearchOptions = .init()) -> Tool {
+        anthropicWebSearch20260209(options)
     }
 
     /// Creates a tool search tool that uses regex patterns to find tools.

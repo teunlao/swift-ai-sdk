@@ -617,6 +617,213 @@ struct AnthropicToolSchemasTests {
         ]))
     }
 
+    @Test("code_execution_20260120 tool input/output schemas match upstream shape")
+    func codeExecution20260120ToolSchemas() async throws {
+        let tool = anthropicCodeExecution20260120()
+
+        let input = try await tool.inputSchema.resolve().jsonSchema()
+        let output = try await tool.outputSchema?.resolve().jsonSchema()
+        let legacyInput = try await anthropicCodeExecution20250825().inputSchema.resolve().jsonSchema()
+
+        #expect(input == legacyInput)
+
+        #expect(output == .object([
+            "type": .string("object"),
+            "oneOf": .array([
+                .object([
+                    "type": .string("object"),
+                    "properties": .object([
+                        "type": .object(["const": .string("encrypted_code_execution_result")]),
+                        "encrypted_stdout": .object(["type": .string("string")]),
+                        "stderr": .object(["type": .string("string")]),
+                        "return_code": .object(["type": .string("number")]),
+                        "content": .object([
+                            "type": .string("array"),
+                            "items": .object([
+                                "type": .string("object"),
+                                "properties": .object([
+                                    "type": .object(["const": .string("code_execution_output")]),
+                                    "file_id": .object(["type": .string("string")]),
+                                ]),
+                                "required": .array([.string("type"), .string("file_id")]),
+                                "additionalProperties": .bool(false),
+                            ]),
+                        ]),
+                    ]),
+                    "required": .array([
+                        .string("type"),
+                        .string("encrypted_stdout"),
+                        .string("stderr"),
+                        .string("return_code"),
+                    ]),
+                    "additionalProperties": .bool(false),
+                ]),
+                .object([
+                    "type": .string("object"),
+                    "properties": .object([
+                        "type": .object(["const": .string("code_execution_result")]),
+                        "stdout": .object(["type": .string("string")]),
+                        "stderr": .object(["type": .string("string")]),
+                        "return_code": .object(["type": .string("number")]),
+                        "content": .object([
+                            "type": .string("array"),
+                            "items": .object([
+                                "type": .string("object"),
+                                "properties": .object([
+                                    "type": .object(["const": .string("code_execution_output")]),
+                                    "file_id": .object(["type": .string("string")]),
+                                ]),
+                                "required": .array([.string("type"), .string("file_id")]),
+                                "additionalProperties": .bool(false),
+                            ]),
+                        ]),
+                    ]),
+                    "required": .array([.string("type"), .string("stdout"), .string("stderr"), .string("return_code")]),
+                    "additionalProperties": .bool(false),
+                ]),
+                .object([
+                    "type": .string("object"),
+                    "properties": .object([
+                        "type": .object(["const": .string("bash_code_execution_result")]),
+                        "content": .object([
+                            "type": .string("array"),
+                            "items": .object([
+                                "type": .string("object"),
+                                "properties": .object([
+                                    "type": .object(["const": .string("bash_code_execution_output")]),
+                                    "file_id": .object(["type": .string("string")]),
+                                ]),
+                                "required": .array([.string("type"), .string("file_id")]),
+                                "additionalProperties": .bool(false),
+                            ]),
+                        ]),
+                        "stdout": .object(["type": .string("string")]),
+                        "stderr": .object(["type": .string("string")]),
+                        "return_code": .object(["type": .string("number")]),
+                    ]),
+                    "required": .array([
+                        .string("type"),
+                        .string("content"),
+                        .string("stdout"),
+                        .string("stderr"),
+                        .string("return_code"),
+                    ]),
+                    "additionalProperties": .bool(false),
+                ]),
+                .object([
+                    "type": .string("object"),
+                    "properties": .object([
+                        "type": .object(["const": .string("bash_code_execution_tool_result_error")]),
+                        "error_code": .object(["type": .string("string")]),
+                    ]),
+                    "required": .array([.string("type"), .string("error_code")]),
+                    "additionalProperties": .bool(false),
+                ]),
+                .object([
+                    "type": .string("object"),
+                    "properties": .object([
+                        "type": .object(["const": .string("text_editor_code_execution_tool_result_error")]),
+                        "error_code": .object(["type": .string("string")]),
+                    ]),
+                    "required": .array([.string("type"), .string("error_code")]),
+                    "additionalProperties": .bool(false),
+                ]),
+                .object([
+                    "type": .string("object"),
+                    "properties": .object([
+                        "type": .object(["const": .string("text_editor_code_execution_view_result")]),
+                        "content": .object(["type": .string("string")]),
+                        "file_type": .object(["type": .string("string")]),
+                        "num_lines": .object(["type": .array([.string("number"), .string("null")])]),
+                        "start_line": .object(["type": .array([.string("number"), .string("null")])]),
+                        "total_lines": .object(["type": .array([.string("number"), .string("null")])]),
+                    ]),
+                    "required": .array([
+                        .string("type"),
+                        .string("content"),
+                        .string("file_type"),
+                        .string("num_lines"),
+                        .string("start_line"),
+                        .string("total_lines"),
+                    ]),
+                    "additionalProperties": .bool(false),
+                ]),
+                .object([
+                    "type": .string("object"),
+                    "properties": .object([
+                        "type": .object(["const": .string("text_editor_code_execution_create_result")]),
+                        "is_file_update": .object(["type": .string("boolean")]),
+                    ]),
+                    "required": .array([.string("type"), .string("is_file_update")]),
+                    "additionalProperties": .bool(false),
+                ]),
+                .object([
+                    "type": .string("object"),
+                    "properties": .object([
+                        "type": .object(["const": .string("text_editor_code_execution_str_replace_result")]),
+                        "lines": .object([
+                            "type": .array([.string("array"), .string("null")]),
+                            "items": .object(["type": .string("string")]),
+                        ]),
+                        "new_lines": .object(["type": .array([.string("number"), .string("null")])]),
+                        "new_start": .object(["type": .array([.string("number"), .string("null")])]),
+                        "old_lines": .object(["type": .array([.string("number"), .string("null")])]),
+                        "old_start": .object(["type": .array([.string("number"), .string("null")])]),
+                    ]),
+                    "required": .array([
+                        .string("type"),
+                        .string("lines"),
+                        .string("new_lines"),
+                        .string("new_start"),
+                        .string("old_lines"),
+                        .string("old_start"),
+                    ]),
+                    "additionalProperties": .bool(false),
+                ]),
+            ]),
+        ]))
+    }
+
+    @Test("web_fetch_20260209 tool input/output schemas match upstream shape")
+    func webFetch20260209ToolSchemas() async throws {
+        let tool = anthropicWebFetch20260209()
+
+        let input = try await tool.inputSchema.resolve().jsonSchema()
+        let output = try await tool.outputSchema?.resolve().jsonSchema()
+        let legacyOutput = try await anthropicWebFetch20250910().outputSchema?.resolve().jsonSchema()
+
+        #expect(input == .object([
+            "type": .string("object"),
+            "required": .array([.string("url")]),
+            "properties": .object([
+                "url": .object(["type": .string("string")])
+            ]),
+            "additionalProperties": .bool(false),
+        ]))
+
+        #expect(output == legacyOutput)
+    }
+
+    @Test("web_search_20260209 tool input/output schemas match upstream shape")
+    func webSearch20260209ToolSchemas() async throws {
+        let tool = anthropicWebSearch20260209()
+
+        let input = try await tool.inputSchema.resolve().jsonSchema()
+        let output = try await tool.outputSchema?.resolve().jsonSchema()
+        let legacyOutput = try await anthropicWebSearch20250305().outputSchema?.resolve().jsonSchema()
+
+        #expect(input == .object([
+            "type": .string("object"),
+            "required": .array([.string("query")]),
+            "properties": .object([
+                "query": .object(["type": .string("string")])
+            ]),
+            "additionalProperties": .bool(false),
+        ]))
+
+        #expect(output == legacyOutput)
+    }
+
     @Test("memory_20250818 tool input schema matches upstream shape")
     func memory20250818ToolSchema() async throws {
         let tool = anthropicMemory20250818()

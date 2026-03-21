@@ -133,6 +133,12 @@ public func prepareAnthropicTools(
                     "name": .string("code_execution")
                 ]))
 
+            case "anthropic.code_execution_20260120":
+                anthropicTools.append(.object([
+                    "type": .string("code_execution_20260120"),
+                    "name": .string("code_execution")
+                ]))
+
             case "anthropic.computer_20250124":
                 betas.insert("computer-use-2025-01-24")
                 let width = numberValue(providerTool.args["displayWidthPx"]) ?? numberValue(providerTool.args["display_width_px"])
@@ -262,12 +268,79 @@ public func prepareAnthropicTools(
                 }
                 anthropicTools.append(.object(payload))
 
+            case "anthropic.web_fetch_20260209":
+                betas.insert("code-execution-web-tools-2026-02-09")
+                let parsed = try await validateTypes(
+                    ValidateTypesOptions(value: foundationArgs(providerTool.args), schema: anthropicWebFetch20260209ArgsSchema)
+                )
+                var payload: [String: JSONValue] = [
+                    "type": .string("web_fetch_20260209"),
+                    "name": .string("web_fetch")
+                ]
+                if let maxUses = parsed.maxUses {
+                    payload["max_uses"] = .number(Double(maxUses))
+                }
+                if let allowed = parsed.allowedDomains {
+                    payload["allowed_domains"] = .array(allowed.map(JSONValue.string))
+                }
+                if let blocked = parsed.blockedDomains {
+                    payload["blocked_domains"] = .array(blocked.map(JSONValue.string))
+                }
+                if let citations = parsed.citations, let enabled = citations.enabled {
+                    payload["citations"] = .object(["enabled": .bool(enabled)])
+                }
+                if let maxContentTokens = parsed.maxContentTokens {
+                    payload["max_content_tokens"] = .number(Double(maxContentTokens))
+                }
+                anthropicTools.append(.object(payload))
+
             case "anthropic.web_search_20250305":
                 let parsed = try await validateTypes(
                     ValidateTypesOptions(value: foundationArgs(providerTool.args), schema: anthropicWebSearch20250305ArgsSchema)
                 )
                 var payload: [String: JSONValue] = [
                     "type": .string("web_search_20250305"),
+                    "name": .string("web_search")
+                ]
+                if let maxUses = parsed.maxUses {
+                    payload["max_uses"] = .number(Double(maxUses))
+                }
+                if let allowed = parsed.allowedDomains {
+                    payload["allowed_domains"] = .array(allowed.map(JSONValue.string))
+                }
+                if let blocked = parsed.blockedDomains {
+                    payload["blocked_domains"] = .array(blocked.map(JSONValue.string))
+                }
+                if let location = parsed.userLocation {
+                    var locationPayload: [String: JSONValue] = [:]
+                    if let type = location.type {
+                        locationPayload["type"] = .string(type)
+                    }
+                    if let city = location.city {
+                        locationPayload["city"] = .string(city)
+                    }
+                    if let region = location.region {
+                        locationPayload["region"] = .string(region)
+                    }
+                    if let country = location.country {
+                        locationPayload["country"] = .string(country)
+                    }
+                    if let timezone = location.timezone {
+                        locationPayload["timezone"] = .string(timezone)
+                    }
+                    if !locationPayload.isEmpty {
+                        payload["user_location"] = .object(locationPayload)
+                    }
+                }
+                anthropicTools.append(.object(payload))
+
+            case "anthropic.web_search_20260209":
+                betas.insert("code-execution-web-tools-2026-02-09")
+                let parsed = try await validateTypes(
+                    ValidateTypesOptions(value: foundationArgs(providerTool.args), schema: anthropicWebSearch20260209ArgsSchema)
+                )
+                var payload: [String: JSONValue] = [
+                    "type": .string("web_search_20260209"),
                     "name": .string("web_search")
                 ]
                 if let maxUses = parsed.maxUses {

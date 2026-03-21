@@ -300,6 +300,9 @@ public let anthropicWebFetch20250910OutputSchema = FlexibleSchema(
     )
 )
 
+public let anthropicWebFetch20260209ArgsSchema = anthropicWebFetch20250910ArgsSchema
+public let anthropicWebFetch20260209OutputSchema = anthropicWebFetch20250910OutputSchema
+
 private let anthropicWebFetch20250910ToolOutputSchema = FlexibleSchema(
     jsonSchema(
         .object([
@@ -466,6 +469,9 @@ public let anthropicWebSearch20250305OutputSchema = FlexibleSchema(
     )
 )
 
+public let anthropicWebSearch20260209ArgsSchema = anthropicWebSearch20250305ArgsSchema
+public let anthropicWebSearch20260209OutputSchema = anthropicWebSearch20250305OutputSchema
+
 private let anthropicWebSearch20250305ToolOutputSchema = FlexibleSchema(
     jsonSchema(
         .object([
@@ -589,6 +595,35 @@ public func anthropicWebFetch20250910(_ options: AnthropicWebFetchOptions = .ini
     return anthropicWebFetchFactory(ProviderToolFactoryWithOutputSchemaOptions(args: args))
 }
 
+private let anthropicWebFetch20260209Factory = createProviderToolFactoryWithOutputSchema(
+    id: "anthropic.web_fetch_20260209",
+    name: "web_fetch",
+    inputSchema: anthropicWebFetchInputSchema,
+    outputSchema: anthropicWebFetch20250910ToolOutputSchema,
+    supportsDeferredResults: true
+)
+
+@discardableResult
+public func anthropicWebFetch20260209(_ options: AnthropicWebFetchOptions = .init()) -> Tool {
+    var args: [String: JSONValue] = [:]
+    if let maxUses = options.maxUses {
+        args["maxUses"] = .number(Double(maxUses))
+    }
+    if let allowed = options.allowedDomains {
+        args["allowedDomains"] = .array(allowed.map(JSONValue.string))
+    }
+    if let blocked = options.blockedDomains {
+        args["blockedDomains"] = .array(blocked.map(JSONValue.string))
+    }
+    if let citations = options.citationsEnabled {
+        args["citations"] = .object(["enabled": .bool(citations)])
+    }
+    if let maxTokens = options.maxContentTokens {
+        args["maxContentTokens"] = .number(Double(maxTokens))
+    }
+    return anthropicWebFetch20260209Factory(ProviderToolFactoryWithOutputSchemaOptions(args: args))
+}
+
 private let anthropicWebSearchInputSchema = FlexibleSchema(
     jsonSchema(
         .object([
@@ -631,4 +666,35 @@ public func anthropicWebSearch20250305(_ options: AnthropicWebSearchOptions = .i
         args["userLocation"] = .object(locationObject)
     }
     return anthropicWebSearchFactory(ProviderToolFactoryWithOutputSchemaOptions(args: args))
+}
+
+private let anthropicWebSearch20260209Factory = createProviderToolFactoryWithOutputSchema(
+    id: "anthropic.web_search_20260209",
+    name: "web_search",
+    inputSchema: anthropicWebSearchInputSchema,
+    outputSchema: anthropicWebSearch20250305ToolOutputSchema,
+    supportsDeferredResults: true
+)
+
+@discardableResult
+public func anthropicWebSearch20260209(_ options: AnthropicWebSearchOptions = .init()) -> Tool {
+    var args: [String: JSONValue] = [:]
+    if let maxUses = options.maxUses {
+        args["maxUses"] = .number(Double(maxUses))
+    }
+    if let allowed = options.allowedDomains {
+        args["allowedDomains"] = .array(allowed.map(JSONValue.string))
+    }
+    if let blocked = options.blockedDomains {
+        args["blockedDomains"] = .array(blocked.map(JSONValue.string))
+    }
+    if let location = options.userLocation {
+        var locationObject: [String: JSONValue] = ["type": .string("approximate")]
+        if let city = location.city { locationObject["city"] = .string(city) }
+        if let region = location.region { locationObject["region"] = .string(region) }
+        if let country = location.country { locationObject["country"] = .string(country) }
+        if let timezone = location.timezone { locationObject["timezone"] = .string(timezone) }
+        args["userLocation"] = .object(locationObject)
+    }
+    return anthropicWebSearch20260209Factory(ProviderToolFactoryWithOutputSchemaOptions(args: args))
 }

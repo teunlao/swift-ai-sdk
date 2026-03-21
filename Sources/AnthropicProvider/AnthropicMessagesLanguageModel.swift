@@ -599,6 +599,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
             providerToolNames: [
                 "anthropic.code_execution_20250522": "code_execution",
                 "anthropic.code_execution_20250825": "code_execution",
+                "anthropic.code_execution_20260120": "code_execution",
                 "anthropic.computer_20241022": "computer",
                 "anthropic.computer_20250124": "computer",
                 "anthropic.computer_20251124": "computer",
@@ -610,7 +611,9 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                 "anthropic.bash_20250124": "bash",
                 "anthropic.memory_20250818": "memory",
                 "anthropic.web_search_20250305": "web_search",
+                "anthropic.web_search_20260209": "web_search",
                 "anthropic.web_fetch_20250910": "web_fetch",
+                "anthropic.web_fetch_20260209": "web_fetch",
                 "anthropic.tool_search_regex_20251119": "tool_search_tool_regex",
                 "anthropic.tool_search_bm25_20251119": "tool_search_tool_bm25",
             ]
@@ -816,6 +819,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                 if options.tools?.contains(where: { tool in
                     guard case .provider(let providerTool) = tool else { return false }
                     return providerTool.id == "anthropic.code_execution_20250825"
+                        || providerTool.id == "anthropic.code_execution_20260120"
                 }) != true {
                     warnings.append(.other(message: "code execution tool is required when using skills"))
                 }
@@ -1416,6 +1420,24 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                             result: .object([
                                 "type": .string("code_execution_result"),
                                 "stdout": stdout,
+                                "stderr": stderr,
+                                "return_code": returnCode,
+                                "content": contentList,
+                            ])
+                        )
+                        content.append(.toolResult(toolResult))
+
+                    case "encrypted_code_execution_result":
+                        let encryptedStdout = payload["encrypted_stdout"] ?? .string("")
+                        let stderr = payload["stderr"] ?? .string("")
+                        let returnCode = payload["return_code"] ?? .number(0)
+                        let contentList = payload["content"] ?? .array([])
+                        let toolResult = LanguageModelV3ToolResult(
+                            toolCallId: value.toolUseId,
+                            toolName: toolName,
+                            result: .object([
+                                "type": .string("encrypted_code_execution_result"),
+                                "encrypted_stdout": encryptedStdout,
                                 "stderr": stderr,
                                 "return_code": returnCode,
                                 "content": contentList,
@@ -2141,6 +2163,20 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                 result: .object([
                     "type": .string("code_execution_result"),
                     "stdout": payload["stdout"] ?? .string(""),
+                    "stderr": payload["stderr"] ?? .string(""),
+                    "return_code": payload["return_code"] ?? .number(0),
+                    "content": payload["content"] ?? .array([]),
+                ])
+            )
+        }
+
+        if type == "encrypted_code_execution_result" {
+            return LanguageModelV3ToolResult(
+                toolCallId: content.toolUseId,
+                toolName: toolName,
+                result: .object([
+                    "type": .string("encrypted_code_execution_result"),
+                    "encrypted_stdout": payload["encrypted_stdout"] ?? .string(""),
                     "stderr": payload["stderr"] ?? .string(""),
                     "return_code": payload["return_code"] ?? .number(0),
                     "content": payload["content"] ?? .array([]),

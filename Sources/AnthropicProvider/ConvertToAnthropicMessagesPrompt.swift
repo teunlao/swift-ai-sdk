@@ -572,11 +572,11 @@ private func appendAssistantMessageParts(
                    case .object(let callerObject) = callerValue,
                    let typeValue = callerObject["type"],
                    case .string(let callerType) = typeValue {
-                    if callerType == "code_execution_20250825",
+                    if (callerType == "code_execution_20250825" || callerType == "code_execution_20260120"),
                        let toolIdValue = callerObject["toolId"],
                        case .string(let toolId) = toolIdValue {
                         payload["caller"] = .object([
-                            "type": .string("code_execution_20250825"),
+                            "type": .string(callerType),
                             "tool_id": .string(toolId),
                         ])
                     } else if callerType == "direct" {
@@ -730,6 +730,30 @@ private func appendAssistantToolResult(
                         "stderr": .string(parsed.stderr),
                         "return_code": .number(Double(parsed.returnCode)),
                         "content": .array(content),
+                    ]),
+                ]
+                if let cacheControlJSON { payload["cache_control"] = cacheControlJSON }
+                anthropicContent.append(.object(payload))
+                return
+            }
+
+            if typeString == "encrypted_code_execution_result" {
+                guard let encryptedStdout = object["encrypted_stdout"],
+                      let stderr = object["stderr"],
+                      let returnCode = object["return_code"] else {
+                    warnings.append(.other(message: "provider executed tool result output value is not a valid code execution result for tool \(part.toolName)"))
+                    return
+                }
+
+                var payload: [String: JSONValue] = [
+                    "type": .string("code_execution_tool_result"),
+                    "tool_use_id": .string(part.toolCallId),
+                    "content": .object([
+                        "type": .string("encrypted_code_execution_result"),
+                        "encrypted_stdout": encryptedStdout,
+                        "stderr": stderr,
+                        "return_code": returnCode,
+                        "content": object["content"] ?? .array([]),
                     ]),
                 ]
                 if let cacheControlJSON { payload["cache_control"] = cacheControlJSON }

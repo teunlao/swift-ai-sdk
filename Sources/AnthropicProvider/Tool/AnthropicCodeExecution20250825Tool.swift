@@ -248,9 +248,7 @@ public let anthropicCodeExecution20250825OutputSchema = FlexibleSchema(
     )
 )
 
-private let anthropicCodeExecution20250825OutputJSONSchema: JSONValue = .object([
-    "type": .string("object"),
-    "oneOf": .array([
+private let anthropicCodeExecution20250825OutputBranches: [JSONValue] = [
         // code_execution_result
         .object([
             "type": .string("object"),
@@ -380,7 +378,11 @@ private let anthropicCodeExecution20250825OutputJSONSchema: JSONValue = .object(
             ]),
             "additionalProperties": .bool(false),
         ]),
-    ]),
+]
+
+private let anthropicCodeExecution20250825OutputJSONSchema: JSONValue = .object([
+    "type": .string("object"),
+    "oneOf": .array(anthropicCodeExecution20250825OutputBranches),
 ])
 
 // MARK: - Tool definition
@@ -467,4 +469,59 @@ private let anthropicCodeExecution20250825Factory = createProviderToolFactoryWit
 @discardableResult
 public func anthropicCodeExecution20250825() -> Tool {
     anthropicCodeExecution20250825Factory(ProviderToolFactoryWithOutputSchemaOptions(args: [:]))
+}
+
+private let anthropicCodeExecution20260120OutputJSONSchema: JSONValue = .object([
+    "type": .string("object"),
+    "oneOf": .array([
+        .object([
+            "type": .string("object"),
+            "properties": .object([
+                "type": .object(["const": .string("encrypted_code_execution_result")]),
+                "encrypted_stdout": .object(["type": .string("string")]),
+                "stderr": .object(["type": .string("string")]),
+                "return_code": .object(["type": .string("number")]),
+                "content": .object([
+                    "type": .string("array"),
+                    "items": .object([
+                        "type": .string("object"),
+                        "properties": .object([
+                            "type": .object(["const": .string("code_execution_output")]),
+                            "file_id": .object(["type": .string("string")]),
+                        ]),
+                        "required": .array([.string("type"), .string("file_id")]),
+                        "additionalProperties": .bool(false),
+                    ]),
+                ]),
+            ]),
+            "required": .array([
+                .string("type"),
+                .string("encrypted_stdout"),
+                .string("stderr"),
+                .string("return_code"),
+            ]),
+            "additionalProperties": .bool(false),
+        ]),
+    ] + anthropicCodeExecution20250825OutputBranches),
+])
+
+public let anthropicCodeExecution20260120OutputSchema = FlexibleSchema(
+    jsonSchema(anthropicCodeExecution20260120OutputJSONSchema)
+)
+
+private let anthropicCodeExecution20260120ToolOutputSchema = FlexibleSchema(
+    jsonSchema(anthropicCodeExecution20260120OutputJSONSchema)
+)
+
+private let anthropicCodeExecution20260120Factory = createProviderToolFactoryWithOutputSchema(
+    id: "anthropic.code_execution_20260120",
+    name: "code_execution",
+    inputSchema: anthropicCodeExecution20250825InputSchema,
+    outputSchema: anthropicCodeExecution20260120ToolOutputSchema,
+    supportsDeferredResults: true
+)
+
+@discardableResult
+public func anthropicCodeExecution20260120() -> Tool {
+    anthropicCodeExecution20260120Factory(ProviderToolFactoryWithOutputSchemaOptions(args: [:]))
 }

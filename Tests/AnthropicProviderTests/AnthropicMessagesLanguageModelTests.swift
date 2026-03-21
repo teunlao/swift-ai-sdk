@@ -4051,6 +4051,130 @@ struct AnthropicMessagesLanguageModelProgrammaticToolCallingTests {
             Issue.record("Expected text at index 4")
         }
     }
+
+    @Test("should parse code_execution_20260120 caller metadata and encrypted results")
+    func parsesProgrammaticToolCalling20260120EncryptedResult() async throws {
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.anthropic.com/v1/messages")!,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: nil
+        )!
+
+        let responseBody = """
+        {
+            "id": "msg_test",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5-20250929",
+            "content": [
+                { "type": "text", "text": "I'll run the encrypted game." },
+                {
+                    "type": "server_tool_use",
+                    "id": "srvtoolu_1",
+                    "name": "code_execution",
+                    "input": { "code": "print('hi')" },
+                    "caller": { "type": "direct" }
+                },
+                {
+                    "type": "tool_use",
+                    "id": "toolu_1",
+                    "name": "rollDie",
+                    "input": { "player": "player1" },
+                    "caller": { "type": "code_execution_20260120", "tool_id": "srvtoolu_1" }
+                },
+                {
+                    "type": "code_execution_tool_result",
+                    "tool_use_id": "srvtoolu_1",
+                    "content": {
+                        "type": "encrypted_code_execution_result",
+                        "encrypted_stdout": "ciphertext",
+                        "stderr": "",
+                        "return_code": 0,
+                        "content": []
+                    }
+                },
+                { "type": "text", "text": "done" }
+            ],
+            "stop_reason": "end_turn",
+            "stop_sequence": null,
+            "usage": { "input_tokens": 1, "output_tokens": 2, "server_tool_use": { "web_search_requests": 0 } }
+        }
+        """
+
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .data(Data(responseBody.utf8)), urlResponse: httpResponse)
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-sonnet-4-5-20250929"),
+            config: makeConfig(fetch: fetch)
+        )
+
+        let rollDieTool = LanguageModelV3FunctionTool(
+            name: "rollDie",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "player": .object(["type": .string("string")])
+                ]),
+                "required": .array([.string("player")]),
+                "additionalProperties": .bool(false),
+                "$schema": .string("http://json-schema.org/draft-07/schema#")
+            ])
+        )
+
+        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
+            tools: [
+                .provider(LanguageModelV3ProviderTool(
+                    id: "anthropic.code_execution_20260120",
+                    name: "code_execution",
+                    args: [:]
+                )),
+                .function(rollDieTool),
+            ]
+        ))
+
+        func decodeJSONValue(_ string: String) -> JSONValue? {
+            guard let data = string.data(using: .utf8) else { return nil }
+            return try? JSONDecoder().decode(JSONValue.self, from: data)
+        }
+
+        #expect(result.content.count == 5)
+
+        if case .toolCall(let toolCall) = result.content[2] {
+            #expect(toolCall.toolCallId == "toolu_1")
+            #expect(toolCall.toolName == "rollDie")
+            #expect(decodeJSONValue(toolCall.input) == .object([
+                "player": .string("player1")
+            ]))
+            #expect(toolCall.providerMetadata == [
+                "anthropic": [
+                    "caller": .object([
+                        "type": .string("code_execution_20260120"),
+                        "toolId": .string("srvtoolu_1"),
+                    ])
+                ]
+            ])
+        } else {
+            Issue.record("Expected tool-call at index 2")
+        }
+
+        if case .toolResult(let toolResult) = result.content[3] {
+            #expect(toolResult.toolCallId == "srvtoolu_1")
+            #expect(toolResult.toolName == "code_execution")
+            #expect(toolResult.result == .object([
+                "type": .string("encrypted_code_execution_result"),
+                "encrypted_stdout": .string("ciphertext"),
+                "stderr": .string(""),
+                "return_code": .number(0),
+                "content": .array([]),
+            ]))
+        } else {
+            Issue.record("Expected tool-result at index 3")
+        }
+    }
 }
 
 @Suite("AnthropicMessagesLanguageModel code execution")

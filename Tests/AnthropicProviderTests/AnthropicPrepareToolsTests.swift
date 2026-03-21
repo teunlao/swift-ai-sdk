@@ -525,6 +525,23 @@ struct AnthropicPrepareToolsProviderDefinedTests {
         ])
     }
 
+    @Test("code_execution_20260120 adds payload without beta")
+    func codeExecution20260120() async throws {
+        let result = try await prepareAnthropicTools(
+            tools: [makeProviderTool(id: "anthropic.code_execution_20260120", name: "code_execution")],
+            toolChoice: nil,
+            disableParallelToolUse: nil
+        )
+
+        #expect(result.betas.isEmpty)
+        #expect(result.tools == [
+            .object([
+                "type": .string("code_execution_20260120"),
+                "name": .string("code_execution"),
+            ])
+        ])
+    }
+
     @Test("text_editor_20250728 handles max characters")
     func textEditor20250728WithMax() async throws {
         let args: [String: JSONValue] = ["maxCharacters": .number(10_000)]
@@ -594,70 +611,128 @@ struct AnthropicPrepareToolsProviderDefinedTests {
         }
     }
 
-	    @Test("web_fetch_20250910 parses args and betas")
+    @Test("web_search_20260209 parses args and beta")
+    func webSearch20260209() async throws {
+        let args: [String: JSONValue] = [
+            "maxUses": .number(10),
+            "allowedDomains": .array([.string("https://www.google.com")]),
+            "userLocation": .object([
+                "type": .string("approximate"),
+                "city": .string("New York")
+            ])
+        ]
+        let result = try await prepareAnthropicTools(
+            tools: [makeProviderTool(id: "anthropic.web_search_20260209", name: "web_search", args: args)],
+            toolChoice: nil,
+            disableParallelToolUse: nil
+        )
+        #expect(result.betas == Set(["code-execution-web-tools-2026-02-09"]))
+        if case let .object(tool) = result.tools?.first {
+            #expect(tool["type"] == .string("web_search_20260209"))
+            #expect(tool["name"] == .string("web_search"))
+            #expect(tool["max_uses"] == .number(10))
+            #expect(tool["allowed_domains"] == .array([.string("https://www.google.com")]))
+            if case let .object(location)? = tool["user_location"] {
+                #expect(location["type"] == .string("approximate"))
+                #expect(location["city"] == .string("New York"))
+            } else {
+                Issue.record("Expected user_location")
+            }
+        } else {
+            Issue.record("Expected tool object")
+        }
+    }
+
+    @Test("web_fetch_20250910 parses args and betas")
     func webFetch20250910() async throws {
-	        let args: [String: JSONValue] = [
-	            "maxUses": .number(10),
-	            "allowedDomains": .array([.string("https://www.google.com")]),
-	            "citations": .object(["enabled": .bool(true)]),
-	            "maxContentTokens": .number(1_000)
-	        ]
-	        let result = try await prepareAnthropicTools(
-	            tools: [makeProviderTool(id: "anthropic.web_fetch_20250910", name: "web_fetch", args: args)],
-	            toolChoice: nil,
-	            disableParallelToolUse: nil
-	        )
-	        #expect(result.betas == Set(["web-fetch-2025-09-10"]))
-	        if case let .object(tool) = result.tools?.first {
-	            #expect(tool["type"] == .string("web_fetch_20250910"))
-	            #expect(tool["name"] == .string("web_fetch"))
-	            #expect(tool["max_uses"] == .number(10))
-	            #expect(tool["allowed_domains"] == .array([.string("https://www.google.com")]))
-	            #expect(tool["citations"] == .object(["enabled": .bool(true)]))
-	            #expect(tool["max_content_tokens"] == .number(1_000))
-	        } else {
-	            Issue.record("Expected web_fetch tool object")
-	        }
-	    }
+        let args: [String: JSONValue] = [
+            "maxUses": .number(10),
+            "allowedDomains": .array([.string("https://www.google.com")]),
+            "citations": .object(["enabled": .bool(true)]),
+            "maxContentTokens": .number(1_000)
+        ]
+        let result = try await prepareAnthropicTools(
+            tools: [makeProviderTool(id: "anthropic.web_fetch_20250910", name: "web_fetch", args: args)],
+            toolChoice: nil,
+            disableParallelToolUse: nil
+        )
+        #expect(result.betas == Set(["web-fetch-2025-09-10"]))
+        if case let .object(tool) = result.tools?.first {
+            #expect(tool["type"] == .string("web_fetch_20250910"))
+            #expect(tool["name"] == .string("web_fetch"))
+            #expect(tool["max_uses"] == .number(10))
+            #expect(tool["allowed_domains"] == .array([.string("https://www.google.com")]))
+            #expect(tool["citations"] == .object(["enabled": .bool(true)]))
+            #expect(tool["max_content_tokens"] == .number(1_000))
+        } else {
+            Issue.record("Expected web_fetch tool object")
+        }
+    }
 
-	    @Test("tool_search_regex_20251119 adds beta and payload")
-	    func toolSearchRegex20251119() async throws {
-	        let result = try await prepareAnthropicTools(
-	            tools: [makeProviderTool(id: "anthropic.tool_search_regex_20251119", name: "tool_search_tool_regex")],
-	            toolChoice: nil,
-	            disableParallelToolUse: nil
-	        )
+    @Test("web_fetch_20260209 parses args and beta")
+    func webFetch20260209() async throws {
+        let args: [String: JSONValue] = [
+            "maxUses": .number(10),
+            "allowedDomains": .array([.string("https://www.google.com")]),
+            "citations": .object(["enabled": .bool(true)]),
+            "maxContentTokens": .number(1_000)
+        ]
+        let result = try await prepareAnthropicTools(
+            tools: [makeProviderTool(id: "anthropic.web_fetch_20260209", name: "web_fetch", args: args)],
+            toolChoice: nil,
+            disableParallelToolUse: nil
+        )
+        #expect(result.betas == Set(["code-execution-web-tools-2026-02-09"]))
+        if case let .object(tool) = result.tools?.first {
+            #expect(tool["type"] == .string("web_fetch_20260209"))
+            #expect(tool["name"] == .string("web_fetch"))
+            #expect(tool["max_uses"] == .number(10))
+            #expect(tool["allowed_domains"] == .array([.string("https://www.google.com")]))
+            #expect(tool["citations"] == .object(["enabled": .bool(true)]))
+            #expect(tool["max_content_tokens"] == .number(1_000))
+        } else {
+            Issue.record("Expected web_fetch tool object")
+        }
+    }
 
-	        #expect(result.betas == Set(["advanced-tool-use-2025-11-20"]))
-	        #expect(result.tools == [
-	            .object([
-	                "type": .string("tool_search_tool_regex_20251119"),
-	                "name": .string("tool_search_tool_regex"),
-	            ])
-	        ])
-	    }
+    @Test("tool_search_regex_20251119 adds beta and payload")
+    func toolSearchRegex20251119() async throws {
+        let result = try await prepareAnthropicTools(
+            tools: [makeProviderTool(id: "anthropic.tool_search_regex_20251119", name: "tool_search_tool_regex")],
+            toolChoice: nil,
+            disableParallelToolUse: nil
+        )
 
-	    @Test("tool_search_bm25_20251119 adds beta and payload")
-	    func toolSearchBm2520251119() async throws {
-	        let result = try await prepareAnthropicTools(
-	            tools: [makeProviderTool(id: "anthropic.tool_search_bm25_20251119", name: "tool_search_tool_bm25")],
-	            toolChoice: nil,
-	            disableParallelToolUse: nil
-	        )
+        #expect(result.betas == Set(["advanced-tool-use-2025-11-20"]))
+        #expect(result.tools == [
+            .object([
+                "type": .string("tool_search_tool_regex_20251119"),
+                "name": .string("tool_search_tool_regex"),
+            ])
+        ])
+    }
 
-	        #expect(result.betas == Set(["advanced-tool-use-2025-11-20"]))
-	        #expect(result.tools == [
-	            .object([
-	                "type": .string("tool_search_tool_bm25_20251119"),
-	                "name": .string("tool_search_tool_bm25"),
-	            ])
-	        ])
-	    }
+    @Test("tool_search_bm25_20251119 adds beta and payload")
+    func toolSearchBm2520251119() async throws {
+        let result = try await prepareAnthropicTools(
+            tools: [makeProviderTool(id: "anthropic.tool_search_bm25_20251119", name: "tool_search_tool_bm25")],
+            toolChoice: nil,
+            disableParallelToolUse: nil
+        )
 
-	    @Test("unsupported provider tool yields warning")
-	    func unsupportedProviderTool() async throws {
-	        let unsupported = makeProviderTool(id: "unsupported.tool", name: "unsupported_tool")
-	        let result = try await prepareAnthropicTools(
+        #expect(result.betas == Set(["advanced-tool-use-2025-11-20"]))
+        #expect(result.tools == [
+            .object([
+                "type": .string("tool_search_tool_bm25_20251119"),
+                "name": .string("tool_search_tool_bm25"),
+            ])
+        ])
+    }
+
+    @Test("unsupported provider tool yields warning")
+    func unsupportedProviderTool() async throws {
+        let unsupported = makeProviderTool(id: "unsupported.tool", name: "unsupported_tool")
+        let result = try await prepareAnthropicTools(
 	            tools: [unsupported],
 	            toolChoice: nil,
 	            disableParallelToolUse: nil

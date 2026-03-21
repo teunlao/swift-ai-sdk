@@ -657,6 +657,49 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
         ])
     }
 
+    @Test("assistant tool call includes 20260120 caller metadata when present in providerOptions")
+    func assistantToolCallCallerMetadata20260120() async throws {
+        let toolCall = LanguageModelV3MessagePart.toolCall(
+            .init(
+                toolCallId: "tool-1",
+                toolName: "rollDie",
+                input: .object(["player": .string("player1")]),
+                providerExecuted: false,
+                providerOptions: anthropicOptions([
+                    "caller": .object([
+                        "type": .string("code_execution_20260120"),
+                        "toolId": .string("srvtoolu_1"),
+                    ])
+                ])
+            )
+        )
+        let prompt: LanguageModelV3Prompt = [
+            .assistant(content: [toolCall], providerOptions: nil)
+        ]
+
+        let (result, warnings) = try await convert(prompt)
+
+        #expect(warnings.isEmpty)
+        #expect(result.betas.isEmpty)
+        #expect(result.prompt.messages == [
+            AnthropicMessage(
+                role: "assistant",
+                content: [
+                    .object([
+                        "type": .string("tool_use"),
+                        "id": .string("tool-1"),
+                        "name": .string("rollDie"),
+                        "input": .object(["player": .string("player1")]),
+                        "caller": .object([
+                            "type": .string("code_execution_20260120"),
+                            "tool_id": .string("srvtoolu_1"),
+                        ])
+                    ])
+                ]
+            )
+        ])
+    }
+
     @Test("assistant tool call includes direct caller metadata")
     func assistantToolCallDirectCallerMetadata() async throws {
         let toolCall = LanguageModelV3MessagePart.toolCall(
@@ -935,6 +978,60 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
         } else {
             Issue.record("Expected web fetch tool result object")
         }
+    }
+
+    @Test("assistant server tool maps encrypted code execution results")
+    func assistantEncryptedCodeExecutionServerToolResult() async throws {
+        let codeCall = LanguageModelV3MessagePart.toolCall(
+            .init(
+                toolCallId: "tool-1",
+                toolName: "code_execution",
+                input: .object([:]),
+                providerExecuted: true
+            )
+        )
+        let codeResult = LanguageModelV3MessagePart.toolResult(
+            .init(
+                toolCallId: "tool-1",
+                toolName: "code_execution",
+                output: .json(value: .object([
+                    "type": .string("encrypted_code_execution_result"),
+                    "encrypted_stdout": .string("ciphertext"),
+                    "stderr": .string(""),
+                    "return_code": .number(0),
+                    "content": .array([])
+                ]))
+            )
+        )
+        let prompt: LanguageModelV3Prompt = [
+            .assistant(content: [codeCall, codeResult], providerOptions: nil)
+        ]
+
+        let (result, warnings) = try await convert(prompt)
+
+        #expect(warnings.isEmpty)
+        guard let content = result.prompt.messages.first?.content else {
+            Issue.record("Expected assistant content")
+            return
+        }
+        #expect(content.count == 2)
+        guard case let .object(second) = content[1] else {
+            Issue.record("Expected code execution tool result object")
+            return
+        }
+
+        #expect(second["type"] == .string("code_execution_tool_result"))
+        #expect(second["tool_use_id"] == .string("tool-1"))
+        guard case let .object(resultContent)? = second["content"] else {
+            Issue.record("Expected code execution result content object")
+            return
+        }
+
+        #expect(resultContent["type"] == .string("encrypted_code_execution_result"))
+        #expect(resultContent["encrypted_stdout"] == .string("ciphertext"))
+        #expect(resultContent["stderr"] == .string(""))
+        #expect(resultContent["return_code"] == .number(0))
+        #expect(resultContent["content"] == .array([]))
     }
 
     @Test("provider executed web search supports null title/pageAge")
