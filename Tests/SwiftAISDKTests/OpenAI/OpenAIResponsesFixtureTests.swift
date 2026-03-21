@@ -68,6 +68,11 @@ struct OpenAIResponsesFixtureTests {
         return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
     }
 
+    private func decodeToolInput(_ input: String) -> [String: Any]? {
+        guard let data = input.data(using: .utf8) else { return nil }
+        return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+    }
+
     private func makeModel(
         modelId: OpenAIResponsesModelId,
         fetch: @escaping FetchFunction
@@ -147,6 +152,22 @@ struct OpenAIResponsesFixtureTests {
         ))
     }
 
+    private func makeLocalShellTool() -> LanguageModelV3Tool {
+        .provider(.init(
+            id: "openai.local_shell",
+            name: "shell",
+            args: [:]
+        ))
+    }
+
+    private func makePlainShellTool() -> LanguageModelV3Tool {
+        .provider(.init(
+            id: "openai.shell",
+            name: "shell",
+            args: [:]
+        ))
+    }
+
     private func makeMCPTool() -> LanguageModelV3Tool {
         .provider(.init(
             id: "openai.mcp",
@@ -177,6 +198,51 @@ struct OpenAIResponsesFixtureTests {
             id: "openai.web_search",
             name: "webSearch",
             args: [:]
+        ))
+    }
+
+    private func makeCodeInterpreterTool() -> LanguageModelV3Tool {
+        .provider(.init(
+            id: "openai.code_interpreter",
+            name: "codeExecution",
+            args: [:]
+        ))
+    }
+
+    private func makeCalculatorTool() -> LanguageModelV3Tool {
+        .function(.init(
+            name: "calculator",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "a": .object([
+                        "type": .string("number"),
+                        "description": .string("First operand.")
+                    ]),
+                    "b": .object([
+                        "type": .string("number"),
+                        "description": .string("Second operand.")
+                    ]),
+                    "op": .object([
+                        "type": .string("string"),
+                        "enum": .array([
+                            .string("add"),
+                            .string("subtract"),
+                            .string("multiply"),
+                            .string("divide")
+                        ]),
+                        "default": .string("add"),
+                        "description": .string("Arithmetic operation to perform.")
+                    ])
+                ]),
+                "required": .array([
+                    .string("a"),
+                    .string("b"),
+                    .string("op")
+                ]),
+                "additionalProperties": .bool(false)
+            ]),
+            description: "A minimal calculator for basic arithmetic. Call it once per step."
         ))
     }
 
@@ -375,6 +441,133 @@ struct OpenAIResponsesFixtureTests {
         #expect(environment["type"] as? String == "container_auto")
     }
 
+    @Test("doGenerate decodes local shell fixture")
+    func doGenerateDecodesLocalShellFixture() async throws {
+        let capture = RequestCapture()
+        let model = try makeModel(
+            modelId: "gpt-5-codex",
+            fetch: makeJSONFetch(fixture: "openai-local-shell-tool.1", capture: capture)
+        )
+
+        let result = try await model.doGenerate(options: .init(
+            prompt: samplePrompt,
+            tools: [makeLocalShellTool()]
+        ))
+
+        let reasoningParts = result.content.compactMap { content -> LanguageModelV3Reasoning? in
+            if case .reasoning(let reasoning) = content { return reasoning }
+            return nil
+        }
+        let toolCalls = result.content.compactMap { content -> LanguageModelV3ToolCall? in
+            if case .toolCall(let call) = content { return call }
+            return nil
+        }
+        let textParts = result.content.compactMap { content -> LanguageModelV3Text? in
+            if case .text(let text) = content { return text }
+            return nil
+        }
+        let toolResults = result.content.compactMap { content -> LanguageModelV3ToolResult? in
+            if case .toolResult(let toolResult) = content { return toolResult }
+            return nil
+        }
+
+        #expect(reasoningParts.count == 1)
+        #expect(toolCalls.count == 1)
+        #expect(toolResults.isEmpty)
+        #expect(textParts.isEmpty)
+        #expect(result.finishReason.unified == .stop)
+        #expect(result.providerMetadata?["openai"]?["responseId"] == .string("resp_68da74aaae58819ca776fbd20244e8df0fdbc19a07110799"))
+
+        #expect(toolCalls[0].toolCallId == "call_XWgeTylovOiS8xLNz2TONOgO")
+        #expect(toolCalls[0].toolName == "shell")
+        #expect(toolCalls[0].providerExecuted == nil)
+        #expect(toolCalls[0].providerMetadata?["openai"]?["itemId"] == .string("lsh_68da74abdaec819c9aa19c124308f4600fdbc19a07110799"))
+
+        guard let toolInput = decodeToolInput(toolCalls[0].input),
+              let action = toolInput["action"] as? [String: Any],
+              let command = action["command"] as? [String],
+              let env = action["env"] as? [String: Any] else {
+            Issue.record("Expected local shell action payload")
+            return
+        }
+
+        #expect(action["type"] as? String == "exec")
+        #expect(command == ["ls"])
+        #expect(action["working_directory"] as? String == "/root")
+        #expect(env.isEmpty)
+
+        guard let requestBody = decodeRequestBody(await capture.current()),
+              let tools = requestBody["tools"] as? [[String: Any]],
+              let firstTool = tools.first else {
+            Issue.record("Missing request body for local shell fixture")
+            return
+        }
+
+        #expect(requestBody["model"] as? String == "gpt-5-codex")
+        #expect(firstTool["type"] as? String == "local_shell")
+    }
+
+    @Test("doGenerate decodes shell tool fixture")
+    func doGenerateDecodesShellToolFixture() async throws {
+        let capture = RequestCapture()
+        let model = try makeModel(
+            modelId: "gpt-5.1",
+            fetch: makeJSONFetch(fixture: "openai-shell-tool.1", capture: capture)
+        )
+
+        let result = try await model.doGenerate(options: .init(
+            prompt: samplePrompt,
+            tools: [makePlainShellTool()]
+        ))
+
+        let toolCalls = result.content.compactMap { content -> LanguageModelV3ToolCall? in
+            if case .toolCall(let call) = content { return call }
+            return nil
+        }
+        let textParts = result.content.compactMap { content -> LanguageModelV3Text? in
+            if case .text(let text) = content { return text }
+            return nil
+        }
+        let toolResults = result.content.compactMap { content -> LanguageModelV3ToolResult? in
+            if case .toolResult(let toolResult) = content { return toolResult }
+            return nil
+        }
+
+        #expect(toolCalls.count == 1)
+        #expect(toolResults.isEmpty)
+        #expect(textParts.isEmpty)
+        #expect(result.finishReason.unified == .stop)
+        #expect(result.providerMetadata?["openai"]?["responseId"] == .string("resp_0f0d479976b1e9a600692f61be5948819783b655c7a54af2a2"))
+
+        #expect(toolCalls[0].toolCallId == "call_udkLUvR8lWvG8cDO2B6GNpvZ")
+        #expect(toolCalls[0].toolName == "shell")
+        #expect(toolCalls[0].providerExecuted == nil)
+        #expect(toolCalls[0].providerMetadata?["openai"]?["itemId"] == .string("sh_0f0d479976b1e9a600692f61bec0e08197a0864dc5ddf1d38c"))
+
+        guard let toolInput = decodeToolInput(toolCalls[0].input),
+              let action = toolInput["action"] as? [String: Any],
+              let commands = action["commands"] as? [String] else {
+            Issue.record("Expected shell tool action payload")
+            return
+        }
+
+        #expect(commands.count == 3)
+        #expect(commands[0] == "cd ~ && pwd")
+        #expect(commands[1] == "cd ~/Desktop && pwd")
+        #expect(commands[2].contains("THIS WORKS!"))
+        #expect(action["timeout_ms"] == nil)
+
+        guard let requestBody = decodeRequestBody(await capture.current()),
+              let tools = requestBody["tools"] as? [[String: Any]],
+              let firstTool = tools.first else {
+            Issue.record("Missing request body for shell tool fixture")
+            return
+        }
+
+        #expect(requestBody["model"] as? String == "gpt-5.1")
+        #expect(firstTool["type"] as? String == "shell")
+    }
+
     @Test("doGenerate decodes MCP tool fixture")
     func doGenerateDecodesMCPToolFixture() async throws {
         let capture = RequestCapture()
@@ -500,6 +693,166 @@ struct OpenAIResponsesFixtureTests {
         #expect(finishParts.count == 1)
         #expect(finishParts[0].finishReason.unified == LanguageModelV3FinishReason.Unified.stop)
         #expect(finishParts[0].providerMetadata?["openai"]?["responseId"] == JSONValue.string("resp_049350089f7281c400698f717727d08191a446ae1621ed9503"))
+    }
+
+    @Test("doStream emits local shell fixture events")
+    func doStreamEmitsLocalShellFixtureEvents() async throws {
+        let capture = RequestCapture()
+        let model = try makeModel(
+            modelId: "gpt-5-codex",
+            fetch: makeStreamFetch(fixture: "openai-local-shell-tool.1", capture: capture)
+        )
+
+        let result = try await model.doStream(options: .init(
+            prompt: samplePrompt,
+            tools: [makeLocalShellTool()]
+        ))
+        let parts = try await collectStreamParts(result)
+
+        let reasoningStarts = parts.compactMap { part -> SharedV3ProviderMetadata? in
+            if case .reasoningStart(_, let providerMetadata) = part { return providerMetadata }
+            return nil
+        }
+        let reasoningEnds = parts.compactMap { part -> SharedV3ProviderMetadata? in
+            if case .reasoningEnd(_, let providerMetadata) = part { return providerMetadata }
+            return nil
+        }
+        let toolCalls = parts.compactMap { part -> LanguageModelV3ToolCall? in
+            if case .toolCall(let call) = part { return call }
+            return nil
+        }
+        let toolResults = parts.compactMap { part -> LanguageModelV3ToolResult? in
+            if case .toolResult(let toolResult) = part { return toolResult }
+            return nil
+        }
+        let responseMetadata = parts.compactMap { part -> (id: String?, modelId: String?, timestamp: Date?)? in
+            if case .responseMetadata(let id, let modelId, let timestamp) = part {
+                return (id: id, modelId: modelId, timestamp: timestamp)
+            }
+            return nil
+        }
+        let finishParts = parts.compactMap { part -> (finishReason: LanguageModelV3FinishReason, providerMetadata: SharedV3ProviderMetadata?)? in
+            if case .finish(let finishReason, _, let providerMetadata) = part {
+                return (finishReason: finishReason, providerMetadata: providerMetadata)
+            }
+            return nil
+        }
+
+        #expect(responseMetadata.count == 1)
+        #expect(responseMetadata[0].id == "resp_68da7fd5d24481949fc2cf1cc60377050faf5df54b42d9a6")
+        #expect(responseMetadata[0].modelId == "gpt-5-codex")
+        #expect(reasoningStarts.count == 1)
+        #expect(reasoningEnds.count == 1)
+        #expect(reasoningStarts[0]["openai"]?["itemId"] == .string("rs_68da7fd65a3481948bbb35ff2c79c6c20faf5df54b42d9a6"))
+        #expect(reasoningEnds[0]["openai"]?["itemId"] == .string("rs_68da7fd65a3481948bbb35ff2c79c6c20faf5df54b42d9a6"))
+        #expect(toolCalls.count == 1)
+        #expect(toolResults.isEmpty)
+
+        #expect(toolCalls[0].toolCallId == "call_h3nm8hUG0KO9tVNuRACkL1ri")
+        #expect(toolCalls[0].toolName == "shell")
+        #expect(toolCalls[0].providerExecuted == nil)
+        #expect(toolCalls[0].providerMetadata?["openai"]?["itemId"] == .string("lsh_68da7fd99b3c8194bd624b18c0c0851b0faf5df54b42d9a6"))
+
+        guard let toolInput = decodeToolInput(toolCalls[0].input),
+              let action = toolInput["action"] as? [String: Any],
+              let command = action["command"] as? [String],
+              let env = action["env"] as? [String: Any] else {
+            Issue.record("Expected streamed local shell action payload")
+            return
+        }
+
+        #expect(action["type"] as? String == "exec")
+        #expect(command == ["ls", "-a", "~"])
+        #expect(env.isEmpty)
+
+        #expect(finishParts.count == 1)
+        #expect(finishParts[0].finishReason.unified == .stop)
+        #expect(finishParts[0].providerMetadata?["openai"]?["responseId"] == .string("resp_68da7fd5d24481949fc2cf1cc60377050faf5df54b42d9a6"))
+
+        guard let requestBody = decodeRequestBody(await capture.current()),
+              let tools = requestBody["tools"] as? [[String: Any]],
+              let firstTool = tools.first else {
+            Issue.record("Missing streamed request body for local shell fixture")
+            return
+        }
+
+        #expect(requestBody["model"] as? String == "gpt-5-codex")
+        #expect(firstTool["type"] as? String == "local_shell")
+    }
+
+    @Test("doStream emits shell tool fixture events")
+    func doStreamEmitsShellToolFixtureEvents() async throws {
+        let capture = RequestCapture()
+        let model = try makeModel(
+            modelId: "gpt-5.1",
+            fetch: makeStreamFetch(fixture: "openai-shell-tool.1", capture: capture)
+        )
+
+        let result = try await model.doStream(options: .init(
+            prompt: samplePrompt,
+            tools: [makePlainShellTool()]
+        ))
+        let parts = try await collectStreamParts(result)
+
+        let toolCalls = parts.compactMap { part -> LanguageModelV3ToolCall? in
+            if case .toolCall(let call) = part { return call }
+            return nil
+        }
+        let toolResults = parts.compactMap { part -> LanguageModelV3ToolResult? in
+            if case .toolResult(let toolResult) = part { return toolResult }
+            return nil
+        }
+        let responseMetadata = parts.compactMap { part -> (id: String?, modelId: String?)? in
+            if case .responseMetadata(let id, let modelId, _) = part {
+                return (id: id, modelId: modelId)
+            }
+            return nil
+        }
+        let finishParts = parts.compactMap { part -> (finishReason: LanguageModelV3FinishReason, providerMetadata: SharedV3ProviderMetadata?)? in
+            if case .finish(let finishReason, _, let providerMetadata) = part {
+                return (finishReason: finishReason, providerMetadata: providerMetadata)
+            }
+            return nil
+        }
+
+        #expect(responseMetadata.count == 2)
+        #expect(responseMetadata[0].id == "resp_0434d6d64b12b08900692f639c40408195a50fd07b77ce08a7")
+        #expect(responseMetadata[0].modelId == "gpt-5.1-2025-11-13")
+        #expect(responseMetadata[1].id == "resp_0434d6d64b12b08900692f639d784481959af65f985b9c13e2")
+        #expect(responseMetadata[1].modelId == "gpt-5.1-2025-11-13")
+        #expect(toolCalls.count == 1)
+        #expect(toolResults.isEmpty)
+        #expect(collectText(parts).contains("Here are the files and folders in your `~/Desktop` directory"))
+        #expect(collectText(parts).contains("dec1.txt"))
+
+        #expect(toolCalls[0].toolCallId == "call_pbxjNs1tMJUahLZKAS9qLtvw")
+        #expect(toolCalls[0].toolName == "shell")
+        #expect(toolCalls[0].providerExecuted == nil)
+        #expect(toolCalls[0].providerMetadata?["openai"]?["itemId"] == .string("sh_0434d6d64b12b08900692f639c9f0481959c30e03ca0bb2ef8"))
+
+        guard let toolInput = decodeToolInput(toolCalls[0].input),
+              let action = toolInput["action"] as? [String: Any],
+              let commands = action["commands"] as? [String] else {
+            Issue.record("Expected streamed shell tool action payload")
+            return
+        }
+
+        #expect(commands == ["ls -a ~/Desktop"])
+        #expect(action["timeout_ms"] == nil)
+
+        #expect(finishParts.count == 1)
+        #expect(finishParts[0].finishReason.unified == .stop)
+        #expect(finishParts[0].providerMetadata?["openai"]?["responseId"] == .string("resp_0434d6d64b12b08900692f639d784481959af65f985b9c13e2"))
+
+        guard let requestBody = decodeRequestBody(await capture.current()),
+              let tools = requestBody["tools"] as? [[String: Any]],
+              let firstTool = tools.first else {
+            Issue.record("Missing streamed request body for shell tool fixture")
+            return
+        }
+
+        #expect(requestBody["model"] as? String == "gpt-5.1")
+        #expect(firstTool["type"] as? String == "shell")
     }
 
     @Test("doStream emits MCP tool fixture events")
@@ -792,6 +1145,340 @@ struct OpenAIResponsesFixtureTests {
 
         #expect(include.contains("web_search_call.action.sources"))
         #expect(firstTool["type"] as? String == "web_search")
+    }
+
+    @Test("doGenerate decodes reasoning encrypted content fixture")
+    func doGenerateDecodesReasoningEncryptedContentFixture() async throws {
+        let capture = RequestCapture()
+        let model = try makeModel(
+            modelId: "gpt-5-mini",
+            fetch: makeJSONFetch(fixture: "openai-reasoning-encrypted-content.1", capture: capture)
+        )
+
+        let result = try await model.doGenerate(options: .init(
+            prompt: samplePrompt,
+            tools: [makeCodeInterpreterTool()]
+        ))
+
+        let reasoningParts = result.content.compactMap { content -> LanguageModelV3Reasoning? in
+            if case .reasoning(let reasoning) = content { return reasoning }
+            return nil
+        }
+        let textParts = result.content.compactMap { content -> LanguageModelV3Text? in
+            if case .text(let text) = content { return text }
+            return nil
+        }
+
+        #expect(reasoningParts.count == 1)
+        #expect(textParts.count == 1)
+        #expect(result.finishReason.unified == .stop)
+        #expect(result.response?.id == "resp_0f35ed53160b395301693cc957829881909359e7f80cdd20b5")
+
+        #expect(reasoningParts[0].text.contains("Reporting final result"))
+        #expect(reasoningParts[0].text.contains("Final result: 570"))
+        #expect(reasoningParts[0].providerMetadata?["openai"]?["itemId"] == .string("rs_0f35ed53160b395301693cc95817ac8190b978637daea4987e"))
+        if case .string(let encrypted)? = reasoningParts[0].providerMetadata?["openai"]?["reasoningEncryptedContent"] {
+            #expect(!encrypted.isEmpty)
+        } else {
+            Issue.record("Expected reasoning encrypted content metadata")
+        }
+
+        #expect(textParts[0].text.contains("12 + 7 = 19"))
+        #expect(textParts[0].text.contains("Final result: 570"))
+        #expect(textParts[0].providerMetadata?["openai"]?["itemId"] == .string("msg_0f35ed53160b395301693cc95c1d288190997018450969162b"))
+
+        guard let requestBody = decodeRequestBody(await capture.current()),
+              let tools = requestBody["tools"] as? [[String: Any]],
+              let firstTool = tools.first else {
+            Issue.record("Missing request body for reasoning encrypted content fixture")
+            return
+        }
+
+        #expect(requestBody["model"] as? String == "gpt-5-mini")
+        #expect(firstTool["type"] as? String == "code_interpreter")
+    }
+
+    @Test("doStream emits reasoning encrypted content fixture events")
+    func doStreamEmitsReasoningEncryptedContentFixtureEvents() async throws {
+        let capture = RequestCapture()
+        let model = try makeModel(
+            modelId: "gpt-5.1-codex-max",
+            fetch: makeStreamFetch(fixture: "openai-reasoning-encrypted-content.1", capture: capture)
+        )
+
+        let result = try await model.doStream(options: .init(
+            prompt: samplePrompt,
+            tools: [makeCalculatorTool()],
+            providerOptions: [
+                "openai": [
+                    "reasoningEffort": .string("high"),
+                    "maxCompletionTokens": .number(32_000),
+                    "store": .bool(false),
+                    "include": .array([.string("reasoning.encrypted_content")]),
+                    "reasoningSummary": .string("auto"),
+                    "forceReasoning": .bool(true)
+                ]
+            ]
+        ))
+        let parts = try await collectStreamParts(result)
+
+        let reasoningStarts = parts.compactMap { part -> (String, SharedV3ProviderMetadata?)? in
+            if case .reasoningStart(let id, let providerMetadata) = part {
+                return (id, providerMetadata)
+            }
+            return nil
+        }
+        let reasoningEnds = parts.compactMap { part -> (String, SharedV3ProviderMetadata?)? in
+            if case .reasoningEnd(let id, let providerMetadata) = part {
+                return (id, providerMetadata)
+            }
+            return nil
+        }
+        let reasoningDeltas = parts.compactMap { part -> String? in
+            if case .reasoningDelta(_, let delta, _) = part { return delta }
+            return nil
+        }
+        let toolCalls = parts.compactMap { part -> LanguageModelV3ToolCall? in
+            if case .toolCall(let call) = part { return call }
+            return nil
+        }
+        let responseMetadata = parts.compactMap { part -> (id: String?, modelId: String?)? in
+            if case .responseMetadata(let id, let modelId, _) = part {
+                return (id: id, modelId: modelId)
+            }
+            return nil
+        }
+        let finishParts = parts.compactMap { part -> LanguageModelV3FinishReason? in
+            if case .finish(let finishReason, _, _) = part { return finishReason }
+            return nil
+        }
+
+        #expect(responseMetadata.count == 4)
+        #expect(responseMetadata[0].id == "resp_01830d662ab3856501693c321345c88190b0de00f3b9975691")
+        #expect(responseMetadata.last?.id == "resp_01830d662ab3856501693c3217ba4c8190a3ddf6c839d4f12a")
+        #expect(reasoningStarts.count == 1)
+        #expect(reasoningEnds.count == 1)
+        #expect(reasoningStarts[0].0 == "rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9:0")
+        #expect(reasoningEnds[0].0 == "rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9:0")
+        if case .string(let encrypted)? = reasoningEnds[0].1?["openai"]?["reasoningEncryptedContent"] {
+            #expect(!encrypted.isEmpty)
+        } else {
+            Issue.record("Expected streamed reasoning encrypted content metadata")
+        }
+
+        #expect(reasoningDeltas.joined().contains("Calculating step-by-step using calculator"))
+        #expect(toolCalls.count == 3)
+        #expect(toolCalls.allSatisfy { $0.toolName == "calculator" })
+        #expect(toolCalls.contains { $0.toolCallId == "call_AB6AaRZ1FYZB2RwS6A5vbdqn" && $0.input == "{\"a\":12,\"b\":7,\"op\":\"add\"}" })
+        #expect(toolCalls.contains { $0.toolCallId == "call_Q6pW65MUgW9vF59BmItYGos3" && $0.input == "{\"a\":19,\"b\":3,\"op\":\"multiply\"}" })
+        #expect(toolCalls.contains { $0.toolCallId == "call_Zl5vIMnD7dVAjgU6FkhmiCZh" && $0.input == "{\"a\":57,\"b\":10,\"op\":\"multiply\"}" })
+        #expect(collectText(parts).contains("The final result is **570**."))
+        #expect(finishParts.count == 1)
+        #expect(finishParts[0].unified == .toolCalls)
+
+        guard let requestBody = decodeRequestBody(await capture.current()),
+              let include = requestBody["include"] as? [String],
+              let tools = requestBody["tools"] as? [[String: Any]],
+              let firstTool = tools.first else {
+            Issue.record("Missing streamed request body for reasoning encrypted fixture")
+            return
+        }
+
+        #expect(requestBody["model"] as? String == "gpt-5.1-codex-max")
+        #expect(include.contains("reasoning.encrypted_content"))
+        #expect(firstTool["type"] as? String == "function")
+        #expect(firstTool["name"] as? String == "calculator")
+    }
+
+    @Test("doGenerate decodes code interpreter fixture")
+    func doGenerateDecodesCodeInterpreterFixture() async throws {
+        let capture = RequestCapture()
+        let model = try makeModel(
+            modelId: "gpt-5-nano",
+            fetch: makeJSONFetch(fixture: "openai-code-interpreter-tool.1", capture: capture)
+        )
+
+        let result = try await model.doGenerate(options: .init(
+            prompt: samplePrompt,
+            tools: [makeCodeInterpreterTool()]
+        ))
+
+        let reasoningParts = result.content.compactMap { content -> LanguageModelV3Reasoning? in
+            if case .reasoning(let reasoning) = content { return reasoning }
+            return nil
+        }
+        let toolCalls = result.content.compactMap { content -> LanguageModelV3ToolCall? in
+            if case .toolCall(let call) = content { return call }
+            return nil
+        }
+        let toolResults = result.content.compactMap { content -> LanguageModelV3ToolResult? in
+            if case .toolResult(let toolResult) = content { return toolResult }
+            return nil
+        }
+        let textParts = result.content.compactMap { content -> LanguageModelV3Text? in
+            if case .text(let text) = content { return text }
+            return nil
+        }
+        let sourceParts = result.content.compactMap { content -> LanguageModelV3Source? in
+            if case .source(let source) = content { return source }
+            return nil
+        }
+
+        #expect(reasoningParts.count == 4)
+        #expect(toolCalls.count == 3)
+        #expect(toolResults.count == 3)
+        #expect(textParts.count == 1)
+        #expect(sourceParts.count == 1)
+        #expect(result.finishReason.unified == .stop)
+
+        guard let firstCallInput = decodeToolInput(toolCalls[0].input),
+              let firstCode = firstCallInput["code"] as? String,
+              let secondCallInput = decodeToolInput(toolCalls[1].input),
+              let secondCode = secondCallInput["code"] as? String,
+              let thirdCallInput = decodeToolInput(toolCalls[2].input),
+              let thirdCode = thirdCallInput["code"] as? String else {
+            Issue.record("Expected decodable code interpreter call inputs")
+            return
+        }
+
+        #expect(toolCalls.allSatisfy { $0.toolName == "codeExecution" })
+        #expect(toolCalls.allSatisfy { $0.providerExecuted == true })
+        #expect(toolCalls[0].input.contains("\"containerId\":\"cntr_6903bf2c0470819090b2b1e63e0b66800c139a5d654a42ec\""))
+        #expect(firstCode.contains("import random"))
+        #expect(secondCode.contains("filename = \"/mnt/data/two_dice_sums_10000.txt\""))
+        #expect(secondCode.contains("filename, os.path.getsize(filename)"))
+        #expect(thirdCode.contains("os.path.getsize(filename), filename"))
+
+        if case .object(let firstResult) = toolResults[0].result,
+           case .array(let outputs)? = firstResult["outputs"],
+           case .object(let firstOutput) = outputs.first {
+            #expect(firstOutput["type"] == .string("logs"))
+            #expect(firstOutput["logs"] == .string("(10000, 70024)"))
+        } else {
+            Issue.record("Expected code interpreter logs payload")
+        }
+
+        if case .object(let secondResult) = toolResults[1].result,
+           case .array(let outputs)? = secondResult["outputs"] {
+            #expect(outputs.isEmpty)
+        } else {
+            Issue.record("Expected empty outputs for file write step")
+        }
+
+        #expect(textParts[0].text.contains("Total sum across all 10,000 rolls: 70024"))
+        #expect(textParts[0].text.contains("Download the file"))
+
+        guard case .document(_, let mediaType, let title, let filename, let providerMetadata) = sourceParts[0] else {
+            Issue.record("Expected document source from code interpreter fixture")
+            return
+        }
+        #expect(mediaType == "text/plain")
+        #expect(title == "two_dice_sums_10000.txt")
+        #expect(filename == "two_dice_sums_10000.txt")
+        #expect(providerMetadata?["openai"]?["type"] == .string("container_file_citation"))
+        #expect(providerMetadata?["openai"]?["fileId"] == .string("cfile_6903bf45e3288191af3d56e6d23c3a4d"))
+        #expect(providerMetadata?["openai"]?["containerId"] == .string("cntr_6903bf2c0470819090b2b1e63e0b66800c139a5d654a42ec"))
+
+        guard let requestBody = decodeRequestBody(await capture.current()),
+              let include = requestBody["include"] as? [String],
+              let tools = requestBody["tools"] as? [[String: Any]],
+              let firstTool = tools.first,
+              let container = firstTool["container"] as? [String: Any] else {
+            Issue.record("Missing request body for code interpreter fixture")
+            return
+        }
+
+        #expect(requestBody["model"] as? String == "gpt-5-nano")
+        #expect(include.contains("code_interpreter_call.outputs"))
+        #expect(firstTool["type"] as? String == "code_interpreter")
+        #expect(container["type"] as? String == "auto")
+    }
+
+    @Test("doStream emits code interpreter fixture events")
+    func doStreamEmitsCodeInterpreterFixtureEvents() async throws {
+        let capture = RequestCapture()
+        let model = try makeModel(
+            modelId: "gpt-5-nano",
+            fetch: makeStreamFetch(fixture: "openai-code-interpreter-tool.1", capture: capture)
+        )
+
+        let result = try await model.doStream(options: .init(
+            prompt: samplePrompt,
+            tools: [makeCodeInterpreterTool()]
+        ))
+        let parts = try await collectStreamParts(result)
+
+        let toolCalls = parts.compactMap { part -> LanguageModelV3ToolCall? in
+            if case .toolCall(let call) = part { return call }
+            return nil
+        }
+        let toolResults = parts.compactMap { part -> LanguageModelV3ToolResult? in
+            if case .toolResult(let toolResult) = part { return toolResult }
+            return nil
+        }
+        let sourceParts = parts.compactMap { part -> LanguageModelV3Source? in
+            if case .source(let source) = part { return source }
+            return nil
+        }
+        let responseMetadata = parts.compactMap { part -> (id: String?, modelId: String?)? in
+            if case .responseMetadata(let id, let modelId, _) = part {
+                return (id: id, modelId: modelId)
+            }
+            return nil
+        }
+        let finishParts = parts.compactMap { part -> LanguageModelV3FinishReason? in
+            if case .finish(let finishReason, _, _) = part { return finishReason }
+            return nil
+        }
+
+        #expect(responseMetadata.count == 1)
+        #expect(responseMetadata[0].id == "resp_68c2e6efa238819383d5f52a2c2a3baa02d3a5742c7ddae9")
+        #expect(responseMetadata[0].modelId == "gpt-5-nano-2025-08-07")
+        #expect(toolCalls.count == 3)
+        #expect(toolResults.count == 3)
+        #expect(sourceParts.count == 1)
+        #expect(toolCalls.allSatisfy { $0.toolName == "codeExecution" })
+        #expect(toolCalls.allSatisfy { $0.providerExecuted == true })
+        #expect(toolCalls[0].input.contains("\"containerId\":\"cntr_68c2e6f380d881908a57a82d394434ff02f484f5344062e9\""))
+        #expect(toolCalls[1].input.contains("roll2dice_sums_10000.csv"))
+        #expect(toolCalls[2].input.contains("sums[:20]"))
+
+        if case .object(let firstResult) = toolResults[0].result,
+           case .array(let outputs)? = firstResult["outputs"],
+           case .object(let firstOutput) = outputs.first {
+            #expect(firstOutput["logs"] == .string("(2, 12, 69868, 6.9868)"))
+        } else {
+            Issue.record("Expected streamed code interpreter logs payload")
+        }
+
+        guard case .document(_, let mediaType, let title, let filename, let providerMetadata) = sourceParts[0] else {
+            Issue.record("Expected streamed document source from code interpreter fixture")
+            return
+        }
+        #expect(mediaType == "text/plain")
+        #expect(title == "roll2dice_sums_10000.csv")
+        #expect(filename == "roll2dice_sums_10000.csv")
+        #expect(providerMetadata?["openai"]?["type"] == .string("container_file_citation"))
+        #expect(providerMetadata?["openai"]?["fileId"] == .string("cfile_68c2e7084ab48191a67824aa1f4c90f1"))
+        #expect(providerMetadata?["openai"]?["containerId"] == .string("cntr_68c2e6f380d881908a57a82d394434ff02f484f5344062e9"))
+
+        #expect(collectText(parts).contains("Total sum of all 10,000 trials: 69,868"))
+        #expect(collectText(parts).contains("roll2dice_sums_10000.csv"))
+        #expect(finishParts.count == 1)
+        #expect(finishParts[0].unified == .stop)
+
+        guard let requestBody = decodeRequestBody(await capture.current()),
+              let include = requestBody["include"] as? [String],
+              let tools = requestBody["tools"] as? [[String: Any]],
+              let firstTool = tools.first,
+              let container = firstTool["container"] as? [String: Any] else {
+            Issue.record("Missing streamed request body for code interpreter fixture")
+            return
+        }
+
+        #expect(include.contains("code_interpreter_call.outputs"))
+        #expect(firstTool["type"] as? String == "code_interpreter")
+        #expect(container["type"] as? String == "auto")
     }
 
     @Test("doGenerate emits MCP approval request turn 1")
