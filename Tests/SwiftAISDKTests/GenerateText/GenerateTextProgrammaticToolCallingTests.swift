@@ -108,6 +108,9 @@ struct GenerateTextProgrammaticToolCallingTests {
     @Test("5 steps: provider tool triggers client tool across multiple turns (dice game fixture)")
     func diceGameFixture() async throws {
         let usage = LanguageModelV3Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 1))
+        let onStepProviderMetadata = LockedValue(initial: [ProviderMetadata?]())
+        let onStepFinishReasons = LockedValue(initial: [FinishReason]())
+        let onFinishEvent = LockedValue(initial: Optional<GenerateTextFinishEvent>.none)
 
         let step1 = LanguageModelV3GenerateResult(
             content: [
@@ -248,6 +251,13 @@ struct GenerateTextProgrammaticToolCallingTests {
                         ])
                     ]
                 ])
+            },
+            onStepFinish: { stepResult in
+                onStepProviderMetadata.withValue { $0.append(stepResult.providerMetadata) }
+                onStepFinishReasons.withValue { $0.append(stepResult.finishReason) }
+            },
+            onFinish: { event in
+                onFinishEvent.withValue { $0 = event }
             }
         )
 
@@ -282,6 +292,9 @@ struct GenerateTextProgrammaticToolCallingTests {
         // Final step prompt should include all prior response messages.
         #expect(model.doGenerateCalls[4].prompt.count == 9)
 
+        #expect(result.toolCalls.isEmpty)
+        #expect(result.toolResults.count == 1)
+
         // rollDie should have been executed for every client tool call.
         let recordedExecutions = executions.withValue { $0 }
         #expect(recordedExecutions.count == 8)
@@ -311,5 +324,54 @@ struct GenerateTextProgrammaticToolCallingTests {
 
         // Response messages should contain all assistant/tool messages from all steps.
         #expect(result.response.messages.count == 9)
+        if let lastResponseMessage = result.response.messages.last {
+            if case .assistant(let assistantMessage) = lastResponseMessage,
+               case .parts(let parts) = assistantMessage.content {
+                #expect(parts.count == 2)
+
+                if parts.count >= 2 {
+                    if case .toolResult(let toolResultPart) = parts[0] {
+                        #expect(toolResultPart.toolName == "code_execution")
+                        if case .json(value: let value, providerOptions: _) = toolResultPart.output {
+                            #expect(value == codeExecutionResult)
+                        } else {
+                            Issue.record("Expected json tool output in final response message.")
+                        }
+                    } else {
+                        Issue.record("Expected final response message to start with a tool-result part.")
+                    }
+
+                    if case .text(let textPart) = parts[1] {
+                        #expect(textPart.text == "**Game Over!**")
+                    } else {
+                        Issue.record("Expected final response message to end with a text part.")
+                    }
+                }
+            } else {
+                Issue.record("Expected final response message to be an assistant message with parts.")
+            }
+        } else {
+            Issue.record("Expected response messages to contain a final assistant message.")
+        }
+
+        let callbackProviderMetadata = onStepProviderMetadata.withValue { $0 }
+        #expect(callbackProviderMetadata.count == 5)
+        if callbackProviderMetadata.count == 5 {
+            #expect(callbackProviderMetadata[0] == containerProviderMetadata)
+            #expect(callbackProviderMetadata[1] == containerProviderMetadata)
+            #expect(callbackProviderMetadata[2] == containerProviderMetadata)
+            #expect(callbackProviderMetadata[3] == containerProviderMetadata)
+            #expect(callbackProviderMetadata[4] == nil)
+        }
+
+        let callbackFinishReasons = onStepFinishReasons.withValue { $0 }
+        #expect(callbackFinishReasons == [.toolCalls, .toolCalls, .toolCalls, .toolCalls, .stop])
+
+        let finishEvent = try #require(onFinishEvent.withValue { $0 })
+        #expect(finishEvent.finishReason == .stop)
+        #expect(finishEvent.steps.count == 5)
+        #expect(finishEvent.response.messages.count == 9)
+        #expect(finishEvent.toolCalls.isEmpty)
+        #expect(finishEvent.toolResults.count == 1)
     }
 }

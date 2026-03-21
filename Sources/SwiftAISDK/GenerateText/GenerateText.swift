@@ -516,30 +516,61 @@ private func asContent(
 
                 if toolResultPart.isError == true {
                     let errorValue = ProviderToolExecutionError(value: toolResultPart.result)
-                    let typedError = TypedToolError.static(
-                        StaticToolError(
-                            toolCallId: toolResultPart.toolCallId,
-                            toolName: toolResultPart.toolName,
-                            input: input,
-                            error: errorValue,
-                            providerExecuted: true
+                    let typedError: TypedToolError
+                    if toolResultPart.dynamic == true {
+                        typedError = .dynamic(
+                            DynamicToolError(
+                                toolCallId: toolResultPart.toolCallId,
+                                toolName: toolResultPart.toolName,
+                                input: input,
+                                error: errorValue,
+                                providerExecuted: true,
+                                providerMetadata: toolResultPart.providerMetadata
+                            )
                         )
-                    )
+                    } else {
+                        typedError = .static(
+                            StaticToolError(
+                                toolCallId: toolResultPart.toolCallId,
+                                toolName: toolResultPart.toolName,
+                                input: input,
+                                error: errorValue,
+                                providerExecuted: true,
+                                providerMetadata: toolResultPart.providerMetadata
+                            )
+                        )
+                    }
 
-                    contentParts.append(.toolError(typedError, providerMetadata: nil))
+                    contentParts.append(.toolError(typedError, providerMetadata: toolResultPart.providerMetadata))
                 } else {
-                    let typedResult = TypedToolResult.static(
-                        StaticToolResult(
-                            toolCallId: toolResultPart.toolCallId,
-                            toolName: toolResultPart.toolName,
-                            input: input,
-                            output: toolResultPart.result,
-                            providerExecuted: true,
-                            preliminary: toolResultPart.preliminary
+                    let typedResult: TypedToolResult
+                    if toolResultPart.dynamic == true {
+                        typedResult = .dynamic(
+                            DynamicToolResult(
+                                toolCallId: toolResultPart.toolCallId,
+                                toolName: toolResultPart.toolName,
+                                input: input,
+                                output: toolResultPart.result,
+                                providerExecuted: true,
+                                preliminary: toolResultPart.preliminary,
+                                providerMetadata: toolResultPart.providerMetadata
+                            )
                         )
-                    )
+                    } else {
+                        typedResult = .static(
+                            StaticToolResult(
+                                toolCallId: toolResultPart.toolCallId,
+                                toolName: toolResultPart.toolName,
+                                input: input,
+                                output: toolResultPart.result,
+                                providerExecuted: true,
+                                preliminary: toolResultPart.preliminary,
+                                providerMetadata: toolResultPart.providerMetadata
+                            )
+                        )
+                    }
 
-                    contentParts.append(.toolResult(typedResult, providerMetadata: nil))
+                    contentParts.append(.toolResult(typedResult, providerMetadata: toolResultPart.providerMetadata))
                 }
 
                 break
@@ -556,7 +587,8 @@ private func asContent(
                             toolName: call.toolName,
                             input: call.input,
                             error: errorValue,
-                            providerExecuted: true
+                            providerExecuted: true,
+                            providerMetadata: toolResultPart.providerMetadata
                         )
                     )
                 case .dynamic(let call):
@@ -566,11 +598,12 @@ private func asContent(
                             toolName: call.toolName,
                             input: call.input,
                             error: errorValue,
-                            providerExecuted: true
+                            providerExecuted: true,
+                            providerMetadata: toolResultPart.providerMetadata
                         )
                     )
                 }
-                contentParts.append(.toolError(typedError, providerMetadata: nil))
+                contentParts.append(.toolError(typedError, providerMetadata: toolResultPart.providerMetadata))
             } else {
                 let typedResult: TypedToolResult
                 switch toolCall {
@@ -582,7 +615,8 @@ private func asContent(
                             input: call.input,
                             output: toolResultPart.result,
                             providerExecuted: true,
-                            preliminary: toolResultPart.preliminary
+                            preliminary: toolResultPart.preliminary,
+                            providerMetadata: toolResultPart.providerMetadata
                         )
                     )
                 case .dynamic(let call):
@@ -593,11 +627,12 @@ private func asContent(
                             input: call.input,
                             output: toolResultPart.result,
                             providerExecuted: true,
-                            preliminary: toolResultPart.preliminary
+                            preliminary: toolResultPart.preliminary,
+                            providerMetadata: toolResultPart.providerMetadata
                         )
                     )
                 }
-                contentParts.append(.toolResult(typedResult, providerMetadata: nil))
+                contentParts.append(.toolResult(typedResult, providerMetadata: toolResultPart.providerMetadata))
             }
         }
     }

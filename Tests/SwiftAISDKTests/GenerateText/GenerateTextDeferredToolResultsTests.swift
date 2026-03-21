@@ -103,8 +103,8 @@ struct GenerateTextDeferredToolResultsTests {
                 #expect(error.input == .null)
                 #expect(error.providerExecuted == true)
                 #expect(error.isDynamic == false)
-                #expect(error.providerMetadata == nil)
-                #expect(metadata == nil)
+                #expect(error.providerMetadata == meta)
+                #expect(metadata == meta)
             } else {
                 Issue.record("Expected tool-error content part.")
             }

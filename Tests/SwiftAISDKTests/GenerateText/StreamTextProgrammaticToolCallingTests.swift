@@ -21,6 +21,12 @@ struct StreamTextProgrammaticToolCallingTests {
         }
     }
 
+    private struct FinishCapture: Sendable {
+        let stepCount: Int
+        let finishReason: FinishReason
+        let responseMessageCount: Int
+    }
+
     private let containerId = "container_011CWHPPTDTn1XufeRB9uHeH"
     private let codeExecutionToolCallId = "srvtoolu_01MzSrFWsmzBdcoQkGWLyRjK"
 
@@ -108,6 +114,9 @@ struct StreamTextProgrammaticToolCallingTests {
     @Test("5 steps: provider tool triggers client tool across multiple turns (dice game fixture)")
     func diceGameFixture() async throws {
         let usage = LanguageModelV3Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 1))
+        let onStepProviderMetadata = LockedValue(initial: [ProviderMetadata?]())
+        let onStepFinishReasons = LockedValue(initial: [FinishReason]())
+        let onFinishCapture = LockedValue(initial: Optional<FinishCapture>.none)
 
         let step1Parts: [LanguageModelV3StreamPart] = [
             .streamStart(warnings: []),
@@ -283,7 +292,20 @@ struct StreamTextProgrammaticToolCallingTests {
                     ]
                 ])
             },
-            stopWhen: [stepCountIs(10)]
+            stopWhen: [stepCountIs(10)],
+            onStepFinish: { stepResult in
+                onStepProviderMetadata.withValue { $0.append(stepResult.providerMetadata) }
+                onStepFinishReasons.withValue { $0.append(stepResult.finishReason) }
+            },
+            onFinish: { finalStep, steps, _, finishReason in
+                onFinishCapture.withValue {
+                    $0 = FinishCapture(
+                        stepCount: steps.count,
+                        finishReason: finishReason,
+                        responseMessageCount: finalStep.response.messages.count
+                    )
+                }
+            }
         )
 
         _ = try await convertReadableStreamToArray(result.fullStream)
@@ -321,6 +343,23 @@ struct StreamTextProgrammaticToolCallingTests {
         #expect(recordedExecutions.filter { $0 == "player1" }.count == 3)
         #expect(recordedExecutions.filter { $0 == "player2" }.count == 3)
 
+        let finalToolCalls = try await result.toolCalls
+        #expect(finalToolCalls.isEmpty)
+
+        let finalToolResults = try await result.toolResults
+        #expect(finalToolResults.count == 1)
+        if finalToolResults.count == 1 {
+            if case .static(let staticResult) = finalToolResults[0] {
+                #expect(staticResult.toolCallId == codeExecutionToolCallId)
+                #expect(staticResult.toolName == "code_execution")
+                #expect(staticResult.providerExecuted == true)
+                #expect(staticResult.input == .null)
+                #expect(staticResult.output == codeExecutionResult)
+            } else {
+                Issue.record("Expected deferred provider tool result in final toolResults.")
+            }
+        }
+
         // Final content should contain the deferred provider tool result and final text.
         let finalContent = try await result.content
         #expect(finalContent.count == 2)
@@ -342,5 +381,55 @@ struct StreamTextProgrammaticToolCallingTests {
                 Issue.record("Expected final text as second content part.")
             }
         }
+
+        let response = try await result.response
+        #expect(response.messages.count == 9)
+        if let lastResponseMessage = response.messages.last {
+            if case .assistant(let assistantMessage) = lastResponseMessage,
+               case .parts(let parts) = assistantMessage.content {
+                #expect(parts.count == 2)
+
+                if parts.count >= 2 {
+                    if case .toolResult(let toolResultPart) = parts[0] {
+                        #expect(toolResultPart.toolName == "code_execution")
+                        if case .json(value: let value, providerOptions: _) = toolResultPart.output {
+                            #expect(value == codeExecutionResult)
+                        } else {
+                            Issue.record("Expected json tool output in final stream response message.")
+                        }
+                    } else {
+                        Issue.record("Expected final stream response message to start with a tool-result part.")
+                    }
+
+                    if case .text(let textPart) = parts[1] {
+                        #expect(textPart.text == "**Game Over!**")
+                    } else {
+                        Issue.record("Expected final stream response message to end with a text part.")
+                    }
+                }
+            } else {
+                Issue.record("Expected final stream response message to be an assistant message with parts.")
+            }
+        } else {
+            Issue.record("Expected stream response messages to contain a final assistant message.")
+        }
+
+        let callbackProviderMetadata = onStepProviderMetadata.withValue { $0 }
+        #expect(callbackProviderMetadata.count == 5)
+        if callbackProviderMetadata.count == 5 {
+            #expect(callbackProviderMetadata[0] == containerProviderMetadata)
+            #expect(callbackProviderMetadata[1] == containerProviderMetadata)
+            #expect(callbackProviderMetadata[2] == containerProviderMetadata)
+            #expect(callbackProviderMetadata[3] == containerProviderMetadata)
+            #expect(callbackProviderMetadata[4] == nil)
+        }
+
+        let callbackFinishReasons = onStepFinishReasons.withValue { $0 }
+        #expect(callbackFinishReasons == [.toolCalls, .toolCalls, .toolCalls, .toolCalls, .stop])
+
+        let finishCapture = try #require(onFinishCapture.withValue { $0 })
+        #expect(finishCapture.stepCount == 5)
+        #expect(finishCapture.finishReason == .stop)
+        #expect(finishCapture.responseMessageCount == 9)
     }
 }

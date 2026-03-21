@@ -113,7 +113,7 @@ struct StreamTextDeferredToolResultsTests {
         let fullStream = try await convertReadableStreamToArray(result.fullStream)
         if let part = fullStream.first(where: { if case .toolError = $0 { return true } else { return false } }) {
             if case .toolError(let error) = part {
-                #expect(error.providerMetadata == nil)
+                #expect(error.providerMetadata == meta)
             }
         } else {
             Issue.record("Expected fullStream to contain a tool-error part.")
@@ -132,8 +132,8 @@ struct StreamTextDeferredToolResultsTests {
                 #expect(error.input == .null)
                 #expect(error.providerExecuted == true)
                 #expect(error.isDynamic == false)
-                #expect(error.providerMetadata == nil)
-                #expect(metadata == nil)
+                #expect(error.providerMetadata == meta)
+                #expect(metadata == meta)
             } else {
                 Issue.record("Expected tool-error content part.")
             }
@@ -197,7 +197,7 @@ struct StreamTextDeferredToolResultsTests {
         let fullStream = try await convertReadableStreamToArray(result.fullStream)
         if let part = fullStream.first(where: { if case .toolError = $0 { return true } else { return false } }) {
             if case .toolError(let error) = part {
-                #expect(error.providerMetadata == nil)
+                #expect(error.providerMetadata == meta)
             }
         } else {
             Issue.record("Expected fullStream to contain a tool-error part.")
@@ -223,8 +223,8 @@ struct StreamTextDeferredToolResultsTests {
                 #expect(error.toolName == "deferred_tool")
                 #expect(error.providerExecuted == true)
                 #expect(error.isDynamic == false)
-                #expect(error.providerMetadata == nil)
-                #expect(metadata == nil)
+                #expect(error.providerMetadata == meta)
+                #expect(metadata == meta)
             } else {
                 Issue.record("Expected tool-error content part.")
             }

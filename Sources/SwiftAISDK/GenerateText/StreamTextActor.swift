@@ -331,6 +331,121 @@ actor StreamTextActor {
         }
     }
 
+    private func makeProviderToolResult(
+        toolResult: LanguageModelV3ToolResult,
+        input: JSONValue,
+        matchedCall: TypedToolCall?
+    ) -> TypedToolResult {
+        switch matchedCall {
+        case .static:
+            return .static(
+                StaticToolResult(
+                    toolCallId: toolResult.toolCallId,
+                    toolName: toolResult.toolName,
+                    input: input,
+                    output: toolResult.result,
+                    providerExecuted: true,
+                    preliminary: toolResult.preliminary,
+                    providerMetadata: toolResult.providerMetadata
+                )
+            )
+        case .dynamic:
+            return .dynamic(
+                DynamicToolResult(
+                    toolCallId: toolResult.toolCallId,
+                    toolName: toolResult.toolName,
+                    input: input,
+                    output: toolResult.result,
+                    providerExecuted: true,
+                    preliminary: toolResult.preliminary,
+                    providerMetadata: toolResult.providerMetadata
+                )
+            )
+        case nil:
+            if toolResult.dynamic == true {
+                return .dynamic(
+                    DynamicToolResult(
+                        toolCallId: toolResult.toolCallId,
+                        toolName: toolResult.toolName,
+                        input: input,
+                        output: toolResult.result,
+                        providerExecuted: true,
+                        preliminary: toolResult.preliminary,
+                        providerMetadata: toolResult.providerMetadata
+                    )
+                )
+            }
+
+            return .static(
+                StaticToolResult(
+                    toolCallId: toolResult.toolCallId,
+                    toolName: toolResult.toolName,
+                    input: input,
+                    output: toolResult.result,
+                    providerExecuted: true,
+                    preliminary: toolResult.preliminary,
+                    providerMetadata: toolResult.providerMetadata
+                )
+            )
+        }
+    }
+
+    private func makeProviderToolError(
+        toolResult: LanguageModelV3ToolResult,
+        input: JSONValue,
+        error: Error,
+        matchedCall: TypedToolCall?
+    ) -> TypedToolError {
+        switch matchedCall {
+        case .static:
+            return .static(
+                StaticToolError(
+                    toolCallId: toolResult.toolCallId,
+                    toolName: toolResult.toolName,
+                    input: input,
+                    error: error,
+                    providerExecuted: true,
+                    providerMetadata: toolResult.providerMetadata
+                )
+            )
+        case .dynamic:
+            return .dynamic(
+                DynamicToolError(
+                    toolCallId: toolResult.toolCallId,
+                    toolName: toolResult.toolName,
+                    input: input,
+                    error: error,
+                    providerExecuted: true,
+                    providerMetadata: toolResult.providerMetadata
+                )
+            )
+        case nil:
+            if toolResult.dynamic == true {
+                return .dynamic(
+                    DynamicToolError(
+                        toolCallId: toolResult.toolCallId,
+                        toolName: toolResult.toolName,
+                        input: input,
+                        error: error,
+                        providerExecuted: true,
+                        providerMetadata: toolResult.providerMetadata
+                    )
+                )
+            }
+
+            return .static(
+                StaticToolError(
+                    toolCallId: toolResult.toolCallId,
+                    toolName: toolResult.toolName,
+                    input: input,
+                    error: error,
+                    providerExecuted: true,
+                    providerMetadata: toolResult.providerMetadata
+                )
+            )
+        }
+    }
+
     private func emitToolResult(_ result: TypedToolResult, preliminary: Bool) async {
         await fullBroadcaster.send(.toolResult(result))
         if !preliminary {
@@ -1000,37 +1115,21 @@ case let .toolInputStart(id, toolName, providerMetadata, providerExecuted, dynam
                 recordedContent.append(.toolApprovalRequest(approval))
 
             case .toolResult(let result):
-                let input = activeToolInputs[result.toolCallId] ?? .null
+                let matchedCall = currentToolCallsById[result.toolCallId]
+                let input = matchedCall?.input ?? activeToolInputs[result.toolCallId] ?? .null
                 let isPreliminary = result.preliminary == true
                 if result.isError == true {
                     let errorValue = ProviderToolExecutionError(value: result.result)
-                    let typedError: TypedToolError
-
-                    if tools?[result.toolName] != nil {
-                        typedError = .static(
-                            StaticToolError(
-                                toolCallId: result.toolCallId,
-                                toolName: result.toolName,
-                                input: input,
-                                error: errorValue,
-                                providerExecuted: true
-                            )
-                        )
-                    } else {
-                        typedError = .dynamic(
-                            DynamicToolError(
-                                toolCallId: result.toolCallId,
-                                toolName: result.toolName,
-                                input: input,
-                                error: errorValue,
-                                providerExecuted: true
-                            )
-                        )
-                    }
+                    let typedError = makeProviderToolError(
+                        toolResult: result,
+                        input: input,
+                        error: errorValue,
+                        matchedCall: matchedCall
+                    )
 
                     await fullBroadcaster.send(.toolError(typedError))
                     if !isPreliminary {
-                        recordedContent.append(.toolError(typedError, providerMetadata: nil))
+                        recordedContent.append(.toolError(typedError, providerMetadata: result.providerMetadata))
                         currentToolOutputs.append(.error(typedError))
                         pendingDeferredToolCalls.removeValue(forKey: result.toolCallId)
                         activeToolInputs.removeValue(forKey: result.toolCallId)
@@ -1038,32 +1137,15 @@ case let .toolInputStart(id, toolName, providerMetadata, providerExecuted, dynam
                         removePendingApproval(toolCallId: result.toolCallId)
                     }
                 } else {
-                    let typed: TypedToolResult
-                    if tools?[result.toolName] != nil {
-                        let staticResult = StaticToolResult(
-                            toolCallId: result.toolCallId,
-                            toolName: result.toolName,
-                            input: input,
-                            output: result.result,
-                            providerExecuted: true,
-                            preliminary: result.preliminary
-                        )
-                        typed = .static(staticResult)
-                    } else {
-                        let dynamicResult = DynamicToolResult(
-                            toolCallId: result.toolCallId,
-                            toolName: result.toolName,
-                            input: input,
-                            output: result.result,
-                            providerExecuted: true,
-                            preliminary: result.preliminary
-                        )
-                        typed = .dynamic(dynamicResult)
-                    }
+                    let typed = makeProviderToolResult(
+                        toolResult: result,
+                        input: input,
+                        matchedCall: matchedCall
+                    )
 
                     await fullBroadcaster.send(.toolResult(typed))
                     if !isPreliminary {
-                        recordedContent.append(.toolResult(typed, providerMetadata: nil))
+                        recordedContent.append(.toolResult(typed, providerMetadata: result.providerMetadata))
                         currentToolOutputs.append(.result(typed))
                         pendingDeferredToolCalls.removeValue(forKey: result.toolCallId)
                         activeToolInputs.removeValue(forKey: result.toolCallId)
