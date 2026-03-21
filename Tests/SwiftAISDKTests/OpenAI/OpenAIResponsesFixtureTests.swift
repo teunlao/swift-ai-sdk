@@ -168,6 +168,27 @@ struct OpenAIResponsesFixtureTests {
         ))
     }
 
+    private func makeImageGenerationTool() -> LanguageModelV3Tool {
+        .provider(.init(
+            id: "openai.image_generation",
+            name: "generateImage",
+            args: [
+                "outputFormat": .string("webp"),
+                "quality": .string("low"),
+                "size": .string("1024x1024"),
+                "partialImages": .number(2)
+            ]
+        ))
+    }
+
+    private func makeDefaultImageGenerationTool() -> LanguageModelV3Tool {
+        .provider(.init(
+            id: "openai.image_generation",
+            name: "generateImage",
+            args: [:]
+        ))
+    }
+
     private func makeMCPTool() -> LanguageModelV3Tool {
         .provider(.init(
             id: "openai.mcp",
@@ -568,6 +589,76 @@ struct OpenAIResponsesFixtureTests {
         #expect(firstTool["type"] as? String == "shell")
     }
 
+    @Test("doGenerate decodes image generation fixture")
+    func doGenerateDecodesImageGenerationFixture() async throws {
+        let capture = RequestCapture()
+        let model = try makeModel(
+            modelId: "gpt-5-nano",
+            fetch: makeJSONFetch(fixture: "openai-image-generation-tool.1", capture: capture)
+        )
+
+        let result = try await model.doGenerate(options: .init(
+            prompt: samplePrompt,
+            tools: [makeImageGenerationTool()]
+        ))
+
+        let reasoningParts = result.content.compactMap { content -> LanguageModelV3Reasoning? in
+            if case .reasoning(let reasoning) = content { return reasoning }
+            return nil
+        }
+        let toolCalls = result.content.compactMap { content -> LanguageModelV3ToolCall? in
+            if case .toolCall(let call) = content { return call }
+            return nil
+        }
+        let toolResults = result.content.compactMap { content -> LanguageModelV3ToolResult? in
+            if case .toolResult(let toolResult) = content { return toolResult }
+            return nil
+        }
+        let textParts = result.content.compactMap { content -> LanguageModelV3Text? in
+            if case .text(let text) = content { return text }
+            return nil
+        }
+
+        #expect(reasoningParts.count == 2)
+        #expect(toolCalls.count == 1)
+        #expect(toolResults.count == 1)
+        #expect(textParts.count == 1)
+        #expect(result.finishReason.unified == .stop)
+        #expect(result.providerMetadata?["openai"]?["responseId"] == .string("resp_0a33d15155cb126d0068c96c54970481958484dea31f07926d"))
+
+        #expect(toolCalls[0].toolCallId == "ig_0a33d15155cb126d0068c96c59bc14819599154c9988b82996")
+        #expect(toolCalls[0].toolName == "generateImage")
+        #expect(toolCalls[0].providerExecuted == true)
+        #expect(toolCalls[0].input == "{}")
+
+        #expect(toolResults[0].toolCallId == "ig_0a33d15155cb126d0068c96c59bc14819599154c9988b82996")
+        #expect(toolResults[0].toolName == "generateImage")
+        #expect(toolResults[0].preliminary != true)
+        if case .object(let payload) = toolResults[0].result,
+           case .string(let imageData)? = payload["result"] {
+            #expect(imageData.hasPrefix("UklGR"))
+        } else {
+            Issue.record("Expected image generation result payload")
+        }
+
+        #expect(textParts[0].text.isEmpty)
+        #expect(textParts[0].providerMetadata?["openai"]?["itemId"] == .string("msg_0a33d15155cb126d0068c96c723ed88195b1405bc370bb8a65"))
+
+        guard let requestBody = decodeRequestBody(await capture.current()),
+              let tools = requestBody["tools"] as? [[String: Any]],
+              let firstTool = tools.first else {
+            Issue.record("Missing request body for image generation fixture")
+            return
+        }
+
+        #expect(requestBody["model"] as? String == "gpt-5-nano")
+        #expect(firstTool["type"] as? String == "image_generation")
+        #expect(firstTool["output_format"] as? String == "webp")
+        #expect(firstTool["quality"] as? String == "low")
+        #expect(firstTool["size"] as? String == "1024x1024")
+        #expect(firstTool["partial_images"] as? Double == 2)
+    }
+
     @Test("doGenerate decodes MCP tool fixture")
     func doGenerateDecodesMCPToolFixture() async throws {
         let capture = RequestCapture()
@@ -853,6 +944,108 @@ struct OpenAIResponsesFixtureTests {
 
         #expect(requestBody["model"] as? String == "gpt-5.1")
         #expect(firstTool["type"] as? String == "shell")
+    }
+
+    @Test("doStream emits image generation fixture events")
+    func doStreamEmitsImageGenerationFixtureEvents() async throws {
+        let capture = RequestCapture()
+        let model = try makeModel(
+            modelId: "gpt-5-nano",
+            fetch: makeStreamFetch(fixture: "openai-image-generation-tool.1", capture: capture)
+        )
+
+        let result = try await model.doStream(options: .init(
+            prompt: samplePrompt,
+            tools: [makeDefaultImageGenerationTool()]
+        ))
+        let parts = try await collectStreamParts(result)
+
+        let reasoningStarts = parts.compactMap { part -> SharedV3ProviderMetadata? in
+            if case .reasoningStart(_, let providerMetadata) = part { return providerMetadata }
+            return nil
+        }
+        let reasoningEnds = parts.compactMap { part -> SharedV3ProviderMetadata? in
+            if case .reasoningEnd(_, let providerMetadata) = part { return providerMetadata }
+            return nil
+        }
+        let textStarts = parts.compactMap { part -> SharedV3ProviderMetadata? in
+            if case .textStart(_, let providerMetadata) = part { return providerMetadata }
+            return nil
+        }
+        let textEnds = parts.compactMap { part -> SharedV3ProviderMetadata? in
+            if case .textEnd(_, let providerMetadata) = part { return providerMetadata }
+            return nil
+        }
+        let toolCalls = parts.compactMap { part -> LanguageModelV3ToolCall? in
+            if case .toolCall(let call) = part { return call }
+            return nil
+        }
+        let toolResults = parts.compactMap { part -> LanguageModelV3ToolResult? in
+            if case .toolResult(let toolResult) = part { return toolResult }
+            return nil
+        }
+        let responseMetadata = parts.compactMap { part -> (id: String?, modelId: String?)? in
+            if case .responseMetadata(let id, let modelId, _) = part {
+                return (id: id, modelId: modelId)
+            }
+            return nil
+        }
+        let finishParts = parts.compactMap { part -> (finishReason: LanguageModelV3FinishReason, usage: LanguageModelV3Usage, providerMetadata: SharedV3ProviderMetadata?)? in
+            if case .finish(let finishReason, let usage, let providerMetadata) = part {
+                return (finishReason: finishReason, usage: usage, providerMetadata: providerMetadata)
+            }
+            return nil
+        }
+
+        #expect(responseMetadata.count == 1)
+        #expect(responseMetadata[0].id == "resp_0df93c0bb83a72f20068c979db26ac819e8b5a444fad3f0d7f")
+        #expect(responseMetadata[0].modelId == "gpt-5-2025-08-07")
+        #expect(reasoningStarts.count == 1)
+        #expect(reasoningEnds.count == 1)
+        #expect(reasoningStarts[0]["openai"]?["itemId"] == .string("rs_0df93c0bb83a72f20068c979db90b4819e94cedbfda2d49af6"))
+        #expect(reasoningEnds[0]["openai"]?["itemId"] == .string("rs_0df93c0bb83a72f20068c979db90b4819e94cedbfda2d49af6"))
+        #expect(textStarts.count == 1)
+        #expect(textEnds.count == 1)
+        #expect(textStarts[0]["openai"]?["itemId"] == .string("msg_0df93c0bb83a72f20068c97a0b36f4819ea5906451007f95e2"))
+        #expect(textEnds[0]["openai"]?["itemId"] == .string("msg_0df93c0bb83a72f20068c97a0b36f4819ea5906451007f95e2"))
+        #expect(toolCalls.count == 1)
+        #expect(toolResults.count == 2)
+        #expect(collectText(parts).isEmpty)
+
+        #expect(toolCalls[0].toolCallId == "ig_0df93c0bb83a72f20068c979f589c0819e9f0fc2d1a27aa1b8")
+        #expect(toolCalls[0].toolName == "generateImage")
+        #expect(toolCalls[0].providerExecuted == true)
+        #expect(toolCalls[0].input == "{}")
+
+        #expect(toolResults[0].toolCallId == "ig_0df93c0bb83a72f20068c979f589c0819e9f0fc2d1a27aa1b8")
+        #expect(toolResults[0].preliminary == true)
+        #expect(toolResults[1].toolCallId == "ig_0df93c0bb83a72f20068c979f589c0819e9f0fc2d1a27aa1b8")
+        #expect(toolResults[1].preliminary != true)
+        if case .object(let firstPayload) = toolResults[0].result,
+           case .string(let firstImage)? = firstPayload["result"],
+           case .object(let secondPayload) = toolResults[1].result,
+           case .string(let secondImage)? = secondPayload["result"] {
+            #expect(firstImage.hasPrefix("UklGR"))
+            #expect(firstImage == secondImage)
+        } else {
+            Issue.record("Expected streamed image generation result payloads")
+        }
+
+        #expect(finishParts.count == 1)
+        #expect(finishParts[0].finishReason.unified == .stop)
+        #expect(finishParts[0].providerMetadata?["openai"]?["responseId"] == .string("resp_0df93c0bb83a72f20068c979db26ac819e8b5a444fad3f0d7f"))
+        #expect(finishParts[0].usage.inputTokens.cacheRead == 1920)
+        #expect(finishParts[0].usage.outputTokens.reasoning == 1024)
+
+        guard let requestBody = decodeRequestBody(await capture.current()),
+              let tools = requestBody["tools"] as? [[String: Any]],
+              let firstTool = tools.first else {
+            Issue.record("Missing streamed request body for image generation fixture")
+            return
+        }
+
+        #expect(requestBody["model"] as? String == "gpt-5-nano")
+        #expect(firstTool["type"] as? String == "image_generation")
     }
 
     @Test("doStream emits MCP tool fixture events")
