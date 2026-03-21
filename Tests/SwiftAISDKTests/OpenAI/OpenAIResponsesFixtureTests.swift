@@ -172,6 +172,14 @@ struct OpenAIResponsesFixtureTests {
         ))
     }
 
+    private func makeWebSearchTool() -> LanguageModelV3Tool {
+        .provider(.init(
+            id: "openai.web_search",
+            name: "webSearch",
+            args: [:]
+        ))
+    }
+
     private func makeMCPApprovalTurn2Prompt() -> LanguageModelV3Prompt {
         [
             .user(
@@ -625,6 +633,275 @@ struct OpenAIResponsesFixtureTests {
         #expect(textEnds[1]["openai"]?["phase"] == .string("final_answer"))
         #expect(collectText(parts).contains("Got it"))
         #expect(collectText(parts).contains("Here are a few **AI"))
+    }
+
+    @Test("doGenerate decodes web search fixture")
+    func doGenerateDecodesWebSearchFixture() async throws {
+        let capture = RequestCapture()
+        let model = try makeModel(
+            modelId: "gpt-5-nano",
+            fetch: makeJSONFetch(fixture: "openai-web-search-tool.1", capture: capture)
+        )
+
+        let result = try await model.doGenerate(options: .init(
+            prompt: samplePrompt,
+            tools: [makeWebSearchTool()]
+        ))
+
+        let toolCalls = result.content.compactMap { content -> LanguageModelV3ToolCall? in
+            if case .toolCall(let call) = content { return call }
+            return nil
+        }
+        let toolResults = result.content.compactMap { content -> LanguageModelV3ToolResult? in
+            if case .toolResult(let toolResult) = content { return toolResult }
+            return nil
+        }
+        let textParts = result.content.compactMap { content -> LanguageModelV3Text? in
+            if case .text(let text) = content { return text }
+            return nil
+        }
+
+        #expect(toolCalls.count == 3)
+        #expect(toolResults.count == 3)
+        #expect(textParts.count == 1)
+        #expect(result.finishReason.unified == .stop)
+
+        #expect(toolCalls.allSatisfy { $0.toolName == "webSearch" })
+        #expect(toolCalls.allSatisfy { $0.providerExecuted == true })
+        #expect(toolCalls[0].toolCallId == "ws_0953eda47ee1741200693330682c988195aaa470a8cc51dfe4")
+        #expect(toolCalls[1].toolCallId == "ws_0953eda47ee17412006933306f501c8195b9d3dfba4c547834")
+        #expect(toolCalls[2].toolCallId == "ws_0953eda47ee1741200693330740e248195a2c77632e480424b")
+
+        if case .object(let searchPayload) = toolResults[0].result,
+           case .object(let searchAction)? = searchPayload["action"] {
+            #expect(searchAction["type"] == .string("search"))
+            #expect(searchAction["query"] == .string("tech news today December 5 2025"))
+            if case .array(let sources)? = searchPayload["sources"] {
+                #expect(sources.count >= 10)
+            } else {
+                Issue.record("Expected web search sources array")
+            }
+        } else {
+            Issue.record("Expected web search result payload")
+        }
+
+        if case .object(let openPagePayload) = toolResults[1].result,
+           case .object(let action)? = openPagePayload["action"] {
+            #expect(action["type"] == .string("openPage"))
+            #expect(action["url"] == .string("https://www.theverge.com/podcast/838932/openai-chatgpt-code-red-vergecast"))
+        } else {
+            Issue.record("Expected open_page payload")
+        }
+
+        if case .object(let findInPagePayload) = toolResults[2].result,
+           case .object(let action)? = findInPagePayload["action"] {
+            #expect(action["type"] == .string("findInPage"))
+            #expect(action["pattern"] == .string("Vercel"))
+        } else {
+            Issue.record("Expected find_in_page payload")
+        }
+
+        #expect(textParts[0].text.contains("Short answer first"))
+        #expect(textParts[0].text.contains("Vercel-related funding"))
+
+        guard let requestBody = decodeRequestBody(await capture.current()),
+              let include = requestBody["include"] as? [String],
+              let tools = requestBody["tools"] as? [[String: Any]],
+              let firstTool = tools.first else {
+            Issue.record("Missing request body for web search fixture")
+            return
+        }
+
+        #expect(include.contains("web_search_call.action.sources"))
+        #expect(firstTool["type"] as? String == "web_search")
+    }
+
+    @Test("doStream emits web search fixture events")
+    func doStreamEmitsWebSearchFixtureEvents() async throws {
+        let capture = RequestCapture()
+        let model = try makeModel(
+            modelId: "gpt-5-nano",
+            fetch: makeStreamFetch(fixture: "openai-web-search-tool.1", capture: capture)
+        )
+
+        let result = try await model.doStream(options: .init(
+            prompt: samplePrompt,
+            tools: [makeWebSearchTool()]
+        ))
+        let parts = try await collectStreamParts(result)
+
+        let toolCalls = parts.compactMap { part -> LanguageModelV3ToolCall? in
+            if case .toolCall(let call) = part { return call }
+            return nil
+        }
+        let toolResults = parts.compactMap { part -> LanguageModelV3ToolResult? in
+            if case .toolResult(let toolResult) = part { return toolResult }
+            return nil
+        }
+        let responseMetadata = parts.compactMap { part -> (id: String?, modelId: String?)? in
+            if case .responseMetadata(let id, let modelId, _) = part {
+                return (id: id, modelId: modelId)
+            }
+            return nil
+        }
+
+        #expect(responseMetadata.count == 1)
+        #expect(responseMetadata[0].id == "resp_0cc96ac817fdc57e00693337060a408198b92bf1f99cf1b8ec")
+        #expect(responseMetadata[0].modelId == "gpt-5-mini-2025-08-07")
+        #expect(toolCalls.count >= 6)
+        #expect(toolResults.count >= 6)
+        #expect(toolCalls.allSatisfy { $0.toolName == "webSearch" })
+        #expect(toolCalls.allSatisfy { $0.providerExecuted == true })
+        #expect(toolResults[0].toolCallId == "ws_0cc96ac817fdc57e006933370e71cc81989ece73cbdfe67d25")
+
+        if case .object(let searchPayload) = toolResults[0].result,
+           case .object(let action)? = searchPayload["action"] {
+            #expect(action["type"] == .string("search"))
+            #expect(action["query"] == .string("tech news today December 5 2025"))
+        } else {
+            Issue.record("Expected streamed search payload")
+        }
+
+        let hasOpenPage = toolResults.contains { toolResult in
+            guard case .object(let payload) = toolResult.result,
+                  case .object(let action)? = payload["action"] else {
+                return false
+            }
+            return action["type"] == .string("openPage")
+        }
+        let hasFindInPage = toolResults.contains { toolResult in
+            guard case .object(let payload) = toolResult.result,
+                  case .object(let action)? = payload["action"] else {
+                return false
+            }
+            return action["type"] == .string("findInPage")
+        }
+
+        #expect(hasOpenPage)
+        #expect(hasFindInPage)
+        #expect(collectText(parts).contains("I checked today’s tech headlines"))
+        #expect(collectText(parts).contains("keyword pattern"))
+
+        guard let requestBody = decodeRequestBody(await capture.current()),
+              let include = requestBody["include"] as? [String],
+              let tools = requestBody["tools"] as? [[String: Any]],
+              let firstTool = tools.first else {
+            Issue.record("Missing streamed request body for web search fixture")
+            return
+        }
+
+        #expect(include.contains("web_search_call.action.sources"))
+        #expect(firstTool["type"] as? String == "web_search")
+    }
+
+    @Test("doGenerate emits MCP approval request turn 1")
+    func doGenerateEmitsMCPApprovalRequestTurn1() async throws {
+        let capture = RequestCapture()
+        let model = try makeModel(
+            modelId: "gpt-5-mini",
+            fetch: makeJSONFetch(fixture: "openai-mcp-tool-approval.1", capture: capture)
+        )
+
+        let result = try await model.doGenerate(options: .init(
+            prompt: samplePrompt,
+            tools: [makeMCPTool()]
+        ))
+
+        let toolCalls = result.content.compactMap { content -> LanguageModelV3ToolCall? in
+            if case .toolCall(let call) = content { return call }
+            return nil
+        }
+        let approvalRequests = result.content.compactMap { content -> LanguageModelV3ToolApprovalRequest? in
+            if case .toolApprovalRequest(let request) = content { return request }
+            return nil
+        }
+
+        #expect(toolCalls.count == 1)
+        #expect(approvalRequests.count == 1)
+        #expect(result.finishReason.unified == .stop)
+
+        #expect(toolCalls[0].toolCallId == "generated-0")
+        #expect(toolCalls[0].toolName == "mcp.create_short_url")
+        #expect(toolCalls[0].providerExecuted == true)
+        #expect(toolCalls[0].dynamic == true)
+        #expect(toolCalls[0].input.contains("\"url\":\"https://ai-sdk.dev/\""))
+        #expect(toolCalls[0].input.contains("\"description\":\"\""))
+
+        #expect(approvalRequests[0].approvalId == "mcpr_04f6b17429cf2b02006949a6712b1081968b3c7a72dec695d8")
+        #expect(approvalRequests[0].toolCallId == "generated-0")
+
+        guard let requestBody = decodeRequestBody(await capture.current()),
+              let input = requestBody["input"] as? [[String: Any]],
+              let tools = requestBody["tools"] as? [[String: Any]],
+              let firstTool = tools.first else {
+            Issue.record("Missing request body for MCP turn 1")
+            return
+        }
+
+        #expect(input.count == 1)
+        #expect(input[0]["role"] as? String == "user")
+        #expect(firstTool["type"] as? String == "mcp")
+        #expect(firstTool["server_label"] as? String == "zip1")
+        #expect(firstTool["server_url"] as? String == "https://zip1.io/mcp")
+        #expect(firstTool["server_description"] as? String == "Link shortener")
+        #expect(firstTool["require_approval"] as? String == "always")
+    }
+
+    @Test("doStream emits MCP approval request turn 1")
+    func doStreamEmitsMCPApprovalRequestTurn1() async throws {
+        let capture = RequestCapture()
+        let model = try makeModel(
+            modelId: "gpt-5-mini",
+            fetch: makeStreamFetch(fixture: "openai-mcp-tool-approval.1", capture: capture)
+        )
+
+        let result = try await model.doStream(options: .init(
+            prompt: samplePrompt,
+            tools: [makeMCPTool()]
+        ))
+        let parts = try await collectStreamParts(result)
+
+        let toolCalls = parts.compactMap { part -> LanguageModelV3ToolCall? in
+            if case .toolCall(let call) = part { return call }
+            return nil
+        }
+        let approvalRequests = parts.compactMap { part -> LanguageModelV3ToolApprovalRequest? in
+            if case .toolApprovalRequest(let request) = part { return request }
+            return nil
+        }
+        let responseMetadata = parts.compactMap { part -> (id: String?, modelId: String?)? in
+            if case .responseMetadata(let id, let modelId, _) = part {
+                return (id: id, modelId: modelId)
+            }
+            return nil
+        }
+
+        #expect(responseMetadata.count == 1)
+        #expect(responseMetadata[0].id == "resp_04a97b4fce127879006949a837a3a48195b37f26ae73f550c0")
+        #expect(responseMetadata[0].modelId == "gpt-5-mini-2025-08-07")
+        #expect(toolCalls.count == 1)
+        #expect(approvalRequests.count == 1)
+        #expect(collectText(parts).isEmpty)
+
+        #expect(toolCalls[0].toolCallId == "generated-0")
+        #expect(toolCalls[0].toolName == "mcp.create_short_url")
+        #expect(toolCalls[0].providerExecuted == true)
+        #expect(toolCalls[0].dynamic == true)
+        #expect(toolCalls[0].input.contains("\"description\":\"Shortened link for ai-sdk.dev\""))
+
+        #expect(approvalRequests[0].approvalId == "mcpr_04a97b4fce127879006949a83ac9308195a7f7b69ea82e91fe")
+        #expect(approvalRequests[0].toolCallId == "generated-0")
+
+        guard let requestBody = decodeRequestBody(await capture.current()),
+              let tools = requestBody["tools"] as? [[String: Any]],
+              let firstTool = tools.first else {
+            Issue.record("Missing streamed request body for MCP turn 1")
+            return
+        }
+
+        #expect(firstTool["type"] as? String == "mcp")
+        #expect(firstTool["server_label"] as? String == "zip1")
+        #expect(firstTool["require_approval"] as? String == "always")
     }
 
     @Test("doGenerate handles MCP approval denial turn 2")
