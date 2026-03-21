@@ -106,4 +106,86 @@ struct UIMessageChunkTests {
             "dynamic": .bool(true)
         ]))
     }
+
+    @Test("encodes tool input chunks with title and provider metadata")
+    func encodesToolInputChunksWithTitleAndProviderMetadata() throws {
+        let metadata: ProviderMetadata = [
+            "provider": ["itemId": .string("call-item")]
+        ]
+
+        let start = encodeUIMessageChunkToJSON(
+            .toolInputStart(
+                toolCallId: "tool-1",
+                toolName: "weather",
+                providerExecuted: true,
+                providerMetadata: metadata,
+                dynamic: false,
+                title: "Weather lookup"
+            )
+        )
+
+        let available = encodeUIMessageChunkToJSON(
+            .toolInputAvailable(
+                toolCallId: "tool-1",
+                toolName: "weather",
+                input: .object(["city": .string("London")]),
+                providerExecuted: true,
+                providerMetadata: metadata,
+                dynamic: false,
+                title: "Weather lookup"
+            )
+        )
+
+        let error = encodeUIMessageChunkToJSON(
+            .toolInputError(
+                toolCallId: "tool-1",
+                toolName: "weather",
+                input: .object(["city": .string("London")]),
+                providerExecuted: true,
+                providerMetadata: metadata,
+                dynamic: false,
+                errorText: "boom",
+                title: "Weather lookup"
+            )
+        )
+
+        let expectedMetadata: JSONValue = .object([
+            "provider": .object([
+                "itemId": .string("call-item")
+            ])
+        ])
+
+        #expect(start == .object([
+            "type": .string("tool-input-start"),
+            "toolCallId": .string("tool-1"),
+            "toolName": .string("weather"),
+            "providerExecuted": .bool(true),
+            "providerMetadata": expectedMetadata,
+            "dynamic": .bool(false),
+            "title": .string("Weather lookup")
+        ]))
+
+        #expect(available == .object([
+            "type": .string("tool-input-available"),
+            "toolCallId": .string("tool-1"),
+            "toolName": .string("weather"),
+            "input": .object(["city": .string("London")]),
+            "providerExecuted": .bool(true),
+            "providerMetadata": expectedMetadata,
+            "dynamic": .bool(false),
+            "title": .string("Weather lookup")
+        ]))
+
+        #expect(error == .object([
+            "type": .string("tool-input-error"),
+            "toolCallId": .string("tool-1"),
+            "toolName": .string("weather"),
+            "input": .object(["city": .string("London")]),
+            "providerExecuted": .bool(true),
+            "providerMetadata": expectedMetadata,
+            "dynamic": .bool(false),
+            "errorText": .string("boom"),
+            "title": .string("Weather lookup")
+        ]))
+    }
 }

@@ -5,6 +5,21 @@ import AISDKProvider
 
 @Suite("processUIMessageStream")
 struct ProcessUIMessageStreamTests {
+    private final class LockedValue<Value>: @unchecked Sendable {
+        private var value: Value
+        private let lock = NSLock()
+
+        init(initial: Value) {
+            self.value = initial
+        }
+
+        func withValue<R>(_ body: (inout Value) -> R) -> R {
+            lock.lock()
+            defer { lock.unlock() }
+            return body(&value)
+        }
+    }
+
     @Test("stores separate call and result provider metadata for static tool outputs")
     func storesSeparateMetadataForStaticToolOutputs() async throws {
         let callMetadata: ProviderMetadata = [
@@ -302,13 +317,202 @@ struct ProcessUIMessageStreamTests {
         #expect(toolPart.output == .object(["weather": .string("Sunny")]))
     }
 
+    @Test("tool input start preserves title and provider metadata through input available")
+    func toolInputStartPreservesTitleAndProviderMetadata() async throws {
+        let callMetadata: ProviderMetadata = [
+            "testProvider": ["someKey": .string("someValue")]
+        ]
+
+        let result = try await processWithWrites(chunks: [
+            .start(messageId: "msg-123", messageMetadata: nil),
+            .startStep,
+            .toolInputStart(
+                toolCallId: "tool-call-id",
+                toolName: "tool-name",
+                providerExecuted: nil,
+                providerMetadata: callMetadata,
+                dynamic: nil,
+                title: "Weather lookup"
+            ),
+            .toolInputDelta(
+                toolCallId: "tool-call-id",
+                inputTextDelta: "{\"query\":"
+            ),
+            .toolInputDelta(
+                toolCallId: "tool-call-id",
+                inputTextDelta: "\"test\"}"
+            ),
+            .toolInputAvailable(
+                toolCallId: "tool-call-id",
+                toolName: "tool-name",
+                input: .object(["query": .string("test")]),
+                providerExecuted: nil,
+                providerMetadata: nil,
+                dynamic: nil,
+                title: nil
+            ),
+            .finishStep,
+            .finish(finishReason: nil, messageMetadata: nil)
+        ])
+
+        guard let inputStreamingUpdate = result.writes.first(where: { message in
+            message.parts.contains { part in
+                if case .tool(let toolPart) = part {
+                    return toolPart.toolCallId == "tool-call-id" && toolPart.state == .inputStreaming
+                }
+                return false
+            }
+        }) else {
+            Issue.record("Expected an input-streaming write update.")
+            return
+        }
+
+        guard case let .tool(streamingPart)? = inputStreamingUpdate.parts.first(where: {
+            if case .tool(let toolPart) = $0 {
+                return toolPart.toolCallId == "tool-call-id"
+            }
+            return false
+        }) else {
+            Issue.record("Expected static tool part in input-streaming update.")
+            return
+        }
+
+        #expect(streamingPart.state == .inputStreaming)
+        #expect(streamingPart.callProviderMetadata == callMetadata)
+        #expect(streamingPart.title == "Weather lookup")
+
+        guard case let .tool(finalToolPart)? = result.state.message.parts.first(where: {
+            if case .tool(let toolPart) = $0 {
+                return toolPart.toolCallId == "tool-call-id"
+            }
+            return false
+        }) else {
+            Issue.record("Expected final static tool part.")
+            return
+        }
+
+        #expect(finalToolPart.state == .inputAvailable)
+        #expect(finalToolPart.input == .object(["query": .string("test")]))
+        #expect(finalToolPart.callProviderMetadata == callMetadata)
+        #expect(finalToolPart.title == "Weather lookup")
+    }
+
+    @Test("tool output denied preserves existing static approval state")
+    func toolOutputDeniedPreservesExistingStaticApprovalState() async throws {
+        let initialMessage = UIMessage(
+            id: "original-id",
+            role: .assistant,
+            parts: [
+                .stepStart,
+                .tool(
+                    UIToolUIPart(
+                        toolName: "tool1",
+                        toolCallId: "call-1",
+                        state: .approvalResponded,
+                        input: .object(["value": .string("value")]),
+                        approval: UIToolApproval(id: "id-1", approved: false, reason: nil)
+                    )
+                )
+            ]
+        )
+
+        let state = try await process(
+            chunks: [
+                .start(messageId: nil, messageMetadata: nil),
+                .toolOutputDenied(toolCallId: "call-1"),
+                .startStep,
+                .textStart(id: "text-1", providerMetadata: nil),
+                .textDelta(id: "text-1", delta: "I did not execute the tool.", providerMetadata: nil),
+                .textEnd(id: "text-1", providerMetadata: nil),
+                .finishStep,
+                .finish(finishReason: nil, messageMetadata: nil)
+            ],
+            lastMessage: initialMessage
+        )
+
+        #expect(state.message.id == "original-id")
+
+        guard case let .tool(toolPart)? = state.message.parts.first(where: {
+            if case .tool(let part) = $0 {
+                return part.toolCallId == "call-1"
+            }
+            return false
+        }) else {
+            Issue.record("Expected static tool part.")
+            return
+        }
+
+        #expect(toolPart.state == .outputDenied)
+        #expect(toolPart.input == .object(["value": .string("value")]))
+        #expect(toolPart.approval == UIToolApproval(id: "id-1", approved: false, reason: nil))
+    }
+
+    @Test("tool output denied preserves existing dynamic approval state")
+    func toolOutputDeniedPreservesExistingDynamicApprovalState() async throws {
+        let initialMessage = UIMessage(
+            id: "original-id",
+            role: .assistant,
+            parts: [
+                .stepStart,
+                .dynamicTool(
+                    UIDynamicToolUIPart(
+                        toolName: "tool1",
+                        toolCallId: "call-1",
+                        state: .approvalResponded,
+                        input: .object(["value": .string("value")]),
+                        approval: UIToolApproval(id: "id-1", approved: false, reason: nil)
+                    )
+                )
+            ]
+        )
+
+        let state = try await process(
+            chunks: [
+                .start(messageId: nil, messageMetadata: nil),
+                .toolOutputDenied(toolCallId: "call-1"),
+                .startStep,
+                .textStart(id: "text-1", providerMetadata: nil),
+                .textDelta(id: "text-1", delta: "I did not execute the tool.", providerMetadata: nil),
+                .textEnd(id: "text-1", providerMetadata: nil),
+                .finishStep,
+                .finish(finishReason: nil, messageMetadata: nil)
+            ],
+            lastMessage: initialMessage
+        )
+
+        #expect(state.message.id == "original-id")
+
+        guard case let .dynamicTool(toolPart)? = state.message.parts.first(where: {
+            if case .dynamicTool(let part) = $0 {
+                return part.toolCallId == "call-1"
+            }
+            return false
+        }) else {
+            Issue.record("Expected dynamic tool part.")
+            return
+        }
+
+        #expect(toolPart.state == .outputDenied)
+        #expect(toolPart.input == .object(["value": .string("value")]))
+        #expect(toolPart.approval == UIToolApproval(id: "id-1", approved: false, reason: nil))
+    }
+
     private func process(
-        chunks: [AnyUIMessageChunk]
+        chunks: [AnyUIMessageChunk],
+        lastMessage: UIMessage? = nil
     ) async throws -> StreamingUIMessageState<UIMessage> {
+        try await processWithWrites(chunks: chunks, lastMessage: lastMessage).state
+    }
+
+    private func processWithWrites(
+        chunks: [AnyUIMessageChunk],
+        lastMessage: UIMessage? = nil
+    ) async throws -> (state: StreamingUIMessageState<UIMessage>, writes: [UIMessage]) {
         let state: StreamingUIMessageState<UIMessage> = createStreamingUIMessageState(
-            lastMessage: nil,
+            lastMessage: lastMessage,
             messageId: "msg-123"
         )
+        let writes = LockedValue(initial: [UIMessage]())
 
         let stream = makeAsyncStream(from: chunks)
         let processed = processUIMessageStream(
@@ -317,7 +521,9 @@ struct ProcessUIMessageStreamTests {
                 try await job(
                     StreamingUIMessageJobContext(
                         state: state,
-                        write: {}
+                        write: {
+                            writes.withValue { $0.append(state.message.clone()) }
+                        }
                     )
                 )
             },
@@ -325,7 +531,7 @@ struct ProcessUIMessageStreamTests {
         )
 
         _ = try await collectStream(processed)
-        return state
+        return (state, writes.withValue { $0 })
     }
 
     private func processError(
