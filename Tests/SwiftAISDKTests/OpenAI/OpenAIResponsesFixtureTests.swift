@@ -160,6 +160,18 @@ struct OpenAIResponsesFixtureTests {
         ))
     }
 
+    private func makeDefaultMCPTool() -> LanguageModelV3Tool {
+        .provider(.init(
+            id: "openai.mcp",
+            name: "MCP",
+            args: [
+                "serverLabel": .string("dmcp"),
+                "serverUrl": .string("https://mcp.exa.ai/mcp"),
+                "serverDescription": .string("A web-search API for AI agents")
+            ]
+        ))
+    }
+
     private func makeMCPApprovalTurn2Prompt() -> LanguageModelV3Prompt {
         [
             .user(
@@ -355,6 +367,83 @@ struct OpenAIResponsesFixtureTests {
         #expect(environment["type"] as? String == "container_auto")
     }
 
+    @Test("doGenerate decodes MCP tool fixture")
+    func doGenerateDecodesMCPToolFixture() async throws {
+        let capture = RequestCapture()
+        let model = try makeModel(
+            modelId: "gpt-5-mini",
+            fetch: makeJSONFetch(fixture: "openai-mcp-tool.1", capture: capture)
+        )
+
+        let result = try await model.doGenerate(options: .init(
+            prompt: samplePrompt,
+            tools: [makeDefaultMCPTool()]
+        ))
+
+        let reasoningParts = result.content.compactMap { content -> LanguageModelV3Reasoning? in
+            if case .reasoning(let reasoning) = content { return reasoning }
+            return nil
+        }
+        let toolCalls = result.content.compactMap { content -> LanguageModelV3ToolCall? in
+            if case .toolCall(let call) = content { return call }
+            return nil
+        }
+        let toolResults = result.content.compactMap { content -> LanguageModelV3ToolResult? in
+            if case .toolResult(let toolResult) = content { return toolResult }
+            return nil
+        }
+        let textParts = result.content.compactMap { content -> LanguageModelV3Text? in
+            if case .text(let text) = content { return text }
+            return nil
+        }
+
+        #expect(reasoningParts.count == 2)
+        #expect(toolCalls.count == 1)
+        #expect(toolResults.count == 1)
+        #expect(textParts.count == 1)
+        #expect(result.finishReason.unified == .stop)
+        #expect(result.response?.id == "resp_0a4801d792de11eb00690ccb85294c8197b71ddda28cf382e0")
+        #expect(result.providerMetadata?["openai"]?["responseId"] == .string("resp_0a4801d792de11eb00690ccb85294c8197b71ddda28cf382e0"))
+
+        #expect(toolCalls[0].toolCallId == "mcp_0a4801d792de11eb00690ccb8c3fac8197a4fd94f4528cd432")
+        #expect(toolCalls[0].toolName == "mcp.web_search_exa")
+        #expect(toolCalls[0].providerExecuted == true)
+        #expect(toolCalls[0].dynamic == true)
+        #expect(toolCalls[0].input.contains("NYC mayoral election results 2025 latest"))
+
+        #expect(toolResults[0].toolCallId == toolCalls[0].toolCallId)
+        #expect(toolResults[0].toolName == "mcp.web_search_exa")
+        #expect(toolResults[0].providerMetadata?["openai"]?["itemId"] == .string("mcp_0a4801d792de11eb00690ccb8c3fac8197a4fd94f4528cd432"))
+        if case .object(let payload) = toolResults[0].result {
+            #expect(payload["type"] == .string("call"))
+            #expect(payload["name"] == .string("web_search_exa"))
+            #expect(payload["serverLabel"] == .string("dmcp"))
+            if case .string(let output) = payload["output"] {
+                #expect(output.contains("Zohran Mamdani"))
+            } else {
+                Issue.record("Expected MCP tool output payload")
+            }
+        } else {
+            Issue.record("Expected MCP tool result object")
+        }
+
+        #expect(textParts[0].text.contains("Zohran Mamdani projected as the winner"))
+
+        guard let requestBody = decodeRequestBody(await capture.current()),
+              let tools = requestBody["tools"] as? [[String: Any]],
+              let firstTool = tools.first else {
+            Issue.record("Missing request body for MCP tool fixture")
+            return
+        }
+
+        #expect(requestBody["model"] as? String == "gpt-5-mini")
+        #expect(firstTool["type"] as? String == "mcp")
+        #expect(firstTool["server_label"] as? String == "dmcp")
+        #expect(firstTool["server_url"] as? String == "https://mcp.exa.ai/mcp")
+        #expect(firstTool["server_description"] as? String == "A web-search API for AI agents")
+        #expect(firstTool["require_approval"] as? String == "never")
+    }
+
     @Test("doStream emits shell skill fixture events")
     func doStreamMatchesShellSkillsFixture() async throws {
         let model = try makeModel(
@@ -403,6 +492,139 @@ struct OpenAIResponsesFixtureTests {
         #expect(finishParts.count == 1)
         #expect(finishParts[0].finishReason.unified == LanguageModelV3FinishReason.Unified.stop)
         #expect(finishParts[0].providerMetadata?["openai"]?["responseId"] == JSONValue.string("resp_049350089f7281c400698f717727d08191a446ae1621ed9503"))
+    }
+
+    @Test("doStream emits MCP tool fixture events")
+    func doStreamEmitsMCPToolFixtureEvents() async throws {
+        let capture = RequestCapture()
+        let model = try makeModel(
+            modelId: "gpt-5-mini",
+            fetch: makeStreamFetch(fixture: "openai-mcp-tool.1", capture: capture)
+        )
+
+        let result = try await model.doStream(options: .init(
+            prompt: samplePrompt,
+            tools: [makeDefaultMCPTool()]
+        ))
+        let parts = try await collectStreamParts(result)
+
+        let toolCalls = parts.compactMap { part -> LanguageModelV3ToolCall? in
+            if case .toolCall(let call) = part { return call }
+            return nil
+        }
+        let toolResults = parts.compactMap { part -> LanguageModelV3ToolResult? in
+            if case .toolResult(let toolResult) = part { return toolResult }
+            return nil
+        }
+        let reasoningStarts = parts.compactMap { part -> SharedV3ProviderMetadata? in
+            if case .reasoningStart(_, let providerMetadata) = part { return providerMetadata }
+            return nil
+        }
+        let responseMetadata = parts.compactMap { part -> (id: String?, modelId: String?)? in
+            if case .responseMetadata(let id, let modelId, _) = part {
+                return (id: id, modelId: modelId)
+            }
+            return nil
+        }
+
+        #expect(responseMetadata.count == 1)
+        #expect(responseMetadata[0].id == "resp_0c72b1033351981300690ccf79c6d88193b7d054f4f83ad50a")
+        #expect(responseMetadata[0].modelId == "gpt-5-mini-2025-08-07")
+        #expect(reasoningStarts.count >= 2)
+        #expect(toolCalls.count >= 2)
+        #expect(toolResults.count >= 2)
+
+        #expect(toolCalls[0].toolName == "mcp.web_search_exa")
+        #expect(toolCalls[0].providerExecuted == true)
+        #expect(toolCalls[0].dynamic == true)
+        #expect(toolCalls[0].input.contains("2025 New York City mayoral election results Nov 2025 latest results"))
+        #expect(toolCalls[1].input.contains("NYC Board of Elections 2025 mayoral results"))
+
+        #expect(toolResults[0].toolCallId == toolCalls[0].toolCallId)
+        if case .object(let payload) = toolResults[0].result {
+            #expect(payload["type"] == .string("call"))
+            #expect(payload["name"] == .string("web_search_exa"))
+        } else {
+            Issue.record("Expected streamed MCP tool result object")
+        }
+
+        #expect(collectText(parts).contains("Zohran Mamdani"))
+
+        guard let requestBody = decodeRequestBody(await capture.current()),
+              let tools = requestBody["tools"] as? [[String: Any]],
+              let firstTool = tools.first else {
+            Issue.record("Missing streamed request body for MCP tool fixture")
+            return
+        }
+
+        #expect(firstTool["type"] as? String == "mcp")
+        #expect(firstTool["server_label"] as? String == "dmcp")
+        #expect(firstTool["require_approval"] as? String == "never")
+    }
+
+    @Test("doGenerate preserves phase metadata from fixture")
+    func doGeneratePreservesPhaseMetadataFromFixture() async throws {
+        let model = try makeModel(
+            modelId: "gpt-5.3-codex",
+            fetch: makeJSONFetch(fixture: "openai-phase.1")
+        )
+
+        let result = try await model.doGenerate(options: .init(
+            prompt: samplePrompt
+        ))
+
+        let textParts = result.content.compactMap { content -> LanguageModelV3Text? in
+            if case .text(let text) = content { return text }
+            return nil
+        }
+
+        #expect(textParts.count == 2)
+        #expect(textParts[0].providerMetadata?["openai"]?["itemId"] == .string("msg_0465b6d1ae1f97c500699f883243a481a3b50b985223592984"))
+        #expect(textParts[0].providerMetadata?["openai"]?["phase"] == .string("commentary"))
+        #expect(textParts[1].providerMetadata?["openai"]?["itemId"] == .string("msg_0465b6d1ae1f97c500699f8835e09c81a3b91e9d502ff18555"))
+        #expect(textParts[1].providerMetadata?["openai"]?["phase"] == .string("final_answer"))
+        #expect(textParts[0].text.contains("I’ll quickly check reliable"))
+        #expect(textParts[1].text.contains("Wednesday, February 25, 2026"))
+    }
+
+    @Test("doStream preserves phase metadata from fixture")
+    func doStreamPreservesPhaseMetadataFromFixture() async throws {
+        let model = try makeModel(
+            modelId: "gpt-5.3-codex",
+            fetch: makeStreamFetch(fixture: "openai-phase.1")
+        )
+
+        let result = try await model.doStream(options: .init(
+            prompt: samplePrompt
+        ))
+        let parts = try await collectStreamParts(result)
+
+        let textStarts = parts.compactMap { part -> SharedV3ProviderMetadata? in
+            if case .textStart(_, let providerMetadata) = part { return providerMetadata }
+            return nil
+        }
+        let textEnds = parts.compactMap { part -> SharedV3ProviderMetadata? in
+            if case .textEnd(_, let providerMetadata) = part { return providerMetadata }
+            return nil
+        }
+        let responseMetadata = parts.compactMap { part -> (id: String?, modelId: String?)? in
+            if case .responseMetadata(let id, let modelId, _) = part {
+                return (id: id, modelId: modelId)
+            }
+            return nil
+        }
+
+        #expect(responseMetadata.count == 1)
+        #expect(responseMetadata[0].id == "resp_0a63f40a2632b74300699f8818e5648196a8fa657ae8091421")
+        #expect(responseMetadata[0].modelId == "gpt-5.3-codex")
+        #expect(textStarts.count == 2)
+        #expect(textEnds.count == 2)
+        #expect(textStarts[0]["openai"]?["phase"] == .string("commentary"))
+        #expect(textStarts[1]["openai"]?["phase"] == .string("final_answer"))
+        #expect(textEnds[0]["openai"]?["phase"] == .string("commentary"))
+        #expect(textEnds[1]["openai"]?["phase"] == .string("final_answer"))
+        #expect(collectText(parts).contains("Got it"))
+        #expect(collectText(parts).contains("Here are a few **AI"))
     }
 
     @Test("doGenerate handles MCP approval denial turn 2")
