@@ -48,6 +48,41 @@ struct CreateUIMessageStreamTests {
         ])
     }
 
+    @Test("async execute errors become error chunks")
+    func asyncExecuteErrorsBecomeErrorChunks() async throws {
+        struct TestError: Error {}
+
+        let stream = makeStream(
+            execute: { _ in
+                throw TestError()
+            },
+            onError: { _ in "error-message" }
+        )
+
+        let chunks = try await collectStream(stream)
+        #expect(chunks == [
+            AnyUIMessageChunk.error(errorText: "error-message")
+        ])
+    }
+
+    @Test("writing to a closed stream is ignored")
+    func writingToClosedStreamIsIgnored() async throws {
+        let writerBox = WriterBox<UIMessage>()
+
+        let stream = makeStream { writer in
+            writer.write(AnyUIMessageChunk.textDelta(id: "1", delta: "1a", providerMetadata: nil))
+            writerBox.store(writer)
+        }
+
+        let chunks = try await collectStream(stream)
+        #expect(chunks == [
+            AnyUIMessageChunk.textDelta(id: "1", delta: "1a", providerMetadata: nil)
+        ])
+
+        let writer = try #require(await writerBox.waitForValue())
+        writer.write(AnyUIMessageChunk.textDelta(id: "1", delta: "1b", providerMetadata: nil))
+    }
+
     @Test("supports delayed merged streams while another merged stream is still open")
     func supportsDelayedMergedStreams() async throws {
         let firstProbe = ChunkStreamProbe()
@@ -84,6 +119,204 @@ struct CreateUIMessageStreamTests {
         #expect(await chunkProbe.values() == [
             AnyUIMessageChunk.textDelta(id: "1", delta: "1a", providerMetadata: nil),
             AnyUIMessageChunk.textDelta(id: "2", delta: "2a", providerMetadata: nil)
+        ])
+    }
+
+    @Test("onFinish receives generated response message without original messages")
+    func onFinishWithoutOriginalMessages() async throws {
+        let finishEvents = FinishEventProbe<UIMessageStreamFinishEvent<UIMessage>>()
+
+        let stream = makeStream(
+            execute: { writer in
+                writer.write(AnyUIMessageChunk.textStart(id: "1", providerMetadata: nil))
+                writer.write(AnyUIMessageChunk.textDelta(id: "1", delta: "1a", providerMetadata: nil))
+                writer.write(AnyUIMessageChunk.textEnd(id: "1", providerMetadata: nil))
+            },
+            onFinish: { event in
+                await finishEvents.append(event)
+            },
+            generateId: { "response-message-id" }
+        )
+
+        await consumeStream(stream: stream)
+
+        let captured = await finishEvents.values()
+        #expect(captured.count == 1)
+        guard let event = captured.first else {
+            Issue.record("Expected onFinish to be called once")
+            return
+        }
+
+        #expect(event.finishReason == nil)
+        #expect(event.isAborted == false)
+        #expect(event.isContinuation == false)
+        #expect(event.messages == [event.responseMessage])
+        #expect(event.responseMessage == UIMessage(
+            id: "response-message-id",
+            role: .assistant,
+            metadata: nil,
+            parts: [
+                .text(TextUIPart(text: "1a", state: .done, providerMetadata: nil))
+            ]
+        ))
+    }
+
+    @Test("onFinish continues the last assistant message when original messages exist")
+    func onFinishWithOriginalMessagesContinuation() async throws {
+        let finishEvents = FinishEventProbe<UIMessageStreamFinishEvent<UIMessage>>()
+        let originalMessages = [
+            UIMessage(
+                id: "0",
+                role: .user,
+                metadata: nil,
+                parts: [.text(TextUIPart(text: "0a", state: .done, providerMetadata: nil))]
+            ),
+            UIMessage(
+                id: "1",
+                role: .assistant,
+                metadata: nil,
+                parts: [.text(TextUIPart(text: "1a", state: .done, providerMetadata: nil))]
+            )
+        ]
+
+        let stream = makeStream(
+            execute: { writer in
+                writer.write(AnyUIMessageChunk.textStart(id: "1", providerMetadata: nil))
+                writer.write(AnyUIMessageChunk.textDelta(id: "1", delta: "1b", providerMetadata: nil))
+                writer.write(AnyUIMessageChunk.textEnd(id: "1", providerMetadata: nil))
+            },
+            originalMessages: originalMessages,
+            onFinish: { event in
+                await finishEvents.append(event)
+            }
+        )
+
+        await consumeStream(stream: stream)
+
+        let captured = await finishEvents.values()
+        #expect(captured.count == 1)
+        guard let event = captured.first else {
+            Issue.record("Expected onFinish to be called once")
+            return
+        }
+
+        let expectedResponse = UIMessage(
+            id: "1",
+            role: .assistant,
+            metadata: nil,
+            parts: [
+                .text(TextUIPart(text: "1a", state: .done, providerMetadata: nil)),
+                .text(TextUIPart(text: "1b", state: .done, providerMetadata: nil))
+            ]
+        )
+
+        #expect(event.finishReason == nil)
+        #expect(event.isAborted == false)
+        #expect(event.isContinuation == true)
+        #expect(event.responseMessage == expectedResponse)
+        #expect(event.messages == [
+            originalMessages[0],
+            expectedResponse
+        ])
+    }
+
+    @Test("injects generated messageId into start chunks when persistence is enabled")
+    func injectsGeneratedMessageIdForPersistence() async throws {
+        let finishEvents = FinishEventProbe<UIMessageStreamFinishEvent<UIMessage>>()
+        let originalMessages = [
+            UIMessage(
+                id: "0",
+                role: .user,
+                metadata: nil,
+                parts: [.text(TextUIPart(text: "0a", state: .done, providerMetadata: nil))]
+            )
+        ]
+
+        let stream = makeStream(
+            execute: { writer in
+                writer.write(AnyUIMessageChunk.start(messageId: nil, messageMetadata: nil))
+            },
+            originalMessages: originalMessages,
+            onFinish: { event in
+                await finishEvents.append(event)
+            },
+            generateId: { "response-message-id" }
+        )
+
+        let chunks = try await collectStream(stream)
+        #expect(chunks == [
+            AnyUIMessageChunk.start(messageId: "response-message-id", messageMetadata: nil)
+        ])
+
+        let captured = await finishEvents.values()
+        #expect(captured.count == 1)
+        guard let event = captured.first else {
+            Issue.record("Expected onFinish to be called once")
+            return
+        }
+
+        let expectedResponse = UIMessage(
+            id: "response-message-id",
+            role: .assistant,
+            metadata: nil,
+            parts: []
+        )
+
+        #expect(event.isContinuation == false)
+        #expect(event.responseMessage == expectedResponse)
+        #expect(event.messages == [
+            originalMessages[0],
+            expectedResponse
+        ])
+    }
+
+    @Test("keeps existing messageId from start chunks when persistence is enabled")
+    func keepsExistingMessageIdForPersistence() async throws {
+        let finishEvents = FinishEventProbe<UIMessageStreamFinishEvent<UIMessage>>()
+        let originalMessages = [
+            UIMessage(
+                id: "0",
+                role: .user,
+                metadata: nil,
+                parts: [.text(TextUIPart(text: "0a", state: .done, providerMetadata: nil))]
+            )
+        ]
+
+        let stream = makeStream(
+            execute: { writer in
+                writer.write(AnyUIMessageChunk.start(messageId: "existing-message-id", messageMetadata: nil))
+            },
+            originalMessages: originalMessages,
+            onFinish: { event in
+                await finishEvents.append(event)
+            },
+            generateId: { "response-message-id" }
+        )
+
+        let chunks = try await collectStream(stream)
+        #expect(chunks == [
+            AnyUIMessageChunk.start(messageId: "existing-message-id", messageMetadata: nil)
+        ])
+
+        let captured = await finishEvents.values()
+        #expect(captured.count == 1)
+        guard let event = captured.first else {
+            Issue.record("Expected onFinish to be called once")
+            return
+        }
+
+        let expectedResponse = UIMessage(
+            id: "existing-message-id",
+            role: .assistant,
+            metadata: nil,
+            parts: []
+        )
+
+        #expect(event.isContinuation == false)
+        #expect(event.responseMessage == expectedResponse)
+        #expect(event.messages == [
+            originalMessages[0],
+            expectedResponse
         ])
     }
 

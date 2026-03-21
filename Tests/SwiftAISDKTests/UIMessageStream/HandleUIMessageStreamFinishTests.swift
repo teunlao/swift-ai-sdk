@@ -356,6 +356,33 @@ struct HandleUIMessageStreamFinishTests {
         #expect(event.isAborted == true)
     }
 
+    @Test("passes abort chunks through when callbacks are omitted")
+    func abortPassThroughWithoutCallbacks() async throws {
+        let inputChunks: [AnyUIMessageChunk] = [
+            .start(messageId: "msg-abort-passthrough", messageMetadata: nil),
+            .textStart(id: "text-1", providerMetadata: nil),
+            textChunk(id: "text-1", delta: "Text before abort"),
+            .abort(reason: nil),
+            .finish(finishReason: nil, messageMetadata: nil)
+        ]
+
+        let capturedErrors = ThreadSafeArray<String>()
+
+        let stream = makeAsyncStream(from: inputChunks)
+        let result = try await collectStream(
+            handleUIMessageStreamFinish(
+                stream: stream,
+                messageId: "msg-abort-passthrough",
+                originalMessages: [UIMessage](),
+                onFinish: nil,
+                onError: { capturedErrors.append($0.localizedDescription) }
+            )
+        )
+
+        #expect(result == inputChunks)
+        #expect(capturedErrors.values().isEmpty)
+    }
+
     @Test("triggers onFinish when reader is cancelled")
     func readerCancellationTriggersFinish() async throws {
         let inputChunks: [AnyUIMessageChunk] = [
@@ -701,6 +728,35 @@ struct HandleUIMessageStreamFinishTests {
 
         // onFinish should not observe the onStepFinish mutation.
         #expect(finishEvent.responseMessage.parts.count == 1)
+    }
+
+    @Test("finish-step chunks are passed through when no callbacks are provided")
+    func finishStepPassThroughWithoutCallbacks() async throws {
+        let inputChunks: [AnyUIMessageChunk] = [
+            .start(messageId: "msg-passthrough", messageMetadata: nil),
+            .textStart(id: "text-1", providerMetadata: nil),
+            textChunk(id: "text-1", delta: "Test"),
+            .textEnd(id: "text-1", providerMetadata: nil),
+            .finishStep,
+            .finish(finishReason: nil, messageMetadata: nil)
+        ]
+
+        let capturedErrors = ThreadSafeArray<String>()
+
+        let stream = makeAsyncStream(from: inputChunks)
+        let result = try await collectStream(
+            handleUIMessageStreamFinish(
+                stream: stream,
+                messageId: "msg-passthrough",
+                originalMessages: [UIMessage](),
+                onStepFinish: nil,
+                onFinish: nil,
+                onError: { capturedErrors.append($0.localizedDescription) }
+            )
+        )
+
+        #expect(result == inputChunks)
+        #expect(capturedErrors.values().isEmpty)
     }
 }
 
