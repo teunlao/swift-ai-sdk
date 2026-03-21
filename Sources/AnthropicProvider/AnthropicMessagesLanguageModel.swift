@@ -1693,6 +1693,13 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                 || tool.name == "code_execution"
                 || tool.name == "text_editor_code_execution"
                 || tool.name == "bash_code_execution" {
+                let hasNonEmptyInput: Bool
+                if case .object(let object) = tool.input {
+                    hasNonEmptyInput = object.isEmpty == false
+                } else {
+                    hasNonEmptyInput = false
+                }
+                let initialInput = hasNonEmptyInput ? stringifyJSON(tool.input) : ""
                 let providerToolName =
                     (tool.name == "text_editor_code_execution" || tool.name == "bash_code_execution")
                     ? "code_execution"
@@ -1702,11 +1709,11 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                 let state = ToolCallState(
                     toolCallId: tool.id,
                     toolName: customToolName,
-                    input: "",
+                    input: initialInput,
                     providerExecuted: true,
                     dynamic: nil,
                     providerMetadata: nil,
-                    firstDelta: true,
+                    firstDelta: initialInput.isEmpty,
                     providerToolName: tool.name,
                     caller: nil
                 )
@@ -1724,15 +1731,22 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
             } else if tool.name == "tool_search_tool_regex" || tool.name == "tool_search_tool_bm25" {
                 serverToolCalls[tool.id] = tool.name
                 let customToolName = toolNameMapping.toCustomToolName(tool.name)
+                let hasNonEmptyInput: Bool
+                if case .object(let object) = tool.input {
+                    hasNonEmptyInput = object.isEmpty == false
+                } else {
+                    hasNonEmptyInput = false
+                }
+                let initialInput = hasNonEmptyInput ? stringifyJSON(tool.input) : ""
 
                 let state = ToolCallState(
                     toolCallId: tool.id,
                     toolName: customToolName,
-                    input: "",
+                    input: initialInput,
                     providerExecuted: true,
                     dynamic: nil,
                     providerMetadata: nil,
-                    firstDelta: true,
+                    firstDelta: initialInput.isEmpty,
                     providerToolName: tool.name,
                     caller: nil
                 )
