@@ -184,12 +184,12 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
 
                 do {
                     for try await result in chunkStream {
+                        if options.includeRawChunks == true, let raw = result.rawJSONValue {
+                            continuation.yield(.raw(rawValue: raw))
+                        }
+
                         switch result {
                         case .success(let chunk, _):
-                            if options.includeRawChunks == true {
-                                continuation.yield(.raw(rawValue: chunk.rawValue))
-                            }
-
                             guard let type = chunk.type,
                                   let chunkObject = chunk.rawValue.objectValue else {
                                 continue
@@ -334,9 +334,9 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                             default:
                                 break
                             }
-                        case .failure(let error, _):
+                        case .failure:
                             finishReason = .init(unified: .error, raw: nil)
-                            continuation.yield(.error(error: .string(String(describing: error))))
+                            continuation.yield(.error(error: result.streamErrorPayload))
                         }
                     }
 
@@ -2445,6 +2445,62 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
         }
         return value
     }
+}
+
+private extension ParseJSONResult where Output == OpenAIResponsesChunk {
+    var rawJSONValue: JSONValue? {
+        switch self {
+        case .success(_, let raw):
+            return try? jsonValue(from: raw)
+        case .failure(_, let raw):
+            return raw.flatMap { try? jsonValue(from: $0) }
+        }
+    }
+
+    var streamErrorPayload: JSONValue {
+        switch self {
+        case .failure(let error, let raw):
+            return serializeStreamParseError(error: error, raw: raw)
+        case .success:
+            return .string("Unknown stream parsing error")
+        }
+    }
+}
+
+private func serializeStreamParseError(error: Error, raw: Any?) -> JSONValue {
+    if let typeValidationError = error as? TypeValidationError {
+        var payload: [String: JSONValue] = [
+            "name": .string(typeValidationError.name),
+            "message": .string(typeValidationError.message)
+        ]
+
+        if let value = typeValidationError.value {
+            payload["value"] = (try? jsonValue(from: value)) ?? .string(String(describing: value))
+        } else if let raw {
+            payload["value"] = (try? jsonValue(from: raw)) ?? .null
+        }
+
+        return .object(payload)
+    }
+
+    if let jsonParseError = error as? JSONParseError {
+        return .object([
+            "name": .string(jsonParseError.name),
+            "message": .string(jsonParseError.message),
+            "text": .string(jsonParseError.text)
+        ])
+    }
+
+    var payload: [String: JSONValue] = [
+        "name": .string("Error"),
+        "message": .string(AISDKProvider.getErrorMessage(error))
+    ]
+
+    if let raw {
+        payload["value"] = (try? jsonValue(from: raw)) ?? .null
+    }
+
+    return .object(payload)
 }
 
 private func convertOpenAIResponsesUsage(_ usage: OpenAIResponsesResponse.Usage?) -> LanguageModelV3Usage {

@@ -3248,6 +3248,87 @@ struct OpenAIResponsesLanguageModelTests {
         }
     }
 
+    @Test("doStream emits raw chunks for non-object event payloads")
+    func testDoStreamEmitsRawChunksForNonObjectEventPayloads() async throws {
+        func chunk(_ value: Any) -> String {
+            let data = try! JSONSerialization.data(withJSONObject: value)
+            let encoded = String(data: data, encoding: .utf8)!
+            return "data:\(encoded)\n\n"
+        }
+
+        let chunks: [String] = [
+            chunk([
+                "type": "response.created",
+                "response": [
+                    "id": "resp_schema_error",
+                    "object": "response",
+                    "created_at": 1_742_000_100.0,
+                    "status": "in_progress",
+                    "model": "gpt-4o"
+                ]
+            ]),
+            "data:\"unexpected string payload\"\n\n",
+            "data: [DONE]\n\n"
+        ]
+
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.openai.com/v1/responses")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "text/event-stream"]
+        )!
+
+        let fetch: FetchFunction = { _ in
+            let stream = AsyncThrowingStream<Data, Error> { continuation in
+                for string in chunks {
+                    continuation.yield(Data(string.utf8))
+                }
+                continuation.finish()
+            }
+            return FetchResponse(body: .stream(stream), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIResponsesLanguageModel(
+            modelId: "gpt-4o",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let streamResult = try await model.doStream(
+            options: LanguageModelV3CallOptions(
+                prompt: samplePrompt,
+                includeRawChunks: true
+            )
+        )
+
+        var parts: [LanguageModelV3StreamPart] = []
+        for try await part in streamResult.stream {
+            parts.append(part)
+        }
+
+        #expect(parts.contains { part in
+            if case .raw(let raw) = part {
+                return raw == .string("unexpected string payload")
+            }
+            return false
+        })
+
+        #expect(parts.contains { part in
+            if case .error(let error) = part,
+               case .object(let object) = error,
+               case .string(let name)? = object["name"],
+               case .string(let message)? = object["message"] {
+                return !name.isEmpty && !message.isEmpty
+            }
+            return false
+        })
+
+        if let finish = parts.last, case .finish(let reason, _, _) = finish {
+            #expect(reason == .error)
+        } else {
+            Issue.record("Expected finish error part")
+        }
+    }
+
 
     @Test("doStream emits computer use results")
     func testDoStreamEmitsComputerUseResults() async throws {
