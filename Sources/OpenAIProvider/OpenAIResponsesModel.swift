@@ -1231,13 +1231,13 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                     "command": .array(commands.map(JSONValue.string))
                 ]
                 if let timeoutMs = actionObject["timeout_ms"]?.numberValue {
-                    actionPayload["timeout_ms"] = .number(timeoutMs)
+                    actionPayload["timeoutMs"] = .number(timeoutMs)
                 }
                 if let user = actionObject["user"]?.stringValue {
                     actionPayload["user"] = .string(user)
                 }
                 if let workingDirectory = actionObject["working_directory"]?.stringValue {
-                    actionPayload["working_directory"] = .string(workingDirectory)
+                    actionPayload["workingDirectory"] = .string(workingDirectory)
                 }
                 if let env = actionObject["env"]?.objectValue {
                     let mappedEnv = env.compactMapValues { value in value.stringValue.map(JSONValue.string) }
@@ -2063,13 +2063,13 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 "command": .array(commands.map(JSONValue.string))
             ]
             if let timeoutMs = actionObject["timeout_ms"]?.numberValue {
-                actionPayload["timeout_ms"] = .number(timeoutMs)
+                actionPayload["timeoutMs"] = .number(timeoutMs)
             }
             if let user = actionObject["user"]?.stringValue {
                 actionPayload["user"] = .string(user)
             }
             if let workingDirectory = actionObject["working_directory"]?.stringValue {
-                actionPayload["working_directory"] = .string(workingDirectory)
+                actionPayload["workingDirectory"] = .string(workingDirectory)
             }
             if let env = actionObject["env"]?.objectValue {
                 let mappedEnv = env.compactMapValues { value in value.stringValue.map(JSONValue.string) }

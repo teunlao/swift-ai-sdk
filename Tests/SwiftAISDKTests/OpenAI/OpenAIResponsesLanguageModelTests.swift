@@ -3543,24 +3543,24 @@ struct OpenAIResponsesLanguageModelTests {
                     return false
                 }
 
-                let timeoutMs = action["timeout_ms"] as? Double
+                let timeoutMs = action["timeoutMs"] as? Double
                 let user = action["user"] as? String
-                let workingDirectory = action["working_directory"] as? String
-                let hasCamelCaseTimeout = action["timeoutMs"] != nil
-                let hasCamelCaseWorkingDirectory = action["workingDirectory"] != nil
+                let workingDirectory = action["workingDirectory"] as? String
+                let hasSnakeCaseTimeout = action["timeout_ms"] != nil
+                let hasSnakeCaseWorkingDirectory = action["working_directory"] != nil
 
                 return timeoutMs == 1500
                     && user == "dev"
                     && workingDirectory == "/tmp"
-                    && hasCamelCaseTimeout == false
-                    && hasCamelCaseWorkingDirectory == false
+                    && hasSnakeCaseTimeout == false
+                    && hasSnakeCaseWorkingDirectory == false
             }
             return false
         })
     }
 
-    @Test("doGenerate maps local shell input using snake_case fields")
-    func testDoGenerateMapsLocalShellInputSnakeCase() async throws {
+    @Test("doGenerate maps local shell input to camelCase fields")
+    func testDoGenerateMapsLocalShellInputCamelCase() async throws {
         let responseJSON: [String: Any] = [
             "id": "resp_local_shell",
             "created_at": 1_742_150_000.0,
@@ -3639,11 +3639,11 @@ struct OpenAIResponsesLanguageModelTests {
             return
         }
 
-        #expect(action["timeout_ms"] as? Double == 1200)
-        #expect(action["working_directory"] as? String == "/workspace")
+        #expect(action["timeoutMs"] as? Double == 1200)
+        #expect(action["workingDirectory"] as? String == "/workspace")
         #expect(action["user"] as? String == "dev")
-        #expect(action["timeoutMs"] == nil)
-        #expect(action["workingDirectory"] == nil)
+        #expect(action["timeout_ms"] == nil)
+        #expect(action["working_directory"] == nil)
     }
 
     @Test("doGenerate maps shell providerExecuted and shell_call_output")
