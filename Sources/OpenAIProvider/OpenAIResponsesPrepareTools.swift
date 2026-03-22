@@ -18,7 +18,7 @@ func prepareOpenAIResponsesTools(
         return OpenAIResponsesPreparedTools(tools: nil, toolChoice: nil, warnings: [])
     }
 
-    var warnings: [SharedV3Warning] = []
+    let warnings: [SharedV3Warning] = []
     var openAITools: [JSONValue] = []
     var resolvedCustomProviderToolNames = customProviderToolNames
 
@@ -315,7 +315,7 @@ func prepareOpenAIResponsesTools(
                 resolvedCustomProviderToolNames.insert(parsed.name)
 
             default:
-                warnings.append(.unsupported(feature: "provider-defined tool \(providerTool.id)", details: nil))
+                break
             }
         }
     }

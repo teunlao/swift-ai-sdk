@@ -1393,6 +1393,48 @@ struct OpenAIResponsesInputBuilderTests {
         #expect(result.warnings.isEmpty)
     }
 
+    @Test("should preserve encrypted reasoning without item id when store is false")
+    func encryptedReasoningWithoutItemIdStoreFalse() async throws {
+        let prompt: LanguageModelV3Prompt = [
+            .assistant(
+                content: [
+                    .reasoning(LanguageModelV3ReasoningPart(
+                        text: "Analyzing the problem step by step",
+                        providerOptions: [
+                            "openai": [
+                                "reasoningEncryptedContent": .string("encrypted_content_001")
+                            ]
+                        ]
+                    ))
+                ],
+                providerOptions: nil
+            )
+        ]
+
+        let result = try await OpenAIResponsesInputBuilder.makeInput(
+            prompt: prompt,
+            systemMessageMode: .system,
+            store: false,
+            hasLocalShellTool: false
+        )
+
+        let expected: OpenAIResponsesInput = [
+            .object([
+                "type": .string("reasoning"),
+                "encrypted_content": .string("encrypted_content_001"),
+                "summary": .array([
+                    .object([
+                        "type": .string("summary_text"),
+                        "text": .string("Analyzing the problem step by step")
+                    ])
+                ])
+            ])
+        ]
+
+        #expect(result.input == expected)
+        #expect(result.warnings.isEmpty)
+    }
+
     @Test("should convert single reasoning part with null encrypted content (store: false)")
     func singleReasoningPartWithNullEncryptedContentStoreFalse() async throws {
         let prompt: LanguageModelV3Prompt = [
@@ -1544,6 +1586,57 @@ struct OpenAIResponsesInputBuilderTests {
             .object([
                 "type": .string("reasoning"),
                 "id": .string("reasoning_001"),
+                "summary": .array([
+                    .object(["type": .string("summary_text"), "text": .string("First reasoning step")]),
+                    .object(["type": .string("summary_text"), "text": .string("Second reasoning step")])
+                ])
+            ])
+        ]
+
+        #expect(result.input == expected)
+        #expect(result.warnings.isEmpty)
+    }
+
+    @Test("should keep latest encrypted reasoning content when merging parts")
+    func latestEncryptedReasoningContentWinsWhenMergingParts() async throws {
+        let prompt: LanguageModelV3Prompt = [
+            .assistant(
+                content: [
+                    .reasoning(LanguageModelV3ReasoningPart(
+                        text: "First reasoning step",
+                        providerOptions: [
+                            "openai": [
+                                "itemId": .string("reasoning_001"),
+                                "reasoningEncryptedContent": .string("encrypted_content_001")
+                            ]
+                        ]
+                    )),
+                    .reasoning(LanguageModelV3ReasoningPart(
+                        text: "Second reasoning step",
+                        providerOptions: [
+                            "openai": [
+                                "itemId": .string("reasoning_001"),
+                                "reasoningEncryptedContent": .string("encrypted_content_002")
+                            ]
+                        ]
+                    ))
+                ],
+                providerOptions: nil
+            )
+        ]
+
+        let result = try await OpenAIResponsesInputBuilder.makeInput(
+            prompt: prompt,
+            systemMessageMode: .system,
+            store: false,
+            hasLocalShellTool: false
+        )
+
+        let expected: OpenAIResponsesInput = [
+            .object([
+                "type": .string("reasoning"),
+                "id": .string("reasoning_001"),
+                "encrypted_content": .string("encrypted_content_002"),
                 "summary": .array([
                     .object(["type": .string("summary_text"), "text": .string("First reasoning step")]),
                     .object(["type": .string("summary_text"), "text": .string("Second reasoning step")])

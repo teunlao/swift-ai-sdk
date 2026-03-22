@@ -605,8 +605,8 @@ struct OpenAIResponsesPrepareToolsTests {
         #expect(toolObject["type"] == JSONValue.string("apply_patch"))
     }
 
-    @Test("unsupported provider tool produces warning")
-    func unsupportedProviderToolProducesWarning() async throws {
+    @Test("unsupported provider tool is ignored without warning")
+    func unsupportedProviderToolIsIgnoredWithoutWarning() async throws {
         let tool = providerTool(id: "openai.unsupported", name: "unsupported", args: [:])
         let result = try await prepareOpenAIResponsesTools(
             tools: [tool],
@@ -614,15 +614,7 @@ struct OpenAIResponsesPrepareToolsTests {
         )
 
         #expect(result.tools?.isEmpty == true)
-        #expect(result.warnings.count == 1)
-        if let warning = result.warnings.first {
-            if case let .unsupported(feature, details) = warning {
-                #expect(feature == "provider-defined tool openai.unsupported")
-                #expect(details == nil)
-            } else {
-                Issue.record("Unexpected warning type: \(warning)")
-            }
-        }
+        #expect(result.warnings.isEmpty)
     }
 
     @Test("tool choice for function tool maps to function type")

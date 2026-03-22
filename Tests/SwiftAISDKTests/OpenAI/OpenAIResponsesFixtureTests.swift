@@ -222,6 +222,67 @@ struct OpenAIResponsesFixtureTests {
         ))
     }
 
+    private func makeFileSearchTool() -> LanguageModelV3Tool {
+        .provider(.init(
+            id: "openai.file_search",
+            name: "fileSearch",
+            args: [
+                "vectorStoreIds": .array([
+                    .string("vs_68caad8bd5d88191ab766cf043d89a18")
+                ]),
+                "maxNumResults": .number(5),
+                "filters": .object([
+                    "key": .string("author"),
+                    "type": .string("eq"),
+                    "value": .string("Jane Smith")
+                ]),
+                "ranking": .object([
+                    "ranker": .string("auto"),
+                    "scoreThreshold": .number(0.5)
+                ])
+            ]
+        ))
+    }
+
+    private func makeDefaultFileSearchTool() -> LanguageModelV3Tool {
+        .provider(.init(
+            id: "openai.file_search",
+            name: "fileSearch",
+            args: [
+                "vectorStoreIds": .array([
+                    .string("vs_68caad8bd5d88191ab766cf043d89a18")
+                ])
+            ]
+        ))
+    }
+
+    private func makeApplyPatchTool() -> LanguageModelV3Tool {
+        .provider(.init(
+            id: "openai.apply_patch",
+            name: "apply_patch",
+            args: [:]
+        ))
+    }
+
+    private func makeCustomTool(
+        toolName: String = "write_sql",
+        providerName: String = "write_sql"
+    ) -> LanguageModelV3Tool {
+        .provider(.init(
+            id: "openai.custom",
+            name: toolName,
+            args: [
+                "name": .string(providerName),
+                "description": .string("Write a SQL SELECT query to answer the user question."),
+                "format": .object([
+                    "type": .string("grammar"),
+                    "syntax": .string("regex"),
+                    "definition": .string("SELECT .+")
+                ])
+            ]
+        ))
+    }
+
     private func makeCodeInterpreterTool() -> LanguageModelV3Tool {
         .provider(.init(
             id: "openai.code_interpreter",
@@ -1338,6 +1399,835 @@ struct OpenAIResponsesFixtureTests {
 
         #expect(include.contains("web_search_call.action.sources"))
         #expect(firstTool["type"] as? String == "web_search")
+    }
+
+    @Test("doGenerate decodes file search fixture")
+    func doGenerateDecodesFileSearchFixture() async throws {
+        let capture = RequestCapture()
+        let model = try makeModel(
+            modelId: "gpt-5-nano",
+            fetch: makeJSONFetch(fixture: "openai-file-search-tool.1", capture: capture)
+        )
+
+        let result = try await model.doGenerate(options: .init(
+            prompt: samplePrompt,
+            tools: [makeFileSearchTool()]
+        ))
+
+        let reasoningParts = result.content.compactMap { content -> LanguageModelV3Reasoning? in
+            if case .reasoning(let reasoning) = content { return reasoning }
+            return nil
+        }
+        let toolCalls = result.content.compactMap { content -> LanguageModelV3ToolCall? in
+            if case .toolCall(let call) = content { return call }
+            return nil
+        }
+        let toolResults = result.content.compactMap { content -> LanguageModelV3ToolResult? in
+            if case .toolResult(let toolResult) = content { return toolResult }
+            return nil
+        }
+        let textParts = result.content.compactMap { content -> LanguageModelV3Text? in
+            if case .text(let text) = content { return text }
+            return nil
+        }
+        let sourceParts = result.content.compactMap { content -> LanguageModelV3Source? in
+            if case .source(let source) = content { return source }
+            return nil
+        }
+
+        #expect(reasoningParts.count == 2)
+        #expect(toolCalls.count == 1)
+        #expect(toolResults.count == 1)
+        #expect(textParts.count == 1)
+        #expect(sourceParts.count == 1)
+        #expect(result.finishReason.unified == .stop)
+        #expect(result.response?.id == "resp_0a098396a8feca410068caae39e7648196b346e99fa8ec494c")
+
+        #expect(toolCalls[0].toolCallId == "fs_0a098396a8feca410068caae3cab5c8196a54fd00498464e62")
+        #expect(toolCalls[0].toolName == "fileSearch")
+        #expect(toolCalls[0].providerExecuted == true)
+        #expect(toolCalls[0].input == "{}")
+
+        #expect(toolResults[0].toolCallId == toolCalls[0].toolCallId)
+        #expect(toolResults[0].toolName == "fileSearch")
+        if case .object(let payload) = toolResults[0].result,
+           case .array(let queries)? = payload["queries"] {
+            #expect(queries.count == 4)
+            #expect(queries.first == .string("What is an embedding model according to this document?"))
+            #expect(payload["results"] == .null)
+        } else {
+            Issue.record("Expected file search result payload without included results")
+        }
+
+        #expect(textParts[0].text.contains("dense vector"))
+        #expect(textParts[0].text.contains("natural language processing tasks"))
+
+        guard case .document(_, let mediaType, let title, let filename, let providerMetadata) = sourceParts[0] else {
+            Issue.record("Expected document source from file search fixture")
+            return
+        }
+        #expect(mediaType == "text/plain")
+        #expect(title == "ai.pdf")
+        #expect(filename == "ai.pdf")
+        #expect(providerMetadata?["openai"]?["type"] == .string("file_citation"))
+        #expect(providerMetadata?["openai"]?["fileId"] == .string("file-Ebzhf8H4DPGPr9pUhr7n7v"))
+        #expect(providerMetadata?["openai"]?["index"] == .number(438))
+
+        guard let requestBody = decodeRequestBody(await capture.current()),
+              let tools = requestBody["tools"] as? [[String: Any]],
+              let firstTool = tools.first,
+              let filters = firstTool["filters"] as? [String: Any],
+              let rankingOptions = firstTool["ranking_options"] as? [String: Any],
+              let vectorStoreIds = firstTool["vector_store_ids"] as? [String] else {
+            Issue.record("Missing request body for file search fixture")
+            return
+        }
+
+        #expect(requestBody["model"] as? String == "gpt-5-nano")
+        #expect(requestBody["include"] == nil)
+        #expect(firstTool["type"] as? String == "file_search")
+        #expect(vectorStoreIds == ["vs_68caad8bd5d88191ab766cf043d89a18"])
+        #expect(firstTool["max_num_results"] as? Double == 5)
+        #expect(filters["key"] as? String == "author")
+        #expect(filters["type"] as? String == "eq")
+        #expect(filters["value"] as? String == "Jane Smith")
+        #expect(rankingOptions["ranker"] as? String == "auto")
+        #expect(rankingOptions["score_threshold"] as? Double == 0.5)
+    }
+
+    @Test("doGenerate decodes file search results fixture")
+    func doGenerateDecodesFileSearchResultsFixture() async throws {
+        let capture = RequestCapture()
+        let model = try makeModel(
+            modelId: "gpt-5-nano",
+            fetch: makeJSONFetch(fixture: "openai-file-search-tool.2", capture: capture)
+        )
+
+        let result = try await model.doGenerate(options: .init(
+            prompt: samplePrompt,
+            tools: [makeFileSearchTool()],
+            providerOptions: [
+                "openai": [
+                    "include": .array([.string("file_search_call.results")])
+                ]
+            ]
+        ))
+
+        let reasoningParts = result.content.compactMap { content -> LanguageModelV3Reasoning? in
+            if case .reasoning(let reasoning) = content { return reasoning }
+            return nil
+        }
+        let toolCalls = result.content.compactMap { content -> LanguageModelV3ToolCall? in
+            if case .toolCall(let call) = content { return call }
+            return nil
+        }
+        let toolResults = result.content.compactMap { content -> LanguageModelV3ToolResult? in
+            if case .toolResult(let toolResult) = content { return toolResult }
+            return nil
+        }
+        let textParts = result.content.compactMap { content -> LanguageModelV3Text? in
+            if case .text(let text) = content { return text }
+            return nil
+        }
+        let sourceParts = result.content.compactMap { content -> LanguageModelV3Source? in
+            if case .source(let source) = content { return source }
+            return nil
+        }
+
+        #expect(reasoningParts.count == 2)
+        #expect(toolCalls.count == 1)
+        #expect(toolResults.count == 1)
+        #expect(textParts.count == 1)
+        #expect(sourceParts.count == 1)
+        #expect(result.finishReason.unified == .stop)
+        #expect(result.response?.id == "resp_0365d26c32c64c650068cabb02fea4819495862c2bc58440ad")
+
+        #expect(toolCalls[0].toolCallId == "fs_0365d26c32c64c650068cabb04aa388194b53c59de50a3951e")
+        #expect(toolCalls[0].toolName == "fileSearch")
+        #expect(toolCalls[0].providerExecuted == true)
+        #expect(toolCalls[0].input == "{}")
+
+        #expect(toolResults[0].toolCallId == toolCalls[0].toolCallId)
+        #expect(toolResults[0].toolName == "fileSearch")
+        if case .object(let payload) = toolResults[0].result,
+           case .array(let queries)? = payload["queries"],
+           case .array(let results)? = payload["results"],
+           case .object(let firstResult)? = results.first {
+            #expect(queries.count == 4)
+            #expect(queries.first == .string("What is an embedding model according to this document?"))
+            #expect(results.count == 1)
+            #expect(firstResult["fileId"] == .string("file-Ebzhf8H4DPGPr9pUhr7n7v"))
+            #expect(firstResult["filename"] == .string("ai.pdf"))
+            if case .string(let excerpt)? = firstResult["text"] {
+                #expect(excerpt.contains("An embedding model is used to convert complex data"))
+            } else {
+                Issue.record("Expected included file search result text excerpt")
+            }
+        } else {
+            Issue.record("Expected file search result payload with included results")
+        }
+
+        #expect(textParts[0].text.contains("dense vector"))
+        #expect(textParts[0].text.contains("does not generate new text or data"))
+
+        guard case .document(_, let mediaType, let title, let filename, let providerMetadata) = sourceParts[0] else {
+            Issue.record("Expected document source from file search results fixture")
+            return
+        }
+        #expect(mediaType == "text/plain")
+        #expect(title == "ai.pdf")
+        #expect(filename == "ai.pdf")
+        #expect(providerMetadata?["openai"]?["type"] == .string("file_citation"))
+        #expect(providerMetadata?["openai"]?["fileId"] == .string("file-Ebzhf8H4DPGPr9pUhr7n7v"))
+        #expect(providerMetadata?["openai"]?["index"] == .number(350))
+
+        guard let requestBody = decodeRequestBody(await capture.current()),
+              let include = requestBody["include"] as? [String],
+              let tools = requestBody["tools"] as? [[String: Any]],
+              let firstTool = tools.first,
+              let filters = firstTool["filters"] as? [String: Any],
+              let rankingOptions = firstTool["ranking_options"] as? [String: Any],
+              let vectorStoreIds = firstTool["vector_store_ids"] as? [String] else {
+            Issue.record("Missing request body for file search results fixture")
+            return
+        }
+
+        #expect(requestBody["model"] as? String == "gpt-5-nano")
+        #expect(include == ["file_search_call.results"])
+        #expect(firstTool["type"] as? String == "file_search")
+        #expect(vectorStoreIds == ["vs_68caad8bd5d88191ab766cf043d89a18"])
+        #expect(firstTool["max_num_results"] as? Double == 5)
+        #expect(filters["key"] as? String == "author")
+        #expect(filters["type"] as? String == "eq")
+        #expect(filters["value"] as? String == "Jane Smith")
+        #expect(rankingOptions["ranker"] as? String == "auto")
+        #expect(rankingOptions["score_threshold"] as? Double == 0.5)
+    }
+
+    @Test("doStream emits file search fixture events")
+    func doStreamEmitsFileSearchFixtureEvents() async throws {
+        let capture = RequestCapture()
+        let model = try makeModel(
+            modelId: "gpt-5-nano",
+            fetch: makeStreamFetch(fixture: "openai-file-search-tool.1", capture: capture)
+        )
+
+        let result = try await model.doStream(options: .init(
+            prompt: samplePrompt,
+            tools: [makeDefaultFileSearchTool()]
+        ))
+        let parts = try await collectStreamParts(result)
+
+        let reasoningStarts = parts.compactMap { part -> String? in
+            if case .reasoningStart(let id, _) = part { return id }
+            return nil
+        }
+        let reasoningEnds = parts.compactMap { part -> String? in
+            if case .reasoningEnd(let id, _) = part { return id }
+            return nil
+        }
+        let toolCalls = parts.compactMap { part -> LanguageModelV3ToolCall? in
+            if case .toolCall(let call) = part { return call }
+            return nil
+        }
+        let toolResults = parts.compactMap { part -> LanguageModelV3ToolResult? in
+            if case .toolResult(let toolResult) = part { return toolResult }
+            return nil
+        }
+        let sourceParts = parts.compactMap { part -> LanguageModelV3Source? in
+            if case .source(let source) = part { return source }
+            return nil
+        }
+        let responseMetadata = parts.compactMap { part -> (id: String?, modelId: String?)? in
+            if case .responseMetadata(let id, let modelId, _) = part {
+                return (id: id, modelId: modelId)
+            }
+            return nil
+        }
+        let finishParts = parts.compactMap { part -> LanguageModelV3FinishReason? in
+            if case .finish(let finishReason, _, _) = part { return finishReason }
+            return nil
+        }
+
+        #expect(responseMetadata.count == 1)
+        #expect(responseMetadata[0].id == "resp_0459517ad68504ad0068cabfba22b88192836339640e9a765a")
+        #expect(responseMetadata[0].modelId == "gpt-5-mini-2025-08-07")
+        #expect(reasoningStarts.count == 2)
+        #expect(reasoningEnds.count == 2)
+        #expect(toolCalls.count == 1)
+        #expect(toolResults.count == 1)
+        #expect(sourceParts.count == 2)
+        #expect(finishParts.count == 1)
+        #expect(finishParts[0].unified == .stop)
+        #expect(collectText(parts).contains("dense vector"))
+        #expect(collectText(parts).contains("do not generate new text or data"))
+
+        #expect(toolCalls[0].toolCallId == "fs_0459517ad68504ad0068cabfbd76888192a5dc4475fadabf8a")
+        #expect(toolCalls[0].toolName == "fileSearch")
+        #expect(toolCalls[0].providerExecuted == true)
+        #expect(toolCalls[0].input == "{}")
+
+        if case .object(let payload) = toolResults[0].result,
+           case .array(let queries)? = payload["queries"] {
+            #expect(queries.count == 3)
+            #expect(queries.first == .string("What is an embedding model according to this document?"))
+            #expect(payload["results"] == .null)
+        } else {
+            Issue.record("Expected streamed file search result payload without included results")
+        }
+
+        guard let requestBody = decodeRequestBody(await capture.current()),
+              let tools = requestBody["tools"] as? [[String: Any]],
+              let firstTool = tools.first,
+              let vectorStoreIds = firstTool["vector_store_ids"] as? [String] else {
+            Issue.record("Missing streamed request body for file search fixture")
+            return
+        }
+
+        #expect(requestBody["model"] as? String == "gpt-5-nano")
+        #expect(requestBody["include"] == nil)
+        #expect(firstTool["type"] as? String == "file_search")
+        #expect(vectorStoreIds == ["vs_68caad8bd5d88191ab766cf043d89a18"])
+    }
+
+    @Test("doStream emits file search results fixture events")
+    func doStreamEmitsFileSearchResultsFixtureEvents() async throws {
+        let capture = RequestCapture()
+        let model = try makeModel(
+            modelId: "gpt-5-nano",
+            fetch: makeStreamFetch(fixture: "openai-file-search-tool.2", capture: capture)
+        )
+
+        let result = try await model.doStream(options: .init(
+            prompt: samplePrompt,
+            tools: [makeDefaultFileSearchTool()],
+            providerOptions: [
+                "openai": [
+                    "include": .array([.string("file_search_call.results")])
+                ]
+            ]
+        ))
+        let parts = try await collectStreamParts(result)
+
+        let reasoningStarts = parts.compactMap { part -> String? in
+            if case .reasoningStart(let id, _) = part { return id }
+            return nil
+        }
+        let reasoningEnds = parts.compactMap { part -> String? in
+            if case .reasoningEnd(let id, _) = part { return id }
+            return nil
+        }
+        let toolCalls = parts.compactMap { part -> LanguageModelV3ToolCall? in
+            if case .toolCall(let call) = part { return call }
+            return nil
+        }
+        let toolResults = parts.compactMap { part -> LanguageModelV3ToolResult? in
+            if case .toolResult(let toolResult) = part { return toolResult }
+            return nil
+        }
+        let sourceParts = parts.compactMap { part -> LanguageModelV3Source? in
+            if case .source(let source) = part { return source }
+            return nil
+        }
+        let responseMetadata = parts.compactMap { part -> (id: String?, modelId: String?)? in
+            if case .responseMetadata(let id, let modelId, _) = part {
+                return (id: id, modelId: modelId)
+            }
+            return nil
+        }
+        let finishParts = parts.compactMap { part -> LanguageModelV3FinishReason? in
+            if case .finish(let finishReason, _, _) = part { return finishReason }
+            return nil
+        }
+
+        #expect(responseMetadata.count == 1)
+        #expect(responseMetadata[0].id == "resp_06456cb9918b63780068cacd710b0881a1b00b5fca56e7100b")
+        #expect(responseMetadata[0].modelId == "gpt-5-mini-2025-08-07")
+        #expect(reasoningStarts.count == 2)
+        #expect(reasoningEnds.count == 2)
+        #expect(toolCalls.count == 1)
+        #expect(toolResults.count == 1)
+        #expect(sourceParts.count == 1)
+        #expect(finishParts.count == 1)
+        #expect(finishParts[0].unified == .stop)
+        #expect(collectText(parts).contains("dense vector"))
+        #expect(collectText(parts).contains("generate new text or data"))
+
+        #expect(toolCalls[0].toolCallId == "fs_06456cb9918b63780068cacd74a1dc81a1bf68dd57f140b4b6")
+        #expect(toolCalls[0].toolName == "fileSearch")
+        #expect(toolCalls[0].providerExecuted == true)
+        #expect(toolCalls[0].input == "{}")
+
+        if case .object(let payload) = toolResults[0].result,
+           case .array(let queries)? = payload["queries"],
+           case .array(let results)? = payload["results"],
+           case .object(let firstResult)? = results.first {
+            #expect(queries.count == 3)
+            #expect(queries.first == .string("What is an embedding model according to this document?"))
+            #expect(results.count == 1)
+            #expect(firstResult["fileId"] == .string("file-Ebzhf8H4DPGPr9pUhr7n7v"))
+            #expect(firstResult["filename"] == .string("ai.pdf"))
+            if case .string(let excerpt)? = firstResult["text"] {
+                #expect(excerpt.contains("An\u{00A0}embedding model"))
+            } else {
+                Issue.record("Expected streamed included file search result text excerpt")
+            }
+        } else {
+            Issue.record("Expected streamed file search result payload with included results")
+        }
+
+        guard let requestBody = decodeRequestBody(await capture.current()),
+              let include = requestBody["include"] as? [String],
+              let tools = requestBody["tools"] as? [[String: Any]],
+              let firstTool = tools.first,
+              let vectorStoreIds = firstTool["vector_store_ids"] as? [String] else {
+            Issue.record("Missing streamed request body for file search results fixture")
+            return
+        }
+
+        #expect(requestBody["model"] as? String == "gpt-5-nano")
+        #expect(include == ["file_search_call.results"])
+        #expect(firstTool["type"] as? String == "file_search")
+        #expect(vectorStoreIds == ["vs_68caad8bd5d88191ab766cf043d89a18"])
+    }
+
+    @Test("doGenerate decodes apply patch fixture")
+    func doGenerateDecodesApplyPatchFixture() async throws {
+        let capture = RequestCapture()
+        let model = try makeModel(
+            modelId: "gpt-5.1-2025-11-13",
+            fetch: makeJSONFetch(fixture: "openai-apply-patch-tool.1", capture: capture)
+        )
+
+        let result = try await model.doGenerate(options: .init(
+            prompt: samplePrompt,
+            tools: [makeApplyPatchTool()]
+        ))
+
+        let toolCalls = result.content.compactMap { content -> LanguageModelV3ToolCall? in
+            if case .toolCall(let call) = content { return call }
+            return nil
+        }
+        let toolResults = result.content.compactMap { content -> LanguageModelV3ToolResult? in
+            if case .toolResult(let toolResult) = content { return toolResult }
+            return nil
+        }
+        let textParts = result.content.compactMap { content -> LanguageModelV3Text? in
+            if case .text(let text) = content { return text }
+            return nil
+        }
+
+        #expect(toolCalls.count == 1)
+        #expect(toolResults.isEmpty)
+        #expect(textParts.isEmpty)
+        #expect(result.response?.id == "resp_0b04c5f8dfc43af500692749bc5b288197b45e830995fd32d3")
+
+        #expect(toolCalls[0].toolCallId == "call_CdXiGtcRl49Q6Ek20tG9lYOr")
+        #expect(toolCalls[0].toolName == "apply_patch")
+        #expect(toolCalls[0].providerExecuted == nil)
+        #expect(toolCalls[0].providerMetadata?["openai"]?["itemId"] == .string("apc_0b04c5f8dfc43af500692749bd60908197b0e453c38f30191a"))
+
+        guard let toolInput = decodeToolInput(toolCalls[0].input),
+              let callId = toolInput["callId"] as? String,
+              let operation = toolInput["operation"] as? [String: Any],
+              let diff = operation["diff"] as? String else {
+            Issue.record("Expected apply_patch tool input JSON")
+            return
+        }
+
+        #expect(callId == "call_CdXiGtcRl49Q6Ek20tG9lYOr")
+        #expect(operation["type"] as? String == "create_file")
+        #expect(operation["path"] as? String == "shopping-checklist.md")
+        #expect(diff.contains("## Shopping Checklist"))
+        #expect(diff.contains("+- [ ] Apples"))
+
+        guard let requestBody = decodeRequestBody(await capture.current()),
+              let tools = requestBody["tools"] as? [[String: Any]],
+              let firstTool = tools.first else {
+            Issue.record("Missing request body for apply patch fixture")
+            return
+        }
+
+        #expect(requestBody["model"] as? String == "gpt-5.1-2025-11-13")
+        #expect(firstTool["type"] as? String == "apply_patch")
+    }
+
+    @Test("doStream emits apply patch fixture events")
+    func doStreamEmitsApplyPatchFixtureEvents() async throws {
+        let capture = RequestCapture()
+        let model = try makeModel(
+            modelId: "gpt-5.1-2025-11-13",
+            fetch: makeStreamFetch(fixture: "openai-apply-patch-tool.1", capture: capture)
+        )
+
+        let result = try await model.doStream(options: .init(
+            prompt: samplePrompt,
+            tools: [makeApplyPatchTool()]
+        ))
+        let parts = try await collectStreamParts(result)
+
+        let inputStarts = parts.compactMap { part -> String? in
+            if case .toolInputStart(let id, _, _, _, _, _) = part { return id }
+            return nil
+        }
+        let inputDeltas = parts.compactMap { part -> (String, String)? in
+            if case .toolInputDelta(let id, let delta, _) = part { return (id, delta) }
+            return nil
+        }
+        let inputEnds = parts.compactMap { part -> String? in
+            if case .toolInputEnd(let id, _) = part { return id }
+            return nil
+        }
+        let toolCalls = parts.compactMap { part -> LanguageModelV3ToolCall? in
+            if case .toolCall(let call) = part { return call }
+            return nil
+        }
+        let toolResults = parts.compactMap { part -> LanguageModelV3ToolResult? in
+            if case .toolResult(let toolResult) = part { return toolResult }
+            return nil
+        }
+        let responseMetadata = parts.compactMap { part -> (id: String?, modelId: String?)? in
+            if case .responseMetadata(let id, let modelId, _) = part {
+                return (id: id, modelId: modelId)
+            }
+            return nil
+        }
+
+        #expect(inputStarts == ["call_kA46f91ZwocQyMCKyyZqRyC5"])
+        #expect(inputEnds == ["call_kA46f91ZwocQyMCKyyZqRyC5"])
+        #expect(toolCalls.count == 1)
+        #expect(toolResults.isEmpty)
+        #expect(responseMetadata.count == 1)
+        #expect(responseMetadata[0].id == "resp_0372d86dfc1762fe00692741f339a08190bce9b78ee2079295")
+        #expect(responseMetadata[0].modelId == "gpt-5.1-2025-11-13")
+        #expect(collectText(parts).isEmpty)
+
+        #expect(toolCalls[0].toolCallId == "call_kA46f91ZwocQyMCKyyZqRyC5")
+        #expect(toolCalls[0].toolName == "apply_patch")
+        #expect(toolCalls[0].providerExecuted == nil)
+        #expect(toolCalls[0].providerMetadata?["openai"]?["itemId"] == .string("apc_0372d86dfc1762fe00692741f3f3dc8190879cba489ff2fc8b"))
+
+        let deltaString = inputDeltas
+            .filter { $0.0 == "call_kA46f91ZwocQyMCKyyZqRyC5" }
+            .map(\.1)
+            .joined()
+        let deltasObject = try JSONSerialization.jsonObject(with: Data(deltaString.utf8))
+        let toolCallObject = try JSONSerialization.jsonObject(with: Data(toolCalls[0].input.utf8))
+        #expect(try jsonValue(from: deltasObject) == jsonValue(from: toolCallObject))
+
+        guard let requestBody = decodeRequestBody(await capture.current()),
+              let tools = requestBody["tools"] as? [[String: Any]],
+              let firstTool = tools.first else {
+            Issue.record("Missing streamed request body for apply patch fixture")
+            return
+        }
+
+        #expect(requestBody["model"] as? String == "gpt-5.1-2025-11-13")
+        #expect(firstTool["type"] as? String == "apply_patch")
+    }
+
+    @Test("doStream emits apply patch delete fixture events")
+    func doStreamEmitsApplyPatchDeleteFixtureEvents() async throws {
+        let capture = RequestCapture()
+        let model = try makeModel(
+            modelId: "gpt-5.1-2025-11-13",
+            fetch: makeStreamFetch(fixture: "openai-apply-patch-tool-delete.1", capture: capture)
+        )
+
+        let result = try await model.doStream(options: .init(
+            prompt: samplePrompt,
+            tools: [makeApplyPatchTool()]
+        ))
+        let parts = try await collectStreamParts(result)
+
+        let inputStarts = parts.compactMap { part -> String? in
+            if case .toolInputStart(let id, _, _, _, _, _) = part { return id }
+            return nil
+        }
+        let inputDeltas = parts.compactMap { part -> (String, String)? in
+            if case .toolInputDelta(let id, let delta, _) = part { return (id, delta) }
+            return nil
+        }
+        let inputEnds = parts.compactMap { part -> String? in
+            if case .toolInputEnd(let id, _) = part { return id }
+            return nil
+        }
+        let toolCalls = parts.compactMap { part -> LanguageModelV3ToolCall? in
+            if case .toolCall(let call) = part { return call }
+            return nil
+        }
+        let toolResults = parts.compactMap { part -> LanguageModelV3ToolResult? in
+            if case .toolResult(let toolResult) = part { return toolResult }
+            return nil
+        }
+        let responseMetadata = parts.compactMap { part -> (id: String?, modelId: String?)? in
+            if case .responseMetadata(let id, let modelId, _) = part {
+                return (id: id, modelId: modelId)
+            }
+            return nil
+        }
+
+        #expect(inputStarts == ["call_delete_1"])
+        #expect(inputEnds == ["call_delete_1"])
+        #expect(toolCalls.count == 1)
+        #expect(toolResults.isEmpty)
+        #expect(responseMetadata.count == 1)
+        #expect(responseMetadata[0].id == "resp_delete_001")
+        #expect(responseMetadata[0].modelId == "gpt-5.1-2025-11-13")
+        #expect(collectText(parts).isEmpty)
+
+        #expect(toolCalls[0].toolCallId == "call_delete_1")
+        #expect(toolCalls[0].toolName == "apply_patch")
+        #expect(toolCalls[0].providerExecuted == nil)
+        #expect(toolCalls[0].providerMetadata?["openai"]?["itemId"] == .string("apc_delete_001"))
+
+        let deltaString = inputDeltas
+            .filter { $0.0 == "call_delete_1" }
+            .map(\.1)
+            .joined()
+        let deltasObject = try JSONSerialization.jsonObject(with: Data(deltaString.utf8))
+        let toolCallObject = try JSONSerialization.jsonObject(with: Data(toolCalls[0].input.utf8))
+        #expect(try jsonValue(from: deltasObject) == jsonValue(from: toolCallObject))
+
+        guard let toolInput = decodeToolInput(toolCalls[0].input),
+              let operation = toolInput["operation"] as? [String: Any] else {
+            Issue.record("Expected streamed delete apply_patch input JSON")
+            return
+        }
+
+        #expect(operation["type"] as? String == "delete_file")
+        #expect(operation["path"] as? String == "obsolete.txt")
+
+        guard let requestBody = decodeRequestBody(await capture.current()),
+              let tools = requestBody["tools"] as? [[String: Any]],
+              let firstTool = tools.first else {
+            Issue.record("Missing streamed request body for apply patch delete fixture")
+            return
+        }
+
+        #expect(requestBody["model"] as? String == "gpt-5.1-2025-11-13")
+        #expect(firstTool["type"] as? String == "apply_patch")
+    }
+
+    @Test("doGenerate decodes custom tool fixture")
+    func doGenerateDecodesCustomToolFixture() async throws {
+        let capture = RequestCapture()
+        let model = try makeModel(
+            modelId: "gpt-5.2-codex",
+            fetch: makeJSONFetch(fixture: "openai-custom-tool.1", capture: capture)
+        )
+
+        let result = try await model.doGenerate(options: .init(
+            prompt: samplePrompt,
+            tools: [makeCustomTool()]
+        ))
+
+        let toolCalls = result.content.compactMap { content -> LanguageModelV3ToolCall? in
+            if case .toolCall(let call) = content { return call }
+            return nil
+        }
+        let toolResults = result.content.compactMap { content -> LanguageModelV3ToolResult? in
+            if case .toolResult(let toolResult) = content { return toolResult }
+            return nil
+        }
+        let textParts = result.content.compactMap { content -> LanguageModelV3Text? in
+            if case .text(let text) = content { return text }
+            return nil
+        }
+
+        #expect(toolCalls.count == 1)
+        #expect(toolResults.isEmpty)
+        #expect(textParts.isEmpty)
+        #expect(result.finishReason.unified == .toolCalls)
+        #expect(result.response?.id == "resp_custom_tool_test_001")
+
+        #expect(toolCalls[0].toolCallId == "call_custom_sql_001")
+        #expect(toolCalls[0].toolName == "write_sql")
+        #expect(toolCalls[0].providerExecuted == nil)
+        #expect(toolCalls[0].input == "\"SELECT * FROM users WHERE age > 25\"")
+        #expect(toolCalls[0].providerMetadata?["openai"]?["itemId"] == .string("ct_abc123def456"))
+
+        guard let requestBody = decodeRequestBody(await capture.current()),
+              let tools = requestBody["tools"] as? [[String: Any]],
+              let firstTool = tools.first,
+              let format = firstTool["format"] as? [String: Any] else {
+            Issue.record("Missing request body for custom tool fixture")
+            return
+        }
+
+        #expect(requestBody["model"] as? String == "gpt-5.2-codex")
+        #expect(requestBody["tool_choice"] == nil)
+        #expect(firstTool["type"] as? String == "custom")
+        #expect(firstTool["name"] as? String == "write_sql")
+        #expect(firstTool["description"] as? String == "Write a SQL SELECT query to answer the user question.")
+        #expect(format["type"] as? String == "grammar")
+        #expect(format["syntax"] as? String == "regex")
+        #expect(format["definition"] as? String == "SELECT .+")
+    }
+
+    @Test("doGenerate decodes aliased custom tool fixture")
+    func doGenerateDecodesAliasedCustomToolFixture() async throws {
+        let capture = RequestCapture()
+        let model = try makeModel(
+            modelId: "gpt-5.2-codex",
+            fetch: makeJSONFetch(fixture: "openai-custom-tool.1", capture: capture)
+        )
+
+        let result = try await model.doGenerate(options: .init(
+            prompt: samplePrompt,
+            tools: [makeCustomTool(toolName: "alias_name", providerName: "write_sql")],
+            toolChoice: .tool(toolName: "alias_name")
+        ))
+
+        let toolCalls = result.content.compactMap { content -> LanguageModelV3ToolCall? in
+            if case .toolCall(let call) = content { return call }
+            return nil
+        }
+
+        #expect(toolCalls.count == 1)
+        #expect(result.finishReason.unified == .toolCalls)
+        #expect(toolCalls[0].toolCallId == "call_custom_sql_001")
+        #expect(toolCalls[0].toolName == "alias_name")
+        #expect(toolCalls[0].input == "\"SELECT * FROM users WHERE age > 25\"")
+        #expect(toolCalls[0].providerMetadata?["openai"]?["itemId"] == .string("ct_abc123def456"))
+
+        guard let requestBody = decodeRequestBody(await capture.current()),
+              let toolChoice = requestBody["tool_choice"] as? [String: Any] else {
+            Issue.record("Missing aliased custom tool request body")
+            return
+        }
+
+        #expect(toolChoice["type"] as? String == "custom")
+        #expect(toolChoice["name"] as? String == "write_sql")
+    }
+
+    @Test("doStream emits custom tool fixture events")
+    func doStreamEmitsCustomToolFixtureEvents() async throws {
+        let capture = RequestCapture()
+        let model = try makeModel(
+            modelId: "gpt-5.2-codex",
+            fetch: makeStreamFetch(fixture: "openai-custom-tool.1", capture: capture)
+        )
+
+        let result = try await model.doStream(options: .init(
+            prompt: samplePrompt,
+            tools: [makeCustomTool()]
+        ))
+        let parts = try await collectStreamParts(result)
+
+        let inputStarts = parts.compactMap { part -> (String, String)? in
+            if case .toolInputStart(let id, let toolName, _, _, _, _) = part {
+                return (id, toolName)
+            }
+            return nil
+        }
+        let inputDeltas = parts.compactMap { part -> (String, String)? in
+            if case .toolInputDelta(let id, let delta, _) = part { return (id, delta) }
+            return nil
+        }
+        let inputEnds = parts.compactMap { part -> String? in
+            if case .toolInputEnd(let id, _) = part { return id }
+            return nil
+        }
+        let toolCalls = parts.compactMap { part -> LanguageModelV3ToolCall? in
+            if case .toolCall(let call) = part { return call }
+            return nil
+        }
+        let responseMetadata = parts.compactMap { part -> (id: String?, modelId: String?)? in
+            if case .responseMetadata(let id, let modelId, _) = part {
+                return (id: id, modelId: modelId)
+            }
+            return nil
+        }
+        let finishParts = parts.compactMap { part -> (LanguageModelV3FinishReason, SharedV3ProviderMetadata?)? in
+            if case .finish(let finishReason, _, let providerMetadata) = part {
+                return (finishReason, providerMetadata)
+            }
+            return nil
+        }
+
+        #expect(inputStarts.count == 1)
+        #expect(inputStarts[0].0 == "call_custom_sql_001")
+        #expect(inputStarts[0].1 == "write_sql")
+        #expect(inputEnds == ["call_custom_sql_001"])
+        #expect(toolCalls.count == 1)
+        #expect(responseMetadata.count == 1)
+        #expect(responseMetadata[0].id == "resp_custom_tool_test_001")
+        #expect(responseMetadata[0].modelId == "gpt-5.2-codex")
+        #expect(finishParts.count == 1)
+        #expect(finishParts[0].0.unified == .toolCalls)
+        #expect(finishParts[0].1?["openai"]?["responseId"] == .string("resp_custom_tool_test_001"))
+        #expect(collectText(parts).isEmpty)
+
+        let customInputDeltas = inputDeltas
+            .filter { $0.0 == "call_custom_sql_001" }
+            .map(\.1)
+        #expect(customInputDeltas == ["SELECT * ", "FROM users ", "WHERE age > 25"])
+
+        #expect(toolCalls[0].toolCallId == "call_custom_sql_001")
+        #expect(toolCalls[0].toolName == "write_sql")
+        #expect(toolCalls[0].input == "\"SELECT * FROM users WHERE age > 25\"")
+        #expect(toolCalls[0].providerMetadata?["openai"]?["itemId"] == .string("ct_abc123def456"))
+
+        guard let requestBody = decodeRequestBody(await capture.current()),
+              let tools = requestBody["tools"] as? [[String: Any]],
+              let firstTool = tools.first else {
+            Issue.record("Missing streamed custom tool request body")
+            return
+        }
+
+        #expect(requestBody["model"] as? String == "gpt-5.2-codex")
+        #expect(firstTool["type"] as? String == "custom")
+        #expect(firstTool["name"] as? String == "write_sql")
+    }
+
+    @Test("doStream emits aliased custom tool fixture events")
+    func doStreamEmitsAliasedCustomToolFixtureEvents() async throws {
+        let capture = RequestCapture()
+        let model = try makeModel(
+            modelId: "gpt-5.2-codex",
+            fetch: makeStreamFetch(fixture: "openai-custom-tool.1", capture: capture)
+        )
+
+        let result = try await model.doStream(options: .init(
+            prompt: samplePrompt,
+            tools: [makeCustomTool(toolName: "alias_name", providerName: "write_sql")],
+            toolChoice: .tool(toolName: "alias_name")
+        ))
+        let parts = try await collectStreamParts(result)
+
+        let inputStarts = parts.compactMap { part -> (String, String)? in
+            if case .toolInputStart(let id, let toolName, _, _, _, _) = part {
+                return (id, toolName)
+            }
+            return nil
+        }
+        let toolCalls = parts.compactMap { part -> LanguageModelV3ToolCall? in
+            if case .toolCall(let call) = part { return call }
+            return nil
+        }
+        let finishParts = parts.compactMap { part -> LanguageModelV3FinishReason? in
+            if case .finish(let finishReason, _, _) = part { return finishReason }
+            return nil
+        }
+
+        #expect(inputStarts.count == 1)
+        #expect(inputStarts[0].0 == "call_custom_sql_001")
+        #expect(inputStarts[0].1 == "alias_name")
+        #expect(toolCalls.count == 1)
+        #expect(toolCalls[0].toolName == "alias_name")
+        #expect(toolCalls[0].input == "\"SELECT * FROM users WHERE age > 25\"")
+        #expect(finishParts.count == 1)
+        #expect(finishParts[0].unified == .toolCalls)
+
+        guard let requestBody = decodeRequestBody(await capture.current()),
+              let toolChoice = requestBody["tool_choice"] as? [String: Any] else {
+            Issue.record("Missing streamed aliased custom tool request body")
+            return
+        }
+
+        #expect(toolChoice["type"] as? String == "custom")
+        #expect(toolChoice["name"] as? String == "write_sql")
     }
 
     @Test("doGenerate decodes reasoning encrypted content fixture")

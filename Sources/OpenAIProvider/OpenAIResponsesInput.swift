@@ -335,57 +335,78 @@ struct OpenAIResponsesInputBuilder {
                             schema: openAIResponsesReasoningProviderOptionsSchema
                         )
 
-                        guard let reasoningId = providerOptions?.itemId else {
-                            let partDescription = stringifyReasoningPart(reasoningPart)
-                            warnings.append(.other(message: "Non-OpenAI reasoning parts are not supported. Skipping reasoning part: \(partDescription)."))
-                            continue
-                        }
-
-                        if hasConversation {
-                            continue
-                        }
-
-                        if store {
-                            if !reasoningReferences.contains(reasoningId) {
-                                items.append(.object([
-                                    "type": .string("item_reference"),
-                                    "id": .string(reasoningId)
-                                ]))
-                                reasoningReferences.insert(reasoningId)
+                        if let reasoningId = providerOptions?.itemId {
+                            if hasConversation {
+                                continue
                             }
-                            continue
-                        }
 
-                        var accumulator = reasoningMessages[reasoningId]
-                        let isFirstPart = accumulator == nil
+                            if store {
+                                if !reasoningReferences.contains(reasoningId) {
+                                    items.append(.object([
+                                        "type": .string("item_reference"),
+                                        "id": .string(reasoningId)
+                                    ]))
+                                    reasoningReferences.insert(reasoningId)
+                                }
+                                continue
+                            }
 
-                        if accumulator == nil {
-                            let newAccumulator = ReasoningAccumulator(
-                                id: reasoningId,
-                                encryptedContent: providerOptions?.reasoningEncryptedContent,
-                                summaryParts: [],
-                                itemIndex: items.count
-                            )
-                            items.append(newAccumulator.asJSONValue())
-                            reasoningMessages[reasoningId] = newAccumulator
-                            accumulator = newAccumulator
-                        }
+                            var accumulator = reasoningMessages[reasoningId]
+                            let isFirstPart = accumulator == nil
 
-                        guard var existing = accumulator else { continue }
+                            if accumulator == nil {
+                                let newAccumulator = ReasoningAccumulator(
+                                    id: reasoningId,
+                                    encryptedContent: providerOptions?.reasoningEncryptedContent,
+                                    summaryParts: [],
+                                    itemIndex: items.count
+                                )
+                                items.append(newAccumulator.asJSONValue())
+                                reasoningMessages[reasoningId] = newAccumulator
+                                accumulator = newAccumulator
+                            }
 
-                        if !reasoningPart.text.isEmpty {
-                            existing.summaryParts.append(.object([
-                                "type": .string("summary_text"),
-                                "text": .string(reasoningPart.text)
-                            ]))
+                            guard var existing = accumulator else { continue }
+
+                            if let encryptedContent = providerOptions?.reasoningEncryptedContent {
+                                existing.encryptedContent = encryptedContent
+                            }
+
+                            if !reasoningPart.text.isEmpty {
+                                existing.summaryParts.append(.object([
+                                    "type": .string("summary_text"),
+                                    "text": .string(reasoningPart.text)
+                                ]))
+                            } else if !isFirstPart {
+                                // Only warn when appending empty text to existing sequence
+                                let partDescription = stringifyReasoningPart(reasoningPart)
+                                warnings.append(.other(message: "Cannot append empty reasoning part to existing reasoning sequence. Skipping reasoning part: \(partDescription)."))
+                            }
+
                             items[existing.itemIndex] = existing.asJSONValue()
                             reasoningMessages[reasoningId] = existing
-                        } else if !isFirstPart {
-                            // Only warn when appending empty text to existing sequence
-                            let partDescription = stringifyReasoningPart(reasoningPart)
-                            warnings.append(.other(message: "Cannot append empty reasoning part to existing reasoning sequence. Skipping reasoning part: \(partDescription)."))
+                            continue
                         }
-                        // For first part with empty text, we already added the accumulator with empty summary - no warning needed
+
+                        if let encryptedContent = providerOptions?.reasoningEncryptedContent {
+                            var summaryParts: [JSONValue] = []
+                            if !reasoningPart.text.isEmpty {
+                                summaryParts.append(.object([
+                                    "type": .string("summary_text"),
+                                    "text": .string(reasoningPart.text)
+                                ]))
+                            }
+
+                            items.append(.object([
+                                "type": .string("reasoning"),
+                                "encrypted_content": .string(encryptedContent),
+                                "summary": .array(summaryParts)
+                            ]))
+                            continue
+                        }
+
+                        let partDescription = stringifyReasoningPart(reasoningPart)
+                        warnings.append(.other(message: "Non-OpenAI reasoning parts are not supported. Skipping reasoning part: \(partDescription)."))
 
                     case .file:
                         continue
