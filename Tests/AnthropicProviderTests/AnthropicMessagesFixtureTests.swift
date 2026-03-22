@@ -26,9 +26,7 @@ struct AnthropicMessagesFixtureTests {
     private func fixturesDirectory() -> URL {
         URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent("external/vercel-ai-sdk/packages/anthropic/src/__fixtures__")
+            .appendingPathComponent("Fixtures")
     }
 
     private func loadJSONFixtureData(_ name: String) throws -> Data {

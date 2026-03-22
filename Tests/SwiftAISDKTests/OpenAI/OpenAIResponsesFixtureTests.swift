@@ -39,10 +39,7 @@ struct OpenAIResponsesFixtureTests {
     private func fixturesDirectory() -> URL {
         URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent("external/vercel-ai-sdk/packages/openai/src/responses/__fixtures__")
+            .appendingPathComponent("Fixtures")
     }
 
     private func loadJSONFixture(_ name: String) throws -> Any {
