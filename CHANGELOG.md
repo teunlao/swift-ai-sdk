@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.17.5] - 2026-03-22
+
+Upstream parity refresh against Vercel AI SDK commit `a921fbb381cf2d19ef75ae27906f8d1cb0b8325b`.
+
+### Fixed
+- Core: preserve deferred provider tool metadata in `generateText` / `streamText` and align UI message stream callback, tool metadata, and denial handling with upstream.
+- Anthropic: add current code execution and web tool parity, including encrypted code execution result handling and streamed server-tool input mapping.
+- OpenAI Responses: align custom/code interpreter/tool preparation, reasoning encrypted content retention, structured stream parse-error emission, and normalized `local_shell` input casing with upstream.
+- OpenAI Responses: align recorded MCP approval, web search, shell, local shell, image generation, file search, `apply_patch`, and custom-tool scenarios with current upstream behavior.
+
 ## [0.17.4] - 2026-03-12
 
 ### Fixed
