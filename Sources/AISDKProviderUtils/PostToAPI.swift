@@ -36,7 +36,11 @@ public func postJsonToAPI<T>(
     isAborted: (@Sendable () -> Bool)? = nil,
     fetch: FetchFunction? = nil
 ) async throws -> ResponseHandlerResult<T> {
-    let jsonData = try JSONEncoder().encode(body)
+    // Sorted keys ensure deterministic JSON byte output so providers
+    // that use prefix-based caching (e.g. OpenAI) can match request prefixes.
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys]
+    let jsonData = try encoder.encode(body)
 
     var mergedHeaders = headers ?? [:]
     mergedHeaders["Content-Type"] = "application/json"
