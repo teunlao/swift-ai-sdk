@@ -296,3 +296,215 @@ private final class Collector {
     p.feed("{\"error\":\"Internal\"}\n")
     #expect(!c.errors.isEmpty)
 }
+
+// MARK: - feed(Data) UTF-8 chunk boundary handling
+
+@Test func parser_feedData_asciiOnlyChunks() {
+    // Pure ASCII should always work regardless of split position
+    let event = "data: Hello World\n\n"
+    let bytes = Data(event.utf8)
+
+    // Split at every possible position
+    for splitPoint in 1..<bytes.count {
+        let c = Collector()
+        let p = EventSourceParser(callbacks: c.callbacks())
+        p.feed(Data(bytes.prefix(splitPoint)))
+        p.feed(Data(bytes.suffix(from: splitPoint)))
+        #expect(c.events.count == 1, "ASCII split at \(splitPoint) should produce 1 event")
+        #expect(c.events.first?.data == "Hello World")
+    }
+}
+
+@Test func parser_feedData_emptyChunks() {
+    let c = Collector()
+    let p = EventSourceParser(callbacks: c.callbacks())
+
+    // Empty chunks before, between, and after real data
+    p.feed(Data())
+    p.feed(Data("data: ok\n\n".utf8))
+    p.feed(Data())
+
+    #expect(c.events.count == 1)
+    #expect(c.events.first?.data == "ok")
+}
+
+@Test func parser_feedData_split2ByteChar() {
+    // "é" is C3 A9 (2 bytes). Split after the lead byte.
+    let event = "data: café\n\n"
+    let bytes = Data(event.utf8)
+
+    let eAcuteUTF8 = Data([0xC3, 0xA9])
+    guard let range = bytes.firstRange(of: eAcuteUTF8) else {
+        Issue.record("Could not find é bytes")
+        return
+    }
+    let splitPoint = range.lowerBound + 1
+
+    let c = Collector()
+    let p = EventSourceParser(callbacks: c.callbacks())
+    p.feed(Data(bytes.prefix(splitPoint)))
+    p.feed(Data(bytes.suffix(from: splitPoint)))
+
+    #expect(c.events.count == 1)
+    #expect(c.events.first?.data == "café")
+}
+
+@Test func parser_feedData_split3ByteChar() {
+    // "中" is E4 B8 AD (3 bytes). Test split at each internal position.
+    let event = "data: 中\n\n"
+    let bytes = Data(event.utf8)
+
+    let charUTF8 = Data([0xE4, 0xB8, 0xAD])
+    guard let range = bytes.firstRange(of: charUTF8) else {
+        Issue.record("Could not find 中 bytes")
+        return
+    }
+
+    // Split after 1 byte (E4 | B8 AD) and after 2 bytes (E4 B8 | AD)
+    for offset in 1...2 {
+        let splitPoint = range.lowerBound + offset
+        let c = Collector()
+        let p = EventSourceParser(callbacks: c.callbacks())
+        p.feed(Data(bytes.prefix(splitPoint)))
+        p.feed(Data(bytes.suffix(from: splitPoint)))
+        #expect(c.events.count == 1, "3-byte char split at offset \(offset) should produce 1 event")
+        #expect(c.events.first?.data == "中")
+    }
+}
+
+@Test func parser_feedData_split4ByteChar() {
+    // "😀" is F0 9F 98 80 (4 bytes). Test split at each internal position.
+    let event = "data: 😀\n\n"
+    let bytes = Data(event.utf8)
+
+    let charUTF8 = Data([0xF0, 0x9F, 0x98, 0x80])
+    guard let range = bytes.firstRange(of: charUTF8) else {
+        Issue.record("Could not find 😀 bytes")
+        return
+    }
+
+    for offset in 1...3 {
+        let splitPoint = range.lowerBound + offset
+        let c = Collector()
+        let p = EventSourceParser(callbacks: c.callbacks())
+        p.feed(Data(bytes.prefix(splitPoint)))
+        p.feed(Data(bytes.suffix(from: splitPoint)))
+        #expect(c.events.count == 1, "4-byte char split at offset \(offset) should produce 1 event")
+        #expect(c.events.first?.data == "😀")
+    }
+}
+
+@Test func parser_feedData_4ByteCharFedByteByByte() {
+    // Feed each byte of a 4-byte character as a separate Data chunk.
+    // pendingBytes must accumulate across all 4 calls.
+    let event = "data: X😀Y\n\n"
+    let bytes = Array(event.utf8)
+
+    let c = Collector()
+    let p = EventSourceParser(callbacks: c.callbacks())
+    for byte in bytes {
+        p.feed(Data([byte]))
+    }
+
+    #expect(c.events.count == 1)
+    #expect(c.events.first?.data == "X😀Y")
+}
+
+@Test func parser_feedData_consecutiveMultibyteChars() {
+    // Two adjacent 4-byte emojis with the split falling between the
+    // trailing bytes of the first and the leading byte of the second
+    let event = "data: 🎉🎊\n\n"
+    let bytes = Data(event.utf8)
+
+    // 🎉 = F0 9F 8E 89, 🎊 = F0 9F 8E 8A
+    // Split inside the first emoji after 2 bytes
+    let firstEmoji = Data([0xF0, 0x9F, 0x8E, 0x89])
+    guard let range = bytes.firstRange(of: firstEmoji) else {
+        Issue.record("Could not find 🎉 bytes")
+        return
+    }
+    let splitPoint = range.lowerBound + 2
+
+    let c = Collector()
+    let p = EventSourceParser(callbacks: c.callbacks())
+    p.feed(Data(bytes.prefix(splitPoint)))
+    p.feed(Data(bytes.suffix(from: splitPoint)))
+
+    #expect(c.events.count == 1)
+    #expect(c.events.first?.data == "🎉🎊")
+}
+
+@Test func parser_feedData_splitMultibyteCorruptsAdjacentEvents() {
+    // Simulates the real failure mode: a dropped chunk merges fragments
+    // of two different SSE events, producing garbled JSON
+    let event1 = "data: {\"type\":\"content_block_delta\",\"index\":0}\n\n"
+    let event2 = "data: {\"type\":\"thinking_delta\",\"thinking\":\"café résumé\"}\n\n"
+    let event3 = "data: {\"type\":\"content_block_stop\"}\n\n"
+
+    var allBytes = Data()
+    allBytes.append(Data(event1.utf8))
+    allBytes.append(Data(event2.utf8))
+    allBytes.append(Data(event3.utf8))
+
+    // "é" in "café" is C3 A9 in UTF-8 (2 bytes). Split inside it.
+    let eAcuteUTF8 = Data([0xC3, 0xA9])
+    guard let accentRange = allBytes.firstRange(of: eAcuteUTF8) else {
+        Issue.record("Could not find accented character bytes")
+        return
+    }
+    let splitPoint = accentRange.lowerBound + 1
+
+    let chunk1 = Data(allBytes.prefix(splitPoint))
+    let chunk2 = Data(allBytes.suffix(from: splitPoint))
+
+    let c = Collector()
+    let p = EventSourceParser(callbacks: c.callbacks())
+    p.feed(chunk1)
+    p.feed(chunk2)
+
+    #expect(c.events.count == 3, "All events should survive a chunk split inside a multi-byte character")
+    #expect(c.events[0].data == "{\"type\":\"content_block_delta\",\"index\":0}")
+    #expect(c.events[1].data == "{\"type\":\"thinking_delta\",\"thinking\":\"café résumé\"}")
+    #expect(c.events[2].data == "{\"type\":\"content_block_stop\"}")
+}
+
+@Test func parser_feedData_resetClearsPendingBytes() {
+    // Feed an incomplete multi-byte sequence, then reset. The leftover
+    // bytes should be discarded so the next feed starts clean.
+    let c = Collector()
+    let p = EventSourceParser(callbacks: c.callbacks())
+
+    // First byte of "é" (C3) without the continuation byte
+    p.feed(Data([0xC3]))
+    p.reset(consume: false)
+
+    // New event after reset should work normally
+    p.feed(Data("data: clean\n\n".utf8))
+    #expect(c.events.count == 1)
+    #expect(c.events.first?.data == "clean")
+}
+
+@Test func parser_feedData_multipleEventsSpanningManySplits() {
+    // 5 events with multi-byte content, fed in 3-byte micro-chunks
+    var fixture = ""
+    for i in 0..<5 {
+        fixture += "data: msg\(i) \u{00E9}\u{4E2D}\u{1F600}\n\n"
+    }
+    let bytes = Data(fixture.utf8)
+
+    let c = Collector()
+    let p = EventSourceParser(callbacks: c.callbacks())
+
+    let chunkSize = 3
+    var offset = 0
+    while offset < bytes.count {
+        let end = min(offset + chunkSize, bytes.count)
+        p.feed(Data(bytes[offset..<end]))
+        offset = end
+    }
+
+    #expect(c.events.count == 5)
+    for i in 0..<5 {
+        #expect(c.events[i].data == "msg\(i) \u{00E9}\u{4E2D}\u{1F600}")
+    }
+}
