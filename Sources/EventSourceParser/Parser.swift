@@ -10,13 +10,76 @@ public final class EventSourceParser: @unchecked Sendable {
     private var eventType: String = ""
     private var prevTrailingCR: Bool = false
 
+    /// Leftover bytes from a previous chunk that ended mid-UTF-8 sequence
+    private var pendingBytes = Data()
+
     public init(callbacks: ParserCallbacks) {
         self.callbacks = callbacks
     }
 
     public func feed(_ chunkData: Data) {
-        guard let s = String(data: chunkData, encoding: .utf8) else { return }
-        feed(s)
+        // Prepend any leftover bytes from a previous chunk that split a
+        // multi-byte UTF-8 character at an arbitrary Data boundary
+        var bytes: Data
+        if pendingBytes.isEmpty {
+            bytes = chunkData
+        } else {
+            bytes = pendingBytes
+            bytes.append(chunkData)
+            pendingBytes.removeAll(keepingCapacity: true)
+        }
+
+        // Try the fast path first
+        if let s = String(data: bytes, encoding: .utf8) {
+            feed(s)
+            return
+        }
+
+        // Conversion failed -- likely an incomplete UTF-8 sequence at the
+        // end of the buffer. Trim trailing continuation bytes and decode
+        // the valid prefix so we don't silently drop the entire chunk.
+        let splitIndex = Self.utf8SafeSplitIndex(bytes)
+        if splitIndex > 0, let s = String(data: bytes.prefix(splitIndex), encoding: .utf8) {
+            pendingBytes = Data(bytes.suffix(from: splitIndex))
+            feed(s)
+        } else {
+            // Entire chunk is unusable (e.g. all continuation bytes).
+            // Carry everything forward in case the next chunk completes it.
+            pendingBytes = bytes
+        }
+    }
+
+    /// Finds the largest prefix length of `data` that ends on a complete
+    /// UTF-8 character boundary. Scans backwards from the end (at most 3
+    /// bytes) to find the start of the trailing multi-byte sequence and
+    /// checks whether enough continuation bytes are present.
+    private static func utf8SafeSplitIndex(_ data: Data) -> Int {
+        let count = data.count
+        guard count > 0 else { return 0 }
+
+        // ASCII -- boundary is already safe
+        if data[count - 1] < 0x80 { return count }
+
+        // Walk backwards over continuation bytes (10xxxxxx) to find the
+        // lead byte. UTF-8 sequences are at most 4 bytes, so we check
+        // at most 3 bytes back.
+        var i = count - 1
+        let limit = max(0, count - 4)
+        while i > limit && data[i] & 0xC0 == 0x80 { i -= 1 }
+
+        let leadByte = data[i]
+        let expectedLength: Int
+        if leadByte & 0x80 == 0 { expectedLength = 1 }
+        else if leadByte & 0xE0 == 0xC0 { expectedLength = 2 }
+        else if leadByte & 0xF0 == 0xE0 { expectedLength = 3 }
+        else if leadByte & 0xF8 == 0xF0 { expectedLength = 4 }
+        else { return count } // Invalid lead byte -- let the caller handle it
+
+        let available = count - i
+        if available >= expectedLength {
+            return count // Complete sequence at the tail
+        }
+        return i // Split before the incomplete sequence
     }
 
     public func feed(_ newChunk: String) {
@@ -74,6 +137,7 @@ public final class EventSourceParser: @unchecked Sendable {
         eventType = ""
         incompleteLine = ""
         prevTrailingCR = false
+        pendingBytes.removeAll(keepingCapacity: true)
     }
 
     private func parseLine(_ line: String) {
