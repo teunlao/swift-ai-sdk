@@ -49,6 +49,9 @@ public protocol StepResult: Sendable {
     /// The results of the tool calls.
     var toolResults: [TypedToolResult] { get }
 
+    /// The errors from invalid or failed tool calls.
+    var toolErrors: [TypedToolError] { get }
+
     /// The static tool results that were made in the last step.
     var staticToolResults: [StaticToolResult] { get }
 
@@ -262,6 +265,15 @@ public final class DefaultStepResult: StepResult {
         content.compactMap { part in
             if case .toolResult(let result, _) = part {
                 return result
+            }
+            return nil
+        }
+    }
+
+    public var toolErrors: [TypedToolError] {
+        content.compactMap { part in
+            if case .toolError(let error, _) = part {
+                return error
             }
             return nil
         }

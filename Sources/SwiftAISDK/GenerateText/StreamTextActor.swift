@@ -211,8 +211,8 @@ actor StreamTextActor {
         guard let lastStep = recordedSteps.last else { return false }
         guard lastStep.finishReason == .toolCalls else { return false }
         let clientToolCalls = clientToolCalls(in: lastStep)
-        let clientToolOutputs = clientToolOutputs(in: lastStep)
-        let clientToolCallsComplete = !clientToolCalls.isEmpty && clientToolOutputs.count == clientToolCalls.count
+        let clientToolOutputCount = clientToolOutputCount(in: lastStep)
+        let clientToolCallsComplete = !clientToolCalls.isEmpty && clientToolOutputCount == clientToolCalls.count
         let stopMet = await isStopConditionMet(stopConditions: stopConditions, steps: recordedSteps)
         return (clientToolCallsComplete || !pendingDeferredToolCalls.isEmpty) && !stopMet
     }
@@ -1379,6 +1379,16 @@ case let .toolInputStart(id, toolName, providerMetadata, providerExecuted, dynam
 
     private func clientToolOutputs(in step: StepResult) -> [TypedToolResult] {
         step.toolResults.filter { $0.providerExecuted != true }
+    }
+
+    /// Counts both successful tool results and tool errors as completed
+    /// outputs. This matches the generateText path's behavior where
+    /// collectInvalidToolOutputs includes errors in the count, ensuring
+    /// the step loop continues when tools fail validation.
+    private func clientToolOutputCount(in step: StepResult) -> Int {
+        let resultCount = step.toolResults.filter { $0.providerExecuted != true }.count
+        let errorCount = step.toolErrors.filter { $0.providerExecuted != true }.count
+        return resultCount + errorCount
     }
 
     private func finalizePendingContent() {
