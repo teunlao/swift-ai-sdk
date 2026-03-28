@@ -752,6 +752,20 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
             args["max_tokens"] = .number(Double(capabilities.maxOutputTokens))
         }
 
+        // Top-level cache control (automatic caching)
+        if let cacheControl = anthropicOptions?.cacheControl {
+            var payload = cacheControl.additionalFields
+            if let type = cacheControl.type {
+                payload["type"] = .string(type)
+            }
+            if let ttl = cacheControl.ttl {
+                payload["ttl"] = .string(ttl.rawValue)
+            }
+            if !payload.isEmpty {
+                args["cache_control"] = .object(payload)
+            }
+        }
+
         // Effort
         if let effort = anthropicOptions?.effort {
             args["output_config"] = .object(["effort": .string(effort.rawValue)])

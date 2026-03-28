@@ -752,4 +752,193 @@ struct AnthropicMessagesLanguageModelProviderOptionsRequestTests {
                 ])
         )
     }
+
+    @Test("sends top-level cache_control for automatic caching")
+    func sendsCacheControl() async throws {
+        let capture = RequestCapture()
+        let responseData = try makeProviderOptionsTestResponseData(model: "claude-3-haiku-20240307")
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: makeProviderOptionsTestHTTPResponse())
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: makeProviderOptionsTestConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(options: .init(
+            prompt: providerOptionsTestPrompt,
+            providerOptions: [
+                "anthropic": [
+                    "cacheControl": .object(["type": .string("ephemeral")])
+                ]
+            ]
+        ))
+
+        let json = decodeRequestJSON(await capture.current())
+        if let cacheControl = json?["cache_control"] as? [String: Any] {
+            #expect(cacheControl["type"] as? String == "ephemeral")
+        } else {
+            Issue.record("Expected top-level cache_control payload")
+        }
+    }
+
+    @Test("sends top-level cache_control with ttl")
+    func sendsCacheControlWithTTL() async throws {
+        let capture = RequestCapture()
+        let responseData = try makeProviderOptionsTestResponseData(model: "claude-3-haiku-20240307")
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: makeProviderOptionsTestHTTPResponse())
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: makeProviderOptionsTestConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(options: .init(
+            prompt: providerOptionsTestPrompt,
+            providerOptions: [
+                "anthropic": [
+                    "cacheControl": .object([
+                        "type": .string("ephemeral"),
+                        "ttl": .string("1h"),
+                    ])
+                ]
+            ]
+        ))
+
+        let json = decodeRequestJSON(await capture.current())
+        if let cacheControl = json?["cache_control"] as? [String: Any] {
+            #expect(cacheControl["type"] as? String == "ephemeral")
+            #expect(cacheControl["ttl"] as? String == "1h")
+        } else {
+            Issue.record("Expected top-level cache_control payload with ttl")
+        }
+    }
+
+    @Test("sends top-level cache_control via doStream providerOptions")
+    func sendsCacheControlViaDoStream() async throws {
+        let capture = RequestCapture()
+
+        // Minimal SSE streaming response
+        let ssePayloads = [
+            #"{"type":"message_start","message":{"id":"msg_01","type":"message","role":"assistant","model":"claude-3-haiku-20240307","stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":10,"output_tokens":1},"content":[]}}"#,
+            #"{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}"#,
+            #"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hi"}}"#,
+            #"{"type":"content_block_stop","index":0}"#,
+            #"{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":1}}"#,
+            #"{"type":"message_stop"}"#,
+        ]
+
+        let sseBody = ssePayloads.map { "event: message\ndata: \($0)\n\n" }.joined()
+        let sseData = Data(sseBody.utf8)
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(
+                body: .data(sseData),
+                urlResponse: makeProviderOptionsTestHTTPResponse()
+            )
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: makeProviderOptionsTestConfig(fetch: fetch)
+        )
+
+        let result = try await model.doStream(options: .init(
+            prompt: providerOptionsTestPrompt,
+            providerOptions: [
+                "anthropic": [
+                    "cacheControl": .object(["type": .string("ephemeral")])
+                ]
+            ]
+        ))
+
+        // Consume the stream to trigger the request
+        for try await _ in result.stream {}
+
+        let json = decodeRequestJSON(await capture.current())
+        if let cacheControl = json?["cache_control"] as? [String: Any] {
+            #expect(cacheControl["type"] as? String == "ephemeral")
+        } else {
+            Issue.record("Expected top-level cache_control in doStream request body. Keys: \(json?.keys.sorted() ?? [])")
+        }
+    }
+
+    @Test("sends cache_control when providerOptions are built via JSON round-trip")
+    func sendsCacheControlViaJSONRoundTrip() async throws {
+        // Simulate the exact pattern Symphony uses:
+        // 1. Build options with sendReasoning (like buildProviderOptions)
+        // 2. Encode as JSON, decode as ProviderOptions
+        // 3. Re-encode, add cacheControl, decode again
+        // 4. Pass to doGenerate and verify cache_control in body
+
+        // Step 1: Build initial options (simulating buildProviderOptions)
+        let initialJSON: [String: [String: JSONValue]] = [
+            "anthropic": ["sendReasoning": .bool(true)]
+        ]
+        let initialData = try JSONEncoder().encode(initialJSON)
+        let existing = try JSONDecoder().decode(ProviderOptions.self, from: initialData)
+
+        // Step 2: Round-trip and merge cacheControl (simulating mergeAutomaticCaching)
+        // CRITICAL: Symphony decodes as its own JSONValue type, not the SDK's.
+        // But since we can't import SymphonyShared here, we simulate by
+        // decoding as a generic JSON structure via JSONSerialization
+        let existingData = try JSONEncoder().encode(existing)
+
+        // Parse as Foundation types (simulating cross-module decode)
+        guard let foundation = try JSONSerialization.jsonObject(with: existingData) as? [String: [String: Any]] else {
+            Issue.record("Failed to parse existing options as Foundation dict")
+            return
+        }
+
+        // Add cacheControl using Foundation types
+        var mutable = foundation
+        var anthropic = mutable["anthropic"] ?? [:]
+        anthropic["cacheControl"] = ["type": "ephemeral"]
+        mutable["anthropic"] = anthropic
+
+        // Re-encode back to JSON and decode as ProviderOptions
+        let mergedFoundationData = try JSONSerialization.data(withJSONObject: mutable)
+        let merged = try JSONDecoder().decode(ProviderOptions.self, from: mergedFoundationData)
+
+        // Verify the merged options have both keys
+        let anthropicOpts = try #require(merged["anthropic"])
+        #expect(anthropicOpts["sendReasoning"] == .bool(true))
+        #expect(anthropicOpts["cacheControl"] != nil)
+
+        // Step 3: Pass to doGenerate and verify serialized body
+        let capture = RequestCapture()
+        let responseData = try makeProviderOptionsTestResponseData(model: "claude-3-haiku-20240307")
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: makeProviderOptionsTestHTTPResponse())
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: makeProviderOptionsTestConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(options: .init(
+            prompt: providerOptionsTestPrompt,
+            providerOptions: merged
+        ))
+
+        let json = decodeRequestJSON(await capture.current())
+        if let cacheControl = json?["cache_control"] as? [String: Any] {
+            #expect(cacheControl["type"] as? String == "ephemeral")
+        } else {
+            let bodyData = await capture.current()?.httpBody
+            let bodyStr = bodyData.flatMap { String(data: $0, encoding: .utf8) } ?? "nil"
+            Issue.record("Expected top-level cache_control after cross-type round-trip. Body: \(bodyStr.prefix(500))")
+        }
+    }
 }
