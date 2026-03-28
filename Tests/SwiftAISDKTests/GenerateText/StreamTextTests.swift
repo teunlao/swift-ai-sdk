@@ -2086,3 +2086,161 @@ struct StreamTextBasicTests {
     }
 
 }
+
+// MARK: - Invalid tool call step loop continuation
+
+@Suite("StreamText – invalid tool calls and step loop")
+struct StreamTextInvalidToolCallStepLoopTests {
+    private let defaultUsage = LanguageModelV3Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 1))
+
+    private func toolInputSchema(requiredKey: String = "value") -> FlexibleSchema<JSONValue> {
+        FlexibleSchema(jsonSchema(JSONValue.object([
+            "type": .string("object"),
+            "properties": .object([
+                requiredKey: .object(["type": .string("string")])
+            ]),
+            "required": .array([.string(requiredKey)]),
+            "additionalProperties": .bool(false),
+        ])))
+    }
+
+    @Test("invalid tool call triggers step loop continuation so model can retry")
+    func invalidToolCallContinuesStepLoop() async throws {
+        // Step 1: model sends a tool call with a missing required field.
+        // The SDK validates the input, finds the required key absent,
+        // and emits .toolError. The step finishes with .toolCalls.
+        // The step loop should continue to step 2 where the model
+        // receives the error and responds with text.
+        let stepOneParts: [LanguageModelV3StreamPart] = [
+            .streamStart(warnings: []),
+            .responseMetadata(id: "step-1", modelId: "mock", timestamp: Date(timeIntervalSince1970: 0)),
+            .toolCall(LanguageModelV3ToolCall(
+                toolCallId: "call-1",
+                toolName: "myTool",
+                input: #"{"wrong_key": "value"}"#,
+                providerExecuted: false,
+                providerMetadata: nil
+            )),
+            .finish(finishReason: LanguageModelV3FinishReason(unified: .toolCalls), usage: defaultUsage, providerMetadata: nil),
+        ]
+
+        // Step 2: model sees the error and produces a text response
+        let stepTwoParts: [LanguageModelV3StreamPart] = [
+            .streamStart(warnings: []),
+            .responseMetadata(id: "step-2", modelId: "mock", timestamp: Date(timeIntervalSince1970: 1)),
+            .textStart(id: "t-1", providerMetadata: nil),
+            .textDelta(id: "t-1", delta: "I see the error", providerMetadata: nil),
+            .textEnd(id: "t-1", providerMetadata: nil),
+            .finish(finishReason: LanguageModelV3FinishReason(unified: .stop), usage: defaultUsage, providerMetadata: nil),
+        ]
+
+        let stream1 = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
+            for p in stepOneParts { c.yield(p) }
+            c.finish()
+        }
+        let stream2 = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
+            for p in stepTwoParts { c.yield(p) }
+            c.finish()
+        }
+
+        let model = MockLanguageModelV3(
+            doStream: .array([
+                LanguageModelV3StreamResult(stream: stream1),
+                LanguageModelV3StreamResult(stream: stream2),
+            ])
+        )
+
+        let tools: ToolSet = [
+            "myTool": tool(
+                inputSchema: toolInputSchema(requiredKey: "value"),
+                execute: { _, _ in .value(.string("should not be called")) }
+            ),
+        ]
+
+        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+            model: .v3(model),
+            prompt: "hello",
+            tools: tools,
+            stopWhen: [stepCountIs(3)]
+        )
+
+        let text = try await result.readAllText()
+        #expect(text == "I see the error")
+
+        let steps = try await result.steps
+        #expect(steps.count == 2, "Step loop should continue after invalid tool call so the model can see the error and retry")
+        #expect(steps.first?.finishReason == .toolCalls)
+        #expect(steps.last?.finishReason == .stop)
+
+        // The model should have been called twice (once for each step)
+        #expect(model.doStreamCalls.count == 2)
+    }
+
+    @Test("invalid tool call error appears in response messages for next step")
+    func invalidToolCallErrorInResponseMessages() async throws {
+        // Even with a single step, the error should be recorded in the
+        // response messages so it would be available for continuation
+        let parts: [LanguageModelV3StreamPart] = [
+            .streamStart(warnings: []),
+            .responseMetadata(id: "step-1", modelId: "mock", timestamp: Date(timeIntervalSince1970: 0)),
+            .toolCall(LanguageModelV3ToolCall(
+                toolCallId: "call-1",
+                toolName: "myTool",
+                input: #"{"wrong_key": "value"}"#,
+                providerExecuted: false,
+                providerMetadata: nil
+            )),
+            .finish(finishReason: LanguageModelV3FinishReason(unified: .toolCalls), usage: defaultUsage, providerMetadata: nil),
+        ]
+
+        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
+            for p in parts { c.yield(p) }
+            c.finish()
+        }
+
+        let model = MockLanguageModelV3(
+            doStream: .singleValue(LanguageModelV3StreamResult(stream: stream))
+        )
+
+        let tools: ToolSet = [
+            "myTool": tool(
+                inputSchema: toolInputSchema(requiredKey: "value"),
+                execute: { _, _ in .value(.string("should not be called")) }
+            ),
+        ]
+
+        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+            model: .v3(model),
+            prompt: "hello",
+            tools: tools
+        )
+
+        _ = try await result.readAllText()
+        let steps = try await result.steps
+        let step = try #require(steps.first)
+
+        // The step should contain a tool error in its content
+        let hasToolError = step.content.contains { part in
+            if case .toolError = part { return true }
+            return false
+        }
+        #expect(hasToolError, "Step content should include the tool error")
+
+        // The response messages should convert the error into a tool
+        // result message so the model can see what went wrong
+        let messages = try await result.response.messages
+        let toolMessage = messages.first { msg in
+            if case .tool = msg { return true }
+            return false
+        }
+        #expect(toolMessage != nil, "Response messages should include a tool message with the error")
+
+        if case .tool(let toolMsg) = toolMessage {
+            let errorPart = toolMsg.content.first { part in
+                if case .toolResult(let r) = part, case .errorText = r.output { return true }
+                return false
+            }
+            #expect(errorPart != nil, "Tool message should contain an errorText result")
+        }
+    }
+}

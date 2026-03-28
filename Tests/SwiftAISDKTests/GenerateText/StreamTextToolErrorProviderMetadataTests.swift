@@ -96,14 +96,17 @@ struct StreamTextToolErrorProviderMetadataTests {
             Issue.record("Expected fullStream to contain a tool-error part.")
         }
 
-        let content = try await result.content
-        if let part = content.first(where: { if case .toolError = $0 { return true } else { return false } }) {
+        // The tool error is in step 1's content (step 2 is the retry
+        // with a text response now that the step loop continues)
+        let steps = try await result.steps
+        let step1 = try #require(steps.first)
+        if let part = step1.content.first(where: { if case .toolError = $0 { return true } else { return false } }) {
             if case .toolError(let error, let providerMetadata) = part {
                 #expect(error.providerMetadata == meta)
                 #expect(providerMetadata == meta)
             }
         } else {
-            Issue.record("Expected content to contain a tool-error part.")
+            Issue.record("Expected step 1 content to contain a tool-error part.")
         }
     }
 }
