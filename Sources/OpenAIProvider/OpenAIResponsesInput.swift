@@ -847,7 +847,9 @@ struct OpenAIResponsesInputBuilder {
     }
 
     private static func encodeJSONStringifiedValue(_ value: JSONValue) throws -> String {
-        let data = try JSONEncoder().encode(value)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let data = try encoder.encode(value)
         guard let string = String(data: data, encoding: .utf8) else {
             throw UnsupportedFunctionalityError(functionality: "Unable to encode JSON value")
         }

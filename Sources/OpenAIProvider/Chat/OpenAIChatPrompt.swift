@@ -223,7 +223,7 @@ struct OpenAIChatMessagesConverter {
 
     private static func encodeJSONValue(_ value: JSONValue) throws -> String {
         let encoder = JSONEncoder()
-        encoder.outputFormatting = [.withoutEscapingSlashes]
+        encoder.outputFormatting = [.withoutEscapingSlashes, .sortedKeys]
         let data = try encoder.encode(value)
         guard let string = String(data: data, encoding: .utf8) else {
             throw UnsupportedFunctionalityError(functionality: "Unable to encode JSON value")
@@ -233,6 +233,7 @@ struct OpenAIChatMessagesConverter {
 
     private static func encodeEncodable<T: Encodable>(_ value: T) throws -> String {
         let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
         let data = try encoder.encode(value)
         guard let string = String(data: data, encoding: .utf8) else {
             throw UnsupportedFunctionalityError(functionality: "Unable to encode JSON value")
