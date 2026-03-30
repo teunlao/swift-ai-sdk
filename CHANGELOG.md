@@ -9,8 +9,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ## [0.17.6] - 2026-03-30
 
 ### Fixed
-- Tests/CI: vendor tracked fixtures into the repository for release/CI stability instead of relying on transient local state.
-- OpenAI Responses: refresh capability gates and model-id allowlists to the latest upstream surface, including `gpt-5.3-chat-latest`, `gpt-5.4-mini*`, and `gpt-5.4-nano*`, while removing stale legacy IDs and aligning `gpt-5.4-nano` priority-processing behavior.
+- Tests/CI: vendor tracked fixtures into the repository for stable release and CI checkouts instead of relying on transient local state.
+- EventSourceParser: preserve `Data` chunks when multibyte UTF-8 characters are split across parser boundaries.
+- StreamText: keep the step loop advancing after invalid tool calls instead of stalling.
+- OpenAI: sort JSON keys in request encoding so prefix caching stays stable.
+- Anthropic: serialize top-level `cache_control` for automatic caching requests.
+- OpenAI Responses: refresh capability gates and model-id allowlists to the latest model surface, including `gpt-5.3-chat-latest`, `gpt-5.4-mini*`, and `gpt-5.4-nano*`, while removing stale legacy IDs and aligning `gpt-5.4-nano` priority-processing behavior.
 
 ## [0.17.5] - 2026-03-22
 
