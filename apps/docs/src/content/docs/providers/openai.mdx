@@ -200,7 +200,7 @@ The following provider options are available:
 
 <Aside type="note">
   The 'none' type for `reasoningEffort` is available for OpenAI's GPT-5.1,
-  GPT-5.2, and GPT-5.4 model families. The 'xhigh' type for
+  GPT-5.2, GPT-5.3, and GPT-5.4 model families. The 'xhigh' type for
   `reasoningEffort` is only available for OpenAI's GPT-5.1-Codex-Max model.
   When `reasoningEffort` is set to `none`, the SDK also keeps
   `temperature`, `topP`, and `logprobs` enabled for those supported GPT-5
@@ -224,8 +224,8 @@ The following provider options are available:
 
 - **serviceTier** _'auto' | 'flex' | 'priority' | 'default'_
   Service tier for the request. Set to 'flex' for 50% cheaper processing
-  at the cost of increased latency (available for o3, o4-mini, and gpt-5 models).
-  Set to 'priority' for faster processing with Enterprise access (available for gpt-4, gpt-5, gpt-5-mini, o3, o4-mini; gpt-5-nano is not supported).
+  at the cost of increased latency (available for o3, o4-mini, and GPT-5 models except chat-only aliases such as `gpt-5-chat-latest`).
+  Set to 'priority' for faster processing with Enterprise access (available for gpt-4, most gpt-5 models, o3, and o4-mini; nano variants such as `gpt-5-nano` and `gpt-5.4-nano` are not supported).
 
   Defaults to 'auto'.
 
@@ -886,7 +886,7 @@ The following optional provider options are available for OpenAI chat models:
 
 <Aside type="note">
   The 'none' type for `reasoningEffort` is available for OpenAI's GPT-5.1,
-  GPT-5.2, and GPT-5.4 model families. The 'xhigh' type for
+  GPT-5.2, GPT-5.3, and GPT-5.4 model families. The 'xhigh' type for
   `reasoningEffort` is only available for OpenAI's GPT-5.1-Codex-Max model.
   When `reasoningEffort` is set to `none`, the SDK also keeps
   `temperature`, `topP`, and `logprobs` enabled for those supported GPT-5
@@ -912,8 +912,8 @@ The following optional provider options are available for OpenAI chat models:
 - **serviceTier** _'auto' | 'flex' | 'priority' | 'default'_
 
   Service tier for the request. Set to 'flex' for 50% cheaper processing
-  at the cost of increased latency (available for o3, o4-mini, and gpt-5 models).
-  Set to 'priority' for faster processing with Enterprise access (available for gpt-4, gpt-5, gpt-5-mini, o3, o4-mini; gpt-5-nano is not supported).
+  at the cost of increased latency (available for o3, o4-mini, and GPT-5 models except chat-only aliases such as `gpt-5-chat-latest`).
+  Set to 'priority' for faster processing with Enterprise access (available for gpt-4, most gpt-5 models, o3, and o4-mini; nano variants such as `gpt-5-nano` and `gpt-5.4-nano` are not supported).
 
   Defaults to 'auto'.
 
@@ -1437,29 +1437,37 @@ The following optional provider options are available for OpenAI completion mode
 
 ### Model Capabilities
 
-| Model               | Image Input         | Audio Input         | Object Generation   | Tool Usage          |
-| ------------------- | ------------------- | ------------------- | ------------------- | ------------------- |
-| `gpt-5.4-pro`       | <Check size={18} /> | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> |
-| `gpt-5.4`           | <Check size={18} /> | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> |
-| `gpt-5.3-codex`     | <Check size={18} /> | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> |
-| `gpt-5-pro`         | <Check size={18} /> | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> |
-| `gpt-5`             | <Check size={18} /> | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> |
-| `gpt-5-mini`        | <Check size={18} /> | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> |
-| `gpt-5-nano`        | <Check size={18} /> | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> |
-| `gpt-5-codex`       | <Check size={18} /> | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> |
-| `gpt-5-chat-latest` | <Check size={18} /> | <Cross size={18} /> | <Cross size={18} /> | <Cross size={18} /> |
-| `gpt-4.1`           | <Check size={18} /> | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> |
-| `gpt-4.1-mini`      | <Check size={18} /> | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> |
-| `gpt-4.1-nano`      | <Check size={18} /> | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> |
-| `gpt-4o`            | <Check size={18} /> | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> |
-| `gpt-4o-mini`       | <Check size={18} /> | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| Model                 | Image Input         | Audio Input         | Object Generation   | Tool Usage          |
+| --------------------- | ------------------- | ------------------- | ------------------- | ------------------- |
+| `gpt-5.4-pro`         | <Check size={18} /> | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| `gpt-5.4`             | <Check size={18} /> | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| `gpt-5.4-mini`        | <Check size={18} /> | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| `gpt-5.4-nano`        | <Check size={18} /> | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| `gpt-5.3-chat-latest` | <Check size={18} /> | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| `gpt-5.2-pro`         | <Check size={18} /> | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| `gpt-5.2-chat-latest` | <Check size={18} /> | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| `gpt-5.2`             | <Check size={18} /> | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| `gpt-5.1-codex-mini`  | <Check size={18} /> | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| `gpt-5.1-codex`       | <Check size={18} /> | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| `gpt-5.1-chat-latest` | <Check size={18} /> | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| `gpt-5.1`             | <Check size={18} /> | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| `gpt-5-pro`           | <Check size={18} /> | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| `gpt-5`               | <Check size={18} /> | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| `gpt-5-mini`          | <Check size={18} /> | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| `gpt-5-nano`          | <Check size={18} /> | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| `gpt-5-codex`         | <Check size={18} /> | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| `gpt-5-chat-latest`   | <Check size={18} /> | <Cross size={18} /> | <Cross size={18} /> | <Cross size={18} /> |
+| `gpt-4.1`             | <Check size={18} /> | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| `gpt-4.1-mini`        | <Check size={18} /> | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| `gpt-4.1-nano`        | <Check size={18} /> | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| `gpt-4o`              | <Check size={18} /> | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| `gpt-4o-mini`         | <Check size={18} /> | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> |
 
 <Aside type="note">
   The table above lists popular models. Please see the [OpenAI
   docs](https://platform.openai.com/docs/models) for a full list of available
-  models. Recent additions include `gpt-5.4`, `gpt-5.4-pro`, and
-  `gpt-5.3-codex`. You can also pass any available provider model ID as a
-  string if needed.
+  models. You can also pass any available provider model ID as a string if
+  needed.
 </Aside>
 
 ## Embedding Models
