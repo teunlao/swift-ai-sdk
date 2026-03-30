@@ -358,6 +358,82 @@ struct ConvertToAnthropicMessagesPromptToolTests {
 
 // MARK: - Assistant Messages
 
+// MARK: - JSON Key Ordering Stability
+
+@Suite("convertToAnthropicMessagesPrompt JSON key ordering")
+struct ConvertToAnthropicMessagesPromptKeyOrderingTests {
+    @Test("tool result with json output uses sorted keys")
+    func toolResultJSONUsesSortedKeys() async throws {
+        // An object with keys that sort differently than hash order.
+        // Without .sortedKeys, Swift dictionaries iterate in non-deterministic
+        // hash order, producing different JSON strings across process launches.
+        let toolPart = LanguageModelV3ToolResultPart(
+            toolCallId: "call-1",
+            toolName: "mcp_tool",
+            output: .json(value: .object([
+                "zebra": .string("last"),
+                "alpha": .string("first"),
+                "middle": .number(42),
+            ]))
+        )
+        let prompt: LanguageModelV3Prompt = [
+            .tool(content: [.toolResult(toolPart)], providerOptions: nil)
+        ]
+
+        let (result, _) = try await convert(prompt)
+        let msg = try #require(result.prompt.messages.first)
+        let block = try #require(msg.content.first)
+
+        // Extract the stringified content field
+        guard case .object(let obj) = block,
+              case .string(let contentString) = obj["content"] else {
+            Issue.record("Expected tool_result with string content")
+            return
+        }
+
+        // Keys must appear in sorted order: alpha, middle, zebra
+        let alphaIdx = try #require(contentString.range(of: "\"alpha\""))
+        let middleIdx = try #require(contentString.range(of: "\"middle\""))
+        let zebraIdx = try #require(contentString.range(of: "\"zebra\""))
+        #expect(alphaIdx.lowerBound < middleIdx.lowerBound, "alpha should come before middle")
+        #expect(middleIdx.lowerBound < zebraIdx.lowerBound, "middle should come before zebra")
+    }
+
+    @Test("tool result json output is byte-stable across repeated conversions")
+    func toolResultJSONByteStable() async throws {
+        let toolPart = LanguageModelV3ToolResultPart(
+            toolCallId: "call-1",
+            toolName: "mcp_tool",
+            output: .json(value: .object([
+                "zebra": .string("z"),
+                "alpha": .string("a"),
+                "nested": .object(["beta": .number(1), "alpha": .number(2)]),
+            ]))
+        )
+        let prompt: LanguageModelV3Prompt = [
+            .tool(content: [.toolResult(toolPart)], providerOptions: nil)
+        ]
+
+        // Convert multiple times — results must be byte-identical
+        // Use .sortedKeys to match the production postJsonToAPI encoder
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        var results: [String] = []
+        for _ in 0..<10 {
+            let (result, _) = try await convert(prompt)
+            let data = try encoder.encode(result.prompt.messages)
+            results.append(String(data: data, encoding: .utf8)!)
+        }
+
+        let first = results[0]
+        for (i, r) in results.enumerated().dropFirst() {
+            #expect(r == first, "Conversion \(i) differs from first — key ordering is non-deterministic")
+        }
+    }
+}
+
+// MARK: - Assistant Messages
+
 @Suite("convertToAnthropicMessagesPrompt assistant messages")
 struct ConvertToAnthropicMessagesPromptAssistantTests {
     @Test("assistant text trims final whitespace")
