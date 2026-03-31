@@ -28,7 +28,7 @@ import AISDKProvider
 
  Port of `@ai-sdk/provider-utils/types/system-model-message.ts`.
  */
-public struct SystemModelMessage: Sendable, Equatable {
+public struct SystemModelMessage: Sendable, Equatable, Codable {
     public let role: String = "system"
 
     /// System content (text only).
@@ -43,35 +43,33 @@ public struct SystemModelMessage: Sendable, Equatable {
         self.content = content
         self.providerOptions = providerOptions
     }
+
+    private enum CodingKeys: String, CodingKey {
+        case role, content, providerOptions
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        content = try container.decode(String.self, forKey: .content)
+        providerOptions = try container.decodeIfPresent(ProviderOptions.self, forKey: .providerOptions)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(role, forKey: .role)
+        try container.encode(content, forKey: .content)
+        try container.encodeIfPresent(providerOptions, forKey: .providerOptions)
+    }
 }
 
 // MARK: - User Message
-
-/**
- Content of a user message. It can be a string or an array of text, image, and file parts.
- */
-public enum UserContent: Sendable, Equatable {
-    /// Simple text content
-    case text(String)
-    /// Array of content parts (text, images, files)
-    case parts([UserContentPart])
-}
-
-/**
- Content part types allowed in user messages.
- */
-public enum UserContentPart: Sendable, Equatable {
-    case text(TextPart)
-    case image(ImagePart)
-    case file(FilePart)
-}
 
 /**
  A user message. It can contain text or a combination of text, images, and files.
 
  Port of `@ai-sdk/provider-utils/types/user-model-message.ts`.
  */
-public struct UserModelMessage: Sendable, Equatable {
+public struct UserModelMessage: Sendable, Equatable, Codable {
     public let role: String = "user"
 
     /// Content of the user message.
@@ -86,39 +84,33 @@ public struct UserModelMessage: Sendable, Equatable {
         self.content = content
         self.providerOptions = providerOptions
     }
+
+    private enum CodingKeys: String, CodingKey {
+        case role, content, providerOptions
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        content = try container.decode(UserContent.self, forKey: .content)
+        providerOptions = try container.decodeIfPresent(ProviderOptions.self, forKey: .providerOptions)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(role, forKey: .role)
+        try container.encode(content, forKey: .content)
+        try container.encodeIfPresent(providerOptions, forKey: .providerOptions)
+    }
 }
 
 // MARK: - Assistant Message
-
-/**
- Content of an assistant message.
- It can be a string or an array of text, file, reasoning, tool call, tool result, and approval request parts.
- */
-public enum AssistantContent: Sendable, Equatable {
-    /// Simple text content
-    case text(String)
-    /// Array of content parts
-    case parts([AssistantContentPart])
-}
-
-/**
- Content part types allowed in assistant messages.
- */
-public enum AssistantContentPart: Sendable, Equatable {
-    case text(TextPart)
-    case file(FilePart)
-    case reasoning(ReasoningPart)
-    case toolCall(ToolCallPart)
-    case toolResult(ToolResultPart)
-    case toolApprovalRequest(ToolApprovalRequest)
-}
 
 /**
  An assistant message. It can contain text, tool calls, or a combination of text and tool calls.
 
  Port of `@ai-sdk/provider-utils/types/assistant-model-message.ts`.
  */
-public struct AssistantModelMessage: Sendable, Equatable {
+public struct AssistantModelMessage: Sendable, Equatable, Codable {
     public let role: String = "assistant"
 
     /// Content of the assistant message.
@@ -133,24 +125,33 @@ public struct AssistantModelMessage: Sendable, Equatable {
         self.content = content
         self.providerOptions = providerOptions
     }
+
+    private enum CodingKeys: String, CodingKey {
+        case role, content, providerOptions
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        content = try container.decode(AssistantContent.self, forKey: .content)
+        providerOptions = try container.decodeIfPresent(ProviderOptions.self, forKey: .providerOptions)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(role, forKey: .role)
+        try container.encode(content, forKey: .content)
+        try container.encodeIfPresent(providerOptions, forKey: .providerOptions)
+    }
 }
 
 // MARK: - Tool Message
-
-/**
- Content part types allowed in tool messages.
- */
-public enum ToolContentPart: Sendable, Equatable {
-    case toolResult(ToolResultPart)
-    case toolApprovalResponse(ToolApprovalResponse)
-}
 
 /**
  A tool message. It contains the result of one or more tool calls.
 
  Port of `@ai-sdk/provider-utils/types/tool-model-message.ts`.
  */
-public struct ToolModelMessage: Sendable, Equatable {
+public struct ToolModelMessage: Sendable, Equatable, Codable {
     public let role: String = "tool"
 
     /// Content of the tool message (array of tool results and approval responses).
@@ -165,6 +166,23 @@ public struct ToolModelMessage: Sendable, Equatable {
         self.content = content
         self.providerOptions = providerOptions
     }
+
+    private enum CodingKeys: String, CodingKey {
+        case role, content, providerOptions
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        content = try container.decode([ToolContentPart].self, forKey: .content)
+        providerOptions = try container.decodeIfPresent(ProviderOptions.self, forKey: .providerOptions)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(role, forKey: .role)
+        try container.encode(content, forKey: .content)
+        try container.encodeIfPresent(providerOptions, forKey: .providerOptions)
+    }
 }
 
 // MARK: - Model Message Union
@@ -175,9 +193,48 @@ public struct ToolModelMessage: Sendable, Equatable {
 
  Port of `@ai-sdk/provider-utils/types/model-message.ts`.
  */
-public enum ModelMessage: Sendable, Equatable {
+public enum ModelMessage: Sendable, Equatable, Codable {
     case system(SystemModelMessage)
     case user(UserModelMessage)
     case assistant(AssistantModelMessage)
     case tool(ToolModelMessage)
+
+    private enum CodingKeys: String, CodingKey {
+        case role
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let role = try container.decode(String.self, forKey: .role)
+
+        switch role {
+        case "system":
+            self = .system(try SystemModelMessage(from: decoder))
+        case "user":
+            self = .user(try UserModelMessage(from: decoder))
+        case "assistant":
+            self = .assistant(try AssistantModelMessage(from: decoder))
+        case "tool":
+            self = .tool(try ToolModelMessage(from: decoder))
+        default:
+            throw DecodingError.dataCorruptedError(
+                forKey: .role,
+                in: container,
+                debugDescription: "Unknown ModelMessage role: \(role)"
+            )
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        switch self {
+        case .system(let message):
+            try message.encode(to: encoder)
+        case .user(let message):
+            try message.encode(to: encoder)
+        case .assistant(let message):
+            try message.encode(to: encoder)
+        case .tool(let message):
+            try message.encode(to: encoder)
+        }
+    }
 }
