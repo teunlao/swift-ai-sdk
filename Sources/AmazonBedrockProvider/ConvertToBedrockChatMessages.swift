@@ -184,24 +184,36 @@ func convertToBedrockChatMessages(
                         throw UnsupportedFunctionalityError(functionality: "Assistant file content")
 
                     case .reasoning(let reasoningPart):
-                        let trimmed = trimIfNeeded(reasoningPart.text, isLastBlock: isLastBlock, isLastMessage: isLastMessage, isLastPart: isLastPart)
                         let metadata = try await parseReasoningMetadata(reasoningPart.providerOptions)
-                        guard let metadata else { break }
-
-                        if let signature = metadata.signature {
+                        if let signature = metadata?.signature {
+                            // Bedrock signatures validate the exact original bytes, so keep text unchanged.
                             content.append(.object([
                                 "reasoningContent": .object([
                                     "reasoningText": .object([
-                                        "text": .string(trimmed),
+                                        "text": .string(reasoningPart.text),
                                         "signature": .string(signature)
                                     ])
                                 ])
                             ]))
-                        } else if let redacted = metadata.redactedData {
+                        } else if let redacted = metadata?.redactedData {
                             content.append(.object([
                                 "reasoningContent": .object([
                                     "redactedReasoning": .object([
                                         "data": .string(redacted)
+                                    ])
+                                ])
+                            ]))
+                        } else {
+                            let trimmed = trimIfNeeded(
+                                reasoningPart.text,
+                                isLastBlock: isLastBlock,
+                                isLastMessage: isLastMessage,
+                                isLastPart: isLastPart
+                            )
+                            content.append(.object([
+                                "reasoningContent": .object([
+                                    "reasoningText": .object([
+                                        "text": .string(trimmed)
                                     ])
                                 ])
                             ]))

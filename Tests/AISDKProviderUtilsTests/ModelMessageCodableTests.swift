@@ -15,6 +15,13 @@ struct ModelMessageCodableTests {
         return try JSONDecoder().decode(ModelMessage.self, from: data)
     }
 
+    private func encodedJSON<T: Encodable>(_ value: T) throws -> JSONValue {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let data = try encoder.encode(value)
+        return try JSONDecoder().decode(JSONValue.self, from: data)
+    }
+
     // MARK: - System
 
     @Test func systemMessage() throws {
@@ -71,6 +78,20 @@ struct ModelMessageCodableTests {
                 toolCallId: "call_1",
                 toolName: "web_search",
                 output: .json(value: .object(["results": .array([])]))
+            )),
+        ])))
+        let decoded = try roundTrip(msg)
+        #expect(decoded == msg)
+    }
+
+    @Test func assistantToolCallPreservesProviderExecutedAndProviderOptions() throws {
+        let msg = ModelMessage.assistant(AssistantModelMessage(content: .parts([
+            .toolCall(ToolCallPart(
+                toolCallId: "call_1",
+                toolName: "computer",
+                input: .object(["action": .string("click")]),
+                providerOptions: ["openai": ["priority": .string("high")]],
+                providerExecuted: true
             )),
         ])))
         let decoded = try roundTrip(msg)
@@ -134,6 +155,31 @@ struct ModelMessageCodableTests {
         #expect(decoded == msg)
     }
 
+    @Test func approvalPartsPreserveProviderExecutedAndReason() throws {
+        let messages: [ModelMessage] = [
+            .assistant(AssistantModelMessage(content: .parts([
+                .toolApprovalRequest(ToolApprovalRequest(
+                    approvalId: "approval_1",
+                    toolCallId: "call_1"
+                )),
+            ]))),
+            .tool(ToolModelMessage(content: [
+                .toolApprovalResponse(ToolApprovalResponse(
+                    approvalId: "approval_1",
+                    approved: true,
+                    reason: "Approved by user",
+                    providerExecuted: true
+                )),
+            ])),
+        ]
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let data = try encoder.encode(messages)
+        let decoded = try JSONDecoder().decode([ModelMessage].self, from: data)
+        #expect(decoded == messages)
+    }
+
     // MARK: - Byte stability
 
     @Test func encodingIsByteStableAcrossMultipleCalls() throws {
@@ -193,5 +239,88 @@ struct ModelMessageCodableTests {
         let data = try encoder.encode(conversation)
         let decoded = try JSONDecoder().decode([ModelMessage].self, from: data)
         #expect(decoded == conversation)
+    }
+
+    // MARK: - Storage shape regressions
+
+    @Test func userTextMessageUsesTaggedStorageContentShape() throws {
+        let json = try encodedJSON(
+            ModelMessage.user(UserModelMessage(content: .text("Hello")))
+        )
+
+        let expected: JSONValue = .object([
+            "content": .object([
+                "type": .string("text"),
+                "value": .string("Hello"),
+            ]),
+            "role": .string("user"),
+        ])
+
+        #expect(json == expected)
+    }
+
+    @Test func dataContentOrURLUsesExplicitTaggedStorageCases() throws {
+        let url = URL(string: "https://example.com/cat.png")!
+        let binary = Data([0x00, 0x01, 0x02])
+
+        let stringJSON = try encodedJSON(DataContentOrURL.string("iVBOR"))
+        let urlJSON = try encodedJSON(DataContentOrURL.url(url))
+        let dataJSON = try encodedJSON(DataContentOrURL.data(binary))
+
+        #expect(stringJSON == .object([
+            "type": .string("string"),
+            "value": .string("iVBOR"),
+        ]))
+        #expect(urlJSON == .object([
+            "type": .string("url"),
+            "url": .string("https://example.com/cat.png"),
+        ]))
+        #expect(dataJSON == .object([
+            "type": .string("data"),
+            "data": .string("AAEC"),
+        ]))
+    }
+
+    @Test func imageAndFilePartsPreserveDistinctStringURLAndDataStorageCases() throws {
+        let msg = ModelMessage.user(UserModelMessage(content: .parts([
+            .image(ImagePart(
+                image: .url(URL(string: "https://example.com/image.png")!),
+                mediaType: "image/png"
+            )),
+            .file(FilePart(
+                data: .data(Data([0xDE, 0xAD, 0xBE, 0xEF])),
+                mediaType: "application/octet-stream",
+                filename: "blob.bin"
+            )),
+        ])))
+
+        let json = try encodedJSON(msg)
+        let expected: JSONValue = .object([
+            "content": .object([
+                "type": .string("parts"),
+                "parts": .array([
+                    .object([
+                        "image": .object([
+                            "type": .string("url"),
+                            "url": .string("https://example.com/image.png"),
+                        ]),
+                        "mediaType": .string("image/png"),
+                        "type": .string("image"),
+                    ]),
+                    .object([
+                        "data": .object([
+                            "type": .string("data"),
+                            "data": .string("3q2+7w=="),
+                        ]),
+                        "filename": .string("blob.bin"),
+                        "mediaType": .string("application/octet-stream"),
+                        "type": .string("file"),
+                    ]),
+                ]),
+            ]),
+            "role": .string("user"),
+        ])
+
+        #expect(json == expected)
     }
 }
