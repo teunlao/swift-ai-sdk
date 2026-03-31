@@ -585,40 +585,35 @@ public enum UserContent: Sendable, Equatable, Codable {
     /// Array of content parts (text, images, files)
     case parts([UserContentPart])
 
-    private enum CodingKeys: String, CodingKey {
-        case type, value, parts
-    }
-
     public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        let type = try container.decode(String.self, forKey: .type)
+        let container = try decoder.singleValueContainer()
 
-        switch type {
-        case "text":
-            let value = try container.decode(String.self, forKey: .value)
-            self = .text(value)
-        case "parts":
-            let parts = try container.decode([UserContentPart].self, forKey: .parts)
-            self = .parts(parts)
-        default:
-            throw DecodingError.dataCorruptedError(
-                forKey: .type,
-                in: container,
-                debugDescription: "Unknown UserContent type: \(type)"
-            )
+        if let string = try? container.decode(String.self) {
+            self = .text(string)
+            return
         }
+
+        if let parts = try? container.decode([UserContentPart].self) {
+            self = .parts(parts)
+            return
+        }
+
+        throw DecodingError.dataCorrupted(
+            DecodingError.Context(
+                codingPath: decoder.codingPath,
+                debugDescription: "Cannot decode UserContent"
+            )
+        )
     }
 
     public func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
+        var container = encoder.singleValueContainer()
 
         switch self {
         case .text(let value):
-            try container.encode("text", forKey: .type)
-            try container.encode(value, forKey: .value)
+            try container.encode(value)
         case .parts(let parts):
-            try container.encode("parts", forKey: .type)
-            try container.encode(parts, forKey: .parts)
+            try container.encode(parts)
         }
     }
 }
@@ -635,40 +630,35 @@ public enum AssistantContent: Sendable, Equatable, Codable {
     /// Array of content parts
     case parts([AssistantContentPart])
 
-    private enum CodingKeys: String, CodingKey {
-        case type, value, parts
-    }
-
     public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        let type = try container.decode(String.self, forKey: .type)
+        let container = try decoder.singleValueContainer()
 
-        switch type {
-        case "text":
-            let value = try container.decode(String.self, forKey: .value)
-            self = .text(value)
-        case "parts":
-            let parts = try container.decode([AssistantContentPart].self, forKey: .parts)
-            self = .parts(parts)
-        default:
-            throw DecodingError.dataCorruptedError(
-                forKey: .type,
-                in: container,
-                debugDescription: "Unknown AssistantContent type: \(type)"
-            )
+        if let string = try? container.decode(String.self) {
+            self = .text(string)
+            return
         }
+
+        if let parts = try? container.decode([AssistantContentPart].self) {
+            self = .parts(parts)
+            return
+        }
+
+        throw DecodingError.dataCorrupted(
+            DecodingError.Context(
+                codingPath: decoder.codingPath,
+                debugDescription: "Cannot decode AssistantContent"
+            )
+        )
     }
 
     public func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
+        var container = encoder.singleValueContainer()
 
         switch self {
         case .text(let value):
-            try container.encode("text", forKey: .type)
-            try container.encode(value, forKey: .value)
+            try container.encode(value)
         case .parts(let parts):
-            try container.encode("parts", forKey: .type)
-            try container.encode(parts, forKey: .parts)
+            try container.encode(parts)
         }
     }
 }

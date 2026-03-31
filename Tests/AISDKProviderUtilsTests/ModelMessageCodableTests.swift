@@ -194,4 +194,206 @@ struct ModelMessageCodableTests {
         let decoded = try JSONDecoder().decode([ModelMessage].self, from: data)
         #expect(decoded == conversation)
     }
+
+    // MARK: - JSON shape snapshot
+
+    @Test func fullConversationEncodesToUpstreamShape() throws {
+        let conversation: [ModelMessage] = [
+            .system(SystemModelMessage(content: "You are helpful")),
+            .user(UserModelMessage(content: .text("Hello"))),
+            .user(UserModelMessage(content: .parts([
+                .text(TextPart(text: "Look at this")),
+                .image(ImagePart(image: .string("iVBOR"), mediaType: "image/png")),
+            ]))),
+            .assistant(AssistantModelMessage(content: .text("Sure!"))),
+            .assistant(AssistantModelMessage(content: .parts([
+                .reasoning(ReasoningPart(text: "Let me think")),
+                .text(TextPart(text: "I'll use a tool")),
+                .toolCall(ToolCallPart(
+                    toolCallId: "call_1", toolName: "bash",
+                    input: .object(["command": .string("ls")])
+                )),
+            ]))),
+            .tool(ToolModelMessage(content: [
+                .toolResult(ToolResultPart(
+                    toolCallId: "call_1", toolName: "bash",
+                    output: .text(value: "file1.txt")
+                )),
+            ])),
+        ]
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .prettyPrinted]
+        let data = try encoder.encode(conversation)
+        let json = String(data: data, encoding: .utf8)!
+
+        // Verify the JSON matches the upstream TypeScript shape exactly:
+        // - Messages are objects with "role" + "content"
+        // - User text content is a bare string, not {"type":"text","value":"..."}
+        // - User parts content is a bare array, not {"type":"parts","parts":[...]}
+        // - Image data is a bare string, not {"type":"string","value":"..."}
+        // - Part objects have "type" discriminator fields
+        // - Tool call type is "tool-call" (hyphenated)
+        // - Tool result type is "tool-result" (hyphenated)
+        let expected = """
+        [
+          {
+            "content" : "You are helpful",
+            "role" : "system"
+          },
+          {
+            "content" : "Hello",
+            "role" : "user"
+          },
+          {
+            "content" : [
+              {
+                "text" : "Look at this",
+                "type" : "text"
+              },
+              {
+                "image" : "iVBOR",
+                "mediaType" : "image\\/png",
+                "type" : "image"
+              }
+            ],
+            "role" : "user"
+          },
+          {
+            "content" : "Sure!",
+            "role" : "assistant"
+          },
+          {
+            "content" : [
+              {
+                "text" : "Let me think",
+                "type" : "reasoning"
+              },
+              {
+                "text" : "I'll use a tool",
+                "type" : "text"
+              },
+              {
+                "input" : {
+                  "command" : "ls"
+                },
+                "toolCallId" : "call_1",
+                "toolName" : "bash",
+                "type" : "tool-call"
+              }
+            ],
+            "role" : "assistant"
+          },
+          {
+            "content" : [
+              {
+                "output" : {
+                  "type" : "text",
+                  "value" : "file1.txt"
+                },
+                "toolCallId" : "call_1",
+                "toolName" : "bash",
+                "type" : "tool-result"
+              }
+            ],
+            "role" : "tool"
+          }
+        ]
+        """
+        #expect(json == expected)
+    }
+
+    // MARK: - Upstream JSON shape decoding
+
+    @Test func decodesUserMessageWithStringContent() throws {
+        let json = """
+        {"role":"user","content":"Hello"}
+        """
+        let msg = try JSONDecoder().decode(ModelMessage.self, from: Data(json.utf8))
+        guard case .user(let user) = msg,
+              case .text(let text) = user.content else {
+            Issue.record("Expected user message with text content")
+            return
+        }
+        #expect(text == "Hello")
+    }
+
+    @Test func decodesUserMessageWithPartsArray() throws {
+        let json = """
+        {"role":"user","content":[{"type":"text","text":"Look"},{"type":"image","image":"iVBOR","mediaType":"image/png"}]}
+        """
+        let msg = try JSONDecoder().decode(ModelMessage.self, from: Data(json.utf8))
+        guard case .user(let user) = msg,
+              case .parts(let parts) = user.content else {
+            Issue.record("Expected user message with parts content")
+            return
+        }
+        #expect(parts.count == 2)
+    }
+
+    @Test func decodesAssistantMessageWithStringContent() throws {
+        let json = """
+        {"role":"assistant","content":"Hi there"}
+        """
+        let msg = try JSONDecoder().decode(ModelMessage.self, from: Data(json.utf8))
+        guard case .assistant(let asst) = msg,
+              case .text(let text) = asst.content else {
+            Issue.record("Expected assistant message with text content")
+            return
+        }
+        #expect(text == "Hi there")
+    }
+
+    @Test func decodesImagePartWithDirectStringData() throws {
+        let json = """
+        {"role":"user","content":[{"type":"image","image":"iVBORbase64data","mediaType":"image/png"}]}
+        """
+        let msg = try JSONDecoder().decode(ModelMessage.self, from: Data(json.utf8))
+        guard case .user(let user) = msg,
+              case .parts(let parts) = user.content,
+              case .image(let imagePart) = parts.first,
+              case .string(let data) = imagePart.image else {
+            Issue.record("Expected image part with string data")
+            return
+        }
+        #expect(data == "iVBORbase64data")
+    }
+
+    @Test func encodesUserTextContentAsBareString() throws {
+        let msg = ModelMessage.user(UserModelMessage(content: .text("Hello")))
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let data = try encoder.encode(msg)
+        let json = try JSONDecoder().decode([String: JSONValue].self, from: data)
+        guard case .string(let content) = json["content"] else {
+            Issue.record("Expected content to be a bare string, got \(String(describing: json["content"]))")
+            return
+        }
+        #expect(content == "Hello")
+    }
+
+    @Test func encodesUserPartsContentAsBareArray() throws {
+        let msg = ModelMessage.user(UserModelMessage(content: .parts([
+            .text(TextPart(text: "Look")),
+        ])))
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let data = try encoder.encode(msg)
+        let json = try JSONDecoder().decode([String: JSONValue].self, from: data)
+        guard case .array = json["content"] else {
+            Issue.record("Expected content to be a bare array, got \(String(describing: json["content"]))")
+            return
+        }
+    }
+
+    @Test func encodesImageDataAsBareString() throws {
+        let msg = ModelMessage.user(UserModelMessage(content: .parts([
+            .image(ImagePart(image: .string("iVBOR"), mediaType: "image/png")),
+        ])))
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let data = try encoder.encode(msg)
+        let str = String(data: data, encoding: .utf8)!
+        #expect(str.contains("\"image\":\"iVBOR\""))
+    }
 }

@@ -16,56 +16,41 @@ public enum DataContentOrURL: Sendable, Equatable, Codable {
     case string(String)
     case url(URL)
 
-    private enum CodingKeys: String, CodingKey {
-        case type
-        case data
-        case value
-        case url
-    }
-
     public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        let type = try container.decode(String.self, forKey: .type)
+        let container = try decoder.singleValueContainer()
 
-        switch type {
-        case "data":
-            let base64 = try container.decode(String.self, forKey: .data)
-            guard let data = Data(base64Encoded: base64) else {
-                throw DecodingError.dataCorruptedError(
-                    forKey: .data,
-                    in: container,
-                    debugDescription: "Invalid base64 string"
-                )
+        if let string = try? container.decode(String.self) {
+            if let url = URL(string: string), url.scheme != nil {
+                self = .url(url)
+            } else {
+                self = .string(string)
             }
-            self = .data(data)
-        case "string":
-            let value = try container.decode(String.self, forKey: .value)
-            self = .string(value)
-        case "url":
-            let url = try container.decode(URL.self, forKey: .url)
-            self = .url(url)
-        default:
-            throw DecodingError.dataCorruptedError(
-                forKey: .type,
-                in: container,
-                debugDescription: "Unknown DataContentOrURL type: \(type)"
-            )
+            return
         }
+
+        if let data = try? container.decode(Data.self) {
+            self = .data(data)
+            return
+        }
+
+        throw DecodingError.dataCorrupted(
+            DecodingError.Context(
+                codingPath: decoder.codingPath,
+                debugDescription: "Cannot decode DataContentOrURL"
+            )
+        )
     }
 
     public func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
+        var container = encoder.singleValueContainer()
 
         switch self {
-        case .data(let data):
-            try container.encode("data", forKey: .type)
-            try container.encode(data.base64EncodedString(), forKey: .data)
         case .string(let value):
-            try container.encode("string", forKey: .type)
-            try container.encode(value, forKey: .value)
+            try container.encode(value)
         case .url(let url):
-            try container.encode("url", forKey: .type)
-            try container.encode(url, forKey: .url)
+            try container.encode(url.absoluteString)
+        case .data(let data):
+            try container.encode(data.base64EncodedString())
         }
     }
 }
