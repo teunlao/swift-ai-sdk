@@ -181,4 +181,68 @@ struct StreamTextConcurrencyTests {
             "Tool calls ran sequentially — an end arrived before both starts. Events: \(events)"
         )
     }
+
+    @Test("stop() cancels in-flight tool tasks",
+          .timeLimit(.minutes(1)))
+    func stopCancelsInFlightToolTasks() async throws {
+        let toolStarted = Flag()
+        let toolCancelled = Flag()
+
+        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
+            _ = Task {
+                c.yield(.streamStart(warnings: []))
+                c.yield(.responseMetadata(id: "s1", modelId: "mock-model", timestamp: Date(timeIntervalSince1970: 0)))
+                c.yield(.toolCall(LanguageModelV3ToolCall(
+                    toolCallId: "call-1",
+                    toolName: "blocking_tool",
+                    input: "{}",
+                    providerExecuted: false,
+                    providerMetadata: nil
+                )))
+                c.yield(.finish(
+                    finishReason: LanguageModelV3FinishReason(unified: .toolCalls),
+                    usage: defaultUsage,
+                    providerMetadata: nil
+                ))
+                c.finish()
+            }
+        }
+
+        let tools: ToolSet = [
+            "blocking_tool": Tool(
+                description: "Blocks until cancelled",
+                inputSchema: FlexibleSchema(jsonSchema(.object(["type": .string("object")]))),
+                needsApproval: .never,
+                execute: { _, _ in
+                    await toolStarted.set()
+                    // Sleep for a long time — stop() should cancel this task,
+                    // causing Task.sleep to throw CancellationError
+                    do {
+                        try await Task.sleep(for: .seconds(60))
+                    } catch is CancellationError {
+                        await toolCancelled.set()
+                    }
+                    return .value(.null)
+                }
+            )
+        ]
+
+        let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
+        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+            model: .v3(model),
+            prompt: "hello",
+            tools: tools
+        )
+
+        // Wait for the tool execute closure to start running
+        let started = await waitUntil(2.0) { await toolStarted.get() }
+        #expect(started, "Tool execute closure should have started")
+
+        result.stop()
+
+        // The tool task should be cancelled promptly — if stop() doesn't
+        // cancel in-flight tool tasks, this will hang for ~60 seconds
+        let cancelled = await waitUntil(2.0) { await toolCancelled.get() }
+        #expect(cancelled, "Tool task should be cancelled when stop() is called")
+    }
 }
