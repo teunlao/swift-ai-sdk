@@ -769,7 +769,6 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
         // Effort
         if let effort = anthropicOptions?.effort {
             args["output_config"] = .object(["effort": .string(effort.rawValue)])
-            betas.insert("effort-2025-11-24")
         }
 
         // Speed (fast mode, Opus 4.6 only)

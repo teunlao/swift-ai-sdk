@@ -157,7 +157,7 @@ struct AnthropicMessagesLanguageModelProviderOptionsRequestTests {
             Issue.record("Expected output_config payload")
         }
 
-        #expect(anthropicBetaSet(await capture.current()) == Set(["effort-2025-11-24"]))
+        #expect(anthropicBetaSet(await capture.current()) == nil)
     }
 
     @Test("reads provider options from custom provider key")
@@ -194,7 +194,7 @@ struct AnthropicMessagesLanguageModelProviderOptionsRequestTests {
             Issue.record("Expected output_config payload")
         }
 
-        #expect(anthropicBetaSet(await capture.current()) == Set(["effort-2025-11-24"]))
+        #expect(anthropicBetaSet(await capture.current()) == nil)
     }
 
     @Test("custom provider key: passes disableParallelToolUse via tool_choice")
@@ -532,7 +532,7 @@ struct AnthropicMessagesLanguageModelProviderOptionsRequestTests {
             Issue.record("Expected output_config payload")
         }
 
-        #expect(anthropicBetaSet(await capture.current()) == Set(["effort-2025-11-24"]))
+        #expect(anthropicBetaSet(await capture.current()) == nil)
     }
 
     @Test("sends compact_20260112 with trigger")

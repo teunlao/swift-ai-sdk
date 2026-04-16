@@ -57,6 +57,7 @@ public enum AnthropicEffort: String, Sendable, Equatable {
     case low
     case medium
     case high
+    case xhigh
     /// Opus 4.6 only. Claude always thinks with no constraints on thinking depth.
     case max
 }
@@ -568,7 +569,7 @@ public let anthropicProviderOptionsSchema = FlexibleSchema(
                 if let effortValue = dict["effort"], effortValue != .null {
                     guard case .string(let raw) = effortValue,
                           let effort = AnthropicEffort(rawValue: raw) else {
-                        let error = SchemaValidationIssuesError(vendor: "anthropic", issues: "effort must be 'low', 'medium', 'high', or 'max'")
+                        let error = SchemaValidationIssuesError(vendor: "anthropic", issues: "effort must be 'low', 'medium', 'high', 'xhigh', or 'max'")
                         return .failure(error: TypeValidationError.wrap(value: effortValue, cause: error))
                     }
                     options.effort = effort
