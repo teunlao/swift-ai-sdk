@@ -60,6 +60,16 @@ struct DetectMediaTypeTests {
         #expect(mediaType == "image/jpeg")
     }
 
+    @Test("should detect JPEG from base64url")
+    func testDetectJPEGFromBase64URL() throws {
+        let jpegBytes = Data([0xFF, 0xD8, 0xFF, 0xE0])
+        let jpegBase64URL = jpegBytes.base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+        let mediaType = detectMediaType(data: jpegBase64URL, signatures: imageMediaTypeSignatures)
+        #expect(mediaType == "image/jpeg")
+    }
+
     // MARK: - WebP Tests
 
     @Test("should detect WebP from bytes (positive webp image uint8)")
