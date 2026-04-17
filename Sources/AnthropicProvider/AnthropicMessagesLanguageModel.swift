@@ -721,15 +721,23 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
             switch thinkingMode {
             case .enabled:
                 if let budget = thinkingBudget {
-                    args["thinking"] = .object([
+                    var thinkingPayload: [String: JSONValue] = [
                         "type": .string("enabled"),
                         "budget_tokens": .number(Double(budget)),
-                    ])
+                    ]
+                    if let display = anthropicOptions?.thinking?.display {
+                        thinkingPayload["display"] = .string(display.rawValue)
+                    }
+                    args["thinking"] = .object(thinkingPayload)
                     args["max_tokens"] = .number(Double(maxTokens + budget))
                 }
             case .adaptive:
                 // Adaptive mode: Claude dynamically decides when and how much to think
-                args["thinking"] = .object(["type": .string("adaptive")])
+                var thinkingPayload: [String: JSONValue] = ["type": .string("adaptive")]
+                if let display = anthropicOptions?.thinking?.display {
+                    thinkingPayload["display"] = .string(display.rawValue)
+                }
+                args["thinking"] = .object(thinkingPayload)
             default:
                 break
             }

@@ -442,6 +442,115 @@ struct AnthropicMessagesLanguageModelProviderOptionsRequestTests {
         #expect(json?["top_p"] == nil)
     }
 
+    @Test("sends thinking.display when set on adaptive thinking")
+    func sendsAdaptiveThinkingWithDisplay() async throws {
+        let capture = RequestCapture()
+        let responseData = try makeProviderOptionsTestResponseData(model: "claude-opus-4-7")
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: makeProviderOptionsTestHTTPResponse())
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-opus-4-7"),
+            config: makeProviderOptionsTestConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(options: .init(
+            prompt: providerOptionsTestPrompt,
+            providerOptions: [
+                "anthropic": [
+                    "thinking": .object([
+                        "type": .string("adaptive"),
+                        "display": .string("summarized"),
+                    ])
+                ]
+            ]
+        ))
+
+        let json = decodeRequestJSON(await capture.current())
+        if let thinking = json?["thinking"] as? [String: Any] {
+            #expect(thinking["type"] as? String == "adaptive")
+            #expect(thinking["display"] as? String == "summarized")
+        } else {
+            Issue.record("Expected thinking payload")
+        }
+    }
+
+    @Test("sends thinking.display when set on enabled thinking")
+    func sendsEnabledThinkingWithDisplay() async throws {
+        let capture = RequestCapture()
+        let responseData = try makeProviderOptionsTestResponseData(model: "claude-sonnet-4-5-20250929")
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: makeProviderOptionsTestHTTPResponse())
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-sonnet-4-5-20250929"),
+            config: makeProviderOptionsTestConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(options: .init(
+            prompt: providerOptionsTestPrompt,
+            providerOptions: [
+                "anthropic": [
+                    "thinking": .object([
+                        "type": .string("enabled"),
+                        "budgetTokens": .number(2048),
+                        "display": .string("omitted"),
+                    ])
+                ]
+            ]
+        ))
+
+        let json = decodeRequestJSON(await capture.current())
+        if let thinking = json?["thinking"] as? [String: Any] {
+            #expect(thinking["type"] as? String == "enabled")
+            #expect(thinking["budget_tokens"] as? Double == 2048)
+            #expect(thinking["display"] as? String == "omitted")
+        } else {
+            Issue.record("Expected thinking payload")
+        }
+    }
+
+    @Test("omits thinking.display when not set")
+    func omitsDisplayWhenNotSet() async throws {
+        let capture = RequestCapture()
+        let responseData = try makeProviderOptionsTestResponseData(model: "claude-sonnet-4-5-20250929")
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: makeProviderOptionsTestHTTPResponse())
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-sonnet-4-5-20250929"),
+            config: makeProviderOptionsTestConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(options: .init(
+            prompt: providerOptionsTestPrompt,
+            providerOptions: [
+                "anthropic": [
+                    "thinking": .object([
+                        "type": .string("adaptive")
+                    ])
+                ]
+            ]
+        ))
+
+        let json = decodeRequestJSON(await capture.current())
+        if let thinking = json?["thinking"] as? [String: Any] {
+            #expect(thinking["type"] as? String == "adaptive")
+            #expect(thinking["display"] == nil)
+        } else {
+            Issue.record("Expected thinking payload")
+        }
+    }
+
     @Test("sends speed=fast and fast-mode beta header")
     func sendsSpeedFast() async throws {
         let capture = RequestCapture()
