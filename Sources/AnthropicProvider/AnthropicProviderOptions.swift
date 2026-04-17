@@ -38,12 +38,25 @@ public struct AnthropicThinkingOptions: Sendable, Equatable {
         case adaptive
     }
 
+    /// Controls how thinking content is returned in API responses.
+    /// - `summarized`: thinking blocks contain summarized text. Default on
+    ///   Claude Opus 4.6, Sonnet 4.6, and earlier Claude 4 models.
+    /// - `omitted`: thinking blocks are returned with an empty `thinking` field.
+    ///   The `signature` is still populated for multi-turn continuity. Default
+    ///   on Claude Opus 4.7 and Claude Mythos Preview.
+    public enum Display: String, Sendable, Equatable {
+        case summarized
+        case omitted
+    }
+
     public var type: Mode
     public var budgetTokens: Int?
+    public var display: Display?
 
-    public init(type: Mode, budgetTokens: Int? = nil) {
+    public init(type: Mode, budgetTokens: Int? = nil, display: Display? = nil) {
         self.type = type
         self.budgetTokens = budgetTokens
+        self.display = display
     }
 }
 
@@ -57,6 +70,7 @@ public enum AnthropicEffort: String, Sendable, Equatable {
     case low
     case medium
     case high
+    case xhigh
     /// Opus 4.6 only. Claude always thinks with no constraints on thinking depth.
     case max
 }
@@ -419,7 +433,17 @@ public let anthropicProviderOptionsSchema = FlexibleSchema(
                         budget = intValue
                     }
 
-                    options.thinking = AnthropicThinkingOptions(type: mode, budgetTokens: budget)
+                    var display: AnthropicThinkingOptions.Display?
+                    if let displayValue = thinkingDict["display"], displayValue != .null {
+                        guard case .string(let raw) = displayValue,
+                              let parsed = AnthropicThinkingOptions.Display(rawValue: raw) else {
+                            let error = SchemaValidationIssuesError(vendor: "anthropic", issues: "thinking.display must be 'summarized' or 'omitted'")
+                            return .failure(error: TypeValidationError.wrap(value: displayValue, cause: error))
+                        }
+                        display = parsed
+                    }
+
+                    options.thinking = AnthropicThinkingOptions(type: mode, budgetTokens: budget, display: display)
                 }
 
                 options.disableParallelToolUse = try parseOptionalBool(dict, key: "disableParallelToolUse")
@@ -568,7 +592,7 @@ public let anthropicProviderOptionsSchema = FlexibleSchema(
                 if let effortValue = dict["effort"], effortValue != .null {
                     guard case .string(let raw) = effortValue,
                           let effort = AnthropicEffort(rawValue: raw) else {
-                        let error = SchemaValidationIssuesError(vendor: "anthropic", issues: "effort must be 'low', 'medium', 'high', or 'max'")
+                        let error = SchemaValidationIssuesError(vendor: "anthropic", issues: "effort must be 'low', 'medium', 'high', 'xhigh', or 'max'")
                         return .failure(error: TypeValidationError.wrap(value: effortValue, cause: error))
                     }
                     options.effort = effort
