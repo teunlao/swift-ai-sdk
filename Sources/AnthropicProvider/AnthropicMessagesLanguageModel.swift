@@ -496,6 +496,9 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
         if let contextManagement = custom.contextManagement {
             merged.contextManagement = contextManagement
         }
+        if let anthropicBeta = custom.anthropicBeta {
+            merged.anthropicBeta = anthropicBeta
+        }
 
         return merged
     }
@@ -957,6 +960,17 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
         warnings.append(contentsOf: cacheControlValidator.getWarnings())
         betas.formUnion(preparedTools.betas)
 
+        // Union user-supplied betas (header sources + typed providerOption)
+        // into the SDK's auto-collected set. Trim/lowercase the typed array
+        // for CRLF defense; `getBetasFromHeaders` already normalizes headers.
+        betas.formUnion(try getBetasFromHeaders(options.headers))
+        for raw in anthropicOptions?.anthropicBeta ?? [] {
+            let value = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if !value.isEmpty {
+                betas.insert(value)
+            }
+        }
+
         if let tools = preparedTools.tools {
             args["tools"] = .array(tools)
         }
@@ -985,14 +999,39 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
 
     private func getHeaders(betas: Set<String>, additional: [String: String]?) throws -> [String: String] {
         var combined: [String: String?] = try config.headers()
-        if !betas.isEmpty {
-            combined = combineHeaders(
-                combined, ["anthropic-beta": betas.sorted().joined(separator: ",")])
-        }
         if let additional {
             combined = combineHeaders(combined, additional.mapValues { Optional($0) })
         }
+        if !betas.isEmpty {
+            // Written last to overwrite any raw `anthropic-beta` header
+            // in `additional`; user values were already harvested into
+            // `betas` via `getBetasFromHeaders`. Matches upstream order.
+            combined = combineHeaders(
+                combined, ["anthropic-beta": betas.sorted().joined(separator: ",")])
+        }
         return combined.compactMapValues { $0 }
+    }
+
+    /// Harvests `anthropic-beta` from `config.headers` and `requestHeaders`,
+    /// splitting on `,` and lower-casing each entry. Mirrors the upstream
+    /// TypeScript `getBetasFromHeaders`.
+    private func getBetasFromHeaders(
+        _ requestHeaders: [String: String]?
+    ) throws -> Set<String> {
+        let configHeaders = try config.headers()
+        let configBetaHeader = configHeaders["anthropic-beta"].flatMap { $0 } ?? ""
+        let requestBetaHeader = requestHeaders?["anthropic-beta"] ?? ""
+
+        var betas: Set<String> = []
+        for source in [configBetaHeader, requestBetaHeader] {
+            for raw in source.split(separator: ",", omittingEmptySubsequences: true) {
+                let value = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                if !value.isEmpty {
+                    betas.insert(value)
+                }
+            }
+        }
+        return betas
     }
 
     private struct AnthropicModelCapabilities: Sendable {

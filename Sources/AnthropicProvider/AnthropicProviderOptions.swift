@@ -295,6 +295,10 @@ public struct AnthropicProviderOptions: Sendable, Equatable {
     /// Enable fast mode for faster inference. Only supported on claude-opus-4-6.
     public var speed: AnthropicSpeed?
     public var contextManagement: AnthropicContextManagement?
+    /// Extra `anthropic-beta` values to merge into the request header.
+    /// Use for betas the SDK doesn't auto-detect (e.g.
+    /// `["extended-cache-ttl-2025-04-11"]`).
+    public var anthropicBeta: [String]?
 
     public init(
         sendReasoning: Bool? = nil,
@@ -307,7 +311,8 @@ public struct AnthropicProviderOptions: Sendable, Equatable {
         toolStreaming: Bool? = nil,
         effort: AnthropicEffort? = nil,
         speed: AnthropicSpeed? = nil,
-        contextManagement: AnthropicContextManagement? = nil
+        contextManagement: AnthropicContextManagement? = nil,
+        anthropicBeta: [String]? = nil
     ) {
         self.sendReasoning = sendReasoning
         self.structuredOutputMode = structuredOutputMode
@@ -320,6 +325,7 @@ public struct AnthropicProviderOptions: Sendable, Equatable {
         self.effort = effort
         self.speed = speed
         self.contextManagement = contextManagement
+        self.anthropicBeta = anthropicBeta
     }
 }
 
@@ -746,6 +752,23 @@ public let anthropicProviderOptionsSchema = FlexibleSchema(
                     }
 
                     options.contextManagement = AnthropicContextManagement(edits: edits)
+                }
+
+                if let anthropicBetaValue = dict["anthropicBeta"], anthropicBetaValue != .null {
+                    guard case .array(let array) = anthropicBetaValue else {
+                        let error = SchemaValidationIssuesError(vendor: "anthropic", issues: "anthropicBeta must be an array of strings")
+                        return .failure(error: TypeValidationError.wrap(value: anthropicBetaValue, cause: error))
+                    }
+                    var betas: [String] = []
+                    betas.reserveCapacity(array.count)
+                    for item in array {
+                        guard case .string(let beta) = item else {
+                            let error = SchemaValidationIssuesError(vendor: "anthropic", issues: "anthropicBeta entries must be strings")
+                            return .failure(error: TypeValidationError.wrap(value: item, cause: error))
+                        }
+                        betas.append(beta)
+                    }
+                    options.anthropicBeta = betas
                 }
 
                 return .success(value: options)
