@@ -1050,4 +1050,257 @@ struct AnthropicMessagesLanguageModelProviderOptionsRequestTests {
             Issue.record("Expected top-level cache_control after cross-type round-trip. Body: \(bodyStr.prefix(500))")
         }
     }
+
+    // MARK: - User-supplied anthropic-beta merging
+    //
+    // Mirrors `getBetasFromHeaders` and the typed `anthropicBeta` provider
+    // option from the upstream TypeScript SDK. User-supplied beta values
+    // (via `AnthropicProviderSettings.headers`, `CallSettings.headers`,
+    // or `AnthropicProviderOptions.anthropicBeta`) must be merged with
+    // the SDK's auto-collected betas into a single deduplicated
+    // `anthropic-beta` header, instead of overwriting them.
+
+    @Test("merges user-supplied anthropic-beta from CallSettings.headers with SDK betas")
+    func mergesCallSettingsBetaWithSDKBetas() async throws {
+        let capture = RequestCapture()
+        let responseData = try makeProviderOptionsTestResponseData(model: "claude-3-haiku-20240307")
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: makeProviderOptionsTestHTTPResponse())
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: makeProviderOptionsTestConfig(fetch: fetch)
+        )
+
+        // mcp-client-2025-04-04 is added by the SDK (mcpServers); the
+        // user's extended-cache-ttl beta must be unioned with it.
+        _ = try await model.doGenerate(options: .init(
+            prompt: providerOptionsTestPrompt,
+            headers: ["anthropic-beta": "extended-cache-ttl-2025-04-11"],
+            providerOptions: [
+                "anthropic": [
+                    "mcpServers": .array([
+                        .object([
+                            "type": .string("url"),
+                            "name": .string("echo"),
+                            "url": .string("https://example.com/mcp"),
+                        ])
+                    ])
+                ]
+            ]
+        ))
+
+        let betas = anthropicBetaSet(await capture.current())
+        #expect(betas == Set(["extended-cache-ttl-2025-04-11", "mcp-client-2025-04-04"]))
+    }
+
+    @Test("merges user-supplied anthropic-beta from provider settings.headers with SDK betas")
+    func mergesProviderSettingsBetaWithSDKBetas() async throws {
+        let capture = RequestCapture()
+        let responseData = try makeProviderOptionsTestResponseData(model: "claude-3-haiku-20240307")
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: makeProviderOptionsTestHTTPResponse())
+        }
+
+        // Add anthropic-beta to the provider's static headers (settings.headers).
+        let configHeaders = AnthropicMessagesConfig(
+            provider: "anthropic.messages",
+            baseURL: "https://api.anthropic.com/v1",
+            headers: { [
+                "x-api-key": "test-key",
+                "anthropic-version": "2023-06-01",
+                "anthropic-beta": "extended-cache-ttl-2025-04-11",
+            ] },
+            fetch: fetch,
+            supportedUrls: { [:] },
+            generateId: { "generated-id" }
+        )
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: configHeaders
+        )
+
+        _ = try await model.doGenerate(options: .init(
+            prompt: providerOptionsTestPrompt,
+            providerOptions: [
+                "anthropic": [
+                    "mcpServers": .array([
+                        .object([
+                            "type": .string("url"),
+                            "name": .string("settings-merge"),
+                            "url": .string("https://example.com/mcp"),
+                        ])
+                    ])
+                ]
+            ]
+        ))
+
+        let betas = anthropicBetaSet(await capture.current())
+        #expect(betas == Set(["extended-cache-ttl-2025-04-11", "mcp-client-2025-04-04"]))
+    }
+
+    @Test("merges anthropic-beta from both provider settings and CallSettings without legacy fine-grained-tool-streaming")
+    func mergesProviderSettingsAndCallSettingsBetas() async throws {
+        // Mirrors the upstream test
+        // `should merge custom anthropic-beta headers without legacy fine-grained-tool-streaming beta`.
+        // No tools and no provider options that add betas — only the
+        // user-supplied ones from settings.headers and CallSettings.headers
+        // should appear.
+        let capture = RequestCapture()
+        let responseData = try makeProviderOptionsTestResponseData(model: "claude-3-haiku-20240307")
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: makeProviderOptionsTestHTTPResponse())
+        }
+
+        let configHeaders = AnthropicMessagesConfig(
+            provider: "anthropic.messages",
+            baseURL: "https://api.anthropic.com/v1",
+            headers: { [
+                "x-api-key": "test-key",
+                "anthropic-version": "2023-06-01",
+                "anthropic-beta": "CONFIG-beta1,config-beta2",
+            ] },
+            fetch: fetch,
+            supportedUrls: { [:] },
+            generateId: { "generated-id" }
+        )
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: configHeaders
+        )
+
+        _ = try await model.doGenerate(options: .init(
+            prompt: providerOptionsTestPrompt,
+            headers: ["anthropic-beta": "REQUEST-beta1,request-beta2"]
+        ))
+
+        // All four entries are present and lowercased; no other betas
+        // are added because this request has no tools and no other
+        // provider options.
+        let betas = anthropicBetaSet(await capture.current())
+        #expect(betas == Set(["config-beta1", "config-beta2", "request-beta1", "request-beta2"]))
+    }
+
+    @Test("includes providerOptions.anthropic.anthropicBeta in anthropic-beta header")
+    func includesAnthropicBetaProviderOption() async throws {
+        let capture = RequestCapture()
+        let responseData = try makeProviderOptionsTestResponseData(model: "claude-3-haiku-20240307")
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: makeProviderOptionsTestHTTPResponse())
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: makeProviderOptionsTestConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(options: .init(
+            prompt: providerOptionsTestPrompt,
+            providerOptions: [
+                "anthropic": [
+                    "anthropicBeta": .array([
+                        .string("my-beta-2025-01-01"),
+                        .string("another-beta-2025-06-01"),
+                    ])
+                ]
+            ]
+        ))
+
+        let betas = anthropicBetaSet(await capture.current())
+        #expect(betas?.contains("my-beta-2025-01-01") == true)
+        #expect(betas?.contains("another-beta-2025-06-01") == true)
+    }
+
+    @Test("trims and lowercases anthropicBeta provider option entries")
+    func sanitizesAnthropicBetaProviderOptionEntries() async throws {
+        // Defensive: the typed `anthropicBeta` array on
+        // `AnthropicProviderOptions` flows directly into the
+        // `anthropic-beta` header. Values must be trimmed (CRLF defense)
+        // and lowercased (Anthropic treats beta names case-insensitively
+        // and the SDK normalizes header-string sources the same way).
+        // Empty entries — including those that become empty after
+        // trimming — must be dropped so they don't introduce stray
+        // commas in the final header value.
+        let capture = RequestCapture()
+        let responseData = try makeProviderOptionsTestResponseData(model: "claude-3-haiku-20240307")
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: makeProviderOptionsTestHTTPResponse())
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: makeProviderOptionsTestConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(options: .init(
+            prompt: providerOptionsTestPrompt,
+            providerOptions: [
+                "anthropic": [
+                    "anthropicBeta": .array([
+                        .string("  Mixed-Case-Beta-2025-01-01  "),
+                        .string(""),
+                        .string("   "),
+                    ])
+                ]
+            ]
+        ))
+
+        let betas = anthropicBetaSet(await capture.current())
+        #expect(betas == Set(["mixed-case-beta-2025-01-01"]))
+    }
+
+    @Test("deduplicates anthropic-beta entries across all sources")
+    func deduplicatesBetaEntries() async throws {
+        let capture = RequestCapture()
+        let responseData = try makeProviderOptionsTestResponseData(model: "claude-3-haiku-20240307")
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: makeProviderOptionsTestHTTPResponse())
+        }
+
+        let configHeaders = AnthropicMessagesConfig(
+            provider: "anthropic.messages",
+            baseURL: "https://api.anthropic.com/v1",
+            headers: { [
+                "x-api-key": "test-key",
+                "anthropic-version": "2023-06-01",
+                "anthropic-beta": "extended-cache-ttl-2025-04-11",
+            ] },
+            fetch: fetch,
+            supportedUrls: { [:] },
+            generateId: { "generated-id" }
+        )
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: configHeaders
+        )
+
+        _ = try await model.doGenerate(options: .init(
+            prompt: providerOptionsTestPrompt,
+            headers: ["anthropic-beta": "extended-cache-ttl-2025-04-11"],
+            providerOptions: [
+                "anthropic": [
+                    "anthropicBeta": .array([.string("extended-cache-ttl-2025-04-11")])
+                ]
+            ]
+        ))
+
+        let betas = anthropicBetaSet(await capture.current())
+        #expect(betas == Set(["extended-cache-ttl-2025-04-11"]))
+    }
 }
