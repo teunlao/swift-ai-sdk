@@ -104,12 +104,26 @@ public func convertToOpenAICompatibleChatMessages(
             ]
 
             var textAccumulator = ""
+            // Reasoning parts in assistant messages are accumulated and
+            // sent as a top-level `reasoning_content` field on the
+            // outgoing assistant message. This matches the upstream
+            // `@ai-sdk/openai-compatible` behavior and lets reasoning
+            // models (DeepSeek, Kimi, Qwen3, GLM, etc.) round-trip
+            // their prior turn's reasoning back to the provider for
+            // continuity. Per-provider field naming overrides (e.g.
+            // OpenRouter's `reasoning_details`) can still be applied
+            // by callers via the `openaiCompatible` providerOptions
+            // namespace, which `metadata(from:)` merges into the final
+            // payload below.
+            var reasoningAccumulator = ""
             var toolCalls: [[String: JSONValue]] = []
 
             for content in contents {
                 switch content {
                 case .text(let textPart):
                     textAccumulator.append(textPart.text)
+                case .reasoning(let reasoningPart):
+                    reasoningAccumulator.append(reasoningPart.text)
                 case .toolCall(let call):
                     let inputData = try JSONEncoder().encode(call.input)
                     let arguments = String(data: inputData, encoding: .utf8) ?? "{}"
@@ -125,8 +139,6 @@ public func convertToOpenAICompatibleChatMessages(
                         payload[key] = value
                     }
                     toolCalls.append(payload)
-                case .reasoning:
-                    throw UnsupportedFunctionalityError(functionality: "reasoning content in assistant message")
                 case .file:
                     throw UnsupportedFunctionalityError(functionality: "file content in assistant message")
                 case .toolResult:
@@ -135,6 +147,9 @@ public func convertToOpenAICompatibleChatMessages(
             }
 
             builder["content"] = .string(textAccumulator)
+            if !reasoningAccumulator.isEmpty {
+                builder["reasoning_content"] = .string(reasoningAccumulator)
+            }
             if !toolCalls.isEmpty {
                 builder["tool_calls"] = .array(toolCalls.map(JSONValue.object))
             }

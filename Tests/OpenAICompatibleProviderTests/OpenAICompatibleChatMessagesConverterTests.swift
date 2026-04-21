@@ -706,6 +706,120 @@ struct OpenAICompatibleChatMessagesConverterTests {
         #expect(result == expected)
     }
 
+    @Test("accumulates assistant reasoning into reasoning_content")
+    func accumulatesReasoningIntoReasoningContent() throws {
+        let prompt: LanguageModelV3Prompt = [
+            .assistant(
+                content: [
+                    .reasoning(LanguageModelV3ReasoningPart(text: "Let me think. ")),
+                    .reasoning(LanguageModelV3ReasoningPart(text: "First step.")),
+                    .text(LanguageModelV3TextPart(text: "Hello there"))
+                ],
+                providerOptions: nil
+            )
+        ]
+
+        let result = try convertToOpenAICompatibleChatMessages(prompt: prompt)
+        let expected: [JSONValue] = [
+            .object([
+                "role": .string("assistant"),
+                "content": .string("Hello there"),
+                "reasoning_content": .string("Let me think. First step.")
+            ])
+        ]
+        #expect(result == expected)
+    }
+
+    @Test("preserves reasoning_content when assistant message contains tool calls")
+    func reasoningRoundTripsWithToolCalls() throws {
+        let prompt: LanguageModelV3Prompt = [
+            .assistant(
+                content: [
+                    .reasoning(LanguageModelV3ReasoningPart(text: "I need to read the README first.")),
+                    .text(LanguageModelV3TextPart(text: "I'll explore the repo.")),
+                    .toolCall(LanguageModelV3ToolCallPart(
+                        toolCallId: "call_1",
+                        toolName: "ReadFile",
+                        input: .object(["file": .string("README.md")])
+                    ))
+                ],
+                providerOptions: nil
+            )
+        ]
+
+        let result = try convertToOpenAICompatibleChatMessages(prompt: prompt)
+        let expected: [JSONValue] = [
+            .object([
+                "role": .string("assistant"),
+                "content": .string("I'll explore the repo."),
+                "reasoning_content": .string("I need to read the README first."),
+                "tool_calls": .array([
+                    .object([
+                        "type": .string("function"),
+                        "id": .string("call_1"),
+                        "function": .object([
+                            "name": .string("ReadFile"),
+                            "arguments": .string("{\"file\":\"README.md\"}")
+                        ])
+                    ])
+                ])
+            ])
+        ]
+        #expect(result == expected)
+    }
+
+    @Test("omits reasoning_content when no reasoning parts are present")
+    func omitsReasoningContentWhenAbsent() throws {
+        let prompt: LanguageModelV3Prompt = [
+            .assistant(
+                content: [
+                    .text(LanguageModelV3TextPart(text: "Just text"))
+                ],
+                providerOptions: nil
+            )
+        ]
+
+        let result = try convertToOpenAICompatibleChatMessages(prompt: prompt)
+        let expected: [JSONValue] = [
+            .object([
+                "role": .string("assistant"),
+                "content": .string("Just text")
+            ])
+        ]
+        #expect(result == expected)
+    }
+
+    @Test("metadata-supplied reasoning_content overrides accumulated reasoning")
+    func metadataOverridesAccumulatedReasoning() throws {
+        // Callers (e.g. opencode-style transforms) may pre-strip
+        // reasoning parts and inject `reasoning_content` directly via
+        // providerOptions. When both paths are used, the metadata
+        // value wins because it's merged after the accumulator.
+        let prompt: LanguageModelV3Prompt = [
+            .assistant(
+                content: [
+                    .reasoning(LanguageModelV3ReasoningPart(text: "raw thought")),
+                    .text(LanguageModelV3TextPart(text: "Answer"))
+                ],
+                providerOptions: [
+                    "openaiCompatible": [
+                        "reasoning_content": .string("metadata thought")
+                    ]
+                ]
+            )
+        ]
+
+        let result = try convertToOpenAICompatibleChatMessages(prompt: prompt)
+        let expected: [JSONValue] = [
+            .object([
+                "role": .string("assistant"),
+                "content": .string("Answer"),
+                "reasoning_content": .string("metadata thought")
+            ])
+        ]
+        #expect(result == expected)
+    }
+
     @Test("handles metadata collisions and overwrites in tool calls")
     func handlesMetadataCollisionsInToolCalls() throws {
         let prompt: LanguageModelV3Prompt = [
