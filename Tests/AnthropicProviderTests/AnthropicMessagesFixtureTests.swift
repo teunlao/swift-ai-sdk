@@ -269,7 +269,6 @@ struct AnthropicMessagesFixtureTests {
 
         let request = await capture.current()
         #expect(anthropicBetaSet(request) == Set([
-            "fine-grained-tool-streaming-2025-05-14",
             "mcp-client-2025-04-04"
         ]))
 
@@ -444,8 +443,7 @@ struct AnthropicMessagesFixtureTests {
 
         let request = await capture.current()
         #expect(anthropicBetaSet(request) == Set([
-            "code-execution-web-tools-2026-02-09",
-            "fine-grained-tool-streaming-2025-05-14"
+            "code-execution-web-tools-2026-02-09"
         ]))
 
         let toolCalls = parts.compactMap { part -> LanguageModelV3ToolCall? in

@@ -1303,4 +1303,118 @@ struct AnthropicMessagesLanguageModelProviderOptionsRequestTests {
         let betas = anthropicBetaSet(await capture.current())
         #expect(betas == Set(["extended-cache-ttl-2025-04-11"]))
     }
+
+    // MARK: - eager_input_streaming (GA replacement for fine-grained-tool-streaming beta)
+
+    @Test("defaults to per-tool eager_input_streaming on streaming requests")
+    func defaultsEagerInputStreamingOnStream() async throws {
+        let capture = RequestCapture()
+
+        let ssePayloads = [
+            #"{"type":"message_start","message":{"id":"msg_01","type":"message","role":"assistant","model":"claude-3-haiku-20240307","stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":1,"output_tokens":1},"content":[]}}"#,
+            #"{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":1}}"#,
+            #"{"type":"message_stop"}"#,
+        ]
+        let sseBody = ssePayloads.map { "event: message\ndata: \($0)\n\n" }.joined()
+        let sseData = Data(sseBody.utf8)
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(sseData), urlResponse: makeProviderOptionsTestHTTPResponse())
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: makeProviderOptionsTestConfig(fetch: fetch)
+        )
+
+        let result = try await model.doStream(options: .init(
+            prompt: providerOptionsTestPrompt,
+            tools: [
+                .function(.init(
+                    name: "get_weather",
+                    inputSchema: .object([:]),
+                    description: "Get weather"
+                ))
+            ]
+        ))
+        for try await _ in result.stream {}
+
+        let json = decodeRequestJSON(await capture.current())
+        let tools = json?["tools"] as? [[String: Any]]
+        #expect(tools?.first?["eager_input_streaming"] as? Bool == true)
+        // No legacy beta header
+        #expect(anthropicBetaSet(await capture.current()) == nil)
+    }
+
+    @Test("does not add eager_input_streaming when toolStreaming is false")
+    func noEagerInputStreamingWhenOptOut() async throws {
+        let capture = RequestCapture()
+
+        let ssePayloads = [
+            #"{"type":"message_start","message":{"id":"msg_01","type":"message","role":"assistant","model":"claude-3-haiku-20240307","stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":1,"output_tokens":1},"content":[]}}"#,
+            #"{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":1}}"#,
+            #"{"type":"message_stop"}"#,
+        ]
+        let sseBody = ssePayloads.map { "event: message\ndata: \($0)\n\n" }.joined()
+        let sseData = Data(sseBody.utf8)
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(sseData), urlResponse: makeProviderOptionsTestHTTPResponse())
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: makeProviderOptionsTestConfig(fetch: fetch)
+        )
+
+        let result = try await model.doStream(options: .init(
+            prompt: providerOptionsTestPrompt,
+            tools: [
+                .function(.init(
+                    name: "get_weather",
+                    inputSchema: .object([:]),
+                    description: "Get weather"
+                ))
+            ],
+            providerOptions: ["anthropic": ["toolStreaming": .bool(false)]]
+        ))
+        for try await _ in result.stream {}
+
+        let json = decodeRequestJSON(await capture.current())
+        let tools = json?["tools"] as? [[String: Any]]
+        #expect(tools?.first?["eager_input_streaming"] == nil)
+    }
+
+    @Test("does not default eager_input_streaming on non-streaming (generate) calls")
+    func noEagerInputStreamingOnGenerate() async throws {
+        let capture = RequestCapture()
+        let responseData = try makeProviderOptionsTestResponseData(model: "claude-3-haiku-20240307")
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: makeProviderOptionsTestHTTPResponse())
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: makeProviderOptionsTestConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(options: .init(
+            prompt: providerOptionsTestPrompt,
+            tools: [
+                .function(.init(
+                    name: "get_weather",
+                    inputSchema: .object([:]),
+                    description: "Get weather"
+                ))
+            ]
+        ))
+
+        let json = decodeRequestJSON(await capture.current())
+        let tools = json?["tools"] as? [[String: Any]]
+        #expect(tools?.first?["eager_input_streaming"] == nil)
+    }
 }

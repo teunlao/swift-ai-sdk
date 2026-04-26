@@ -52,7 +52,6 @@ private struct AnthropicRequestArguments {
     let betas: Set<String>
     let usesJsonResponseTool: Bool
     let toolNameMapping: AnthropicToolNameMapping
-    let toolStreaming: Bool
     let providerOptionsName: String
     let usedCustomProviderKey: Bool
 }
@@ -149,12 +148,9 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
     public func doStream(options: LanguageModelV3CallOptions) async throws
         -> LanguageModelV3StreamResult
     {
-        let prepared = try await prepareRequest(options: options)
+        let prepared = try await prepareRequest(options: options, stream: true)
 
-        var betas = prepared.betas
-        if prepared.toolStreaming {
-            betas.insert("fine-grained-tool-streaming-2025-05-14")
-        }
+        let betas = prepared.betas
 
         var requestBody = prepared.body
         requestBody["stream"] = .bool(true)
@@ -503,7 +499,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
         return merged
     }
 
-    private func prepareRequest(options: LanguageModelV3CallOptions) async throws
+    private func prepareRequest(options: LanguageModelV3CallOptions, stream: Bool = false) async throws
         -> AnthropicRequestArguments
     {
         var warnings: [SharedV3Warning] = []
@@ -594,7 +590,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
 
         let usesJsonResponseTool = jsonResponseTool != nil
         let contextManagement = anthropicOptions?.contextManagement
-        let toolStreaming = anthropicOptions?.toolStreaming ?? true
+        let defaultEagerInputStreaming = stream && (anthropicOptions?.toolStreaming ?? true)
         let cacheControlValidator = CacheControlValidator()
 
         let toolNameMapping = AnthropicToolNameMapping.create(
@@ -953,7 +949,8 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
             toolChoice: jsonResponseTool != nil ? .required : options.toolChoice,
             disableParallelToolUse: jsonResponseTool != nil ? true : anthropicOptions?.disableParallelToolUse,
             supportsStructuredOutput: jsonResponseTool == nil ? supportsStructuredOutput : false,
-            cacheControlValidator: cacheControlValidator
+            cacheControlValidator: cacheControlValidator,
+            defaultEagerInputStreaming: defaultEagerInputStreaming
         )
 
         warnings.append(contentsOf: preparedTools.warnings)
@@ -984,7 +981,6 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
             betas: betas,
             usesJsonResponseTool: usesJsonResponseTool,
             toolNameMapping: toolNameMapping,
-            toolStreaming: toolStreaming,
             providerOptionsName: providerOptionsName,
             usedCustomProviderKey: usedCustomProviderKey
         )
