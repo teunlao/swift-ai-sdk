@@ -38,8 +38,6 @@ upstream/
 
 # Agent and project configuration (moved to archive)
 git-local-config.md
-AGENTS.md
-CLAUDE.md
 .claude/
 .codex/
 skills/
