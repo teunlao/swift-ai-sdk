@@ -27,8 +27,8 @@ Swift-specific contract.
   background, but prefer current code, `Package.swift`, and `upstream/**` when
   facts differ.
 - `.archive/**`, `.trash/**`, `.staging/**`, `.sessions/**`, `.validation/**`,
-  `.orchestrator/**`, and `.taskmaster/**` are local/temporary unless a user
-  explicitly asks to inspect them.
+  `.orchestrator/**`, `.upstream/**`, and `.taskmaster/**` are local/temporary
+  unless a user explicitly asks to inspect them.
 
 `CLAUDE.md` must remain a relative symlink to `AGENTS.md`. Do not reintroduce a
 second copied guide.
@@ -65,8 +65,10 @@ Examples live in the separate `examples/Package.swift` package. Docs live in
 
 ## Upstream Workflow
 
-Use the repo-local skill `.codex/skills/swift-ai-sdk-upstream/SKILL.md` for
+Use the repo-local skill `.agents/skills/swift-ai-sdk-upstream/SKILL.md` for
 upstream refreshes, provider/core parity audits, and `upstream/**` tracking.
+Generated intake/status artifacts for that workflow live under `.upstream/**`
+and must remain untracked.
 
 Rules:
 

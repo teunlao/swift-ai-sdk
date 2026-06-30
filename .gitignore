@@ -22,6 +22,9 @@ dist
 # Audit files (entire directory - not tracked in git)
 .audit/
 
+# Generated upstream parity artifacts
+.upstream/
+
 # Staging and trash (local development)
 .staging/
 .trash/
@@ -41,6 +44,9 @@ git-local-config.md
 .claude/
 .codex/
 skills/
+!.agents/
+!.agents/skills/
+!.agents/skills/**
 
 # Logs
 logs
