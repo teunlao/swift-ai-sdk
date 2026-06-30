@@ -52,7 +52,6 @@ private struct AnthropicRequestArguments {
     let betas: Set<String>
     let usesJsonResponseTool: Bool
     let toolNameMapping: AnthropicToolNameMapping
-    let toolStreaming: Bool
     let providerOptionsName: String
     let usedCustomProviderKey: Bool
 }
@@ -149,12 +148,9 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
     public func doStream(options: LanguageModelV3CallOptions) async throws
         -> LanguageModelV3StreamResult
     {
-        let prepared = try await prepareRequest(options: options)
+        let prepared = try await prepareRequest(options: options, stream: true)
 
-        var betas = prepared.betas
-        if prepared.toolStreaming {
-            betas.insert("fine-grained-tool-streaming-2025-05-14")
-        }
+        let betas = prepared.betas
 
         var requestBody = prepared.body
         requestBody["stream"] = .bool(true)
@@ -496,11 +492,14 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
         if let contextManagement = custom.contextManagement {
             merged.contextManagement = contextManagement
         }
+        if let anthropicBeta = custom.anthropicBeta {
+            merged.anthropicBeta = anthropicBeta
+        }
 
         return merged
     }
 
-    private func prepareRequest(options: LanguageModelV3CallOptions) async throws
+    private func prepareRequest(options: LanguageModelV3CallOptions, stream: Bool = false) async throws
         -> AnthropicRequestArguments
     {
         var warnings: [SharedV3Warning] = []
@@ -591,7 +590,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
 
         let usesJsonResponseTool = jsonResponseTool != nil
         let contextManagement = anthropicOptions?.contextManagement
-        let toolStreaming = anthropicOptions?.toolStreaming ?? true
+        let defaultEagerInputStreaming = stream && (anthropicOptions?.toolStreaming ?? true)
         let cacheControlValidator = CacheControlValidator()
 
         let toolNameMapping = AnthropicToolNameMapping.create(
@@ -721,15 +720,23 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
             switch thinkingMode {
             case .enabled:
                 if let budget = thinkingBudget {
-                    args["thinking"] = .object([
+                    var thinkingPayload: [String: JSONValue] = [
                         "type": .string("enabled"),
                         "budget_tokens": .number(Double(budget)),
-                    ])
+                    ]
+                    if let display = anthropicOptions?.thinking?.display {
+                        thinkingPayload["display"] = .string(display.rawValue)
+                    }
+                    args["thinking"] = .object(thinkingPayload)
                     args["max_tokens"] = .number(Double(maxTokens + budget))
                 }
             case .adaptive:
                 // Adaptive mode: Claude dynamically decides when and how much to think
-                args["thinking"] = .object(["type": .string("adaptive")])
+                var thinkingPayload: [String: JSONValue] = ["type": .string("adaptive")]
+                if let display = anthropicOptions?.thinking?.display {
+                    thinkingPayload["display"] = .string(display.rawValue)
+                }
+                args["thinking"] = .object(thinkingPayload)
             default:
                 break
             }
@@ -769,7 +776,6 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
         // Effort
         if let effort = anthropicOptions?.effort {
             args["output_config"] = .object(["effort": .string(effort.rawValue)])
-            betas.insert("effort-2025-11-24")
         }
 
         // Speed (fast mode, Opus 4.6 only)
@@ -943,12 +949,24 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
             toolChoice: jsonResponseTool != nil ? .required : options.toolChoice,
             disableParallelToolUse: jsonResponseTool != nil ? true : anthropicOptions?.disableParallelToolUse,
             supportsStructuredOutput: jsonResponseTool == nil ? supportsStructuredOutput : false,
-            cacheControlValidator: cacheControlValidator
+            cacheControlValidator: cacheControlValidator,
+            defaultEagerInputStreaming: defaultEagerInputStreaming
         )
 
         warnings.append(contentsOf: preparedTools.warnings)
         warnings.append(contentsOf: cacheControlValidator.getWarnings())
         betas.formUnion(preparedTools.betas)
+
+        // Union user-supplied betas (header sources + typed providerOption)
+        // into the SDK's auto-collected set. Trim/lowercase the typed array
+        // for CRLF defense; `getBetasFromHeaders` already normalizes headers.
+        betas.formUnion(try getBetasFromHeaders(options.headers))
+        for raw in anthropicOptions?.anthropicBeta ?? [] {
+            let value = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if !value.isEmpty {
+                betas.insert(value)
+            }
+        }
 
         if let tools = preparedTools.tools {
             args["tools"] = .array(tools)
@@ -963,7 +981,6 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
             betas: betas,
             usesJsonResponseTool: usesJsonResponseTool,
             toolNameMapping: toolNameMapping,
-            toolStreaming: toolStreaming,
             providerOptionsName: providerOptionsName,
             usedCustomProviderKey: usedCustomProviderKey
         )
@@ -978,14 +995,39 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
 
     private func getHeaders(betas: Set<String>, additional: [String: String]?) throws -> [String: String] {
         var combined: [String: String?] = try config.headers()
-        if !betas.isEmpty {
-            combined = combineHeaders(
-                combined, ["anthropic-beta": betas.sorted().joined(separator: ",")])
-        }
         if let additional {
             combined = combineHeaders(combined, additional.mapValues { Optional($0) })
         }
+        if !betas.isEmpty {
+            // Written last to overwrite any raw `anthropic-beta` header
+            // in `additional`; user values were already harvested into
+            // `betas` via `getBetasFromHeaders`. Matches upstream order.
+            combined = combineHeaders(
+                combined, ["anthropic-beta": betas.sorted().joined(separator: ",")])
+        }
         return combined.compactMapValues { $0 }
+    }
+
+    /// Harvests `anthropic-beta` from `config.headers` and `requestHeaders`,
+    /// splitting on `,` and lower-casing each entry. Mirrors the upstream
+    /// TypeScript `getBetasFromHeaders`.
+    private func getBetasFromHeaders(
+        _ requestHeaders: [String: String]?
+    ) throws -> Set<String> {
+        let configHeaders = try config.headers()
+        let configBetaHeader = configHeaders["anthropic-beta"].flatMap { $0 } ?? ""
+        let requestBetaHeader = requestHeaders?["anthropic-beta"] ?? ""
+
+        var betas: Set<String> = []
+        for source in [configBetaHeader, requestBetaHeader] {
+            for raw in source.split(separator: ",", omittingEmptySubsequences: true) {
+                let value = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                if !value.isEmpty {
+                    betas.insert(value)
+                }
+            }
+        }
+        return betas
     }
 
     private struct AnthropicModelCapabilities: Sendable {

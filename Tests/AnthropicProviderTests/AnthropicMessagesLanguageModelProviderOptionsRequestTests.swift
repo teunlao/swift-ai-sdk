@@ -157,7 +157,7 @@ struct AnthropicMessagesLanguageModelProviderOptionsRequestTests {
             Issue.record("Expected output_config payload")
         }
 
-        #expect(anthropicBetaSet(await capture.current()) == Set(["effort-2025-11-24"]))
+        #expect(anthropicBetaSet(await capture.current()) == nil)
     }
 
     @Test("reads provider options from custom provider key")
@@ -194,7 +194,7 @@ struct AnthropicMessagesLanguageModelProviderOptionsRequestTests {
             Issue.record("Expected output_config payload")
         }
 
-        #expect(anthropicBetaSet(await capture.current()) == Set(["effort-2025-11-24"]))
+        #expect(anthropicBetaSet(await capture.current()) == nil)
     }
 
     @Test("custom provider key: passes disableParallelToolUse via tool_choice")
@@ -442,6 +442,115 @@ struct AnthropicMessagesLanguageModelProviderOptionsRequestTests {
         #expect(json?["top_p"] == nil)
     }
 
+    @Test("sends thinking.display when set on adaptive thinking")
+    func sendsAdaptiveThinkingWithDisplay() async throws {
+        let capture = RequestCapture()
+        let responseData = try makeProviderOptionsTestResponseData(model: "claude-opus-4-7")
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: makeProviderOptionsTestHTTPResponse())
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-opus-4-7"),
+            config: makeProviderOptionsTestConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(options: .init(
+            prompt: providerOptionsTestPrompt,
+            providerOptions: [
+                "anthropic": [
+                    "thinking": .object([
+                        "type": .string("adaptive"),
+                        "display": .string("summarized"),
+                    ])
+                ]
+            ]
+        ))
+
+        let json = decodeRequestJSON(await capture.current())
+        if let thinking = json?["thinking"] as? [String: Any] {
+            #expect(thinking["type"] as? String == "adaptive")
+            #expect(thinking["display"] as? String == "summarized")
+        } else {
+            Issue.record("Expected thinking payload")
+        }
+    }
+
+    @Test("sends thinking.display when set on enabled thinking")
+    func sendsEnabledThinkingWithDisplay() async throws {
+        let capture = RequestCapture()
+        let responseData = try makeProviderOptionsTestResponseData(model: "claude-sonnet-4-5-20250929")
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: makeProviderOptionsTestHTTPResponse())
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-sonnet-4-5-20250929"),
+            config: makeProviderOptionsTestConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(options: .init(
+            prompt: providerOptionsTestPrompt,
+            providerOptions: [
+                "anthropic": [
+                    "thinking": .object([
+                        "type": .string("enabled"),
+                        "budgetTokens": .number(2048),
+                        "display": .string("omitted"),
+                    ])
+                ]
+            ]
+        ))
+
+        let json = decodeRequestJSON(await capture.current())
+        if let thinking = json?["thinking"] as? [String: Any] {
+            #expect(thinking["type"] as? String == "enabled")
+            #expect(thinking["budget_tokens"] as? Double == 2048)
+            #expect(thinking["display"] as? String == "omitted")
+        } else {
+            Issue.record("Expected thinking payload")
+        }
+    }
+
+    @Test("omits thinking.display when not set")
+    func omitsDisplayWhenNotSet() async throws {
+        let capture = RequestCapture()
+        let responseData = try makeProviderOptionsTestResponseData(model: "claude-sonnet-4-5-20250929")
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: makeProviderOptionsTestHTTPResponse())
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-sonnet-4-5-20250929"),
+            config: makeProviderOptionsTestConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(options: .init(
+            prompt: providerOptionsTestPrompt,
+            providerOptions: [
+                "anthropic": [
+                    "thinking": .object([
+                        "type": .string("adaptive")
+                    ])
+                ]
+            ]
+        ))
+
+        let json = decodeRequestJSON(await capture.current())
+        if let thinking = json?["thinking"] as? [String: Any] {
+            #expect(thinking["type"] as? String == "adaptive")
+            #expect(thinking["display"] == nil)
+        } else {
+            Issue.record("Expected thinking payload")
+        }
+    }
+
     @Test("sends speed=fast and fast-mode beta header")
     func sendsSpeedFast() async throws {
         let capture = RequestCapture()
@@ -532,7 +641,7 @@ struct AnthropicMessagesLanguageModelProviderOptionsRequestTests {
             Issue.record("Expected output_config payload")
         }
 
-        #expect(anthropicBetaSet(await capture.current()) == Set(["effort-2025-11-24"]))
+        #expect(anthropicBetaSet(await capture.current()) == nil)
     }
 
     @Test("sends compact_20260112 with trigger")
@@ -940,5 +1049,372 @@ struct AnthropicMessagesLanguageModelProviderOptionsRequestTests {
             let bodyStr = bodyData.flatMap { String(data: $0, encoding: .utf8) } ?? "nil"
             Issue.record("Expected top-level cache_control after cross-type round-trip. Body: \(bodyStr.prefix(500))")
         }
+    }
+
+    // MARK: - User-supplied anthropic-beta merging
+    //
+    // Mirrors `getBetasFromHeaders` and the typed `anthropicBeta` provider
+    // option from the upstream TypeScript SDK. User-supplied beta values
+    // (via `AnthropicProviderSettings.headers`, `CallSettings.headers`,
+    // or `AnthropicProviderOptions.anthropicBeta`) must be merged with
+    // the SDK's auto-collected betas into a single deduplicated
+    // `anthropic-beta` header, instead of overwriting them.
+
+    @Test("merges user-supplied anthropic-beta from CallSettings.headers with SDK betas")
+    func mergesCallSettingsBetaWithSDKBetas() async throws {
+        let capture = RequestCapture()
+        let responseData = try makeProviderOptionsTestResponseData(model: "claude-3-haiku-20240307")
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: makeProviderOptionsTestHTTPResponse())
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: makeProviderOptionsTestConfig(fetch: fetch)
+        )
+
+        // mcp-client-2025-04-04 is added by the SDK (mcpServers); the
+        // user's extended-cache-ttl beta must be unioned with it.
+        _ = try await model.doGenerate(options: .init(
+            prompt: providerOptionsTestPrompt,
+            headers: ["anthropic-beta": "extended-cache-ttl-2025-04-11"],
+            providerOptions: [
+                "anthropic": [
+                    "mcpServers": .array([
+                        .object([
+                            "type": .string("url"),
+                            "name": .string("echo"),
+                            "url": .string("https://example.com/mcp"),
+                        ])
+                    ])
+                ]
+            ]
+        ))
+
+        let betas = anthropicBetaSet(await capture.current())
+        #expect(betas == Set(["extended-cache-ttl-2025-04-11", "mcp-client-2025-04-04"]))
+    }
+
+    @Test("merges user-supplied anthropic-beta from provider settings.headers with SDK betas")
+    func mergesProviderSettingsBetaWithSDKBetas() async throws {
+        let capture = RequestCapture()
+        let responseData = try makeProviderOptionsTestResponseData(model: "claude-3-haiku-20240307")
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: makeProviderOptionsTestHTTPResponse())
+        }
+
+        // Add anthropic-beta to the provider's static headers (settings.headers).
+        let configHeaders = AnthropicMessagesConfig(
+            provider: "anthropic.messages",
+            baseURL: "https://api.anthropic.com/v1",
+            headers: { [
+                "x-api-key": "test-key",
+                "anthropic-version": "2023-06-01",
+                "anthropic-beta": "extended-cache-ttl-2025-04-11",
+            ] },
+            fetch: fetch,
+            supportedUrls: { [:] },
+            generateId: { "generated-id" }
+        )
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: configHeaders
+        )
+
+        _ = try await model.doGenerate(options: .init(
+            prompt: providerOptionsTestPrompt,
+            providerOptions: [
+                "anthropic": [
+                    "mcpServers": .array([
+                        .object([
+                            "type": .string("url"),
+                            "name": .string("settings-merge"),
+                            "url": .string("https://example.com/mcp"),
+                        ])
+                    ])
+                ]
+            ]
+        ))
+
+        let betas = anthropicBetaSet(await capture.current())
+        #expect(betas == Set(["extended-cache-ttl-2025-04-11", "mcp-client-2025-04-04"]))
+    }
+
+    @Test("merges anthropic-beta from both provider settings and CallSettings without legacy fine-grained-tool-streaming")
+    func mergesProviderSettingsAndCallSettingsBetas() async throws {
+        // Mirrors the upstream test
+        // `should merge custom anthropic-beta headers without legacy fine-grained-tool-streaming beta`.
+        // No tools and no provider options that add betas — only the
+        // user-supplied ones from settings.headers and CallSettings.headers
+        // should appear.
+        let capture = RequestCapture()
+        let responseData = try makeProviderOptionsTestResponseData(model: "claude-3-haiku-20240307")
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: makeProviderOptionsTestHTTPResponse())
+        }
+
+        let configHeaders = AnthropicMessagesConfig(
+            provider: "anthropic.messages",
+            baseURL: "https://api.anthropic.com/v1",
+            headers: { [
+                "x-api-key": "test-key",
+                "anthropic-version": "2023-06-01",
+                "anthropic-beta": "CONFIG-beta1,config-beta2",
+            ] },
+            fetch: fetch,
+            supportedUrls: { [:] },
+            generateId: { "generated-id" }
+        )
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: configHeaders
+        )
+
+        _ = try await model.doGenerate(options: .init(
+            prompt: providerOptionsTestPrompt,
+            headers: ["anthropic-beta": "REQUEST-beta1,request-beta2"]
+        ))
+
+        // All four entries are present and lowercased; no other betas
+        // are added because this request has no tools and no other
+        // provider options.
+        let betas = anthropicBetaSet(await capture.current())
+        #expect(betas == Set(["config-beta1", "config-beta2", "request-beta1", "request-beta2"]))
+    }
+
+    @Test("includes providerOptions.anthropic.anthropicBeta in anthropic-beta header")
+    func includesAnthropicBetaProviderOption() async throws {
+        let capture = RequestCapture()
+        let responseData = try makeProviderOptionsTestResponseData(model: "claude-3-haiku-20240307")
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: makeProviderOptionsTestHTTPResponse())
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: makeProviderOptionsTestConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(options: .init(
+            prompt: providerOptionsTestPrompt,
+            providerOptions: [
+                "anthropic": [
+                    "anthropicBeta": .array([
+                        .string("my-beta-2025-01-01"),
+                        .string("another-beta-2025-06-01"),
+                    ])
+                ]
+            ]
+        ))
+
+        let betas = anthropicBetaSet(await capture.current())
+        #expect(betas?.contains("my-beta-2025-01-01") == true)
+        #expect(betas?.contains("another-beta-2025-06-01") == true)
+    }
+
+    @Test("trims and lowercases anthropicBeta provider option entries")
+    func sanitizesAnthropicBetaProviderOptionEntries() async throws {
+        // Defensive: the typed `anthropicBeta` array on
+        // `AnthropicProviderOptions` flows directly into the
+        // `anthropic-beta` header. Values must be trimmed (CRLF defense)
+        // and lowercased (Anthropic treats beta names case-insensitively
+        // and the SDK normalizes header-string sources the same way).
+        // Empty entries — including those that become empty after
+        // trimming — must be dropped so they don't introduce stray
+        // commas in the final header value.
+        let capture = RequestCapture()
+        let responseData = try makeProviderOptionsTestResponseData(model: "claude-3-haiku-20240307")
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: makeProviderOptionsTestHTTPResponse())
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: makeProviderOptionsTestConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(options: .init(
+            prompt: providerOptionsTestPrompt,
+            providerOptions: [
+                "anthropic": [
+                    "anthropicBeta": .array([
+                        .string("  Mixed-Case-Beta-2025-01-01  "),
+                        .string(""),
+                        .string("   "),
+                    ])
+                ]
+            ]
+        ))
+
+        let betas = anthropicBetaSet(await capture.current())
+        #expect(betas == Set(["mixed-case-beta-2025-01-01"]))
+    }
+
+    @Test("deduplicates anthropic-beta entries across all sources")
+    func deduplicatesBetaEntries() async throws {
+        let capture = RequestCapture()
+        let responseData = try makeProviderOptionsTestResponseData(model: "claude-3-haiku-20240307")
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: makeProviderOptionsTestHTTPResponse())
+        }
+
+        let configHeaders = AnthropicMessagesConfig(
+            provider: "anthropic.messages",
+            baseURL: "https://api.anthropic.com/v1",
+            headers: { [
+                "x-api-key": "test-key",
+                "anthropic-version": "2023-06-01",
+                "anthropic-beta": "extended-cache-ttl-2025-04-11",
+            ] },
+            fetch: fetch,
+            supportedUrls: { [:] },
+            generateId: { "generated-id" }
+        )
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: configHeaders
+        )
+
+        _ = try await model.doGenerate(options: .init(
+            prompt: providerOptionsTestPrompt,
+            headers: ["anthropic-beta": "extended-cache-ttl-2025-04-11"],
+            providerOptions: [
+                "anthropic": [
+                    "anthropicBeta": .array([.string("extended-cache-ttl-2025-04-11")])
+                ]
+            ]
+        ))
+
+        let betas = anthropicBetaSet(await capture.current())
+        #expect(betas == Set(["extended-cache-ttl-2025-04-11"]))
+    }
+
+    // MARK: - eager_input_streaming (GA replacement for fine-grained-tool-streaming beta)
+
+    @Test("defaults to per-tool eager_input_streaming on streaming requests")
+    func defaultsEagerInputStreamingOnStream() async throws {
+        let capture = RequestCapture()
+
+        let ssePayloads = [
+            #"{"type":"message_start","message":{"id":"msg_01","type":"message","role":"assistant","model":"claude-3-haiku-20240307","stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":1,"output_tokens":1},"content":[]}}"#,
+            #"{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":1}}"#,
+            #"{"type":"message_stop"}"#,
+        ]
+        let sseBody = ssePayloads.map { "event: message\ndata: \($0)\n\n" }.joined()
+        let sseData = Data(sseBody.utf8)
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(sseData), urlResponse: makeProviderOptionsTestHTTPResponse())
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: makeProviderOptionsTestConfig(fetch: fetch)
+        )
+
+        let result = try await model.doStream(options: .init(
+            prompt: providerOptionsTestPrompt,
+            tools: [
+                .function(.init(
+                    name: "get_weather",
+                    inputSchema: .object([:]),
+                    description: "Get weather"
+                ))
+            ]
+        ))
+        for try await _ in result.stream {}
+
+        let json = decodeRequestJSON(await capture.current())
+        let tools = json?["tools"] as? [[String: Any]]
+        #expect(tools?.first?["eager_input_streaming"] as? Bool == true)
+        // No legacy beta header
+        #expect(anthropicBetaSet(await capture.current()) == nil)
+    }
+
+    @Test("does not add eager_input_streaming when toolStreaming is false")
+    func noEagerInputStreamingWhenOptOut() async throws {
+        let capture = RequestCapture()
+
+        let ssePayloads = [
+            #"{"type":"message_start","message":{"id":"msg_01","type":"message","role":"assistant","model":"claude-3-haiku-20240307","stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":1,"output_tokens":1},"content":[]}}"#,
+            #"{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":1}}"#,
+            #"{"type":"message_stop"}"#,
+        ]
+        let sseBody = ssePayloads.map { "event: message\ndata: \($0)\n\n" }.joined()
+        let sseData = Data(sseBody.utf8)
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(sseData), urlResponse: makeProviderOptionsTestHTTPResponse())
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: makeProviderOptionsTestConfig(fetch: fetch)
+        )
+
+        let result = try await model.doStream(options: .init(
+            prompt: providerOptionsTestPrompt,
+            tools: [
+                .function(.init(
+                    name: "get_weather",
+                    inputSchema: .object([:]),
+                    description: "Get weather"
+                ))
+            ],
+            providerOptions: ["anthropic": ["toolStreaming": .bool(false)]]
+        ))
+        for try await _ in result.stream {}
+
+        let json = decodeRequestJSON(await capture.current())
+        let tools = json?["tools"] as? [[String: Any]]
+        #expect(tools?.first?["eager_input_streaming"] == nil)
+    }
+
+    @Test("does not default eager_input_streaming on non-streaming (generate) calls")
+    func noEagerInputStreamingOnGenerate() async throws {
+        let capture = RequestCapture()
+        let responseData = try makeProviderOptionsTestResponseData(model: "claude-3-haiku-20240307")
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: makeProviderOptionsTestHTTPResponse())
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-3-haiku-20240307"),
+            config: makeProviderOptionsTestConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(options: .init(
+            prompt: providerOptionsTestPrompt,
+            tools: [
+                .function(.init(
+                    name: "get_weather",
+                    inputSchema: .object([:]),
+                    description: "Get weather"
+                ))
+            ]
+        ))
+
+        let json = decodeRequestJSON(await capture.current())
+        let tools = json?["tools"] as? [[String: Any]]
+        #expect(tools?.first?["eager_input_streaming"] == nil)
     }
 }

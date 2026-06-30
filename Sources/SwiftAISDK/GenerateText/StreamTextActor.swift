@@ -111,6 +111,13 @@ actor StreamTextActor {
     // This mirrors the upstream `stopStream` hook used by transforms.
     func requestStop() async {
         externalStopRequested = true
+
+        // Cancel all in-flight tool tasks so cancellation propagates into
+        // tool execute closures (e.g. via withTaskCancellationHandler)
+        for (_, task) in inFlightToolTasks {
+            task.cancel()
+        }
+
         // Emit `.abort` immediately to notify consumers, but keep streams open
         // until the provider finishes so we can still publish a final `.finish`.
         if !terminated && !abortEmitted {

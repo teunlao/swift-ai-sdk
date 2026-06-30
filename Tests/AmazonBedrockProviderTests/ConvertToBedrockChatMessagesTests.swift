@@ -183,4 +183,76 @@ struct ConvertToBedrockChatMessagesTests {
             ]),
         ])
     }
+
+    @Test("preserves reasoning content without Bedrock metadata")
+    func preservesReasoningContentWithoutMetadata() async throws {
+        let prompt: LanguageModelV3Prompt = [
+            .user(content: [.text(.init(text: "Explain your reasoning"))], providerOptions: nil),
+            .assistant(
+                content: [
+                    .reasoning(.init(text: "My reasoning"))
+                ],
+                providerOptions: nil
+            )
+        ]
+
+        let result = try await convertToBedrockChatMessages(prompt)
+        #expect(result.messages == [
+            .object([
+                "role": .string("user"),
+                "content": .array([.object(["text": .string("Explain your reasoning")])])
+            ]),
+            .object([
+                "role": .string("assistant"),
+                "content": .array([
+                    .object([
+                        "reasoningContent": .object([
+                            "reasoningText": .object([
+                                "text": .string("My reasoning"),
+                            ])
+                        ])
+                    ])
+                ])
+            ]),
+        ])
+    }
+
+    @Test("does not trim reasoning text when Bedrock signature is present")
+    func doesNotTrimReasoningTextWhenSignaturePresent() async throws {
+        let prompt: LanguageModelV3Prompt = [
+            .user(content: [.text(.init(text: "Explain your reasoning"))], providerOptions: nil),
+            .assistant(
+                content: [
+                    .reasoning(.init(
+                        text: "Reasoning with trailing spaces    ",
+                        providerOptions: [
+                            "bedrock": ["signature": .string("test-signature")]
+                        ]
+                    ))
+                ],
+                providerOptions: nil
+            )
+        ]
+
+        let result = try await convertToBedrockChatMessages(prompt)
+        #expect(result.messages == [
+            .object([
+                "role": .string("user"),
+                "content": .array([.object(["text": .string("Explain your reasoning")])])
+            ]),
+            .object([
+                "role": .string("assistant"),
+                "content": .array([
+                    .object([
+                        "reasoningContent": .object([
+                            "reasoningText": .object([
+                                "text": .string("Reasoning with trailing spaces    "),
+                                "signature": .string("test-signature"),
+                            ])
+                        ])
+                    ])
+                ])
+            ]),
+        ])
+    }
 }

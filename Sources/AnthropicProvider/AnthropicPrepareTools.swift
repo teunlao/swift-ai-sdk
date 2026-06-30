@@ -56,7 +56,8 @@ public func prepareAnthropicTools(
     toolChoice: LanguageModelV3ToolChoice?,
     disableParallelToolUse: Bool?,
     supportsStructuredOutput: Bool = false,
-    cacheControlValidator: CacheControlValidator? = nil
+    cacheControlValidator: CacheControlValidator? = nil,
+    defaultEagerInputStreaming: Bool = false
 ) async throws -> AnthropicPreparedTools {
     guard let tools, !tools.isEmpty else {
         return AnthropicPreparedTools(tools: nil, toolChoice: nil, warnings: [], betas: [])
@@ -109,6 +110,20 @@ public func prepareAnthropicTools(
                         betas.insert("advanced-tool-use-2025-11-20")
                     }
                 }
+            }
+
+            // eager_input_streaming is only supported on custom (function) tools.
+            // Fall back to the model-level default when the tool doesn't set it.
+            let eagerInputStreaming: Bool? = {
+                if let anthropicOptions = functionTool.providerOptions?["anthropic"],
+                   let value = anthropicOptions["eagerInputStreaming"],
+                   case .bool(let flag) = value {
+                    return flag
+                }
+                return defaultEagerInputStreaming ? true : nil
+            }()
+            if let eagerInputStreaming {
+                payload["eager_input_streaming"] = .bool(eagerInputStreaming)
             }
 
             if let inputExamples = functionTool.inputExamples {
