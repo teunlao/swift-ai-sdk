@@ -19,13 +19,68 @@ const FRAMEWORK_PACKAGES = new Set(["angular", "react", "rsc", "svelte", "vue"])
 const TOOLING_PACKAGES = new Set([
   "codemod",
   "devtools",
+  "harness",
+  "harness-claude-code",
+  "harness-codex",
+  "harness-deepagents",
+  "harness-opencode",
+  "harness-pi",
   "langchain",
   "llamaindex",
   "mcp",
   "otel",
+  "policy-opa",
+  "sandbox-just-bash",
+  "sandbox-vercel",
   "test-server",
+  "tui",
   "valibot",
   "workflow",
+  "workflow-harness",
+]);
+
+const PROVIDER_PACKAGES = new Set([
+  "alibaba",
+  "amazon-bedrock",
+  "anthropic",
+  "anthropic-aws",
+  "assemblyai",
+  "azure",
+  "baseten",
+  "black-forest-labs",
+  "bytedance",
+  "cerebras",
+  "cohere",
+  "deepgram",
+  "deepinfra",
+  "deepseek",
+  "elevenlabs",
+  "fal",
+  "fireworks",
+  "gateway",
+  "gladia",
+  "google",
+  "google-vertex",
+  "groq",
+  "huggingface",
+  "hume",
+  "klingai",
+  "lmnt",
+  "luma",
+  "mistral",
+  "moonshotai",
+  "open-responses",
+  "openai",
+  "openai-compatible",
+  "perplexity",
+  "prodia",
+  "quiverai",
+  "replicate",
+  "revai",
+  "togetherai",
+  "vercel",
+  "voyage",
+  "xai",
 ]);
 
 const TARGET_OVERRIDES = {
@@ -35,6 +90,7 @@ const TARGET_OVERRIDES = {
   alibaba: "AlibabaProvider",
   "amazon-bedrock": "AmazonBedrockProvider",
   anthropic: "AnthropicProvider",
+  "anthropic-aws": "AnthropicAWSProvider",
   assemblyai: "AssemblyAIProvider",
   azure: "AzureProvider",
   baseten: "BasetenProvider",
@@ -65,10 +121,12 @@ const TARGET_OVERRIDES = {
   "openai-compatible": "OpenAICompatibleProvider",
   perplexity: "PerplexityProvider",
   prodia: "ProdiaProvider",
+  quiverai: "QuiverAIProvider",
   replicate: "ReplicateProvider",
   revai: "RevAIProvider",
   togetherai: "TogetherAIProvider",
   vercel: "VercelProvider",
+  voyage: "VoyageProvider",
   xai: "XAIProvider",
 };
 
@@ -200,6 +258,9 @@ function classifyArea(packageName, swiftTargets) {
   if (TOOLING_PACKAGES.has(packageName)) {
     return "tooling";
   }
+  if (PROVIDER_PACKAGES.has(packageName)) {
+    return "provider";
+  }
   if (swiftTargets.length > 0 && swiftTargets.some((target) => target.endsWith("Provider"))) {
     return "provider";
   }
@@ -210,7 +271,7 @@ function priorityFor(packageName, area, swiftTargets) {
   if (P0.has(packageName)) {
     return "P0";
   }
-  if (area === "provider" && swiftTargets.length > 0) {
+  if (area === "provider") {
     return "P1";
   }
   if (area === "framework" || area === "unknown") {
@@ -263,7 +324,6 @@ function auditedCommitFor(repoRoot, trackingPath) {
   const text = readText(path.join(repoRoot, trackingPath));
   return (
     matchFirst(text, /Audited against upstream commit:\s*`([0-9a-f]+)`/) ||
-    matchFirst(text, /against upstream [`"]?([0-9a-f]{12,40})[`"]?/) ||
     matchFirst(text, /refreshed upstream [`"]?([0-9a-f]{12,40})[`"]?/)
   );
 }
@@ -292,6 +352,10 @@ function statusFor({ area, swiftTargets, trackingPath, auditedCommit, pinnedComm
   }
 
   if (!trackingPath) {
+    return "mapped";
+  }
+
+  if (!auditedCommit) {
     return "mapped";
   }
 
@@ -382,7 +446,9 @@ function notesFor({ area, swiftTargets, trackingPath }) {
     return "JS/upstream-only unless explicitly targeted";
   }
   if (swiftTargets.length === 0) {
-    return "No Swift owner detected";
+    return area === "provider"
+      ? "Upstream provider package; no Swift owner detected"
+      : "No Swift owner detected";
   }
   if (!trackingPath) {
     return "Swift owner detected; no durable tracking page found";

@@ -5,10 +5,10 @@
 
 ## Current pinned reference
 
-- Upstream commit: `4891db8bfc583d3767831dac83439ac190c93cb0`
-- Commit subject: `Version Packages (beta) (#14488)`
-- Commit date: `2026-04-15`
-- Last refreshed (local): `2026-04-15`
+- Upstream commit: `85a80fc6e71558717899e30c9f1fc0e9eb7d733d`
+- Commit subject: `fix(amazon-bedrock): send correct bedrockRerankingConfiguration key for reranking (#16501)`
+- Commit date: `2026-06-30`
+- Last refreshed (local): `2026-06-30`
 
 ## Refresh history
 
@@ -22,3 +22,4 @@
 - `2026-03-30`: Pinned at `0a56c9eedb1b421f85b6b81eda9cd01c98995051`
 - `2026-03-31`: Pinned at `b0c59e850b3d51db40a0816c562da52c63ceaba2`
 - `2026-04-15`: Pinned at `4891db8bfc583d3767831dac83439ac190c93cb0`
+- `2026-06-30`: Pinned at `85a80fc6e71558717899e30c9f1fc0e9eb7d733d`

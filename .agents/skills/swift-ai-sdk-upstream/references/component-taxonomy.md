@@ -20,7 +20,7 @@ definitions.
 | Priority | Meaning |
 | --- | --- |
 | `P0` | Must stay close to upstream: `ai`, `provider`, `provider-utils`, `openai`, `openai-compatible`, `anthropic`, `google`, `google-vertex`, `gateway`. |
-| `P1` | Swift-supported provider package with a real Swift target. Audit after P0 or when touched by upstream. |
+| `P1` | Runtime provider package. If Swift has a target, audit after P0 or when touched by upstream. If Swift has no target, track as missing provider surface. |
 | `P2` | Docs, examples, framework-only packages, and integrations that are JS-specific or lower urgency for Swift runtime parity. |
 | `P3` | Upstream tooling/internal packages that are usually not ported unless they affect tests, fixtures, or release process. |
 
@@ -59,10 +59,53 @@ definitions.
 | `google-vertex` | `Sources/GoogleVertexProvider` |
 | `gateway` | `Sources/GatewayProvider` |
 
+## P1 Provider Components
+
+These are upstream runtime provider packages that should be visible in the
+component catalog even when Swift does not yet have an owner target:
+
+- `alibaba`
+- `amazon-bedrock`
+- `anthropic`
+- `anthropic-aws`
+- `assemblyai`
+- `azure`
+- `baseten`
+- `black-forest-labs`
+- `bytedance`
+- `cerebras`
+- `cohere`
+- `deepgram`
+- `deepinfra`
+- `deepseek`
+- `elevenlabs`
+- `fal`
+- `fireworks`
+- `gladia`
+- `groq`
+- `huggingface`
+- `hume`
+- `klingai`
+- `lmnt`
+- `luma`
+- `mistral`
+- `moonshotai`
+- `open-responses`
+- `perplexity`
+- `prodia`
+- `quiverai`
+- `replicate`
+- `revai`
+- `togetherai`
+- `vercel`
+- `voyage`
+- `xai`
+
 ## Non-Runtime Packages
 
 These usually become `P2` or `P3` unless a task explicitly targets them:
 
 - Framework/UI: `react`, `vue`, `svelte`, `angular`, `rsc`.
 - Ecosystem adapters: `langchain`, `llamaindex`, `mcp`, `otel`, `valibot`.
-- Tooling/internal: `codemod`, `devtools`, `test-server`, `workflow`.
+- Tooling/internal: `codemod`, `devtools`, `harness*`, `policy-opa`, `sandbox-*`,
+  `test-server`, `tui`, `workflow`, `workflow-harness`.

@@ -13,6 +13,60 @@ Rules:
 2) Core API parity only when blocked by providers
 3) Docs updates only after behavior parity is green
 
+## Current upstream intake snapshot
+
+### 2026-06-30: `ai@7.0.8` / upstream `85a80fc6e71558717899e30c9f1fc0e9eb7d733d`
+
+Scope: `intake:latest-main`.
+
+Evidence:
+- `external/vercel-ai-sdk` refreshed from upstream `main` to `85a80fc6e71558717899e30c9f1fc0e9eb7d733d`.
+- `npm view ai version time.modified --json` reported `7.0.8`, modified `2026-06-30T04:05:57.112Z`.
+- Generated local artifacts:
+  - `.upstream/current/component-catalog.md`
+  - `.upstream/refresh-2026-06-30/package-diff.md`
+  - `.upstream/refresh-2026-06-30/work-queue.md`
+
+Important interpretation:
+- No component should be treated as `verified` against the current baseline until
+  it is re-audited against `85a80fc6e71558717899e30c9f1fc0e9eb7d733d`.
+- The previous baseline was `4891db8bfc583d3767831dac83439ac190c93cb0`
+  from 2026-04-15. The current upstream package line is major-version newer
+  across core and most providers (`ai` 7.x, `provider` 4.x,
+  `provider-utils` 5.x, `openai` 4.x, `anthropic` 4.x).
+- This pass refreshed intake artifacts only. It did not claim runtime parity,
+  port behavior, or update provider-specific verification checklists.
+
+Component scan summary:
+
+| Priority | Status | Count | Components |
+| --- | --- | ---: | --- |
+| P0 | stale | 8 | `ai`, `provider`, `provider-utils`, `anthropic`, `gateway`, `google`, `google-vertex`, `openai` |
+| P0 | mapped | 1 | `openai-compatible` has an intake tracking page but no audited commit |
+| P1 | stale | 29 | Existing Swift provider targets with old audited commits |
+| P1 | mapped | 3 | `baseten`, `moonshotai`, `open-responses` have Swift owners and intake tracking pages but no audited commit |
+| P1 | unknown | 3 | `anthropic-aws`, `quiverai`, `voyage` are upstream provider packages with intake tracking pages but no Swift owner target |
+| P2 | n/a | 5 | Framework packages: `angular`, `react`, `rsc`, `svelte`, `vue` |
+| P3 | n/a | 20 | Upstream tooling/internal packages, including new `harness*`, `sandbox-*`, `policy-opa`, `tui`, `workflow-harness` |
+
+Added upstream packages since the previous catalog:
+- Runtime provider surface: `anthropic-aws`, `quiverai`, `voyage`.
+- Tooling/internal surface: `harness`, `harness-claude-code`,
+  `harness-codex`, `harness-deepagents`, `harness-opencode`, `harness-pi`,
+  `policy-opa`, `sandbox-just-bash`, `sandbox-vercel`, `tui`,
+  `workflow-harness`.
+
+Recommended audit order:
+1) Re-audit P0 core contracts first: `provider`, `provider-utils`, then `ai`.
+2) Audit `openai-compatible`, because it is P0 and currently only `mapped`.
+3) Re-audit P0 providers by blast radius: `openai`, `anthropic`, `gateway`,
+   `google`, `google-vertex`.
+4) Triage missing P1 provider surface: decide whether Swift should add
+   `anthropic-aws`, `voyage`, and `quiverai`, or mark them intentionally out of
+   scope.
+5) After P0 contracts stabilize, sweep stale P1 providers in provider-first
+   vertical slices.
+
 ## How to track a provider
 
 1) Copy `upstream/providers/_template.md` → `upstream/providers/<provider>.md`
