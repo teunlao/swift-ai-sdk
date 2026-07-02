@@ -11,6 +11,7 @@ public struct OpenAICompatibleProviderSettings: Sendable {
     public var fetch: FetchFunction?
     public var includeUsage: Bool
     public var supportsStructuredOutputs: Bool
+    public var supportedUrls: (@Sendable () async throws -> [String: [NSRegularExpression]])?
     public var transformRequestBody: (@Sendable (_ body: [String: JSONValue]) -> [String: JSONValue])?
     public var metadataExtractor: OpenAICompatibleMetadataExtractor?
 
@@ -23,6 +24,7 @@ public struct OpenAICompatibleProviderSettings: Sendable {
         fetch: FetchFunction? = nil,
         includeUsage: Bool = false,
         supportsStructuredOutputs: Bool = false,
+        supportedUrls: (@Sendable () async throws -> [String: [NSRegularExpression]])? = nil,
         transformRequestBody: (@Sendable (_ body: [String: JSONValue]) -> [String: JSONValue])? = nil,
         metadataExtractor: OpenAICompatibleMetadataExtractor? = nil
     ) {
@@ -34,6 +36,7 @@ public struct OpenAICompatibleProviderSettings: Sendable {
         self.fetch = fetch
         self.includeUsage = includeUsage
         self.supportsStructuredOutputs = supportsStructuredOutputs
+        self.supportedUrls = supportedUrls
         self.transformRequestBody = transformRequestBody
         self.metadataExtractor = metadataExtractor
     }
@@ -81,9 +84,62 @@ public final class OpenAICompatibleProvider: ProviderV3 {
     }
 }
 
-public func createOpenAICompatibleProvider(
+public final class OpenAICompatibleProviderV4: ProviderV4 {
+    private let languageFactory: @Sendable (OpenAICompatibleChatModelId) -> any LanguageModelV4
+    private let chatFactory: @Sendable (OpenAICompatibleChatModelId) -> any LanguageModelV4
+    private let completionFactory: @Sendable (OpenAICompatibleCompletionModelId) -> any LanguageModelV4
+    private let embeddingFactory: @Sendable (OpenAICompatibleEmbeddingModelId) -> any EmbeddingModelV4
+    private let imageFactory: @Sendable (OpenAICompatibleImageModelId) -> any ImageModelV4
+
+    public init(
+        languageFactory: @escaping @Sendable (OpenAICompatibleChatModelId) -> any LanguageModelV4,
+        chatFactory: @escaping @Sendable (OpenAICompatibleChatModelId) -> any LanguageModelV4,
+        completionFactory: @escaping @Sendable (OpenAICompatibleCompletionModelId) -> any LanguageModelV4,
+        embeddingFactory: @escaping @Sendable (OpenAICompatibleEmbeddingModelId) -> any EmbeddingModelV4,
+        imageFactory: @escaping @Sendable (OpenAICompatibleImageModelId) -> any ImageModelV4
+    ) {
+        self.languageFactory = languageFactory
+        self.chatFactory = chatFactory
+        self.completionFactory = completionFactory
+        self.embeddingFactory = embeddingFactory
+        self.imageFactory = imageFactory
+    }
+
+    public func languageModel(modelId: String) throws -> any LanguageModelV4 {
+        languageFactory(OpenAICompatibleChatModelId(rawValue: modelId))
+    }
+
+    public func chatModel(modelId: String) throws -> any LanguageModelV4 {
+        chatFactory(OpenAICompatibleChatModelId(rawValue: modelId))
+    }
+
+    public func completionModel(modelId: String) throws -> any LanguageModelV4 {
+        completionFactory(OpenAICompatibleCompletionModelId(rawValue: modelId))
+    }
+
+    public func embeddingModel(modelId: String) throws -> any EmbeddingModelV4 {
+        embeddingFactory(OpenAICompatibleEmbeddingModelId(rawValue: modelId))
+    }
+
+    public func textEmbeddingModel(modelId: String) throws -> any EmbeddingModelV4 {
+        embeddingFactory(OpenAICompatibleEmbeddingModelId(rawValue: modelId))
+    }
+
+    public func imageModel(modelId: String) throws -> any ImageModelV4 {
+        imageFactory(OpenAICompatibleImageModelId(rawValue: modelId))
+    }
+}
+
+private struct OpenAICompatibleModelFactories: Sendable {
+    let languageFactory: @Sendable (OpenAICompatibleChatModelId) -> OpenAICompatibleChatLanguageModel
+    let completionFactory: @Sendable (OpenAICompatibleCompletionModelId) -> OpenAICompatibleCompletionLanguageModel
+    let embeddingFactory: @Sendable (OpenAICompatibleEmbeddingModelId) -> OpenAICompatibleEmbeddingModel
+    let imageFactory: @Sendable (OpenAICompatibleImageModelId) -> OpenAICompatibleImageModel
+}
+
+private func makeOpenAICompatibleModelFactories(
     settings: OpenAICompatibleProviderSettings
-) -> OpenAICompatibleProvider {
+) -> OpenAICompatibleModelFactories {
     let baseURL = withoutTrailingSlash(settings.baseURL) ?? settings.baseURL
     let providerName = settings.name
 
@@ -122,6 +178,7 @@ public func createOpenAICompatibleProvider(
     let commonFetch = settings.fetch
     let includeUsage = settings.includeUsage
     let supportsStructuredOutputs = settings.supportsStructuredOutputs
+    let supportedUrls = settings.supportedUrls
     let transformRequestBody = settings.transformRequestBody
     let metadataExtractor = settings.metadataExtractor
 
@@ -139,6 +196,7 @@ public func createOpenAICompatibleProvider(
                 errorConfiguration: errorConfiguration,
                 metadataExtractor: metadataExtractor,
                 supportsStructuredOutputs: supportsStructuredOutputs,
+                supportedUrls: supportedUrls,
                 transformRequestBody: transformRequestBody
             )
         )
@@ -184,11 +242,38 @@ public func createOpenAICompatibleProvider(
         )
     }
 
-    return OpenAICompatibleProvider(
+    return OpenAICompatibleModelFactories(
         languageFactory: languageFactory,
-        chatFactory: languageFactory,
         completionFactory: completionFactory,
         embeddingFactory: embeddingFactory,
         imageFactory: imageFactory
+    )
+}
+
+public func createOpenAICompatible(
+    settings: OpenAICompatibleProviderSettings
+) -> OpenAICompatibleProviderV4 {
+    let factories = makeOpenAICompatibleModelFactories(settings: settings)
+
+    return OpenAICompatibleProviderV4(
+        languageFactory: { OpenAICompatibleLanguageModelV4Adapter(wrapping: factories.languageFactory($0)) },
+        chatFactory: { OpenAICompatibleLanguageModelV4Adapter(wrapping: factories.languageFactory($0)) },
+        completionFactory: { OpenAICompatibleLanguageModelV4Adapter(wrapping: factories.completionFactory($0)) },
+        embeddingFactory: { OpenAICompatibleEmbeddingModelV4Adapter(wrapping: factories.embeddingFactory($0)) },
+        imageFactory: { OpenAICompatibleImageModelV4Adapter(wrapping: factories.imageFactory($0)) }
+    )
+}
+
+public func createOpenAICompatibleProvider(
+    settings: OpenAICompatibleProviderSettings
+) -> OpenAICompatibleProvider {
+    let factories = makeOpenAICompatibleModelFactories(settings: settings)
+
+    return OpenAICompatibleProvider(
+        languageFactory: factories.languageFactory,
+        chatFactory: factories.languageFactory,
+        completionFactory: factories.completionFactory,
+        embeddingFactory: factories.embeddingFactory,
+        imageFactory: factories.imageFactory
     )
 }
