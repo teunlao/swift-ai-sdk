@@ -34,7 +34,7 @@ public final class AnthropicSkills: SkillsV4 {
                 name: "files[]",
                 filename: file.path,
                 contentType: nil,
-                data: try toData(file.content)
+                data: try toData(file.data)
             )
         }
 
@@ -106,6 +106,8 @@ public final class AnthropicSkills: SkillsV4 {
             return data
         case .base64(let string):
             return try convertBase64ToData(string)
+        case .text(let text):
+            return Data(text.utf8)
         }
     }
 }

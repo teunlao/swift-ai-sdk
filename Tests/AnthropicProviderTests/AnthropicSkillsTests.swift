@@ -133,4 +133,39 @@ struct AnthropicSkillsTests {
         #expect(versionHeaders["anthropic-beta"] == "skills-2025-10-02")
         #expect(versionHeaders["Content-Type"] == nil)
     }
+
+    @Test("uploadSkill accepts upstream data initializer and text file data")
+    func uploadSkillAcceptsDataInitializerAndTextFileData() async throws {
+        let capture = URLRequestCapture()
+        let provider = createAnthropicProvider(settings: .init(
+            baseURL: "https://api.anthropic.com/v1",
+            apiKey: "test-api-key",
+            fetch: makeFetch(capture: capture)
+        ))
+
+        _ = try await provider.skills().uploadSkill(
+            options: SkillsV4UploadSkillCallOptions(
+                files: [
+                    SkillsV4File(
+                        path: "README.md",
+                        data: .text("# Skill\n")
+                    )
+                ]
+            )
+        )
+
+        guard let createRequest = await capture.first(),
+              let contentType = createRequest.value(forHTTPHeaderField: "Content-Type"),
+              let boundary = extractBoundary(from: contentType),
+              let body = createRequest.httpBody else {
+            Issue.record("Missing skill upload request")
+            return
+        }
+
+        let parts = parseMultipart(body, boundary: boundary)
+        let filePart = parts.first { multipartName($0) == "files[]" }
+
+        #expect(multipartFilename(filePart!) == "README.md")
+        #expect(String(data: filePart?.body ?? Data(), encoding: .utf8) == "# Skill\n")
+    }
 }

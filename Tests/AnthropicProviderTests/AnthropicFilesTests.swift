@@ -111,4 +111,36 @@ struct AnthropicFilesTests {
         #expect(result.providerMetadata?["anthropic"]?["createdAt"] == .string("2025-04-14T12:00:00Z"))
         #expect(result.providerMetadata?["anthropic"]?["downloadable"] == .bool(true))
     }
+
+    @Test("uploadFile accepts upstream text data variant")
+    func uploadFileAcceptsTextDataVariant() async throws {
+        let capture = URLRequestCapture()
+        let provider = createAnthropicProvider(settings: .init(
+            baseURL: "https://api.anthropic.com/v1",
+            apiKey: "test-api-key",
+            fetch: makeFetch(capture: capture)
+        ))
+
+        _ = try await provider.files().uploadFile(
+            options: .init(
+                data: .text("plain text fixture"),
+                mediaType: "text/plain",
+                filename: "fixture.txt"
+            )
+        )
+
+        guard let request = await capture.first(),
+              let contentType = request.value(forHTTPHeaderField: "Content-Type"),
+              let boundary = extractBoundary(from: contentType),
+              let body = request.httpBody else {
+            Issue.record("Missing multipart body")
+            return
+        }
+
+        let parts = parseMultipart(body, boundary: boundary)
+        let filePart = parts.first { multipartName($0) == "file" }
+
+        #expect(multipartFilename(filePart!) == "fixture.txt")
+        #expect(String(data: filePart?.body ?? Data(), encoding: .utf8) == "plain text fixture")
+    }
 }

@@ -121,6 +121,8 @@ public final class AnthropicFiles: FilesV4 {
             return data
         case .base64(let string):
             return try convertBase64ToData(string)
+        case .text(let text):
+            return Data(text.utf8)
         }
     }
 }
