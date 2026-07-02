@@ -42,7 +42,7 @@ struct GenerateImageTests {
 
     private func createMockResponse(
         images: TestImages,
-        warnings: [SharedV3Warning] = [],
+        warnings: [ImageGenerationWarning] = [],
         timestamp: Date? = nil,
         modelId: String? = nil,
         providerMetadata: ImageModelV3ProviderMetadata? = nil,
@@ -70,7 +70,7 @@ struct GenerateImageTests {
 
         return ImageModelV3GenerateResult(
             images: generatedImages,
-            warnings: warnings,
+            warnings: warnings.map(convertImageGenerationWarningToV3),
             providerMetadata: metadata,
             response: ImageModelV3ResponseInfo(
                 timestamp: timestamp ?? Date(),
@@ -79,6 +79,60 @@ struct GenerateImageTests {
             ),
             usage: usage
         )
+    }
+
+    private func createMockResponseV4(
+        images: TestImages,
+        warnings: [ImageGenerationWarning] = [],
+        timestamp: Date? = nil,
+        modelId: String? = nil,
+        providerMetadata: ImageModelV4ProviderMetadata? = nil,
+        usage: ImageModelV4Usage? = nil,
+        headers: [String: String]? = nil
+    ) -> ImageModelV4GenerateResult {
+        let generatedImages: ImageModelV4GeneratedImages
+        let imageCount: Int
+
+        switch images {
+        case .base64(let values):
+            generatedImages = .base64(values)
+            imageCount = values.count
+        case .data(let values):
+            generatedImages = .binary(values)
+            imageCount = values.count
+        }
+
+        let metadata = providerMetadata ?? [
+            "testProvider": ImageModelV4ProviderMetadataValue(
+                images: Array(repeating: .null, count: imageCount),
+                additionalData: nil
+            )
+        ]
+
+        return ImageModelV4GenerateResult(
+            images: generatedImages,
+            warnings: warnings,
+            providerMetadata: metadata,
+            response: ImageModelV4ResponseInfo(
+                timestamp: timestamp ?? Date(),
+                modelId: modelId ?? "test-model-id",
+                headers: headers
+            ),
+            usage: usage
+        )
+    }
+
+    private func convertImageGenerationWarningToV3(_ warning: ImageGenerationWarning) -> SharedV3Warning {
+        switch warning {
+        case let .unsupported(feature, details):
+            return .unsupported(feature: feature, details: details)
+        case let .compatibility(feature, details):
+            return .compatibility(feature: feature, details: details)
+        case .deprecated(let setting, let message):
+            return .other(message: "The setting \"\(setting)\" is deprecated - \(message)")
+        case .other(let message):
+            return .other(message: message)
+        }
     }
 
     private func resetWarningHooks() {
@@ -149,6 +203,101 @@ struct GenerateImageTests {
         let userAgentValue = headers["user-agent"] ?? ""
         let expectedUserAgent: String = "ai/" + SwiftAISDK.VERSION
         #expect(userAgentValue == expectedUserAgent)
+    }
+
+    @Test("should send V4 args directly to doGenerate")
+    func sendsV4ArgsDirectlyToDoGenerate() async throws {
+        let optionsBox = SingleValueBox<ImageModelV4CallOptions>()
+        let abortSignal: @Sendable () -> Bool = { false }
+        let providerOptions: ProviderOptions = [
+            "mock-provider": [
+                "style": .string("vivid")
+            ]
+        ]
+        let expectedImageData = try convertBase64ToData(pngBase64)
+        let expectedFile: ImageModelV4File = .file(
+            mediaType: "image/png",
+            data: .binary(expectedImageData),
+            providerOptions: nil
+        )
+        let expectedWarning: ImageGenerationWarning = .deprecated(
+            setting: "size",
+            message: "Use providerOptions instead"
+        )
+
+        let result = try await generateImage(
+            model: MockImageModelV4(
+                doGenerate: { options in
+                    await optionsBox.set(options)
+                    return self.createMockResponseV4(
+                        images: .base64([self.pngBase64]),
+                        warnings: [expectedWarning],
+                        usage: ImageModelV4Usage(
+                            inputTokens: 1,
+                            outputTokens: 2,
+                            totalTokens: 3
+                        )
+                    )
+                }
+            ),
+            prompt: .imageEditing(
+                images: [.string(pngBase64)],
+                text: prompt,
+                mask: .string(pngBase64)
+            ),
+            size: "1024x1024",
+            aspectRatio: "16:9",
+            seed: 12345,
+            providerOptions: providerOptions,
+            abortSignal: abortSignal,
+            headers: [
+                "custom-request-header": "request-header-value"
+            ]
+        )
+
+        let options = await optionsBox.wait()
+
+        #expect(options.n == 1)
+        #expect(options.prompt == prompt)
+        #expect(options.size == "1024x1024")
+        #expect(options.aspectRatio == "16:9")
+        #expect(options.seed == 12345)
+        #expect(options.abortSignal?() == false)
+        #expect(options.files == [expectedFile])
+        #expect(options.mask == expectedFile)
+        #expect(options.providerOptions?["mock-provider"]?["style"] == .string("vivid"))
+        #expect(options.headers?["custom-request-header"] == "request-header-value")
+        #expect(options.headers?["user-agent"] == "ai/" + SwiftAISDK.VERSION)
+        #expect(result.warnings == [expectedWarning])
+        #expect(result.usage == ImageModelV4Usage(inputTokens: 1, outputTokens: 2, totalTokens: 3))
+    }
+
+    @Test("should resolve string image model IDs through V4 global provider")
+    func resolvesStringImageModelThroughV4GlobalProvider() async throws {
+        let provider = customProviderV4(
+            imageModels: [
+                "image-model": MockImageModelV4(
+                    provider: "v4-provider",
+                    modelId: "resolved-image-model",
+                    doGenerate: { _ in
+                        self.createMockResponseV4(
+                            images: .base64([self.pngBase64]),
+                            modelId: "resolved-image-model"
+                        )
+                    }
+                )
+            ]
+        )
+
+        let result = try await withGlobalProviderV4(provider, operation: {
+            try await generateImage(
+                model: .string("image-model"),
+                prompt: prompt
+            )
+        })
+
+        #expect(result.image.base64 == pngBase64)
+        #expect(result.responses.first?.modelId == "resolved-image-model")
     }
 
     @Test("should return warnings")

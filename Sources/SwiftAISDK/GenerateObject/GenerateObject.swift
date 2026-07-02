@@ -17,7 +17,7 @@ public func generateObject<ResultValue, PartialValue, ElementStream>(
     internalOptions _internal: GenerateObjectInternalOptions = GenerateObjectInternalOptions(),
     settings: CallSettings = CallSettings()
 ) async throws -> GenerateObjectResult<ResultValue> {
-    let resolvedModel = try resolveLanguageModel(modelArg)
+    let resolvedModel = try resolveLanguageModelV4(modelArg)
 
     try validateObjectGenerationInput(
         output: output.kind,
@@ -46,7 +46,8 @@ public func generateObject<ResultValue, PartialValue, ElementStream>(
         presencePenalty: settings.presencePenalty,
         frequencyPenalty: settings.frequencyPenalty,
         stopSequences: settings.stopSequences,
-        seed: settings.seed
+        seed: settings.seed,
+        reasoning: settings.reasoning
     )
 
     let headersWithUserAgent = withUserAgentSuffix(
@@ -94,7 +95,7 @@ public func generateObject<ResultValue, PartialValue, ElementStream>(
         ) { rootSpan in
             let standardizedPrompt = try standardizePrompt(promptInput)
 
-            let promptMessages = try await convertToLanguageModelPrompt(
+            let promptMessages = try await convertToLanguageModelV4Prompt(
                 prompt: standardizedPrompt,
                 supportedUrls: try await resolvedModel.supportedUrls,
                 download: download
@@ -118,7 +119,7 @@ public func generateObject<ResultValue, PartialValue, ElementStream>(
                     attributes: innerAttributes
                 ) { span in
                     let generateResult = try await resolvedModel.doGenerate(
-                        options: LanguageModelV3CallOptions(
+                        options: LanguageModelV4CallOptions(
                             prompt: promptMessages,
                             maxOutputTokens: preparedCallSettings.maxOutputTokens,
                             temperature: preparedCallSettings.temperature,
@@ -135,6 +136,7 @@ public func generateObject<ResultValue, PartialValue, ElementStream>(
                             seed: preparedCallSettings.seed,
                             abortSignal: settings.abortSignal,
                             headers: headersWithUserAgent,
+                            reasoning: preparedCallSettings.reasoning,
                             providerOptions: providerOptions
                         )
                     )

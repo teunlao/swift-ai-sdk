@@ -19,11 +19,14 @@ public protocol EmbedResult: Sendable {
     /// Token usage for the embedding operation.
     var usage: EmbeddingModelUsage { get }
 
+    /// Provider warnings for the embedding operation.
+    var warnings: [SharedV4Warning] { get }
+
     /// Provider-specific metadata, if any.
     var providerMetadata: ProviderMetadata? { get }
 
     /// Optional response information returned by the provider.
-    var response: EmbeddingModelV3ResponseInfo? { get }
+    var response: EmbeddingModelV4ResponseInfo? { get }
 }
 
 /**
@@ -35,19 +38,22 @@ public final class DefaultEmbedResult<Value: Sendable>: EmbedResult {
     public let value: Value
     public let embedding: Embedding
     public let usage: EmbeddingModelUsage
+    public let warnings: [SharedV4Warning]
     public let providerMetadata: ProviderMetadata?
-    public let response: EmbeddingModelV3ResponseInfo?
+    public let response: EmbeddingModelV4ResponseInfo?
 
     public init(
         value: Value,
         embedding: Embedding,
         usage: EmbeddingModelUsage,
+        warnings: [SharedV4Warning] = [],
         providerMetadata: ProviderMetadata? = nil,
-        response: EmbeddingModelV3ResponseInfo? = nil
+        response: EmbeddingModelV4ResponseInfo? = nil
     ) {
         self.value = value
         self.embedding = embedding
         self.usage = usage
+        self.warnings = warnings
         self.providerMetadata = providerMetadata
         self.response = response
     }

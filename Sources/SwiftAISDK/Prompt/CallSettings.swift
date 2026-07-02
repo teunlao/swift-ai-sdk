@@ -170,6 +170,14 @@ public struct CallSettings: Sendable, Equatable {
     public var seed: Int?
 
     /**
+     Reasoning effort level for V4 language models.
+
+     Use `.providerDefault` to delegate to the provider default, or `.none` to
+     disable reasoning when supported by the provider.
+     */
+    public var reasoning: LanguageModelV4ReasoningEffort?
+
+    /**
      Maximum number of retries for failed requests.
 
      Set to 0 to disable retries. Default is 2.
@@ -217,6 +225,7 @@ public struct CallSettings: Sendable, Equatable {
         frequencyPenalty: Double? = nil,
         stopSequences: [String]? = nil,
         seed: Int? = nil,
+        reasoning: LanguageModelV4ReasoningEffort? = nil,
         maxRetries: Int? = nil,
         abortSignal: (@Sendable () -> Bool)? = nil,
         timeout: TimeoutConfiguration? = nil,
@@ -230,6 +239,7 @@ public struct CallSettings: Sendable, Equatable {
         self.frequencyPenalty = frequencyPenalty
         self.stopSequences = stopSequences
         self.seed = seed
+        self.reasoning = reasoning
         self.maxRetries = maxRetries
         self.abortSignal = abortSignal
         self.timeout = timeout
@@ -267,6 +277,7 @@ extension CallSettings {
             lhs.frequencyPenalty == rhs.frequencyPenalty &&
             lhs.stopSequences == rhs.stopSequences &&
             lhs.seed == rhs.seed &&
+            lhs.reasoning == rhs.reasoning &&
             lhs.maxRetries == rhs.maxRetries &&
             lhs.timeout == rhs.timeout &&
             lhs.headers == rhs.headers

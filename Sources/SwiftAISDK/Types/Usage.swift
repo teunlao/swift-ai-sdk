@@ -117,14 +117,44 @@ public struct EmbeddingModelUsage: Sendable, Equatable, Codable {
 /**
  Usage information for an image model call.
 
- Type alias for `ImageModelV3Usage` from the Provider package.
+ Type alias for `ImageModelV4Usage` from the Provider package.
  */
-public typealias ImageModelUsage = ImageModelV3Usage
+public typealias ImageModelUsage = ImageModelV4Usage
 
 /**
  Convert provider-level usage into AI-level usage.
  */
 public func asLanguageModelUsage(_ usage: LanguageModelV3Usage) -> LanguageModelUsage {
+    let rawObject: JSONObject?
+    if let raw = usage.raw, case .object(let object) = raw {
+        rawObject = object
+    } else {
+        rawObject = nil
+    }
+
+    return LanguageModelUsage(
+        inputTokens: usage.inputTokens.total,
+        inputTokenDetails: .init(
+            noCacheTokens: usage.inputTokens.noCache,
+            cacheReadTokens: usage.inputTokens.cacheRead,
+            cacheWriteTokens: usage.inputTokens.cacheWrite
+        ),
+        outputTokens: usage.outputTokens.total,
+        outputTokenDetails: .init(
+            textTokens: usage.outputTokens.text,
+            reasoningTokens: usage.outputTokens.reasoning
+        ),
+        totalTokens: addTokenCounts(usage.inputTokens.total, usage.outputTokens.total),
+        raw: rawObject,
+        reasoningTokens: usage.outputTokens.reasoning,
+        cachedInputTokens: usage.inputTokens.cacheRead
+    )
+}
+
+/**
+ Convert provider-level V4 usage into AI-level usage.
+ */
+public func asLanguageModelUsage(_ usage: LanguageModelV4Usage) -> LanguageModelUsage {
     let rawObject: JSONObject?
     if let raw = usage.raw, case .object(let object) = raw {
         rawObject = object

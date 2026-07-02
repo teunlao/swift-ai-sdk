@@ -119,6 +119,8 @@ private func detectUploadMediaType(_ data: SharedV4DataContent) -> String {
     case .base64(let base64):
         return detectMediaType(data: base64, signatures: signatures)
             ?? (isLikelyTextUploadData(base64) ? "text/plain" : "application/octet-stream")
+    case .text:
+        return "text/plain"
     }
 }
 

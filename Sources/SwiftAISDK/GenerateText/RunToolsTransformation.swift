@@ -94,7 +94,7 @@ public func runToolsTransformation(
                         emit(.toolInputEnd(id: id, providerMetadata: providerMetadata))
 
                     case .source(let source):
-                        emit(.source(source))
+                        emit(.source(asSource(source)))
 
                     case .file(let fileChunk):
                         let generatedFile: GeneratedFile
@@ -111,7 +111,7 @@ public func runToolsTransformation(
 
                     case .finish(let finishReason, let usage, let providerMetadata):
                         let finishPart: SingleRequestTextStreamPart = .finish(
-                            finishReason: finishReason.unified,
+                            finishReason: asFinishReason(finishReason.unified),
                             rawFinishReason: finishReason.raw,
                             usage: asLanguageModelUsage(usage),
                             providerMetadata: providerMetadata

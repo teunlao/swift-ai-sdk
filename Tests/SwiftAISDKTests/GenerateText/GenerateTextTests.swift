@@ -2385,6 +2385,10 @@ private func summarizeMessages(_ messages: [ModelMessage]) -> [String] {
                         return "assistant:file"
                     case .reasoning:
                         return "assistant:reasoning"
+                    case .custom:
+                        return "assistant:custom"
+                    case .reasoningFile:
+                        return "assistant:reasoning-file"
                     case .toolCall(let toolCallPart):
                         return "assistant:tool-call:\(toolCallPart.toolName)"
                     case .toolResult(let toolResultPart):

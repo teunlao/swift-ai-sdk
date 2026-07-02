@@ -23,7 +23,7 @@ public func streamObject<ResultValue, PartialValue, ElementStream>(
     internalOptions _internal: GenerateObjectInternalOptions = GenerateObjectInternalOptions(),
     settings: CallSettings = CallSettings()
 ) throws -> StreamObjectResult<PartialValue, ResultValue, ElementStream> {
-    let resolvedModel = try resolveLanguageModel(modelArg)
+    let resolvedModel = try resolveLanguageModelV4(modelArg)
 
     let hasSchema = output.kind == .object || output.kind == .array
     try validateObjectGenerationInput(
@@ -301,7 +301,7 @@ public func streamObjectEnum(
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 private func runStreamObject<ResultValue, PartialValue, ElementStream>(
-    model: any LanguageModelV3,
+    model: any LanguageModelV4,
     output: GenerateObjectOutputSpec<ResultValue, PartialValue, ElementStream>,
     repairText: RepairTextFunction?,
     telemetry: TelemetrySettings?,
@@ -335,7 +335,8 @@ private func runStreamObject<ResultValue, PartialValue, ElementStream>(
         presencePenalty: settings.presencePenalty,
         frequencyPenalty: settings.frequencyPenalty,
         stopSequences: settings.stopSequences,
-        seed: settings.seed
+        seed: settings.seed,
+        reasoning: settings.reasoning
     )
 
     var telemetryCallSettings = settings
@@ -354,7 +355,7 @@ private func runStreamObject<ResultValue, PartialValue, ElementStream>(
     )
 
     let standardizedPrompt = try standardizePrompt(promptInput)
-    let promptMessages = try await convertToLanguageModelPrompt(
+    let promptMessages = try await convertToLanguageModelV4Prompt(
         prompt: standardizedPrompt,
         supportedUrls: try await model.supportedUrls,
         download: download
@@ -399,7 +400,7 @@ private func runStreamObject<ResultValue, PartialValue, ElementStream>(
                     tracer: tracer,
                     attributes: innerAttributes,
                     fn: { span in
-                        let options = LanguageModelV3CallOptions(
+                        let options = LanguageModelV4CallOptions(
                             prompt: promptMessages,
                             maxOutputTokens: preparedCallSettings.maxOutputTokens,
                             temperature: preparedCallSettings.temperature,
@@ -418,6 +419,7 @@ private func runStreamObject<ResultValue, PartialValue, ElementStream>(
                             seed: preparedCallSettings.seed,
                             abortSignal: settings.abortSignal,
                             headers: settings.headers,
+                            reasoning: preparedCallSettings.reasoning,
                             providerOptions: providerOptions
                         )
 
@@ -456,13 +458,13 @@ private func runStreamObject<ResultValue, PartialValue, ElementStream>(
 private struct StreamExecution: Sendable {
     let span: any Span
     let startTimestampMs: Double
-    let streamResult: LanguageModelV3StreamResult
+    let streamResult: LanguageModelV4StreamResult
 }
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 private func consumeStream<ResultValue, PartialValue, ElementStream>(
     execution: StreamExecution,
-    model: any LanguageModelV3,
+    model: any LanguageModelV4,
     output: GenerateObjectOutputSpec<ResultValue, PartialValue, ElementStream>,
     repairText: RepairTextFunction?,
     telemetry: TelemetrySettings?,
@@ -594,7 +596,9 @@ private func consumeStream<ResultValue, PartialValue, ElementStream>(
              .toolApprovalRequest,
              .toolCall,
              .toolResult,
+             .custom,
              .file,
+             .reasoningFile,
              .source:
             continue
         }

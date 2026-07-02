@@ -329,6 +329,62 @@ struct EmbedManyTests {
             ])
     }
 
+    @Test("direct V4 model aggregates warnings, responses, and usage")
+    func directV4ModelAggregatesResultFields() async throws {
+        let callCounter = CallCounter()
+        let firstWarning = SharedV4Warning.other(message: "Warning from call 1")
+        let secondWarning = SharedV4Warning.unsupported(feature: "dimensions", details: nil)
+
+        let model = TestEmbeddingModelV4(
+            maxEmbeddingsPerCall: 2,
+            supportsParallelCalls: false
+        ) { options in
+            let index = await callCounter.next()
+            switch index {
+            case 0:
+                #expect(options.values == Array(testValues.prefix(2)))
+                return EmbeddingModelV4Result(
+                    embeddings: Array(dummyEmbeddings.prefix(2)),
+                    usage: EmbeddingModelV4Usage(tokens: 10),
+                    providerMetadata: ["gateway": ["call0": .bool(true)]],
+                    response: EmbeddingModelV4ResponseInfo(body: ["index": 0]),
+                    warnings: [firstWarning]
+                )
+            case 1:
+                #expect(options.values == Array(testValues.suffix(1)))
+                return EmbeddingModelV4Result(
+                    embeddings: Array(dummyEmbeddings.suffix(1)),
+                    usage: EmbeddingModelV4Usage(tokens: 20),
+                    providerMetadata: ["gateway": ["call1": .bool(true)]],
+                    response: EmbeddingModelV4ResponseInfo(body: ["index": 1]),
+                    warnings: [secondWarning]
+                )
+            default:
+                Issue.record("Unexpected V4 embedding call")
+                return EmbeddingModelV4Result(embeddings: [])
+            }
+        }
+
+        let result = try await embedMany(
+            model: .v4(model),
+            values: testValues
+        )
+
+        #expect(result.embeddings == dummyEmbeddings)
+        #expect(result.usage == EmbeddingModelUsage(tokens: 30))
+        #expect(result.warnings == [firstWarning, secondWarning])
+        let expectedMetadata: ProviderMetadata = [
+            "gateway": [
+                "call0": .bool(true),
+                "call1": .bool(true),
+            ]
+        ]
+        #expect(result.providerMetadata == expectedMetadata)
+
+        let bodies = result.responses?.compactMap { $0?.body as? [String: Int] } ?? []
+        #expect(bodies == [["index": 0], ["index": 1]])
+    }
+
     // MARK: - Telemetry
 
     @Test("telemetry disabled records no spans")

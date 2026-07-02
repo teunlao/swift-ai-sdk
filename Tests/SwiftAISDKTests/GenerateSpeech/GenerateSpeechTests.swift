@@ -37,7 +37,7 @@ private final class ValueBox<T>: @unchecked Sendable {
 
 private func makeMockResult(
     audio file: DefaultGeneratedAudioFile,
-    warnings: [SharedV3Warning] = [],
+    warnings: [SpeechWarning] = [],
     timestamp: Date = Date(),
     modelId: String = "test-model-id",
     headers: [String: String]? = nil,
@@ -45,7 +45,7 @@ private func makeMockResult(
 ) -> SpeechModelV3Result {
     SpeechModelV3Result(
         audio: .binary(file.data),
-        warnings: warnings,
+        warnings: warnings.map(convertSpeechWarningToV3),
         request: nil,
         response: SpeechModelV3Result.ResponseInfo(
             timestamp: timestamp,
@@ -55,6 +55,41 @@ private func makeMockResult(
         ),
         providerMetadata: providerMetadata
     )
+}
+
+private func makeMockResultV4(
+    audio file: DefaultGeneratedAudioFile,
+    warnings: [SpeechWarning] = [],
+    timestamp: Date = Date(),
+    modelId: String = "test-model-id",
+    headers: [String: String]? = nil,
+    providerMetadata: [String: [String: JSONValue]]? = nil
+) -> SpeechModelV4Result {
+    SpeechModelV4Result(
+        audio: .binary(file.data),
+        warnings: warnings,
+        request: nil,
+        response: SpeechModelV4Result.ResponseInfo(
+            timestamp: timestamp,
+            modelId: modelId,
+            headers: headers,
+            body: nil
+        ),
+        providerMetadata: providerMetadata
+    )
+}
+
+private func convertSpeechWarningToV3(_ warning: SpeechWarning) -> SharedV3Warning {
+    switch warning {
+    case let .unsupported(feature, details):
+        return .unsupported(feature: feature, details: details)
+    case let .compatibility(feature, details):
+        return .compatibility(feature: feature, details: details)
+    case .deprecated(let setting, let message):
+        return .other(message: "The setting \"\(setting)\" is deprecated - \(message)")
+    case .other(let message):
+        return .other(message: message)
+    }
 }
 
 @Suite(.serialized)
@@ -109,9 +144,98 @@ struct GenerateSpeechTests {
         #expect(abortCalled.value == true)
     }
 
+    @Test("should send V4 args directly to doGenerate")
+    func shouldSendV4ArgsDirectlyToDoGenerate() async throws {
+        let abortCalled = ValueBox(false)
+        let abortSignal: @Sendable () -> Bool = {
+            abortCalled.value = true
+            return false
+        }
+
+        let capturedOptions = ValueBox<SpeechModelV4CallOptions?>(nil)
+        let expectedWarning: SpeechWarning = .deprecated(
+            setting: "voice",
+            message: "Use provider options instead"
+        )
+
+        let model = MockSpeechModelV4 { options in
+            capturedOptions.value = options
+            return makeMockResultV4(
+                audio: mockAudioFile,
+                warnings: [expectedWarning]
+            )
+        }
+
+        let result = try await generateSpeech(
+            model: model,
+            text: sampleText,
+            voice: "test-voice",
+            outputFormat: "wav",
+            instructions: "Speak slowly",
+            speed: 0.75,
+            language: "en",
+            providerOptions: [
+                "mock-provider": [
+                    "style": .string("calm")
+                ]
+            ],
+            abortSignal: abortSignal,
+            headers: [
+                "custom-request-header": "request-header-value"
+            ]
+        )
+
+        guard let options = capturedOptions.value else {
+            Issue.record("doGenerate was not called")
+            return
+        }
+
+        #expect(options.text == sampleText)
+        #expect(options.voice == "test-voice")
+        #expect(options.outputFormat == "wav")
+        #expect(options.instructions == "Speak slowly")
+        #expect(options.speed == 0.75)
+        #expect(options.language == "en")
+        #expect(options.providerOptions?["mock-provider"]?["style"] == .string("calm"))
+        #expect(options.headers?["custom-request-header"] == "request-header-value")
+        #expect(options.headers?["user-agent"] == "ai/\(SwiftAISDK.VERSION)")
+        #expect(options.abortSignal != nil)
+        _ = options.abortSignal?()
+        #expect(abortCalled.value == true)
+        #expect(result.warnings == [expectedWarning])
+    }
+
+    @Test("should resolve string speech model IDs through V4 global provider")
+    func shouldResolveStringSpeechModelThroughV4GlobalProvider() async throws {
+        let provider = customProviderV4(
+            speechModels: [
+                "speech-model": MockSpeechModelV4(
+                    provider: "v4-provider",
+                    modelId: "resolved-speech-model",
+                    doGenerate: { _ in
+                        makeMockResultV4(
+                            audio: mockAudioFile,
+                            modelId: "resolved-speech-model"
+                        )
+                    }
+                )
+            ]
+        )
+
+        let result = try await withGlobalProviderV4(provider, operation: {
+            try await generateSpeech(
+                model: .string("speech-model"),
+                text: sampleText
+            )
+        })
+
+        #expect(result.audio.data == audioData)
+        #expect(result.responses.first?.modelId == "resolved-speech-model")
+    }
+
     @Test("should return warnings")
     func shouldReturnWarnings() async throws {
-        let warnings: [SharedV3Warning] = [
+        let warnings: [SpeechWarning] = [
             .other(message: "Setting is not supported")
         ]
 
@@ -140,7 +264,7 @@ struct GenerateSpeechTests {
 
     @Test("should call logWarnings with the correct warnings")
     func shouldCallLogWarningsWithWarnings() async throws {
-        let expectedWarnings: [SharedV3Warning] = [
+        let expectedWarnings: [SpeechWarning] = [
             .other(message: "Setting is not supported"),
             .unsupported(feature: "voice", details: "Voice parameter not supported")
         ]
@@ -163,7 +287,7 @@ struct GenerateSpeechTests {
         )
 
         #expect(recordedWarnings.value.count == 1)
-        let expectedLogged = try expectedWarnings.map { Warning.speechModel($0) }
+        let expectedLogged = expectedWarnings.map { Warning.speechModel($0) }
         #expect(recordedWarnings.value.first == expectedLogged)
     }
 

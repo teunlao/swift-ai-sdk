@@ -8,17 +8,17 @@ import AISDKProviderUtils
  Port of `@ai-sdk/ai/src/embed/embed-many.ts`.
  */
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-public func embedMany<Value: Sendable>(
-    model modelArg: EmbeddingModel<Value>,
-    values: [Value],
+public func embedMany(
+    model modelArg: EmbeddingModel,
+    values: [String],
     maxParallelCalls: Int? = nil,
     maxRetries: Int? = nil,
     abortSignal: (@Sendable () -> Bool)? = nil,
     headers: [String: String]? = nil,
     providerOptions: ProviderOptions? = nil,
     experimentalTelemetry telemetry: TelemetrySettings? = nil
-) async throws -> DefaultEmbedManyResult<Value> {
-    let model = try resolveEmbeddingModel(modelArg)
+) async throws -> DefaultEmbedManyResult<String> {
+    let model = try resolveEmbeddingModelV4(modelArg)
 
     let preparedRetries = try prepareRetries(
         maxRetries: maxRetries,
@@ -94,7 +94,7 @@ public func embedMany<Value: Sendable>(
                     )
                 ) { doEmbedSpan in
                     let modelResponse = try await model.doEmbed(
-                        options: EmbeddingModelV3DoEmbedOptions(
+                        options: EmbeddingModelV4CallOptions(
                             values: values,
                             abortSignal: abortSignal,
                             providerOptions: providerOptions,
@@ -121,6 +121,7 @@ public func embedMany<Value: Sendable>(
                     return SingleCallResult(
                         embeddings: modelResponse.embeddings,
                         usage: usage,
+                        warnings: modelResponse.warnings,
                         providerMetadata: modelResponse.providerMetadata,
                         response: modelResponse.response
                     )
@@ -140,11 +141,13 @@ public func embedMany<Value: Sendable>(
             )
 
             span.setAttributes(outerAttributesSingleCall)
+            logWarnings(result.warnings.map { .embeddingModel($0) })
 
             return DefaultEmbedManyResult(
                 values: values,
                 embeddings: result.embeddings,
                 usage: result.usage,
+                warnings: result.warnings,
                 providerMetadata: result.providerMetadata,
                 responses: [result.response]
             )
@@ -162,7 +165,9 @@ public func embedMany<Value: Sendable>(
         var collectedEmbeddings: [Embedding] = []
         collectedEmbeddings.reserveCapacity(values.count)
 
-        var collectedResponses: [EmbeddingModelV3ResponseInfo?] = []
+        var collectedWarnings: [SharedV4Warning] = []
+
+        var collectedResponses: [EmbeddingModelV4ResponseInfo?] = []
         collectedResponses.reserveCapacity(valueChunks.count)
 
         var totalTokens = 0
@@ -193,7 +198,7 @@ public func embedMany<Value: Sendable>(
                                 )
                             ) { doEmbedSpan in
                                 let modelResponse = try await model.doEmbed(
-                                    options: EmbeddingModelV3DoEmbedOptions(
+                                    options: EmbeddingModelV4CallOptions(
                                         values: chunk,
                                         abortSignal: abortSignal,
                                         providerOptions: providerOptions,
@@ -220,6 +225,7 @@ public func embedMany<Value: Sendable>(
                                 return SingleCallResult(
                                     embeddings: modelResponse.embeddings,
                                     usage: usage,
+                                    warnings: modelResponse.warnings,
                                     providerMetadata: modelResponse.providerMetadata,
                                     response: modelResponse.response
                                 )
@@ -241,6 +247,7 @@ public func embedMany<Value: Sendable>(
                 }
 
                 collectedEmbeddings.append(contentsOf: result.embeddings)
+                collectedWarnings.append(contentsOf: result.warnings)
                 collectedResponses.append(result.response)
                 totalTokens += result.usage.tokens
                 mergeProviderMetadata(target: &aggregatedMetadata, source: result.providerMetadata)
@@ -263,11 +270,13 @@ public func embedMany<Value: Sendable>(
         )
 
         span.setAttributes(outerAttributesMultiCall)
+        logWarnings(collectedWarnings.map { .embeddingModel($0) })
 
         return DefaultEmbedManyResult(
             values: values,
             embeddings: telemetryEmbeddings,
             usage: EmbeddingModelUsage(tokens: totalUsageTokens),
+            warnings: collectedWarnings,
             providerMetadata: aggregatedMetadata,
             responses: collectedResponses
         )
@@ -277,16 +286,39 @@ public func embedMany<Value: Sendable>(
 // MARK: - Convenience overloads (DX parity with TS)
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-public func embedMany<Value: Sendable>(
-    model: any EmbeddingModelV3<Value>,
-    values: [Value],
+public func embedMany(
+    model: any EmbeddingModelV4,
+    values: [String],
     maxParallelCalls: Int? = nil,
     maxRetries: Int? = nil,
     abortSignal: (@Sendable () -> Bool)? = nil,
     headers: [String: String]? = nil,
     providerOptions: ProviderOptions? = nil,
     experimentalTelemetry telemetry: TelemetrySettings? = nil
-) async throws -> DefaultEmbedManyResult<Value> {
+) async throws -> DefaultEmbedManyResult<String> {
+    try await embedMany(
+        model: .v4(model),
+        values: values,
+        maxParallelCalls: maxParallelCalls,
+        maxRetries: maxRetries,
+        abortSignal: abortSignal,
+        headers: headers,
+        providerOptions: providerOptions,
+        experimentalTelemetry: telemetry
+    )
+}
+
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+public func embedMany(
+    model: any EmbeddingModelV3<String>,
+    values: [String],
+    maxParallelCalls: Int? = nil,
+    maxRetries: Int? = nil,
+    abortSignal: (@Sendable () -> Bool)? = nil,
+    headers: [String: String]? = nil,
+    providerOptions: ProviderOptions? = nil,
+    experimentalTelemetry telemetry: TelemetrySettings? = nil
+) async throws -> DefaultEmbedManyResult<String> {
     try await embedMany(
         model: .v3(model),
         values: values,
@@ -300,16 +332,16 @@ public func embedMany<Value: Sendable>(
 }
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-public func embedMany<Value: Sendable>(
-    model: any EmbeddingModelV2<Value>,
-    values: [Value],
+public func embedMany(
+    model: any EmbeddingModelV2<String>,
+    values: [String],
     maxParallelCalls: Int? = nil,
     maxRetries: Int? = nil,
     abortSignal: (@Sendable () -> Bool)? = nil,
     headers: [String: String]? = nil,
     providerOptions: ProviderOptions? = nil,
     experimentalTelemetry telemetry: TelemetrySettings? = nil
-) async throws -> DefaultEmbedManyResult<Value> {
+) async throws -> DefaultEmbedManyResult<String> {
     try await embedMany(
         model: .v2(model),
         values: values,
@@ -327,6 +359,7 @@ public func embedMany<Value: Sendable>(
 private struct SingleCallResult {
     let embeddings: [Embedding]
     let usage: EmbeddingModelUsage
+    let warnings: [SharedV4Warning]
     let providerMetadata: ProviderMetadata?
-    let response: EmbeddingModelV3ResponseInfo?
+    let response: EmbeddingModelV4ResponseInfo?
 }

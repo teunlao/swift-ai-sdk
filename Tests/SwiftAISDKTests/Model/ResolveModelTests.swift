@@ -35,6 +35,18 @@ struct ResolveLanguageModelTests {
         #expect(resolvedModel.specificationVersion == "v3")
     }
 
+    @Test("when a language model v4 is provided to the legacy V3 resolver - should throw")
+    func rejectsV4Model() async throws {
+        let mockModel = MockLanguageModelV4(
+            provider: "test-provider",
+            modelId: "test-model-id"
+        )
+
+        #expect(throws: UnsupportedModelVersionError.self) {
+            try resolveLanguageModel(.v4(mockModel))
+        }
+    }
+
     // MARK: - V2 Adaptation Tests
 
     @Test("when a language model v2 is provided - should adapt to v3 and preserve prototype methods")

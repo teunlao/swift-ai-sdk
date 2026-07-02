@@ -71,7 +71,7 @@ struct StreamTextActorConfiguration: Sendable {
     let toolChoice: ToolChoice?
     let activeTools: [String]?
     let download: DownloadFunction?
-    let responseFormatProvider: (@Sendable () async throws -> LanguageModelV3ResponseFormat?)?
+    let responseFormatProvider: (@Sendable () async throws -> LanguageModelV4ResponseFormat?)?
     let now: @Sendable () -> Double
     let generateId: IDGenerator
     let currentDate: @Sendable () -> Date
@@ -86,7 +86,7 @@ struct StreamTextActorConfiguration: Sendable {
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 struct StreamTextStepPreparation {
     let modelArg: LanguageModel
-    let resolvedModel: any LanguageModelV3
+    let resolvedModel: any LanguageModelV4
     let system: String?
     let messages: [ModelMessage]
     let toolChoice: ToolChoice?
@@ -99,7 +99,7 @@ struct StreamTextStepPreparation {
 private func makeStreamTextStepPreparation(
     prepareStep: PrepareStepFunction?,
     baseModel: LanguageModel,
-    defaultResolvedModel: any LanguageModelV3,
+    defaultResolvedModel: any LanguageModelV4,
     steps: [StepResult],
     stepNumber: Int,
     inputMessages: [ModelMessage],
@@ -107,7 +107,7 @@ private func makeStreamTextStepPreparation(
     experimentalContext: JSONValue?
 ) async throws -> StreamTextStepPreparation {
     var modelArg = baseModel
-    var resolvedModel: any LanguageModelV3 = defaultResolvedModel
+    var resolvedModel: any LanguageModelV4 = defaultResolvedModel
     var systemOverride: String? = nil
     var messages = inputMessages
     var toolChoice: ToolChoice? = nil
@@ -128,7 +128,7 @@ private func makeStreamTextStepPreparation(
             stepExperimentalContext = result.experimentalContext ?? stepExperimentalContext
             if let newModel = result.model {
                 modelArg = newModel
-                resolvedModel = try resolveLanguageModel(newModel)
+                resolvedModel = try resolveLanguageModelV4(newModel)
             }
             if let system = result.system {
                 systemOverride = system
@@ -211,8 +211,7 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
     internalOptions _internal: StreamTextInternalOptions = StreamTextInternalOptions(),
     settings: CallSettings = CallSettings()
 ) throws -> DefaultStreamTextResult<OutputValue, PartialOutputValue> {
-    // Resolve LanguageModel to a v3 model; for milestone 1 only v3 path is supported.
-    _ = try resolveLanguageModel(modelArg)
+    _ = try resolveLanguageModelV4(modelArg)
 
     return try streamText(
         model: modelArg,
@@ -396,8 +395,8 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
     @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
     init(
         baseModel: LanguageModel,
-        model: any LanguageModelV3,
-        providerStream: AsyncThrowingStream<LanguageModelV3StreamPart, Error>,
+        model: any LanguageModelV4,
+        providerStream: AsyncThrowingStream<LanguageModelV4StreamPart, Error>,
         transforms: [StreamTextTransform],
         stopConditions: [StopCondition],
         initialMessages: [ModelMessage],
@@ -875,7 +874,7 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
     }
 
 
-    func _setRequestInfo(_ info: LanguageModelV3RequestInfo?) async {
+    func _setRequestInfo(_ info: LanguageModelV4RequestInfo?) async {
         await actor.setInitialRequest(info)
     }
 
@@ -1058,8 +1057,12 @@ private actor StreamTextPipelineAggregator {
             return
         case .source(let source):
             recordedContent.append(.source(type: "source", source: source))
+        case .custom(let kind, let providerMetadata):
+            recordedContent.append(.custom(kind: kind, providerMetadata: providerMetadata))
         case .file(let file):
             recordedContent.append(.file(file: file, providerMetadata: nil))
+        case .reasoningFile(let file, let providerMetadata):
+            recordedContent.append(.reasoningFile(file: file, providerMetadata: providerMetadata))
         case .raw:
             return
         case .finishStep(let response, let usage, let finishReason, let rawFinishReason, let providerMetadata):
@@ -1151,7 +1154,7 @@ private actor StreamTextPipelineAggregator {
     private func deliverOnChunkIfNeeded(_ part: TextStreamPart) async {
         guard let onChunk else { return }
         switch part {
-        case .textDelta, .reasoningDelta, .source, .toolCall, .toolInputStart, .toolInputDelta, .toolResult:
+        case .textDelta, .reasoningDelta, .source, .custom, .reasoningFile, .toolCall, .toolInputStart, .toolInputDelta, .toolResult:
             await onChunk(part)
         case .raw:
             if includeRawChunks { await onChunk(part) }
@@ -1354,6 +1357,19 @@ private func toGeneratedFile(_ file: LanguageModelV3File) -> GeneratedFile {
     }
 }
 
+private func streamTextLanguageModelV4ResponseFormat(
+    from responseFormat: LanguageModelV3ResponseFormat?
+) -> LanguageModelV4ResponseFormat? {
+    guard let responseFormat else { return nil }
+
+    switch responseFormat {
+    case .text:
+        return .text
+    case let .json(schema, name, description):
+        return .json(schema: schema, name: name, description: description)
+    }
+}
+
 // MARK: - Internal helpers
 
 // MARK: - Helpers (none needed for milestone 1)
@@ -1403,7 +1419,7 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
 ) throws -> DefaultStreamTextResult<OutputValue, PartialOutputValue> {
 
     _ = _internal
-    let defaultResolvedModel = try resolveLanguageModel(modelArg)
+    let defaultResolvedModel = try resolveLanguageModelV4(modelArg)
     let standardizedPrompt = StandardizedPrompt(system: system, messages: initialMessages)
     let normalizedMessages = standardizedPrompt.messages
     let effectiveActiveTools = activeTools ?? experimentalActiveTools
@@ -1433,7 +1449,8 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
         presencePenalty: settings.presencePenalty,
         frequencyPenalty: settings.frequencyPenalty,
         stopSequences: settings.stopSequences,
-        seed: settings.seed
+        seed: settings.seed,
+        reasoning: settings.reasoning
     )
 
     let headersWithUserAgent = withUserAgentSuffix(
@@ -1456,9 +1473,11 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
         headers: headersWithUserAgent
     )
 
-    let responseFormatProvider: (@Sendable () async throws -> LanguageModelV3ResponseFormat?)?
+    let responseFormatProvider: (@Sendable () async throws -> LanguageModelV4ResponseFormat?)?
     if let output {
-        responseFormatProvider = { try await output.responseFormat() }
+        responseFormatProvider = {
+            streamTextLanguageModelV4ResponseFormat(from: try await output.responseFormat())
+        }
     } else {
         responseFormatProvider = nil
     }
@@ -1491,7 +1510,7 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
 
     // Bridge provider async stream acquisition without blocking the caller.
     let (bridgeStream, continuation) = AsyncThrowingStream.makeStream(
-        of: LanguageModelV3StreamPart.self
+        of: LanguageModelV4StreamPart.self
     )
 
     let errorHandler: StreamTextOnError = onError ?? { error in
@@ -1722,13 +1741,13 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
                 )
 
                 let supported = try await stepPreparation.resolvedModel.supportedUrls
-                let lmPrompt = try await convertToLanguageModelPrompt(
+                let lmPrompt = try await convertToLanguageModelV4Prompt(
                     prompt: promptForProvider,
                     supportedUrls: supported,
                     download: download
                 )
 
-                let toolPreparation = try await prepareToolsAndToolChoice(
+                let toolPreparation = try await prepareToolsAndToolChoiceV4(
                     tools: tools,
                     toolChoice: stepPreparation.toolChoice ?? toolChoice,
                     activeTools: stepPreparation.activeTools ?? effectiveActiveTools
@@ -1736,7 +1755,7 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
 
                 let responseFormat = try await actorConfig.responseFormatProvider?()
 
-                let callOptions = LanguageModelV3CallOptions(
+                let callOptions = LanguageModelV4CallOptions(
                     prompt: lmPrompt,
                     maxOutputTokens: actorConfig.callSettings.maxOutputTokens,
                     temperature: actorConfig.callSettings.temperature,
@@ -1752,6 +1771,7 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
                     includeRawChunks: actorConfig.includeRawChunks ? true : nil,
                     abortSignal: actorConfig.abortSignal,
                     headers: actorConfig.headers,
+                    reasoning: actorConfig.callSettings.reasoning,
                     providerOptions: stepPreparation.providerOptions
                 )
 
@@ -1775,7 +1795,7 @@ public func streamText<OutputValue: Sendable, PartialOutputValue: Sendable>(
                     resolvedDoStreamAttributes = resolvedAttributesFromValues(doStreamAttributeInputs)
                 }
 
-                let (providerResult, doStreamSpanAny, doStreamStartTimestamp): (LanguageModelV3StreamResult, any Span, Double) = try await recordSpan(
+                let (providerResult, doStreamSpanAny, doStreamStartTimestamp): (LanguageModelV4StreamResult, any Span, Double) = try await recordSpan(
                     name: "ai.streamText.doStream",
                     tracer: actorConfig.tracer,
                     attributes: resolvedDoStreamAttributes,
@@ -1888,11 +1908,11 @@ private func buildStreamTextOuterTelemetryAttributes(
 private func buildStreamTextDoStreamTelemetryAttributes(
     telemetry: TelemetrySettings?,
     baseAttributes: Attributes,
-    prompt: LanguageModelV3Prompt,
-    tools: [LanguageModelV3Tool]?,
-    toolChoice: LanguageModelV3ToolChoice?,
+    prompt: LanguageModelV4Prompt,
+    tools: [LanguageModelV4Tool]?,
+    toolChoice: LanguageModelV4ToolChoice?,
     settings: PreparedCallSettings,
-    model: any LanguageModelV3
+    model: any LanguageModelV4
 ) -> [String: ResolvableAttributeValue?] {
     var attributes: [String: ResolvableAttributeValue?] = [:]
 
@@ -2000,12 +2020,12 @@ private func buildStreamTextRootTelemetryAttributes(
     return attributes
 }
 
-private func encodeToolsForTelemetry(_ tools: [LanguageModelV3Tool]?) -> String? {
+private func encodeToolsForTelemetry(_ tools: [LanguageModelV4Tool]?) -> String? {
     guard let tools else { return nil }
     return jsonString(from: tools)
 }
 
-private func encodeToolChoiceForTelemetry(_ toolChoice: LanguageModelV3ToolChoice?) -> String? {
+private func encodeToolChoiceForTelemetry(_ toolChoice: LanguageModelV4ToolChoice?) -> String? {
     guard let toolChoice else { return nil }
     return jsonString(from: toolChoice)
 }

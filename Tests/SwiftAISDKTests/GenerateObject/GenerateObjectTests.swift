@@ -288,7 +288,7 @@ struct GenerateObjectTests {
             prompt: "prompt"
         )
 
-        #expect(result.warnings == warnings)
+        #expect(result.warnings == warnings.map(asCallWarning))
     }
 
     @Test("should call logWarnings with the correct warnings")
@@ -311,7 +311,7 @@ struct GenerateObjectTests {
             )
         }
 
-        let expectedEntry = expectedWarnings.map { Warning.languageModel($0) }
+        let expectedEntry = expectedWarnings.map { Warning.languageModel(asCallWarning($0)) }
         #expect(logged.contains(expectedEntry))
     }
 

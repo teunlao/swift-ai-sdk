@@ -19,11 +19,14 @@ public protocol EmbedManyResult: Sendable {
     /// Token usage aggregated across all calls.
     var usage: EmbeddingModelUsage { get }
 
+    /// Provider warnings aggregated across all calls.
+    var warnings: [SharedV4Warning] { get }
+
     /// Provider-specific metadata, if any.
     var providerMetadata: ProviderMetadata? { get }
 
     /// Raw response information for each call, if available.
-    var responses: [EmbeddingModelV3ResponseInfo?]? { get }
+    var responses: [EmbeddingModelV4ResponseInfo?]? { get }
 }
 
 /**
@@ -35,19 +38,22 @@ public final class DefaultEmbedManyResult<Value: Sendable>: EmbedManyResult {
     public let values: [Value]
     public let embeddings: [Embedding]
     public let usage: EmbeddingModelUsage
+    public let warnings: [SharedV4Warning]
     public let providerMetadata: ProviderMetadata?
-    public let responses: [EmbeddingModelV3ResponseInfo?]?
+    public let responses: [EmbeddingModelV4ResponseInfo?]?
 
     public init(
         values: [Value],
         embeddings: [Embedding],
         usage: EmbeddingModelUsage,
+        warnings: [SharedV4Warning] = [],
         providerMetadata: ProviderMetadata? = nil,
-        responses: [EmbeddingModelV3ResponseInfo?]? = nil
+        responses: [EmbeddingModelV4ResponseInfo?]? = nil
     ) {
         self.values = values
         self.embeddings = embeddings
         self.usage = usage
+        self.warnings = warnings
         self.providerMetadata = providerMetadata
         self.responses = responses
     }

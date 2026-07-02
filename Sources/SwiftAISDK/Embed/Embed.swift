@@ -8,16 +8,16 @@ import AISDKProviderUtils
  Port of `@ai-sdk/ai/src/embed/embed.ts`.
  */
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-public func embed<Value: Sendable>(
-    model modelArg: EmbeddingModel<Value>,
-    value: Value,
+public func embed(
+    model modelArg: EmbeddingModel,
+    value: String,
     providerOptions: ProviderOptions? = nil,
     maxRetries: Int? = nil,
     abortSignal: (@Sendable () -> Bool)? = nil,
     headers: [String: String]? = nil,
     experimentalTelemetry telemetry: TelemetrySettings? = nil
-) async throws -> DefaultEmbedResult<Value> {
-    let model = try resolveEmbeddingModel(modelArg)
+) async throws -> DefaultEmbedResult<String> {
+    let model = try resolveEmbeddingModelV4(modelArg)
 
     let preparedRetries = try prepareRetries(
         maxRetries: maxRetries,
@@ -65,7 +65,7 @@ public func embed<Value: Sendable>(
         tracer: tracer,
         attributes: outerAttributes
     ) { span in
-        let (embedding, usage, providerMetadata, providerResponse) = try await preparedRetries.retry.call {
+        let (embedding, usage, warnings, providerMetadata, providerResponse) = try await preparedRetries.retry.call {
             try await recordSpan(
                 name: "ai.embed.doEmbed",
                 tracer: tracer,
@@ -84,7 +84,7 @@ public func embed<Value: Sendable>(
                 )
             ) { doEmbedSpan in
                 let modelResponse = try await model.doEmbed(
-                    options: EmbeddingModelV3DoEmbedOptions(
+                    options: EmbeddingModelV4CallOptions(
                         values: [value],
                         abortSignal: abortSignal,
                         providerOptions: providerOptions,
@@ -112,11 +112,14 @@ public func embed<Value: Sendable>(
                 return (
                     embedding,
                     usage,
+                    modelResponse.warnings,
                     modelResponse.providerMetadata,
                     modelResponse.response
                 )
             }
         }
+
+        logWarnings(warnings.map { .embeddingModel($0) })
 
         let outerResultAttributes = try await selectTelemetryAttributes(
             telemetry: telemetry,
@@ -134,6 +137,7 @@ public func embed<Value: Sendable>(
             value: value,
             embedding: embedding,
             usage: usage,
+            warnings: warnings,
             providerMetadata: providerMetadata,
             response: providerResponse
         )
@@ -143,15 +147,36 @@ public func embed<Value: Sendable>(
 // MARK: - Convenience overloads (DX parity with TS)
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-public func embed<Value: Sendable>(
-    model: any EmbeddingModelV3<Value>,
-    value: Value,
+public func embed(
+    model: any EmbeddingModelV4,
+    value: String,
     providerOptions: ProviderOptions? = nil,
     maxRetries: Int? = nil,
     abortSignal: (@Sendable () -> Bool)? = nil,
     headers: [String: String]? = nil,
     experimentalTelemetry telemetry: TelemetrySettings? = nil
-) async throws -> DefaultEmbedResult<Value> {
+) async throws -> DefaultEmbedResult<String> {
+    try await embed(
+        model: .v4(model),
+        value: value,
+        providerOptions: providerOptions,
+        maxRetries: maxRetries,
+        abortSignal: abortSignal,
+        headers: headers,
+        experimentalTelemetry: telemetry
+    )
+}
+
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+public func embed(
+    model: any EmbeddingModelV3<String>,
+    value: String,
+    providerOptions: ProviderOptions? = nil,
+    maxRetries: Int? = nil,
+    abortSignal: (@Sendable () -> Bool)? = nil,
+    headers: [String: String]? = nil,
+    experimentalTelemetry telemetry: TelemetrySettings? = nil
+) async throws -> DefaultEmbedResult<String> {
     try await embed(
         model: .v3(model),
         value: value,
@@ -164,15 +189,15 @@ public func embed<Value: Sendable>(
 }
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-public func embed<Value: Sendable>(
-    model: any EmbeddingModelV2<Value>,
-    value: Value,
+public func embed(
+    model: any EmbeddingModelV2<String>,
+    value: String,
     providerOptions: ProviderOptions? = nil,
     maxRetries: Int? = nil,
     abortSignal: (@Sendable () -> Bool)? = nil,
     headers: [String: String]? = nil,
     experimentalTelemetry telemetry: TelemetrySettings? = nil
-) async throws -> DefaultEmbedResult<Value> {
+) async throws -> DefaultEmbedResult<String> {
     try await embed(
         model: .v2(model),
         value: value,

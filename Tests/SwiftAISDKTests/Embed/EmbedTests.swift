@@ -106,6 +106,57 @@ struct EmbedTests {
         #expect(result.providerMetadata == providerMetadata)
     }
 
+    @Test("direct V4 model uses V4 call options and preserves warnings")
+    func directV4ModelUsesV4RuntimeSurface() async throws {
+        let capturedOptions = V4EmbeddingOptionsCapture()
+        let expectedOptions: ProviderOptions = [
+            "aProvider": ["someKey": .string("someValue")]
+        ]
+        let expectedWarning = SharedV4Warning.deprecated(
+            setting: "dimensions",
+            message: "Use provider-native dimensions instead."
+        )
+        let providerMetadata: ProviderMetadata = [
+            "gateway": ["routing": .string("direct-v4")]
+        ]
+
+        let model = TestEmbeddingModelV4 { options in
+            await capturedOptions.set(options)
+            return EmbeddingModelV4Result(
+                embeddings: [dummyEmbedding],
+                usage: EmbeddingModelV4Usage(tokens: 7),
+                providerMetadata: providerMetadata,
+                response: EmbeddingModelV4ResponseInfo(
+                    headers: ["x-provider": "v4"],
+                    body: ["ok": true]
+                ),
+                warnings: [expectedWarning]
+            )
+        }
+
+        let result = try await embed(
+            model: .v4(model),
+            value: testValue,
+            providerOptions: expectedOptions,
+            headers: ["custom-request-header": "request-header-value"]
+        )
+
+        let options = try #require(await capturedOptions.get())
+        #expect(options.values == [testValue])
+        #expect(options.providerOptions == expectedOptions)
+        #expect(
+            options.headers == [
+                "custom-request-header": "request-header-value",
+                "user-agent": "ai/\(VERSION)",
+            ])
+        #expect(result.embedding == dummyEmbedding)
+        #expect(result.usage == EmbeddingModelUsage(tokens: 7))
+        #expect(result.warnings == [expectedWarning])
+        #expect(result.providerMetadata == providerMetadata)
+        #expect(result.response?.headers == ["x-provider": "v4"])
+        #expect(result.response?.body as? [String: Bool] == ["ok": true])
+    }
+
     @Test("headers option augments provider headers")
     func headersOptionIsForwarded() async throws {
         let capturedHeaders = HeadersCapture()
@@ -277,6 +328,18 @@ private actor HeadersCapture {
 
     func get() -> [String: String]? {
         return headers
+    }
+}
+
+private actor V4EmbeddingOptionsCapture {
+    private var options: EmbeddingModelV4CallOptions?
+
+    func set(_ options: EmbeddingModelV4CallOptions) {
+        self.options = options
+    }
+
+    func get() -> EmbeddingModelV4CallOptions? {
+        options
     }
 }
 

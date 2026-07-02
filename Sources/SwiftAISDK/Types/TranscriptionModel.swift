@@ -13,12 +13,27 @@ import AISDKProviderUtils
 /**
  Transcription model that is used by the AI SDK Core functions.
 
- Type alias for `TranscriptionModelV3` protocol from the Provider package.
+ Can be one of:
+ - A string identifier (model ID that will be resolved via the default/global provider)
+ - A `TranscriptionModelV4` protocol implementation
+ - A `TranscriptionModelV3` protocol implementation
+ - A `TranscriptionModelV2` protocol implementation
 
- - Note: TypeScript type `TranscriptionModelV3` is represented as `any TranscriptionModelV3` in Swift
-         to support any conforming implementation.
+ TypeScript equivalent: `string | TranscriptionModelV4 | TranscriptionModelV3 | TranscriptionModelV2`
  */
-public typealias TranscriptionModel = any TranscriptionModelV3
+public enum TranscriptionModel: Sendable {
+    /// Model identifier string (will be resolved via the global/default provider).
+    case string(String)
+
+    /// Transcription model V4 implementation.
+    case v4(any TranscriptionModelV4)
+
+    /// Transcription model V3 implementation.
+    case v3(any TranscriptionModelV3)
+
+    /// Transcription model V2 implementation.
+    case v2(any TranscriptionModelV2)
+}
 
 /**
  Warning from the model provider for this call.
@@ -26,6 +41,6 @@ public typealias TranscriptionModel = any TranscriptionModelV3
  The call will proceed, but e.g. some settings might not be supported,
  which can lead to suboptimal results.
 
- Type alias for `SharedV3Warning` from the Provider package.
+ Type alias for `SharedV4Warning` from the Provider package.
  */
-public typealias TranscriptionWarning = SharedV3Warning
+public typealias TranscriptionWarning = SharedV4Warning

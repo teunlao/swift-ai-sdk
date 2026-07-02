@@ -146,12 +146,26 @@ private final class StreamTextSSEEncoder {
             }
             return []
 
+        case let .custom(kind, providerMetadata):
+            var payload: [String: Any] = ["type": "custom", "kind": kind]
+            if let meta = providerMetadataDictionary(providerMetadata) { payload["providerMetadata"] = meta }
+            return [encode(event: payload)]
+
         case let .file(file):
-            var payload: [String: Any] = [
+            let payload: [String: Any] = [
                 "type": "file",
                 "base64": file.base64,
                 "mediaType": file.mediaType
             ]
+            return [encode(event: payload)]
+
+        case let .reasoningFile(file, providerMetadata):
+            var payload: [String: Any] = [
+                "type": "reasoning-file",
+                "base64": file.base64,
+                "mediaType": file.mediaType
+            ]
+            if let meta = providerMetadataDictionary(providerMetadata) { payload["providerMetadata"] = meta }
             return [encode(event: payload)]
 
         case let .toolError(error):

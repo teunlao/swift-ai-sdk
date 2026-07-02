@@ -12,7 +12,7 @@ import Foundation
 
 private let audioData = Data([1, 2, 3, 4])
 
-private let sampleSegments: [TranscriptionModelV3Result.Segment] = [
+private let sampleSegments: [TranscriptionModelV4Result.Segment] = [
     .init(text: "This is a", startSecond: 0, endSecond: 2.5),
     .init(text: "sample transcript.", startSecond: 2.5, endSecond: 4.0)
 ]
@@ -41,10 +41,10 @@ private final class ValueBox<T>: @unchecked Sendable {
 
 private func makeMockResponse(
     text: String = sampleTranscriptText,
-    segments: [TranscriptionModelV3Result.Segment] = sampleSegments,
+    segments: [TranscriptionModelV4Result.Segment] = sampleSegments,
     language: String? = sampleLanguage,
     durationInSeconds: Double? = sampleDuration,
-    warnings: [SharedV3Warning] = [],
+    warnings: [TranscriptionWarning] = [],
     timestamp: Date = Date(),
     modelId: String = "test-model-id",
     headers: [String: String]? = nil,
@@ -54,10 +54,16 @@ private func makeMockResponse(
 
     return TranscriptionModelV3Result(
         text: text,
-        segments: segments,
+        segments: segments.map {
+            TranscriptionModelV3Result.Segment(
+                text: $0.text,
+                startSecond: $0.startSecond,
+                endSecond: $0.endSecond
+            )
+        },
         language: language,
         durationInSeconds: durationInSeconds,
-        warnings: warnings,
+        warnings: warnings.map(convertTranscriptionWarningToV3),
         request: nil,
         response: TranscriptionModelV3Result.ResponseInfo(
             timestamp: timestamp,
@@ -67,6 +73,49 @@ private func makeMockResponse(
         ),
         providerMetadata: providerMetadata
     )
+}
+
+private func makeMockResponseV4(
+    text: String = sampleTranscriptText,
+    segments: [TranscriptionModelV4Result.Segment] = sampleSegments,
+    language: String? = sampleLanguage,
+    durationInSeconds: Double? = sampleDuration,
+    warnings: [TranscriptionWarning] = [],
+    timestamp: Date = Date(),
+    modelId: String = "test-model-id",
+    headers: [String: String]? = nil,
+    providerMetadata: [String: [String: JSONValue]]? = nil
+) -> TranscriptionModelV4Result {
+    let responseHeaders = headers ?? [:]
+
+    return TranscriptionModelV4Result(
+        text: text,
+        segments: segments,
+        language: language,
+        durationInSeconds: durationInSeconds,
+        warnings: warnings,
+        request: nil,
+        response: TranscriptionModelV4Result.ResponseInfo(
+            timestamp: timestamp,
+            modelId: modelId,
+            headers: responseHeaders,
+            body: nil
+        ),
+        providerMetadata: providerMetadata
+    )
+}
+
+private func convertTranscriptionWarningToV3(_ warning: TranscriptionWarning) -> SharedV3Warning {
+    switch warning {
+    case let .unsupported(feature, details):
+        return .unsupported(feature: feature, details: details)
+    case let .compatibility(feature, details):
+        return .compatibility(feature: feature, details: details)
+    case .deprecated(let setting, let message):
+        return .other(message: "The setting \"\(setting)\" is deprecated - \(message)")
+    case .other(let message):
+        return .other(message: message)
+    }
 }
 
 @Suite(.serialized)
@@ -124,9 +173,136 @@ struct TranscribeTests {
         #expect(abortCalled.value == true)
     }
 
+    @Test("should send V4 args directly to doGenerate")
+    func shouldSendV4ArgsDirectlyToDoGenerate() async throws {
+        let abortCalled = ValueBox(false)
+        let abortSignal: @Sendable () -> Bool = {
+            abortCalled.value = true
+            return false
+        }
+
+        let capturedOptions = ValueBox<TranscriptionModelV4CallOptions?>(nil)
+        let expectedWarning: TranscriptionWarning = .deprecated(
+            setting: "mediaType",
+            message: "Use provider options instead"
+        )
+
+        let model = MockTranscriptionModelV4 { options in
+            capturedOptions.value = options
+            return makeMockResponseV4(warnings: [expectedWarning])
+        }
+
+        let result = try await transcribe(
+            model: model,
+            audio: .data(audioData),
+            providerOptions: [
+                "mock-provider": [
+                    "temperature": .number(0)
+                ]
+            ],
+            abortSignal: abortSignal,
+            headers: [
+                "custom-request-header": "request-header-value"
+            ]
+        )
+
+        guard let options = capturedOptions.value else {
+            Issue.record("doGenerate was not called")
+            return
+        }
+
+        switch options.audio {
+        case .binary(let data):
+            #expect(data == audioData)
+        case .base64:
+            Issue.record("Expected binary audio data")
+        }
+
+        #expect(options.mediaType == "audio/wav")
+        #expect(options.providerOptions?["mock-provider"]?["temperature"] == .number(0))
+        #expect(options.headers?["custom-request-header"] == "request-header-value")
+        #expect(options.headers?["user-agent"] == "ai/\(SwiftAISDK.VERSION)")
+        #expect(options.abortSignal != nil)
+        _ = options.abortSignal?()
+        #expect(abortCalled.value == true)
+        #expect(result.warnings == [expectedWarning])
+    }
+
+    @Test("should download URL audio with custom download function")
+    func shouldDownloadURLAudioWithCustomDownloadFunction() async throws {
+        let url = URL(string: "https://example.com/audio.wav")!
+        let downloadCalled = ValueBox(false)
+        let abortCalled = ValueBox(false)
+        let capturedOptions = ValueBox<TranscriptionModelV3CallOptions?>(nil)
+
+        let abortSignal: @Sendable () -> Bool = {
+            abortCalled.value = true
+            return false
+        }
+
+        let download: DownloadFileFunction = { request in
+            #expect(request.url == url)
+            #expect(request.abortSignal?() == false)
+            downloadCalled.value = true
+            return DownloadResult(data: audioData, mediaType: "audio/wav")
+        }
+
+        let model = MockTranscriptionModelV3 { options in
+            capturedOptions.value = options
+            return makeMockResponse()
+        }
+
+        _ = try await transcribe(
+            model: model,
+            audio: .url(url),
+            abortSignal: abortSignal,
+            experimentalDownload: download
+        )
+
+        #expect(downloadCalled.value == true)
+        #expect(abortCalled.value == true)
+
+        guard let options = capturedOptions.value else {
+            Issue.record("doGenerate was not called")
+            return
+        }
+
+        switch options.audio {
+        case .binary(let data):
+            #expect(data == audioData)
+        case .base64:
+            Issue.record("Expected binary audio data")
+        }
+    }
+
+    @Test("should resolve string transcription model IDs through V4 global provider")
+    func shouldResolveStringTranscriptionModelThroughV4GlobalProvider() async throws {
+        let provider = customProviderV4(
+            transcriptionModels: [
+                "transcription-model": MockTranscriptionModelV4(
+                    provider: "v4-provider",
+                    modelId: "resolved-transcription-model",
+                    doGenerate: { _ in
+                        makeMockResponseV4(modelId: "resolved-transcription-model")
+                    }
+                )
+            ]
+        )
+
+        let result = try await withGlobalProviderV4(provider, operation: {
+            try await transcribe(
+                model: .string("transcription-model"),
+                audio: .data(audioData)
+            )
+        })
+
+        #expect(result.text == sampleTranscriptText)
+        #expect(result.responses.first?.modelId == "resolved-transcription-model")
+    }
+
     @Test("should return warnings")
     func shouldReturnWarnings() async throws {
-        let warnings: [SharedV3Warning] = [
+        let warnings: [TranscriptionWarning] = [
             .other(message: "Setting is not supported")
         ]
 
@@ -155,7 +331,7 @@ struct TranscribeTests {
     @Test("should call logWarnings with the correct warnings")
     func shouldCallLogWarningsWithExpectedWarnings() async throws {
         try await LogWarningsTestLock.shared.withLock {
-            let expectedWarnings: [SharedV3Warning] = [
+            let expectedWarnings: [TranscriptionWarning] = [
                 .other(message: "Setting is not supported"),
                 .unsupported(feature: "mediaType", details: "MediaType parameter not supported")
             ]
@@ -177,7 +353,7 @@ struct TranscribeTests {
                 audio: .data(audioData)
             )
 
-            let expectedLogged = try expectedWarnings.map { Warning.transcriptionModel($0) }
+            let expectedLogged = expectedWarnings.map { Warning.transcriptionModel($0) }
             #expect(recordedWarnings.value.count == 1)
             #expect(recordedWarnings.value.first == expectedLogged)
         }

@@ -7,13 +7,13 @@ import AISDKProviderUtils
 
  Port of `@ai-sdk/ai/src/registry/custom-provider.ts`.
 
- Creates a custom provider with specified language models, text embedding models, image models,
- video models, transcription models, speech models, and an optional fallback provider.
+ Swift keeps the legacy V3 `customProvider` surface for source compatibility and
+ exposes `customProviderV4` for the current upstream V4 provider contract.
  */
 
 /**
- Creates a custom provider with specified language models, text embedding models, image models,
- video models, transcription models, speech models, and an optional fallback provider.
+ Creates a legacy V3 custom provider with specified language models, text embedding models,
+ image models, video models, transcription models, speech models, and an optional fallback provider.
 
  - Parameters:
    - languageModels: A dictionary of language models, where keys are model IDs and values are LanguageModelV3 instances.
@@ -24,8 +24,8 @@ import AISDKProviderUtils
    - speechModels: A dictionary of speech models, where keys are model IDs and values are SpeechModelV3 instances.
    - fallbackProvider: An optional fallback provider to use when a requested model is not found in the custom provider.
 
- - Returns: A ProviderV3 object with languageModel, textEmbeddingModel, imageModel, transcriptionModel,
-   videoModel, transcriptionModel, and speechModel methods.
+ - Returns: A ProviderV3 object with languageModel, textEmbeddingModel, imageModel, videoModel,
+   transcriptionModel, speechModel, and rerankingModel methods.
 
  - Throws: `NoSuchModelError` when a requested model is not found and no fallback provider is available.
  */
@@ -40,7 +40,7 @@ public func customProvider(
     speechModels: [String: any SpeechModelV3]? = nil,
     fallbackProvider: (any ProviderV3)? = nil
 ) -> any ProviderV3 {
-    return CustomProviderImpl(
+    CustomProviderImpl(
         languageModels: languageModels,
         textEmbeddingModels: textEmbeddingModels,
         imageModels: imageModels,
@@ -52,7 +52,53 @@ public func customProvider(
     )
 }
 
-/// Internal implementation of custom provider
+/**
+ Creates a V4 custom provider.
+
+ Swift adaptation of upstream's union-typed `customProvider`: V4 dictionaries use the
+ primary labels, while legacy V3 dictionaries use `legacy*` labels and are adapted
+ through `asProviderV4` / `as*ModelV4`.
+ */
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+public func customProviderV4(
+    languageModels: [String: any LanguageModelV4]? = nil,
+    legacyLanguageModels: [String: any LanguageModelV3]? = nil,
+    embeddingModels: [String: any EmbeddingModelV4]? = nil,
+    legacyTextEmbeddingModels: [String: any EmbeddingModelV3<String>]? = nil,
+    imageModels: [String: any ImageModelV4]? = nil,
+    legacyImageModels: [String: any ImageModelV3]? = nil,
+    rerankingModels: [String: any RerankingModelV4]? = nil,
+    legacyRerankingModels: [String: any RerankingModelV3]? = nil,
+    transcriptionModels: [String: any TranscriptionModelV4]? = nil,
+    legacyTranscriptionModels: [String: any TranscriptionModelV3]? = nil,
+    speechModels: [String: any SpeechModelV4]? = nil,
+    legacySpeechModels: [String: any SpeechModelV3]? = nil,
+    files: (any FilesV4)? = nil,
+    skills: (any SkillsV4)? = nil,
+    fallbackProvider: (any ProviderV4)? = nil,
+    legacyFallbackProvider: (any ProviderV3)? = nil
+) -> any ProviderV4 {
+    CustomProviderV4Impl(
+        languageModels: languageModels,
+        legacyLanguageModels: legacyLanguageModels,
+        embeddingModels: embeddingModels,
+        legacyTextEmbeddingModels: legacyTextEmbeddingModels,
+        imageModels: imageModels,
+        legacyImageModels: legacyImageModels,
+        rerankingModels: rerankingModels,
+        legacyRerankingModels: legacyRerankingModels,
+        transcriptionModels: transcriptionModels,
+        legacyTranscriptionModels: legacyTranscriptionModels,
+        speechModels: speechModels,
+        legacySpeechModels: legacySpeechModels,
+        files: files,
+        skills: skills,
+        fallbackProvider: fallbackProvider,
+        legacyFallbackProvider: legacyFallbackProvider
+    )
+}
+
+/// Internal implementation of legacy V3 custom provider.
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 private final class CustomProviderImpl: ProviderV3 {
     private let languageModels: [String: any LanguageModelV3]?
@@ -137,10 +183,8 @@ private final class CustomProviderImpl: ProviderV3 {
             return model
         }
 
-        if let fallback = fallbackProvider {
-            if let model = try fallback.rerankingModel(modelId: modelId) {
-                return model
-            }
+        if let fallback = fallbackProvider, let model = try fallback.rerankingModel(modelId: modelId) {
+            return model
         }
 
         throw NoSuchModelError(modelId: modelId, modelType: .rerankingModel)
@@ -155,7 +199,6 @@ private final class CustomProviderImpl: ProviderV3 {
             return try fallback.transcriptionModel(modelId: modelId)
         }
 
-        // Throw error when model not found and no fallback (matches upstream behavior)
         throw NoSuchModelError(modelId: modelId, modelType: .transcriptionModel)
     }
 
@@ -168,7 +211,161 @@ private final class CustomProviderImpl: ProviderV3 {
             return try fallback.speechModel(modelId: modelId)
         }
 
-        // Throw error when model not found and no fallback (matches upstream behavior)
         throw NoSuchModelError(modelId: modelId, modelType: .speechModel)
+    }
+}
+
+/// Internal implementation of upstream-style V4 custom provider.
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+private final class CustomProviderV4Impl: ProviderV4 {
+    let specificationVersion = "v4"
+
+    private let languageModels: [String: any LanguageModelV4]?
+    private let legacyLanguageModels: [String: any LanguageModelV3]?
+    private let embeddingModels: [String: any EmbeddingModelV4]?
+    private let legacyTextEmbeddingModels: [String: any EmbeddingModelV3<String>]?
+    private let imageModels: [String: any ImageModelV4]?
+    private let legacyImageModels: [String: any ImageModelV3]?
+    private let rerankingModels: [String: any RerankingModelV4]?
+    private let legacyRerankingModels: [String: any RerankingModelV3]?
+    private let transcriptionModels: [String: any TranscriptionModelV4]?
+    private let legacyTranscriptionModels: [String: any TranscriptionModelV3]?
+    private let speechModels: [String: any SpeechModelV4]?
+    private let legacySpeechModels: [String: any SpeechModelV3]?
+    private let filesInterface: (any FilesV4)?
+    private let skillsInterface: (any SkillsV4)?
+    private let fallbackProvider: (any ProviderV4)?
+
+    init(
+        languageModels: [String: any LanguageModelV4]?,
+        legacyLanguageModels: [String: any LanguageModelV3]?,
+        embeddingModels: [String: any EmbeddingModelV4]?,
+        legacyTextEmbeddingModels: [String: any EmbeddingModelV3<String>]?,
+        imageModels: [String: any ImageModelV4]?,
+        legacyImageModels: [String: any ImageModelV3]?,
+        rerankingModels: [String: any RerankingModelV4]?,
+        legacyRerankingModels: [String: any RerankingModelV3]?,
+        transcriptionModels: [String: any TranscriptionModelV4]?,
+        legacyTranscriptionModels: [String: any TranscriptionModelV3]?,
+        speechModels: [String: any SpeechModelV4]?,
+        legacySpeechModels: [String: any SpeechModelV3]?,
+        files: (any FilesV4)?,
+        skills: (any SkillsV4)?,
+        fallbackProvider: (any ProviderV4)?,
+        legacyFallbackProvider: (any ProviderV3)?
+    ) {
+        self.languageModels = languageModels
+        self.legacyLanguageModels = legacyLanguageModels
+        self.embeddingModels = embeddingModels
+        self.legacyTextEmbeddingModels = legacyTextEmbeddingModels
+        self.imageModels = imageModels
+        self.legacyImageModels = legacyImageModels
+        self.rerankingModels = rerankingModels
+        self.legacyRerankingModels = legacyRerankingModels
+        self.transcriptionModels = transcriptionModels
+        self.legacyTranscriptionModels = legacyTranscriptionModels
+        self.speechModels = speechModels
+        self.legacySpeechModels = legacySpeechModels
+        self.filesInterface = files
+        self.skillsInterface = skills
+        self.fallbackProvider = fallbackProvider ?? legacyFallbackProvider.map(asProviderV4)
+    }
+
+    func languageModel(modelId: String) throws -> any LanguageModelV4 {
+        if let models = languageModels, let model = models[modelId] {
+            return model
+        }
+
+        if let models = legacyLanguageModels, let model = models[modelId] {
+            return asLanguageModelV4(model)
+        }
+
+        if let fallbackProvider {
+            return try fallbackProvider.languageModel(modelId: modelId)
+        }
+
+        throw NoSuchModelError(modelId: modelId, modelType: .languageModel)
+    }
+
+    func embeddingModel(modelId: String) throws -> any EmbeddingModelV4 {
+        if let models = embeddingModels, let model = models[modelId] {
+            return model
+        }
+
+        if let models = legacyTextEmbeddingModels, let model = models[modelId] {
+            return asEmbeddingModelV4(model)
+        }
+
+        if let fallbackProvider {
+            return try fallbackProvider.embeddingModel(modelId: modelId)
+        }
+
+        throw NoSuchModelError(modelId: modelId, modelType: .textEmbeddingModel)
+    }
+
+    func imageModel(modelId: String) throws -> any ImageModelV4 {
+        if let models = imageModels, let model = models[modelId] {
+            return model
+        }
+
+        if let models = legacyImageModels, let model = models[modelId] {
+            return asImageModelV4(model)
+        }
+
+        if let fallbackProvider {
+            return try fallbackProvider.imageModel(modelId: modelId)
+        }
+
+        throw NoSuchModelError(modelId: modelId, modelType: .imageModel)
+    }
+
+    func transcriptionModel(modelId: String) throws -> (any TranscriptionModelV4)? {
+        if let models = transcriptionModels, let model = models[modelId] {
+            return model
+        }
+
+        if let models = legacyTranscriptionModels, let model = models[modelId] {
+            return asTranscriptionModelV4(model)
+        }
+
+        return try fallbackProvider?.transcriptionModel(modelId: modelId)
+    }
+
+    func speechModel(modelId: String) throws -> (any SpeechModelV4)? {
+        if let models = speechModels, let model = models[modelId] {
+            return model
+        }
+
+        if let models = legacySpeechModels, let model = models[modelId] {
+            return asSpeechModelV4(model)
+        }
+
+        return try fallbackProvider?.speechModel(modelId: modelId)
+    }
+
+    func rerankingModel(modelId: String) throws -> (any RerankingModelV4)? {
+        if let models = rerankingModels, let model = models[modelId] {
+            return model
+        }
+
+        if let models = legacyRerankingModels, let model = models[modelId] {
+            return asRerankingModelV4(model)
+        }
+
+        return try fallbackProvider?.rerankingModel(modelId: modelId)
+    }
+
+    func files() throws -> (any FilesV4)? {
+        if let filesInterface {
+            return filesInterface
+        }
+        return try fallbackProvider?.files()
+    }
+
+    func skills() throws -> (any SkillsV4)? {
+        if let skillsInterface {
+            return skillsInterface
+        }
+        return try fallbackProvider?.skills()
     }
 }

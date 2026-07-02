@@ -24,7 +24,8 @@ struct PrepareCallSettingsTests {
             topK: 50,
             presencePenalty: 0.5,
             frequencyPenalty: 0.3,
-            seed: 42
+            seed: 42,
+            reasoning: .high
         )
 
         #expect(settings.maxOutputTokens == 100)
@@ -35,6 +36,7 @@ struct PrepareCallSettingsTests {
         #expect(settings.frequencyPenalty == 0.3)
         #expect(settings.seed == 42)
         #expect(settings.stopSequences == nil)
+        #expect(settings.reasoning == .high)
     }
 
     @Test("should allow nil values for optional settings")
@@ -46,7 +48,8 @@ struct PrepareCallSettingsTests {
             topK: nil,
             presencePenalty: nil,
             frequencyPenalty: nil,
-            seed: nil
+            seed: nil,
+            reasoning: nil
         )
 
         #expect(settings.maxOutputTokens == nil)
@@ -57,6 +60,7 @@ struct PrepareCallSettingsTests {
         #expect(settings.frequencyPenalty == nil)
         #expect(settings.seed == nil)
         #expect(settings.stopSequences == nil)
+        #expect(settings.reasoning == nil)
     }
 
     // MARK: - Invalid Inputs
@@ -118,6 +122,7 @@ struct PrepareCallSettingsTests {
         #expect(settings.frequencyPenalty == nil)
         #expect(settings.stopSequences == nil)
         #expect(settings.seed == nil)
+        #expect(settings.reasoning == nil)
     }
 
     @Test("should handle stopSequences correctly")
@@ -129,6 +134,23 @@ struct PrepareCallSettingsTests {
         )
 
         #expect(settings.stopSequences == sequences)
+    }
+
+    @Test("should pass through reasoning effort for V4 language calls")
+    func reasoningEffort() throws {
+        let settings = try prepareCallSettings(reasoning: .providerDefault)
+
+        #expect(settings.reasoning == .providerDefault)
+    }
+
+    @Test("CallSettings equality includes reasoning effort")
+    func callSettingsEqualityIncludesReasoning() {
+        let high = CallSettings(reasoning: .high)
+        let low = CallSettings(reasoning: .low)
+        let alsoHigh = CallSettings(reasoning: .high)
+
+        #expect(high == alsoHigh)
+        #expect(high != low)
     }
 
     // MARK: - Note on Type Validation Tests

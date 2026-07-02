@@ -9,6 +9,56 @@ import AISDKProviderUtils
  */
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 public func rerank(
+    model: any RerankingModelV3,
+    documents: [String],
+    query: String,
+    topN: Int? = nil,
+    maxRetries: Int? = nil,
+    abortSignal: (@Sendable () -> Bool)? = nil,
+    headers: [String: String]? = nil,
+    providerOptions: ProviderOptions? = nil,
+    experimentalTelemetry telemetry: TelemetrySettings? = nil
+) async throws -> DefaultRerankResult<String> {
+    try await rerank(
+        model: .v3(model),
+        documents: documents,
+        query: query,
+        topN: topN,
+        maxRetries: maxRetries,
+        abortSignal: abortSignal,
+        headers: headers,
+        providerOptions: providerOptions,
+        experimentalTelemetry: telemetry
+    )
+}
+
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+public func rerank(
+    model: any RerankingModelV4,
+    documents: [String],
+    query: String,
+    topN: Int? = nil,
+    maxRetries: Int? = nil,
+    abortSignal: (@Sendable () -> Bool)? = nil,
+    headers: [String: String]? = nil,
+    providerOptions: ProviderOptions? = nil,
+    experimentalTelemetry telemetry: TelemetrySettings? = nil
+) async throws -> DefaultRerankResult<String> {
+    try await rerank(
+        model: .v4(model),
+        documents: documents,
+        query: query,
+        topN: topN,
+        maxRetries: maxRetries,
+        abortSignal: abortSignal,
+        headers: headers,
+        providerOptions: providerOptions,
+        experimentalTelemetry: telemetry
+    )
+}
+
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+public func rerank(
     model: RerankingModel,
     documents: [String],
     query: String,
@@ -33,6 +83,56 @@ public func rerank(
         stringifyDocumentForTelemetry: { doc in
             try jsonStringify(doc)
         }
+    )
+}
+
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+public func rerank(
+    model: any RerankingModelV3,
+    documents: [JSONObject],
+    query: String,
+    topN: Int? = nil,
+    maxRetries: Int? = nil,
+    abortSignal: (@Sendable () -> Bool)? = nil,
+    headers: [String: String]? = nil,
+    providerOptions: ProviderOptions? = nil,
+    experimentalTelemetry telemetry: TelemetrySettings? = nil
+) async throws -> DefaultRerankResult<JSONObject> {
+    try await rerank(
+        model: .v3(model),
+        documents: documents,
+        query: query,
+        topN: topN,
+        maxRetries: maxRetries,
+        abortSignal: abortSignal,
+        headers: headers,
+        providerOptions: providerOptions,
+        experimentalTelemetry: telemetry
+    )
+}
+
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+public func rerank(
+    model: any RerankingModelV4,
+    documents: [JSONObject],
+    query: String,
+    topN: Int? = nil,
+    maxRetries: Int? = nil,
+    abortSignal: (@Sendable () -> Bool)? = nil,
+    headers: [String: String]? = nil,
+    providerOptions: ProviderOptions? = nil,
+    experimentalTelemetry telemetry: TelemetrySettings? = nil
+) async throws -> DefaultRerankResult<JSONObject> {
+    try await rerank(
+        model: .v4(model),
+        documents: documents,
+        query: query,
+        topN: topN,
+        maxRetries: maxRetries,
+        abortSignal: abortSignal,
+        headers: headers,
+        providerOptions: providerOptions,
+        experimentalTelemetry: telemetry
     )
 }
 
@@ -71,7 +171,7 @@ public func rerank(
 private func _rerank<Value: Sendable>(
     model: RerankingModel,
     documents: [Value],
-    documentsToSend: RerankingModelV3CallOptions.Documents,
+    documentsToSend: RerankingModelV4CallOptions.Documents,
     query: String,
     topN: Int?,
     maxRetries: Int?,
@@ -81,6 +181,8 @@ private func _rerank<Value: Sendable>(
     telemetry: TelemetrySettings?,
     stringifyDocumentForTelemetry: @escaping @Sendable (Value) throws -> String
 ) async throws -> DefaultRerankResult<Value> {
+    let resolvedModel = try resolveRerankingModelV4(model)
+
     if documents.isEmpty {
         return DefaultRerankResult(
             originalDocuments: [],
@@ -88,7 +190,7 @@ private func _rerank<Value: Sendable>(
             providerMetadata: nil,
             response: RerankResponse(
                 timestamp: Date(),
-                modelId: model.modelId
+                modelId: resolvedModel.modelId
             )
         )
     }
@@ -107,7 +209,7 @@ private func _rerank<Value: Sendable>(
     telemetrySettings.maxRetries = preparedRetries.maxRetries
 
     let baseTelemetryAttributes = getBaseTelemetryAttributes(
-        model: TelemetryModelInfo(modelId: model.modelId, provider: model.provider),
+        model: TelemetryModelInfo(modelId: resolvedModel.modelId, provider: resolvedModel.provider),
         settings: telemetrySettings,
         telemetry: telemetry,
         headers: headersWithUserAgent
@@ -155,8 +257,8 @@ private func _rerank<Value: Sendable>(
                     )
                 )
             ) { doRerankSpan in
-                let modelResponse = try await model.doRerank(
-                    options: RerankingModelV3CallOptions(
+                let modelResponse = try await resolvedModel.doRerank(
+                    options: RerankingModelV4CallOptions(
                         documents: documentsToSend,
                         query: query,
                         topN: topN,
@@ -192,7 +294,7 @@ private func _rerank<Value: Sendable>(
         let resolvedResponse = RerankResponse(
             id: responseInfo?.id,
             timestamp: responseInfo?.timestamp ?? Date(),
-            modelId: responseInfo?.modelId ?? model.modelId,
+            modelId: responseInfo?.modelId ?? resolvedModel.modelId,
             headers: responseInfo?.headers,
             body: responseInfo?.body
         )
@@ -248,7 +350,7 @@ private func makeRerankTelemetryAttributes(
     return attributes
 }
 
-private func rerankDocumentsTypeString(_ documents: RerankingModelV3CallOptions.Documents) -> String {
+private func rerankDocumentsTypeString(_ documents: RerankingModelV4CallOptions.Documents) -> String {
     switch documents {
     case .text:
         return "text"

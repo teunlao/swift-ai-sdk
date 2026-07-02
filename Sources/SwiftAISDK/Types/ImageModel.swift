@@ -13,12 +13,27 @@ import AISDKProviderUtils
 /**
  Image model that is used by the AI SDK Core functions.
 
- Type alias for `ImageModelV3` protocol from the Provider package.
+ Can be one of:
+ - A string identifier (model ID that will be resolved via the default/global provider)
+ - An `ImageModelV4` protocol implementation
+ - An `ImageModelV3` protocol implementation
+ - An `ImageModelV2` protocol implementation
 
- - Note: TypeScript type `ImageModelV3` is represented as `any ImageModelV3` in Swift
-         to support any conforming implementation.
+ TypeScript equivalent: `string | ImageModelV4 | ImageModelV3 | ImageModelV2`
  */
-public typealias ImageModel = any ImageModelV3
+public enum ImageModel: Sendable {
+    /// Model identifier string (will be resolved via the global/default provider).
+    case string(String)
+
+    /// Image model V4 implementation.
+    case v4(any ImageModelV4)
+
+    /// Image model V3 implementation.
+    case v3(any ImageModelV3)
+
+    /// Image model V2 implementation.
+    case v2(any ImageModelV2)
+}
 
 /**
  Warning from the model provider for this call.
@@ -26,13 +41,13 @@ public typealias ImageModel = any ImageModelV3
  The call will proceed, but e.g. some settings might not be supported,
  which can lead to suboptimal results.
 
- Type alias for `SharedV3Warning` from the Provider package.
+ Type alias for `SharedV4Warning` from the Provider package.
  */
-public typealias ImageGenerationWarning = SharedV3Warning
+public typealias ImageGenerationWarning = SharedV4Warning
 
 /**
  Metadata from the model provider for this call.
 
- Type alias for `ImageModelV3ProviderMetadata` from the Provider package.
+ Type alias for `ImageModelV4ProviderMetadata` from the Provider package.
  */
-public typealias ImageModelProviderMetadata = ImageModelV3ProviderMetadata
+public typealias ImageModelProviderMetadata = ImageModelV4ProviderMetadata

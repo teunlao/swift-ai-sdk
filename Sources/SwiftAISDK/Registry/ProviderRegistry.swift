@@ -7,52 +7,48 @@ import AISDKProviderUtils
 
  Port of `@ai-sdk/ai/src/registry/provider-registry.ts`.
 
- Creates a registry for multiple providers with optional middleware functionality.
- Allows registering providers and applying middleware to all language models from the registry.
+ The registry is V4-first internally: legacy V3 providers are accepted by the
+ compatibility factory and normalized through `asProviderV4` at registration time.
  */
 
-/// Protocol defining provider registry interface
+/// Protocol defining provider registry interface.
 public protocol ProviderRegistryProvider: Sendable {
-    /// Returns the language model with the given combined ID (providerId:modelId)
-    func languageModel(id: String) -> any LanguageModelV3
+    /// Returns the language model with the given combined ID (providerId:modelId).
+    func languageModel(id: String) throws -> any LanguageModelV4
 
-    /// Returns the text embedding model with the given combined ID
-    func textEmbeddingModel(id: String) -> any EmbeddingModelV3<String>
+    /// Returns the embedding model with the given combined ID.
+    func embeddingModel(id: String) throws -> any EmbeddingModelV4
 
-    /// Returns the image model with the given combined ID
-    func imageModel(id: String) -> any ImageModelV3
+    /// Backward-compatible alias for `embeddingModel(id:)`.
+    func textEmbeddingModel(id: String) throws -> any EmbeddingModelV4
 
-    /// Returns the video model with the given combined ID
-    func videoModel(id: String) -> any VideoModelV3
+    /// Returns the image model with the given combined ID.
+    func imageModel(id: String) throws -> any ImageModelV4
 
-    /// Returns the reranking model with the given combined ID
-    func rerankingModel(id: String) -> any RerankingModelV3
+    /// Returns the video model with the given combined ID when the original provider exposes a legacy video model.
+    func videoModel(id: String) throws -> any VideoModelV4
 
-    /// Returns the transcription model with the given combined ID
-    func transcriptionModel(id: String) -> any TranscriptionModelV3
+    /// Returns the reranking model with the given combined ID.
+    func rerankingModel(id: String) throws -> any RerankingModelV4
 
-    /// Returns the speech model with the given combined ID
-    func speechModel(id: String) -> any SpeechModelV3
+    /// Returns the transcription model with the given combined ID.
+    func transcriptionModel(id: String) throws -> any TranscriptionModelV4
+
+    /// Returns the speech model with the given combined ID.
+    func speechModel(id: String) throws -> any SpeechModelV4
+
+    /// Returns the files API for a provider ID.
+    func files(id: String) throws -> any FilesV4
+
+    /// Returns the skills API for a provider ID.
+    func skills(id: String) throws -> any SkillsV4
 }
 
 /**
- Creates a registry for the given providers with optional middleware functionality.
+ Creates a registry for legacy V3 providers with optional middleware functionality.
 
- This function allows you to register multiple providers and optionally apply middleware
- to all language models from the registry, enabling you to transform parameters, wrap generate
- operations, and wrap stream operations for every language model accessed through the registry.
-
- - Parameters:
-   - providers: A dictionary of provider instances to be registered in the registry.
-   - options: Configuration options that control the separator and optional language model middleware.
-
- - Returns: A new ProviderRegistryProvider instance that provides access to all registered providers
-   with optional middleware applied to language models.
-
- - Note: Error handling differs from TypeScript upstream:
-   - TypeScript: throws recoverable errors
-   - Swift: uses fatalError (crashes with detailed message)
-   - Rationale: Protocol methods cannot conditionally declare 'throws' in Swift
+ Legacy providers are normalized to the V4 surface immediately. Language model
+ middleware remains V3-based for compatibility and is applied before V4 adaptation.
  */
 public struct ProviderRegistryOptions: Sendable {
     public var separator: String
@@ -93,43 +89,80 @@ public func createProviderRegistry(
     providers: [String: any ProviderV3],
     options: ProviderRegistryOptions = ProviderRegistryOptions()
 ) -> ProviderRegistryProvider {
-    return DefaultProviderRegistry(
+    DefaultProviderRegistry(
         separator: options.separator,
         languageModelMiddleware: options.languageModelMiddleware,
-        providers: providers
+        providers: providers.mapValues(asProviderV4),
+        legacyProviders: providers
     )
 }
 
-/// Default implementation of provider registry
+public func createProviderRegistry(
+    providers: [String: any ProviderV4],
+    options: ProviderRegistryOptions = ProviderRegistryOptions()
+) -> ProviderRegistryProvider {
+    createProviderRegistryV4(providers: providers, options: options)
+}
+
+public func createProviderRegistryV4(
+    providers: [String: any ProviderV4],
+    options: ProviderRegistryOptions = ProviderRegistryOptions()
+) -> ProviderRegistryProvider {
+    DefaultProviderRegistry(
+        separator: options.separator,
+        languageModelMiddleware: options.languageModelMiddleware,
+        providers: providers,
+        legacyProviders: [:]
+    )
+}
+
+/// Default implementation of provider registry.
 final class DefaultProviderRegistry: ProviderRegistryProvider {
-    private let providers: [String: any ProviderV3]
+    private let providers: [String: any ProviderV4]
+    private let legacyProviders: [String: any ProviderV3]
     private let separator: String
     private let languageModelMiddleware: LanguageModelMiddlewareInput?
 
     init(
         separator: String,
         languageModelMiddleware: LanguageModelMiddlewareInput?,
-        providers: [String: any ProviderV3] = [:]
+        providers: [String: any ProviderV4] = [:],
+        legacyProviders: [String: any ProviderV3] = [:]
     ) {
         self.separator = separator
         self.languageModelMiddleware = languageModelMiddleware
         self.providers = providers
+        self.legacyProviders = legacyProviders
     }
 
     func registerProvider(id: String, provider: any ProviderV3) -> DefaultProviderRegistry {
-        var newProviders = self.providers
+        var newProviders = providers
+        var newLegacyProviders = legacyProviders
+        newProviders[id] = asProviderV4(provider)
+        newLegacyProviders[id] = provider
+        return DefaultProviderRegistry(
+            separator: separator,
+            languageModelMiddleware: languageModelMiddleware,
+            providers: newProviders,
+            legacyProviders: newLegacyProviders
+        )
+    }
+
+    func registerProviderV4(id: String, provider: any ProviderV4) -> DefaultProviderRegistry {
+        var newProviders = providers
         newProviders[id] = provider
         return DefaultProviderRegistry(
             separator: separator,
             languageModelMiddleware: languageModelMiddleware,
-            providers: newProviders
+            providers: newProviders,
+            legacyProviders: legacyProviders
         )
     }
 
     private func getProvider(
         id: String,
         modelType: NoSuchModelError.ModelType
-    ) throws -> any ProviderV3 {
+    ) throws -> any ProviderV4 {
         guard let provider = providers[id] else {
             throw NoSuchProviderError(
                 modelId: id,
@@ -145,130 +178,120 @@ final class DefaultProviderRegistry: ProviderRegistryProvider {
         id: String,
         modelType: NoSuchModelError.ModelType
     ) throws -> (providerId: String, modelId: String) {
-        // Support multi-character separators (e.g., " > ")
         guard let range = id.range(of: separator) else {
             throw NoSuchModelError(
                 modelId: id,
                 modelType: modelType,
                 message: "Invalid \(modelType.rawValue) id for registry: \(id) " +
-                        "(must be in the format \"providerId\(separator)modelId\")"
+                    "(must be in the format \"providerId\(separator)modelId\")"
             )
         }
 
-        let providerId = String(id[..<range.lowerBound])
-        let modelId = String(id[range.upperBound...])
-
-        return (providerId, modelId)
+        return (String(id[..<range.lowerBound]), String(id[range.upperBound...]))
     }
 
-    public func languageModel(id: String) -> any LanguageModelV3 {
-        do {
-            let (providerId, modelId) = try splitId(id: id, modelType: .languageModel)
-            let provider = try getProvider(id: providerId, modelType: .languageModel)
+    public func languageModel(id: String) throws -> any LanguageModelV4 {
+        let (providerId, modelId) = try splitId(id: id, modelType: .languageModel)
 
-            var model = try provider.languageModel(modelId: modelId)
-
-            if let middleware = languageModelMiddleware {
-                model = wrapLanguageModel(
-                    model: model,
-                    middleware: middleware
-                )
-            }
-
-            return model
-        } catch {
-            // Swift adaptation: Use fatalError instead of throws
-            // Rationale: Protocol methods cannot conditionally declare 'throws'
-            // TypeScript throws recoverable errors, Swift crashes with detailed message
-            fatalError("Error accessing language model: \(error)")
+        if let middleware = languageModelMiddleware, let legacyProvider = legacyProviders[providerId] {
+            let legacyModel = try legacyProvider.languageModel(modelId: modelId)
+            return asLanguageModelV4(wrapLanguageModel(model: legacyModel, middleware: middleware))
         }
+
+        let provider = try getProvider(id: providerId, modelType: .languageModel)
+        return try provider.languageModel(modelId: modelId)
     }
 
-    public func textEmbeddingModel(id: String) -> any EmbeddingModelV3<String> {
-        do {
-            let (providerId, modelId) = try splitId(id: id, modelType: .textEmbeddingModel)
-            let provider = try getProvider(id: providerId, modelType: .textEmbeddingModel)
-
-            let model = try provider.textEmbeddingModel(modelId: modelId)
-            return model
-        } catch {
-            fatalError("Error accessing text embedding model: \(error)")
-        }
+    public func embeddingModel(id: String) throws -> any EmbeddingModelV4 {
+        let (providerId, modelId) = try splitId(id: id, modelType: .textEmbeddingModel)
+        let provider = try getProvider(id: providerId, modelType: .textEmbeddingModel)
+        return try provider.embeddingModel(modelId: modelId)
     }
 
-    public func imageModel(id: String) -> any ImageModelV3 {
-        do {
-            let (providerId, modelId) = try splitId(id: id, modelType: .imageModel)
-            let provider = try getProvider(id: providerId, modelType: .imageModel)
-
-            let model = try provider.imageModel(modelId: modelId)
-            return model
-        } catch {
-            fatalError("Error accessing image model: \(error)")
-        }
+    public func textEmbeddingModel(id: String) throws -> any EmbeddingModelV4 {
+        try embeddingModel(id: id)
     }
 
-    public func videoModel(id: String) -> any VideoModelV3 {
-        do {
-            let (providerId, modelId) = try splitId(id: id, modelType: .videoModel)
-            let provider = try getProvider(id: providerId, modelType: .videoModel)
-
-            let maybeModel = try provider.videoModel(modelId: modelId)
-            guard let model = maybeModel else {
-                throw NoSuchModelError(modelId: id, modelType: .videoModel)
-            }
-
-            return model
-        } catch {
-            fatalError("Error accessing video model: \(error)")
-        }
+    public func imageModel(id: String) throws -> any ImageModelV4 {
+        let (providerId, modelId) = try splitId(id: id, modelType: .imageModel)
+        let provider = try getProvider(id: providerId, modelType: .imageModel)
+        return try provider.imageModel(modelId: modelId)
     }
 
-    public func rerankingModel(id: String) -> any RerankingModelV3 {
-        do {
-            let (providerId, modelId) = try splitId(id: id, modelType: .rerankingModel)
-            let provider = try getProvider(id: providerId, modelType: .rerankingModel)
+    public func videoModel(id: String) throws -> any VideoModelV4 {
+        let (providerId, modelId) = try splitId(id: id, modelType: .videoModel)
 
-            let maybeModel = try provider.rerankingModel(modelId: modelId)
-            guard let model = maybeModel else {
-                throw NoSuchModelError(modelId: id, modelType: .rerankingModel)
-            }
-
-            return model
-        } catch {
-            fatalError("Error accessing reranking model: \(error)")
+        guard let legacyProvider = legacyProviders[providerId],
+              let model = try legacyProvider.videoModel(modelId: modelId)
+        else {
+            throw NoSuchModelError(modelId: id, modelType: .videoModel)
         }
+
+        return asVideoModelV4(model)
     }
 
-    public func transcriptionModel(id: String) -> any TranscriptionModelV3 {
-        do {
-            let (providerId, modelId) = try splitId(id: id, modelType: .transcriptionModel)
-            let provider = try getProvider(id: providerId, modelType: .transcriptionModel)
+    public func rerankingModel(id: String) throws -> any RerankingModelV4 {
+        let (providerId, modelId) = try splitId(id: id, modelType: .rerankingModel)
+        let provider = try getProvider(id: providerId, modelType: .rerankingModel)
 
-            let maybeModel = try provider.transcriptionModel(modelId: modelId)
-            guard let model = maybeModel else {
-                throw NoSuchModelError(modelId: id, modelType: .transcriptionModel)
-            }
-
-            return model
-        } catch {
-            fatalError("Error accessing transcription model: \(error)")
+        guard let model = try provider.rerankingModel(modelId: modelId) else {
+            throw NoSuchModelError(modelId: id, modelType: .rerankingModel)
         }
+
+        return model
     }
 
-    public func speechModel(id: String) -> any SpeechModelV3 {
-        do {
-            let (providerId, modelId) = try splitId(id: id, modelType: .speechModel)
-            let provider = try getProvider(id: providerId, modelType: .speechModel)
+    public func transcriptionModel(id: String) throws -> any TranscriptionModelV4 {
+        let (providerId, modelId) = try splitId(id: id, modelType: .transcriptionModel)
+        let provider = try getProvider(id: providerId, modelType: .transcriptionModel)
 
-            let maybeModel = try provider.speechModel(modelId: modelId)
-            guard let model = maybeModel else {
-                throw NoSuchModelError(modelId: id, modelType: .speechModel)
-            }
-
-            return model
-        } catch {
-            fatalError("Error accessing speech model: \(error)")
+        guard let model = try provider.transcriptionModel(modelId: modelId) else {
+            throw NoSuchModelError(modelId: id, modelType: .transcriptionModel)
         }
+
+        return model
+    }
+
+    public func speechModel(id: String) throws -> any SpeechModelV4 {
+        let (providerId, modelId) = try splitId(id: id, modelType: .speechModel)
+        let provider = try getProvider(id: providerId, modelType: .speechModel)
+
+        guard let model = try provider.speechModel(modelId: modelId) else {
+            throw NoSuchModelError(modelId: id, modelType: .speechModel)
+        }
+
+        return model
+    }
+
+    public func files(id: String) throws -> any FilesV4 {
+        let provider = try getProvider(id: id, modelType: .languageModel)
+
+        guard let files = try provider.files() else {
+            throw ProviderRegistryCapabilityError(
+                message: "The provider \"\(id)\" does not support file uploads. Make sure it exposes a files() method."
+            )
+        }
+
+        return files
+    }
+
+    public func skills(id: String) throws -> any SkillsV4 {
+        let provider = try getProvider(id: id, modelType: .languageModel)
+
+        guard let skills = try provider.skills() else {
+            throw ProviderRegistryCapabilityError(
+                message: "The provider \"\(id)\" does not support skills. Make sure it exposes a skills() method."
+            )
+        }
+
+        return skills
+    }
+}
+
+private struct ProviderRegistryCapabilityError: Error, CustomStringConvertible, Sendable {
+    let message: String
+
+    var description: String {
+        message
     }
 }

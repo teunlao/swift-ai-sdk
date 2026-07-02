@@ -77,6 +77,12 @@ private enum GenerateObjectResultJSONEncoder {
                 "feature": .string(feature),
                 "details": details.map(JSONValue.string) ?? .null
             ])
+        case .deprecated(let setting, let message):
+            return .object([
+                "type": .string("deprecated"),
+                "setting": .string(setting),
+                "message": .string(message)
+            ])
         case .other(let message):
             return .object([
                 "type": .string("other"),

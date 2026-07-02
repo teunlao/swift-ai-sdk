@@ -28,3 +28,18 @@ public func extractReasoningContent(content: [LanguageModelV3Content]) -> String
 
     return reasoningParts.joined(separator: "\n")
 }
+
+public func extractReasoningContent(content: [LanguageModelV4Content]) -> String? {
+    let reasoningParts = content.compactMap { part -> String? in
+        guard case .reasoning(let reasoningPart) = part else {
+            return nil
+        }
+        return reasoningPart.text
+    }
+
+    guard !reasoningParts.isEmpty else {
+        return nil
+    }
+
+    return reasoningParts.joined(separator: "\n")
+}

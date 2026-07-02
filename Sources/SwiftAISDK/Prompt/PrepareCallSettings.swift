@@ -16,6 +16,7 @@ public struct PreparedCallSettings: Sendable, Equatable {
     public var frequencyPenalty: Double?
     public var stopSequences: [String]?
     public var seed: Int?
+    public var reasoning: LanguageModelV4ReasoningEffort?
 
     public init(
         maxOutputTokens: Int? = nil,
@@ -25,7 +26,8 @@ public struct PreparedCallSettings: Sendable, Equatable {
         presencePenalty: Double? = nil,
         frequencyPenalty: Double? = nil,
         stopSequences: [String]? = nil,
-        seed: Int? = nil
+        seed: Int? = nil,
+        reasoning: LanguageModelV4ReasoningEffort? = nil
     ) {
         self.maxOutputTokens = maxOutputTokens
         self.temperature = temperature
@@ -35,6 +37,7 @@ public struct PreparedCallSettings: Sendable, Equatable {
         self.frequencyPenalty = frequencyPenalty
         self.stopSequences = stopSequences
         self.seed = seed
+        self.reasoning = reasoning
     }
 }
 
@@ -52,6 +55,7 @@ public struct PreparedCallSettings: Sendable, Equatable {
    - frequencyPenalty: Frequency penalty setting
    - stopSequences: Stop sequences
    - seed: Random seed for deterministic sampling
+   - reasoning: V4 reasoning effort setting
 
  - Throws: `InvalidArgumentError` if validation fails
 
@@ -70,7 +74,8 @@ public func prepareCallSettings(
     presencePenalty: Double? = nil,
     frequencyPenalty: Double? = nil,
     stopSequences: [String]? = nil,
-    seed: Int? = nil
+    seed: Int? = nil,
+    reasoning: LanguageModelV4ReasoningEffort? = nil
 ) throws -> PreparedCallSettings {
     // Validate maxOutputTokens
     if let maxOutputTokens = maxOutputTokens {
@@ -96,6 +101,7 @@ public func prepareCallSettings(
         presencePenalty: presencePenalty,
         frequencyPenalty: frequencyPenalty,
         stopSequences: stopSequences,
-        seed: seed
+        seed: seed,
+        reasoning: reasoning
     )
 }

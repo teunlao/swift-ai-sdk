@@ -90,6 +90,11 @@ public func transformFullToUIMessageStream(
                         // Upstream UI stream surfaces files via dedicated pathways.
                         break
 
+                    case .custom, .reasoningFile:
+                        // Full-stream-only V4 chunks; UI message chunks do not expose
+                        // a dedicated representation in this Swift surface yet.
+                        break
+
                     case let .toolInputStart(toolCallId, toolName, providerMetadata, providerExecuted, dynamic, title):
                         continuation.yield(.toolInputStart(
                             toolCallId: toolCallId,

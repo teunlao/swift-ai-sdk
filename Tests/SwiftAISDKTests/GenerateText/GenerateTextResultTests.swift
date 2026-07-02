@@ -33,7 +33,7 @@ struct GenerateTextResultTests {
             .reasoning(ReasoningOutput(text: "why-\(identifier)")),
             .source(
                 type: "doc",
-                source: LanguageModelV3Source.url(
+                source: Source.url(
                     id: "s-\(identifier)",
                     url: "https://example.com/\(identifier)",
                     title: nil,

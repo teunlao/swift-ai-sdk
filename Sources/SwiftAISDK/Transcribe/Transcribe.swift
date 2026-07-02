@@ -11,20 +11,15 @@ nonisolated(unsafe) var logWarningsForTranscribe: ([Warning]) -> Void = logWarni
  Port of `@ai-sdk/ai/src/transcribe/transcribe.ts`.
  */
 public func transcribe(
-    model: any TranscriptionModelV3,
+    model: TranscriptionModel,
     audio: TranscriptionAudioInput,
     providerOptions: ProviderOptions = [:],
     maxRetries: Int? = nil,
     abortSignal: (@Sendable () -> Bool)? = nil,
-    headers: [String: String]? = nil
+    headers: [String: String]? = nil,
+    experimentalDownload download: DownloadFileFunction? = nil
 ) async throws -> any TranscriptionResult {
-    guard model.specificationVersion == "v3" else {
-        throw UnsupportedModelVersionError(
-            version: model.specificationVersion,
-            provider: model.provider,
-            modelId: model.modelId
-        )
-    }
+    let resolvedModel = try resolveTranscriptionModelV4(model)
 
     let preparedRetries = try prepareRetries(
         maxRetries: maxRetries,
@@ -36,11 +31,15 @@ public func transcribe(
         "ai/\(VERSION)"
     )
 
-    let audioData = try await resolveAudioData(audio)
+    let audioData = try await resolveAudioData(
+        audio,
+        download: download ?? createDownload(),
+        abortSignal: abortSignal
+    )
 
     let result = try await preparedRetries.retry.call {
-        try await model.doGenerate(
-            options: TranscriptionModelV3CallOptions(
+        try await resolvedModel.doGenerate(
+            options: TranscriptionModelV4CallOptions(
                 audio: .binary(audioData),
                 mediaType: detectMediaType(
                     data: audioData,
@@ -92,6 +91,66 @@ public func transcribe(
     )
 }
 
+public func transcribe(
+    model: any TranscriptionModelV4,
+    audio: TranscriptionAudioInput,
+    providerOptions: ProviderOptions = [:],
+    maxRetries: Int? = nil,
+    abortSignal: (@Sendable () -> Bool)? = nil,
+    headers: [String: String]? = nil,
+    experimentalDownload download: DownloadFileFunction? = nil
+) async throws -> any TranscriptionResult {
+    try await transcribe(
+        model: .v4(model),
+        audio: audio,
+        providerOptions: providerOptions,
+        maxRetries: maxRetries,
+        abortSignal: abortSignal,
+        headers: headers,
+        experimentalDownload: download
+    )
+}
+
+public func transcribe(
+    model: any TranscriptionModelV3,
+    audio: TranscriptionAudioInput,
+    providerOptions: ProviderOptions = [:],
+    maxRetries: Int? = nil,
+    abortSignal: (@Sendable () -> Bool)? = nil,
+    headers: [String: String]? = nil,
+    experimentalDownload download: DownloadFileFunction? = nil
+) async throws -> any TranscriptionResult {
+    try await transcribe(
+        model: .v3(model),
+        audio: audio,
+        providerOptions: providerOptions,
+        maxRetries: maxRetries,
+        abortSignal: abortSignal,
+        headers: headers,
+        experimentalDownload: download
+    )
+}
+
+public func transcribe(
+    model: any TranscriptionModelV2,
+    audio: TranscriptionAudioInput,
+    providerOptions: ProviderOptions = [:],
+    maxRetries: Int? = nil,
+    abortSignal: (@Sendable () -> Bool)? = nil,
+    headers: [String: String]? = nil,
+    experimentalDownload download: DownloadFileFunction? = nil
+) async throws -> any TranscriptionResult {
+    try await transcribe(
+        model: .v2(model),
+        audio: audio,
+        providerOptions: providerOptions,
+        maxRetries: maxRetries,
+        abortSignal: abortSignal,
+        headers: headers,
+        experimentalDownload: download
+    )
+}
+
 /**
  Audio input for transcription.
 
@@ -118,7 +177,11 @@ public enum TranscriptionAudioInput: Sendable, Equatable {
     }
 }
 
-private func resolveAudioData(_ audio: TranscriptionAudioInput) async throws -> Data {
+private func resolveAudioData(
+    _ audio: TranscriptionAudioInput,
+    download: DownloadFileFunction,
+    abortSignal: (@Sendable () -> Bool)?
+) async throws -> Data {
     switch audio {
     case .data(let data):
         return data
@@ -127,6 +190,11 @@ private func resolveAudioData(_ audio: TranscriptionAudioInput) async throws -> 
         return try convertBase64ToData(base64)
 
     case .url(let url):
-        return try await download(url: url).data
+        return try await download(
+            DownloadFileRequest(
+                url: url,
+                abortSignal: abortSignal
+            )
+        ).data
     }
 }

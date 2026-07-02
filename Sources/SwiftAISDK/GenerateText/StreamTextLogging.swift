@@ -120,8 +120,12 @@ private final class StreamTextLogEncoder {
             message = "step \(currentStep):tool-output-denied tool=\(denied.toolName) id=\(denied.toolCallId)"
         case let .source(source):
             message = "source \(source.logDescription())"
+        case let .custom(kind, _):
+            message = "custom kind=\(kind)"
         case let .file(file):
             message = "file \(file.logDescription())"
+        case let .reasoningFile(file):
+            message = "reasoning-file \(file.logDescription())"
         case let .finish(reason, rawFinishReason, usage):
             let usageSummary = usage.logDescription()
             if let rawFinishReason {
@@ -169,6 +173,23 @@ private extension SharedV3Warning {
         case let .compatibility(feature, details):
             if let details { return "compatibility(\(feature)): \(details)" }
             return "compatibility(\(feature))"
+        case let .other(message):
+            return "other(\(message))"
+        }
+    }
+}
+
+private extension SharedV4Warning {
+    func codeDescription() -> String {
+        switch self {
+        case let .unsupported(feature, details):
+            if let details { return "unsupported(\(feature)): \(details)" }
+            return "unsupported(\(feature))"
+        case let .compatibility(feature, details):
+            if let details { return "compatibility(\(feature)): \(details)" }
+            return "compatibility(\(feature))"
+        case let .deprecated(setting, message):
+            return "deprecated(\(setting)): \(message)"
         case let .other(message):
             return "other(\(message))"
         }

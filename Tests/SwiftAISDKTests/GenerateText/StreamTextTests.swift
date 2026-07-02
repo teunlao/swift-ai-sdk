@@ -1734,7 +1734,9 @@ struct StreamTextBasicTests {
             case .toolOutputDenied: return "tool-output-denied"
             case .toolApprovalRequest: return "tool-approval-request"
             case .source: return "source"
+            case .custom: return "custom"
             case .file: return "file"
+            case .reasoningFile: return "reasoning-file"
             case .raw: return "raw"
             case .error: return "error"
             }
