@@ -40,9 +40,13 @@ Status:
 
 Latest validation:
 - `2026-07-02`: `AGENT=1 swift test`
-  passed all 3967 Swift Testing tests.
-- `2026-07-02`: `AGENT=1 node tools/test-runner.js --config tools/test-runner.default.config.json`
-  passed all 3967 selected tests.
+  passed all 3973 Swift Testing tests.
+- `2026-07-02`: `node tools/test-runner.js --config tools/test-runner.default.config.json`
+  passed all 3973 selected tests.
+- `2026-07-02`: `pnpm run examples:build`
+  built the examples package successfully.
+- `2026-07-02`: `pnpm run docs:check` and `pnpm run docs:build`
+  passed; the docs build generated 53 pages.
 
 ## Known gaps / TODO
 
@@ -1776,6 +1780,16 @@ This is a lightweight “memory log” of what we shipped while chasing upstream
 For source-of-truth code, always follow the commits and tests.
 
 ### Unreleased (main)
+
+No unreleased parity changes yet.
+
+### v0.18.0 - 2026-07-02
+
+- 2026-07-02
+  - Core V4 foundation on refreshed upstream `85a80fc6e71558717899e30c9f1fc0e9eb7d733d`: added `ProviderV4` plus V4 language, embedding, image, speech, transcription, video, reranking, realtime, middleware, file, skill, warning, provider-reference, and shared file-data contracts; high-level Swift AI SDK flows now run through V4-compatible adapters while preserving V3/V2 provider compatibility.
+  - Provider utils V4 foundation on refreshed upstream `85a80fc6e71558717899e30c9f1fc0e9eb7d733d`: added shared provider-reference resolution, reasoning mapping, normalized headers, origin/filename/media helpers, inline data conversion, multipart form-data support, validated downloads, size-limited reads, model option serialization, streaming tool-call tracking, provider tool-name mapping, standard-schema normalization, response cancellation, delayed promises, and browser runtime detection.
+  - OpenAI-compatible V4 surface: added V4 adapters and regression coverage for OpenAI-compatible chat models, including reasoning-content round-trips.
+  - Release/CI: tracked the V4 skills contract files and root-scoped the local `skills/` ignore rule so protected GitHub checkouts build the same source tree as local development.
 
 - 2026-04-15
   - Anthropic upload parity on refreshed upstream `4891db8bfc583d3767831dac83439ac190c93cb0`: added provider-side `files()` / `skills()` surfaces with multipart upload support (`AnthropicFiles`, `AnthropicSkills`), including `files-api-2025-04-14` / `skills-2025-10-02` beta headers, version-metadata fetch for uploaded skills, and direct regression coverage for multipart payloads plus mapped provider metadata.

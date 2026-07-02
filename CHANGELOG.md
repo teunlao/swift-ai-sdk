@@ -6,6 +6,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-07-02
+
+Upstream parity refresh against Vercel AI SDK commit `85a80fc6e71558717899e30c9f1fc0e9eb7d733d`.
+
+### Added
+- Core: add the V4 provider contract foundation across language, embedding, image, speech, transcription, video, reranking, realtime, middleware, files, skills, warnings, provider references, and shared file-data types.
+- Core: route high-level text, object, embedding, rerank, image, speech, transcription, and video flows through V4-compatible adapters while preserving existing V2/V3 provider compatibility.
+- Core: add AI-level `uploadFile` and `uploadSkill` helpers with provider capability checks, media-type detection, multipart support, and direct regression coverage.
+- Provider utils: add V4 parity helpers for provider references, reasoning mapping, header normalization, same-origin and filename handling, nullable filtering, line extraction, media-type detection, inline file-data conversion, multipart form data, validated downloads, size-limited reads, model option serialization, streaming tool-call tracking, tool-name mapping, standard-schema normalization, response cancellation, delayed promises, and browser runtime detection.
+- OpenAI Compatible: add V4 provider-surface adapters and regression coverage for the OpenAI-compatible chat path.
+- Anthropic: add `files()` and `skills()` upload surfaces with multipart request support, beta headers, uploaded-skill version metadata, and provider metadata mapping.
+
+### Fixed
+- Amazon Bedrock: preserve assistant reasoning during prompt conversion even when Bedrock metadata is absent, and keep reasoning text intact when signatures are present.
+- Anthropic: align upload file-data handling with V4 file data contracts.
+- OpenAI Compatible: preserve `reasoning_content` round-trips for assistant reasoning.
+- Tool execution: cancel in-flight tool tasks when streaming is stopped.
+- MCP HTTP transport: stabilize inbound SSE reopen behavior.
+- CI/release: track the V4 skills contract files in Git so protected GitHub checkouts build cleanly.
+
+### Docs
+- README and Starlight docs now reference `0.18.0`.
+- Provider counts now reflect the current 38 concrete provider modules.
+- Public examples and docs snippets now compile against the current V4 registry, streaming, provider-warning, and OpenAI Responses helper APIs.
+- Upstream parity evidence now records the refreshed V4 core/provider-utils foundation and remaining provider-migration gaps.
+
 ## [0.17.6] - 2026-03-30
 
 ### Fixed
