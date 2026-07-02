@@ -12,7 +12,7 @@ struct RegistryEmbedOpenAIExample: Example {
         "openai": createOpenAIProvider()
       ])
 
-      let model = registry.textEmbeddingModel(id: "openai:text-embedding-3-small")
+      let model = try registry.textEmbeddingModel(id: "openai:text-embedding-3-small")
       let text = "sunny day at the beach"
       let result = try await embed(model: model, value: text)
       Logger.section("Embedding (first 8 dims)")

@@ -654,9 +654,9 @@ import OpenAIProvider
 
 let mcp = openai.tools.mcp(OpenAIMCPArgs(
   serverLabel: "zip1",
-  serverUrl: "https://zip1.io/mcp",
+  requireApproval: .always,
   serverDescription: "Link shortener",
-  requireApproval: .always
+  serverUrl: "https://zip1.io/mcp"
 ))
 
 let result = try streamText(

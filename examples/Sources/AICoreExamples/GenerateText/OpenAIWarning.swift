@@ -43,12 +43,18 @@ struct GenerateTextOpenAIWarningExample: Example {
     switch warning {
     case .languageModel(let w):
       return describeLanguageWarning(w)
+    case .embeddingModel(let w):
+      return "Embedding model warning: \(describeLanguageWarning(w))"
     case .imageModel(let w):
-      return "Image model warning: \(String(describing: w))"
+      return "Image model warning: \(describeLanguageWarning(w))"
+    case .videoModel(let w):
+      return "Video model warning: \(describeLanguageWarning(w))"
     case .speechModel(let w):
-      return "Speech model warning: \(String(describing: w))"
+      return "Speech model warning: \(describeLanguageWarning(w))"
     case .transcriptionModel(let w):
-      return "Transcription warning: \(String(describing: w))"
+      return "Transcription warning: \(describeLanguageWarning(w))"
+    case .rerankingModel(let w):
+      return "Reranking model warning: \(describeLanguageWarning(w))"
     }
   }
 
@@ -56,21 +62,16 @@ struct GenerateTextOpenAIWarningExample: Example {
     return "Language model warning: \(describeLanguageWarning(warning))"
   }
 
-  private static func describeLanguageWarning(_ warning: LanguageModelV3CallWarning) -> String {
+  private static func describeLanguageWarning(_ warning: CallWarning) -> String {
     switch warning {
-    case .unsupportedSetting(let setting, let details):
-      if let details { return "Unsupported setting \(setting): \(details)" }
-      return "Unsupported setting \(setting)"
-    case .unsupportedTool(let tool, let details):
-      let toolName: String
-      switch tool {
-      case .function(let functionTool):
-        toolName = functionTool.name
-      case .providerDefined:
-        toolName = "provider-defined tool"
-      }
-      if let details { return "Unsupported tool \(toolName): \(details)" }
-      return "Unsupported tool \(toolName)"
+    case .unsupported(let feature, let details):
+      if let details { return "Unsupported feature \(feature): \(details)" }
+      return "Unsupported feature \(feature)"
+    case .compatibility(let feature, let details):
+      if let details { return "Compatibility warning \(feature): \(details)" }
+      return "Compatibility warning \(feature)"
+    case .deprecated(let setting, let message):
+      return "Deprecated setting \(setting): \(message)"
     case .other(let message):
       return message
     }

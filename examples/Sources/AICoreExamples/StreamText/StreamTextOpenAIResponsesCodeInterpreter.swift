@@ -10,8 +10,6 @@ struct StreamTextOpenAIResponsesCodeInterpreterExample: Example {
     do {
       let codeTool = openai.tools.codeInterpreter()
 
-      let providerOptions = openai.options.responses(include: [.codeInterpreterCallOutputs])
-
       let result = try streamText(
         model: openai.responses("gpt-4.1-mini"),
         system: "Use the code interpreter when math or CSV processing is needed.",
@@ -20,8 +18,7 @@ struct StreamTextOpenAIResponsesCodeInterpreterExample: Example {
         ],
         tools: [
           "code_interpreter": codeTool
-        ],
-        providerOptions: providerOptions
+        ]
       )
 
       Logger.section("Streamed output")

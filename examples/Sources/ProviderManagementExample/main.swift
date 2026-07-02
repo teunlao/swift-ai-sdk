@@ -64,15 +64,15 @@ struct ProviderManagementExample: CLIExample {
     )
 
     Logger.info("Accessing model via registry: 'openai:gpt-4o-mini'")
-    let registryResult = try await generateText(
-      model: registry.languageModel(id: "openai:gpt-4o-mini"),
+    let registryResult: DefaultGenerateTextResult<JSONValue> = try await generateText(
+      model: .v4(registry.languageModel(id: "openai:gpt-4o-mini")),
       prompt: "Say hello in Spanish"
     )
     Logger.info(registryResult.text)
 
     Logger.info("Accessing custom provider model: 'custom:fast'")
-    let customResult = try await generateText(
-      model: registry.languageModel(id: "custom:fast"),
+    let customResult: DefaultGenerateTextResult<JSONValue> = try await generateText(
+      model: .v4(registry.languageModel(id: "custom:fast")),
       prompt: "Say hello in French"
     )
     Logger.info(customResult.text)
@@ -90,8 +90,8 @@ struct ProviderManagementExample: CLIExample {
     )
 
     Logger.info("Accessing model: 'openai > gpt-4o'")
-    let separatorResult = try await generateText(
-      model: readableRegistry.languageModel(id: "openai > gpt-4o"),
+    let separatorResult: DefaultGenerateTextResult<JSONValue> = try await generateText(
+      model: .v4(readableRegistry.languageModel(id: "openai > gpt-4o")),
       prompt: "What is Swift?"
     )
     Logger.info(separatorResult.text.prefix(100) + "...")
@@ -114,8 +114,8 @@ struct ProviderManagementExample: CLIExample {
     )
 
     Logger.info("All models from this registry extract <think> tags:")
-    let thinkResult = try await generateText(
-      model: middlewareRegistry.languageModel(id: "openai:gpt-4o"),
+    let thinkResult: DefaultGenerateTextResult<JSONValue> = try await generateText(
+      model: .v4(middlewareRegistry.languageModel(id: "openai:gpt-4o")),
       prompt: "Calculate 15 * 7. Wrap your reasoning in <think> tags."
     )
 
