@@ -42,7 +42,7 @@ parity/
 git-local-config.md
 .claude/
 .codex/
-skills/
+/skills/
 !.agents/
 !.agents/skills/
 !.agents/skills/**
