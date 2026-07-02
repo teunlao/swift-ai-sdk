@@ -4,8 +4,8 @@ import Foundation
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 actor StreamTextActor {
-    private let source: AsyncThrowingStream<LanguageModelV3StreamPart, Error>
-    private var model: any LanguageModelV3
+    private let source: AsyncThrowingStream<LanguageModelV4StreamPart, Error>
+    private var model: any LanguageModelV4
     private var initialMessages: [ModelMessage]
     private let initialSystem: String?
     private let stopConditions: [StopCondition]
@@ -21,7 +21,7 @@ actor StreamTextActor {
     private var terminated = false
     private var onTerminate: (@Sendable () -> Void)? = nil
 
-    private var capturedWarnings: [SharedV3Warning] = []
+    private var capturedWarnings: [CallWarning] = []
     private var capturedResponseId: String?
     private var capturedModelId: String?
     private var capturedTimestamp: Date?
@@ -66,8 +66,8 @@ actor StreamTextActor {
     private let stepsPromise: DelayedPromise<[StepResult]>
 
     init(
-        source: AsyncThrowingStream<LanguageModelV3StreamPart, Error>,
-        model: any LanguageModelV3,
+        source: AsyncThrowingStream<LanguageModelV4StreamPart, Error>,
+        model: any LanguageModelV4,
         initialMessages: [ModelMessage],
         system: String?,
         stopConditions: [StopCondition],
@@ -186,9 +186,9 @@ actor StreamTextActor {
                     }
                 }
 
-                self.model = try resolveLanguageModel(stepModelArg)
+                self.model = try resolveLanguageModelV4(stepModelArg)
                 let lmPrompt = try await buildLanguageModelPrompt(system: stepSystem, messages: stepMessages)
-                let toolPreparation = try await prepareToolsAndToolChoice(
+                let toolPreparation = try await prepareToolsAndToolChoiceV4(
                     tools: tools,
                     toolChoice: stepToolChoice,
                     activeTools: stepActiveTools
@@ -339,7 +339,7 @@ actor StreamTextActor {
     }
 
     private func makeProviderToolResult(
-        toolResult: LanguageModelV3ToolResult,
+        toolResult: LanguageModelV4ToolResult,
         input: JSONValue,
         matchedCall: TypedToolCall?
     ) -> TypedToolResult {
@@ -398,7 +398,7 @@ actor StreamTextActor {
     }
 
     private func makeProviderToolError(
-        toolResult: LanguageModelV3ToolResult,
+        toolResult: LanguageModelV4ToolResult,
         input: JSONValue,
         error: Error,
         matchedCall: TypedToolCall?
@@ -621,11 +621,11 @@ actor StreamTextActor {
     /// - Uses `convertToLanguageModelPrompt` to map content parts and assets
     /// - Respects provider `supportedUrls` (URLs left as references when supported)
     /// - Parameter messages: Conversation messages to include (system is injected automatically)
-    /// - Returns: A LanguageModelV3Prompt ready for `doStream`
-    private func buildLanguageModelPrompt(system: String?, messages: [ModelMessage]) async throws -> LanguageModelV3Prompt {
+    /// - Returns: A LanguageModelV4Prompt ready for `doStream`
+    private func buildLanguageModelPrompt(system: String?, messages: [ModelMessage]) async throws -> LanguageModelV4Prompt {
         let standardized = StandardizedPrompt(system: system, messages: messages)
         let supported = try await model.supportedUrls
-        let prompt = try await convertToLanguageModelPrompt(
+        let prompt = try await convertToLanguageModelV4Prompt(
             prompt: standardized,
             supportedUrls: supported,
             download: configuration.download
@@ -634,7 +634,7 @@ actor StreamTextActor {
     }
 
     private func consumeProviderStream(
-        stream: AsyncThrowingStream<LanguageModelV3StreamPart, Error>,
+        stream: AsyncThrowingStream<LanguageModelV4StreamPart, Error>,
         emitStartStep: Bool
     ) async throws {
         // Reset per-step state
@@ -1260,9 +1260,16 @@ case let .toolInputStart(id, toolName, providerMetadata, providerExecuted, dynam
                 recordedFinishReason = unifiedFinishReason
                 recordedRawFinishReason = finishReason.raw
             case .file(let file):
-                let genFile = toGeneratedFile(file)
-                recordedContent.append(.file(file: genFile, providerMetadata: nil))
+                let genFile = generatedFileFromV4Data(mediaType: file.mediaType, data: file.data)
+                recordedContent.append(.file(file: genFile, providerMetadata: file.providerMetadata))
                 await fullBroadcaster.send(.file(genFile))
+            case .reasoningFile(let file):
+                let genFile = generatedFileFromV4Data(mediaType: file.mediaType, data: file.data)
+                recordedContent.append(.reasoningFile(file: genFile, providerMetadata: file.providerMetadata))
+                await fullBroadcaster.send(.reasoningFile(file: genFile, providerMetadata: file.providerMetadata))
+            case .custom(let custom):
+                recordedContent.append(.custom(kind: custom.kind, providerMetadata: custom.providerMetadata))
+                await fullBroadcaster.send(.custom(kind: custom.kind, providerMetadata: custom.providerMetadata))
             case .source(let source):
                 recordedContent.append(.source(type: "source", source: source))
                 await fullBroadcaster.send(.source(source))
@@ -1418,17 +1425,8 @@ case let .toolInputStart(id, toolName, providerMetadata, providerExecuted, dynam
 
     // MARK: - Conversions
 
-    private func toGeneratedFile(_ file: LanguageModelV3File) -> GeneratedFile {
-        switch file.data {
-        case .base64(let b64):
-            return DefaultGeneratedFileWithType(base64: b64, mediaType: file.mediaType)
-        case .binary(let data):
-            return DefaultGeneratedFileWithType(data: data, mediaType: file.mediaType)
-        }
-    }
-
     func setOnTerminate(_ cb: @escaping @Sendable () -> Void) { onTerminate = cb }
-    func setInitialRequest(_ info: LanguageModelV3RequestInfo?) {
+    func setInitialRequest(_ info: LanguageModelV4RequestInfo?) {
         guard configuration.includeRequestBody else { return }
         guard let body = info?.body else { return }
         if let value = try? jsonValue(from: body) {
@@ -1453,13 +1451,13 @@ case let .toolInputStart(id, toolName, providerMetadata, providerExecuted, dynam
     func getLastStep() -> StepResult? { recordedSteps.last }
 
     private func makeCallOptions(
-        prompt: LanguageModelV3Prompt,
-        tools: [LanguageModelV3Tool]?,
-        toolChoice: LanguageModelV3ToolChoice?,
+        prompt: LanguageModelV4Prompt,
+        tools: [LanguageModelV4Tool]?,
+        toolChoice: LanguageModelV4ToolChoice?,
         providerOptions: ProviderOptions?
-    ) async throws -> LanguageModelV3CallOptions {
+    ) async throws -> LanguageModelV4CallOptions {
         let responseFormat = try await configuration.responseFormatProvider?()
-        return LanguageModelV3CallOptions(
+        return LanguageModelV4CallOptions(
             prompt: prompt,
             maxOutputTokens: configuration.callSettings.maxOutputTokens,
             temperature: configuration.callSettings.temperature,
@@ -1475,6 +1473,7 @@ case let .toolInputStart(id, toolName, providerMetadata, providerExecuted, dynam
             includeRawChunks: configuration.includeRawChunks ? true : nil,
             abortSignal: configuration.abortSignal,
             headers: configuration.headers,
+            reasoning: configuration.callSettings.reasoning,
             providerOptions: providerOptions ?? configuration.providerOptions
         )
     }

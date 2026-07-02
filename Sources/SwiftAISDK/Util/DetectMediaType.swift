@@ -52,6 +52,11 @@ public let imageMediaTypeSignatures: [MediaTypeSignature] = [
     ),
 ]
 
+/// Known document media type signatures for detection.
+public let documentMediaTypeSignatures: [MediaTypeSignature] = [
+    MediaTypeSignature(mediaType: "application/pdf", bytesPrefix: [0x25, 0x50, 0x44, 0x46]), // %PDF
+]
+
 /// Known audio media type signatures for detection.
 public let audioMediaTypeSignatures: [MediaTypeSignature] = [
     MediaTypeSignature(mediaType: "audio/mpeg", bytesPrefix: [0xFF, 0xFB]),
@@ -117,7 +122,7 @@ func stripID3TagsIfPresent(_ data: DataOrBase64) -> DataOrBase64 {
         guard str.hasPrefix("SUQz") else {
             return data
         }
-        guard let decoded = Data(base64Encoded: str) else {
+        guard let decoded = decodeBase64ForSignatureDetection(str) else {
             return data
         }
         bytes = decoded
@@ -200,19 +205,7 @@ private func detectMediaTypeInternal(
     case .data(let d):
         bytes = d
     case .base64(let str):
-        // Decode first ~18 bytes (24 base64 chars) for consistent detection
-        let substring = String(str.prefix(min(str.count, 24)))
-
-        // Swift's base64 decoder requires proper padding, add it if needed
-        let paddedSubstring: String
-        let remainder = substring.count % 4
-        if remainder > 0 {
-            paddedSubstring = substring + String(repeating: "=", count: 4 - remainder)
-        } else {
-            paddedSubstring = substring
-        }
-
-        guard let decoded = Data(base64Encoded: paddedSubstring) else {
+        guard let decoded = decodeBase64ForSignatureDetection(str, maxEncodedLength: 24) else {
             return nil
         }
         bytes = decoded
@@ -236,4 +229,30 @@ private func detectMediaTypeInternal(
     }
 
     return nil
+}
+
+private func decodeBase64ForSignatureDetection(
+    _ string: String,
+    maxEncodedLength: Int? = nil
+) -> Data? {
+    let truncated: String
+    if let maxEncodedLength {
+        truncated = String(string.prefix(min(string.count, maxEncodedLength)))
+    } else {
+        truncated = string
+    }
+
+    let normalized = truncated
+        .replacingOccurrences(of: "-", with: "+")
+        .replacingOccurrences(of: "_", with: "/")
+
+    let remainder = normalized.count % 4
+    let padded: String
+    if remainder == 0 {
+        padded = normalized
+    } else {
+        padded = normalized + String(repeating: "=", count: 4 - remainder)
+    }
+
+    return Data(base64Encoded: padded)
 }

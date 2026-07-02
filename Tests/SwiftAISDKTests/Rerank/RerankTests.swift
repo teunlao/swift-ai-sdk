@@ -85,6 +85,81 @@ struct RerankTests {
         #expect(result.response.headers?["x-test"] == "1")
     }
 
+    @Test("uses direct V4 model options and maps V4 response metadata")
+    func usesDirectV4Model() async throws {
+        let fixedDate = Date(timeIntervalSince1970: 1_800_000_000)
+
+        let model = TestRerankingModelV4(provider: "v4-provider", modelId: "v4-model") { options in
+            guard case .text(let values) = options.documents else {
+                Issue.record("Expected text documents")
+                return RerankingModelV4Result(ranking: [])
+            }
+
+            #expect(values == ["a", "b", "c"])
+            #expect(options.query == "query")
+            #expect(options.topN == 2)
+            #expect(options.headers?["x-test"] == "1")
+            #expect(options.headers?["user-agent"]?.contains("ai/\(VERSION)") == true)
+            #expect(options.providerOptions?["test"]?["flag"] == .bool(true))
+
+            return RerankingModelV4Result(
+                ranking: [
+                    RerankingModelV4Ranking(index: 1, relevanceScore: 0.91),
+                    RerankingModelV4Ranking(index: 0, relevanceScore: 0.72),
+                ],
+                providerMetadata: ["test": ["note": .string("v4")]],
+                warnings: [.deprecated(setting: "legacy-rerank", message: "use v4")],
+                response: RerankingModelV4ResponseInfo(
+                    id: "v4-response-id",
+                    timestamp: fixedDate,
+                    modelId: "v4-response-model",
+                    headers: ["x-v4": "ok"],
+                    body: ["id": "body"]
+                )
+            )
+        }
+
+        let result = try await rerank(
+            model: model,
+            documents: ["a", "b", "c"],
+            query: "query",
+            topN: 2,
+            headers: ["x-test": "1"],
+            providerOptions: ["test": ["flag": .bool(true)]]
+        )
+
+        #expect(result.rerankedDocuments == ["b", "a"])
+        #expect(result.ranking[0].originalIndex == 1)
+        #expect(result.ranking[0].score == 0.91)
+        #expect(result.providerMetadata?["test"]?["note"] == .string("v4"))
+        #expect(result.response.id == "v4-response-id")
+        #expect(result.response.timestamp == fixedDate)
+        #expect(result.response.modelId == "v4-response-model")
+        #expect(result.response.headers?["x-v4"] == "ok")
+    }
+
+    @Test("resolves string model IDs through V4 global provider")
+    func resolvesStringModelIdThroughV4Provider() async throws {
+        let model = TestRerankingModelV4(provider: "global-v4", modelId: "actual-rerank") { options in
+            #expect(options.query == "q")
+            return RerankingModelV4Result(
+                ranking: [RerankingModelV4Ranking(index: 0, relevanceScore: 0.8)]
+            )
+        }
+        let provider = customProviderV4(rerankingModels: ["rerank-model": model])
+
+        let result = try await withGlobalProviderV4(provider) {
+            try await rerank(
+                model: .string("rerank-model"),
+                documents: ["a"],
+                query: "q"
+            )
+        }
+
+        #expect(result.rerankedDocuments == ["a"])
+        #expect(result.response.modelId == "actual-rerank")
+    }
+
     @Test("logs reranking warnings")
     func logsWarnings() async throws {
         setWarningsLoggingDisabledForTests(true)
@@ -590,6 +665,30 @@ private final class TestRerankingModel: RerankingModelV3, @unchecked Sendable {
     var modelId: String { modelIdentifier }
 
     func doRerank(options: RerankingModelV3CallOptions) async throws -> RerankingModelV3DoRerankResult {
+        try await handler(options)
+    }
+}
+
+private final class TestRerankingModelV4: RerankingModelV4, @unchecked Sendable {
+    let specificationVersion = "v4"
+    let providerValue: String
+    let modelIdentifier: String
+    let handler: @Sendable (RerankingModelV4CallOptions) async throws -> RerankingModelV4Result
+
+    init(
+        provider: String,
+        modelId: String,
+        handler: @escaping @Sendable (RerankingModelV4CallOptions) async throws -> RerankingModelV4Result
+    ) {
+        self.providerValue = provider
+        self.modelIdentifier = modelId
+        self.handler = handler
+    }
+
+    var provider: String { providerValue }
+    var modelId: String { modelIdentifier }
+
+    func doRerank(options: RerankingModelV4CallOptions) async throws -> RerankingModelV4Result {
         try await handler(options)
     }
 }

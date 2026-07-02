@@ -25,7 +25,7 @@ import AISDKProvider
 
  Port of `@ai-sdk/provider-utils/types/provider-options.ts`.
  */
-public typealias ProviderOptions = SharedV3ProviderOptions
+public typealias ProviderOptions = SharedV4ProviderOptions
 
 // MARK: - Text Content
 
@@ -214,6 +214,80 @@ public struct ReasoningPart: Sendable, Equatable, Codable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(type, forKey: .type)
         try container.encode(text, forKey: .text)
+        try container.encodeIfPresent(providerOptions, forKey: .providerOptions)
+    }
+}
+
+// MARK: - Custom Content
+
+/**
+ Custom content part of a prompt.
+ */
+public struct CustomPart: Sendable, Equatable, Codable {
+    public let type: String = "custom"
+    public let kind: String
+    public let providerOptions: ProviderOptions?
+
+    public init(kind: String, providerOptions: ProviderOptions? = nil) {
+        self.kind = kind
+        self.providerOptions = providerOptions
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case type, kind, providerOptions
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        kind = try container.decode(String.self, forKey: .kind)
+        providerOptions = try container.decodeIfPresent(ProviderOptions.self, forKey: .providerOptions)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(type, forKey: .type)
+        try container.encode(kind, forKey: .kind)
+        try container.encodeIfPresent(providerOptions, forKey: .providerOptions)
+    }
+}
+
+// MARK: - Reasoning File Content
+
+/**
+ Reasoning file content part of a prompt.
+ */
+public struct ReasoningFilePart: Sendable, Equatable, Codable {
+    public let type: String = "reasoning-file"
+    public let data: DataContentOrURL
+    public let mediaType: String
+    public let providerOptions: ProviderOptions?
+
+    public init(
+        data: DataContentOrURL,
+        mediaType: String,
+        providerOptions: ProviderOptions? = nil
+    ) {
+        self.data = data
+        self.mediaType = mediaType
+        self.providerOptions = providerOptions
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case type, data, mediaType, providerOptions
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        data = try container.decode(DataContentOrURL.self, forKey: .data)
+        mediaType = try container.decode(String.self, forKey: .mediaType)
+        providerOptions = try container.decodeIfPresent(ProviderOptions.self, forKey: .providerOptions)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(type, forKey: .type)
+        try container.encode(data, forKey: .data)
+        try container.encode(mediaType, forKey: .mediaType)
         try container.encodeIfPresent(providerOptions, forKey: .providerOptions)
     }
 }
@@ -479,8 +553,10 @@ public enum UserContentPart: Sendable, Equatable, Codable {
  */
 public enum AssistantContentPart: Sendable, Equatable, Codable {
     case text(TextPart)
+    case custom(CustomPart)
     case file(FilePart)
     case reasoning(ReasoningPart)
+    case reasoningFile(ReasoningFilePart)
     case toolCall(ToolCallPart)
     case toolResult(ToolResultPart)
     case toolApprovalRequest(ToolApprovalRequest)
@@ -496,10 +572,14 @@ public enum AssistantContentPart: Sendable, Equatable, Codable {
         switch type {
         case "text":
             self = .text(try TextPart(from: decoder))
+        case "custom":
+            self = .custom(try CustomPart(from: decoder))
         case "file":
             self = .file(try FilePart(from: decoder))
         case "reasoning":
             self = .reasoning(try ReasoningPart(from: decoder))
+        case "reasoning-file":
+            self = .reasoningFile(try ReasoningFilePart(from: decoder))
         case "tool-call":
             self = .toolCall(try ToolCallPart(from: decoder))
         case "tool-result":
@@ -519,9 +599,13 @@ public enum AssistantContentPart: Sendable, Equatable, Codable {
         switch self {
         case .text(let part):
             try part.encode(to: encoder)
+        case .custom(let part):
+            try part.encode(to: encoder)
         case .file(let part):
             try part.encode(to: encoder)
         case .reasoning(let part):
+            try part.encode(to: encoder)
+        case .reasoningFile(let part):
             try part.encode(to: encoder)
         case .toolCall(let part):
             try part.encode(to: encoder)

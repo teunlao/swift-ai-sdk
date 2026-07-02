@@ -236,6 +236,22 @@ struct ProviderErrorsTests {
         #expect(error.message == "Custom model error")
     }
 
+    // MARK: - NoSuchProviderReferenceError
+
+    @Test("NoSuchProviderReferenceError default message and marker")
+    func testNoSuchProviderReferenceErrorDefault() throws {
+        let error = NoSuchProviderReferenceError(
+            provider: "openai",
+            reference: ["anthropic": "file-abc123"]
+        )
+
+        #expect(error.provider == "openai")
+        #expect(error.reference == ["anthropic": "file-abc123"])
+        #expect(error.message == "No provider reference found for provider 'openai'. Available providers: anthropic")
+        #expect(NoSuchProviderReferenceError.isInstance(error))
+        #expect(!NoSuchModelError.isInstance(error))
+    }
+
     // MARK: - TooManyEmbeddingValuesForCallError
 
     @Test("TooManyEmbeddingValuesForCallError message")

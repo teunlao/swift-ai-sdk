@@ -260,6 +260,10 @@ public final class HttpMCPTransport: MCPTransport, @unchecked Sendable {
                             await self?.openInboundSse(triedAuth: false, resumeToken: nil)
                         }
                     }
+                    // In upstream JS, fire-and-forget async functions run until
+                    // their first await before the caller continues. Give the
+                    // Swift task the same chance to start the GET request.
+                    await Task.yield()
                 }
 
                 // Drain any body best-effort (usually empty).

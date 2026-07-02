@@ -105,6 +105,90 @@ public func prepareToolsAndToolChoice(
     return (tools: languageModelTools, toolChoice: convertedToolChoice)
 }
 
+public func prepareToolsAndToolChoiceV4(
+    tools: [String: Tool]?,
+    toolChoice: ToolChoice?,
+    activeTools: [String]?
+) async throws -> (
+    tools: [LanguageModelV4Tool]?,
+    toolChoice: LanguageModelV4ToolChoice?
+) {
+    guard let tools, !tools.isEmpty else {
+        return (tools: nil, toolChoice: nil)
+    }
+
+    let filteredTools: [(key: String, value: Tool)]
+    if let activeTools {
+        filteredTools = tools.filter { activeTools.contains($0.key) }.sorted { $0.key < $1.key }
+    } else {
+        filteredTools = tools.sorted { $0.key < $1.key }
+    }
+
+    var languageModelTools: [LanguageModelV4Tool] = []
+
+    for (name, tool) in filteredTools {
+        switch tool.type {
+        case nil, .function, .dynamic:
+            let jsonSchema = try await tool.inputSchema.resolve().jsonSchema()
+
+            let providerOptions: SharedV4ProviderOptions? = tool.providerOptions.map { options in
+                options.compactMapValues { value in
+                    if case .object(let nestedDict) = value {
+                        return nestedDict
+                    }
+                    return nil
+                }
+            }
+
+            let inputExamples = tool.inputExamples?.map {
+                LanguageModelV4ToolInputExample(input: $0.input)
+            }
+
+            languageModelTools.append(.function(LanguageModelV4FunctionTool(
+                name: name,
+                inputSchema: jsonSchema,
+                inputExamples: inputExamples,
+                description: tool.description,
+                strict: tool.strict,
+                providerOptions: providerOptions
+            )))
+
+        case .provider:
+            guard let id = tool.id else {
+                throw InvalidArgumentError(
+                    parameter: "tools[\(name)]",
+                    value: JSONValue.string(String(describing: tool)),
+                    message: "Provider tool must have 'id' field"
+                )
+            }
+
+            languageModelTools.append(.provider(LanguageModelV4ProviderTool(
+                id: id,
+                name: name,
+                args: tool.args ?? [:]
+            )))
+        }
+    }
+
+    let convertedToolChoice: LanguageModelV4ToolChoice
+    if let toolChoice {
+        switch toolChoice {
+        case .auto:
+            convertedToolChoice = .auto
+        case .none:
+            convertedToolChoice = .none
+        case .required:
+            convertedToolChoice = .required
+        case .tool(let toolName):
+            convertedToolChoice = .tool(toolName: toolName)
+        }
+    } else {
+        convertedToolChoice = .auto
+    }
+
+    return (tools: languageModelTools, toolChoice: convertedToolChoice)
+}
+
 /// Tool choice for model generation.
 ///
 /// Port of `@ai-sdk/ai/src/types/language-model.ts` ToolChoice type.

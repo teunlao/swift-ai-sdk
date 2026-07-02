@@ -192,6 +192,31 @@ public func parseToolCall(
     }
 }
 
+public func parseToolCall(
+    toolCall: LanguageModelV4ToolCall,
+    tools: ToolSet?,
+    repairToolCall: ToolCallRepairFunction?,
+    system: String?,
+    messages: [ModelMessage]
+) async -> TypedToolCall {
+    let legacyToolCall = LanguageModelV3ToolCall(
+        toolCallId: toolCall.toolCallId,
+        toolName: toolCall.toolName,
+        input: toolCall.input,
+        providerExecuted: toolCall.providerExecuted,
+        dynamic: toolCall.dynamic,
+        providerMetadata: toolCall.providerMetadata
+    )
+
+    return await parseToolCall(
+        toolCall: legacyToolCall,
+        tools: tools,
+        repairToolCall: repairToolCall,
+        system: system,
+        messages: messages
+    )
+}
+
 private func parseProviderExecutedDynamicToolCall(
     _ toolCall: LanguageModelV3ToolCall
 ) async throws -> TypedToolCall {

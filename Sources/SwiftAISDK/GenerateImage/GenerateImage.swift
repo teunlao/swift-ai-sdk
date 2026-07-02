@@ -52,8 +52,8 @@ public func generateImage(
     size: String? = nil,
     aspectRatio: String? = nil,
     seed: Int? = nil,
-    files: [ImageModelV3File]? = nil,
-    mask: ImageModelV3File? = nil,
+    files: [ImageModelV4File]? = nil,
+    mask: ImageModelV4File? = nil,
     providerOptions: ProviderOptions? = nil,
     maxRetries: Int? = nil,
     abortSignal: (@Sendable () -> Bool)? = nil,
@@ -77,6 +77,190 @@ public func generateImage(
 }
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+public func generateImage(
+    model: any ImageModelV4,
+    prompt: GenerateImagePrompt,
+    n: Int = 1,
+    maxImagesPerCall: Int? = nil,
+    size: String? = nil,
+    aspectRatio: String? = nil,
+    seed: Int? = nil,
+    providerOptions: ProviderOptions? = nil,
+    maxRetries: Int? = nil,
+    abortSignal: (@Sendable () -> Bool)? = nil,
+    headers: [String: String]? = nil
+) async throws -> DefaultGenerateImageResult {
+    try await generateImage(
+        model: .v4(model),
+        prompt: prompt,
+        n: n,
+        maxImagesPerCall: maxImagesPerCall,
+        size: size,
+        aspectRatio: aspectRatio,
+        seed: seed,
+        providerOptions: providerOptions,
+        maxRetries: maxRetries,
+        abortSignal: abortSignal,
+        headers: headers
+    )
+}
+
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+public func generateImage(
+    model: any ImageModelV3,
+    prompt: GenerateImagePrompt,
+    n: Int = 1,
+    maxImagesPerCall: Int? = nil,
+    size: String? = nil,
+    aspectRatio: String? = nil,
+    seed: Int? = nil,
+    providerOptions: ProviderOptions? = nil,
+    maxRetries: Int? = nil,
+    abortSignal: (@Sendable () -> Bool)? = nil,
+    headers: [String: String]? = nil
+) async throws -> DefaultGenerateImageResult {
+    try await generateImage(
+        model: .v3(model),
+        prompt: prompt,
+        n: n,
+        maxImagesPerCall: maxImagesPerCall,
+        size: size,
+        aspectRatio: aspectRatio,
+        seed: seed,
+        providerOptions: providerOptions,
+        maxRetries: maxRetries,
+        abortSignal: abortSignal,
+        headers: headers
+    )
+}
+
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+public func generateImage(
+    model: any ImageModelV2,
+    prompt: GenerateImagePrompt,
+    n: Int = 1,
+    maxImagesPerCall: Int? = nil,
+    size: String? = nil,
+    aspectRatio: String? = nil,
+    seed: Int? = nil,
+    providerOptions: ProviderOptions? = nil,
+    maxRetries: Int? = nil,
+    abortSignal: (@Sendable () -> Bool)? = nil,
+    headers: [String: String]? = nil
+) async throws -> DefaultGenerateImageResult {
+    try await generateImage(
+        model: .v2(model),
+        prompt: prompt,
+        n: n,
+        maxImagesPerCall: maxImagesPerCall,
+        size: size,
+        aspectRatio: aspectRatio,
+        seed: seed,
+        providerOptions: providerOptions,
+        maxRetries: maxRetries,
+        abortSignal: abortSignal,
+        headers: headers
+    )
+}
+
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+public func generateImage(
+    model: any ImageModelV4,
+    prompt: String,
+    n: Int = 1,
+    maxImagesPerCall: Int? = nil,
+    size: String? = nil,
+    aspectRatio: String? = nil,
+    seed: Int? = nil,
+    files: [ImageModelV4File]? = nil,
+    mask: ImageModelV4File? = nil,
+    providerOptions: ProviderOptions? = nil,
+    maxRetries: Int? = nil,
+    abortSignal: (@Sendable () -> Bool)? = nil,
+    headers: [String: String]? = nil
+) async throws -> DefaultGenerateImageResult {
+    try await generateImage(
+        model: .v4(model),
+        prompt: prompt,
+        n: n,
+        maxImagesPerCall: maxImagesPerCall,
+        size: size,
+        aspectRatio: aspectRatio,
+        seed: seed,
+        files: files,
+        mask: mask,
+        providerOptions: providerOptions,
+        maxRetries: maxRetries,
+        abortSignal: abortSignal,
+        headers: headers
+    )
+}
+
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+public func generateImage(
+    model: any ImageModelV3,
+    prompt: String,
+    n: Int = 1,
+    maxImagesPerCall: Int? = nil,
+    size: String? = nil,
+    aspectRatio: String? = nil,
+    seed: Int? = nil,
+    files: [ImageModelV3File]? = nil,
+    mask: ImageModelV3File? = nil,
+    providerOptions: ProviderOptions? = nil,
+    maxRetries: Int? = nil,
+    abortSignal: (@Sendable () -> Bool)? = nil,
+    headers: [String: String]? = nil
+) async throws -> DefaultGenerateImageResult {
+    try await generateImage(
+        model: .v3(model),
+        prompt: prompt,
+        n: n,
+        maxImagesPerCall: maxImagesPerCall,
+        size: size,
+        aspectRatio: aspectRatio,
+        seed: seed,
+        files: try files?.map(convertImageModelV3FileToV4),
+        mask: try mask.map(convertImageModelV3FileToV4),
+        providerOptions: providerOptions,
+        maxRetries: maxRetries,
+        abortSignal: abortSignal,
+        headers: headers
+    )
+}
+
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+public func generateImage(
+    model: any ImageModelV2,
+    prompt: String,
+    n: Int = 1,
+    maxImagesPerCall: Int? = nil,
+    size: String? = nil,
+    aspectRatio: String? = nil,
+    seed: Int? = nil,
+    providerOptions: ProviderOptions? = nil,
+    maxRetries: Int? = nil,
+    abortSignal: (@Sendable () -> Bool)? = nil,
+    headers: [String: String]? = nil
+) async throws -> DefaultGenerateImageResult {
+    try await generateImage(
+        model: .v2(model),
+        prompt: prompt,
+        n: n,
+        maxImagesPerCall: maxImagesPerCall,
+        size: size,
+        aspectRatio: aspectRatio,
+        seed: seed,
+        files: nil,
+        mask: nil,
+        providerOptions: providerOptions,
+        maxRetries: maxRetries,
+        abortSignal: abortSignal,
+        headers: headers
+    )
+}
+
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 private func generateImageInternal(
     model: ImageModel,
     prompt: String?,
@@ -85,20 +269,14 @@ private func generateImageInternal(
     size: String?,
     aspectRatio: String?,
     seed: Int?,
-    files: [ImageModelV3File]?,
-    mask: ImageModelV3File?,
+    files: [ImageModelV4File]?,
+    mask: ImageModelV4File?,
     providerOptions: ProviderOptions?,
     maxRetries: Int?,
     abortSignal: (@Sendable () -> Bool)?,
     headers: [String: String]?
 ) async throws -> DefaultGenerateImageResult {
-    guard model.specificationVersion == "v3" else {
-        throw UnsupportedModelVersionError(
-            version: model.specificationVersion,
-            provider: model.provider,
-            modelId: model.modelId
-        )
-    }
+    let model = try resolveImageModelV4(model)
 
     let headersWithUserAgent = withUserAgentSuffix(
         headers ?? [:],
@@ -131,23 +309,23 @@ private func generateImageInternal(
         return remainder == 0 ? maxImagesPerCallResolved : remainder
     }
 
-    var results: [ImageModelV3GenerateResult] = []
+    var results: [ImageModelV4GenerateResult] = []
     results.reserveCapacity(callImageCounts.count)
 
     for imagesInCall in callImageCounts {
         let result = try await preparedRetries.retry.call {
             try await model.doGenerate(
-                options: ImageModelV3CallOptions(
+                options: ImageModelV4CallOptions(
                     prompt: prompt,
                     n: imagesInCall,
                     size: size,
                     aspectRatio: aspectRatio,
                     seed: seed,
+                    files: files,
+                    mask: mask,
                     providerOptions: providerOptions ?? [:],
                     abortSignal: abortSignal,
-                    headers: headersWithUserAgent,
-                    files: files,
-                    mask: mask
+                    headers: headersWithUserAgent
                 )
             )
         }
@@ -227,14 +405,26 @@ private func generateImageInternal(
 }
 
 private func mergeProviderMetadata(
-    target: inout ImageModelV3ProviderMetadata,
-    source: ImageModelV3ProviderMetadata
+    target: inout ImageModelV4ProviderMetadata,
+    source: ImageModelV4ProviderMetadata
 ) {
     for (providerName, value) in source {
+        if providerName == "gateway" {
+            let existing = target[providerName]
+            target[providerName] = ImageModelV4ProviderMetadataValue(
+                images: value.images.isEmpty ? (existing?.images ?? []) : value.images,
+                additionalData: mergeGatewayAdditionalData(
+                    existing?.additionalData,
+                    value.additionalData
+                )
+            )
+            continue
+        }
+
         if let existing = target[providerName] {
             let combinedImages = existing.images + value.images
             let additionalData = existing.additionalData ?? value.additionalData
-            target[providerName] = ImageModelV3ProviderMetadataValue(
+            target[providerName] = ImageModelV4ProviderMetadataValue(
                 images: combinedImages,
                 additionalData: additionalData
             )
@@ -244,7 +434,42 @@ private func mergeProviderMetadata(
     }
 }
 
-private func invokeModelMaxImagesPerCall(_ model: ImageModel) async throws -> Int? {
+private func mergeGatewayAdditionalData(_ existing: JSONValue?, _ incoming: JSONValue?) -> JSONValue? {
+    switch (existing, incoming) {
+    case let (.object(lhs)?, .object(rhs)?):
+        return .object(lhs.merging(rhs) { _, new in new })
+    case (_, let incoming?):
+        return incoming
+    case (let existing?, nil):
+        return existing
+    case (nil, nil):
+        return nil
+    }
+}
+
+private func convertImageModelV3FileToV4(_ value: ImageModelV3File) throws -> ImageModelV4File {
+    switch value {
+    case let .file(mediaType, data, providerOptions):
+        return .file(
+            mediaType: mediaType,
+            data: convertImageModelV3FileDataToV4(data),
+            providerOptions: providerOptions
+        )
+    case let .url(url, providerOptions):
+        return .url(url: url, providerOptions: providerOptions)
+    }
+}
+
+private func convertImageModelV3FileDataToV4(_ value: ImageModelV3FileData) -> ImageModelV4FileData {
+    switch value {
+    case .base64(let base64):
+        return .base64(base64)
+    case .binary(let data):
+        return .binary(data)
+    }
+}
+
+private func invokeModelMaxImagesPerCall(_ model: any ImageModelV4) async throws -> Int? {
     switch model.maxImagesPerCall {
     case .value(let value):
         return value

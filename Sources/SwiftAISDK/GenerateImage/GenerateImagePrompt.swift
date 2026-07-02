@@ -21,23 +21,23 @@ extension GenerateImagePrompt {
         .imageEditing(text: text, images: images, mask: mask)
     }
 
-    func normalize() throws -> (prompt: String?, files: [ImageModelV3File]?, mask: ImageModelV3File?) {
+    func normalize() throws -> (prompt: String?, files: [ImageModelV4File]?, mask: ImageModelV4File?) {
         switch self {
         case .text(let text):
             return (prompt: text, files: nil, mask: nil)
 
         case .imageEditing(let text, let images, let mask):
-            let files = try images.map { try toImageModelV3File($0) }
-            let maskFile = try mask.map { try toImageModelV3File($0) }
+            let files = try images.map { try toImageModelV4File($0) }
+            let maskFile = try mask.map { try toImageModelV4File($0) }
             return (prompt: text, files: files, mask: maskFile)
         }
     }
 }
 
-private func toImageModelV3File(_ dataContent: DataContent) throws -> ImageModelV3File {
+func toImageModelV4File(_ dataContent: DataContent) throws -> ImageModelV4File {
     switch dataContent {
     case .string(let string):
-        if string.hasPrefix("http://") || string.hasPrefix("https://") {
+        if string.hasPrefix("http") {
             return .url(url: string, providerOptions: nil)
         }
 

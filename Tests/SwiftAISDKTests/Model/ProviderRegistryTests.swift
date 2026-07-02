@@ -16,6 +16,32 @@ struct ProviderRegistryTests {
 
         #expect(resolved.provider == "base")
         #expect(resolved.modelId == "model")
+        #expect(resolved.specificationVersion == "v4")
+    }
+
+    @Test("returns direct V4 model from V4 registry")
+    func returnsDirectV4ModelFromV4Registry() throws {
+        let baseModel = MockLanguageModelV4(provider: "v4-base", modelId: "v4-model")
+        let provider = customProviderV4(languageModels: ["model": baseModel])
+
+        let registry = createProviderRegistry(providers: ["p": provider])
+        let resolved = try registry.languageModel(id: "p:model")
+
+        #expect(resolved.provider == "v4-base")
+        #expect(resolved.modelId == "v4-model")
+        #expect(resolved.specificationVersion == "v4")
+    }
+
+    @Test("customProviderV4 adapts legacy language models")
+    func customProviderV4AdaptsLegacyLanguageModels() throws {
+        let baseModel = TestLanguageModel(provider: "legacy-base", modelId: "legacy-model")
+        let provider = customProviderV4(legacyLanguageModels: ["model": baseModel])
+
+        let resolved = try provider.languageModel(modelId: "model")
+
+        #expect(resolved.provider == "legacy-base")
+        #expect(resolved.modelId == "legacy-model")
+        #expect(resolved.specificationVersion == "v4")
     }
 
     @Test("applies single middleware to language model")
@@ -86,10 +112,11 @@ struct ProviderRegistryTests {
         let provider = customProvider(rerankingModels: ["model": baseModel])
 
         let registry = createProviderRegistry(providers: ["p": provider])
-        let resolved = registry.rerankingModel(id: "p:model")
+        let resolved = try registry.rerankingModel(id: "p:model")
 
         #expect(resolved.provider == "base")
         #expect(resolved.modelId == "model")
+        #expect(resolved.specificationVersion == "v4")
     }
 
     @Test("returns base video model when configured")
@@ -98,10 +125,11 @@ struct ProviderRegistryTests {
         let provider = customProvider(videoModels: ["model": baseModel])
 
         let registry = createProviderRegistry(providers: ["p": provider])
-        let resolved = registry.videoModel(id: "p:model")
+        let resolved = try registry.videoModel(id: "p:model")
 
         #expect(resolved.provider == "base")
         #expect(resolved.modelId == "model")
+        #expect(resolved.specificationVersion == "v4")
     }
 
     @Test("supports custom separators when resolving video models")
@@ -114,7 +142,7 @@ struct ProviderRegistryTests {
             options: ProviderRegistryOptions(separator: " > ")
         )
 
-        let resolved = registry.videoModel(id: "p > model")
+        let resolved = try registry.videoModel(id: "p > model")
 
         #expect(resolved.provider == "base")
         #expect(resolved.modelId == "model")
@@ -130,7 +158,7 @@ struct ProviderRegistryTests {
             options: ProviderRegistryOptions(separator: " > ")
         )
 
-        let resolved = registry.rerankingModel(id: "p > model")
+        let resolved = try registry.rerankingModel(id: "p > model")
 
         #expect(resolved.provider == "base")
         #expect(resolved.modelId == "model")

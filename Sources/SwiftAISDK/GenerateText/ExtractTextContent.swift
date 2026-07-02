@@ -28,3 +28,18 @@ public func extractTextContent(content: [LanguageModelV3Content]) -> String? {
 
     return textParts.joined()
 }
+
+public func extractTextContent(content: [LanguageModelV4Content]) -> String? {
+    let textParts = content.compactMap { part -> String? in
+        guard case .text(let textPart) = part else {
+            return nil
+        }
+        return textPart.text
+    }
+
+    guard !textParts.isEmpty else {
+        return nil
+    }
+
+    return textParts.joined()
+}

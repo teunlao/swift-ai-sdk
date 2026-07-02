@@ -587,6 +587,9 @@ private func _convertLanguageModelV2CallWarningToSharedV3Warning(_ warning: Lang
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 nonisolated(unsafe) public var globalDefaultProvider: (any ProviderV3)? = nil
 
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+nonisolated(unsafe) public var globalDefaultProviderV4: (any ProviderV4)? = nil
+
 /**
  Test-only switch to disable usage of `globalDefaultProvider` for string model resolution.
 
@@ -602,6 +605,7 @@ nonisolated(unsafe) public var globalDefaultProvider: (any ProviderV3)? = nil
 enum _ResolveModelContext {
     @TaskLocal static var disableGlobalProvider: Bool = false
     @TaskLocal static var overrideProvider: (any ProviderV3)? = nil
+    @TaskLocal static var overrideProviderV4: (any ProviderV4)? = nil
 }
 
 // Kept for backward-compat toggling in rare cases; prefer task-local helpers below.
@@ -631,7 +635,50 @@ public func withGlobalProvider<T>(_ provider: any ProviderV3, operation: () asyn
     try await _ResolveModelContext.$overrideProvider.withValue(provider) { try await operation() }
 }
 
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+@discardableResult
+public func withGlobalProviderV4<T>(_ provider: any ProviderV4, _ operation: () throws -> T) rethrows -> T {
+    try _ResolveModelContext.$overrideProviderV4.withValue(provider) { try operation() }
+}
+
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+@discardableResult
+public func withGlobalProviderV4<T>(_ provider: any ProviderV4, operation: () async throws -> T) async rethrows -> T {
+    try await _ResolveModelContext.$overrideProviderV4.withValue(provider) { try await operation() }
+}
+
 // MARK: - Resolution Functions
+
+@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+func _resolveGlobalProviderV4(modelId: String, modelType: NoSuchModelError.ModelType) throws -> any ProviderV4 {
+    let disabled = disableGlobalProviderForStringResolution || _ResolveModelContext.disableGlobalProvider
+
+    if let provider = _ResolveModelContext.overrideProviderV4 {
+        return provider
+    }
+
+    if let provider = _ResolveModelContext.overrideProvider {
+        return asProviderV4(provider)
+    }
+
+    if !disabled {
+        if let provider = globalDefaultProviderV4 {
+            return provider
+        }
+
+        if let provider = globalDefaultProvider {
+            return asProviderV4(provider)
+        }
+    }
+
+    throw NoSuchProviderError(
+        modelId: modelId,
+        modelType: modelType,
+        providerId: "default",
+        availableProviders: [],
+        message: "No global default provider set. Set `globalDefaultProviderV4` before resolving string model IDs."
+    )
+}
 
 /**
  Resolves a language model reference into a `LanguageModelV3` instance.
@@ -639,14 +686,15 @@ public func withGlobalProvider<T>(_ provider: any ProviderV3, operation: () asyn
  Port of `resolveLanguageModel` from `@ai-sdk/ai/src/model/resolve-model.ts`.
 
  **Behavior**:
+ - If the input is a V4 model, throws because this is the legacy V3 resolver
  - If the input is already a V3 model, returns it as-is
  - If the input is a V2 model, wraps it in an adapter that presents a V3 interface
  - If the input is a string ID, resolves it using the global default provider
  - If the input is an unsupported model version, throws `UnsupportedModelVersionError`
 
- - Parameter model: The language model to resolve (string ID, V2, or V3 model)
+ - Parameter model: The language model to resolve (string ID, V2, V3, or V4 model)
  - Returns: A `LanguageModelV3` instance ready for use
- - Throws: `UnsupportedModelVersionError` if the model version is not v2 or v3,
+ - Throws: `UnsupportedModelVersionError` if a V4 model is passed to this legacy V3 resolver,
            or `NoSuchProviderError` if no global provider is set for string resolution
  */
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
@@ -667,6 +715,13 @@ public func resolveLanguageModel(_ model: LanguageModel) throws -> any LanguageM
             )
         }
         return try provider.languageModel(modelId: id)
+
+    case .v4(let model):
+        throw UnsupportedModelVersionError(
+            version: model.specificationVersion,
+            provider: model.provider,
+            modelId: model.modelId
+        )
 
     case .v3(let model):
         // Already V3, return as-is
@@ -689,13 +744,13 @@ public func resolveLanguageModel(_ model: LanguageModel) throws -> any LanguageM
  - If the input is a string ID, resolves it using the global default provider
  - If the input is an unsupported model version, throws `UnsupportedModelVersionError`
 
- - Parameter model: The embedding model to resolve (string ID, V2, or V3 model)
+ - Parameter model: The embedding model to resolve (string ID, V2, V3, or V4 model)
  - Returns: An `EmbeddingModelV3` instance ready for use
- - Throws: `UnsupportedModelVersionError` if the model version is not v2 or v3,
+ - Throws: `UnsupportedModelVersionError` if a V4 model is passed to this legacy V3 resolver,
            or `NoSuchProviderError` if no global provider is set for string resolution
  */
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-public func resolveEmbeddingModel<VALUE: Sendable>(_ model: EmbeddingModel<VALUE>) throws -> any EmbeddingModelV3<VALUE> {
+public func resolveEmbeddingModel(_ model: EmbeddingModel) throws -> any EmbeddingModelV3<String> {
     switch model {
     case .string(let id):
         // Resolve string ID using task-local override or global provider
@@ -711,12 +766,14 @@ public func resolveEmbeddingModel<VALUE: Sendable>(_ model: EmbeddingModel<VALUE
                 message: "No global default provider set. Set `globalDefaultProvider` before resolving string model IDs."
             )
         }
-        // TODO AI SDK 6: figure out how to cleanly support different generic types
-        // For now, we trust that the provider returns the correct VALUE type.
-        // Swift adaptation: Provider returns EmbeddingModelV3<String>, but we need EmbeddingModelV3<VALUE>.
-        // We use force cast (as!) which will fail at runtime if types don't match.
-        // This matches the TypeScript behavior where type mismatches are caught at runtime.
-        return try provider.textEmbeddingModel(modelId: id) as! any EmbeddingModelV3<VALUE>
+        return try provider.textEmbeddingModel(modelId: id)
+
+    case .v4(let model):
+        throw UnsupportedModelVersionError(
+            version: model.specificationVersion,
+            provider: model.provider,
+            modelId: model.modelId
+        )
 
     case .v3(let model):
         // Already V3, return as-is

@@ -5,7 +5,7 @@ import AISDKProviderUtils
 /// High-level event emitted while observing a StreamText full stream.
 public enum StreamTextEvent: Sendable {
     case start
-    case startStep(index: Int, warnings: [SharedV3Warning])
+    case startStep(index: Int, warnings: [CallWarning])
     case textDelta(text: String, id: String)
     case textEnd(id: String)
     case reasoningDelta(text: String, id: String)
@@ -15,7 +15,9 @@ public enum StreamTextEvent: Sendable {
     case toolApprovalRequest(ToolApprovalRequestOutput)
     case toolOutputDenied(ToolOutputDenied)
     case source(Source)
+    case custom(kind: String, providerMetadata: ProviderMetadata?)
     case file(GeneratedFile)
+    case reasoningFile(GeneratedFile)
     case finish(reason: FinishReason, rawFinishReason: String?, usage: LanguageModelUsage)
     case abort(reason: String?)
 }
@@ -54,6 +56,7 @@ public struct StreamTextEventSummary: Sendable {
     public var toolCalls: [TypedToolCall]
     public var toolResults: [TypedToolResult]
     public var files: [GeneratedFile]
+    public var reasoningFiles: [GeneratedFile]
     public var sources: [Source]
     public var finishReason: FinishReason?
     public var usage: LanguageModelUsage?
@@ -65,6 +68,7 @@ public struct StreamTextEventSummary: Sendable {
         toolCalls: [TypedToolCall] = [],
         toolResults: [TypedToolResult] = [],
         files: [GeneratedFile] = [],
+        reasoningFiles: [GeneratedFile] = [],
         sources: [Source] = [],
         finishReason: FinishReason? = nil,
         usage: LanguageModelUsage? = nil,
@@ -75,6 +79,7 @@ public struct StreamTextEventSummary: Sendable {
         self.toolCalls = toolCalls
         self.toolResults = toolResults
         self.files = files
+        self.reasoningFiles = reasoningFiles
         self.sources = sources
         self.finishReason = finishReason
         self.usage = usage
@@ -111,8 +116,12 @@ public func summarizeStreamTextEvents(
             continue
         case let .source(source):
             summary.sources.append(source)
+        case .custom:
+            continue
         case let .file(file):
             summary.files.append(file)
+        case let .reasoningFile(file):
+            summary.reasoningFiles.append(file)
         case let .finish(reason, _, usage):
             summary.finishReason = reason
             summary.usage = usage
@@ -170,8 +179,14 @@ private final class StreamTextEventEncoder {
         case let .source(source):
             return [.source(source)]
 
+        case let .custom(kind, providerMetadata):
+            return [.custom(kind: kind, providerMetadata: providerMetadata)]
+
         case let .file(file):
             return [.file(file)]
+
+        case let .reasoningFile(file, _):
+            return [.reasoningFile(file)]
 
         case .finishStep:
             return []

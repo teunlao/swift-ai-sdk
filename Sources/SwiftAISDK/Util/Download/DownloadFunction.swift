@@ -39,6 +39,48 @@ public struct DownloadResult: Sendable {
     }
 }
 
+/// Represents a single URL download request.
+public struct DownloadFileRequest: Sendable {
+    /// The URL to download.
+    public let url: URL
+
+    /// Whether the download should abort.
+    public let abortSignal: (@Sendable () -> Bool)?
+
+    public init(
+        url: URL,
+        abortSignal: (@Sendable () -> Bool)? = nil
+    ) {
+        self.url = url
+        self.abortSignal = abortSignal
+    }
+}
+
+/**
+ Download function for a single URL-backed asset.
+
+ Used by APIs that receive provider-returned or user-supplied URLs and need to
+ materialize the asset before passing it to a model or returning it to callers.
+ */
+public typealias DownloadFileFunction = @Sendable (DownloadFileRequest) async throws -> DownloadResult
+
+/**
+ Creates a download function with a configurable maximum size.
+
+ - Parameter maxBytes: Maximum allowed download size in bytes. Defaults to 2 GiB.
+ - Returns: A download function for a single URL-backed asset.
+ */
+public func createDownload(maxBytes: Int = DEFAULT_MAX_DOWNLOAD_SIZE) -> DownloadFileFunction {
+    { request in
+        let result = try await download(
+            url: request.url,
+            maxBytes: maxBytes,
+            isAborted: request.abortSignal
+        )
+        return DownloadResult(data: result.data, mediaType: result.mediaType)
+    }
+}
+
 /**
  Download function. Called with an array of URLs and a boolean indicating
  whether the URL is supported by the model.
@@ -67,7 +109,9 @@ public typealias DownloadFunction = @Sendable ([DownloadRequest]) async throws -
  - Returns: A download function that processes an array of download requests.
  */
 public func createDefaultDownloadFunction(
-    downloadImpl: @escaping @Sendable (URL) async throws -> (data: Data, mediaType: String?) = download
+    downloadImpl: @escaping @Sendable (URL) async throws -> (data: Data, mediaType: String?) = { url in
+        try await download(url: url)
+    }
 ) -> DownloadFunction {
     return { requestedDownloads in
         // Process all downloads concurrently using TaskGroup

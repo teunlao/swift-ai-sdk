@@ -53,13 +53,13 @@ private actor ResponseMessageStore {
 }
 
 private struct GenerateStepIntermediate {
-    let content: [LanguageModelV3Content]
+    let content: [LanguageModelV4Content]
     let finishReason: FinishReason
     let rawFinishReason: String?
     let usage: LanguageModelUsage
     let warnings: [CallWarning]
     let providerMetadata: ProviderMetadata?
-    let requestInfo: LanguageModelV3RequestInfo?
+    let requestInfo: LanguageModelV4RequestInfo?
     let responseMetadata: LanguageModelResponseMetadata
     let responseBody: JSONValue?
 }
@@ -126,11 +126,11 @@ private func buildInnerTelemetryAttributes(
     telemetry: TelemetrySettings?,
     baseAttributes: Attributes,
     operationId: String,
-    prompt: LanguageModelV3Prompt,
-    tools: [LanguageModelV3Tool]?,
-    toolChoice: LanguageModelV3ToolChoice?,
+    prompt: LanguageModelV4Prompt,
+    tools: [LanguageModelV4Tool]?,
+    toolChoice: LanguageModelV4ToolChoice?,
     settings: PreparedCallSettings,
-    model: any LanguageModelV3
+    model: any LanguageModelV4
 ) -> [String: ResolvableAttributeValue?] {
     var attributes: [String: ResolvableAttributeValue?] = [:]
 
@@ -197,7 +197,7 @@ private func buildInnerTelemetryAttributes(
 private func buildResponseTelemetryAttributes(
     telemetry: TelemetrySettings?,
     finishReason: FinishReason,
-    content: [LanguageModelV3Content],
+    content: [LanguageModelV4Content],
     providerMetadata: ProviderMetadata?,
     usage: LanguageModelUsage,
     responseId: String,
@@ -290,14 +290,14 @@ private func summarizePromptForTelemetry(
 }
 
 private func encodeToolsForTelemetry(
-    _ tools: [LanguageModelV3Tool]?
+    _ tools: [LanguageModelV4Tool]?
 ) -> String? {
     guard let tools else { return nil }
     return jsonString(from: tools)
 }
 
 private func encodeToolChoiceForTelemetry(
-    _ toolChoice: LanguageModelV3ToolChoice?
+    _ toolChoice: LanguageModelV4ToolChoice?
 ) -> String? {
     guard let toolChoice else { return nil }
     return jsonString(from: toolChoice)
@@ -330,7 +330,7 @@ private struct ToolCallTelemetry: Encodable {
 }
 
 private func asToolCalls(
-    _ content: [LanguageModelV3Content]
+    _ content: [LanguageModelV4Content]
 ) -> [ToolCallTelemetry]? {
     let calls = content.compactMap { part -> ToolCallTelemetry? in
         switch part {
@@ -357,7 +357,7 @@ private func asToolCalls(
 }
 
 private func parseToolCalls(
-    from content: [LanguageModelV3Content],
+    from content: [LanguageModelV4Content],
     tools: ToolSet?,
     repairToolCall: ToolCallRepairFunction?,
     system: String?,
@@ -412,7 +412,7 @@ private func convertResponseBody(_ body: Any?) -> JSONValue? {
 }
 
 private func makeRequestMetadata(
-    from info: LanguageModelV3RequestInfo?
+    from info: LanguageModelV4RequestInfo?
 ) -> LanguageModelRequestMetadata {
     guard let info else { return LanguageModelRequestMetadata() }
     let body: JSONValue?
@@ -424,6 +424,19 @@ private func makeRequestMetadata(
     return LanguageModelRequestMetadata(body: body)
 }
 
+private func languageModelV4ResponseFormat(
+    from responseFormat: LanguageModelV3ResponseFormat?
+) -> LanguageModelV4ResponseFormat? {
+    guard let responseFormat else { return nil }
+
+    switch responseFormat {
+    case .text:
+        return .text
+    case let .json(schema, name, description):
+        return .json(schema: schema, name: name, description: description)
+    }
+}
+
 private struct ToolCallNotFoundError: LocalizedError, Sendable {
     let toolCallId: String
 
@@ -433,7 +446,7 @@ private struct ToolCallNotFoundError: LocalizedError, Sendable {
 }
 
 private func asContent(
-    content languageModelContent: [LanguageModelV3Content],
+    content languageModelContent: [LanguageModelV4Content],
     toolCalls: [TypedToolCall],
     toolOutputs: [ToolOutput],
     toolApprovalRequests: [ToolApprovalRequestOutput],
@@ -453,6 +466,11 @@ private func asContent(
                 .text(text: textPart.text, providerMetadata: textPart.providerMetadata)
             )
 
+        case .custom(let customPart):
+            contentParts.append(
+                .custom(kind: customPart.kind, providerMetadata: customPart.providerMetadata)
+            )
+
         case .reasoning(let reasoningPart):
             contentParts.append(
                 .reasoning(
@@ -463,15 +481,17 @@ private func asContent(
                 )
             )
 
+        case .reasoningFile(let filePart):
+            contentParts.append(.reasoningFile(
+                file: generatedFile(mediaType: filePart.mediaType, data: filePart.data),
+                providerMetadata: filePart.providerMetadata
+            ))
+
         case .file(let filePart):
-            let generatedFile: GeneratedFile
-            switch filePart.data {
-            case .base64(let base64):
-                generatedFile = DefaultGeneratedFileWithType(base64: base64, mediaType: filePart.mediaType)
-            case .binary(let data):
-                generatedFile = DefaultGeneratedFileWithType(data: data, mediaType: filePart.mediaType)
-            }
-            contentParts.append(.file(file: generatedFile, providerMetadata: nil))
+            contentParts.append(.file(
+                file: generatedFile(mediaType: filePart.mediaType, data: filePart.data),
+                providerMetadata: filePart.providerMetadata
+            ))
 
         case .source(let sourcePart):
             contentParts.append(.source(type: "source", source: sourcePart))
@@ -648,6 +668,17 @@ private func asContent(
     return contentParts
 }
 
+private func generatedFile(mediaType: String, data: LanguageModelV4FileData) -> GeneratedFile {
+    switch data {
+    case .data(let data):
+        return DefaultGeneratedFileWithType(data: data, mediaType: mediaType)
+    case .base64(let base64):
+        return DefaultGeneratedFileWithType(base64: base64, mediaType: mediaType)
+    case .url(let url):
+        return DefaultGeneratedFileWithType(base64: url.absoluteString, mediaType: mediaType)
+    }
+}
+
 private func toolOutputToContentPart(_ output: ToolOutput) -> ContentPart {
     switch output {
     case .result(let result):
@@ -799,8 +830,8 @@ public func generateText<OutputValue: Sendable>(
     onFinish: GenerateTextOnFinishCallback? = nil,
     settings: CallSettings = CallSettings()
 ) async throws -> DefaultGenerateTextResult<OutputValue> {
-    let resolvedModel = try resolveLanguageModel(modelArg)
-    let defaultLanguageModel: LanguageModel = .v3(resolvedModel)
+    let resolvedModel = try resolveLanguageModelV4(modelArg)
+    let defaultLanguageModel: LanguageModel = .v4(resolvedModel)
     let effectiveActiveTools = activeTools ?? experimentalActiveTools
     let effectivePrepareStep = prepareStep ?? experimentalPrepareStep
     let downloadHandler = download
@@ -843,7 +874,8 @@ public func generateText<OutputValue: Sendable>(
         presencePenalty: settings.presencePenalty,
         frequencyPenalty: settings.frequencyPenalty,
         stopSequences: settings.stopSequences,
-        seed: settings.seed
+        seed: settings.seed,
+        reasoning: settings.reasoning
     )
 
     let headersWithUserAgent = withUserAgentSuffix(
@@ -1000,24 +1032,24 @@ public func generateText<OutputValue: Sendable>(
                 currentExperimentalContext = prepareStepResult?.experimentalContext ?? currentExperimentalContext
 
                 let stepModelSource = prepareStepResult?.model ?? defaultLanguageModel
-                let stepModel = try resolveLanguageModel(stepModelSource)
+                let stepModel = try resolveLanguageModelV4(stepModelSource)
 
                 let stepSystem = prepareStepResult?.system ?? standardizedPrompt.system
                 let stepMessages = prepareStepResult?.messages ?? stepInputMessages
 
-                let promptForModel = try await convertToLanguageModelPrompt(
+                let promptForModel = try await convertToLanguageModelV4Prompt(
                     prompt: StandardizedPrompt(system: stepSystem, messages: stepMessages),
                     supportedUrls: try await stepModel.supportedUrls,
                     download: downloadHandler
                 )
 
-                let toolPreparation = try await prepareToolsAndToolChoice(
+                let toolPreparation = try await prepareToolsAndToolChoiceV4(
                     tools: tools,
                     toolChoice: prepareStepResult?.toolChoice ?? toolChoice,
                     activeTools: prepareStepResult?.activeTools ?? effectiveActiveTools
                 )
 
-                let responseFormat = try await output?.responseFormat()
+                let responseFormat = languageModelV4ResponseFormat(from: try await output?.responseFormat())
                 let stepProviderOptions = mergeProviderOptions(
                     providerOptions,
                     prepareStepResult?.providerOptions
@@ -1044,7 +1076,7 @@ public func generateText<OutputValue: Sendable>(
                         attributes: innerAttributes
                     ) { span in
                         let result = try await stepModel.doGenerate(
-                            options: LanguageModelV3CallOptions(
+                            options: LanguageModelV4CallOptions(
                                 prompt: promptForModel,
                                 maxOutputTokens: preparedCallSettings.maxOutputTokens,
                                 temperature: preparedCallSettings.temperature,
@@ -1060,6 +1092,7 @@ public func generateText<OutputValue: Sendable>(
                                 includeRawChunks: nil,
                                 abortSignal: effectiveAbortSignal,
                                 headers: headersWithUserAgent,
+                                reasoning: preparedCallSettings.reasoning,
                                 providerOptions: stepProviderOptions
                             )
                         )

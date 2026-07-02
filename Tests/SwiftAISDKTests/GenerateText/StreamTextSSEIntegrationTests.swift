@@ -328,8 +328,8 @@ struct StreamTextSSEIntegrationTests {
 
     @Test("SSE encodes source url/document and file events")
     func sseEncodesSourceAndFile() async throws {
-        let urlSource: LanguageModelV3Source = .url(id: "u1", url: "https://example.com", title: "Ex", providerMetadata: ["p": ["k": .string("v")]])
-        let docSource: LanguageModelV3Source = .document(id: "d1", mediaType: "text/plain", title: "Doc", filename: "a.txt", providerMetadata: nil)
+        let urlSource: Source = .url(id: "u1", url: "https://example.com", title: "Ex", providerMetadata: ["p": ["k": .string("v")]])
+        let docSource: Source = .document(id: "d1", mediaType: "text/plain", title: "Doc", filename: "a.txt", providerMetadata: nil)
         let file = DefaultGeneratedFileWithType(data: Data("X".utf8), mediaType: "text/plain")
         let parts: [TextStreamPart] = [
             .source(urlSource),

@@ -347,10 +347,11 @@ public func standardSchema<Output>(_ schema: StandardSchemaV1<Output>) -> Schema
 
     let resolver: Schema<Output>.JSONSchemaResolver = {
         if let jsonSchema = schema.definition.jsonSchema {
-            return try await jsonSchema()
+            return addAdditionalPropertiesToJsonSchema(try await jsonSchema())
         }
 
         return .object([
+            "type": .string("object"),
             "properties": .object([:]),
             "additionalProperties": .bool(false)
         ])
@@ -406,6 +407,7 @@ public func asSchema<Output>(_ schema: FlexibleSchema<Output>?) -> Schema<Output
     guard let schema else {
         return jsonSchema(
             .object([
+                "type": .string("object"),
                 "properties": .object([:]),
                 "additionalProperties": .bool(false)
             ]),

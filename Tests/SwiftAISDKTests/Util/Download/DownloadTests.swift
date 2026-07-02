@@ -31,13 +31,9 @@ struct DownloadTests {
             headerFields: ["Content-Type": contentType]
         )!
 
-        let teardown = try registerMock(for: url) { request in
-            #expect(request.url == url)
-            return (response, expectedBody)
-        }
-        defer { teardown() }
+        let fetch = makeMockFetch(url: url, response: response, body: expectedBody)
 
-        let result = try await download(url: url)
+        let result = try await download(url: url, fetch: fetch)
 
         // Verify we got data
         #expect(result.data == expectedBody)
@@ -56,14 +52,10 @@ struct DownloadTests {
             headerFields: nil
         )!
 
-        let teardown = try registerMock(for: url) { request in
-            #expect(request.url == url)
-            return (response, Data())
-        }
-        defer { teardown() }
+        let fetch = makeMockFetch(url: url, response: response, body: Data())
 
         do {
-            _ = try await download(url: url)
+            _ = try await download(url: url, fetch: fetch)
             Issue.record("Expected download to throw DownloadError")
         } catch let error as DownloadError {
             #expect([404, 503].contains(error.statusCode))
@@ -83,14 +75,10 @@ struct DownloadTests {
             headerFields: nil
         )!
 
-        let teardown = try registerMock(for: url) { request in
-            #expect(request.url == url)
-            return (response, Data())
-        }
-        defer { teardown() }
+        let fetch = makeMockFetch(url: url, response: response, body: Data())
 
         do {
-            _ = try await download(url: url)
+            _ = try await download(url: url, fetch: fetch)
             Issue.record("Expected download to throw DownloadError")
         } catch let error as DownloadError {
             #expect([500, 503].contains(error.statusCode))
@@ -101,7 +89,7 @@ struct DownloadTests {
     }
 
     @Test("download should include User-Agent header")
-        func testDownloadUserAgentHeader() async throws {
+    func testDownloadUserAgentHeader() async throws {
         let url = URL(string: "https://example.com/user-agent")!
         let expectedBody = Data("ok".utf8)
         let response = HTTPURLResponse(
@@ -111,107 +99,53 @@ struct DownloadTests {
             headerFields: nil
         )!
 
-        let teardown = try registerMock(for: url) { request in
+        let fetch = makeMockFetch(url: url, response: response, body: expectedBody) { request in
             #expect(request.url == url)
             let header = request.value(forHTTPHeaderField: "User-Agent")
             #expect(header?.contains("ai-sdk/") == true)
-            return (response, expectedBody)
         }
-        defer { teardown() }
 
-        let result = try await download(url: url)
+        let result = try await download(url: url, fetch: fetch)
         #expect(result.data == expectedBody)
+    }
+
+    @Test("createDownload should download data URLs")
+    func testCreateDownloadDataURL() async throws {
+        let url = URL(string: "data:text/plain;base64,b2s=")!
+        let download = createDownload()
+
+        let result = try await download(DownloadFileRequest(url: url))
+
+        #expect(result.data == Data("ok".utf8))
+        #expect(result.mediaType == "text/plain")
+    }
+
+    @Test("createDownload should enforce maxBytes")
+    func testCreateDownloadMaxBytes() async throws {
+        let url = URL(string: "data:text/plain;base64,b2s=")!
+        let download = createDownload(maxBytes: 1)
+
+        do {
+            _ = try await download(DownloadFileRequest(url: url))
+            Issue.record("Expected DownloadError")
+        } catch let error as DownloadError {
+            #expect(error.url == url.absoluteString)
+            #expect(error.message.contains("exceeded maximum size of 1 bytes"))
+        }
     }
 
     // MARK: - Helpers
 
-        private func registerMock(
-        for url: URL,
-        handler: @escaping @Sendable (URLRequest) throws -> (HTTPURLResponse, Data)
-    ) throws -> () -> Void {
-        MockURLProtocol.install(handler: handler, for: url)
-        guard URLProtocol.registerClass(MockURLProtocol.self) else {
-            throw DownloadTestError.registrationFailed
+    private func makeMockFetch(
+        url: URL,
+        response: HTTPURLResponse,
+        body: Data,
+        inspectRequest: (@Sendable (URLRequest) -> Void)? = nil
+    ) -> FetchFunction {
+        { request in
+            #expect(request.url == url)
+            inspectRequest?(request)
+            return FetchResponse(body: .data(body), urlResponse: response)
         }
-        return {
-            URLProtocol.unregisterClass(MockURLProtocol.self)
-            MockURLProtocol.removeHandler(for: url)
-        }
-    }
-
-    private enum DownloadTestError: Error {
-        case registrationFailed
-    }
-}
-
-@preconcurrency private final class MockURLProtocol: URLProtocol {
-    typealias Handler = @Sendable (URLRequest) throws -> (HTTPURLResponse, Data)
-
-    private final class HandlerStore: @unchecked Sendable {
-        private let queue = DispatchQueue(label: "mock-url-protocol.handlers", attributes: .concurrent)
-        private var handlers: [String: Handler] = [:]
-
-        @discardableResult
-        private func barrier<T>(_ block: () -> T) -> T {
-            queue.sync(flags: .barrier, execute: block)
-        }
-
-        func install(_ handler: @escaping Handler, for url: String) {
-            barrier { handlers[url] = handler }
-        }
-
-        func remove(for url: String) {
-            barrier { handlers.removeValue(forKey: url) }
-        }
-
-        func handler(for url: String) -> Handler? {
-            queue.sync { handlers[url] }
-        }
-    }
-
-    private static let handlerStore = HandlerStore()
-
-    override class func canInit(with request: URLRequest) -> Bool {
-        guard let url = request.url?.absoluteString else { return false }
-        return handlerStore.handler(for: url) != nil
-    }
-
-    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
-        request
-    }
-
-    override func startLoading() {
-        guard let url = request.url?.absoluteString else {
-            client?.urlProtocol(self, didFailWithError: URLError(.unknown))
-            return
-        }
-        guard let handler = MockURLProtocol.handlerStore.handler(for: url) else {
-            client?.urlProtocol(self, didFailWithError: URLError(.unknown))
-            return
-        }
-        do {
-            let (response, data) = try handler(request)
-            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-            client?.urlProtocol(self, didLoad: data)
-            client?.urlProtocolDidFinishLoading(self)
-        } catch {
-            client?.urlProtocol(self, didFailWithError: error)
-        }
-    }
-
-    override func stopLoading() {
-        // Nothing to do
-    }
-
-    static func install(handler: @escaping Handler, for url: URL) {
-        handlerStore.install(handler, for: url.absoluteString)
-    }
-
-    static func removeHandler(for url: URL) {
-        handlerStore.remove(for: url.absoluteString)
-    }
-
-    private static func currentHandler(for url: String) -> Handler? {
-        handlerStore.handler(for: url)
     }
 }

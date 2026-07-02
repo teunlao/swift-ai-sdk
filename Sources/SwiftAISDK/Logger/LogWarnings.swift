@@ -56,12 +56,13 @@ private nonisolated(unsafe) var _warningsLoggingDisabledForProcess: Bool = false
 
 /// Union type for all warning types
 public enum Warning: Sendable, Equatable {
-    case languageModel(SharedV3Warning)
-    case imageModel(SharedV3Warning)
-    case videoModel(SharedV3Warning)
-    case speechModel(SharedV3Warning)
-    case transcriptionModel(SharedV3Warning)
-    case rerankingModel(SharedV3Warning)
+    case languageModel(SharedV4Warning)
+    case embeddingModel(SharedV4Warning)
+    case imageModel(SharedV4Warning)
+    case videoModel(SharedV4Warning)
+    case speechModel(SharedV4Warning)
+    case transcriptionModel(SharedV4Warning)
+    case rerankingModel(SharedV4Warning)
 }
 
 /// Custom logger function type
@@ -120,17 +121,19 @@ private func formatWarning(_ warning: Warning) -> String {
 
     switch warning {
     case .languageModel(let w):
-        return formatSharedV3Warning(w, prefix: prefix)
+        return formatSharedV4Warning(w, prefix: prefix)
+    case .embeddingModel(let w):
+        return formatSharedV4Warning(w, prefix: prefix)
     case .imageModel(let w):
-        return formatSharedV3Warning(w, prefix: prefix)
+        return formatSharedV4Warning(w, prefix: prefix)
     case .videoModel(let w):
-        return formatSharedV3Warning(w, prefix: prefix)
+        return formatSharedV4Warning(w, prefix: prefix)
     case .speechModel(let w):
-        return formatSharedV3Warning(w, prefix: prefix)
+        return formatSharedV4Warning(w, prefix: prefix)
     case .transcriptionModel(let w):
-        return formatSharedV3Warning(w, prefix: prefix)
+        return formatSharedV4Warning(w, prefix: prefix)
     case .rerankingModel(let w):
-        return formatSharedV3Warning(w, prefix: prefix)
+        return formatSharedV4Warning(w, prefix: prefix)
     }
 }
 
@@ -150,6 +153,31 @@ private func formatSharedV3Warning(_ warning: SharedV3Warning, prefix: String) -
             message += " - \(details)"
         }
         return message
+
+    case .other(let message):
+        return "\(prefix) \(message)"
+    }
+}
+
+/// Format SharedV4Warning
+private func formatSharedV4Warning(_ warning: SharedV4Warning, prefix: String) -> String {
+    switch warning {
+    case .unsupported(let feature, let details):
+        var message = "\(prefix) The feature \"\(feature)\" is not supported"
+        if let details = details {
+            message += " - \(details)"
+        }
+        return message
+
+    case .compatibility(let feature, let details):
+        var message = "\(prefix) Using compatibility mode for \"\(feature)\""
+        if let details = details {
+            message += " - \(details)"
+        }
+        return message
+
+    case .deprecated(let setting, let message):
+        return "\(prefix) The setting \"\(setting)\" is deprecated - \(message)"
 
     case .other(let message):
         return "\(prefix) \(message)"

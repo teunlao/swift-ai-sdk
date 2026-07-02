@@ -29,6 +29,21 @@ public func convertToLanguageModelV3DataContent(
     }
 }
 
+/// Converts data content inputs to the V4 tagged file-data shape.
+public func convertToSharedV4FileData(
+    _ content: DataContentOrURL
+) throws -> (data: SharedV4FileData, mediaType: String?) {
+    let converted = try convertToLanguageModelV3DataContent(content)
+    switch converted.data {
+    case .data(let data):
+        return (data: .data(data), mediaType: converted.mediaType)
+    case .base64(let base64):
+        return (data: .base64(base64), mediaType: converted.mediaType)
+    case .url(let url):
+        return (data: .url(url), mediaType: converted.mediaType)
+    }
+}
+
 /// Converts `DataContent` to a base64-encoded string.
 public func convertDataContentToBase64String(_ content: DataContent) -> String {
     switch content {

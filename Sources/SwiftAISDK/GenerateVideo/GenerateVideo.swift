@@ -14,14 +14,24 @@ public enum GenerateVideoPrompt: Sendable {
 }
 
 extension GenerateVideoPrompt {
-    func normalize() throws -> (prompt: String?, image: VideoModelV3File?) {
+    func normalize() throws -> (prompt: String?, image: VideoModelV4File?) {
         switch self {
         case .text(let text):
             return (prompt: text, image: nil)
 
         case .imageToVideo(let image, let text):
-            return (prompt: text, image: try toVideoModelV3File(image))
+            return (prompt: text, image: try toVideoModelV4File(image))
         }
+    }
+}
+
+public struct GenerateVideoFrameImage: Sendable {
+    public let image: DataContent
+    public let frameType: VideoModelV4FrameType
+
+    public init(image: DataContent, frameType: VideoModelV4FrameType) {
+        self.image = image
+        self.frameType = frameType
     }
 }
 
@@ -36,12 +46,47 @@ func generateVideo(
     duration: Int? = nil,
     fps: Int? = nil,
     seed: Int? = nil,
+    frameImages: [GenerateVideoFrameImage]? = nil,
+    inputReferences: [DataContent]? = nil,
+    generateAudio: Bool? = nil,
     providerOptions: ProviderOptions? = nil,
     maxRetries: Int? = nil,
     abortSignal: (@Sendable () -> Bool)? = nil,
-    headers: [String: String]? = nil
+    headers: [String: String]? = nil,
+    experimentalDownload download: DownloadFileFunction? = nil
 ) async throws -> DefaultGenerateVideoResult {
+    let resolvedModel = try resolveVideoModelV4(model)
     let normalizedPrompt = try prompt.normalize()
+    let normalizedFrameImages = try frameImages?.map { frame in
+        VideoModelV4FrameImage(
+            image: try toVideoModelV4File(frame.image),
+            frameType: frame.frameType
+        )
+    }
+    let normalizedInputReferences = try inputReferences?.map(toVideoModelV4File)
+    let hasFrameImages = normalizedFrameImages?.isEmpty == false
+    let hasInputReferences = normalizedInputReferences?.isEmpty == false
+
+    let effectiveInputReferences = hasFrameImages ? nil : normalizedInputReferences
+    let firstFrameImage = normalizedFrameImages?.first { $0.frameType == .firstFrame }?.image
+    let resolvedImage = firstFrameImage ?? normalizedPrompt.image
+
+    var warnings: [VideoGenerationWarning] = []
+    if hasFrameImages && hasInputReferences {
+        warnings.append(
+            .other(
+                message: "inputReferences were ignored because frameImages were provided; frameImages and inputReferences cannot be combined."
+            )
+        )
+    }
+
+    if normalizedPrompt.image != nil && firstFrameImage != nil {
+        warnings.append(
+            .other(
+                message: "prompt.image was ignored because a first_frame frameImage was provided; the first_frame frameImage takes precedence as the start image."
+            )
+        )
+    }
 
     let headersWithUserAgent = withUserAgentSuffix(
         headers ?? [:],
@@ -57,7 +102,7 @@ func generateVideo(
     if let override = maxVideosPerCall {
         maxVideosPerCallResolved = override
     } else {
-        let modelLimit = try await invokeModelMaxVideosPerCall(model)
+        let modelLimit = try await invokeModelMaxVideosPerCall(resolvedModel)
         maxVideosPerCallResolved = modelLimit ?? 1
     }
 
@@ -70,13 +115,13 @@ func generateVideo(
         return min(remaining, maxVideosPerCallResolved)
     }
 
-    var results: [VideoModelV3GenerateResult] = []
+    var results: [VideoModelV4GenerateResult] = []
     results.reserveCapacity(callVideoCounts.count)
 
     for videosInCall in callVideoCounts {
         let result = try await preparedRetries.retry.call {
-            try await model.doGenerate(
-                options: VideoModelV3CallOptions(
+            try await resolvedModel.doGenerate(
+                options: VideoModelV4CallOptions(
                     prompt: normalizedPrompt.prompt,
                     n: videosInCall,
                     aspectRatio: aspectRatio,
@@ -84,7 +129,10 @@ func generateVideo(
                     duration: duration,
                     fps: fps,
                     seed: seed,
-                    image: normalizedPrompt.image,
+                    image: resolvedImage,
+                    frameImages: normalizedFrameImages,
+                    inputReferences: effectiveInputReferences,
+                    generateAudio: generateAudio,
                     providerOptions: providerOptions ?? [:],
                     abortSignal: abortSignal,
                     headers: headersWithUserAgent
@@ -96,11 +144,11 @@ func generateVideo(
     }
 
     var videos: [GeneratedFile] = []
-    var warnings: [VideoGenerationWarning] = []
     var responses: [VideoModelResponseMetadata] = []
     responses.reserveCapacity(results.count)
 
     var providerMetadata: VideoModelProviderMetadata = [:]
+    let downloadFile = download ?? createDownload()
 
     for result in results {
         for videoData in result.videos {
@@ -110,7 +158,12 @@ func generateVideo(
                     throw DownloadError(url: urlString, cause: URLError(.badURL))
                 }
 
-                let (data, downloadedMediaType) = try await download(url: url)
+                let downloadResult = try await downloadFile(
+                    DownloadFileRequest(
+                        url: url,
+                        abortSignal: abortSignal
+                    )
+                )
 
                 func isUsableMediaType(_ type: String?) -> Bool {
                     guard let type else { return false }
@@ -119,24 +172,24 @@ func generateVideo(
 
                 let mediaType =
                     (isUsableMediaType(providerMediaType) ? providerMediaType : nil)
-                    ?? (isUsableMediaType(downloadedMediaType) ? downloadedMediaType : nil)
-                    ?? detectMediaType(data: data, signatures: videoMediaTypeSignatures)
+                    ?? (isUsableMediaType(downloadResult.mediaType) ? downloadResult.mediaType : nil)
+                    ?? detectMediaType(data: downloadResult.data, signatures: videoMediaTypeSignatures)
                     ?? "video/mp4"
 
                 videos.append(
-                    DefaultGeneratedFile(data: data, mediaType: mediaType)
+                    DefaultGeneratedFile(data: downloadResult.data, mediaType: mediaType)
                 )
 
             case .base64(let base64, let mediaType):
                 videos.append(
-                    DefaultGeneratedFile(base64: base64, mediaType: mediaType ?? "video/mp4")
+                    DefaultGeneratedFile(base64: base64, mediaType: mediaType)
                 )
 
             case .binary(let data, let mediaType):
                 let resolvedMediaType =
-                    mediaType
-                    ?? detectMediaType(data: data, signatures: videoMediaTypeSignatures)
-                    ?? "video/mp4"
+                    mediaType.isEmpty
+                    ? (detectMediaType(data: data, signatures: videoMediaTypeSignatures) ?? "video/mp4")
+                    : mediaType
 
                 videos.append(
                     DefaultGeneratedFile(data: data, mediaType: resolvedMediaType)
@@ -160,10 +213,12 @@ func generateVideo(
         }
     }
 
-    logWarnings(warnings.map { Warning.videoModel($0) })
-
     if videos.isEmpty {
         throw NoVideoGeneratedError(responses: responses)
+    }
+
+    if !warnings.isEmpty {
+        logWarnings(warnings.map { Warning.videoModel($0) })
     }
 
     return DefaultGenerateVideoResult(
@@ -200,7 +255,7 @@ private func mergeProviderMetadata(
     }
 }
 
-private func invokeModelMaxVideosPerCall(_ model: VideoModel) async throws -> Int? {
+private func invokeModelMaxVideosPerCall(_ model: any VideoModelV4) async throws -> Int? {
     switch model.maxVideosPerCall {
     case .value(let value):
         return value
@@ -211,7 +266,7 @@ private func invokeModelMaxVideosPerCall(_ model: VideoModel) async throws -> In
     }
 }
 
-private func toVideoModelV3File(_ dataContent: DataContent) throws -> VideoModelV3File {
+private func toVideoModelV4File(_ dataContent: DataContent) throws -> VideoModelV4File {
     switch dataContent {
     case .string(let string):
         if string.hasPrefix("http://") || string.hasPrefix("https://") {

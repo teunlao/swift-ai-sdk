@@ -1,0 +1,4 @@
+interface:
+  display_name: "Swift AI Upstream"
+  short_description: "Scan upstream drift and maintain Swift parity"
+  default_prompt: "Use $swift-ai-sdk-upstream to scan upstream coverage, classify drift, choose the next parity slice, and land evidence-backed fixes."

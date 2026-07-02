@@ -58,9 +58,9 @@ func makeGenerateObjectOuterTelemetryAttributes(
 func makeGenerateObjectInnerTelemetryAttributes(
     telemetry: TelemetrySettings?,
     baseAttributes: Attributes,
-    promptMessages: [LanguageModelV3Message],
+    promptMessages: LanguageModelV4Prompt,
     callSettings: PreparedCallSettings,
-    model: any LanguageModelV3
+    model: any LanguageModelV4
 ) -> [String: ResolvableAttributeValue?] {
     var attributes: [String: ResolvableAttributeValue?] = [:]
 

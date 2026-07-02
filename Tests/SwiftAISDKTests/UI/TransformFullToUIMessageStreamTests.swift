@@ -65,14 +65,14 @@ struct TransformFullToUIMessageStreamTests {
 
     @Test("includes source url/document when enabled")
     func includesSourcesWhenEnabled() async throws {
-        let urlSource = LanguageModelV3Source.url(
+        let urlSource = Source.url(
             id: "s1",
             url: "https://example.com",
             title: "Example",
             providerMetadata: nil
         )
 
-        let docSource = LanguageModelV3Source.document(
+        let docSource = Source.document(
             id: "s2",
             mediaType: "text/plain",
             title: "Readme",
@@ -138,7 +138,7 @@ struct TransformFullToUIMessageStreamTests {
 
     @Test("excludes sources when disabled")
     func excludesSourcesWhenDisabled() async throws {
-        let urlSource = LanguageModelV3Source.url(
+        let urlSource = Source.url(
             id: "s3",
             url: "https://disabled.example",
             title: nil,

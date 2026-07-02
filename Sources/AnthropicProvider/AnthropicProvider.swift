@@ -39,15 +39,21 @@ public struct AnthropicProviderSettings: Sendable {
     }
 }
 
-public final class AnthropicProvider: ProviderV3 {
+public final class AnthropicProvider: ProviderV3, FilesProvider, SkillsProvider {
     private let makeMessagesModel: @Sendable (AnthropicMessagesModelId) -> AnthropicMessagesLanguageModel
+    private let makeFilesAPI: @Sendable () -> any FilesV4
+    private let makeSkillsAPI: @Sendable () -> any SkillsV4
     public let tools: AnthropicTools
 
     init(
         makeMessagesModel: @escaping @Sendable (AnthropicMessagesModelId) -> AnthropicMessagesLanguageModel,
+        makeFilesAPI: @escaping @Sendable () -> any FilesV4,
+        makeSkillsAPI: @escaping @Sendable () -> any SkillsV4,
         tools: AnthropicTools
     ) {
         self.makeMessagesModel = makeMessagesModel
+        self.makeFilesAPI = makeFilesAPI
+        self.makeSkillsAPI = makeSkillsAPI
         self.tools = tools
     }
 
@@ -73,6 +79,14 @@ public final class AnthropicProvider: ProviderV3 {
 
     public func imageModel(modelId: String) throws -> any ImageModelV3 {
         throw NoSuchModelError(modelId: modelId, modelType: .imageModel)
+    }
+
+    public func files() -> any FilesV4 {
+        makeFilesAPI()
+    }
+
+    public func skills() -> any SkillsV4 {
+        makeSkillsAPI()
     }
 }
 
@@ -140,8 +154,28 @@ public func createAnthropicProvider(settings: AnthropicProviderSettings = .init(
         AnthropicMessagesLanguageModel(modelId: modelId, config: config)
     }
 
+    let filesFactory: @Sendable () -> any FilesV4 = {
+        AnthropicFiles(config: .init(
+            provider: providerName,
+            baseURL: baseURL,
+            headers: headersClosure,
+            fetch: settings.fetch
+        ))
+    }
+
+    let skillsFactory: @Sendable () -> any SkillsV4 = {
+        AnthropicSkills(config: .init(
+            provider: providerName.replacingOccurrences(of: ".messages", with: "") + ".skills",
+            baseURL: baseURL,
+            headers: headersClosure,
+            fetch: settings.fetch
+        ))
+    }
+
     return AnthropicProvider(
         makeMessagesModel: messagesFactory,
+        makeFilesAPI: filesFactory,
+        makeSkillsAPI: skillsFactory,
         tools: anthropicTools
     )
 }

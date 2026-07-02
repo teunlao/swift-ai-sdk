@@ -26,7 +26,7 @@ public struct MultipartFormDataBuilder: Sendable {
     }
 
     /// Appends a binary file part to the multipart payload.
-    public mutating func appendFile(name: String, filename: String, contentType: String, data: Data) {
+    public mutating func appendFile(name: String, filename: String, contentType: String? = nil, data: Data) {
         parts.append(Part(name: name, filename: filename, contentType: contentType, data: data))
     }
 

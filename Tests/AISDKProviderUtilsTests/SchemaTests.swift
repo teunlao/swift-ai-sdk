@@ -265,6 +265,7 @@ struct SchemaTests {
         let resolved = try await schema.jsonSchema()
 
         #expect(resolved == .object([
+            "type": .string("object"),
             "properties": .object([:]),
             "additionalProperties": .bool(false)
         ]))
@@ -286,14 +287,15 @@ struct SchemaTests {
         let resolved = try await schema.jsonSchema()
 
         #expect(resolved == .object([
+            "type": .string("object"),
             "properties": .object([:]),
             "additionalProperties": .bool(false)
         ]))
     }
 
-    @Test("standardSchema passes through provided JSON schema for other vendors")
-    func standardSchemaVendorSpecificJsonSchema() async throws {
-        let expected: JSONValue = .object([
+    @Test("standardSchema normalizes provided JSON schema for other vendors")
+    func standardSchemaNormalizesVendorSpecificJsonSchema() async throws {
+        let input: JSONValue = .object([
             "$schema": .string("http://json-schema.org/draft-07/schema#"),
             "type": .string("object"),
             "properties": .object([
@@ -303,7 +305,7 @@ struct SchemaTests {
 
         let definition = StandardSchemaV1<Double>.Definition(
             vendor: "arktype",
-            jsonSchema: { expected },
+            jsonSchema: { input },
             validate: { value in
                 guard let number = value as? Double else {
                     return .issues("expected number")
@@ -314,7 +316,14 @@ struct SchemaTests {
 
         let schema = standardSchema(StandardSchemaV1(definition: definition))
         let resolved = try await schema.jsonSchema()
-        #expect(resolved == expected)
+        #expect(resolved == .object([
+            "$schema": .string("http://json-schema.org/draft-07/schema#"),
+            "type": .string("object"),
+            "additionalProperties": .bool(false),
+            "properties": .object([
+                "value": .object(["type": "number"])
+            ])
+        ]))
 
         let result = await schema.validate(42.0)
         guard case .success(let typed) = result else {

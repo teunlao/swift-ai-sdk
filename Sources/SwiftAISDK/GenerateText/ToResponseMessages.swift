@@ -100,12 +100,22 @@ private func assistantContentPart(
         let textPart = TextPart(text: text, providerOptions: providerMetadata)
         return .text(textPart)
 
+    case .custom(let kind, let providerMetadata):
+        return .custom(CustomPart(kind: kind, providerOptions: providerMetadata))
+
     case .reasoning(let reasoning):
         let reasoningPart = ReasoningPart(
             text: reasoning.text,
             providerOptions: reasoning.providerMetadata
         )
         return .reasoning(reasoningPart)
+
+    case .reasoningFile(let file, let providerMetadata):
+        return .reasoningFile(ReasoningFilePart(
+            data: .string(file.base64),
+            mediaType: file.mediaType,
+            providerOptions: providerMetadata
+        ))
 
     case .file(let file, let providerMetadata):
         let filePart = FilePart(

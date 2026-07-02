@@ -25,7 +25,7 @@ private func makeHeadersWithUserAgent(_ headers: [String: String]?) -> [String: 
     )
 }
 
-private func makeGeneratedAudioFile(from audio: SpeechModelV3Audio) -> GeneratedAudioFile {
+private func makeGeneratedAudioFile(from audio: SpeechModelV4Audio) -> GeneratedAudioFile {
     switch audio {
     case .binary(let data):
         let mediaType = detectMediaType(
@@ -43,7 +43,7 @@ private func makeGeneratedAudioFile(from audio: SpeechModelV3Audio) -> Generated
     }
 }
 
-private func isAudioEmpty(_ audio: SpeechModelV3Audio) -> Bool {
+private func isAudioEmpty(_ audio: SpeechModelV4Audio) -> Bool {
     switch audio {
     case .binary(let data):
         return data.isEmpty
@@ -72,7 +72,7 @@ private func isAudioEmpty(_ audio: SpeechModelV3Audio) -> Bool {
  - Throws: `UnsupportedModelVersionError`, `NoSpeechGeneratedError`, or retry-related errors.
  */
 public func generateSpeech(
-    model: any SpeechModelV3,
+    model: SpeechModel,
     text: String,
     voice: String? = nil,
     outputFormat: String? = nil,
@@ -84,13 +84,7 @@ public func generateSpeech(
     abortSignal: (@Sendable () -> Bool)? = nil,
     headers: [String: String]? = nil
 ) async throws -> any SpeechResult {
-    guard model.specificationVersion == "v3" else {
-        throw UnsupportedModelVersionError(
-            version: model.specificationVersion,
-            provider: model.provider,
-            modelId: model.modelId
-        )
-    }
+    let model = try resolveSpeechModelV4(model)
 
     let preparedRetries = try prepareRetries(
         maxRetries: maxRetries,
@@ -101,7 +95,7 @@ public func generateSpeech(
 
     let result = try await preparedRetries.retry.call {
         try await model.doGenerate(
-            options: SpeechModelV3CallOptions(
+            options: SpeechModelV4CallOptions(
                 text: text,
                 voice: voice,
                 outputFormat: outputFormat,
@@ -146,5 +140,89 @@ public func generateSpeech(
         warnings: warnings,
         responses: [responseMetadata],
         providerMetadata: result.providerMetadata ?? [:]
+    )
+}
+
+public func generateSpeech(
+    model: any SpeechModelV4,
+    text: String,
+    voice: String? = nil,
+    outputFormat: String? = nil,
+    instructions: String? = nil,
+    speed: Double? = nil,
+    language: String? = nil,
+    providerOptions: ProviderOptions = [:],
+    maxRetries: Int? = nil,
+    abortSignal: (@Sendable () -> Bool)? = nil,
+    headers: [String: String]? = nil
+) async throws -> any SpeechResult {
+    try await generateSpeech(
+        model: .v4(model),
+        text: text,
+        voice: voice,
+        outputFormat: outputFormat,
+        instructions: instructions,
+        speed: speed,
+        language: language,
+        providerOptions: providerOptions,
+        maxRetries: maxRetries,
+        abortSignal: abortSignal,
+        headers: headers
+    )
+}
+
+public func generateSpeech(
+    model: any SpeechModelV3,
+    text: String,
+    voice: String? = nil,
+    outputFormat: String? = nil,
+    instructions: String? = nil,
+    speed: Double? = nil,
+    language: String? = nil,
+    providerOptions: ProviderOptions = [:],
+    maxRetries: Int? = nil,
+    abortSignal: (@Sendable () -> Bool)? = nil,
+    headers: [String: String]? = nil
+) async throws -> any SpeechResult {
+    try await generateSpeech(
+        model: .v3(model),
+        text: text,
+        voice: voice,
+        outputFormat: outputFormat,
+        instructions: instructions,
+        speed: speed,
+        language: language,
+        providerOptions: providerOptions,
+        maxRetries: maxRetries,
+        abortSignal: abortSignal,
+        headers: headers
+    )
+}
+
+public func generateSpeech(
+    model: any SpeechModelV2,
+    text: String,
+    voice: String? = nil,
+    outputFormat: String? = nil,
+    instructions: String? = nil,
+    speed: Double? = nil,
+    language: String? = nil,
+    providerOptions: ProviderOptions = [:],
+    maxRetries: Int? = nil,
+    abortSignal: (@Sendable () -> Bool)? = nil,
+    headers: [String: String]? = nil
+) async throws -> any SpeechResult {
+    try await generateSpeech(
+        model: .v2(model),
+        text: text,
+        voice: voice,
+        outputFormat: outputFormat,
+        instructions: instructions,
+        speed: speed,
+        language: language,
+        providerOptions: providerOptions,
+        maxRetries: maxRetries,
+        abortSignal: abortSignal,
+        headers: headers
     )
 }

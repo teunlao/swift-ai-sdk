@@ -100,8 +100,21 @@ private enum GenerateTextResultJSONEncoder {
                 "text": .string(text),
                 "providerMetadata": encodedProviderMetadata(metadata)
             ])
+        case let .custom(kind, metadata):
+            return object([
+                "type": .string("custom"),
+                "kind": .string(kind),
+                "providerMetadata": encodedProviderMetadata(metadata)
+            ])
         case let .reasoning(reasoning):
             return reasoningOutput(reasoning)
+        case let .reasoningFile(file, metadata):
+            var map = generatedFileMap(file)
+            map["type"] = .string("reasoning-file")
+            if let data = encodedProviderMetadata(metadata) {
+                map["providerMetadata"] = data
+            }
+            return .object(map)
         case let .source(_, sourceValue):
             return sourceValueJSON(sourceValue)
         case let .file(file, metadata):
@@ -368,6 +381,19 @@ private enum GenerateTextResultJSONEncoder {
                 "text": .string(reasoningPart.text),
                 "providerOptions": encodedProviderOptions(reasoningPart.providerOptions)
             ])
+        case .custom(let customPart):
+            return object([
+                "type": .string("custom"),
+                "kind": .string(customPart.kind),
+                "providerOptions": encodedProviderOptions(customPart.providerOptions)
+            ])
+        case .reasoningFile(let reasoningFilePart):
+            return object([
+                "type": .string("reasoning-file"),
+                "mediaType": .string(reasoningFilePart.mediaType),
+                "data": dataContent(reasoningFilePart.data),
+                "providerOptions": encodedProviderOptions(reasoningFilePart.providerOptions)
+            ])
         case .toolCall(let callPart):
             return object([
                 "type": .string("tool-call"),
@@ -503,6 +529,12 @@ private enum GenerateTextResultJSONEncoder {
                 "type": .string("compatibility"),
                 "feature": .string(feature),
                 "details": optionalString(details)
+            ])
+        case .deprecated(let setting, let message):
+            return object([
+                "type": .string("deprecated"),
+                "setting": .string(setting),
+                "message": .string(message)
             ])
         case .other(let message):
             return object([

@@ -13,19 +13,27 @@ public func withUserAgentSuffix(
     _ headers: [String: String?]?,
     _ userAgentSuffixParts: String...
 ) -> [String: String] {
-    let cleanedHeaders = removeUndefinedEntries(headers ?? [:])
+    return withUserAgentSuffix(normalizeHeaders(headers), userAgentSuffixParts)
+}
 
-    var normalizedHeaders: [String: String] = [:]
-    for (key, value) in cleanedHeaders {
-        normalizedHeaders[key.lowercased()] = value
-    }
+public func withUserAgentSuffix(
+    _ headers: [(String, String?)],
+    _ userAgentSuffixParts: String...
+) -> [String: String] {
+    return withUserAgentSuffix(normalizeHeaders(headers), userAgentSuffixParts)
+}
 
-    let currentUserAgent = normalizedHeaders["user-agent"] ?? ""
+private func withUserAgentSuffix(
+    _ normalizedHeaders: [String: String],
+    _ userAgentSuffixParts: [String]
+) -> [String: String] {
+    var headers = normalizedHeaders
+    let currentUserAgent = headers["user-agent"] ?? ""
 
     let parts = [currentUserAgent] + userAgentSuffixParts
     let newUserAgent = parts.filter { !$0.isEmpty }.joined(separator: " ")
 
-    normalizedHeaders["user-agent"] = newUserAgent
+    headers["user-agent"] = newUserAgent
 
-    return normalizedHeaders
+    return headers
 }

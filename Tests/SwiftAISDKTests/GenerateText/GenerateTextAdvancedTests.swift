@@ -1098,7 +1098,7 @@ struct GenerateTextAdvancedTests {
             let entries = collector.entries()
             #expect(entries.count == 1)
             if let first = entries.first {
-                let expected = try expectedWarnings.map { Warning.languageModel($0) }
+                let expected = expectedWarnings.map { Warning.languageModel(asCallWarning($0)) }
                 #expect(first == expected)
             }
         }
@@ -1175,8 +1175,8 @@ struct GenerateTextAdvancedTests {
             let entries = collector.entries()
             #expect(entries.count == 2)
             if entries.count == 2 {
-                #expect(entries[0] == [Warning.languageModel(warning1)])
-                #expect(entries[1] == [Warning.languageModel(warning2)])
+                #expect(entries[0] == [Warning.languageModel(asCallWarning(warning1))])
+                #expect(entries[1] == [Warning.languageModel(asCallWarning(warning2))])
             }
         }
     }
@@ -1650,6 +1650,10 @@ struct GenerateTextAdvancedTests {
                             return "assistant:file"
                         case .reasoning:
                             return "assistant:reasoning"
+                        case .custom:
+                            return "assistant:custom"
+                        case .reasoningFile:
+                            return "assistant:reasoning-file"
                         case .toolCall(let toolCallPart):
                             return "assistant:tool-call:\(toolCallPart.toolName)"
                         case .toolResult(let toolResultPart):

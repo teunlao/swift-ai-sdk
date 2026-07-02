@@ -379,16 +379,17 @@ struct PostToAPITests {
         let capturedRequest = await capture.get()
         #expect(capturedRequest?.httpMethod == "POST")
 
-        // Verify Content-Type is form-urlencoded
+        // Verify Content-Type is multipart/form-data
         let headers = capturedRequest?.allHTTPHeaderFields ?? [:]
-        #expect(headers["Content-Type"] == "application/x-www-form-urlencoded")
+        #expect(headers["Content-Type"]?.hasPrefix("multipart/form-data; boundary=") == true)
 
         // Verify body is properly encoded
         if let body = capturedRequest?.httpBody,
            let bodyString = String(data: body, encoding: .utf8) {
-            // Check that both fields are present (order may vary)
-            #expect(bodyString.contains("username=test%20user"))
-            #expect(bodyString.contains("email=test%40example.com"))
+            #expect(bodyString.contains("Content-Disposition: form-data; name=\"username\""))
+            #expect(bodyString.contains("test user"))
+            #expect(bodyString.contains("Content-Disposition: form-data; name=\"email\""))
+            #expect(bodyString.contains("test@example.com"))
         } else {
             Issue.record("Form data body is missing")
         }

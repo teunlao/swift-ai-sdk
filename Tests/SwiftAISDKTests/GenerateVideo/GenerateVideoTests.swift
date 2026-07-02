@@ -31,7 +31,7 @@ struct GenerateVideoTests {
 
     private func createMockResponse(
         videos: [VideoModelV3VideoData],
-        warnings: [SharedV3Warning] = [],
+        warnings: [VideoGenerationWarning] = [],
         timestamp: Date? = nil,
         modelId: String? = nil,
         providerMetadata: SharedV3ProviderMetadata? = nil,
@@ -45,7 +45,7 @@ struct GenerateVideoTests {
 
         return VideoModelV3GenerateResult(
             videos: videos,
-            warnings: warnings,
+            warnings: warnings.map(convertVideoWarningToV3),
             providerMetadata: providerMetadata ?? defaultMetadata,
             response: VideoModelV3ResponseInfo(
                 timestamp: timestamp ?? Date(),
@@ -53,6 +53,45 @@ struct GenerateVideoTests {
                 headers: headers ?? [:]
             )
         )
+    }
+
+    private func createMockResponseV4(
+        videos: [VideoModelV4VideoData],
+        warnings: [VideoGenerationWarning] = [],
+        timestamp: Date? = nil,
+        modelId: String? = nil,
+        providerMetadata: SharedV4ProviderMetadata? = nil,
+        headers: [String: String]? = nil
+    ) -> VideoModelV4GenerateResult {
+        let defaultMetadata: SharedV4ProviderMetadata = [
+            "testProvider": [
+                "videos": .array(Array(repeating: .null, count: videos.count))
+            ]
+        ]
+
+        return VideoModelV4GenerateResult(
+            videos: videos,
+            warnings: warnings,
+            providerMetadata: providerMetadata ?? defaultMetadata,
+            response: VideoModelV4ResponseInfo(
+                timestamp: timestamp ?? Date(),
+                modelId: modelId ?? "test-model-id",
+                headers: headers ?? [:]
+            )
+        )
+    }
+
+    private func convertVideoWarningToV3(_ warning: VideoGenerationWarning) -> SharedV3Warning {
+        switch warning {
+        case let .unsupported(feature, details):
+            return .unsupported(feature: feature, details: details)
+        case let .compatibility(feature, details):
+            return .compatibility(feature: feature, details: details)
+        case .deprecated(let setting, let message):
+            return .other(message: "The setting \"\(setting)\" is deprecated - \(message)")
+        case .other(let message):
+            return .other(message: message)
+        }
     }
 
     private func resetWarningHooks() {
@@ -115,6 +154,119 @@ struct GenerateVideoTests {
         #expect(options.headers?["custom-request-header"] == "request-header-value")
         let userAgentValue = options.headers?["user-agent"] ?? ""
         #expect(userAgentValue == "ai/" + SwiftAISDK.VERSION)
+    }
+
+    @Test("should send V4 args directly to doGenerate")
+    func sendsV4ArgsDirectlyToDoGenerate() async throws {
+        let optionsBox = SingleValueBox<VideoModelV4CallOptions>()
+        let abortSignal: @Sendable () -> Bool = { false }
+        let providerWarning: VideoGenerationWarning = .deprecated(
+            setting: "generateAudio",
+            message: "Use provider options instead"
+        )
+
+        let frameImage = GenerateVideoFrameImage(
+            image: .string("https://example.com/first.png"),
+            frameType: .firstFrame
+        )
+
+        let result = try await experimental_generateVideo(
+            model: MockVideoModelV4(
+                doGenerate: { options in
+                    await optionsBox.set(options)
+                    return self.createMockResponseV4(
+                        videos: [
+                            .base64(data: self.mp4Base64, mediaType: "video/mp4")
+                        ],
+                        warnings: [providerWarning]
+                    )
+                }
+            ),
+            prompt: .imageToVideo(
+                image: .string("https://example.com/prompt.png"),
+                text: prompt
+            ),
+            aspectRatio: "16:9",
+            resolution: "1920x1080",
+            duration: 5,
+            fps: 30,
+            seed: 12345,
+            frameImages: [frameImage],
+            inputReferences: [
+                .string("https://example.com/reference.png")
+            ],
+            generateAudio: true,
+            providerOptions: [
+                "mock-provider": [
+                    "loop": .bool(true)
+                ]
+            ],
+            abortSignal: abortSignal,
+            headers: [
+                "custom-request-header": "request-header-value"
+            ]
+        )
+
+        let options = await optionsBox.wait()
+
+        #expect(options.n == 1)
+        #expect(options.prompt == prompt)
+        #expect(options.image == .url(url: "https://example.com/first.png", providerOptions: nil))
+        #expect(options.frameImages == [
+            VideoModelV4FrameImage(
+                image: .url(url: "https://example.com/first.png", providerOptions: nil),
+                frameType: .firstFrame
+            )
+        ])
+        #expect(options.inputReferences == nil)
+        #expect(options.generateAudio == true)
+        #expect(options.aspectRatio == "16:9")
+        #expect(options.resolution == "1920x1080")
+        #expect(options.duration == 5)
+        #expect(options.fps == 30)
+        #expect(options.seed == 12345)
+        #expect(options.providerOptions?["mock-provider"]?["loop"] == .bool(true))
+        #expect(options.headers?["custom-request-header"] == "request-header-value")
+        #expect(options.headers?["user-agent"] == "ai/" + SwiftAISDK.VERSION)
+        #expect(options.abortSignal?() == false)
+        #expect(result.warnings == [
+            .other(
+                message: "inputReferences were ignored because frameImages were provided; frameImages and inputReferences cannot be combined."
+            ),
+            .other(
+                message: "prompt.image was ignored because a first_frame frameImage was provided; the first_frame frameImage takes precedence as the start image."
+            ),
+            providerWarning,
+        ])
+    }
+
+    @Test("should resolve string video model IDs through legacy global provider")
+    func resolvesStringVideoModelThroughLegacyGlobalProvider() async throws {
+        let provider = customProvider(
+            videoModels: [
+                "video-model": MockVideoModelV3(
+                    modelId: "resolved-video-model",
+                    doGenerate: { _ in
+                        self.createMockResponse(
+                            videos: [
+                                .base64(data: self.mp4Base64, mediaType: "video/mp4")
+                            ],
+                            modelId: "resolved-video-model"
+                        )
+                    }
+                )
+            ]
+        )
+
+        let result = try await withGlobalProvider(provider, operation: {
+            try await experimental_generateVideo(
+                model: .string("video-model"),
+                prompt: prompt
+            )
+        })
+
+        #expect(result.video.mediaType == "video/mp4")
+        #expect(result.responses.first?.modelId == "resolved-video-model")
     }
 
     @Test("should return warnings")
@@ -251,11 +403,42 @@ struct GenerateVideoTests {
     func returnsVideos_urlDownload() async throws {
         let url = URL(string: "https://example.com/video.mp4")!
         let mp4Bytes = decodeBase64(mp4Base64)
+        let download: DownloadFileFunction = { request in
+            #expect(request.url == url)
+            return DownloadResult(data: mp4Bytes, mediaType: "video/mp4")
+        }
 
-        try await withMockedURL(url: url) { _ in
-            (status: 200, headers: ["Content-Type": "video/mp4"], body: mp4Bytes)
-        } run: {
-            let result = try await experimental_generateVideo(
+        let result = try await experimental_generateVideo(
+            model: MockVideoModelV3(
+                doGenerate: { _ in
+                    self.createMockResponse(
+                        videos: [
+                            .url(url: url.absoluteString, mediaType: "video/mp4")
+                        ]
+                    )
+                }
+            ),
+            prompt: prompt,
+            experimentalDownload: download
+        )
+
+        #expect(result.videos.count == 1)
+        #expect(result.video.mediaType == "video/mp4")
+    }
+
+    @Test("should throw DownloadError when fetch fails")
+    func throwsDownloadError() async throws {
+        let url = URL(string: "https://example.com/video.mp4")!
+        let download: DownloadFileFunction = { request in
+            throw DownloadError(
+                url: request.url.absoluteString,
+                statusCode: 404,
+                statusText: "Not Found"
+            )
+        }
+
+        do {
+            _ = try await experimental_generateVideo(
                 model: MockVideoModelV3(
                     doGenerate: { _ in
                         self.createMockResponse(
@@ -265,35 +448,9 @@ struct GenerateVideoTests {
                         )
                     }
                 ),
-                prompt: prompt
+                prompt: prompt,
+                experimentalDownload: download
             )
-
-            #expect(result.videos.count == 1)
-            #expect(result.video.mediaType == "video/mp4")
-        }
-    }
-
-    @Test("should throw DownloadError when fetch fails")
-    func throwsDownloadError() async throws {
-        let url = URL(string: "https://example.com/video.mp4")!
-
-        do {
-            try await withMockedURL(url: url) { _ in
-                (status: 404, headers: ["Content-Type": "text/plain"], body: Data())
-            } run: {
-                _ = try await experimental_generateVideo(
-                    model: MockVideoModelV3(
-                        doGenerate: { _ in
-                            self.createMockResponse(
-                                videos: [
-                                    .url(url: url.absoluteString, mediaType: "video/mp4")
-                                ]
-                            )
-                        }
-                    ),
-                    prompt: prompt
-                )
-            }
 
             Issue.record("Expected DownloadError")
         } catch let error as DownloadError {
@@ -305,25 +462,26 @@ struct GenerateVideoTests {
     func detectsMediaTypeFromSignature() async throws {
         let url = URL(string: "https://example.com/video")!
         let mp4Bytes = decodeBase64(mp4Base64)
-
-        try await withMockedURL(url: url) { _ in
-            (status: 200, headers: ["Content-Type": "application/octet-stream"], body: mp4Bytes)
-        } run: {
-            let result = try await experimental_generateVideo(
-                model: MockVideoModelV3(
-                    doGenerate: { _ in
-                        self.createMockResponse(
-                            videos: [
-                                .url(url: url.absoluteString, mediaType: "application/octet-stream")
-                            ]
-                        )
-                    }
-                ),
-                prompt: prompt
-            )
-
-            #expect(result.video.mediaType == "video/mp4")
+        let download: DownloadFileFunction = { request in
+            #expect(request.url == url)
+            return DownloadResult(data: mp4Bytes, mediaType: "application/octet-stream")
         }
+
+        let result = try await experimental_generateVideo(
+            model: MockVideoModelV3(
+                doGenerate: { _ in
+                    self.createMockResponse(
+                        videos: [
+                            .url(url: url.absoluteString, mediaType: "application/octet-stream")
+                        ]
+                    )
+                }
+            ),
+            prompt: prompt,
+            experimentalDownload: download
+        )
+
+        #expect(result.video.mediaType == "video/mp4")
     }
 
     @Test("should generate videos when several calls are required")
@@ -970,100 +1128,4 @@ private final class LockedBox<Value>: @unchecked Sendable {
         defer { lock.unlock() }
         return value
     }
-}
-
-@preconcurrency private final class MockURLProtocol: URLProtocol {
-    typealias Handler = @Sendable (URLRequest) async throws -> (status: Int, headers: [String: String], body: Data)
-
-    private final class Registry: @unchecked Sendable {
-        private let lock = NSLock()
-        private var handlers: [URL: Handler] = [:]
-
-        func set(_ handler: @escaping Handler, for url: URL) {
-            lock.lock()
-            defer { lock.unlock() }
-            handlers[url] = handler
-        }
-
-        func remove(for url: URL) {
-            lock.lock()
-            defer { lock.unlock() }
-            handlers.removeValue(forKey: url)
-        }
-
-        func get(for url: URL) -> Handler? {
-            lock.lock()
-            defer { lock.unlock() }
-            return handlers[url]
-        }
-    }
-
-    private static let registry = Registry()
-
-    static func install(handler: @escaping Handler, for url: URL) {
-        registry.set(handler, for: url)
-    }
-
-    static func removeHandler(for url: URL) {
-        registry.remove(for: url)
-    }
-
-    static func handler(for url: URL) -> Handler? {
-        registry.get(for: url)
-    }
-
-    override class func canInit(with request: URLRequest) -> Bool {
-        guard let url = request.url else { return false }
-        return handler(for: url) != nil
-    }
-
-    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
-        request
-    }
-
-    override func startLoading() {
-        Task {
-            guard let url = request.url, let handler = Self.handler(for: url) else {
-                client?.urlProtocol(self, didFailWithError: URLError(.unsupportedURL))
-                return
-            }
-
-            do {
-                let result = try await handler(request)
-                let response = HTTPURLResponse(
-                    url: url,
-                    statusCode: result.status,
-                    httpVersion: "HTTP/1.1",
-                    headerFields: result.headers
-                )!
-
-                client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-                client?.urlProtocol(self, didLoad: result.body)
-                client?.urlProtocolDidFinishLoading(self)
-            } catch {
-                client?.urlProtocol(self, didFailWithError: error)
-            }
-        }
-    }
-
-    override func stopLoading() {}
-}
-
-private func withMockedURL<T>(
-    url: URL,
-    handler: @escaping MockURLProtocol.Handler,
-    run: () async throws -> T
-) async throws -> T {
-    MockURLProtocol.install(handler: handler, for: url)
-    guard URLProtocol.registerClass(MockURLProtocol.self) else {
-        MockURLProtocol.removeHandler(for: url)
-        throw CancellationError()
-    }
-
-    defer {
-        URLProtocol.unregisterClass(MockURLProtocol.self)
-        MockURLProtocol.removeHandler(for: url)
-    }
-
-    return try await run()
 }
