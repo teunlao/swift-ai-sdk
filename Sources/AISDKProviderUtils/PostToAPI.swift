@@ -74,10 +74,6 @@ public func postJsonToAPI<T>(
 
  - Returns: The result from successfulResponseHandler
  - Throws: APICallError or handler errors
-
- - Note: Upstream TypeScript uses FormData API (multipart/form-data).
-         Swift implementation uses simplified application/x-www-form-urlencoded.
-         For multipart/form-data, use a custom implementation.
  */
 public func postFormDataToAPI<T>(
     url: String,
@@ -88,10 +84,12 @@ public func postFormDataToAPI<T>(
     isAborted: (@Sendable () -> Bool)? = nil,
     fetch: FetchFunction? = nil
 ) async throws -> ResponseHandlerResult<T> {
+    let builder = convertToFormData(formData)
+
     return try await postToAPI(
         url: url,
         headers: headers,
-        body: PostBody(content: .formData(formData), values: formData),
+        body: PostBody(content: .multipartFormData(builder), values: formData),
         failedResponseHandler: failedResponseHandler,
         successfulResponseHandler: successfulResponseHandler,
         isAborted: isAborted,
@@ -106,7 +104,8 @@ public struct PostBody: Sendable {
     public enum Content: Sendable {
         case json(Data)
         case data(Data)
-        case formData([String: String])  // Simplified form data (key-value pairs)
+        case formData([String: String])
+        case multipartFormData(MultipartFormDataBuilder)
     }
 
     let content: Content
@@ -190,20 +189,14 @@ public func postToAPI<T>(
         case .json(let data), .data(let data):
             request.httpBody = data
         case .formData(let fields):
-            // Encode as application/x-www-form-urlencoded
-            // RFC 3986: unreserved = ALPHA / DIGIT / "-" / "." / "_" / "~"
-            var allowedCharacters = CharacterSet.alphanumerics
-            allowedCharacters.insert(charactersIn: "-._~")
-
-            let formString = fields
-                .map { key, value in
-                    let encodedKey = key.addingPercentEncoding(withAllowedCharacters: allowedCharacters) ?? key
-                    let encodedValue = value.addingPercentEncoding(withAllowedCharacters: allowedCharacters) ?? value
-                    return "\(encodedKey)=\(encodedValue)"
-                }
-                .joined(separator: "&")
-            request.httpBody = formString.data(using: .utf8)
-            request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+            let builder = convertToFormData(fields)
+            let multipart = builder.build()
+            request.httpBody = multipart.data
+            request.setValue(multipart.contentType, forHTTPHeaderField: "Content-Type")
+        case .multipartFormData(let builder):
+            let multipart = builder.build()
+            request.httpBody = multipart.data
+            request.setValue(multipart.contentType, forHTTPHeaderField: "Content-Type")
         }
 
         // Check cancellation before fetch

@@ -82,7 +82,7 @@ func fetchWithAbortCheck(
 @available(macOS 12.0, iOS 15.0, tvOS 15.0, watchOS 8.0, *)
 private func makeDataStream(from bytes: URLSession.AsyncBytes) -> AsyncThrowingStream<Data, Error> {
     AsyncThrowingStream { continuation in
-        Task {
+        let task = Task {
             var buffer = Data()
             buffer.reserveCapacity(16_384)
 
@@ -104,6 +104,10 @@ private func makeDataStream(from bytes: URLSession.AsyncBytes) -> AsyncThrowingS
             } catch {
                 continuation.finish(throwing: error)
             }
+        }
+
+        continuation.onTermination = { @Sendable _ in
+            task.cancel()
         }
     }
 }

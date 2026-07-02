@@ -44,6 +44,13 @@ public struct RuntimeEnvironmentSnapshot: Sendable {
     }
 }
 
+/// Returns `true` when the runtime snapshot represents a browser environment.
+public func isBrowserRuntime(
+    _ snapshot: RuntimeEnvironmentSnapshot = .current
+) -> Bool {
+    snapshot.hasWindow
+}
+
 /**
  Returns the runtime environment user agent string.
  Port of `@ai-sdk/provider-utils/src/get-runtime-environment-user-agent.ts`.

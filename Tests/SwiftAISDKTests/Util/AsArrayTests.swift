@@ -1,6 +1,4 @@
 import Testing
-@testable import AISDKProvider
-@testable import AISDKProviderUtils
 @testable import SwiftAISDK
 
 @Suite("asArray function tests")

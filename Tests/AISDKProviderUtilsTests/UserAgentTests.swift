@@ -45,6 +45,18 @@ struct UserAgentTests {
         #expect(getRuntimeEnvironmentUserAgent(snapshot) == "runtime/vercel-edge")
     }
 
+    @Test("isBrowserRuntime returns true when a window is present")
+    func testIsBrowserRuntimeWithWindow() throws {
+        #expect(isBrowserRuntime(RuntimeEnvironmentSnapshot(hasWindow: true)))
+    }
+
+    @Test("isBrowserRuntime returns false for server runtimes")
+    func testIsBrowserRuntimeForServerRuntimes() throws {
+        #expect(!isBrowserRuntime(RuntimeEnvironmentSnapshot()))
+        #expect(!isBrowserRuntime(RuntimeEnvironmentSnapshot(processVersionsNode: "22")))
+        #expect(!isBrowserRuntime(RuntimeEnvironmentSnapshot(edgeRuntime: true)))
+    }
+
     // MARK: - WithUserAgentSuffix
 
     @Test("withUserAgentSuffix creates new user-agent when none exists")
@@ -89,6 +101,22 @@ struct UserAgentTests {
         #expect(result["content-type"] == "application/json")
         #expect(result["accept"] == "application/json")
         #expect(result["authorization"] == nil)
+    }
+
+    @Test("withUserAgentSuffix handles tuple header entries")
+    func testTupleHeaderEntries() throws {
+        let headers: [(String, String?)] = [
+            ("Authorization", "Bearer token123"),
+            ("X-Feature", "alpha"),
+            ("X-Ignore", nil)
+        ]
+
+        let result = withUserAgentSuffix(headers, "ai-sdk/0.0.0")
+
+        #expect(result["authorization"] == "Bearer token123")
+        #expect(result["x-feature"] == "alpha")
+        #expect(result["x-ignore"] == nil)
+        #expect(result["user-agent"] == "ai-sdk/0.0.0")
     }
 
     @Test("withUserAgentSuffix handles nil headers")
