@@ -32,7 +32,7 @@ struct StreamTextOpenAIOnChunkToolCallStreamingExample: Example {
         tools: ["weather": weather.tool],
         onChunk: { part in
           switch part {
-          case .toolInputStart(let id, let toolName, _, _, _):
+          case .toolInputStart(let id, let toolName, _, _, _, _):
             Logger.info("toolInputStart id=\(id) tool=\(toolName)")
           case .toolInputDelta(let id, let delta, _):
             Logger.info("toolInputDelta id=\(id) delta=\(delta.prefix(60))...")

@@ -162,9 +162,9 @@ The provider id will become the prefix of the model id: `providerId:modelId`.
 import SwiftAISDK
 
 let result = try await generateText(
-  model: registry.languageModel(id: "openai:gpt-4o"), // default separator
+  model: .v4(registry.languageModel(id: "openai:gpt-4o")), // default separator
   // or with custom separator:
-  // model: customSeparatorRegistry.languageModel(id: "openai > gpt-4o"),
+  // model: .v4(customSeparatorRegistry.languageModel(id: "openai > gpt-4o")),
   prompt: "Invent a new holiday and describe its traditions."
 )
 ```
@@ -261,7 +261,7 @@ let registry = createProviderRegistry(
 )
 
 // Usage:
-let model = registry.languageModel(id: "anthropic > reasoning")
+let model = try registry.languageModel(id: "anthropic > reasoning")
 ```
 
 ## Registry with Middleware
@@ -287,7 +287,7 @@ let registry = createProviderRegistry(
 
 // All language models from this registry will have reasoning extraction enabled
 let result = try await generateText(
-  model: registry.languageModel(id: "openai:gpt-4o"),
+  model: .v4(registry.languageModel(id: "openai:gpt-4o")),
   prompt: "Think step by step and wrap reasoning in <think> tags"
 )
 ```

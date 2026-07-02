@@ -91,7 +91,7 @@ struct StreamTextOpenAIResponsesReasoningToolCallExample: Example {
         case .reasoningEnd:
           print("\u{001B}[0m")
 
-        case .toolInputStart(_, let toolName, _, _, _):
+        case .toolInputStart(_, let toolName, _, _, _, _):
           print("\u{001B}[33mTool call: \(toolName)")
           print("Tool args: ", terminator: "")
         case .toolInputDelta(_, let delta, _):
@@ -114,13 +114,13 @@ struct StreamTextOpenAIResponsesReasoningToolCallExample: Example {
         case .textEnd:
           print("\u{001B}[0m")
 
-        case .finishStep(_, let usage, let finishReason, _):
+        case .finishStep(_, let usage, let finishReason, _, _):
           Logger.info("Finish reason: \(finishReason.rawValue)")
           Logger.info("Usage:")
           Helpers.printJSON(usage)
           Logger.info("STEP FINISH")
 
-        case .finish(let finishReason, let totalUsage):
+        case .finish(let finishReason, _, let totalUsage):
           Logger.info("Finish reason: \(finishReason.rawValue)")
           Logger.info("Total usage:")
           Helpers.printJSON(totalUsage)

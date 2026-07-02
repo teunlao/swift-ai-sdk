@@ -16,7 +16,7 @@ The OpenAI provider is available in the `OpenAIProvider` module. Add it to your 
 ```swift
 // Package.swift
 dependencies: [
-    .package(url: "https://github.com/teunlao/swift-ai-sdk", from: "0.17.6")
+    .package(url: "https://github.com/teunlao/swift-ai-sdk", from: "0.18.0")
 ],
 targets: [
     .target(
@@ -654,9 +654,9 @@ import OpenAIProvider
 
 let mcp = openai.tools.mcp(OpenAIMCPArgs(
   serverLabel: "zip1",
-  serverUrl: "https://zip1.io/mcp",
+  requireApproval: .always,
   serverDescription: "Link shortener",
-  requireApproval: .always
+  serverUrl: "https://zip1.io/mcp"
 ))
 
 let result = try streamText(

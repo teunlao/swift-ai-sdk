@@ -12,9 +12,9 @@ struct RegistryStreamTextOpenAIExample: Example {
         "openai": createOpenAIProvider()
       ])
 
-      let model = registry.languageModel(id: "openai:gpt-4o")
-      let result = try streamText(
-        model: model,
+      let model = try registry.languageModel(id: "openai:gpt-4o")
+      let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+        model: .v4(model),
         prompt: "Say hello from the registry stream example."
       )
 

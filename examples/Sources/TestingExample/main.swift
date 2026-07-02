@@ -25,10 +25,10 @@ struct TestingExample: CLIExample {
       doGenerate: .function { _ in
         LanguageModelV3GenerateResult(
           content: [.text(LanguageModelV3Text(text: "Hello, world!"))],
-          finishReason: .stop,
+          finishReason: LanguageModelV3FinishReason(unified: .stop),
           usage: LanguageModelV3Usage(
-            inputTokens: 10,
-            outputTokens: 20
+            inputTokens: .init(total: 10),
+            outputTokens: .init(total: 20)
           )
         )
       }
@@ -57,10 +57,10 @@ struct TestingExample: CLIExample {
               .textDelta(id: "text-1", delta: "world!", providerMetadata: nil),
               .textEnd(id: "text-1", providerMetadata: nil),
               .finish(
-                finishReason: .stop,
+                finishReason: LanguageModelV3FinishReason(unified: .stop),
                 usage: LanguageModelV3Usage(
-                  inputTokens: 3,
-                  outputTokens: 10
+                  inputTokens: .init(total: 3),
+                  outputTokens: .init(total: 10)
                 ),
                 providerMetadata: nil
               )
@@ -91,8 +91,8 @@ struct TestingExample: CLIExample {
       doGenerate: .function { _ in
         LanguageModelV3GenerateResult(
           content: [.text(LanguageModelV3Text(text: "Response"))],
-          finishReason: .stop,
-          usage: LanguageModelV3Usage(inputTokens: 5, outputTokens: 5)
+          finishReason: LanguageModelV3FinishReason(unified: .stop),
+          usage: LanguageModelV3Usage(inputTokens: .init(total: 5), outputTokens: .init(total: 5))
         )
       }
     )
@@ -116,8 +116,8 @@ struct TestingExample: CLIExample {
       doGenerate: .function { _ in
         LanguageModelV3GenerateResult(
           content: [.text(LanguageModelV3Text(text: "Complete"))],
-          finishReason: .stop,
-          usage: LanguageModelV3Usage(inputTokens: 3, outputTokens: 2)
+          finishReason: LanguageModelV3FinishReason(unified: .stop),
+          usage: LanguageModelV3Usage(inputTokens: .init(total: 3), outputTokens: .init(total: 2))
         )
       }
     )
@@ -126,8 +126,8 @@ struct TestingExample: CLIExample {
       doGenerate: .function { _ in
         LanguageModelV3GenerateResult(
           content: [.text(LanguageModelV3Text(text: "Truncated..."))],
-          finishReason: .length,
-          usage: LanguageModelV3Usage(inputTokens: 3, outputTokens: 100)
+          finishReason: LanguageModelV3FinishReason(unified: .length),
+          usage: LanguageModelV3Usage(inputTokens: .init(total: 3), outputTokens: .init(total: 100))
         )
       }
     )
@@ -147,13 +147,13 @@ struct TestingExample: CLIExample {
     let mockResponses = mockValues(
       LanguageModelV3GenerateResult(
         content: [.text(LanguageModelV3Text(text: "First response"))],
-        finishReason: .stop,
-        usage: LanguageModelV3Usage(inputTokens: 10, outputTokens: 5)
+        finishReason: LanguageModelV3FinishReason(unified: .stop),
+        usage: LanguageModelV3Usage(inputTokens: .init(total: 10), outputTokens: .init(total: 5))
       ),
       LanguageModelV3GenerateResult(
         content: [.text(LanguageModelV3Text(text: "Second response"))],
-        finishReason: .stop,
-        usage: LanguageModelV3Usage(inputTokens: 10, outputTokens: 5)
+        finishReason: LanguageModelV3FinishReason(unified: .stop),
+        usage: LanguageModelV3Usage(inputTokens: .init(total: 10), outputTokens: .init(total: 5))
       )
     )
 
@@ -189,8 +189,8 @@ struct TestingExample: CLIExample {
               .textDelta(id: "text-1", delta: " stream", providerMetadata: nil),
               .textEnd(id: "text-1", providerMetadata: nil),
               .finish(
-                finishReason: .stop,
-                usage: LanguageModelV3Usage(inputTokens: 3, outputTokens: 2),
+                finishReason: LanguageModelV3FinishReason(unified: .stop),
+                usage: LanguageModelV3Usage(inputTokens: .init(total: 3), outputTokens: .init(total: 2)),
                 providerMetadata: nil
               )
             ],

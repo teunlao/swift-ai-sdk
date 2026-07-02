@@ -12,7 +12,7 @@ struct RegistryGenerateImageOpenAIExample: Example {
         "openai": createOpenAIProvider()
       ])
 
-      let model = registry.imageModel(id: "openai:gpt-image-1-mini")
+      let model = try registry.imageModel(id: "openai:gpt-image-1-mini")
       let result = try await generateImage(
         model: model,
         prompt: "A simple sketch of a paper airplane, monochrome"

@@ -57,13 +57,13 @@ struct StreamTextOpenAIResponsesToolCallExample: Example {
           Logger.section("TOOL RESULT \(result.toolName)")
           Helpers.printJSON(result.output)
 
-        case .finishStep(_, let usage, let finishReason, _):
+        case .finishStep(_, let usage, let finishReason, _, _):
           Logger.section("STEP FINISH")
           Logger.info("Finish reason: \(finishReason.rawValue)")
           Helpers.printJSON(usage)
           print("")
 
-        case .finish(let finishReason, let totalUsage):
+        case .finish(let finishReason, _, let totalUsage):
           Logger.section("FINISH")
           Logger.info("Finish reason: \(finishReason.rawValue)")
           Helpers.printJSON(totalUsage)
