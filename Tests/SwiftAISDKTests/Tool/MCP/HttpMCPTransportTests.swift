@@ -207,6 +207,14 @@ struct HttpMCPTransportTests {
         do {
             try await transport.start()
 
+            let didOpenInitialGet = await eventually {
+                let calls = TestURLProtocol.takeCalls()
+                let getCount = calls.filter { $0.requestMethod == "GET" && normalizeTestURL($0.requestUrl) == mcpUrl }.count
+                return getCount >= 1
+            }
+
+            #expect(didOpenInitialGet == true)
+
             try await transport.send(
                 message: .request(JSONRPCRequest(id: .int(1), method: "initialize", params: .object([:])))
             )
@@ -218,6 +226,11 @@ struct HttpMCPTransportTests {
             }
 
             #expect(didOpenSecondGet == true)
+
+            let getCalls = TestURLProtocol.takeCalls()
+                .filter { $0.requestMethod == "GET" && normalizeTestURL($0.requestUrl) == mcpUrl }
+            let reopenedGet = try #require(getCalls.dropFirst().first)
+            #expect(reopenedGet.requestHeaders["accept"] == "text/event-stream")
 
             controller.finish()
         } catch {
