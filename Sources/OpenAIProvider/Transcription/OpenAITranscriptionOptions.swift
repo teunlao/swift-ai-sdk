@@ -8,6 +8,12 @@ struct OpenAITranscriptionProviderOptions: Sendable, Equatable {
     var prompt: String?
     var temperature: Double?
     var timestampGranularities: [String]?
+    var streaming: OpenAITranscriptionStreamingOptions?
+}
+
+struct OpenAITranscriptionStreamingOptions: Sendable, Equatable {
+    var delay: String?
+    var include: [String]?
 }
 
 private let openAITranscriptionProviderOptionsJSONSchema: JSONValue = .object([
@@ -31,7 +37,8 @@ let openAITranscriptionProviderOptionsSchema = FlexibleSchema<OpenAITranscriptio
                     language: nil,
                     prompt: nil,
                     temperature: 0,
-                    timestampGranularities: ["segment"]
+                    timestampGranularities: ["segment"],
+                    streaming: nil
                 )
 
                 if let includeValue = dict["include"], includeValue != .null {
@@ -100,6 +107,46 @@ let openAITranscriptionProviderOptionsSchema = FlexibleSchema<OpenAITranscriptio
                     options.timestampGranularities = granularities
                 }
 
+                if let streamingValue = dict["streaming"], streamingValue != .null {
+                    guard case .object(let streamingObject) = streamingValue else {
+                        let error = SchemaValidationIssuesError(vendor: "openai", issues: "streaming must be an object")
+                        return .failure(error: TypeValidationError.wrap(value: streamingValue, cause: error))
+                    }
+
+                    var streaming = OpenAITranscriptionStreamingOptions(delay: nil, include: nil)
+
+                    if let delayValue = streamingObject["delay"], delayValue != .null {
+                        guard case .string(let delay) = delayValue else {
+                            let error = SchemaValidationIssuesError(vendor: "openai", issues: "streaming.delay must be a string")
+                            return .failure(error: TypeValidationError.wrap(value: delayValue, cause: error))
+                        }
+                        guard ["minimal", "low", "medium", "high", "xhigh"].contains(delay) else {
+                            let error = SchemaValidationIssuesError(vendor: "openai", issues: "streaming.delay must be minimal, low, medium, high, or xhigh")
+                            return .failure(error: TypeValidationError.wrap(value: delayValue, cause: error))
+                        }
+                        streaming.delay = delay
+                    }
+
+                    if let includeValue = streamingObject["include"], includeValue != .null {
+                        guard case .array(let array) = includeValue else {
+                            let error = SchemaValidationIssuesError(vendor: "openai", issues: "streaming.include must be an array of strings")
+                            return .failure(error: TypeValidationError.wrap(value: includeValue, cause: error))
+                        }
+                        var include: [String] = []
+                        include.reserveCapacity(array.count)
+                        for item in array {
+                            guard case .string(let string) = item else {
+                                let error = SchemaValidationIssuesError(vendor: "openai", issues: "streaming.include entries must be strings")
+                                return .failure(error: TypeValidationError.wrap(value: item, cause: error))
+                            }
+                            include.append(string)
+                        }
+                        streaming.include = include
+                    }
+
+                    options.streaming = streaming
+                }
+
                 return .success(value: options)
             } catch let error as TypeValidationError {
                 return .failure(error: error)
@@ -119,7 +166,8 @@ extension OpenAITranscriptionProviderOptions {
             language: nil,
             prompt: nil,
             temperature: 0,
-            timestampGranularities: ["segment"]
+            timestampGranularities: ["segment"],
+            streaming: nil
         )
     }
 }

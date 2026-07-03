@@ -1277,6 +1277,13 @@ private final class TranscriptionModelV2ToV4Adapter: TranscriptionModelV4, @unch
             providerMetadata: result.providerMetadata
         )
     }
+
+    func doStream(options: TranscriptionModelV4StreamOptions) async throws -> TranscriptionModelV4StreamResult {
+        if let streamingModel = model as? any TranscriptionModelV4Streaming {
+            return try await streamingModel.doStream(options: options)
+        }
+        throw UnsupportedFunctionalityError(functionality: "streaming transcription with \(modelId)")
+    }
 }
 
 private func _convertTranscriptionModelV4CallOptionsToV2(
@@ -1345,6 +1352,13 @@ private final class TranscriptionModelV3ToV4Adapter: TranscriptionModelV4, @unch
             ),
             providerMetadata: result.providerMetadata
         )
+    }
+
+    func doStream(options: TranscriptionModelV4StreamOptions) async throws -> TranscriptionModelV4StreamResult {
+        if let streamingModel = model as? any TranscriptionModelV4Streaming {
+            return try await streamingModel.doStream(options: options)
+        }
+        throw UnsupportedFunctionalityError(functionality: "streaming transcription with \(modelId)")
     }
 }
 

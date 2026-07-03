@@ -10,13 +10,17 @@ Rules:
 ## Current core audit status
 
 Audited against upstream commit: `85a80fc6e71558717899e30c9f1fc0e9eb7d733d`
-for the current `core:provider`, `core:provider-utils`, and `core:ai`
-foundation slices.
+for the broad `core:provider`, `core:provider-utils`, and `core:ai`
+foundation slices, plus targeted `core:provider/transcription-stream` and
+`provider:openai/transcription` evidence against
+`0c3c7e426d359c236952d6f8da7b0081eb6f1a7a`.
 
 Status:
 - `core:provider`: partial/current. Swift now has the V4 provider, model,
   realtime, middleware, shared-file, warning, and provider-reference foundation,
-  but concrete provider targets still need native V4 vertical migrations.
+  plus the V4 transcription streaming contract needed by upstream realtime
+  transcription; concrete provider targets still need native V4 vertical
+  migrations.
 - `core:ai`: partial/current. Swift high-level model resolution and runtime
   entrypoints now use the V4 rail for text, object, embed, rerank, image,
   speech, transcription, and experimental video flows while preserving V3/V2
@@ -39,6 +43,15 @@ Status:
   drift.
 
 Latest validation:
+- `2026-07-03`: `AGENT=1 swift test`
+  passed all 3978 Swift Testing tests.
+- `2026-07-03`: `pnpm run docs:check` and `pnpm run docs:build`
+  passed for the Starlight docs site.
+- `2026-07-03`: `pnpm run examples:build`
+  built the examples package successfully.
+- `2026-07-03`: `swift test --filter 'OpenAITranscriptionModelTests|ResolveModelV4Tests'`
+  passed the targeted OpenAI transcription streaming and V3→V4 adapter
+  regression suites.
 - `2026-07-02`: `AGENT=1 swift test`
   passed all 3973 Swift Testing tests.
 - `2026-07-02`: `node tools/test-runner.js --config tools/test-runner.default.config.json`
@@ -59,7 +72,7 @@ Latest validation:
   re-exports are classified as Swift `n/a` unless a concrete Swift runtime
   contract later needs them.
 - [ ] Re-audit stale P0 provider pages against
-  `85a80fc6e71558717899e30c9f1fc0e9eb7d733d`.
+  `0c3c7e426d359c236952d6f8da7b0081eb6f1a7a`.
 - [ ] Decide whether new upstream P1 providers `anthropic-aws`, `quiverai`, and
   `voyage` should get Swift targets or be marked intentionally out of scope.
 
@@ -70,6 +83,29 @@ Latest validation:
 3) Docs updates only after behavior parity is green
 
 ## Current upstream intake snapshot
+
+### 2026-07-03: upstream `0c3c7e426d359c236952d6f8da7b0081eb6f1a7a`
+
+Scope: `intake:latest-main` plus targeted `provider:openai/transcription`.
+
+Evidence:
+- `external/vercel-ai-sdk` refreshed from upstream `main` to `0c3c7e426d359c236952d6f8da7b0081eb6f1a7a`.
+- Upstream OpenAI runtime drift since `85a80fc6e71558717899e30c9f1fc0e9eb7d733d` is concentrated in realtime transcription streaming:
+  - `packages/provider/src/transcription-model/v4/*stream*`
+  - `packages/openai/src/openai-config.ts`
+  - `packages/openai/src/openai-provider.ts`
+  - `packages/openai/src/transcription/openai-transcription-model-options.ts`
+  - `packages/openai/src/transcription/openai-transcription-model.ts`
+  - `packages/openai/src/transcription/openai-transcription-model.test.ts`
+- Swift landed the provider/core boundary for that drift:
+  - V4 transcription stream options/parts/result and default unsupported behavior.
+  - Legacy V3→V4 transcription adapter forwarding for concrete models that expose the stream capability.
+  - OpenAI `webSocket` transport injection and realtime transcription stream mapping.
+  - Direct regressions for realtime REST rejection, non-realtime stream rejection, session payload, audio append/commit, transcript delta/final/finish ordering, REST-only option warnings, provider error propagation, and adapter forwarding.
+
+Important interpretation:
+- This does not complete the full OpenAI provider migration to native `ProviderV4`.
+- The upstream `ai` package also added high-level `experimental_streamTranscribe`; Swift has not ported that high-level helper yet.
 
 ### 2026-06-30: `ai@7.0.8` / upstream `85a80fc6e71558717899e30c9f1fc0e9eb7d733d`
 
@@ -1782,6 +1818,13 @@ For source-of-truth code, always follow the commits and tests.
 ### Unreleased (main)
 
 No unreleased parity changes yet.
+
+### v0.18.1 - 2026-07-03
+
+- 2026-07-03
+  - OpenAI transcription parity on refreshed upstream `0c3c7e426d359c236952d6f8da7b0081eb6f1a7a`: added the V4 streaming transcription provider contract, legacy V3 capability forwarding through the V4 adapter rail, and OpenAI realtime transcription streaming for `gpt-realtime-whisper*`.
+  - OpenAI realtime transcription now validates realtime vs REST model usage, sends WebSocket session setup plus audio append/commit messages, maps transcript delta/final/finish parts, warns on REST-only provider options during streaming, and propagates provider error events.
+  - Release/docs: README, SDK release version, Starlight install snippets, changelog, and upstream evidence now point at `0.18.1`.
 
 ### v0.18.0 - 2026-07-02
 

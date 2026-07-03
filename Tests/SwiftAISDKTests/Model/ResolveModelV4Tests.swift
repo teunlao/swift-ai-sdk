@@ -255,6 +255,32 @@ struct ResolveModelV4Tests {
             TranscriptionModelV4Result.Segment(text: "transcript", startSecond: 0, endSecond: 1)
         ])
 
+        let streamingTranscriptionBase = StreamingRecordingTranscriptionModelV3()
+        let streamingTranscription = try await asTranscriptionModelV4(streamingTranscriptionBase).doStream(
+            options: TranscriptionModelV4StreamOptions(
+                audio: AsyncThrowingStream { continuation in
+                    continuation.yield(.binary(Data([1, 2, 3])))
+                    continuation.finish()
+                },
+                inputAudioFormat: .init(type: "audio/pcm", rate: 24_000)
+            )
+        )
+        var transcriptionParts: [TranscriptionModelV4StreamPart] = []
+        for try await part in streamingTranscription.stream {
+            transcriptionParts.append(part)
+        }
+        #expect(transcriptionParts == [
+            .streamStart(warnings: []),
+            .finish(
+                text: "streamed transcript",
+                segments: [],
+                language: "en",
+                durationInSeconds: nil,
+                providerMetadata: nil
+            )
+        ])
+        #expect(streamingTranscriptionBase.lastStreamOptions?.inputAudioFormat.type == "audio/pcm")
+
         let videoBase = RecordingVideoModelV3()
         let video = try await asVideoModelV4(videoBase).doGenerate(
             options: VideoModelV4CallOptions(
@@ -503,6 +529,41 @@ private final class RecordingTranscriptionModelV3: TranscriptionModelV3, @unchec
                 timestamp: Date(timeIntervalSince1970: 3),
                 modelId: modelId
             )
+        )
+    }
+}
+
+private final class StreamingRecordingTranscriptionModelV3: TranscriptionModelV3, TranscriptionModelV4Streaming, @unchecked Sendable {
+    let specificationVersion = "v3"
+    let provider = "test-provider"
+    let modelId = "streaming-transcription-model"
+    var lastStreamOptions: TranscriptionModelV4StreamOptions?
+
+    func doGenerate(options: TranscriptionModelV3CallOptions) async throws -> TranscriptionModelV3Result {
+        TranscriptionModelV3Result(
+            text: "transcript",
+            segments: [],
+            response: TranscriptionModelV3Result.ResponseInfo(
+                timestamp: Date(timeIntervalSince1970: 3),
+                modelId: modelId
+            )
+        )
+    }
+
+    func doStream(options: TranscriptionModelV4StreamOptions) async throws -> TranscriptionModelV4StreamResult {
+        lastStreamOptions = options
+        return TranscriptionModelV4StreamResult(
+            stream: AsyncThrowingStream { continuation in
+                continuation.yield(.streamStart(warnings: []))
+                continuation.yield(.finish(
+                    text: "streamed transcript",
+                    segments: [],
+                    language: "en",
+                    durationInSeconds: nil,
+                    providerMetadata: nil
+                ))
+                continuation.finish()
+            }
         )
     }
 }

@@ -1,6 +1,7 @@
 # Provider: OpenAI
 
 - Audited against upstream commit: `a921fbb381cf2d19ef75ae27906f8d1cb0b8325b`
+- Latest targeted slice: `provider:openai/transcription` against `0c3c7e426d359c236952d6f8da7b0081eb6f1a7a`
 - Upstream package: `external/vercel-ai-sdk/packages/openai/src/**`
 - Swift implementation: `Sources/OpenAIProvider/**`
 
@@ -21,10 +22,13 @@
 - [x] Responses provider-options include parity: public provider-options include values are restricted to upstream schema (`reasoning.encrypted_content`, `file_search_call.results`, `message.output_text.logprobs`) while internal request/autoinclude still supports full include union
 - [x] GPT-5.4 / GPT-5.3-codex parity: Responses model-id helpers include `gpt-5.2-codex`, `gpt-5.4*`, and `gpt-5.3-codex`; GPT-5.4 follows upstream non-reasoning parameter compatibility when `reasoningEffort == "none"`; Responses `phase` is preserved on output text provider metadata and round-tripped back into follow-up assistant input
 - [x] Upstream Responses fixtures covered directly in Swift tests for shell skill/container flows and MCP approvals: `openai-shell-skills.1`, `openai-mcp-tool-approval.2`, `.3`, `.4` (both JSON and streaming variants)
+- [x] Targeted 2026-07-03 transcription slice: OpenAI realtime transcription models (`gpt-realtime-whisper*`) reject non-streaming REST transcription, regular REST transcription models reject streaming, and realtime streaming maps WebSocket session setup, audio append/commit, transcript delta/final/finish ordering, REST-only provider-option warnings, and provider error propagation.
 
 ## Known gaps / TODO
 
-- None known.
+- Broader native `ProviderV4` OpenAI migration is still incomplete: most OpenAI language, embedding, image, and speech models remain implemented on the legacy V3 model contracts and are adapted by `SwiftAISDK`.
+- High-level `experimental_streamTranscribe` from upstream `packages/ai` is not yet ported; this slice covers the provider/core model boundary that it requires.
+- A full OpenAI package re-audit against `0c3c7e426d359c236952d6f8da7b0081eb6f1a7a` is still pending beyond the targeted transcription drift.
 
 ## Notes
 
@@ -39,5 +43,20 @@
   - `Sources/OpenAIProvider/OpenAIResponsesModel.swift`
   - `Sources/OpenAIProvider/OpenAIResponsesPrepareTools.swift`
   - `Sources/OpenAIProvider/Tool/OpenAIShellTool.swift`
+
+- Upstream (Transcription streaming):
+  - `external/vercel-ai-sdk/packages/provider/src/transcription-model/v4/transcription-model-v4-stream-options.ts`
+  - `external/vercel-ai-sdk/packages/provider/src/transcription-model/v4/transcription-model-v4-stream-part.ts`
+  - `external/vercel-ai-sdk/packages/provider/src/transcription-model/v4/transcription-model-v4-stream-result.ts`
+  - `external/vercel-ai-sdk/packages/openai/src/transcription/openai-transcription-model.ts`
+  - `external/vercel-ai-sdk/packages/openai/src/transcription/openai-transcription-model.test.ts`
+- Swift (Transcription streaming):
+  - `Sources/AISDKProvider/TranscriptionModel/TranscriptionModelV4StreamOptions.swift`
+  - `Sources/AISDKProvider/TranscriptionModel/TranscriptionModelV4StreamPart.swift`
+  - `Sources/AISDKProvider/TranscriptionModel/TranscriptionModelV4StreamResult.swift`
+  - `Sources/OpenAIProvider/OpenAIConfig.swift`
+  - `Sources/OpenAIProvider/Transcription/OpenAITranscriptionModel.swift`
+  - `Tests/SwiftAISDKTests/OpenAI/OpenAITranscriptionModelTests.swift`
+  - `Tests/SwiftAISDKTests/Model/ResolveModelV4Tests.swift`
 
 - JSON Schema validation: Swift `JSONSchemaValidator` supports `$ref` (local `#/...`) and conditional keywords (`if`/`then`/`else`). Unsupported keywords remain permissive by design.
