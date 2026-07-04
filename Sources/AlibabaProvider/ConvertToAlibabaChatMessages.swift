@@ -141,7 +141,7 @@ func convertToAlibabaChatMessages(
                     // Reasoning content can appear in assistant messages during multi-turn conversations.
                     text.append(contentsOf: reasoningPart.text)
 
-                case .file, .toolResult:
+                case .file, .toolResult, .custom:
                     // Mirror upstream behavior: silently ignore unsupported part types for this prompt conversion.
                     break
                 }

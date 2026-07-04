@@ -290,6 +290,8 @@ private func convertLanguageModelV3ContentToV4(_ value: LanguageModelV3Content) 
         return .text(LanguageModelV4Text(text: content.text, providerMetadata: content.providerMetadata))
     case .reasoning(let content):
         return .reasoning(LanguageModelV4Reasoning(text: content.text, providerMetadata: content.providerMetadata))
+    case .custom(let content):
+        return .custom(LanguageModelV4CustomContent(kind: content.kind, providerMetadata: content.providerMetadata))
     case .file(let content):
         return .file(convertLanguageModelV3FileToV4(content))
     case .toolApprovalRequest(let request):
@@ -336,6 +338,8 @@ private func convertLanguageModelV3StreamPartToV4(_ value: LanguageModelV3Stream
         return .toolCall(convertLanguageModelV3ToolCallToV4(toolCall))
     case .toolResult(let toolResult):
         return .toolResult(convertLanguageModelV3ToolResultToV4(toolResult))
+    case .custom(let custom):
+        return .custom(LanguageModelV4CustomContent(kind: custom.kind, providerMetadata: custom.providerMetadata))
     case .file(let file):
         return .file(convertLanguageModelV3FileToV4(file))
     case .source(let source):

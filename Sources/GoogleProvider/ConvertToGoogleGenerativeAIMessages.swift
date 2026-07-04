@@ -129,6 +129,8 @@ func convertToGoogleGenerativeAIMessages(
                 case .toolResult:
                     // Tool results in assistant role are ignored, they should arrive as tool messages.
                     return nil
+                case .custom:
+                    return nil
                 }
             }
 

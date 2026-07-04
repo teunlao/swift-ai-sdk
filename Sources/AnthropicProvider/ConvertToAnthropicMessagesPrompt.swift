@@ -602,6 +602,8 @@ private func appendAssistantMessageParts(
 
         case .file:
             throw UnsupportedFunctionalityError(functionality: "assistant file content")
+        case .custom:
+            throw UnsupportedFunctionalityError(functionality: "assistant custom content")
         }
     }
 }
@@ -1040,6 +1042,8 @@ private extension LanguageModelV3MessagePart {
         case .file(let value):
             return value.providerOptions
         case .reasoning(let value):
+            return value.providerOptions
+        case .custom(let value):
             return value.providerOptions
         case .toolCall(let value):
             return value.providerOptions

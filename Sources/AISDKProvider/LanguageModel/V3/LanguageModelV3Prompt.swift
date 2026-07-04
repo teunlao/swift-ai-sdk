@@ -99,6 +99,7 @@ public enum LanguageModelV3MessagePart: Sendable, Equatable, Codable {
     case text(LanguageModelV3TextPart)
     case file(LanguageModelV3FilePart)
     case reasoning(LanguageModelV3ReasoningPart)
+    case custom(LanguageModelV3CustomPart)
     case toolCall(LanguageModelV3ToolCallPart)
     case toolResult(LanguageModelV3ToolResultPart)
 
@@ -117,6 +118,8 @@ public enum LanguageModelV3MessagePart: Sendable, Equatable, Codable {
             self = .file(try LanguageModelV3FilePart(from: decoder))
         case "reasoning":
             self = .reasoning(try LanguageModelV3ReasoningPart(from: decoder))
+        case "custom":
+            self = .custom(try LanguageModelV3CustomPart(from: decoder))
         case "tool-call":
             self = .toolCall(try LanguageModelV3ToolCallPart(from: decoder))
         case "tool-result":
@@ -137,6 +140,8 @@ public enum LanguageModelV3MessagePart: Sendable, Equatable, Codable {
         case .file(let part):
             try part.encode(to: encoder)
         case .reasoning(let part):
+            try part.encode(to: encoder)
+        case .custom(let part):
             try part.encode(to: encoder)
         case .toolCall(let part):
             try part.encode(to: encoder)
@@ -281,6 +286,35 @@ public struct LanguageModelV3ReasoningPart: Sendable, Equatable, Codable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(type, forKey: .type)
         try container.encode(text, forKey: .text)
+        try container.encodeIfPresent(providerOptions, forKey: .providerOptions)
+    }
+}
+
+/// Provider-defined custom content part of a prompt.
+public struct LanguageModelV3CustomPart: Sendable, Equatable, Codable {
+    public let type: String = "custom"
+    public let kind: String
+    public let providerOptions: SharedV3ProviderOptions?
+
+    public init(kind: String, providerOptions: SharedV3ProviderOptions? = nil) {
+        self.kind = kind
+        self.providerOptions = providerOptions
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case type, kind, providerOptions
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        kind = try container.decode(String.self, forKey: .kind)
+        providerOptions = try container.decodeIfPresent(SharedV3ProviderOptions.self, forKey: .providerOptions)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(type, forKey: .type)
+        try container.encode(kind, forKey: .kind)
         try container.encodeIfPresent(providerOptions, forKey: .providerOptions)
     }
 }

@@ -85,8 +85,8 @@ struct GroqChatMessageBuilder {
                             ])
                         ]))
 
-                    case .file, .toolResult:
-                        // assistant messages do not support files or tool results
+                    case .file, .toolResult, .custom:
+                        // assistant messages do not support files, tool results, or provider custom parts
                         break
                     }
                 }

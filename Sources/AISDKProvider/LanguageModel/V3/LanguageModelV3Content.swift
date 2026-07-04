@@ -18,6 +18,7 @@ import Foundation
 public enum LanguageModelV3Content: Sendable, Equatable, Codable {
     case text(LanguageModelV3Text)
     case reasoning(LanguageModelV3Reasoning)
+    case custom(LanguageModelV3CustomContent)
     case file(LanguageModelV3File)
     case toolApprovalRequest(LanguageModelV3ToolApprovalRequest)
     case source(LanguageModelV3Source)
@@ -37,6 +38,8 @@ public enum LanguageModelV3Content: Sendable, Equatable, Codable {
             self = .text(try LanguageModelV3Text(from: decoder))
         case "reasoning":
             self = .reasoning(try LanguageModelV3Reasoning(from: decoder))
+        case "custom":
+            self = .custom(try LanguageModelV3CustomContent(from: decoder))
         case "file":
             self = .file(try LanguageModelV3File(from: decoder))
         case "tool-approval-request":
@@ -61,6 +64,8 @@ public enum LanguageModelV3Content: Sendable, Equatable, Codable {
         case .text(let value):
             try value.encode(to: encoder)
         case .reasoning(let value):
+            try value.encode(to: encoder)
+        case .custom(let value):
             try value.encode(to: encoder)
         case .file(let value):
             try value.encode(to: encoder)

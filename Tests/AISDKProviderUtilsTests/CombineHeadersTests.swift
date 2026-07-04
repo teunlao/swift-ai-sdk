@@ -53,6 +53,29 @@ struct CombineHeadersTests {
         #expect(result.count == 2)
     }
 
+    @Test("combineHeaders: later values override earlier case-insensitive header names")
+    func testOverrideValuesCaseInsensitive() throws {
+        let baseHeaders: [String: String?] = [
+            "Authorization": "Bearer base-token",
+            "OpenAI-Project": "base-project"
+        ]
+        let customHeaders: [String: String?] = [
+            "authorization": "Bearer custom-token",
+            "openai-project": "custom-project"
+        ]
+
+        let result = combineHeaders(baseHeaders, customHeaders)
+        let normalized = normalizeHeaders(result)
+
+        #expect(result["Authorization"] == nil)
+        #expect(result["OpenAI-Project"] == nil)
+        #expect(result["authorization"] == "Bearer custom-token")
+        #expect(result["openai-project"] == "custom-project")
+        #expect(normalized["authorization"] == "Bearer custom-token")
+        #expect(normalized["openai-project"] == "custom-project")
+        #expect(result.count == 2)
+    }
+
     @Test("combineHeaders: handles nil dictionaries")
     func testNilDictionaries() throws {
         let headers1: [String: String?]? = ["Content-Type": "application/json"]

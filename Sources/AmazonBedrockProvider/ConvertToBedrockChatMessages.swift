@@ -230,6 +230,8 @@ func convertToBedrockChatMessages(
 
                     case .toolResult:
                         throw UnsupportedFunctionalityError(functionality: "Assistant tool-result content")
+                    case .custom:
+                        throw UnsupportedFunctionalityError(functionality: "Assistant custom content")
                     }
                 }
 
