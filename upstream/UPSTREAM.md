@@ -5,9 +5,9 @@
 
 ## Current pinned reference
 
-- Upstream commit: `0c3c7e426d359c236952d6f8da7b0081eb6f1a7a`
-- Commit subject: `feat(alibaba): support wan2.7 text-to-video and reference-to-video models (#16644)`
-- Commit date: `2026-07-02`
+- Upstream commit: `c8d2726ae045a28142cb46df5e41cdd51d8dcc71`
+- Commit subject: `chore(provider/gateway): update gateway model settings files (#16674)`
+- Commit date: `2026-07-03`
 - Last refreshed (local): `2026-07-03`
 
 ## Refresh history
@@ -24,3 +24,4 @@
 - `2026-04-15`: Pinned at `4891db8bfc583d3767831dac83439ac190c93cb0`
 - `2026-06-30`: Pinned at `85a80fc6e71558717899e30c9f1fc0e9eb7d733d`
 - `2026-07-03`: Pinned at `0c3c7e426d359c236952d6f8da7b0081eb6f1a7a`
+- `2026-07-03`: Pinned at `c8d2726ae045a28142cb46df5e41cdd51d8dcc71`

@@ -13,7 +13,28 @@ Audited against upstream commit: `85a80fc6e71558717899e30c9f1fc0e9eb7d733d`
 for the broad `core:provider`, `core:provider-utils`, and `core:ai`
 foundation slices, plus targeted `core:provider/transcription-stream` and
 `provider:openai/transcription` evidence against
-`0c3c7e426d359c236952d6f8da7b0081eb6f1a7a`.
+`0c3c7e426d359c236952d6f8da7b0081eb6f1a7a`, and targeted
+`provider:openai/files-skills`, `provider:openai/files-skills-binary-upload`,
+`provider:openai/model-capabilities-gpt-5.5`,
+`provider:openai/responses-shell-skill-reference`, `provider:openai/realtime`,
+`provider:openai/responses-custom-tool-names`,
+`core:ai/transcribe-stream`, `provider:openai/provider-v4-facade`,
+`provider:openai/provider-factory-settings`,
+`provider:openai/error-mapping`,
+`provider:openai/usage-provider-metadata`,
+`provider:openai/tools-factory-surface`,
+`provider:openai/index-export-surface`,
+`provider:openai/chat-prompt-conversion-v4`,
+`provider:openai/package-source-closure`,
+`core:ai/openai-v4-dx`, `docs:openai-v4`, and
+`provider:openai/native-v4-embedding`, and
+`provider:openai/native-v4-speech`, and
+`provider:openai/native-v4-image`, and
+`provider:openai/native-v4-rest-transcription`, and
+`provider:openai/native-v4-completion`, and
+`provider:openai/native-v4-chat`, and
+`provider:openai/native-v4-responses`
+evidence against `c8d2726ae045a28142cb46df5e41cdd51d8dcc71`.
 
 Status:
 - `core:provider`: partial/current. Swift now has the V4 provider, model,
@@ -23,26 +44,253 @@ Status:
   migrations.
 - `core:ai`: partial/current. Swift high-level model resolution and runtime
   entrypoints now use the V4 rail for text, object, embed, rerank, image,
-  speech, transcription, and experimental video flows while preserving V3/V2
-  compatibility through adapters; URL-backed video and transcription downloads
-  now use shared `createDownload`/`DownloadFileFunction` hooks.
+  speech, transcription, experimental stream transcription, and experimental
+  video flows while preserving V3/V2 compatibility through adapters;
+  URL-backed video and transcription downloads now use shared
+  `createDownload`/`DownloadFileFunction` hooks. OpenAI's default provider now
+  drives the direct V4 examples, agent settings, middleware, custom provider,
+  provider registry, and docs paths without requiring `.v3(...)`/`.v4(...)`
+  wrappers at the call site.
 - `core:provider-utils`: partial/current for the shared content/data helper
   support touched by the V4 prompt/upload flow and provider-reference
   detection/resolution, V4 reasoning-to-provider mapping helpers, and shared
   header, filename, same-origin URL, nullable filtering, line extraction, and
   media-type detection/resolution, inline file-data conversion, and multipart
-  form-data helpers, plus shared download URL validation, manual redirect
+  form-data helpers, including optional multipart filenames required by
+  OpenAI's V4 files upload contract, plus shared download URL validation, manual redirect
   validation, size-limit reads, download error wrapping, model-option workflow
   serialization, streaming tool-call tracking, provider tool-name mapping, and
   JSON Schema additional-properties normalization for standard schemas, plus
   the shared `asArray` normalization helper, response-body cancellation, and
-  delayed-promise primitive, baseURL trailing-slash normalization, and browser
-  runtime detection. The Swift-applicable `@ai-sdk/provider-utils` export
-  surface is now audited against this baseline; remaining provider-utils work
-  is provider-driven integration behavior, not unidentified exported helper
-  drift.
+  delayed-promise primitive, baseURL trailing-slash normalization, browser
+  runtime detection, and provider-driven case-insensitive HTTP header override
+  behavior. The Swift-applicable `@ai-sdk/provider-utils` export surface is now
+  audited against this baseline; remaining provider-utils work is
+  provider-driven integration behavior, not unidentified exported helper drift.
 
 Latest validation:
+- `2026-07-04`: `node .agents/skills/swift-ai-sdk-upstream/scripts/scan-upstream.js --out .upstream/current`
+  reports `openai | provider | P0 | verified | current | OpenAIProvider |
+  SwiftAISDKTests | upstream/providers/openai.md |
+  c8d2726ae045a28142cb46df5e41cdd51d8dcc71`; the scanner now recognizes
+  `No known` / `None known` gap-free tracking text and the OpenAI tests housed
+  under `SwiftAISDKTests`.
+- `2026-07-04`: the OpenAI runtime source-owner closure check produced no
+  untracked runtime source paths after excluding upstream test declaration and
+  fixture-only files.
+- `2026-07-04`: `swift test --filter 'OpenAIChatMessagesConverterTests|OpenAIProviderTests|OpenAIResponsesLanguageModelV4Tests|OpenAIResponsesFixtureTests|OpenAIExportSurfaceTests|OpenAIFilesSkillsTests|OpenAIRealtimeModelTests|OpenAIToolsSchemaParityTests|OpenAITranscriptionModelTests|OpenAIImageModelTests|OpenAIEmbeddingModelTests|OpenAISpeechModelTests'`
+  passed 174 Swift Testing tests across the main OpenAI V4 prompt, provider
+  factory, Responses, fixture, export, files/skills, realtime, tools, image,
+  speech, transcription, and embedding boundaries.
+- `2026-07-04`: `pnpm run examples:build`, `pnpm run docs:check`,
+  `pnpm run docs:build`, `git diff --check`, and `AGENT=1 swift test` passed
+  after the OpenAI source-closure and scan-status updates. The docs build
+  generated 53 Starlight pages and still emits the known nonfatal npm ENOENT
+  warning from the sitemap/npx hook.
+- `2026-07-04`: `swift test --filter 'OpenAIFilesSkillsTests|OpenAIProviderTests|OpenAIRealtimeModelTests|OpenAIChatMessagesConverterTests'`
+  passed 49 Swift Testing tests for the OpenAI package source closure owners.
+- `2026-07-04`: `AGENT=1 swift test`
+  passed all 4065 Swift Testing tests after the OpenAI chat prompt conversion
+  V4 slice.
+- `2026-07-04`: `swift test --filter 'OpenAIChatMessagesConverterTests|OpenAIChatLanguageModelV4Tests|OpenAIChatLanguageModelTests|OpenAICompletionLanguageModelTests'`
+  passed 122 Swift Testing tests across Chat prompt conversion, native V4 Chat
+  request/stream behavior, legacy Chat, and Completion prompt/result
+  boundaries after the OpenAI chat prompt conversion V4 slice.
+- `2026-07-04`: `swift test --filter OpenAIChatMessagesConverterTests`
+  passed 28 Swift Testing tests after adding V4 prompt-conversion regressions
+  for upstream file/reference/tool-result cases.
+- `2026-07-04`: `AGENT=1 swift test`
+  passed all 4059 Swift Testing tests after the OpenAI index/export surface
+  slice.
+- `2026-07-04`: `swift test --filter 'OpenAIExportSurfaceTests|OpenAIProviderOptionsParsingTests|OpenAIRealtimeModelTests|OpenAIFilesSkillsTests|OpenAISpeechModelTests|OpenAITranscriptionModelTests|OpenAIImageOptionsTests|OpenAICompletionLanguageModelTests|OpenAIEmbeddingModelTests'`
+  passed 89 Swift Testing tests across public export, provider option parsing,
+  and adjacent OpenAI model/facade boundaries after the OpenAI index/export
+  surface slice.
+- `2026-07-04`: `swift test --filter OpenAIExportSurfaceTests`
+  passed 2 Swift Testing tests for the OpenAI public package export surface.
+- `2026-07-04`: `AGENT=1 swift test`
+  passed all 4057 Swift Testing tests after the OpenAI tools factory surface
+  slice.
+- `2026-07-04`: `git diff --check`
+  passed after the OpenAI tools factory surface slice.
+- `2026-07-04`: `swift test --filter 'OpenAIToolsSchemaParityTests|OpenAIWebSearchToolOutputSchemaTests|OpenAIResponsesPrepareToolsTests|OpenAICodeInterpreterOutputSchemaTests|OpenAICustomToolTests|OpenAIResponsesFixtureTests'`
+  passed 89 Swift Testing tests across OpenAI tool schema, request mapping, and
+  fixture boundaries after the tools factory surface slice.
+- `2026-07-04`: `swift test --filter OpenAIToolsSchemaParityTests`
+  passed 4 Swift Testing tests for public OpenAI tool schemas/facade contracts.
+- `2026-07-04`: `AGENT=1 swift test`
+  passed all 4053 Swift Testing tests after the OpenAI usage/provider-metadata
+  slice.
+- `2026-07-04`: `git diff --check`
+  passed after the OpenAI usage/provider-metadata slice.
+- `2026-07-04`: `swift test --filter 'OpenAIChatLanguageModelV4Tests|OpenAIChatLanguageModelTests|OpenAICompletionLanguageModelTests|OpenAIResponsesLanguageModelV4Tests|OpenAIResponsesLanguageModelTests|OpenAIResponsesFixtureTests'`
+  passed 256 Swift Testing tests across Chat, Completion, and Responses
+  usage/metadata boundaries.
+- `2026-07-04`: `swift test --filter OpenAIChatLanguageModelV4Tests`
+  passed 4 Swift Testing tests after the Chat `created: 0` metadata parity
+  regression was added.
+- `2026-07-04`: `AGENT=1 swift test`
+  passed all 4050 Swift Testing tests after the OpenAI provider
+  factory/settings and shared header merge audit.
+- `2026-07-04`: `git diff --check`
+  passed after the OpenAI provider factory/settings audit.
+- `2026-07-04`: `swift test --filter 'OpenAIProviderTests|CombineHeadersTests|UserAgentTests|NormalizeHeadersTests'`
+  passed 42 Swift Testing tests for adjacent OpenAI factory and shared header
+  behavior after the provider factory/settings audit.
+- `2026-07-04`: `swift test --filter OpenAIProviderTests`
+  passed 9 Swift Testing tests for OpenAI factory baseURL, V4 routing,
+  provider surface, lazy auth, and request header contracts after the
+  provider factory/settings audit.
+- `2026-07-04`: `swift test --filter CombineHeadersTests`
+  passed 11 Swift Testing tests for shared header merge semantics after the
+  provider factory/settings audit.
+- `2026-07-04`: `AGENT=1 swift test`
+  passed all 4048 Swift Testing tests after the Responses custom/tool name
+  audit.
+- `2026-07-04`: `swift test --filter OpenAIResponsesLanguageModelTests`
+  passed 101 Swift Testing tests for Responses request/response/stream custom
+  tool-name mapping.
+- `2026-07-04`: `swift test --filter OpenAIResponsesFixtureTests`
+  passed 52 Swift Testing tests for recorded Responses fixtures after custom
+  tool-name request alignment.
+- `2026-07-04`: `swift test --filter OpenAICustomToolTests`,
+  `swift test --filter OpenAIResponsesPrepareToolsTests`,
+  `swift test --filter OpenAIResponsesInputBuilderTests`, and
+  `swift test --filter OpenAIResponsesLanguageModelV4Tests` passed 1, 29, 72,
+  and 7 Swift Testing tests for the Responses custom/tool_search/allowed_tools
+  and adjacent prompt/V4 boundaries.
+- `2026-07-04`: `git diff --check`
+  passed after the Responses custom/tool name audit.
+- `2026-07-04`: `AGENT=1 swift test`
+  passed all 4048 Swift Testing tests after the Responses shell
+  skillReference provider-reference audit.
+- `2026-07-04`: `swift test --filter OpenAIResponsesPrepareToolsTests`
+  passed 29 Swift Testing tests for the Responses shell skillReference
+  provider-reference request serialization audit.
+- `2026-07-04`: `AGENT=1 swift test`
+  passed all 4046 Swift Testing tests after the OpenAI GPT-5.5
+  capability/model-list audit.
+- `2026-07-04`: `swift test --filter OpenAILanguageModelCapabilitiesTests`
+  passed 4 Swift Testing tests for the OpenAI GPT-5.5 capability/model-list
+  parity audit against upstream `openai-language-model-capabilities`.
+- `2026-07-04`: `AGENT=1 swift test`
+  passed all 4046 Swift Testing tests after the OpenAI files/skills binary
+  upload audit.
+- `2026-07-04`: `swift test --filter OpenAIFilesSkillsTests`
+  passed 5 Swift Testing tests for the OpenAI V4 files/skills multipart
+  boundary, including binary skill uploads and no-warning default skill
+  behavior.
+- `2026-07-04`: `AGENT=1 swift test`
+  passed all 4030 Swift Testing tests after the native OpenAI V4 Responses
+  slice.
+- `2026-07-04`: `swift test --filter 'OpenAIResponsesLanguageModelV4Tests|OpenAIResponsesLanguageModelTests|OpenAIResponsesInputBuilderTests|OpenAIResponsesPrepareToolsTests|OpenAIProviderOptionsParsingTests|OpenAIProviderTests|ResolveModelV4Tests|GenerateTextV4Tests|StreamTextV4Tests|GenerateObjectV4Tests|RunToolsTransformationTests|StringifyForTelemetryTests'`
+  passed 252 Swift Testing tests for native OpenAI V4 Responses request,
+  response, streaming, provider option, tool, compaction, V4 adapter, and
+  high-level text/object stream contracts.
+- `2026-07-04`: `swift test --filter OpenAIResponsesInputBuilderTests`
+  passed 72 Swift Testing tests for the Responses prompt/input boundary,
+  including upstream non-image file URL behavior and
+  `passThroughUnsupportedFiles`.
+- `2026-07-03`: `AGENT=1 swift test`
+  passed all 4015 Swift Testing tests after the native OpenAI V4 chat slice.
+- `2026-07-03`: `swift test --filter 'OpenAIChat|OpenAIProviderTests|ResolveModelV4Tests|GenerateTextV4Tests|StreamTextV4Tests|GenerateObjectV4Tests'`
+  passed 131 Swift Testing tests for native OpenAI V4 chat, legacy OpenAI V3
+  chat compatibility, `OpenAIProviderV4` chat factory routing, V4 model
+  resolution, and direct V4 generate/stream/object contracts.
+- `2026-07-03`: `swift test --filter OpenAIChatLanguageModelV4Tests`
+  passed 3 Swift Testing tests for native OpenAI V4 chat request, response,
+  streaming, provider metadata, provider-reference file, and pre-output
+  stream-error contracts.
+- `2026-07-03`: `AGENT=1 swift test`
+  passed all 4012 Swift Testing tests after the native OpenAI V4 completion
+  slice.
+- `2026-07-03`: `swift test --filter 'OpenAICompletionLanguageModelTests|OpenAIProviderTests|ResolveModelV4Tests|GenerateTextV4Tests|StreamTextV4Tests|GenerateObjectV4Tests'`
+  passed 46 Swift Testing tests for native OpenAI V4 completion,
+  `OpenAIProviderV4` completion factory routing, V4 model resolution, and
+  direct V4 generate/stream/object contracts.
+- `2026-07-03`: `swift test --filter 'OpenAICompletionLanguageModelTests|OpenAIProviderTests'`
+  passed 32 Swift Testing tests for native OpenAI V4 completion request,
+  response, streaming, provider metadata, pre-output stream-error, and provider
+  routing contracts while preserving legacy V3 completion behavior.
+- `2026-07-03`: `AGENT=1 swift test`
+  passed all 4009 Swift Testing tests after the native OpenAI V4 REST
+  transcription slice.
+- `2026-07-03`: `swift test --filter 'OpenAITranscriptionModelTests|OpenAIProviderTests|ResolveModelV4Tests|TranscribeTests|StreamTranscribeTests'`
+  passed 54 Swift Testing tests for native OpenAI V4 REST transcription,
+  `OpenAIProviderV4` transcription factory routing, V4 model resolution,
+  high-level `transcribe`, and high-level `experimental_streamTranscribe`
+  contracts.
+- `2026-07-03`: `pnpm run examples:build`, `pnpm run docs:check`, and
+  `pnpm run docs:build` completed after the native OpenAI V4 image slice; the
+  docs build generated 53 Starlight pages and emitted the known nonfatal npm
+  ENOENT warning from the sitemap/npx hook.
+- `2026-07-03`: `AGENT=1 swift test`
+  passed all 4007 Swift Testing tests after the native OpenAI V4 image slice.
+- `2026-07-03`: `swift test --filter 'OpenAIImageModelTests|OpenAIImageOptionsTests|OpenAIProviderOptionsParsingTests|OpenAIProviderTests|ResolveModelV4Tests|GenerateImageTests'`
+  passed 71 Swift Testing tests for native OpenAI V4 image,
+  `OpenAIProviderV4` image factory routing, OpenAI image option parsing,
+  request serialization, V4 model resolution, and high-level
+  `generateImage` contracts.
+- `2026-07-03`: `pnpm run examples:build`, `pnpm run docs:check`, and
+  `pnpm run docs:build` completed after the native OpenAI V4 speech slice; the
+  docs build generated 53 Starlight pages.
+- `2026-07-03`: `AGENT=1 swift test`
+  passed all 4003 Swift Testing tests after the native OpenAI V4 speech slice.
+- `2026-07-03`: `swift test --filter 'OpenAISpeechModelTests|OpenAIProviderTests|ResolveModelV4Tests|GenerateSpeechTests'`
+  passed 38 Swift Testing tests for native OpenAI V4 speech,
+  `OpenAIProviderV4` speech factory routing, V4 model resolution, and
+  high-level `generateSpeech` contracts.
+- `2026-07-03`: `pnpm run examples:build`, `pnpm run docs:check`, and
+  `pnpm run docs:build` completed after the native OpenAI V4 embedding slice;
+  the docs build generated 53 Starlight pages.
+- `2026-07-03`: `AGENT=1 swift test`
+  passed all 4002 Swift Testing tests after the native OpenAI V4 embedding
+  slice.
+- `2026-07-03`: `swift test --filter 'OpenAIEmbeddingModelTests|OpenAIProviderTests|ResolveModelV4Tests|EmbedTests|EmbedManyTests|ProviderRegistryTests'`
+  passed 63 Swift Testing tests for native OpenAI V4 embedding,
+  `OpenAIProviderV4` embedding factory routing, V4 model resolution, provider
+  registry resolution, and high-level embed/embedMany contracts.
+- `2026-07-03`: `AGENT=1 swift test`
+  passed all 4001 Swift Testing tests after the OpenAI main V4 DX/docs,
+  middleware, provider registry, Agent settings, examples, files/skills,
+  realtime, and stream transcription slices.
+- `2026-07-03`: `swift test --filter 'OpenAIProviderTests|OpenAIFilesSkillsTests|OpenAIRealtimeModelTests|ResolveModelV4Tests|GenerateTextV4Tests|StreamTextV4Tests|GenerateObjectV4Tests|WrapLanguageModelTests|DefaultSettingsMiddlewareTests|ProviderRegistryTests|AgentTests|StreamTranscribeTests'`
+  passed 114 Swift Testing tests for the targeted OpenAI V4 facade,
+  files/skills, realtime, high-level stream transcription, direct V4
+  generate/stream/object, middleware, provider registry, model resolution, and
+  Agent settings contracts.
+- `2026-07-03`: `pnpm run docs:check` and `pnpm run docs:build`
+  completed successfully after the OpenAI V4 docs/examples refresh; the build
+  generated 53 Starlight pages.
+- `2026-07-03`: `pnpm run examples:build`
+  built the examples package successfully after switching OpenAI examples to
+  the direct V4 facade.
+- `2026-07-03`: `swift test --filter 'OpenAI.*Tests|OpenAICompatible.*Tests|OpenAICompatibleProviderV4Tests|ResolveModelV4Tests|UploadFileTests|UploadSkillTests|TranscribeTests|StreamTranscribeTests|RealtimeV4MiddlewareTests'`
+  passed 629 Swift Testing tests across the OpenAI provider V4 facade,
+  OpenAI-compatible V4 guard, upload, transcription, realtime, and V4 adapter
+  suites.
+- `2026-07-03`: `swift test --filter OpenAIProviderTests`
+  passed 8 Swift Testing tests for OpenAI provider base URL behavior and the
+  targeted `createOpenAI` V4 facade/routing contract.
+- `2026-07-03`: `AGENT=1 swift test`
+  passed all 3990 Swift Testing tests after the OpenAI files/skills and
+  realtime slices.
+- `2026-07-03`: `swift test --filter 'OpenAI.*Tests|ResolveModelV4Tests|UploadFileTests|UploadSkillTests|RealtimeV4MiddlewareTests'`
+  passed 612 Swift Testing tests across OpenAI, OpenAI-compatible, upload,
+  V4 adapter, and realtime contract suites.
+- `2026-07-03`: `swift test --filter 'OpenAIRealtimeModelTests|OpenAIProviderTests|RealtimeV4MiddlewareTests'`
+  passed 16 Swift Testing tests for OpenAI realtime provider wiring plus core
+  realtime middleware contracts.
+- `2026-07-03`: `swift test --filter OpenAIRealtimeModelTests`
+  passed 7 Swift Testing tests for the targeted OpenAI realtime slice.
+- `2026-07-03`: `AGENT=1 swift test`
+  passed all 3983 Swift Testing tests after the OpenAI files/skills slice.
+- `2026-07-03`: `swift test --filter 'OpenAIFilesSkillsTests|ResolveModelV4Tests|UploadFileTests|UploadSkillTests|AnthropicProviderTests|AISDKProviderUtilsTests'`
+  passed 750 Swift Testing tests for OpenAI upload surfaces, V3->V4 upload
+  capability forwarding, Anthropic upload regressions, and provider-utils
+  multipart helpers.
+- `2026-07-03`: `swift test --filter 'OpenAIFilesSkillsTests|ResolveModelV4Tests'`
+  passed 14 Swift Testing tests for the targeted OpenAI files/skills slice.
 - `2026-07-03`: `AGENT=1 swift test`
   passed all 3978 Swift Testing tests.
 - `2026-07-03`: `pnpm run docs:check` and `pnpm run docs:build`
@@ -72,7 +320,7 @@ Latest validation:
   re-exports are classified as Swift `n/a` unless a concrete Swift runtime
   contract later needs them.
 - [ ] Re-audit stale P0 provider pages against
-  `0c3c7e426d359c236952d6f8da7b0081eb6f1a7a`.
+  `c8d2726ae045a28142cb46df5e41cdd51d8dcc71`.
 - [ ] Decide whether new upstream P1 providers `anthropic-aws`, `quiverai`, and
   `voyage` should get Swift targets or be marked intentionally out of scope.
 
@@ -83,6 +331,471 @@ Latest validation:
 3) Docs updates only after behavior parity is green
 
 ## Current upstream intake snapshot
+
+### 2026-07-03: upstream `c8d2726ae045a28142cb46df5e41cdd51d8dcc71`
+
+Scope: `intake:latest-main` plus targeted `provider:openai/files-skills`,
+`provider:openai/realtime`, `core:ai/transcribe-stream`, and
+`provider:openai/provider-v4-facade`,
+`provider:openai/provider-factory-settings`,
+`provider:openai/error-mapping`,
+`provider:openai/usage-provider-metadata`,
+`provider:openai/tools-factory-surface`,
+`provider:openai/index-export-surface`,
+`provider:openai/chat-prompt-conversion-v4`,
+`provider:openai/package-source-closure`,
+`core:ai/openai-v4-dx`, `docs:openai-v4`, and
+`provider:openai/native-v4-embedding`, and
+`provider:openai/native-v4-speech`, and
+`provider:openai/native-v4-image`, and
+`provider:openai/native-v4-rest-transcription`, and
+`provider:openai/native-v4-completion`, and
+`provider:openai/native-v4-chat`, and
+`provider:openai/native-v4-responses`.
+
+Evidence:
+- `external/vercel-ai-sdk` refreshed from upstream `main` to `c8d2726ae045a28142cb46df5e41cdd51d8dcc71`.
+- Upstream OpenAI V4 provider surface includes `files(): FilesV4` and
+  `skills(): SkillsV4` on the main provider, plus
+  `experimental_realtime: RealtimeFactoryV4`.
+- Swift landed the provider-owned OpenAI upload boundary for that surface:
+  - `OpenAIProvider` exposes `FilesProvider` and `SkillsProvider` capability
+    markers while preserving the existing V3 model facade.
+  - `OpenAIFiles` sends OpenAI multipart uploads to `/files`, preserves nil
+    filename behavior, defaults `purpose` to `assistants`, forwards
+    `expires_after`, maps OpenAI provider references and metadata, and keeps
+    OpenAI auth/header timing lazy.
+  - `OpenAISkills` sends skill files to `/skills`, maps the OpenAI skill
+    response, and emits the upstream unsupported `displayTitle` warning.
+  - `ProviderV3ToV4Adapter` forwards `files()` and `skills()` when a legacy
+    provider exposes those V4 capability markers.
+- Swift landed the provider-owned OpenAI realtime boundary for that surface:
+  - `OpenAIProvider.experimental_realtime` returns OpenAI realtime models with
+    upstream provider naming.
+  - `OpenAIRealtimeModel` creates client secrets through
+    `/realtime/client_secrets`, omits `expires_after` by default, includes the
+    required `expires_after.anchor = created_at` when a TTL is requested, keeps
+    OpenAI auth/header timing lazy, and returns the OpenAI `wss://.../v1/realtime?model=...`
+    URL.
+  - The OpenAI realtime mapper covers session config building, WebSocket
+    subprotocols, server event normalization, and client event serialization.
+  - Swift's normalized realtime conversation item does not expose a redundant
+    role field; OpenAI serialization still emits the upstream fixed user role
+    for text/audio conversation items.
+- Swift landed the high-level stream transcription API that the OpenAI
+  transcription stream boundary enables:
+  - `experimental_streamTranscribe` and `streamTranscribe` resolve
+    `TranscriptionModelV4`, pass headers/providerOptions/input format/raw
+    chunk options through to `doStream`, expose an async `fullStream`, and
+    resolve transcript text, segments, language, duration, warnings, response
+    metadata, and provider metadata from the finish part.
+  - Missing finish text rejects with `NoTranscriptGeneratedError`, provider
+    stream errors propagate, and consumer cancellation cancels the underlying
+    provider stream task.
+- Swift landed a provider-owned V4 facade for the main OpenAI package:
+  - Default `openai` and `createOpenAI(settings:)` return `OpenAIProviderV4`,
+    preserving upstream V4 factory naming for default Responses, chat,
+    completion, embedding, textEmbedding, image, transcription, speech, files,
+    skills, realtime, and tools.
+  - The facade uses provider-local V3->V4 adapters so the `OpenAIProvider`
+    target does not depend on `SwiftAISDK`, while legacy
+    `createOpenAIProvider` remains available for existing Swift V3-style
+    callers.
+- Swift verified the OpenAI provider factory/settings boundary:
+  - `createOpenAI(settings:)` and `createOpenAIProvider(settings:)` preserve
+    upstream default/env/explicit `baseURL`, lazy API-key loading, provider
+    suffixes, Responses-as-default routing, OpenAI org/project headers, custom
+    header overrides, and OpenAI/provider-utils user-agent suffix behavior.
+  - `combineHeaders` now preserves upstream-style later-header override
+    semantics for case-insensitive HTTP header names before downstream
+    normalization, which keeps OpenAI provider custom `authorization`,
+    `openai-organization`, and `openai-project` overrides deterministic.
+- Swift verified the OpenAI Responses error-mapping boundary:
+  - `OpenAIResponsesLanguageModel` now handles upstream `response.failed`
+    streaming chunks instead of dropping them in the default branch.
+  - Pre-output `response.failed` events with `response.error` now surface through
+    the V4 pre-output stream-error gate as `APICallError` with the provider
+    message and upstream status-code mapping.
+  - Late `response.failed` events emit one structured stream error, preserve
+    raw finish reason from `incomplete_details.reason`, map usage/service tier,
+    and avoid duplicating a prior `type: "error"` stream event.
+- Swift verified the OpenAI tools factory surface:
+  - `OpenAITools` exposes the upstream `openaiTools` facade names, including
+    `applyPatch`, `customTool`, `codeInterpreter`, `fileSearch`,
+    `imageGeneration`, `localShell`, `shell`, `webSearchPreview`, `webSearch`,
+    `mcp`, and `toolSearch`.
+  - `openaiTools.shell(OpenAIShellArgs)` now provides a typed Swift path for
+    upstream shell `environment` args while preserving the raw provider-tool
+    options factory path.
+  - Public tool schemas now match upstream boundaries for `web_search` output
+    `queries`, the `apply_patch` create/update/delete operation union, and
+    `shell` exit outcomes requiring `exitCode`.
+- Swift verified the OpenAI package index/export surface:
+  - Public `OpenAIProvider` API now mirrors upstream `packages/openai/src/index.ts`
+    exported names for `VERSION`, experimental realtime model/config aliases,
+    language/model option aliases across Responses, Chat, Completion, Embedding,
+    Image, Speech, Transcription, and Files, and typed Responses provider
+    metadata wrappers.
+  - The runtime provider metadata flow remains Swift-native
+    `[String: JSONValue]`; the added wrappers are public typed surface parity over
+    the same keys and do not change request, stream, or result payloads.
+- Swift verified the OpenAI native V4 Chat prompt conversion boundary:
+  - `OpenAIChatMessagesConverter.convertV4` is now directly covered against
+    upstream `convert-to-openai-chat-messages.ts` for top-level `image` /
+    `image/*` file parts, raw base64 and URL image payloads, OpenAI
+    provider-reference `file_id` mapping, missing OpenAI reference errors,
+    top-level `application` URL rejection, assistant tool-call `content: null`,
+    and execution-denied tool-result default text.
+  - Chat and Completion finish-reason mappers were re-read against upstream; the
+    existing Swift mappings preserve upstream `nil -> other` for Chat/Completion
+    and Responses `nil -> stop/tool-calls` behavior.
+- Swift closed the remaining OpenAI package source-owner audit surface:
+  - `openai-chat-prompt.ts` is a TypeScript request-shape type reflected by
+    Swift JSON request-shape tests rather than a separate runtime object model.
+  - `openai-files-api.ts` and `openai-skills-api.ts` match Swift upload response
+    schemas in `OpenAIFiles` and `OpenAISkills`.
+  - `openai-config.ts` matches Swift `OpenAIConfig` plus provider factory/auth,
+    header, baseURL, fetch, websocket, generated-id, and file-id-prefix
+    coverage.
+  - `realtime/index.ts` is covered by public experimental realtime aliases, and
+    `internal/index.ts` is a TypeScript internal re-export surface with no
+    separate Swift runtime artifact.
+- Swift landed a native V4 OpenAI embedding model for that facade:
+  - `OpenAIEmbeddingModelV4` shares the OpenAI embedding request/response core
+    with the existing V3 model, preserving `/embeddings` request shape,
+    `encoding_format = float`, `dimensions` and `user` provider options,
+    lazy OpenAI auth/header merging, response headers/body, usage tokens, and
+    the 2048-value call limit.
+  - `OpenAIProviderV4.embedding(...)`, `embeddingModel(...)`,
+    `textEmbedding(...)`, and `textEmbeddingModel(...)` now return the native
+    V4 model directly. Legacy `OpenAIProvider` and Azure reuse keep the V3
+    embedding surface.
+- Swift landed a native V4 OpenAI speech model for that facade:
+  - `OpenAISpeechModelV4` shares the OpenAI speech request/response core with
+    the existing V3 model, preserving `/audio/speech` request shape, voice,
+    `outputFormat`, speed, instructions, language warnings, provider-option
+    validation, lazy OpenAI auth/header merging, request body metadata, binary
+    audio, response headers/body, and timestamps.
+  - `OpenAIProviderV4.speech(...)` and `speechModel(...)` now return the native
+    V4 model directly. Legacy `OpenAIProvider` and Azure reuse keep the V3
+    speech surface.
+- Swift landed a native V4 OpenAI image model for that facade:
+  - `OpenAIImageModelV4` shares the OpenAI image request/response core with the
+    existing V3 model, preserving `/images/generations` and `/images/edits`,
+    unsupported `aspectRatio`/`seed` warnings, OpenAI response metadata, usage,
+    image token-detail distribution, lazy OpenAI auth/header merging, and V3
+    legacy behavior.
+  - The image provider options now parse against the upstream generation/edit
+    option schemas and map Swift-facing camelCase options to OpenAI request
+    fields: `outputFormat` -> `output_format`, `outputCompression` ->
+    `output_compression`, and `inputFidelity` -> `input_fidelity`.
+  - Image model gates now include upstream `gpt-image-2` and
+    `chatgpt-image-latest`; default response-format omission also covers
+    `chatgpt-image-*` and `gpt-image-2*`; multiple edit files use multipart
+    `image[]` fields.
+  - `OpenAIProviderV4.image(...)` and `imageModel(...)` now return the native
+    V4 model directly. Legacy `OpenAIProvider` keeps the V3 image surface.
+- Swift landed a native V4 OpenAI REST transcription model for that facade:
+  - `OpenAITranscriptionModelV4` shares the OpenAI transcription
+    request/response core with the existing V3 model, preserving
+    `/audio/transcriptions` multipart request shape, lazy OpenAI auth/header
+    merging, realtime-model REST rejection, response headers/body, timestamps,
+    language mapping, segment/word fallback mapping, and realtime `doStream`
+    behavior.
+  - `whisper-1` now defaults REST transcription requests to
+    `response_format = verbose_json` even without provider options, and
+    GPT-4o transcription models use upstream `response_format = json` when
+    provider options are present. Provider-option defaults serialize through
+    the same multipart boundary as upstream (`temperature = 0`,
+    `timestamp_granularities[] = segment` unless overridden).
+  - `OpenAIProviderV4.transcription(...)` and `transcriptionModel(...)` now
+    return the native V4 model directly. Legacy `OpenAIProvider` keeps the V3
+    transcription surface.
+- Swift landed a native V4 OpenAI completion model for that facade:
+  - `OpenAICompletionLanguageModelV4` shares the OpenAI completion
+    request/response/streaming core with the existing V3 completion model while
+    preserving the legacy V3 surface for `createOpenAIProvider`.
+  - The native V4 path sends V4 prompts directly through the OpenAI completion
+    prompt converter, merges `providerOptions.openai` and provider-prefixed
+    options, preserves upstream `logprobs` mapping (`true -> 0`, `false`
+    omitted), unsupported `topK`/tools/toolChoice/non-text response-format
+    warnings, response metadata, usage, and OpenAI logprobs provider metadata.
+  - Streaming sends `stream = true` and `stream_options.include_usage = true`,
+    emits V4 stream-start/response-metadata/text/finish/raw/error parts in
+    upstream order, and the native V4 path throws an `APICallError` when an
+    OpenAI error frame arrives before any output chunk.
+  - `OpenAIProviderV4.completion(...)` and `completionModel(...)` now return
+    the native V4 model directly.
+- Swift landed a native V4 OpenAI chat model for that facade:
+  - `OpenAIChatLanguageModelV4` shares the OpenAI chat request/response/stream
+    core with the existing V3 chat model while preserving the legacy V3 surface
+    for `createOpenAIProvider`.
+  - The native V4 path accepts V4 prompts directly, maps top-level V4
+    `reasoning` to OpenAI `reasoning_effort`, preserves provider-reference file
+    parts (`file_id`), nested `url_citation` annotations, tool calls, usage,
+    OpenAI prediction-token metadata, V4 logprobs content metadata, raw chunks,
+    and upstream pre-output OpenAI stream-error throwing.
+  - Legacy V3 chat streaming still preserves its existing empty initial
+    tool-input delta contract. `OpenAIProviderV4.chat(...)` and `chatModel(...)`
+    now return the native V4 model directly.
+- Swift landed a native V4 OpenAI Responses model for that facade:
+  - `OpenAIResponsesLanguageModelV4` exposes the provider-owned Responses
+    implementation directly through the V4 language-model surface instead of
+    routing the V4 facade through a local V3-backed adapter.
+  - The native V4 path forwards top-level V4 `reasoning`, provider-reference
+    files, provider options, tools/tool choice, `context_management`,
+    `allowed_tools`, `passThroughUnsupportedFiles`, and OpenAI compaction custom
+    content while preserving lazy OpenAI auth/header behavior.
+  - Responses prompt conversion now matches upstream non-image file handling:
+    URL-backed non-image files serialize as `input_file.file_url`, while
+    unsupported binary/base64 file media types require
+    `passThroughUnsupportedFiles` and serialize as `input_file`.
+  - V3/V4 custom content bridging preserves OpenAI `compaction` across
+    generate/stream and follow-up input reconstruction; truly V4-only
+    `reasoning-file` prompt parts still reject when routed to a V3-backed
+    adapter.
+
+Validation:
+- `pnpm run examples:build`, `pnpm run docs:check`, and `pnpm run docs:build`
+  completed; docs build generated 53 Starlight pages with the known nonfatal
+  npm ENOENT sitemap/npx warning.
+- `AGENT=1 swift test` passed all 4015 Swift Testing tests.
+- `AGENT=1 swift test` passed all 4012 Swift Testing tests.
+- `AGENT=1 swift test` passed all 4009 Swift Testing tests.
+- `AGENT=1 swift test` passed all 4007 Swift Testing tests.
+- `swift build` passed.
+- `git diff --check` passed.
+- `swift test --filter 'OpenAITranscriptionModelTests|OpenAIProviderTests|ResolveModelV4Tests|TranscribeTests|StreamTranscribeTests'`
+  passed 54 Swift Testing tests.
+- `swift test --filter 'OpenAICompletionLanguageModelTests|OpenAIProviderTests|ResolveModelV4Tests|GenerateTextV4Tests|StreamTextV4Tests|GenerateObjectV4Tests'`
+  passed 46 Swift Testing tests.
+- `swift test --filter 'OpenAIChat|OpenAIProviderTests|ResolveModelV4Tests|GenerateTextV4Tests|StreamTextV4Tests|GenerateObjectV4Tests'`
+  passed 131 Swift Testing tests.
+- `swift test --filter 'OpenAIResponsesLanguageModelV4Tests|OpenAIResponsesLanguageModelTests|OpenAIResponsesInputBuilderTests|OpenAIResponsesPrepareToolsTests|OpenAIProviderOptionsParsingTests|OpenAIProviderTests|ResolveModelV4Tests|GenerateTextV4Tests|StreamTextV4Tests|GenerateObjectV4Tests|RunToolsTransformationTests|StringifyForTelemetryTests'`
+  passed 252 Swift Testing tests.
+- `AGENT=1 swift test` passed all 4030 Swift Testing tests.
+- `swift test --filter OpenAIChatLanguageModelV4Tests` passed 3 Swift Testing
+  tests.
+- `swift test --filter 'OpenAICompletionLanguageModelTests|OpenAIProviderTests'`
+  passed 32 Swift Testing tests.
+- `swift test --filter 'OpenAIImageModelTests|OpenAIImageOptionsTests|OpenAIProviderOptionsParsingTests|OpenAIProviderTests|ResolveModelV4Tests|GenerateImageTests'`
+  passed 71 Swift Testing tests.
+- `swift test --filter 'OpenAISpeechModelTests|OpenAIProviderTests|ResolveModelV4Tests|GenerateSpeechTests'`
+  passed 38 Swift Testing tests.
+- `swift test --filter 'OpenAIEmbeddingModelTests|OpenAIProviderTests|ResolveModelV4Tests|EmbedTests|EmbedManyTests|ProviderRegistryTests'`
+  passed 63 Swift Testing tests.
+- `swift test --filter 'OpenAI.*Tests|OpenAICompatible.*Tests|OpenAICompatibleProviderV4Tests|ResolveModelV4Tests|UploadFileTests|UploadSkillTests|TranscribeTests|StreamTranscribeTests|RealtimeV4MiddlewareTests'`
+  passed 629 Swift Testing tests.
+- `swift test --filter OpenAIProviderTests` passed 8 Swift Testing tests.
+- `AGENT=1 swift test` passed all 3990 Swift Testing tests.
+- `swift test --filter OpenAIRealtimeModelTests` passed 7 Swift Testing tests.
+- `swift test --filter 'OpenAIRealtimeModelTests|OpenAIProviderTests|RealtimeV4MiddlewareTests'`
+  passed 16 Swift Testing tests.
+- `swift test --filter 'OpenAI.*Tests|ResolveModelV4Tests|UploadFileTests|UploadSkillTests|RealtimeV4MiddlewareTests'`
+  passed 612 Swift Testing tests.
+- `swift test --filter 'OpenAIFilesSkillsTests|ResolveModelV4Tests'` passed
+  14 Swift Testing tests.
+- `swift test --filter 'OpenAIFilesSkillsTests|ResolveModelV4Tests|UploadFileTests|UploadSkillTests|AnthropicProviderTests|AISDKProviderUtilsTests'`
+  passed 750 Swift Testing tests.
+- `swift test --filter OpenAIResponsesLanguageModelV4Tests` passed 9 Swift
+  Testing tests after adding direct `response.failed` pre-output and late-stream
+  regressions.
+- `swift test --filter 'OpenAIResponsesLanguageModelTests|OpenAIResponsesLanguageModelV4Tests|OpenAIResponsesFixtureTests'`
+  passed 162 Swift Testing tests.
+- `swift test --filter 'OpenAIErrorTests|OpenAIChatLanguageModelV4Tests|OpenAICompletionLanguageModelTests'`
+  passed 28 Swift Testing tests.
+- `swift test --filter OpenAIToolsSchemaParityTests` passed 4 Swift Testing
+  tests for public OpenAI tool schemas/facade contracts.
+- `swift test --filter 'OpenAIToolsSchemaParityTests|OpenAIWebSearchToolOutputSchemaTests|OpenAIResponsesPrepareToolsTests|OpenAICodeInterpreterOutputSchemaTests|OpenAICustomToolTests|OpenAIResponsesFixtureTests'`
+  passed 89 Swift Testing tests across OpenAI tool schema, request mapping, and
+  fixture boundaries.
+- `swift test --filter OpenAIExportSurfaceTests` passed 2 Swift Testing tests
+  for the OpenAI public package export surface.
+- `swift test --filter 'OpenAIExportSurfaceTests|OpenAIProviderOptionsParsingTests|OpenAIRealtimeModelTests|OpenAIFilesSkillsTests|OpenAISpeechModelTests|OpenAITranscriptionModelTests|OpenAIImageOptionsTests|OpenAICompletionLanguageModelTests|OpenAIEmbeddingModelTests'`
+  passed 89 Swift Testing tests across public export, provider option parsing,
+  and adjacent OpenAI model/facade boundaries.
+- `swift test --filter OpenAIChatMessagesConverterTests` passed 28 Swift
+  Testing tests after adding V4 prompt-conversion regressions for upstream
+  file/reference/tool-result cases.
+- `swift test --filter 'OpenAIChatMessagesConverterTests|OpenAIChatLanguageModelV4Tests|OpenAIChatLanguageModelTests|OpenAICompletionLanguageModelTests'`
+  passed 122 Swift Testing tests across Chat prompt conversion, native V4 Chat
+  request/stream behavior, legacy Chat, and Completion prompt/result boundaries.
+- `swift test --filter 'OpenAIFilesSkillsTests|OpenAIProviderTests|OpenAIRealtimeModelTests|OpenAIChatMessagesConverterTests'`
+  passed 49 Swift Testing tests for the OpenAI package source closure owners.
+- `git diff --check` passed.
+- `AGENT=1 swift test` passed all 4065 Swift Testing tests after the OpenAI
+  chat prompt conversion V4 slice.
+- `AGENT=1 swift test` passed all 4059 Swift Testing tests after the OpenAI
+  index/export surface slice.
+- `AGENT=1 swift test` passed all 4057 Swift Testing tests after the OpenAI
+  tools factory surface slice.
+- `AGENT=1 swift test` passed all 4052 Swift Testing tests after the OpenAI
+  error-mapping slice.
+
+Evidence paths:
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/openai-provider.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/files/openai-files.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/files/openai-files.test.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/skills/openai-skills.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/skills/openai-skills.test.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/realtime/openai-realtime-model.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/realtime/openai-realtime-model.test.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/realtime/openai-realtime-event-mapper.ts`
+- Swift: `Sources/OpenAIProvider/OpenAIProvider.swift`
+- Swift: `Sources/OpenAIProvider/OpenAIFiles.swift`
+- Swift: `Sources/OpenAIProvider/OpenAISkills.swift`
+- Swift: `Sources/OpenAIProvider/OpenAIRealtimeModel.swift`
+- Swift: `Sources/SwiftAISDK/Model/ModelV4Adapters.swift`
+- Swift: `Sources/AISDKProviderUtils/MultipartFormDataBuilder.swift`
+- Swift tests: `Tests/SwiftAISDKTests/OpenAI/OpenAIFilesSkillsTests.swift`
+- Swift tests: `Tests/SwiftAISDKTests/OpenAI/OpenAIRealtimeModelTests.swift`
+- Swift tests: `Tests/SwiftAISDKTests/Model/ResolveModelV4Tests.swift`
+- Upstream: `external/vercel-ai-sdk/packages/ai/src/transcribe/index.ts`
+- Upstream: `external/vercel-ai-sdk/packages/ai/src/transcribe/stream-transcribe.ts`
+- Upstream: `external/vercel-ai-sdk/packages/ai/src/transcribe/stream-transcribe-result.ts`
+- Upstream: `external/vercel-ai-sdk/packages/ai/src/transcribe/stream-transcribe.test.ts`
+- Swift: `Sources/SwiftAISDK/Transcribe/TranscribeExports.swift`
+- Swift: `Sources/SwiftAISDK/Transcribe/StreamTranscribe.swift`
+- Swift: `Sources/SwiftAISDK/Transcribe/StreamTranscribeResult.swift`
+- Swift tests: `Tests/SwiftAISDKTests/Transcribe/StreamTranscribeTests.swift`
+- Swift: `Sources/OpenAIProvider/OpenAIProviderV4.swift`
+- Swift: `Sources/OpenAIProvider/OpenAIV4Adapters.swift`
+- Swift tests: `Tests/SwiftAISDKTests/OpenAI/OpenAIProviderTests.swift`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/embedding/openai-embedding-model.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/embedding/openai-embedding-model.test.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/embedding/openai-embedding-api.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/embedding/openai-embedding-model-options.ts`
+- Swift: `Sources/OpenAIProvider/Embedding/OpenAIEmbeddingModel.swift`
+- Swift tests: `Tests/SwiftAISDKTests/OpenAI/OpenAIEmbeddingModelTests.swift`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/speech/openai-speech-model.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/speech/openai-speech-model.test.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/speech/openai-speech-api.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/speech/openai-speech-model-options.ts`
+- Swift: `Sources/OpenAIProvider/Speech/OpenAISpeechModel.swift`
+- Swift tests: `Tests/SwiftAISDKTests/OpenAI/OpenAISpeechModelTests.swift`
+- Swift tests: `Tests/SwiftAISDKTests/GenerateSpeech/GenerateSpeechTests.swift`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/image/openai-image-model.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/image/openai-image-model.test.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/image/openai-image-api.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/image/openai-image-model-options.ts`
+- Swift: `Sources/OpenAIProvider/Image/OpenAIImageModel.swift`
+- Swift: `Sources/OpenAIProvider/Image/OpenAIImageOptions.swift`
+- Swift tests: `Tests/SwiftAISDKTests/OpenAI/OpenAIImageModelTests.swift`
+- Swift tests: `Tests/SwiftAISDKTests/OpenAI/OpenAIImageOptionsTests.swift`
+- Swift tests: `Tests/SwiftAISDKTests/OpenAI/OpenAIProviderOptionsParsingTests.swift`
+- Swift tests: `Tests/SwiftAISDKTests/GenerateImage/GenerateImageTests.swift`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/transcription/openai-transcription-model.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/transcription/openai-transcription-model.test.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/transcription/openai-transcription-api.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/transcription/openai-transcription-model-options.ts`
+- Swift: `Sources/OpenAIProvider/Transcription/OpenAITranscriptionModel.swift`
+- Swift: `Sources/OpenAIProvider/Transcription/OpenAITranscriptionAPI.swift`
+- Swift: `Sources/OpenAIProvider/Transcription/OpenAITranscriptionOptions.swift`
+- Swift tests: `Tests/SwiftAISDKTests/OpenAI/OpenAITranscriptionModelTests.swift`
+- Swift tests: `Tests/SwiftAISDKTests/Transcribe/TranscribeTests.swift`
+- Swift tests: `Tests/SwiftAISDKTests/Transcribe/StreamTranscribeTests.swift`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/completion/openai-completion-language-model.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/completion/convert-to-openai-completion-prompt.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/completion/openai-completion-api.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/completion/openai-completion-language-model-options.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/completion/openai-completion-language-model.test.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/openai-stream-error.ts`
+- Swift: `Sources/OpenAIProvider/Completion/OpenAICompletionLanguageModel.swift`
+- Swift: `Sources/OpenAIProvider/Completion/OpenAICompletionPrompt.swift`
+- Swift: `Sources/OpenAIProvider/Completion/OpenAICompletionAPI.swift`
+- Swift: `Sources/OpenAIProvider/Completion/OpenAICompletionOptions.swift`
+- Swift tests: `Tests/SwiftAISDKTests/OpenAI/OpenAICompletionLanguageModelTests.swift`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/chat/openai-chat-language-model.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/chat/convert-to-openai-chat-messages.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/chat/openai-chat-prepare-tools.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/chat/openai-chat-api.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/chat/openai-chat-language-model-options.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/chat/openai-chat-language-model.test.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/openai-stream-error.ts`
+- Swift: `Sources/OpenAIProvider/Chat/OpenAIChatLanguageModel.swift`
+- Swift: `Sources/OpenAIProvider/Chat/OpenAIChatPrompt.swift`
+- Swift: `Sources/OpenAIProvider/Chat/OpenAIChatPrepareTools.swift`
+- Swift: `Sources/OpenAIProvider/Chat/OpenAIChatAPI.swift`
+- Swift: `Sources/OpenAIProvider/Chat/OpenAIChatOptions.swift`
+- Swift: `Sources/AISDKProviderUtils/StreamingToolCallTracker.swift`
+- Swift tests: `Tests/SwiftAISDKTests/OpenAI/OpenAIChatLanguageModelV4Tests.swift`
+- Swift tests: `Tests/SwiftAISDKTests/OpenAI/OpenAIChatLanguageModelTests.swift`
+- Swift tests: `Tests/SwiftAISDKTests/OpenAI/OpenAIChatStreamingTests.swift`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/openai-error.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/openai-error.test.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/openai-stream-error.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/responses/openai-responses-api.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/responses/openai-responses-language-model.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/responses/openai-responses-language-model.test.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/openai-tools.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/tool/apply-patch.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/tool/code-interpreter.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/tool/custom.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/tool/file-search.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/tool/image-generation.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/tool/local-shell.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/tool/mcp.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/tool/shell.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/tool/tool-search.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/tool/web-search-preview.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/tool/web-search.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/index.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/version.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/realtime/openai-realtime-model-options.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/files/openai-files-options.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/responses/openai-responses-provider-metadata.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/chat/convert-to-openai-chat-messages.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/chat/convert-to-openai-chat-messages.test.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/chat/map-openai-finish-reason.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/completion/convert-to-openai-completion-prompt.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/completion/map-openai-finish-reason.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/responses/map-openai-responses-finish-reason.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/chat/openai-chat-prompt.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/files/openai-files-api.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/skills/openai-skills-api.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/openai-config.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/realtime/index.ts`
+- Upstream: `external/vercel-ai-sdk/packages/openai/src/internal/index.ts`
+- Swift: `Sources/OpenAIProvider/OpenAIError.swift`
+- Swift: `Sources/OpenAIProvider/OpenAIResponsesModel.swift`
+- Swift: `Sources/OpenAIProvider/OpenAIResponsesLanguageModelV4.swift`
+- Swift: `Sources/OpenAIProvider/OpenAITools.swift`
+- Swift: `Sources/OpenAIProvider/OpenAIVersion.swift`
+- Swift: `Sources/OpenAIProvider/OpenAIResponsesProviderMetadata.swift`
+- Swift: `Sources/OpenAIProvider/Chat/OpenAIChatPrompt.swift`
+- Swift: `Sources/OpenAIProvider/Chat/OpenAIChatFinishReason.swift`
+- Swift: `Sources/OpenAIProvider/Completion/OpenAICompletionPrompt.swift`
+- Swift: `Sources/OpenAIProvider/Completion/OpenAICompletionFinishReason.swift`
+- Swift: `Sources/OpenAIProvider/OpenAIResponsesFinishReason.swift`
+- Swift: `Sources/OpenAIProvider/OpenAIFiles.swift`
+- Swift: `Sources/OpenAIProvider/OpenAISkills.swift`
+- Swift: `Sources/OpenAIProvider/OpenAIConfig.swift`
+- Swift: `Sources/OpenAIProvider/Tool/OpenAIApplyPatchTool.swift`
+- Swift: `Sources/OpenAIProvider/Tool/OpenAIShellTool.swift`
+- Swift: `Sources/OpenAIProvider/Tool/OpenAIWebSearchTool.swift`
+- Swift tests: `Tests/SwiftAISDKTests/OpenAI/OpenAIErrorTests.swift`
+- Swift tests: `Tests/SwiftAISDKTests/OpenAI/OpenAIResponsesLanguageModelV4Tests.swift`
+- Swift tests: `Tests/SwiftAISDKTests/OpenAI/OpenAIResponsesLanguageModelTests.swift`
+- Swift tests: `Tests/SwiftAISDKTests/OpenAI/OpenAIResponsesFixtureTests.swift`
+- Swift tests: `Tests/SwiftAISDKTests/OpenAI/OpenAIToolsSchemaParityTests.swift`
+- Swift tests: `Tests/SwiftAISDKTests/OpenAI/OpenAIWebSearchToolOutputSchemaTests.swift`
+- Swift tests: `Tests/SwiftAISDKTests/OpenAI/OpenAIResponsesPrepareToolsTests.swift`
+- Swift tests: `Tests/SwiftAISDKTests/OpenAI/OpenAIExportSurfaceTests.swift`
+- Swift tests: `Tests/SwiftAISDKTests/OpenAI/OpenAIChatMessagesConverterTests.swift`
+
+Important interpretation:
+- This closes the main OpenAI provider V4 files/skills upload surface,
+  `experimental_realtime`, high-level stream transcription, the direct
+  `openai`/`createOpenAI` V4 facade, native OpenAI V4 embeddings, and native
+  OpenAI V4 speech, native OpenAI V4 image, and native OpenAI V4 REST
+  transcription, native OpenAI V4 completion, native OpenAI V4 chat, native
+  OpenAI V4 Responses, the audited OpenAI tools factory surface, and the
+  audited OpenAI package index/export surface, plus the audited native V4 Chat
+  prompt conversion boundary and the remaining OpenAI package source-owner
+  closure.
+- No known OpenAI runtime source-owner gaps remain at
+  `c8d2726ae045a28142cb46df5e41cdd51d8dcc71`. Future upstream OpenAI source or
+  test drift should reopen `upstream/providers/openai.md`.
 
 ### 2026-07-03: upstream `0c3c7e426d359c236952d6f8da7b0081eb6f1a7a`
 
@@ -1817,7 +2530,24 @@ For source-of-truth code, always follow the commits and tests.
 
 ### Unreleased (main)
 
-No unreleased parity changes yet.
+- 2026-07-04
+  - OpenAI package source-owner closure on refreshed upstream `c8d2726ae045a28142cb46df5e41cdd51d8dcc71`: the remaining runtime source owners are now tracked or classified (`openai-chat-prompt.ts`, files/skills API schemas, `openai-config.ts`, realtime export aliases, and TypeScript-only internal re-exports), and the broad OpenAI provider audit status now points at the refreshed upstream commit.
+  - Validation: `swift test --filter 'OpenAIFilesSkillsTests|OpenAIProviderTests|OpenAIRealtimeModelTests|OpenAIChatMessagesConverterTests'` passed 49 Swift Testing tests.
+  - OpenAI native V4 Chat prompt conversion parity on refreshed upstream `c8d2726ae045a28142cb46df5e41cdd51d8dcc71`: direct converter coverage now protects upstream file/reference/media handling (`image`, `image/*`, provider-reference `file_id`, top-level application URL rejection), assistant tool-call `content: null`, and execution-denied tool-result default text.
+  - Validation: `swift test --filter OpenAIChatMessagesConverterTests` passed 28 Swift Testing tests; the broader Chat/Completion gate passed 122 Swift Testing tests; `AGENT=1 swift test` passed all 4065 Swift Testing tests.
+  - OpenAI package index/export surface parity on refreshed upstream `c8d2726ae045a28142cb46df5e41cdd51d8dcc71`: Swift public API now mirrors upstream `packages/openai/src/index.ts` exports for `VERSION`, experimental realtime aliases, language/model option aliases, files options, and typed Responses provider metadata wrappers without changing runtime provider-metadata payloads.
+  - Validation: `swift test --filter OpenAIExportSurfaceTests` passed 2 Swift Testing tests; the broader OpenAI export/options/model gate passed 89 Swift Testing tests; `AGENT=1 swift test` passed all 4059 Swift Testing tests.
+  - OpenAI tools factory surface parity on refreshed upstream `c8d2726ae045a28142cb46df5e41cdd51d8dcc71`: `openaiTools` now covers the upstream tool factory names, adds a typed Swift `openaiTools.shell(OpenAIShellArgs)` environment path, and tightens public schemas for `web_search.queries`, `apply_patch` create/update/delete operations, and `shell` exit outcomes.
+  - Validation: `swift test --filter OpenAIToolsSchemaParityTests` passed 4 Swift Testing tests; the broader OpenAI tools/request/fixture gate passed 89 Swift Testing tests; `git diff --check` passed; `AGENT=1 swift test` passed all 4057 Swift Testing tests.
+  - OpenAI Responses fixture remainder parity on refreshed upstream `c8d2726ae045a28142cb46df5e41cdd51d8dcc71`: Swift now covers the remaining upstream Responses fixtures for hosted/client `tool_search`, shell container/local multiturn, compaction, and `openai-error.1` JSON/SSE error bodies. `OpenAIResponsesResponse` now matches upstream optional error-response fields so successful HTTP responses containing OpenAI `error` payloads throw provider `APICallError` messages instead of schema-validation errors.
+  - Validation: `swift test --filter OpenAIResponsesFixtureTests` passed 52 Swift Testing tests; the broader OpenAI Responses/V4 gate passed 304 Swift Testing tests; `AGENT=1 swift test` passed all 4045 Swift Testing tests.
+
+- 2026-07-03
+  - OpenAI native V4 REST transcription parity on refreshed upstream `c8d2726ae045a28142cb46df5e41cdd51d8dcc71`: `OpenAIProviderV4` transcription factories now return a native `TranscriptionModelV4`, REST transcription multipart defaults match upstream (`whisper-1` verbose JSON and GPT-4o JSON response format), and the existing realtime transcription stream behavior is preserved.
+  - OpenAI native V4 image parity on refreshed upstream `c8d2726ae045a28142cb46df5e41cdd51d8dcc71`: `OpenAIProviderV4` image factories now return a native `ImageModelV4`, OpenAI image provider options parse/map to upstream request fields, and `gpt-image-2` / `chatgpt-image-latest` model gates match upstream while preserving the existing V3 `OpenAIProvider` image surface.
+  - OpenAI native V4 speech parity on refreshed upstream `c8d2726ae045a28142cb46df5e41cdd51d8dcc71`: `OpenAIProviderV4` speech factories now return a native `SpeechModelV4` while preserving the existing V3 `OpenAIProvider` and Azure speech surfaces.
+  - OpenAI native V4 embedding parity on refreshed upstream `c8d2726ae045a28142cb46df5e41cdd51d8dcc71`: `OpenAIProviderV4` embedding/textEmbedding factories now return a native `EmbeddingModelV4` while preserving the existing V3 `OpenAIProvider` and Azure embedding surfaces.
+  - OpenAI main V4 DX/docs parity on refreshed upstream `c8d2726ae045a28142cb46df5e41cdd51d8dcc71`: default `openai` / `createOpenAI(settings:)` usage, direct V4 high-level text/object/embedding calls, `AgentSettings`, V4 language-model middleware, `customProviderV4`, provider registry, examples, and Starlight docs now use the V4 facade without `.v3(...)` / `.v4(...)` call-site wrappers.
 
 ### v0.18.1 - 2026-07-03
 
