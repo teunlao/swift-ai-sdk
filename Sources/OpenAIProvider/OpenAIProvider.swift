@@ -33,7 +33,7 @@ public struct OpenAIProviderSettings: Sendable {
     }
 }
 
-public final class OpenAIProvider: ProviderV3 {
+public final class OpenAIProvider: ProviderV3, FilesProvider, SkillsProvider {
     private let responsesFactory: @Sendable (OpenAIResponsesModelId) -> OpenAIResponsesLanguageModel
     private let chatFactory: @Sendable (OpenAIChatModelId) -> OpenAIChatLanguageModel
     private let embeddingFactory: @Sendable (OpenAIEmbeddingModelId) -> OpenAIEmbeddingModel
@@ -41,6 +41,9 @@ public final class OpenAIProvider: ProviderV3 {
     private let completionFactory: @Sendable (OpenAICompletionModelId) -> OpenAICompletionLanguageModel
     private let transcriptionFactory: @Sendable (OpenAITranscriptionModelId) -> OpenAITranscriptionModel
     private let speechFactory: @Sendable (OpenAISpeechModelId) -> OpenAISpeechModel
+    private let filesFactory: @Sendable () -> any FilesV4
+    private let skillsFactory: @Sendable () -> any SkillsV4
+    public let experimental_realtime: any RealtimeFactoryV4
     public let tools: OpenAITools
     public let options: OpenAIOptionsFacade
 
@@ -52,6 +55,9 @@ public final class OpenAIProvider: ProviderV3 {
         completions: @escaping @Sendable (OpenAICompletionModelId) -> OpenAICompletionLanguageModel,
         transcriptions: @escaping @Sendable (OpenAITranscriptionModelId) -> OpenAITranscriptionModel,
         speeches: @escaping @Sendable (OpenAISpeechModelId) -> OpenAISpeechModel,
+        files: @escaping @Sendable () -> any FilesV4,
+        skills: @escaping @Sendable () -> any SkillsV4,
+        experimentalRealtime: any RealtimeFactoryV4,
         tools: OpenAITools,
         options: OpenAIOptionsFacade
     ) {
@@ -62,6 +68,9 @@ public final class OpenAIProvider: ProviderV3 {
         self.completionFactory = completions
         self.transcriptionFactory = transcriptions
         self.speechFactory = speeches
+        self.filesFactory = files
+        self.skillsFactory = skills
+        self.experimental_realtime = experimentalRealtime
         self.tools = tools
         self.options = options
     }
@@ -160,6 +169,14 @@ public final class OpenAIProvider: ProviderV3 {
 
     public func speech(_ modelId: String) -> OpenAISpeechModel {
         speechFactory(OpenAISpeechModelId(rawValue: modelId))
+    }
+
+    public func files() -> any FilesV4 {
+        filesFactory()
+    }
+
+    public func skills() -> any SkillsV4 {
+        skillsFactory()
     }
 }
 
@@ -260,6 +277,31 @@ public func createOpenAIProvider(settings: OpenAIProviderSettings = .init()) -> 
         )
     }
 
+    let filesFactory: @Sendable () -> any FilesV4 = {
+        OpenAIFiles(config: .init(
+            provider: "\(providerName).files",
+            baseURL: baseURL,
+            headers: headersClosure,
+            fetch: settings.fetch
+        ))
+    }
+
+    let skillsFactory: @Sendable () -> any SkillsV4 = {
+        OpenAISkills(config: .init(
+            provider: "\(providerName).skills",
+            url: { path in "\(baseURL)\(path)" },
+            headers: headersClosure,
+            fetch: settings.fetch
+        ))
+    }
+
+    let realtimeFactory = OpenAIRealtimeFactory(config: .init(
+        provider: "\(providerName).realtime",
+        baseURL: baseURL,
+        headers: headersClosure,
+        fetch: settings.fetch
+    ))
+
     return OpenAIProvider(
         responses: responsesFactory,
         chat: chatFactory,
@@ -268,6 +310,9 @@ public func createOpenAIProvider(settings: OpenAIProviderSettings = .init()) -> 
         completions: completionFactory,
         transcriptions: transcriptionFactory,
         speeches: speechFactory,
+        files: filesFactory,
+        skills: skillsFactory,
+        experimentalRealtime: realtimeFactory,
         tools: openaiTools,
         options: OpenAIOptionsFacade()
     )
@@ -286,6 +331,11 @@ public extension OpenAIProvider {
         embeddingFactory(modelId)
     }
 
+    /// Native V4 embedding model factory used by the Provider V4 facade.
+    func embeddingV4(_ modelId: OpenAIEmbeddingModelId) -> OpenAIEmbeddingModelV4 {
+        embeddingFactory(modelId).asV4()
+    }
+
     /// Typed alias to mirror upstream `embeddingModel(...)`.
     func embeddingModel(_ modelId: OpenAIEmbeddingModelId) -> OpenAIEmbeddingModel {
         embeddingFactory(modelId)
@@ -296,9 +346,49 @@ public extension OpenAIProvider {
         imageFactory(modelId)
     }
 
+    /// Native V4 image model factory used by the Provider V4 facade.
+    func imageV4(_ modelId: OpenAIImageModelId) -> OpenAIImageModelV4 {
+        imageFactory(modelId).asV4()
+    }
+
+    /// Native V4 image model alias used by the Provider V4 facade.
+    func imageModelV4(_ modelId: OpenAIImageModelId) -> OpenAIImageModelV4 {
+        imageV4(modelId)
+    }
+
     /// Typed alias for completion models.
     func completion(_ modelId: OpenAICompletionModelId) -> OpenAICompletionLanguageModel {
         completionFactory(modelId)
+    }
+
+    /// Native V4 completion model factory used by the Provider V4 facade.
+    func completionV4(_ modelId: OpenAICompletionModelId) -> OpenAICompletionLanguageModelV4 {
+        completionFactory(modelId).asV4()
+    }
+
+    /// Native V4 completion model alias used by the Provider V4 facade.
+    func completionModelV4(_ modelId: OpenAICompletionModelId) -> OpenAICompletionLanguageModelV4 {
+        completionV4(modelId)
+    }
+
+    /// Native V4 responses model factory used by the Provider V4 facade.
+    func responsesV4(_ modelId: OpenAIResponsesModelId) -> OpenAIResponsesLanguageModelV4 {
+        responsesFactory(modelId).asV4()
+    }
+
+    /// Native V4 responses model alias used by the Provider V4 facade.
+    func responsesModelV4(_ modelId: OpenAIResponsesModelId) -> OpenAIResponsesLanguageModelV4 {
+        responsesV4(modelId)
+    }
+
+    /// Native V4 chat model factory used by the Provider V4 facade.
+    func chatV4(_ modelId: OpenAIChatModelId) -> OpenAIChatLanguageModelV4 {
+        chatFactory(modelId).asV4()
+    }
+
+    /// Native V4 chat model alias used by the Provider V4 facade.
+    func chatModelV4(_ modelId: OpenAIChatModelId) -> OpenAIChatLanguageModelV4 {
+        chatV4(modelId)
     }
 
     /// Alias for `textEmbeddingModel` to match upstream naming.
@@ -306,9 +396,24 @@ public extension OpenAIProvider {
         embeddingFactory(modelId)
     }
 
+    /// Native V4 text embedding alias used by the Provider V4 facade.
+    func textEmbeddingV4(_ modelId: OpenAIEmbeddingModelId) -> OpenAIEmbeddingModelV4 {
+        embeddingV4(modelId)
+    }
+
     /// Typed alias for transcription models (not just String-based).
     func transcriptionModel(_ modelId: OpenAITranscriptionModelId) -> OpenAITranscriptionModel {
         transcriptionFactory(modelId)
+    }
+
+    /// Native V4 transcription model factory used by the Provider V4 facade.
+    func transcriptionV4(_ modelId: OpenAITranscriptionModelId) -> OpenAITranscriptionModelV4 {
+        transcriptionFactory(modelId).asV4()
+    }
+
+    /// Native V4 transcription model alias used by the Provider V4 facade.
+    func transcriptionModelV4(_ modelId: OpenAITranscriptionModelId) -> OpenAITranscriptionModelV4 {
+        transcriptionV4(modelId)
     }
 
     /// Typed alias for speech models (not just String-based).
@@ -316,12 +421,22 @@ public extension OpenAIProvider {
         speechFactory(modelId)
     }
 
+    /// Native V4 speech alias used by the Provider V4 facade.
+    func speechV4(_ modelId: OpenAISpeechModelId) -> OpenAISpeechModelV4 {
+        speechFactory(modelId).asV4()
+    }
+
     /// Convenience alias to match facade style: `openai.speech("tts-1")`.
     func speech(_ modelId: OpenAISpeechModelId) -> OpenAISpeechModel {
         speechFactory(modelId)
+    }
+
+    /// Native V4 speech model alias used by the Provider V4 facade.
+    func speechModelV4(_ modelId: OpenAISpeechModelId) -> OpenAISpeechModelV4 {
+        speechV4(modelId)
     }
 }
 
 // MARK: - Default provider instance (parity with TS `export const openai = createOpenAI()`)
 
-public let openai: OpenAIProvider = createOpenAIProvider()
+public let openai: OpenAIProviderV4 = createOpenAI()

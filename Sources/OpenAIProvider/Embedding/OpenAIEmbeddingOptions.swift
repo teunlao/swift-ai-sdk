@@ -44,6 +44,8 @@ public struct OpenAIEmbeddingProviderOptions: Sendable, Equatable {
     }
 }
 
+public typealias OpenAIEmbeddingModelOptions = OpenAIEmbeddingProviderOptions
+
 private let openaiEmbeddingProviderOptionsJSONSchema: JSONValue = .object([
     "type": .string("object"),
     "additionalProperties": .bool(true),

@@ -25,6 +25,7 @@ struct OpenAIResponsesRequestBody: Encodable, Sendable {
     var topLogprobs: Double?
     var reasoning: JSONValue?
     var truncation: String?
+    var contextManagement: [JSONValue]?
     var tools: [JSONValue]?
     var toolChoice: JSONValue?
     var stream: Bool?
@@ -52,6 +53,7 @@ struct OpenAIResponsesRequestBody: Encodable, Sendable {
         case topLogprobs = "top_logprobs"
         case reasoning
         case truncation
+        case contextManagement = "context_management"
         case tools
         case toolChoice = "tool_choice"
         case stream
@@ -81,6 +83,7 @@ struct OpenAIResponsesRequestBody: Encodable, Sendable {
         try container.encodeIfPresent(topLogprobs, forKey: .topLogprobs)
         try container.encodeIfPresent(reasoning, forKey: .reasoning)
         try container.encodeIfPresent(truncation, forKey: .truncation)
+        try container.encodeIfPresent(contextManagement, forKey: .contextManagement)
         try container.encodeIfPresent(tools, forKey: .tools)
         try container.encodeIfPresent(toolChoice, forKey: .toolChoice)
         try container.encodeIfPresent(stream, forKey: .stream)

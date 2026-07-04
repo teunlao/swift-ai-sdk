@@ -2,94 +2,68 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-public final class OpenAITranscriptionModel: TranscriptionModelV3, TranscriptionModelV4Streaming {
+private struct OpenAITranscriptionModelCore: Sendable {
     private let modelIdentifier: OpenAITranscriptionModelId
     private let config: OpenAIConfig
 
-    public init(modelId: OpenAITranscriptionModelId, config: OpenAIConfig) {
+    init(modelId: OpenAITranscriptionModelId, config: OpenAIConfig) {
         self.modelIdentifier = modelId
         self.config = config
     }
 
-    public var provider: String { config.provider }
-    public var modelId: String { modelIdentifier.rawValue }
+    var provider: String { config.provider }
+    var modelId: String { modelIdentifier.rawValue }
 
-    public func doGenerate(options: TranscriptionModelV3CallOptions) async throws -> TranscriptionModelV3Result {
+    func doGenerate(
+        audio: OpenAITranscriptionAudio,
+        mediaType: String,
+        providerOptions: SharedV4ProviderOptions?,
+        abortSignal: (@Sendable () -> Bool)?,
+        headers: SharedV4Headers?
+    ) async throws -> OpenAITranscriptionCoreResult {
         if isRealtimeTranscriptionModelId(modelIdentifier.rawValue) {
             throw UnsupportedFunctionalityError(functionality: "non-streaming transcription with \(modelIdentifier.rawValue)")
         }
 
-        let prepared = try await prepareRequest(options: options)
+        let currentDate = config._internal?.currentDate?() ?? Date()
+        let prepared = try await prepareRequest(
+            audio: audio,
+            mediaType: mediaType,
+            providerOptions: providerOptions
+        )
 
-        var headers = combineHeaders(try config.headers(), options.headers?.mapValues { Optional($0) })
+        var requestHeaders = combineHeaders(try config.headers(), headers?.mapValues { Optional($0) })
             .compactMapValues { $0 }
-        headers["Content-Type"] = prepared.contentType
+        requestHeaders["Content-Type"] = prepared.contentType
 
         let response = try await postToAPI(
             url: config.url(.init(modelId: modelIdentifier.rawValue, path: "/audio/transcriptions")),
-            headers: headers,
+            headers: requestHeaders,
             body: PostBody(content: .data(prepared.body), values: nil),
             failedResponseHandler: openAIFailedResponseHandler,
             successfulResponseHandler: createJsonResponseHandler(responseSchema: openAITranscriptionResponseSchema),
-            isAborted: options.abortSignal,
+            isAborted: abortSignal,
             fetch: config.fetch
         )
 
-        let currentDate = config._internal?.currentDate?() ?? Date()
         let result = mapResponse(response.value)
 
-        return TranscriptionModelV3Result(
+        return OpenAITranscriptionCoreResult(
             text: result.text,
             segments: result.segments,
             language: result.language,
             durationInSeconds: result.duration,
             warnings: prepared.warnings,
-            request: nil,
-            response: TranscriptionModelV3Result.ResponseInfo(
-                timestamp: currentDate,
-                modelId: modelIdentifier.rawValue,
-                headers: response.responseHeaders,
-                body: response.rawValue
-            ),
+            requestBody: nil,
+            timestamp: currentDate,
+            modelId: modelIdentifier.rawValue,
+            responseHeaders: response.responseHeaders,
+            responseBody: response.rawValue,
             providerMetadata: nil
         )
     }
 
-    public func doGenerate(options: TranscriptionModelV4CallOptions) async throws -> TranscriptionModelV4Result {
-        let result = try await doGenerate(
-            options: TranscriptionModelV3CallOptions(
-                audio: v3Audio(from: options.audio),
-                mediaType: options.mediaType,
-                providerOptions: options.providerOptions,
-                abortSignal: options.abortSignal,
-                headers: options.headers
-            )
-        )
-
-        return TranscriptionModelV4Result(
-            text: result.text,
-            segments: result.segments.map {
-                TranscriptionModelV4Result.Segment(
-                    text: $0.text,
-                    startSecond: $0.startSecond,
-                    endSecond: $0.endSecond
-                )
-            },
-            language: result.language,
-            durationInSeconds: result.durationInSeconds,
-            warnings: result.warnings.map(convertSharedV3WarningToV4),
-            request: result.request.map { TranscriptionModelV4Result.RequestInfo(body: $0.body) },
-            response: TranscriptionModelV4Result.ResponseInfo(
-                timestamp: result.response.timestamp,
-                modelId: result.response.modelId,
-                headers: result.response.headers,
-                body: result.response.body
-            ),
-            providerMetadata: result.providerMetadata
-        )
-    }
-
-    public func doStream(options: TranscriptionModelV4StreamOptions) async throws -> TranscriptionModelV4StreamResult {
+    func doStream(options: TranscriptionModelV4StreamOptions) async throws -> TranscriptionModelV4StreamResult {
         if !isRealtimeTranscriptionModelId(modelIdentifier.rawValue) {
             throw UnsupportedFunctionalityError(functionality: "streaming transcription with \(modelIdentifier.rawValue)")
         }
@@ -141,25 +115,33 @@ public final class OpenAITranscriptionModel: TranscriptionModelV3, Transcription
     private struct PreparedRequest {
         let body: Data
         let contentType: String
-        let warnings: [SharedV3Warning]
+        let warnings: [SharedV4Warning]
     }
 
-    private func prepareRequest(options: TranscriptionModelV3CallOptions) async throws -> PreparedRequest {
-        let warnings: [SharedV3Warning] = []
+    private func prepareRequest(
+        audio: OpenAITranscriptionAudio,
+        mediaType: String,
+        providerOptions: SharedV4ProviderOptions?
+    ) async throws -> PreparedRequest {
+        let warnings: [SharedV4Warning] = []
 
         let openAIOptions = try await parseProviderOptions(
             provider: "openai",
-            providerOptions: options.providerOptions,
+            providerOptions: providerOptions,
             schema: openAITranscriptionProviderOptionsSchema
         )
 
-        let audioData = try data(from: options.audio)
-        let fileExtension = mediaTypeToExtension(options.mediaType)
+        let audioData = try data(from: audio)
+        let fileExtension = mediaTypeToExtension(mediaType)
         let filename = fileExtension.isEmpty ? "audio" : "audio.\(fileExtension)"
 
         var builder = MultipartFormDataBuilder()
         builder.appendField(name: "model", value: modelIdentifier.rawValue)
-        builder.appendFile(name: "file", filename: filename, contentType: options.mediaType, data: audioData)
+        builder.appendFile(name: "file", filename: filename, contentType: mediaType, data: audioData)
+
+        if modelIdentifier.rawValue == "whisper-1" {
+            builder.appendField(name: "response_format", value: "verbose_json")
+        }
 
         if let openAIOptions {
             if let include = openAIOptions.include {
@@ -174,10 +156,12 @@ public final class OpenAITranscriptionModel: TranscriptionModelV3, Transcription
                 builder.appendField(name: "prompt", value: prompt)
             }
 
-            builder.appendField(name: "response_format", value: responseFormat(for: modelIdentifier))
+            if modelIdentifier.rawValue != "whisper-1" {
+                builder.appendField(name: "response_format", value: responseFormat(for: modelIdentifier))
+            }
 
             if let temperature = openAIOptions.temperature {
-                builder.appendField(name: "temperature", value: String(temperature))
+                builder.appendField(name: "temperature", value: stringifyMultipartNumber(temperature))
             }
             if let granularities = openAIOptions.timestampGranularities {
                 for granularity in granularities {
@@ -190,7 +174,7 @@ public final class OpenAITranscriptionModel: TranscriptionModelV3, Transcription
         return PreparedRequest(body: body, contentType: contentType, warnings: warnings)
     }
 
-    private func data(from audio: TranscriptionModelV3Audio) throws -> Data {
+    private func data(from audio: OpenAITranscriptionAudio) throws -> Data {
         switch audio {
         case .binary(let data):
             return data
@@ -212,7 +196,7 @@ public final class OpenAITranscriptionModel: TranscriptionModelV3, Transcription
 
     private struct MappedResponse {
         let text: String
-        let segments: [TranscriptionModelV3Result.Segment]
+        let segments: [TranscriptionModelV4Result.Segment]
         let language: String?
         let duration: Double?
     }
@@ -220,10 +204,10 @@ public final class OpenAITranscriptionModel: TranscriptionModelV3, Transcription
     private func mapResponse(_ response: OpenAITranscriptionResponse) -> MappedResponse {
         let languageCode = response.language.flatMap { languageLookup[$0] }
 
-        let segments: [TranscriptionModelV3Result.Segment]
+        let segments: [TranscriptionModelV4Result.Segment]
         if let responseSegments = response.segments {
             segments = responseSegments.map {
-                TranscriptionModelV3Result.Segment(
+                TranscriptionModelV4Result.Segment(
                     text: $0.text,
                     startSecond: $0.start,
                     endSecond: $0.end
@@ -231,7 +215,7 @@ public final class OpenAITranscriptionModel: TranscriptionModelV3, Transcription
             }
         } else if let words = response.words {
             segments = words.map {
-                TranscriptionModelV3Result.Segment(
+                TranscriptionModelV4Result.Segment(
                     text: $0.word,
                     startSecond: $0.start,
                     endSecond: $0.end
@@ -310,12 +294,134 @@ public final class OpenAITranscriptionModel: TranscriptionModelV3, Transcription
     ]
 }
 
+private func stringifyMultipartNumber(_ value: Double) -> String {
+    if value.rounded(.towardZero) == value {
+        return String(Int(value))
+    }
+    return String(value)
+}
+
+private struct OpenAITranscriptionCoreResult: @unchecked Sendable {
+    let text: String
+    let segments: [TranscriptionModelV4Result.Segment]
+    let language: String?
+    let durationInSeconds: Double?
+    let warnings: [SharedV4Warning]
+    let requestBody: String?
+    let timestamp: Date
+    let modelId: String
+    let responseHeaders: SharedV4Headers?
+    let responseBody: Any?
+    let providerMetadata: [String: JSONObject]?
+}
+
+private enum OpenAITranscriptionAudio: Sendable {
+    case binary(Data)
+    case base64(String)
+}
+
+public final class OpenAITranscriptionModel: TranscriptionModelV3, TranscriptionModelV4Streaming {
+    private let core: OpenAITranscriptionModelCore
+
+    public init(modelId: OpenAITranscriptionModelId, config: OpenAIConfig) {
+        self.core = OpenAITranscriptionModelCore(modelId: modelId, config: config)
+    }
+
+    public var provider: String { core.provider }
+    public var modelId: String { core.modelId }
+
+    public func doGenerate(options: TranscriptionModelV3CallOptions) async throws -> TranscriptionModelV3Result {
+        let result = try await core.doGenerate(
+            audio: convertTranscriptionModelV3AudioToOpenAI(options.audio),
+            mediaType: options.mediaType,
+            providerOptions: options.providerOptions,
+            abortSignal: options.abortSignal,
+            headers: options.headers
+        )
+
+        return TranscriptionModelV3Result(
+            text: result.text,
+            segments: result.segments.map {
+                TranscriptionModelV3Result.Segment(
+                    text: $0.text,
+                    startSecond: $0.startSecond,
+                    endSecond: $0.endSecond
+                )
+            },
+            language: result.language,
+            durationInSeconds: result.durationInSeconds,
+            warnings: result.warnings.map(convertSharedV4WarningToV3),
+            request: result.requestBody.map { TranscriptionModelV3Result.RequestInfo(body: $0) },
+            response: TranscriptionModelV3Result.ResponseInfo(
+                timestamp: result.timestamp,
+                modelId: result.modelId,
+                headers: result.responseHeaders,
+                body: result.responseBody
+            ),
+            providerMetadata: result.providerMetadata
+        )
+    }
+
+    public func doStream(options: TranscriptionModelV4StreamOptions) async throws -> TranscriptionModelV4StreamResult {
+        try await core.doStream(options: options)
+    }
+
+    func asV4() -> OpenAITranscriptionModelV4 {
+        OpenAITranscriptionModelV4(core: core)
+    }
+}
+
+public final class OpenAITranscriptionModelV4: TranscriptionModelV4 {
+    private let core: OpenAITranscriptionModelCore
+
+    public init(modelId: OpenAITranscriptionModelId, config: OpenAIConfig) {
+        self.core = OpenAITranscriptionModelCore(modelId: modelId, config: config)
+    }
+
+    fileprivate init(core: OpenAITranscriptionModelCore) {
+        self.core = core
+    }
+
+    public var provider: String { core.provider }
+    public var modelId: String { core.modelId }
+
+    public func doGenerate(options: TranscriptionModelV4CallOptions) async throws -> TranscriptionModelV4Result {
+        let result = try await core.doGenerate(
+            audio: convertTranscriptionModelV4AudioToOpenAI(options.audio),
+            mediaType: options.mediaType,
+            providerOptions: options.providerOptions,
+            abortSignal: options.abortSignal,
+            headers: options.headers
+        )
+
+        return TranscriptionModelV4Result(
+            text: result.text,
+            segments: result.segments,
+            language: result.language,
+            durationInSeconds: result.durationInSeconds,
+            warnings: result.warnings,
+            request: result.requestBody.map { TranscriptionModelV4Result.RequestInfo(body: $0) },
+            response: TranscriptionModelV4Result.ResponseInfo(
+                timestamp: result.timestamp,
+                modelId: result.modelId,
+                headers: result.responseHeaders,
+                body: result.responseBody
+            ),
+            providerMetadata: result.providerMetadata
+        )
+    }
+
+    public func doStream(options: TranscriptionModelV4StreamOptions) async throws -> TranscriptionModelV4StreamResult {
+        try await core.doStream(options: options)
+    }
+}
+
 private func isRealtimeTranscriptionModelId(_ modelId: String) -> Bool {
     modelId == "gpt-realtime-whisper" || modelId.hasPrefix("gpt-realtime-whisper-")
 }
 
-private func v3Audio(from audio: TranscriptionModelV4Audio) -> TranscriptionModelV3Audio {
-    switch audio {
+private func convertTranscriptionModelV3AudioToOpenAI(_ value: TranscriptionModelV3Audio) -> OpenAITranscriptionAudio {
+    switch value {
     case .binary(let data):
         return .binary(data)
     case .base64(let base64):
@@ -323,12 +429,23 @@ private func v3Audio(from audio: TranscriptionModelV4Audio) -> TranscriptionMode
     }
 }
 
-private func convertSharedV3WarningToV4(_ warning: SharedV3Warning) -> SharedV4Warning {
-    switch warning {
+private func convertTranscriptionModelV4AudioToOpenAI(_ value: TranscriptionModelV4Audio) -> OpenAITranscriptionAudio {
+    switch value {
+    case .binary(let data):
+        return .binary(data)
+    case .base64(let base64):
+        return .base64(base64)
+    }
+}
+
+private func convertSharedV4WarningToV3(_ value: SharedV4Warning) -> SharedV3Warning {
+    switch value {
     case let .unsupported(feature, details):
         return .unsupported(feature: feature, details: details)
     case let .compatibility(feature, details):
         return .compatibility(feature: feature, details: details)
+    case let .deprecated(setting, message):
+        return .other(message: "\(setting): \(message)")
     case let .other(message):
         return .other(message: message)
     }

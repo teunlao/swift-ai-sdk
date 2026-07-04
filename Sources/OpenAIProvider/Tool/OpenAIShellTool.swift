@@ -115,16 +115,31 @@ private let shellOutputJSONSchema: JSONValue = .object([
                         "type": .string("string")
                     ]),
                     "outcome": .object([
-                        "type": .string("object"),
-                        "required": .array([.string("type")]),
-                        "additionalProperties": .bool(false),
-                        "properties": .object([
-                            "type": .object([
-                                "type": .string("string"),
-                                "enum": .array([.string("timeout"), .string("exit")])
+                        "oneOf": .array([
+                            .object([
+                                "type": .string("object"),
+                                "required": .array([.string("type")]),
+                                "additionalProperties": .bool(false),
+                                "properties": .object([
+                                    "type": .object([
+                                        "type": .string("string"),
+                                        "enum": .array([.string("timeout")])
+                                    ])
+                                ])
                             ]),
-                            "exitCode": .object([
-                                "type": .array([.string("number"), .string("null")])
+                            .object([
+                                "type": .string("object"),
+                                "required": .array([.string("type"), .string("exitCode")]),
+                                "additionalProperties": .bool(false),
+                                "properties": .object([
+                                    "type": .object([
+                                        "type": .string("string"),
+                                        "enum": .array([.string("exit")])
+                                    ]),
+                                    "exitCode": .object([
+                                        "type": .string("number")
+                                    ])
+                                ])
                             ])
                         ])
                     ])
@@ -192,6 +207,14 @@ public let openaiShellTool = createProviderToolFactoryWithOutputSchema(
     inputSchema: FlexibleSchema(jsonSchema(shellInputJSONSchema)),
     outputSchema: FlexibleSchema(jsonSchema(shellOutputJSONSchema))
 )
+
+public let openaiShellToolFactory: @Sendable (OpenAIShellArgs) -> Tool = { args in
+    var options = ProviderToolFactoryWithOutputSchemaOptions()
+    if let environment = args.environment {
+        options.args["environment"] = .object(environment)
+    }
+    return openaiShellTool(options)
+}
 
 private func isValidShellEnvironment(_ environment: [String: JSONValue]) -> Bool {
     let type = environment["type"]?.stringValue ?? "local"
@@ -273,7 +296,8 @@ private func isValidShellEnvironment(_ environment: [String: JSONValue]) -> Bool
 
                 switch skillType {
                 case "skillReference":
-                    guard case .string? = object["skillId"] else { return false }
+                    guard let providerReference = object["providerReference"],
+                          isProviderReference(providerReference) else { return false }
                     if let version = object["version"], version != .null {
                         guard case .string = version else { return false }
                     }

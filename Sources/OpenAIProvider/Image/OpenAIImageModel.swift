@@ -2,47 +2,63 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-public final class OpenAIImageModel: ImageModelV3 {
+private struct OpenAIImageModelCore: Sendable {
     private let modelIdentifier: OpenAIImageModelId
     private let config: OpenAIConfig
 
-    public init(modelId: OpenAIImageModelId, config: OpenAIConfig) {
+    init(modelId: OpenAIImageModelId, config: OpenAIConfig) {
         self.modelIdentifier = modelId
         self.config = config
     }
 
-    public var provider: String { config.provider }
-    public var modelId: String { modelIdentifier.rawValue }
+    var provider: String { config.provider }
+    var modelId: String { modelIdentifier.rawValue }
 
-    public var maxImagesPerCall: ImageModelV3MaxImagesPerCall {
-        if let limit = openAIImageModelMaxImagesPerCall[modelIdentifier] {
-            return .value(limit)
-        }
-        // Upstream TypeScript: return modelMaxImagesPerCall[this.modelId] ?? 1
-        return .value(1)
+    var maxImagesPerCall: Int {
+        openAIImageModelMaxImagesPerCall[modelIdentifier] ?? 1
     }
 
-    public func doGenerate(options: ImageModelV3CallOptions) async throws -> ImageModelV3GenerateResult {
-        var warnings: [SharedV3Warning] = []
+    func doGenerate(
+        prompt: String?,
+        n: Int,
+        size: String?,
+        aspectRatio: String?,
+        seed: Int?,
+        files: [OpenAIImageInputFile]?,
+        mask: OpenAIImageInputFile?,
+        providerOptions: SharedV4ProviderOptions?,
+        abortSignal: (@Sendable () -> Bool)?,
+        headers: SharedV4Headers?
+    ) async throws -> OpenAIImageCoreResult {
+        var warnings: [SharedV4Warning] = []
 
-        if options.aspectRatio != nil {
+        if aspectRatio != nil {
             warnings.append(.unsupported(
                 feature: "aspectRatio",
                 details: "This model does not support aspect ratio. Use `size` instead."
             ))
         }
 
-        if options.seed != nil {
+        if seed != nil {
             warnings.append(.unsupported(feature: "seed", details: nil))
         }
 
-        let headers = combineHeaders(try config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 }
+        let timestamp = config._internal?.currentDate?() ?? Date()
+        let combinedHeaders = combineHeaders(try config.headers(), headers?.mapValues { Optional($0) })
+            .compactMapValues { $0 }
 
         let response: ResponseHandlerResult<OpenAIImageResponse>
-        if let files = options.files, !files.isEmpty {
-            let prepared = try await prepareEditsRequest(prompt: options.prompt, files: files, mask: options.mask, n: options.n, size: options.size, providerOptions: options.providerOptions)
+        if let files {
+            let prepared = try await prepareEditsRequest(
+                prompt: prompt,
+                files: files,
+                mask: mask,
+                n: n,
+                size: size,
+                providerOptions: providerOptions
+            )
 
-            var multipartHeaders = headers
+            var multipartHeaders = combinedHeaders
             multipartHeaders["Content-Type"] = prepared.contentType
 
             response = try await postToAPI(
@@ -51,51 +67,53 @@ public final class OpenAIImageModel: ImageModelV3 {
                 body: PostBody(content: .data(prepared.body), values: nil),
                 failedResponseHandler: openAIFailedResponseHandler,
                 successfulResponseHandler: createJsonResponseHandler(responseSchema: openaiImageResponseSchema),
-                isAborted: options.abortSignal,
+                isAborted: abortSignal,
                 fetch: config.fetch
             )
         } else {
-            let body = try makeRequestBody(options: options)
+            let body = try await makeGenerationRequestBody(
+                prompt: prompt,
+                n: n,
+                size: size,
+                providerOptions: providerOptions
+            )
+
             response = try await postJsonToAPI(
                 url: config.url(.init(modelId: modelIdentifier.rawValue, path: "/images/generations")),
-                headers: headers,
+                headers: combinedHeaders,
                 body: body,
                 failedResponseHandler: openAIFailedResponseHandler,
                 successfulResponseHandler: createJsonResponseHandler(responseSchema: openaiImageResponseSchema),
-                isAborted: options.abortSignal,
+                isAborted: abortSignal,
                 fetch: config.fetch
             )
         }
 
         let value = response.value
         let images = value.data.map { $0.b64JSON }
-        let usage = value.usage.map {
-            ImageModelV3Usage(
-                inputTokens: $0.inputTokens,
-                outputTokens: $0.outputTokens,
-                totalTokens: $0.totalTokens
-            )
-        }
-        let providerMetadata: ImageModelV3ProviderMetadata = [
-            "openai": ImageModelV3ProviderMetadataValue(
+        let metadata: ImageModelV4ProviderMetadata = [
+            "openai": ImageModelV4ProviderMetadataValue(
                 images: makeOpenAIImageMetadataEntries(value),
                 additionalData: nil
             )
         ]
 
-        let timestamp = config._internal?.currentDate?() ?? Date()
-        let responseInfo = ImageModelV3ResponseInfo(
-            timestamp: timestamp,
-            modelId: modelIdentifier.rawValue,
-            headers: response.responseHeaders
-        )
-
-        return ImageModelV3GenerateResult(
-            images: .base64(images),
+        return OpenAIImageCoreResult(
+            images: images,
             warnings: warnings,
-            providerMetadata: providerMetadata,
-            response: responseInfo,
-            usage: usage
+            providerMetadata: metadata,
+            response: ImageModelV4ResponseInfo(
+                timestamp: timestamp,
+                modelId: modelIdentifier.rawValue,
+                headers: response.responseHeaders
+            ),
+            usage: value.usage.map {
+                ImageModelV4Usage(
+                    inputTokens: $0.inputTokens,
+                    outputTokens: $0.outputTokens,
+                    totalTokens: $0.totalTokens
+                )
+            }
         )
     }
 
@@ -165,30 +183,53 @@ public final class OpenAIImageModel: ImageModelV3 {
         return result
     }
 
-    private func makeRequestBody(options: ImageModelV3CallOptions) throws -> JSONValue {
+    private func makeGenerationRequestBody(
+        prompt: String?,
+        n: Int,
+        size: String?,
+        providerOptions: SharedV4ProviderOptions?
+    ) async throws -> JSONValue {
+        let openAIOptions = try await parseProviderOptions(
+            provider: "openai",
+            providerOptions: providerOptions,
+            schema: openAIImageModelGenerationOptionsSchema
+        )
+
         var payload: [String: JSONValue] = [
-            "model": .string(modelIdentifier.rawValue)
+            "model": .string(modelIdentifier.rawValue),
+            "n": .number(Double(n))
         ]
 
-        if let prompt = options.prompt {
+        if let prompt {
             payload["prompt"] = .string(prompt)
         }
-
-        if options.n > 0 {
-            payload["n"] = .number(Double(options.n))
-        }
-        if let size = options.size {
+        if let size {
             payload["size"] = .string(size)
+        }
+        if let quality = openAIOptions?.quality {
+            payload["quality"] = .string(quality)
+        }
+        if let style = openAIOptions?.style {
+            payload["style"] = .string(style)
+        }
+        if let background = openAIOptions?.background {
+            payload["background"] = .string(background)
+        }
+        if let moderation = openAIOptions?.moderation {
+            payload["moderation"] = .string(moderation)
+        }
+        if let outputFormat = openAIOptions?.outputFormat {
+            payload["output_format"] = .string(outputFormat)
+        }
+        if let outputCompression = openAIOptions?.outputCompression {
+            payload["output_compression"] = .number(outputCompression)
+        }
+        if let user = openAIOptions?.user {
+            payload["user"] = .string(user)
         }
 
         if !openAIImageHasDefaultResponseFormat(modelId: modelIdentifier) {
             payload["response_format"] = .string("b64_json")
-        }
-
-        if let openaiOptions = options.providerOptions?["openai"], !openaiOptions.isEmpty {
-            for (key, value) in openaiOptions {
-                payload[key] = value
-            }
         }
 
         return .object(payload)
@@ -201,28 +242,33 @@ public final class OpenAIImageModel: ImageModelV3 {
 
     private func prepareEditsRequest(
         prompt: String?,
-        files: [ImageModelV3File],
-        mask: ImageModelV3File?,
+        files: [OpenAIImageInputFile],
+        mask: OpenAIImageInputFile?,
         n: Int,
         size: String?,
-        providerOptions: SharedV3ProviderOptions?
+        providerOptions: SharedV4ProviderOptions?
     ) async throws -> PreparedMultipartRequest {
+        let openAIOptions = try await parseProviderOptions(
+            provider: "openai",
+            providerOptions: providerOptions,
+            schema: openAIImageModelEditOptionsSchema
+        )
+
         var builder = MultipartFormDataBuilder()
         builder.appendField(name: "model", value: modelIdentifier.rawValue)
         if let prompt {
             builder.appendField(name: "prompt", value: prompt)
         }
 
-        if n > 0 {
-            builder.appendField(name: "n", value: String(n))
-        }
+        builder.appendField(name: "n", value: String(n))
         if let size {
             builder.appendField(name: "size", value: size)
         }
 
+        let imageFieldName = files.count > 1 ? "image[]" : "image"
         for file in files {
             let upload = try await resolveUpload(for: file, defaultFilename: "image")
-            builder.appendFile(name: "image", filename: upload.filename, contentType: upload.contentType, data: upload.data)
+            builder.appendFile(name: imageFieldName, filename: upload.filename, contentType: upload.contentType, data: upload.data)
         }
 
         if let mask {
@@ -230,15 +276,20 @@ public final class OpenAIImageModel: ImageModelV3 {
             builder.appendFile(name: "mask", filename: upload.filename, contentType: upload.contentType, data: upload.data)
         }
 
-        if let openaiOptions = providerOptions?["openai"], !openaiOptions.isEmpty {
-            for (key, value) in openaiOptions {
-                guard let string = stringifyMultipartValue(value) else { continue }
-                builder.appendField(name: key, value: string)
-            }
-        }
+        appendMultipartField(builder: &builder, name: "quality", value: openAIOptions?.quality.map(JSONValue.string))
+        appendMultipartField(builder: &builder, name: "background", value: openAIOptions?.background.map(JSONValue.string))
+        appendMultipartField(builder: &builder, name: "output_format", value: openAIOptions?.outputFormat.map(JSONValue.string))
+        appendMultipartField(builder: &builder, name: "output_compression", value: openAIOptions?.outputCompression.map(JSONValue.number))
+        appendMultipartField(builder: &builder, name: "input_fidelity", value: openAIOptions?.inputFidelity.map(JSONValue.string))
+        appendMultipartField(builder: &builder, name: "user", value: openAIOptions?.user.map(JSONValue.string))
 
         let (body, contentType) = builder.build()
         return PreparedMultipartRequest(body: body, contentType: contentType)
+    }
+
+    private func appendMultipartField(builder: inout MultipartFormDataBuilder, name: String, value: JSONValue?) {
+        guard let value, let string = stringifyMultipartValue(value) else { return }
+        builder.appendField(name: name, value: string)
     }
 
     private struct UploadPart {
@@ -247,9 +298,9 @@ public final class OpenAIImageModel: ImageModelV3 {
         let data: Data
     }
 
-    private func resolveUpload(for file: ImageModelV3File, defaultFilename: String) async throws -> UploadPart {
+    private func resolveUpload(for file: OpenAIImageInputFile, defaultFilename: String) async throws -> UploadPart {
         switch file {
-        case let .file(mediaType, data, _):
+        case let .file(mediaType, data):
             let resolvedData: Data
             switch data {
             case .base64(let base64):
@@ -261,7 +312,7 @@ public final class OpenAIImageModel: ImageModelV3 {
             let filename = ext.isEmpty ? defaultFilename : "\(defaultFilename).\(ext)"
             return UploadPart(filename: filename, contentType: mediaType, data: resolvedData)
 
-        case let .url(urlString, _):
+        case let .url(urlString):
             guard let url = URL(string: urlString) else {
                 throw URLError(.badURL)
             }
@@ -289,5 +340,177 @@ public final class OpenAIImageModel: ImageModelV3 {
             guard let data = try? encoder.encode(value) else { return nil }
             return String(decoding: data, as: UTF8.self)
         }
+    }
+}
+
+private struct OpenAIImageCoreResult: Sendable {
+    let images: [String]
+    let warnings: [SharedV4Warning]
+    let providerMetadata: ImageModelV4ProviderMetadata
+    let response: ImageModelV4ResponseInfo
+    let usage: ImageModelV4Usage?
+}
+
+private enum OpenAIImageInputFile: Sendable {
+    case file(mediaType: String, data: OpenAIImageInputFileData)
+    case url(String)
+}
+
+private enum OpenAIImageInputFileData: Sendable {
+    case base64(String)
+    case binary(Data)
+}
+
+public final class OpenAIImageModel: ImageModelV3 {
+    private let core: OpenAIImageModelCore
+
+    public init(modelId: OpenAIImageModelId, config: OpenAIConfig) {
+        self.core = OpenAIImageModelCore(modelId: modelId, config: config)
+    }
+
+    public var provider: String { core.provider }
+    public var modelId: String { core.modelId }
+
+    public var maxImagesPerCall: ImageModelV3MaxImagesPerCall {
+        .value(core.maxImagesPerCall)
+    }
+
+    public func doGenerate(options: ImageModelV3CallOptions) async throws -> ImageModelV3GenerateResult {
+        let result = try await core.doGenerate(
+            prompt: options.prompt,
+            n: options.n,
+            size: options.size,
+            aspectRatio: options.aspectRatio,
+            seed: options.seed,
+            files: convertImageModelV3FilesToOpenAIInput(options.files),
+            mask: options.mask.map(convertImageModelV3FileToOpenAIInput),
+            providerOptions: options.providerOptions,
+            abortSignal: options.abortSignal,
+            headers: options.headers
+        )
+
+        return ImageModelV3GenerateResult(
+            images: .base64(result.images),
+            warnings: result.warnings.map(convertSharedV4WarningToV3),
+            providerMetadata: convertOpenAIImageProviderMetadataToV3(result.providerMetadata),
+            response: ImageModelV3ResponseInfo(
+                timestamp: result.response.timestamp,
+                modelId: result.response.modelId,
+                headers: result.response.headers
+            ),
+            usage: result.usage.map {
+                ImageModelV3Usage(
+                    inputTokens: $0.inputTokens,
+                    outputTokens: $0.outputTokens,
+                    totalTokens: $0.totalTokens
+                )
+            }
+        )
+    }
+
+    func asV4() -> OpenAIImageModelV4 {
+        OpenAIImageModelV4(core: core)
+    }
+}
+
+public final class OpenAIImageModelV4: ImageModelV4 {
+    private let core: OpenAIImageModelCore
+
+    public init(modelId: OpenAIImageModelId, config: OpenAIConfig) {
+        self.core = OpenAIImageModelCore(modelId: modelId, config: config)
+    }
+
+    fileprivate init(core: OpenAIImageModelCore) {
+        self.core = core
+    }
+
+    public var provider: String { core.provider }
+    public var modelId: String { core.modelId }
+
+    public var maxImagesPerCall: ImageModelV4MaxImagesPerCall {
+        .value(core.maxImagesPerCall)
+    }
+
+    public func doGenerate(options: ImageModelV4CallOptions) async throws -> ImageModelV4GenerateResult {
+        let result = try await core.doGenerate(
+            prompt: options.prompt,
+            n: options.n,
+            size: options.size,
+            aspectRatio: options.aspectRatio,
+            seed: options.seed,
+            files: options.files?.map(convertImageModelV4FileToOpenAIInput),
+            mask: options.mask.map(convertImageModelV4FileToOpenAIInput),
+            providerOptions: options.providerOptions,
+            abortSignal: options.abortSignal,
+            headers: options.headers
+        )
+
+        return ImageModelV4GenerateResult(
+            images: .base64(result.images),
+            warnings: result.warnings,
+            providerMetadata: result.providerMetadata,
+            response: result.response,
+            usage: result.usage
+        )
+    }
+}
+
+private func convertImageModelV3FilesToOpenAIInput(_ files: [ImageModelV3File]?) -> [OpenAIImageInputFile]? {
+    guard let files, !files.isEmpty else { return nil }
+    return files.map(convertImageModelV3FileToOpenAIInput)
+}
+
+private func convertImageModelV3FileToOpenAIInput(_ value: ImageModelV3File) -> OpenAIImageInputFile {
+    switch value {
+    case let .file(mediaType, data, _):
+        return .file(mediaType: mediaType, data: convertImageModelV3FileDataToOpenAIInput(data))
+    case let .url(url, _):
+        return .url(url)
+    }
+}
+
+private func convertImageModelV3FileDataToOpenAIInput(_ value: ImageModelV3FileData) -> OpenAIImageInputFileData {
+    switch value {
+    case .base64(let base64):
+        return .base64(base64)
+    case .binary(let data):
+        return .binary(data)
+    }
+}
+
+private func convertImageModelV4FileToOpenAIInput(_ value: ImageModelV4File) -> OpenAIImageInputFile {
+    switch value {
+    case let .file(mediaType, data, _):
+        return .file(mediaType: mediaType, data: convertImageModelV4FileDataToOpenAIInput(data))
+    case let .url(url, _):
+        return .url(url)
+    }
+}
+
+private func convertImageModelV4FileDataToOpenAIInput(_ value: ImageModelV4FileData) -> OpenAIImageInputFileData {
+    switch value {
+    case .base64(let base64):
+        return .base64(base64)
+    case .binary(let data):
+        return .binary(data)
+    }
+}
+
+private func convertOpenAIImageProviderMetadataToV3(
+    _ value: ImageModelV4ProviderMetadata?
+) -> ImageModelV3ProviderMetadata? {
+    value?.mapValues { ImageModelV3ProviderMetadataValue(images: $0.images, additionalData: $0.additionalData) }
+}
+
+private func convertSharedV4WarningToV3(_ value: SharedV4Warning) -> SharedV3Warning {
+    switch value {
+    case let .unsupported(feature, details):
+        return .unsupported(feature: feature, details: details)
+    case let .compatibility(feature, details):
+        return .compatibility(feature: feature, details: details)
+    case let .deprecated(setting, message):
+        return .other(message: "\(setting): \(message)")
+    case let .other(message):
+        return .other(message: message)
     }
 }

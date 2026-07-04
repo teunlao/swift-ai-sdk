@@ -33,12 +33,13 @@ func getOpenAILanguageModelCapabilities(for modelId: String) -> OpenAILanguageMo
         || (modelId.hasPrefix("gpt-5") && !modelId.hasPrefix("gpt-5-chat"))
 
     // https://platform.openai.com/docs/guides/latest-model#gpt-5-1-parameter-compatibility
-    // GPT-5.1, GPT-5.2, GPT-5.3, and GPT-5.4 support temperature/topP/logprobs when reasoningEffort is none.
+    // GPT-5.1 and later model families support temperature/topP/logprobs when reasoningEffort is none.
     let supportsNonReasoningParameters =
         modelId.hasPrefix("gpt-5.1")
         || modelId.hasPrefix("gpt-5.2")
         || modelId.hasPrefix("gpt-5.3")
         || modelId.hasPrefix("gpt-5.4")
+        || modelId.hasPrefix("gpt-5.5")
 
     let systemMessageMode: OpenAIResponsesSystemMessageMode = isReasoningModel ? .developer : .system
 

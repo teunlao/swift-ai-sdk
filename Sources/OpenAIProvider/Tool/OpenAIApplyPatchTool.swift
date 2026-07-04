@@ -74,19 +74,54 @@ private let applyPatchInputJSONSchema: JSONValue = .object([
             "type": .string("string")
         ]),
         "operation": .object([
-            "type": .string("object"),
-            "required": .array([.string("type"), .string("path")]),
-            "additionalProperties": .bool(false),
-            "properties": .object([
-                "type": .object([
-                    "type": .string("string"),
-                    "enum": .array([.string("create_file"), .string("delete_file"), .string("update_file")])
+            "oneOf": .array([
+                .object([
+                    "type": .string("object"),
+                    "required": .array([.string("type"), .string("path"), .string("diff")]),
+                    "additionalProperties": .bool(false),
+                    "properties": .object([
+                        "type": .object([
+                            "type": .string("string"),
+                            "enum": .array([.string("create_file")])
+                        ]),
+                        "path": .object([
+                            "type": .string("string")
+                        ]),
+                        "diff": .object([
+                            "type": .string("string")
+                        ])
+                    ])
                 ]),
-                "path": .object([
-                    "type": .string("string")
+                .object([
+                    "type": .string("object"),
+                    "required": .array([.string("type"), .string("path")]),
+                    "additionalProperties": .bool(false),
+                    "properties": .object([
+                        "type": .object([
+                            "type": .string("string"),
+                            "enum": .array([.string("delete_file")])
+                        ]),
+                        "path": .object([
+                            "type": .string("string")
+                        ])
+                    ])
                 ]),
-                "diff": .object([
-                    "type": .array([.string("string"), .string("null")])
+                .object([
+                    "type": .string("object"),
+                    "required": .array([.string("type"), .string("path"), .string("diff")]),
+                    "additionalProperties": .bool(false),
+                    "properties": .object([
+                        "type": .object([
+                            "type": .string("string"),
+                            "enum": .array([.string("update_file")])
+                        ]),
+                        "path": .object([
+                            "type": .string("string")
+                        ]),
+                        "diff": .object([
+                            "type": .string("string")
+                        ])
+                    ])
                 ])
             ])
         ])

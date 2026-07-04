@@ -2,19 +2,42 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-struct OpenAITranscriptionProviderOptions: Sendable, Equatable {
-    var include: [String]?
-    var language: String?
-    var prompt: String?
-    var temperature: Double?
-    var timestampGranularities: [String]?
-    var streaming: OpenAITranscriptionStreamingOptions?
+public struct OpenAITranscriptionProviderOptions: Sendable, Equatable {
+    public var include: [String]?
+    public var language: String?
+    public var prompt: String?
+    public var temperature: Double?
+    public var timestampGranularities: [String]?
+    public var streaming: OpenAITranscriptionStreamingOptions?
+
+    public init(
+        include: [String]? = nil,
+        language: String? = nil,
+        prompt: String? = nil,
+        temperature: Double? = nil,
+        timestampGranularities: [String]? = nil,
+        streaming: OpenAITranscriptionStreamingOptions? = nil
+    ) {
+        self.include = include
+        self.language = language
+        self.prompt = prompt
+        self.temperature = temperature
+        self.timestampGranularities = timestampGranularities
+        self.streaming = streaming
+    }
 }
 
-struct OpenAITranscriptionStreamingOptions: Sendable, Equatable {
-    var delay: String?
-    var include: [String]?
+public struct OpenAITranscriptionStreamingOptions: Sendable, Equatable {
+    public var delay: String?
+    public var include: [String]?
+
+    public init(delay: String? = nil, include: [String]? = nil) {
+        self.delay = delay
+        self.include = include
+    }
 }
+
+public typealias OpenAITranscriptionModelOptions = OpenAITranscriptionProviderOptions
 
 private let openAITranscriptionProviderOptionsJSONSchema: JSONValue = .object([
     "type": .string("object"),
