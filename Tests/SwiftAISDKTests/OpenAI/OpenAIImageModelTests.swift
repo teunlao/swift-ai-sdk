@@ -97,6 +97,70 @@ struct OpenAIImageModelTests {
         #expect(normalized["content-type"] == "application/json")
     }
 
+    @Test("V4 doGenerate maps generation provider options to OpenAI request fields")
+    func testV4DoGenerateMapsGenerationProviderOptions() async throws {
+        actor RequestCapture {
+            var request: URLRequest?
+            func store(_ request: URLRequest) { self.request = request }
+            func current() -> URLRequest? { request }
+        }
+
+        let capture = RequestCapture()
+        let responseData = try JSONSerialization.data(withJSONObject: makeResponseJSON())
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.openai.com/v1/images/generations")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIImageModelV4(modelId: "gpt-image-1", config: makeConfig(fetch: fetch))
+
+        _ = try await model.doGenerate(
+            options: ImageModelV4CallOptions(
+                prompt: imagePrompt,
+                n: 1,
+                size: "1024x1024",
+                providerOptions: [
+                    "openai": [
+                        "quality": .string("high"),
+                        "background": .string("transparent"),
+                        "moderation": .string("low"),
+                        "outputFormat": .string("webp"),
+                        "outputCompression": .number(80),
+                        "user": .string("user-123")
+                    ]
+                ]
+            )
+        )
+
+        guard let request = await capture.current(),
+              let body = request.httpBody,
+              let json = try JSONSerialization.jsonObject(with: body) as? [String: Any]
+        else {
+            Issue.record("Missing request capture")
+            return
+        }
+
+        #expect(request.url?.absoluteString == "https://api.openai.com/v1/images/generations")
+        #expect(json["model"] as? String == "gpt-image-1")
+        #expect(json["prompt"] as? String == imagePrompt)
+        #expect(json["quality"] as? String == "high")
+        #expect(json["background"] as? String == "transparent")
+        #expect(json["moderation"] as? String == "low")
+        #expect(json["output_format"] as? String == "webp")
+        #expect(json["output_compression"] as? Int == 80 || json["output_compression"] as? Double == 80)
+        #expect(json["user"] as? String == "user-123")
+        #expect(json["outputFormat"] == nil)
+        #expect(json["outputCompression"] == nil)
+        #expect(json["response_format"] == nil)
+    }
+
     @Test("doGenerate returns images, warnings and metadata")
     func testDoGenerateReturnsImagesAndWarnings() async throws {
         let responseData = try JSONSerialization.data(withJSONObject: makeResponseJSON())
@@ -262,6 +326,55 @@ struct OpenAIImageModelTests {
 
         #expect(json["model"] as? String == "gpt-image-1")
         #expect(json["response_format"] == nil)
+    }
+
+    @Test("response_format omitted for new upstream default response format image models")
+    func testResponseFormatOmittedForNewDefaultResponseFormatModels() async throws {
+        actor RequestCapture {
+            var body: Data?
+            func store(_ data: Data?) { body = data }
+            func current() -> Data? { body }
+        }
+
+        let capture = RequestCapture()
+        let responseData = try JSONSerialization.data(withJSONObject: makeResponseJSON())
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.openai.com/v1/images/generations")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request.httpBody)
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        for modelId in ["gpt-image-2", "chatgpt-image-latest"] {
+            let model = OpenAIImageModelV4(
+                modelId: OpenAIImageModelId(rawValue: modelId),
+                config: makeConfig(fetch: fetch)
+            )
+
+            _ = try await model.doGenerate(
+                options: ImageModelV4CallOptions(
+                    prompt: imagePrompt,
+                    n: 1,
+                    size: "1024x1024",
+                    providerOptions: [:]
+                )
+            )
+
+            guard let data = await capture.current(),
+                  let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+            else {
+                Issue.record("Missing request body for \(modelId)")
+                return
+            }
+
+            #expect(json["model"] as? String == modelId)
+            #expect(json["response_format"] == nil)
+        }
     }
 
     @Test("response_format omitted for date-suffixed gpt-image-1 (Azure deployment name)")
@@ -565,6 +678,20 @@ struct OpenAIImageModelTests {
             #expect(count == 10)
         } else {
             Issue.record("Expected .value(10) for gpt-image-1.5 maxImagesPerCall")
+        }
+
+        let gptImage2Model = try provider.imageModel(modelId: "gpt-image-2")
+        if case .value(let count) = gptImage2Model.maxImagesPerCall {
+            #expect(count == 10)
+        } else {
+            Issue.record("Expected .value(10) for gpt-image-2 maxImagesPerCall")
+        }
+
+        let chatGPTImageLatestModel = try provider.imageModel(modelId: "chatgpt-image-latest")
+        if case .value(let count) = chatGPTImageLatestModel.maxImagesPerCall {
+            #expect(count == 10)
+        } else {
+            Issue.record("Expected .value(10) for chatgpt-image-latest maxImagesPerCall")
         }
     }
 
@@ -898,7 +1025,7 @@ struct OpenAIImageModelTests {
                 size: "1024x1024",
                 aspectRatio: nil,
                 seed: nil,
-                providerOptions: ["openai": ["style": .string("vivid")]],
+                providerOptions: ["openai": ["quality": .string("high")]],
                 abortSignal: nil,
                 headers: ["Custom-Header": "request"],
                 files: [inputFile],
@@ -931,8 +1058,75 @@ struct OpenAIImageModelTests {
         #expect(bodyString.contains("filename=\"image.png\""))
         #expect(bodyString.lowercased().contains("content-type: image/png"))
         #expect(bodyString.contains("PNGDATA"))
-        #expect(bodyString.contains("name=\"style\""))
-        #expect(bodyString.contains("vivid"))
+        #expect(bodyString.contains("name=\"quality\""))
+        #expect(bodyString.contains("high"))
+    }
+
+    @Test("V4 doGenerate maps edit provider options to multipart OpenAI fields")
+    func testV4DoGenerateMapsEditProviderOptions() async throws {
+        actor RequestCapture {
+            var request: URLRequest?
+            func store(_ request: URLRequest) { self.request = request }
+            func current() -> URLRequest? { request }
+        }
+
+        let capture = RequestCapture()
+        let responseData = try JSONSerialization.data(withJSONObject: makeResponseJSON())
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.openai.com/v1/images/edits")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAIImageModelV4(modelId: "gpt-image-1", config: makeConfig(fetch: fetch))
+
+        _ = try await model.doGenerate(
+            options: ImageModelV4CallOptions(
+                prompt: imagePrompt,
+                n: 1,
+                size: "1024x1024",
+                files: [
+                    .file(mediaType: "image/png", data: .binary(Data("PNGDATA".utf8)), providerOptions: nil),
+                    .file(mediaType: "image/jpeg", data: .binary(Data("JPEGDATA".utf8)), providerOptions: nil)
+                ],
+                providerOptions: [
+                    "openai": [
+                        "inputFidelity": .string("high"),
+                        "outputFormat": .string("webp"),
+                        "outputCompression": .number(80),
+                        "user": .string("user-123")
+                    ]
+                ]
+            )
+        )
+
+        guard let request = await capture.current(), let body = request.httpBody else {
+            Issue.record("Missing multipart request")
+            return
+        }
+
+        #expect(request.url?.absoluteString == "https://api.openai.com/v1/images/edits")
+        let bodyString = String(decoding: body, as: UTF8.self)
+        #expect(bodyString.contains("name=\"image[]\""))
+        #expect(bodyString.contains("filename=\"image.png\""))
+        #expect(bodyString.contains("filename=\"image.jpeg\""))
+        #expect(bodyString.contains("name=\"input_fidelity\""))
+        #expect(bodyString.contains("high"))
+        #expect(bodyString.contains("name=\"output_format\""))
+        #expect(bodyString.contains("webp"))
+        #expect(bodyString.contains("name=\"output_compression\""))
+        #expect(bodyString.contains("80"))
+        #expect(bodyString.contains("name=\"user\""))
+        #expect(bodyString.contains("user-123"))
+        #expect(!bodyString.contains("inputFidelity"))
+        #expect(!bodyString.contains("outputFormat"))
+        #expect(!bodyString.contains("outputCompression"))
     }
 
     @Test("doGenerate includes mask part when provided")

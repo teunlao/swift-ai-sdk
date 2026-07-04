@@ -572,6 +572,127 @@ struct OpenAIResponsesInputBuilderTests {
         }
     }
 
+    @Test("passThroughUnsupportedFiles maps unsupported file media types to input_file")
+    func passThroughUnsupportedFilesMapsUnsupportedFileMediaTypes() async throws {
+        let prompt: LanguageModelV3Prompt = [
+            .user(
+                content: [
+                    .file(LanguageModelV3FilePart(
+                        data: .base64("YSxiCg=="),
+                        mediaType: "text/csv",
+                        filename: "data.csv",
+                        providerOptions: nil
+                    ))
+                ],
+                providerOptions: nil
+            )
+        ]
+
+        let result = try await OpenAIResponsesInputBuilder.makeInput(
+            prompt: prompt,
+            systemMessageMode: .system,
+            store: true,
+            passThroughUnsupportedFiles: true,
+            hasLocalShellTool: false
+        )
+
+        #expect(result.input == [
+            .object([
+                "role": .string("user"),
+                "content": .array([
+                    .object([
+                        "type": .string("input_file"),
+                        "filename": .string("data.csv"),
+                        "file_data": .string("data:text/csv;base64,YSxiCg==")
+                    ])
+                ])
+            ])
+        ])
+    }
+
+    @Test("audio file data requires pass-through and maps to input_file")
+    func audioFileDataRequiresPassThroughAndMapsToInputFile() async throws {
+        let prompt: LanguageModelV3Prompt = [
+            .user(
+                content: [
+                    .file(LanguageModelV3FilePart(
+                        data: .base64("UklGRg=="),
+                        mediaType: "audio/wav",
+                        filename: "clip.wav",
+                        providerOptions: nil
+                    ))
+                ],
+                providerOptions: nil
+            )
+        ]
+
+        await #expect(throws: UnsupportedFunctionalityError.self) {
+            try await OpenAIResponsesInputBuilder.makeInput(
+                prompt: prompt,
+                systemMessageMode: .system,
+                store: true,
+                hasLocalShellTool: false
+            )
+        }
+
+        let result = try await OpenAIResponsesInputBuilder.makeInput(
+            prompt: prompt,
+            systemMessageMode: .system,
+            store: true,
+            passThroughUnsupportedFiles: true,
+            hasLocalShellTool: false
+        )
+
+        #expect(result.input == [
+            .object([
+                "role": .string("user"),
+                "content": .array([
+                    .object([
+                        "type": .string("input_file"),
+                        "filename": .string("clip.wav"),
+                        "file_data": .string("data:audio/wav;base64,UklGRg==")
+                    ])
+                ])
+            ])
+        ])
+    }
+
+    @Test("audio file URLs map to input_file file_url")
+    func audioFileURLsMapToInputFileURL() async throws {
+        let prompt: LanguageModelV3Prompt = [
+            .user(
+                content: [
+                    .file(LanguageModelV3FilePart(
+                        data: .url(URL(string: "https://example.com/audio.wav")!),
+                        mediaType: "audio/wav",
+                        filename: nil,
+                        providerOptions: nil
+                    ))
+                ],
+                providerOptions: nil
+            )
+        ]
+
+        let result = try await OpenAIResponsesInputBuilder.makeInput(
+            prompt: prompt,
+            systemMessageMode: .system,
+            store: true,
+            hasLocalShellTool: false
+        )
+
+        #expect(result.input == [
+            .object([
+                "role": .string("user"),
+                "content": .array([
+                    .object([
+                        "type": .string("input_file"),
+                        "file_url": .string("https://example.com/audio.wav")
+                    ])
+                ])
+            ])
+        ])
+    }
+
     @Test("should convert PDF file parts with URL to input_file with file_url")
     func pdfWithURLToFileUrl() async throws {
         let prompt: LanguageModelV3Prompt = [
@@ -1147,6 +1268,69 @@ struct OpenAIResponsesInputBuilderTests {
 
         #expect(result.input.isEmpty)
         #expect(result.warnings.isEmpty)
+    }
+
+    @Test("hasPreviousResponseId skips stored reasoning and tool calls with itemId")
+    func hasPreviousResponseIdSkipsStoredReasoningAndToolCallsWithItemId() async throws {
+        let reasoningPart = LanguageModelV3ReasoningPart(
+            text: "prior reasoning",
+            providerOptions: [
+                "openai": [
+                    "itemId": .string("rsn-1"),
+                    "reasoningEncryptedContent": .string("encrypted")
+                ]
+            ]
+        )
+        let toolCallPart = LanguageModelV3ToolCallPart(
+            toolCallId: "call-1",
+            toolName: "weather",
+            input: .object(["city": .string("Berlin")]),
+            providerOptions: ["openai": ["itemId": .string("fc-1")]]
+        )
+
+        let result = try await OpenAIResponsesInputBuilder.makeInput(
+            prompt: [
+                .assistant(content: [
+                    .reasoning(reasoningPart),
+                    .toolCall(toolCallPart)
+                ], providerOptions: nil)
+            ],
+            systemMessageMode: .system,
+            store: true,
+            hasPreviousResponseId: true
+        )
+
+        #expect(result.input.isEmpty)
+        #expect(result.warnings.isEmpty)
+    }
+
+    @Test("store=false reconstructs custom compaction input")
+    func storeFalseReconstructsCustomCompactionInput() async throws {
+        let result = try await OpenAIResponsesInputBuilder.makeInput(
+            prompt: [
+                .assistant(content: [
+                    .custom(LanguageModelV3CustomPart(
+                        kind: "openai.compaction",
+                        providerOptions: [
+                            "openai": [
+                                "itemId": .string("cmp-1"),
+                                "encryptedContent": .string("encrypted-compaction")
+                            ]
+                        ]
+                    ))
+                ], providerOptions: nil)
+            ],
+            systemMessageMode: .system,
+            store: false
+        )
+
+        #expect(result.input == [
+            .object([
+                "type": .string("compaction"),
+                "id": .string("cmp-1"),
+                "encrypted_content": .string("encrypted-compaction")
+            ])
+        ])
     }
 
     @Test("execution-denied tool results are skipped")

@@ -20,12 +20,22 @@ private func makeEmbeddingResponseData() -> Data {
     return try! JSONSerialization.data(withJSONObject: json)
 }
 
+private let openAIV4Prompt: LanguageModelV4Prompt = [
+    .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
+]
+
 @Suite("OpenAIProvider")
 struct OpenAIProviderTests {
     actor URLCapture {
         private(set) var url: String?
         func store(_ url: String?) { self.url = url }
         func current() -> String? { url }
+    }
+
+    actor RequestCapture {
+        private(set) var request: URLRequest?
+        func store(_ request: URLRequest) { self.request = request }
+        func current() -> URLRequest? { request }
     }
 
     private func makeFetch(capture: URLCapture) -> FetchFunction {
@@ -39,6 +49,43 @@ struct OpenAIProviderTests {
 
         return { request in
             await capture.store(request.url?.absoluteString)
+            return FetchResponse(body: .data(data), urlResponse: response)
+        }
+    }
+
+    private func makeFailingFetch(capture: URLCapture) -> FetchFunction {
+        let responseData = try! JSONSerialization.data(withJSONObject: [
+            "error": [
+                "message": "test error",
+                "type": "invalid_request_error",
+                "param": NSNull(),
+                "code": "test_error"
+            ]
+        ])
+
+        return { request in
+            await capture.store(request.url?.absoluteString)
+            let response = HTTPURLResponse(
+                url: request.url ?? URL(string: "https://example.com")!,
+                statusCode: 500,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: response)
+        }
+    }
+
+    private func makeEmbeddingFetch(capture: RequestCapture) -> FetchFunction {
+        let data = makeEmbeddingResponseData()
+        let response = HTTPURLResponse(
+            url: URL(string: "https://example.com")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        return { request in
+            await capture.store(request)
             return FetchResponse(body: .data(data), urlResponse: response)
         }
     }
@@ -192,5 +239,171 @@ struct OpenAIProviderTests {
         #expect(typedModel.modelId == "text-embedding-3-small")
         #expect(embeddingAliasModel.provider == "openai.embedding")
         #expect(embeddingAliasModel.modelId == "text-embedding-3-small")
+    }
+
+    @Test("createOpenAI exposes upstream V4 provider surface")
+    func createOpenAIExposesV4ProviderSurface() throws {
+        let provider = createOpenAI(settings: .init(apiKey: "test-api-key", name: "custom-openai"))
+
+        #expect(provider.specificationVersion == "v4")
+
+        let languageModel = try provider.languageModel(modelId: "gpt-5")
+        #expect(languageModel.specificationVersion == "v4")
+        #expect(languageModel.provider == "custom-openai.responses")
+        #expect(languageModel.modelId == "gpt-5")
+
+        #expect(provider.responses("gpt-5").provider == "custom-openai.responses")
+        #expect(provider.chat("gpt-5").provider == "custom-openai.chat")
+        let completionModel: OpenAICompletionLanguageModelV4 = provider.completion("gpt-3.5-turbo-instruct")
+        #expect(completionModel.specificationVersion == "v4")
+        #expect(completionModel.provider == "custom-openai.completion")
+        #expect(provider.embedding("text-embedding-3-small").provider == "custom-openai.embedding")
+        #expect(provider.textEmbedding("text-embedding-3-small").provider == "custom-openai.embedding")
+        let imageModel = provider.image("gpt-image-1")
+        #expect(imageModel.specificationVersion == "v4")
+        #expect(imageModel.provider == "custom-openai.image")
+        let transcriptionModel: OpenAITranscriptionModelV4 = provider.transcription("whisper-1")
+        #expect(transcriptionModel.specificationVersion == "v4")
+        #expect(transcriptionModel.provider == "custom-openai.transcription")
+        let speechModel = provider.speech("tts-1")
+        #expect(speechModel.specificationVersion == "v4")
+        #expect(speechModel.provider == "custom-openai.speech")
+
+        let files = try #require(try provider.files())
+        let skills = try #require(try provider.skills())
+        #expect(files.specificationVersion == "v4")
+        #expect(files.provider == "custom-openai.files")
+        #expect(skills.specificationVersion == "v4")
+        #expect(skills.provider == "custom-openai.skills")
+
+        let realtimeModel = provider.experimental_realtime.realtimeModel(modelId: "gpt-realtime")
+        #expect(realtimeModel.specificationVersion == "v4")
+        #expect(realtimeModel.provider == "custom-openai.realtime")
+    }
+
+    @Test("createOpenAI V4 routes default, chat, and embedding calls like upstream")
+    func createOpenAIV4RoutesRequestsLikeUpstream() async throws {
+        do {
+            let capture = URLCapture()
+            let provider = createOpenAI(settings: .init(
+                baseURL: "https://proxy.openai.example/v1/",
+                apiKey: "test-api-key",
+                fetch: makeFailingFetch(capture: capture)
+            ))
+            let model = try provider("gpt-4o-mini")
+            do {
+                _ = try await model.doGenerate(options: .init(prompt: openAIV4Prompt))
+            } catch {}
+
+            #expect(await capture.current() == "https://proxy.openai.example/v1/responses")
+        }
+
+        do {
+            let capture = URLCapture()
+            let provider = createOpenAI(settings: .init(
+                baseURL: "https://proxy.openai.example/v1/",
+                apiKey: "test-api-key",
+                fetch: makeFailingFetch(capture: capture)
+            ))
+            do {
+                _ = try await provider.chat("gpt-4o-mini").doGenerate(options: .init(prompt: openAIV4Prompt))
+            } catch {}
+
+            #expect(await capture.current() == "https://proxy.openai.example/v1/chat/completions")
+        }
+
+        do {
+            let capture = URLCapture()
+            let provider = createOpenAI(settings: .init(
+                baseURL: "https://proxy.openai.example/v1/",
+                apiKey: "test-api-key",
+                fetch: makeFailingFetch(capture: capture)
+            ))
+            do {
+                _ = try await provider.completion("gpt-3.5-turbo-instruct").doGenerate(options: .init(prompt: openAIV4Prompt))
+            } catch {}
+
+            #expect(await capture.current() == "https://proxy.openai.example/v1/completions")
+        }
+
+        do {
+            let capture = URLCapture()
+            let provider = createOpenAI(settings: .init(
+                baseURL: "https://proxy.openai.example/v1/",
+                apiKey: "test-api-key",
+                fetch: makeFailingFetch(capture: capture)
+            ))
+            do {
+                _ = try await provider.embedding("text-embedding-3-small").doEmbed(options: .init(values: ["hello"]))
+            } catch {}
+
+            #expect(await capture.current() == "https://proxy.openai.example/v1/embeddings")
+        }
+
+        do {
+            let capture = URLCapture()
+            let provider = createOpenAI(settings: .init(
+                baseURL: "https://proxy.openai.example/v1/",
+                apiKey: "test-api-key",
+                fetch: makeFailingFetch(capture: capture)
+            ))
+            do {
+                _ = try await provider.transcription("whisper-1").doGenerate(
+                    options: .init(audio: .binary(Data("audio".utf8)), mediaType: "audio/wav")
+                )
+            } catch {}
+
+            #expect(await capture.current() == "https://proxy.openai.example/v1/audio/transcriptions")
+        }
+
+        do {
+            let capture = URLCapture()
+            let provider = createOpenAI(settings: .init(
+                baseURL: "https://proxy.openai.example/v1/",
+                apiKey: "test-api-key",
+                fetch: makeFailingFetch(capture: capture)
+            ))
+            do {
+                _ = try await provider.speech("tts-1").doGenerate(options: .init(text: "hello"))
+            } catch {}
+
+            #expect(await capture.current() == "https://proxy.openai.example/v1/audio/speech")
+        }
+    }
+
+    @Test("createOpenAI V4 applies auth, organization, project, custom headers, and user-agent like upstream")
+    func createOpenAIV4AppliesProviderHeadersLikeUpstream() async throws {
+        let capture = RequestCapture()
+        let provider = createOpenAI(settings: .init(
+            apiKey: "base-api-key",
+            organization: "base-organization",
+            project: "base-project",
+            headers: [
+                "authorization": "Bearer custom-api-key",
+                "openai-organization": "custom-organization",
+                "openai-project": "custom-project",
+                "x-custom-header": "custom-header-value",
+                "user-agent": "Client/1.0"
+            ],
+            fetch: makeEmbeddingFetch(capture: capture)
+        ))
+
+        _ = try await provider.embedding("text-embedding-3-small").doEmbed(options: .init(values: ["hello"]))
+
+        guard let request = await capture.current() else {
+            Issue.record("Missing captured request")
+            return
+        }
+
+        let headers = request.allHTTPHeaderFields ?? [:]
+        let normalizedHeaders = Dictionary(uniqueKeysWithValues: headers.map { ($0.key.lowercased(), $0.value) })
+
+        #expect(normalizedHeaders["authorization"] == "Bearer custom-api-key")
+        #expect(normalizedHeaders["openai-organization"] == "custom-organization")
+        #expect(normalizedHeaders["openai-project"] == "custom-project")
+        #expect(normalizedHeaders["x-custom-header"] == "custom-header-value")
+        #expect(normalizedHeaders["user-agent"]?.contains("Client/1.0") == true)
+        #expect(normalizedHeaders["user-agent"]?.contains("ai-sdk/openai/") == true)
+        #expect(normalizedHeaders["user-agent"]?.contains("ai-sdk/provider-utils/") == true)
     }
 }

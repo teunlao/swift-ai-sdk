@@ -51,6 +51,8 @@ struct OpenAILanguageModelCapabilitiesTests {
             ("gpt-5.4-mini-2026-03-17", true),
             ("gpt-5.4-nano", true),
             ("gpt-5.4-nano-2026-03-17", true),
+            ("gpt-5.5", true),
+            ("gpt-5.5-2026-04-23", true),
             ("new-unknown-model", false),
             ("ft:gpt-4o-2024-08-06:org:custom:abc123", false),
             ("custom-model", false)
@@ -76,6 +78,8 @@ struct OpenAILanguageModelCapabilitiesTests {
             ("gpt-5.4-mini", true),
             ("gpt-5.4-nano", false),
             ("gpt-5.4-nano-2026-03-17", false),
+            ("gpt-5.5", true),
+            ("gpt-5.5-2026-04-23", true),
             ("o3", true),
             ("o4-mini", true),
             ("custom-model", false)
@@ -107,6 +111,8 @@ struct OpenAILanguageModelCapabilitiesTests {
             ("gpt-5.4-2026-03-05", true),
             ("gpt-5.4-mini-2026-03-17", true),
             ("gpt-5.4-nano-2026-03-17", true),
+            ("gpt-5.5", true),
+            ("gpt-5.5-2026-04-23", true),
             ("gpt-5", false),
             ("gpt-5-mini", false),
             ("gpt-5-nano", false),
@@ -135,7 +141,9 @@ struct OpenAILanguageModelCapabilitiesTests {
             "gpt-5.4-nano",
             "gpt-5.4-nano-2026-03-17",
             "gpt-5.4-pro",
-            "gpt-5.4-pro-2026-03-05"
+            "gpt-5.4-pro-2026-03-05",
+            "gpt-5.5",
+            "gpt-5.5-2026-04-23"
         ]
 
         let removedReasoningIds = [

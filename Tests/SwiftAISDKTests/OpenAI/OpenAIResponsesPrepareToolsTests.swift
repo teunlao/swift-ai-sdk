@@ -147,6 +147,91 @@ struct OpenAIResponsesPrepareToolsTests {
         #expect(interpreterObject["container"] == JSONValue.string("my-container"))
     }
 
+    @Test("function tools map defer_loading and namespace grouping")
+    func functionToolsMapDeferLoadingAndNamespaceGrouping() async throws {
+        let searchTool = LanguageModelV3Tool.function(
+            LanguageModelV3FunctionTool(
+                name: "search_docs",
+                inputSchema: .object(["type": .string("object")]),
+                description: "Search docs",
+                providerOptions: [
+                    "openai": [
+                        "deferLoading": .bool(true),
+                        "namespace": .object([
+                            "name": .string("research"),
+                            "description": .string("Research tools")
+                        ])
+                    ]
+                ]
+            )
+        )
+        let summarizeTool = LanguageModelV3Tool.function(
+            LanguageModelV3FunctionTool(
+                name: "summarize_docs",
+                inputSchema: .object(["type": .string("object")]),
+                description: "Summarize docs",
+                providerOptions: [
+                    "openai": [
+                        "namespace": .object([
+                            "name": .string("research"),
+                            "description": .string("Research tools")
+                        ])
+                    ]
+                ]
+            )
+        )
+
+        let result = try await prepareOpenAIResponsesTools(
+            tools: [searchTool, summarizeTool],
+            toolChoice: nil
+        )
+
+        guard let tools = result.tools,
+              tools.count == 1,
+              case .object(let namespace) = tools.first,
+              case .array(let nestedTools)? = namespace["tools"],
+              case .object(let firstTool) = nestedTools.first,
+              case .object(let secondTool) = nestedTools.last else {
+            Issue.record("Expected grouped namespace tool")
+            return
+        }
+
+        #expect(namespace["type"] == .string("namespace"))
+        #expect(namespace["name"] == .string("research"))
+        #expect(namespace["description"] == .string("Research tools"))
+        #expect(firstTool["type"] == .string("function"))
+        #expect(firstTool["name"] == .string("search_docs"))
+        #expect(firstTool["defer_loading"] == .bool(true))
+        #expect(secondTool["name"] == .string("summarize_docs"))
+    }
+
+    @Test("allowed tools override normal tool choice")
+    func allowedToolsOverrideNormalToolChoice() async throws {
+        let functionTool = LanguageModelV3Tool.function(
+            LanguageModelV3FunctionTool(
+                name: "weather",
+                inputSchema: .object(["type": .string("object")])
+            )
+        )
+
+        let result = try await prepareOpenAIResponsesTools(
+            tools: [functionTool],
+            toolChoice: LanguageModelV3ToolChoice.none,
+            allowedTools: OpenAIResponsesAllowedTools(toolNames: ["weather"], mode: "required")
+        )
+
+        #expect(result.toolChoice == .object([
+            "type": .string("allowed_tools"),
+            "mode": .string("required"),
+            "tools": .array([
+                .object([
+                    "type": .string("function"),
+                    "name": .string("weather")
+                ])
+            ])
+        ]))
+    }
+
     @Test("image generation tool maps args")
     func imageGenerationToolMapsArgs() async throws {
         let tool = providerTool(
@@ -349,7 +434,7 @@ struct OpenAIResponsesPrepareToolsTests {
             )
             Issue.record("Expected validation to fail when userLocation.type is missing")
         } catch {
-            #expect(true)
+            return
         }
     }
 
@@ -539,7 +624,7 @@ struct OpenAIResponsesPrepareToolsTests {
                     "skills": .array([
                         .object([
                             "type": .string("skillReference"),
-                            "skillId": .string("skill-1"),
+                            "providerReference": .object(["openai": .string("skill-1")]),
                             "version": .string("1")
                         ])
                     ])
@@ -566,6 +651,13 @@ struct OpenAIResponsesPrepareToolsTests {
         if case .object(let networkPolicy)? = environment["network_policy"] {
             #expect(networkPolicy["type"] == JSONValue.string("allowlist"))
             #expect(networkPolicy["allowed_domains"] == JSONValue.array([.string("example.com")]))
+            #expect(networkPolicy["domain_secrets"] == JSONValue.array([
+                .object([
+                    "domain": .string("example.com"),
+                    "name": .string("API_KEY"),
+                    "value": .string("secret")
+                ])
+            ]))
         } else {
             Issue.record("Expected mapped network policy")
         }
@@ -573,8 +665,78 @@ struct OpenAIResponsesPrepareToolsTests {
            case .object(let firstSkill) = skills.first {
             #expect(firstSkill["type"] == JSONValue.string("skill_reference"))
             #expect(firstSkill["skill_id"] == JSONValue.string("skill-1"))
+            #expect(firstSkill["version"] == JSONValue.string("1"))
         } else {
             Issue.record("Expected mapped skills")
+        }
+    }
+
+    @Test("shell skillReference defaults version to latest")
+    func shellSkillReferenceDefaultsVersionToLatest() async throws {
+        let tool = providerTool(
+            id: "openai.shell",
+            name: "shell",
+            args: [
+                "environment": .object([
+                    "type": .string("containerAuto"),
+                    "skills": .array([
+                        .object([
+                            "type": .string("skillReference"),
+                            "providerReference": .object(["openai": .string("skill_abc")])
+                        ])
+                    ])
+                ])
+            ]
+        )
+
+        let result = try await prepareOpenAIResponsesTools(
+            tools: [tool],
+            toolChoice: nil
+        )
+
+        guard let tools = result.tools,
+              case .object(let toolObject) = tools.first,
+              case .object(let environment)? = toolObject["environment"],
+              case .array(let skills)? = environment["skills"],
+              case .object(let skill)? = skills.first else {
+            Issue.record("Expected shell skill reference")
+            return
+        }
+
+        #expect(skill["type"] == .string("skill_reference"))
+        #expect(skill["skill_id"] == .string("skill_abc"))
+        #expect(skill["version"] == .string("latest"))
+    }
+
+    @Test("shell skillReference throws when providerReference cannot resolve OpenAI")
+    func shellSkillReferenceThrowsForMissingOpenAIProviderReference() async throws {
+        let tool = providerTool(
+            id: "openai.shell",
+            name: "shell",
+            args: [
+                "environment": .object([
+                    "type": .string("containerAuto"),
+                    "skills": .array([
+                        .object([
+                            "type": .string("skillReference"),
+                            "providerReference": .object(["anthropic": .string("skill_abc")])
+                        ])
+                    ])
+                ])
+            ]
+        )
+
+        do {
+            _ = try await prepareOpenAIResponsesTools(
+                tools: [tool],
+                toolChoice: nil
+            )
+            Issue.record("Expected NoSuchProviderReferenceError")
+        } catch let error as NoSuchProviderReferenceError {
+            #expect(error.provider == "openai")
+            #expect(error.reference == ["anthropic": "skill_abc"])
+        } catch {
+            Issue.record("Expected NoSuchProviderReferenceError, got \(error)")
         }
     }
 
@@ -641,9 +803,8 @@ struct OpenAIResponsesPrepareToolsTests {
     func customProviderToolMapping() async throws {
         let tool = providerTool(
             id: "openai.custom",
-            name: "custom",
+            name: "grep_ast",
             args: [
-                "name": .string("grep_ast"),
                 "description": .string("Return an AST-shaped grep query"),
                 "format": .object([
                     "type": .string("grammar"),
@@ -683,9 +844,8 @@ struct OpenAIResponsesPrepareToolsTests {
     func customProviderToolRejectsNullOptionalArgs() async throws {
         let nullDescriptionTool = providerTool(
             id: "openai.custom",
-            name: "custom",
+            name: "write_sql",
             args: [
-                "name": .string("write_sql"),
                 "description": .null
             ]
         )
@@ -699,9 +859,8 @@ struct OpenAIResponsesPrepareToolsTests {
 
         let nullFormatTool = providerTool(
             id: "openai.custom",
-            name: "custom",
+            name: "write_sql",
             args: [
-                "name": .string("write_sql"),
                 "format": .null
             ]
         )

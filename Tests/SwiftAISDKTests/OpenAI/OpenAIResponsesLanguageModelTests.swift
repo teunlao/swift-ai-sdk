@@ -4066,8 +4066,8 @@ struct OpenAIResponsesLanguageModelTests {
         #expect(tools.first?["type"] as? String == "apply_patch")
     }
 
-    @Test("doGenerate maps aliased custom tools and tool choice")
-    func testDoGenerateMapsCustomToolAlias() async throws {
+    @Test("doGenerate maps custom tool name and tool choice")
+    func testDoGenerateMapsCustomToolNameAndChoice() async throws {
         actor BodyCapture {
             var request: URLRequest?
             func store(_ request: URLRequest) { self.request = request }
@@ -4123,9 +4123,8 @@ struct OpenAIResponsesLanguageModelTests {
 
         let tool = LanguageModelV3Tool.provider(.init(
             id: "openai.custom",
-            name: "alias_name",
+            name: "write_sql",
             args: [
-                "name": .string("write_sql"),
                 "description": .string("Write SQL."),
                 "format": .object([
                     "type": .string("grammar"),
@@ -4139,7 +4138,7 @@ struct OpenAIResponsesLanguageModelTests {
             options: LanguageModelV3CallOptions(
                 prompt: samplePrompt,
                 tools: [tool],
-                toolChoice: .tool(toolName: "alias_name")
+                toolChoice: .tool(toolName: "write_sql")
             )
         )
 
@@ -4150,7 +4149,7 @@ struct OpenAIResponsesLanguageModelTests {
 
         #expect(toolCalls.count == 1)
         #expect(toolCalls.first?.toolCallId == "call_custom_sql_001")
-        #expect(toolCalls.first?.toolName == "alias_name")
+        #expect(toolCalls.first?.toolName == "write_sql")
         #expect(toolCalls.first?.input == "\"SELECT * FROM users WHERE age > 25\"")
         #expect(toolCalls.first?.providerMetadata?["openai"]?["itemId"] == .string("ct_abc123def456"))
 
@@ -4169,8 +4168,8 @@ struct OpenAIResponsesLanguageModelTests {
         #expect(toolChoice["name"] as? String == "write_sql")
     }
 
-    @Test("doStream maps aliased custom tools and streams input deltas")
-    func testDoStreamMapsCustomToolAlias() async throws {
+    @Test("doStream maps custom tool name and streams input deltas")
+    func testDoStreamMapsCustomToolName() async throws {
         actor BodyCapture {
             var data: Data?
             func store(_ body: Data?) { data = body }
@@ -4266,9 +4265,8 @@ struct OpenAIResponsesLanguageModelTests {
 
         let tool = LanguageModelV3Tool.provider(.init(
             id: "openai.custom",
-            name: "alias_name",
+            name: "write_sql",
             args: [
-                "name": .string("write_sql"),
                 "description": .string("Write SQL."),
                 "format": .object([
                     "type": .string("grammar"),
@@ -4282,7 +4280,7 @@ struct OpenAIResponsesLanguageModelTests {
             options: LanguageModelV3CallOptions(
                 prompt: samplePrompt,
                 tools: [tool],
-                toolChoice: .tool(toolName: "alias_name")
+                toolChoice: .tool(toolName: "write_sql")
             )
         )
 
@@ -4309,7 +4307,7 @@ struct OpenAIResponsesLanguageModelTests {
 
         #expect(toolInputEnded)
         #expect(inputDeltas == ["SELECT * ", "FROM users ", "WHERE age > 25"])
-        #expect(toolCall?.toolName == "alias_name")
+        #expect(toolCall?.toolName == "write_sql")
         #expect(toolCall?.input == "\"SELECT * FROM users WHERE age > 25\"")
         #expect(toolCall?.providerMetadata?["openai"]?["itemId"] == .string("ct_abc123def456"))
 

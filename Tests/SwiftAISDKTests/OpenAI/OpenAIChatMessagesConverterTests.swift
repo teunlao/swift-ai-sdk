@@ -428,6 +428,185 @@ struct OpenAIChatMessagesConverterTests {
         }
     }
 
+    @Test("V4 image top-level media types use raw base64 and URL values")
+    func v4ImageTopLevelMediaTypesUseRawBase64AndURLValues() throws {
+        let prompt: LanguageModelV4Prompt = [
+            .user(
+                content: [
+                    .file(.init(
+                        data: .base64("iVBORw0KGgo="),
+                        mediaType: "image"
+                    )),
+                    .file(.init(
+                        data: .url(URL(string: "https://example.com/x.png")!),
+                        mediaType: "image/*"
+                    ))
+                ],
+                providerOptions: nil
+            )
+        ]
+
+        let result = try OpenAIChatMessagesConverter.convertV4(prompt: prompt, systemMessageMode: .system)
+
+        let expected: [JSONValue] = [
+            .object([
+                "role": .string("user"),
+                "content": .array([
+                    .object([
+                        "type": .string("image_url"),
+                        "image_url": .object([
+                            "url": .string("iVBORw0KGgo=")
+                        ])
+                    ]),
+                    .object([
+                        "type": .string("image_url"),
+                        "image_url": .object([
+                            "url": .string("https://example.com/x.png")
+                        ])
+                    ])
+                ])
+            ])
+        ]
+
+        #expect(result.messages == expected)
+    }
+
+    @Test("V4 provider reference file parts map to OpenAI file ids")
+    func v4ProviderReferenceFilePartsMapToOpenAIFileIds() throws {
+        let prompt: LanguageModelV4Prompt = [
+            .user(
+                content: [
+                    .file(.init(
+                        data: .reference(["openai": "file-img-12345"]),
+                        mediaType: "image/png"
+                    ))
+                ],
+                providerOptions: nil
+            )
+        ]
+
+        let result = try OpenAIChatMessagesConverter.convertV4(prompt: prompt, systemMessageMode: .system)
+
+        guard case .object(let message)? = result.messages.first,
+              case .array(let parts)? = message["content"],
+              case .object(let part)? = parts.first,
+              case .object(let file)? = part["file"] else {
+            Issue.record("Expected V4 provider reference file content")
+            return
+        }
+
+        #expect(part["type"] == .string("file"))
+        #expect(file["file_id"] == .string("file-img-12345"))
+    }
+
+    @Test("V4 provider reference missing OpenAI id throws")
+    func v4ProviderReferenceMissingOpenAIIdThrows() throws {
+        let prompt: LanguageModelV4Prompt = [
+            .user(
+                content: [
+                    .file(.init(
+                        data: .reference(["anthropic": "file-xyz"]),
+                        mediaType: "application/pdf"
+                    ))
+                ],
+                providerOptions: nil
+            )
+        ]
+
+        do {
+            _ = try OpenAIChatMessagesConverter.convertV4(prompt: prompt, systemMessageMode: .system)
+            Issue.record("Expected NoSuchProviderReferenceError")
+        } catch let error as NoSuchProviderReferenceError {
+            #expect(error.provider == "openai")
+            #expect(error.reference == ["anthropic": "file-xyz"])
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+    }
+
+    @Test("V4 top-level application URL file parts require inline bytes")
+    func v4TopLevelApplicationURLFilePartsRequireInlineBytes() throws {
+        let prompt: LanguageModelV4Prompt = [
+            .user(
+                content: [
+                    .file(.init(
+                        data: .url(URL(string: "https://example.com/x.pdf")!),
+                        mediaType: "application"
+                    ))
+                ],
+                providerOptions: nil
+            )
+        ]
+
+        do {
+            _ = try OpenAIChatMessagesConverter.convertV4(prompt: prompt, systemMessageMode: .system)
+            Issue.record("Expected UnsupportedFunctionalityError")
+        } catch let error as UnsupportedFunctionalityError {
+            #expect(error.functionality.contains("media type \"application\""))
+            #expect(error.functionality.contains("not passed as inline bytes"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+    }
+
+    @Test("V4 assistant tool calls without text use null content")
+    func v4AssistantToolCallsWithoutTextUseNullContent() throws {
+        let prompt: LanguageModelV4Prompt = [
+            .assistant(
+                content: [
+                    .toolCall(.init(
+                        toolCallId: "quux",
+                        toolName: "thwomp",
+                        input: .object(["foo": .string("bar123")])
+                    ))
+                ],
+                providerOptions: nil
+            )
+        ]
+
+        let result = try OpenAIChatMessagesConverter.convertV4(prompt: prompt, systemMessageMode: .system)
+
+        guard case .object(let message)? = result.messages.first else {
+            Issue.record("Expected assistant message")
+            return
+        }
+
+        #expect(message["content"] == .null)
+        guard case .array(let toolCalls)? = message["tool_calls"],
+              case .object(let toolCall)? = toolCalls.first,
+              case .object(let function)? = toolCall["function"] else {
+            Issue.record("Expected tool call payload")
+            return
+        }
+
+        #expect(function["arguments"] == .string("{\"foo\":\"bar123\"}"))
+    }
+
+    @Test("V4 execution denied tool result uses upstream default text")
+    func v4ExecutionDeniedToolResultUsesUpstreamDefaultText() throws {
+        let prompt: LanguageModelV4Prompt = [
+            .tool(
+                content: [
+                    .toolResult(.init(
+                        toolCallId: "denied-tool",
+                        toolName: "denied-tool",
+                        output: .executionDenied(reason: nil)
+                    ))
+                ],
+                providerOptions: nil
+            )
+        ]
+
+        let result = try OpenAIChatMessagesConverter.convertV4(prompt: prompt, systemMessageMode: .system)
+
+        guard case .object(let message)? = result.messages.first else {
+            Issue.record("Expected tool message")
+            return
+        }
+
+        #expect(message["content"] == .string("Tool call execution denied."))
+    }
+
     @Test("tool call arguments stringified")
     func toolCallArgumentsStringified() throws {
         let toolCallPart = LanguageModelV3ToolCallPart(

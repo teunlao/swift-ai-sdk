@@ -136,6 +136,24 @@ private func jsonText(from value: JSONValue) throws -> String {
     return String(decoding: data, as: UTF8.self)
 }
 
+private func multipartFieldValues(in body: String, named name: String) -> [String] {
+    let normalized = body.replacingOccurrences(of: "\r\n", with: "\n")
+    return normalized
+        .components(separatedBy: "\n--")
+        .compactMap { part in
+            guard part.contains("name=\"\(name)\""),
+                  let separator = part.range(of: "\n\n")
+            else {
+                return nil
+            }
+
+            let value = part[separator.upperBound...]
+            return value.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
+                .first
+                .map(String.init) ?? ""
+        }
+}
+
 @Suite("OpenAITranscriptionModel")
 struct OpenAITranscriptionModelTests {
     @Test("doGenerate rejects realtime transcription models")
@@ -493,6 +511,138 @@ struct OpenAITranscriptionModelTests {
         #expect(bodyString.contains("prompt"))
         #expect(bodyString.contains("response_format"))
         #expect(bodyString.contains("timestamp_granularities[]"))
+    }
+
+    @Test("V4 doGenerate defaults whisper-1 REST transcription to verbose_json")
+    func testV4DoGenerateDefaultsWhisperToVerboseJSON() async throws {
+        actor RequestCapture {
+            var request: URLRequest?
+            func store(_ request: URLRequest) { self.request = request }
+            func value() -> URLRequest? { request }
+        }
+
+        let capture = RequestCapture()
+
+        let responsePayload: [String: Any] = [
+            "text": "Hello world!",
+            "language": "english",
+            "duration": 1.5,
+            "words": [
+                ["word": "Hello", "start": 0.0, "end": 0.5],
+                ["word": "world", "start": 0.5, "end": 1.0]
+            ]
+        ]
+        let responseData = try JSONSerialization.data(withJSONObject: responsePayload)
+
+        let mockFetch: FetchFunction = { request in
+            await capture.store(request)
+            let httpResponse = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.transcription",
+            url: { _ in "https://api.openai.com/v1/audio/transcriptions" },
+            headers: { ["Authorization": "Bearer test-key"] },
+            fetch: mockFetch,
+            _internal: .init(currentDate: { Date(timeIntervalSince1970: 0) })
+        )
+
+        let model = OpenAITranscriptionModelV4(modelId: "whisper-1", config: config)
+
+        let result = try await model.doGenerate(
+            options: TranscriptionModelV4CallOptions(
+                audio: .binary(sampleAudioData),
+                mediaType: "audio/wav"
+            )
+        )
+
+        #expect(result.text == "Hello world!")
+        #expect(result.language == "en")
+        #expect(result.segments.count == 2)
+        #expect(result.durationInSeconds == 1.5)
+        #expect(result.response.timestamp == Date(timeIntervalSince1970: 0))
+        #expect(result.response.modelId == "whisper-1")
+
+        guard let request = await capture.value(),
+              let body = request.httpBody
+        else {
+            Issue.record("No V4 transcription request captured")
+            return
+        }
+
+        #expect(request.httpMethod == "POST")
+        #expect(request.url?.absoluteString == "https://api.openai.com/v1/audio/transcriptions")
+
+        let bodyString = String(decoding: body, as: UTF8.self)
+        #expect(multipartFieldValues(in: bodyString, named: "model") == ["whisper-1"])
+        #expect(multipartFieldValues(in: bodyString, named: "response_format") == ["verbose_json"])
+        #expect(bodyString.contains("Content-Disposition: form-data; name=\"file\"; filename=\"audio.wav\""))
+    }
+
+    @Test("V4 doGenerate sends OpenAI REST transcription provider options")
+    func testV4DoGenerateSendsProviderOptions() async throws {
+        actor BodyCapture {
+            var bodyString: String?
+            func store(_ data: Data) {
+                bodyString = String(decoding: data, as: UTF8.self)
+            }
+        }
+
+        let capture = BodyCapture()
+
+        let responsePayload: [String: Any] = ["text": "Test"]
+        let responseData = try JSONSerialization.data(withJSONObject: responsePayload)
+
+        let mockFetch: FetchFunction = { request in
+            if let body = request.httpBody {
+                await capture.store(body)
+            }
+            let httpResponse = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.transcription",
+            url: { _ in "https://api.openai.com/v1/audio/transcriptions" },
+            headers: { [:] },
+            fetch: mockFetch
+        )
+
+        let model = OpenAITranscriptionModelV4(modelId: "gpt-4o-transcribe", config: config)
+
+        _ = try await model.doGenerate(
+            options: TranscriptionModelV4CallOptions(
+                audio: .binary(sampleAudioData),
+                mediaType: "audio/mpeg",
+                providerOptions: [
+                    "openai": [
+                        "timestampGranularities": .array([.string("word")])
+                    ]
+                ]
+            )
+        )
+
+        guard let bodyString = await capture.bodyString else {
+            Issue.record("Multipart body not captured")
+            return
+        }
+
+        #expect(multipartFieldValues(in: bodyString, named: "model") == ["gpt-4o-transcribe"])
+        #expect(multipartFieldValues(in: bodyString, named: "response_format") == ["json"])
+        #expect(multipartFieldValues(in: bodyString, named: "temperature") == ["0"])
+        #expect(multipartFieldValues(in: bodyString, named: "timestamp_granularities[]") == ["word"])
+        #expect(bodyString.contains("Content-Disposition: form-data; name=\"file\"; filename=\"audio.mp3\""))
     }
 
     @Test("response_format is json for 4o transcription models")

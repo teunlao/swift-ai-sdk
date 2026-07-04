@@ -75,7 +75,7 @@ struct OpenAIEmbeddingModelTests {
         #expect(result.embeddings.count == 2)
         #expect(result.embeddings == embeddingVectors)
         #expect(result.usage?.tokens == 8)
-                guard let request = await capture.current(),
+        guard let request = await capture.current(),
               let body = request.httpBody,
               let json = try JSONSerialization.jsonObject(with: body) as? [String: Any]
         else {
@@ -90,6 +90,106 @@ struct OpenAIEmbeddingModelTests {
             Issue.record("Expected input array")
         }
         #expect(json["encoding_format"] as? String == "float")
+    }
+
+    @Test("V4 doEmbed maps request, provider options, usage and response")
+    func testV4DoEmbedMapsRequestOptionsAndResponse() async throws {
+        actor RequestCapture {
+            var request: URLRequest?
+            func store(_ request: URLRequest) { self.request = request }
+            func current() -> URLRequest? { request }
+        }
+
+        let capture = RequestCapture()
+        let responseJSON: [String: Any] = [
+            "object": "list",
+            "data": [
+                [
+                    "object": "embedding",
+                    "index": 0,
+                    "embedding": embeddingVectors[0]
+                ]
+            ],
+            "model": "text-embedding-3-large",
+            "usage": [
+                "prompt_tokens": 12,
+                "total_tokens": 12
+            ]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.openai.com/v1/embeddings")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: [
+                "Content-Type": "application/json",
+                "X-Test-Header": "value"
+            ]
+        )!
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let config = OpenAIConfig(
+            provider: "openai.embedding",
+            url: { _ in "https://api.openai.com/v1/embeddings" },
+            headers: { [
+                "Authorization": "Bearer test-api-key",
+                "Custom-Provider-Header": "provider-header-value"
+            ] },
+            fetch: fetch
+        )
+
+        let model = OpenAIEmbeddingModelV4(
+            modelId: "text-embedding-3-large",
+            config: config
+        )
+
+        #expect(model.specificationVersion == "v4")
+        #expect(try await model.maxEmbeddingsPerCall == 2048)
+        #expect(try await model.supportsParallelCalls == true)
+
+        let result = try await model.doEmbed(
+            options: EmbeddingModelV4CallOptions(
+                values: [embeddingValues[0]],
+                providerOptions: [
+                    "openai": [
+                        "dimensions": .number(64),
+                        "user": .string("test-user")
+                    ]
+                ],
+                headers: ["Custom-Request-Header": "request-header-value"]
+            )
+        )
+
+        #expect(result.embeddings == [embeddingVectors[0]])
+        #expect(result.usage?.tokens == 12)
+        #expect(result.response?.headers?["content-type"] == "application/json")
+        #expect(result.response?.headers?["x-test-header"] == "value")
+
+        guard let request = await capture.current(),
+              let body = request.httpBody,
+              let json = try JSONSerialization.jsonObject(with: body) as? [String: Any]
+        else {
+            Issue.record("Missing captured request")
+            return
+        }
+
+        let headers = request.allHTTPHeaderFields ?? [:]
+        let normalized = Dictionary(uniqueKeysWithValues: headers.map { ($0.key.lowercased(), $0.value) })
+        #expect(normalized["authorization"] == "Bearer test-api-key")
+        #expect(normalized["custom-provider-header"] == "provider-header-value")
+        #expect(normalized["custom-request-header"] == "request-header-value")
+        #expect(normalized["content-type"] == "application/json")
+
+        #expect(json["model"] as? String == "text-embedding-3-large")
+        #expect(json["input"] as? [String] == [embeddingValues[0]])
+        #expect(json["encoding_format"] as? String == "float")
+        #expect(json["dimensions"] as? Int == 64 || json["dimensions"] as? Double == 64)
+        #expect(json["user"] as? String == "test-user")
     }
 
     @Test("doEmbed merges headers and provider options")
