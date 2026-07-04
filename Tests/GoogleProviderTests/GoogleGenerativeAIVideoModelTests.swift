@@ -1216,10 +1216,8 @@ struct GoogleGenerativeAIVideoModelTests {
             }
 
             if urlString.contains("/operations/abort-test") {
-                Task {
-                    try? await Task.sleep(nanoseconds: 60_000_000)
-                    flag.abort()
-                }
+                flag.abort()
+                try await Task.sleep(nanoseconds: 120_000_000)
                 let response = try self.jsonData([
                     "name": "operations/abort-test",
                     "done": false
@@ -1240,7 +1238,7 @@ struct GoogleGenerativeAIVideoModelTests {
             _ = try await model.doGenerate(options: makeOptions(
                 providerOptions: [
                     "google": [
-                        "pollIntervalMs": .number(100)
+                        "pollIntervalMs": .number(1)
                     ]
                 ],
                 abortSignal: { flag.isAborted() }

@@ -428,18 +428,26 @@ public final class GoogleVertexVideoModel: VideoModelV3 {
             combineHeaders(try self.config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 }
         }
 
-        let operation = try await postJsonToAPI(
-            url: "\(config.baseURL)/models/\(modelIdentifier.rawValue):predictLongRunning",
-            headers: requestHeaders(),
-            body: JSONValue.object([
-                "instances": .array([.object(instance)]),
-                "parameters": .object(parameters)
-            ]),
-            failedResponseHandler: googleVertexFailedResponseHandler,
-            successfulResponseHandler: createJsonResponseHandler(responseSchema: googleVertexVideoOperationSchema),
-            isAborted: options.abortSignal,
-            fetch: config.fetch
-        )
+        let operation: ResponseHandlerResult<GoogleVertexVideoOperation>
+        do {
+            operation = try await postJsonToAPI(
+                url: "\(config.baseURL)/models/\(modelIdentifier.rawValue):predictLongRunning",
+                headers: requestHeaders(),
+                body: JSONValue.object([
+                    "instances": .array([.object(instance)]),
+                    "parameters": .object(parameters)
+                ]),
+                failedResponseHandler: googleVertexFailedResponseHandler,
+                successfulResponseHandler: createJsonResponseHandler(responseSchema: googleVertexVideoOperationSchema),
+                isAborted: options.abortSignal,
+                fetch: config.fetch
+            )
+        } catch {
+            if isVideoGenerationAbort(error, abortSignal: options.abortSignal) {
+                throw googleVertexVideoGenerationAbortedError()
+            }
+            throw error
+        }
 
         guard let operationName = operation.value.name, !operationName.isEmpty else {
             throw GoogleVertexVideoModelError(
@@ -464,30 +472,34 @@ public final class GoogleVertexVideoModel: VideoModelV3 {
                 )
             }
 
-            let pollDelay = max(0, Int(pollIntervalMs.rounded(.towardZero)))
-            try await delay(pollDelay)
+            do {
+                let pollDelay = max(0, Int(pollIntervalMs.rounded(.towardZero)))
+                try await delay(pollDelay, abortSignal: options.abortSignal)
 
-            if options.abortSignal?() == true {
-                throw GoogleVertexVideoModelError(
-                    name: "VERTEX_VIDEO_GENERATION_ABORTED",
-                    message: "Video generation request was aborted"
+                if options.abortSignal?() == true {
+                    throw googleVertexVideoGenerationAbortedError()
+                }
+
+                let statusOperation = try await postJsonToAPI(
+                    url: "\(config.baseURL)/models/\(modelIdentifier.rawValue):fetchPredictOperation",
+                    headers: requestHeaders(),
+                    body: JSONValue.object([
+                        "operationName": .string(operationName)
+                    ]),
+                    failedResponseHandler: googleVertexFailedResponseHandler,
+                    successfulResponseHandler: createJsonResponseHandler(responseSchema: googleVertexVideoOperationSchema),
+                    isAborted: options.abortSignal,
+                    fetch: config.fetch
                 )
+
+                finalOperation = statusOperation.value
+                responseHeaders = statusOperation.responseHeaders
+            } catch {
+                if isVideoGenerationAbort(error, abortSignal: options.abortSignal) {
+                    throw googleVertexVideoGenerationAbortedError()
+                }
+                throw error
             }
-
-            let statusOperation = try await postJsonToAPI(
-                url: "\(config.baseURL)/models/\(modelIdentifier.rawValue):fetchPredictOperation",
-                headers: requestHeaders(),
-                body: JSONValue.object([
-                    "operationName": .string(operationName)
-                ]),
-                failedResponseHandler: googleVertexFailedResponseHandler,
-                successfulResponseHandler: createJsonResponseHandler(responseSchema: googleVertexVideoOperationSchema),
-                isAborted: options.abortSignal,
-                fetch: config.fetch
-            )
-
-            finalOperation = statusOperation.value
-            responseHeaders = statusOperation.responseHeaders
         }
 
         if let operationError = finalOperation.error {
@@ -573,6 +585,20 @@ private func formatVertexMilliseconds(_ value: Double) -> String {
         return String(Int(value))
     }
     return String(value)
+}
+
+private func isVideoGenerationAbort(
+    _ error: Error,
+    abortSignal: (@Sendable () -> Bool)?
+) -> Bool {
+    abortSignal?() == true && isAbortError(error)
+}
+
+private func googleVertexVideoGenerationAbortedError() -> GoogleVertexVideoModelError {
+    GoogleVertexVideoModelError(
+        name: "VERTEX_VIDEO_GENERATION_ABORTED",
+        message: "Video generation request was aborted"
+    )
 }
 
 private struct GoogleVertexVideoModelError: AISDKError, Sendable {
