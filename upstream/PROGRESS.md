@@ -2530,6 +2530,12 @@ For source-of-truth code, always follow the commits and tests.
 
 ### Unreleased (main)
 
+### v0.18.2 - 2026-07-04
+
+- 2026-07-04
+  - Release/CI: `v0.18.2` supersedes `v0.18.1` on the same OpenAI V4 release line after normalizing Google and Google Vertex video polling abort races to provider abort errors instead of leaking raw Swift `CancellationError`.
+  - Release/docs: README, SDK release version, Starlight install snippets, changelog, and upstream evidence now point at `0.18.2`.
+
 - 2026-07-04
   - OpenAI package source-owner closure on refreshed upstream `c8d2726ae045a28142cb46df5e41cdd51d8dcc71`: the remaining runtime source owners are now tracked or classified (`openai-chat-prompt.ts`, files/skills API schemas, `openai-config.ts`, realtime export aliases, and TypeScript-only internal re-exports), and the broad OpenAI provider audit status now points at the refreshed upstream commit.
   - Validation: `swift test --filter 'OpenAIFilesSkillsTests|OpenAIProviderTests|OpenAIRealtimeModelTests|OpenAIChatMessagesConverterTests'` passed 49 Swift Testing tests.
