@@ -110,6 +110,47 @@ public struct AgentSettings<OutputValue: Sendable, PartialOutputValue: Sendable>
 
     // MARK: - Convenience initializers (model overloads for DX parity)
 
+    /// Convenience initializer that accepts a `LanguageModelV4` directly.
+    public init(
+        name: String? = nil,
+        system: String? = nil,
+        model: any LanguageModelV4,
+        tools: ToolSet? = nil,
+        toolChoice: ToolChoice? = nil,
+        stopWhen: [StopCondition]? = nil,
+        experimentalTelemetry: TelemetrySettings? = nil,
+        activeTools: [String]? = nil,
+        experimentalOutput: Output.Specification<OutputValue, PartialOutputValue>? = nil,
+        experimentalPrepareStep: PrepareStepFunction? = nil,
+        prepareStep: PrepareStepFunction? = nil,
+        experimentalRepairToolCall: ToolCallRepairFunction? = nil,
+        onStepFinish: GenerateTextOnStepFinishCallback? = nil,
+        onFinish: GenerateTextOnFinishCallback? = nil,
+        providerOptions: ProviderOptions? = nil,
+        experimentalContext: JSONValue? = nil,
+        callSettings: CallSettings = CallSettings()
+    ) {
+        self.init(
+            name: name,
+            system: system,
+            model: .v4(model),
+            tools: tools,
+            toolChoice: toolChoice,
+            stopWhen: stopWhen,
+            experimentalTelemetry: experimentalTelemetry,
+            activeTools: activeTools,
+            experimentalOutput: experimentalOutput,
+            experimentalPrepareStep: experimentalPrepareStep,
+            prepareStep: prepareStep,
+            experimentalRepairToolCall: experimentalRepairToolCall,
+            onStepFinish: onStepFinish,
+            onFinish: onFinish,
+            providerOptions: providerOptions,
+            experimentalContext: experimentalContext,
+            callSettings: callSettings
+        )
+    }
+
     /// Convenience initializer that accepts a `LanguageModelV3` directly.
     /// Mirrors the JavaScript API where callers pass provider models like `openai("gpt-4o")`.
     public init(

@@ -65,7 +65,7 @@ struct StreamTextV4Tests {
         )
 
         let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
-            model: .v4(model),
+            model: model,
             system: "You are a V4 stream test.",
             prompt: "Stream hello.",
             providerOptions: ["mock": ["mode": .string("stream")]],

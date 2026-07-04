@@ -76,7 +76,7 @@ struct GenerateTextV4Tests {
         ]
 
         let result: DefaultGenerateTextResult<JSONValue> = try await generateText(
-            model: .v4(model),
+            model: model,
             tools: tools,
             toolChoice: .required,
             system: "You are a V4 contract test.",

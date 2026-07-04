@@ -83,7 +83,7 @@ struct GenerateObjectV4Tests {
         )
 
         let result: GenerateObjectResult<JSONValue> = try await generateObject(
-            model: .v4(model),
+            model: model,
             output: GenerateObjectOutput.object(
                 schema: defaultObjectSchema(),
                 schemaName: "object-result",
@@ -194,7 +194,7 @@ struct GenerateObjectV4Tests {
         )
 
         let result = try streamObject(
-            model: .v4(model),
+            model: model,
             output: GenerateObjectOutput.object(
                 schema: defaultObjectSchema(),
                 schemaName: "stream-object-result",

@@ -21,6 +21,15 @@ struct ResolveModelV4Tests {
         #expect(try providerV4.skills() == nil)
     }
 
+    @Test("ProviderV3 to V4 adapter preserves upload capabilities")
+    func providerV3ToV4AdapterPreservesUploadCapabilities() throws {
+        let provider = UploadCapableProviderV3()
+        let providerV4 = asProviderV4(provider)
+
+        #expect(try providerV4.files()?.provider == "test.files")
+        #expect(try providerV4.skills()?.provider == "test.skills")
+    }
+
     @Test("resolveLanguageModelV4 accepts a direct V4 language model")
     func resolveLanguageModelV4AcceptsDirectV4Model() async throws {
         let directModel = MockLanguageModelV4(
@@ -183,7 +192,8 @@ struct ResolveModelV4Tests {
 
     @Test("language V4 adapter rejects V4-only inputs that a V3 model cannot represent")
     func languageAdapterRejectsUnsupportedV4Inputs() async throws {
-        let model = asLanguageModelV4(RecordingLanguageModelV3())
+        let baseModel = RecordingLanguageModelV3()
+        let model = asLanguageModelV4(baseModel)
 
         await #expect(throws: UnsupportedFunctionalityError.self) {
             _ = try await model.doGenerate(
@@ -191,12 +201,41 @@ struct ResolveModelV4Tests {
             )
         }
 
+        _ = try await model.doGenerate(
+            options: LanguageModelV4CallOptions(
+                prompt: [
+                    .assistant(
+                        content: [
+                            .custom(LanguageModelV4CustomPart(
+                                kind: "provider.custom",
+                                providerOptions: ["provider": ["flag": true]]
+                            ))
+                        ],
+                        providerOptions: nil
+                    )
+                ]
+            )
+        )
+
+        guard case .assistant(let convertedContent, _) = baseModel.lastGenerateOptions?.prompt.first,
+              case .custom(let customPart) = convertedContent.first else {
+            Issue.record("Expected V4 custom prompt part to be represented as V3 custom prompt part")
+            return
+        }
+        #expect(customPart.kind == "provider.custom")
+        #expect(customPart.providerOptions?["provider"]?["flag"] == .bool(true))
+
         await #expect(throws: UnsupportedFunctionalityError.self) {
             _ = try await model.doGenerate(
                 options: LanguageModelV4CallOptions(
                     prompt: [
                         .assistant(
-                            content: [.custom(LanguageModelV4CustomPart(kind: "provider.custom"))],
+                            content: [
+                                .reasoningFile(LanguageModelV4ReasoningFilePart(
+                                    data: .base64("cmVhc29uaW5nLWZpbGU="),
+                                    mediaType: "text/plain"
+                                ))
+                            ],
                             providerOptions: nil
                         )
                     ]
@@ -341,6 +380,50 @@ private final class AdapterProviderV3: ProviderV3, @unchecked Sendable {
 
     func rerankingModel(modelId: String) throws -> (any RerankingModelV3)? {
         RecordingRerankingModelV3(modelId: modelId)
+    }
+}
+
+private final class UploadCapableProviderV3: ProviderV3, FilesProvider, SkillsProvider, @unchecked Sendable {
+    private let base = AdapterProviderV3()
+    private let filesAPI = RecordingFilesV4()
+    private let skillsAPI = RecordingSkillsV4()
+
+    func files() -> any FilesV4 {
+        filesAPI
+    }
+
+    func skills() -> any SkillsV4 {
+        skillsAPI
+    }
+
+    func languageModel(modelId: String) throws -> any LanguageModelV3 {
+        try base.languageModel(modelId: modelId)
+    }
+
+    func textEmbeddingModel(modelId: String) throws -> any EmbeddingModelV3<String> {
+        try base.textEmbeddingModel(modelId: modelId)
+    }
+
+    func imageModel(modelId: String) throws -> any ImageModelV3 {
+        try base.imageModel(modelId: modelId)
+    }
+}
+
+private final class RecordingFilesV4: FilesV4, @unchecked Sendable {
+    let specificationVersion = "v4"
+    let provider = "test.files"
+
+    func uploadFile(options: FilesV4UploadFileCallOptions) async throws -> FilesV4UploadFileResult {
+        FilesV4UploadFileResult(providerReference: ["test": "file"])
+    }
+}
+
+private final class RecordingSkillsV4: SkillsV4, @unchecked Sendable {
+    let specificationVersion = "v4"
+    let provider = "test.skills"
+
+    func uploadSkill(options: SkillsV4UploadSkillCallOptions) async throws -> SkillsV4UploadSkillResult {
+        SkillsV4UploadSkillResult(providerReference: ["test": "skill"])
     }
 }
 

@@ -36,6 +36,30 @@ extension LanguageModelV3GenerateResult {
     }
 }
 
+extension LanguageModelV4GenerateResult {
+    /// Extract first text content for testing.
+    var firstText: String? {
+        for item in content {
+            if case .text(let part) = item { return part.text }
+        }
+        return nil
+    }
+
+    /// Create modified result with transformed text.
+    func withModifiedText(_ transform: (String) -> String) -> Self {
+        guard let text = firstText else { return self }
+        return LanguageModelV4GenerateResult(
+            content: [.text(.init(text: transform(text)))],
+            finishReason: finishReason,
+            usage: usage,
+            providerMetadata: providerMetadata,
+            request: request,
+            response: response,
+            warnings: warnings
+        )
+    }
+}
+
 @Suite("wrapLanguageModel")
 struct WrapLanguageModelTests {
 
@@ -76,6 +100,100 @@ struct WrapLanguageModelTests {
 
             #expect(wrappedModel.modelId == "override-model")
         }
+    }
+
+    // MARK: - V4 Middleware Tests
+
+    @Test("should wrap V4 model and apply transformParams")
+    func wrapsV4ModelAndTransformsParams() async throws {
+        let mockModel = MockLanguageModelV4(
+            provider: "test-provider",
+            modelId: "test-model",
+            doGenerate: .function { options in
+                LanguageModelV4GenerateResult(
+                    content: [.text(.init(text: "temperature=\(options.temperature ?? -1)"))],
+                    finishReason: LanguageModelV4FinishReason(unified: .stop),
+                    usage: LanguageModelV4Usage()
+                )
+            }
+        )
+
+        let wrappedModel = wrapLanguageModel(
+            model: mockModel,
+            middleware: .single(LanguageModelV4Middleware(
+                transformParams: { type, params, _ in
+                    #expect(type == .generate)
+                    return LanguageModelV4CallOptions(
+                        prompt: params.prompt,
+                        maxOutputTokens: params.maxOutputTokens,
+                        temperature: 0.25,
+                        stopSequences: params.stopSequences,
+                        topP: params.topP,
+                        topK: params.topK,
+                        presencePenalty: params.presencePenalty,
+                        frequencyPenalty: params.frequencyPenalty,
+                        responseFormat: params.responseFormat,
+                        seed: params.seed,
+                        tools: params.tools,
+                        toolChoice: params.toolChoice,
+                        includeRawChunks: params.includeRawChunks,
+                        abortSignal: params.abortSignal,
+                        headers: params.headers,
+                        reasoning: params.reasoning,
+                        providerOptions: params.providerOptions
+                    )
+                }
+            )),
+            modelId: "override-model",
+            providerId: "override-provider"
+        )
+
+        let result = try await wrappedModel.doGenerate(options: LanguageModelV4CallOptions(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)]
+        ))
+
+        #expect(wrappedModel.specificationVersion == "v4")
+        #expect(wrappedModel.provider == "override-provider")
+        #expect(wrappedModel.modelId == "override-model")
+        #expect(result.firstText == "temperature=0.25")
+        #expect(mockModel.doGenerateCalls.count == 1)
+    }
+
+    @Test("should chain V4 wrapGenerate middleware in declaration order")
+    func chainsV4WrapGenerateInDeclarationOrder() async throws {
+        let mockModel = MockLanguageModelV4(
+            doGenerate: .function { _ in
+                LanguageModelV4GenerateResult(
+                    content: [.text(.init(text: "final generate result"))],
+                    finishReason: LanguageModelV4FinishReason(unified: .stop),
+                    usage: LanguageModelV4Usage()
+                )
+            }
+        )
+
+        let wrappedModel = wrapLanguageModel(
+            model: mockModel,
+            middleware: .multiple([
+                LanguageModelV4Middleware(
+                    wrapGenerate: { doGenerate, _, _, _ in
+                        let result = try await doGenerate()
+                        return result.withModifiedText { "wrapGenerate1(\($0))" }
+                    }
+                ),
+                LanguageModelV4Middleware(
+                    wrapGenerate: { doGenerate, _, _, _ in
+                        let result = try await doGenerate()
+                        return result.withModifiedText { "wrapGenerate2(\($0))" }
+                    }
+                )
+            ])
+        )
+
+        let result = try await wrappedModel.doGenerate(options: LanguageModelV4CallOptions(
+            prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)]
+        ))
+
+        #expect(result.firstText == "wrapGenerate1(wrapGenerate2(final generate result))")
     }
 
     // MARK: - Provider Property Tests

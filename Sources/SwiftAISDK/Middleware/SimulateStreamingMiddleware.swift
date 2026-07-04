@@ -83,6 +83,9 @@ public func simulateStreamingMiddleware() -> LanguageModelV3Middleware {
                     case .toolApprovalRequest(let request):
                         continuation.yield(.toolApprovalRequest(request))
 
+                    case .custom(let custom):
+                        continuation.yield(.custom(custom))
+
                     case .file(let file):
                         // Pass through files as-is
                         continuation.yield(.file(file))
@@ -109,6 +112,84 @@ public func simulateStreamingMiddleware() -> LanguageModelV3Middleware {
                 request: result.request,
                 response: result.response.map { response in
                     LanguageModelV3StreamResponseInfo(headers: response.headers)
+                }
+            )
+        }
+    )
+}
+
+/// Creates a V4 middleware that simulates streaming from a generate result.
+public func simulateStreamingMiddleware() -> LanguageModelV4Middleware {
+    LanguageModelV4Middleware(
+        wrapStream: { doGenerate, _, _, _ in
+            let result = try await doGenerate()
+
+            var id = 0
+
+            let simulatedStream = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { continuation in
+                continuation.yield(.streamStart(warnings: result.warnings))
+
+                if let response = result.response {
+                    continuation.yield(.responseMetadata(
+                        id: response.id,
+                        modelId: response.modelId,
+                        timestamp: response.timestamp
+                    ))
+                }
+
+                for content in result.content {
+                    switch content {
+                    case .text(let textContent):
+                        if !textContent.text.isEmpty {
+                            continuation.yield(.textStart(id: String(id), providerMetadata: textContent.providerMetadata))
+                            continuation.yield(.textDelta(id: String(id), delta: textContent.text, providerMetadata: textContent.providerMetadata))
+                            continuation.yield(.textEnd(id: String(id), providerMetadata: textContent.providerMetadata))
+                            id += 1
+                        }
+
+                    case .reasoning(let reasoningContent):
+                        continuation.yield(.reasoningStart(id: String(id), providerMetadata: reasoningContent.providerMetadata))
+                        continuation.yield(.reasoningDelta(id: String(id), delta: reasoningContent.text, providerMetadata: reasoningContent.providerMetadata))
+                        continuation.yield(.reasoningEnd(id: String(id), providerMetadata: reasoningContent.providerMetadata))
+                        id += 1
+
+                    case .toolCall(let toolCall):
+                        continuation.yield(.toolCall(toolCall))
+
+                    case .toolResult(let toolResult):
+                        continuation.yield(.toolResult(toolResult))
+
+                    case .toolApprovalRequest(let request):
+                        continuation.yield(.toolApprovalRequest(request))
+
+                    case .custom(let custom):
+                        continuation.yield(.custom(custom))
+
+                    case .file(let file):
+                        continuation.yield(.file(file))
+
+                    case .reasoningFile(let file):
+                        continuation.yield(.reasoningFile(file))
+
+                    case .source(let source):
+                        continuation.yield(.source(source))
+                    }
+                }
+
+                continuation.yield(.finish(
+                    finishReason: result.finishReason,
+                    usage: result.usage,
+                    providerMetadata: result.providerMetadata
+                ))
+
+                continuation.finish()
+            }
+
+            return LanguageModelV4StreamResult(
+                stream: simulatedStream,
+                request: result.request,
+                response: result.response.map { response in
+                    LanguageModelV4StreamResponseInfo(headers: response.headers)
                 }
             )
         }

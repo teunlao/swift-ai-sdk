@@ -328,3 +328,263 @@ public func extractReasoningMiddleware(options: ExtractReasoningOptions) -> Lang
         }
     )
 }
+
+/// Creates a V4 middleware that extracts reasoning from XML tags in text content.
+public func extractReasoningMiddleware(options: ExtractReasoningOptions) -> LanguageModelV4Middleware {
+    let openingTag = "<\(options.tagName)>"
+    let closingTag = "</\(options.tagName)>"
+
+    return LanguageModelV4Middleware(
+        wrapGenerate: { doGenerate, _, _, _ in
+            let result = try await doGenerate()
+
+            var transformedContent: [LanguageModelV4Content] = []
+
+            for content in result.content {
+                guard case .text(let textPart) = content else {
+                    transformedContent.append(content)
+                    continue
+                }
+
+                let text = options.startWithReasoning ? openingTag + textPart.text : textPart.text
+
+                let pattern = "\(NSRegularExpression.escapedPattern(for: openingTag))(.*?)\(NSRegularExpression.escapedPattern(for: closingTag))"
+                guard let regex = try? NSRegularExpression(pattern: pattern, options: [.dotMatchesLineSeparators]) else {
+                    transformedContent.append(content)
+                    continue
+                }
+
+                let nsText = text as NSString
+                let matches = regex.matches(in: text, options: [], range: NSRange(location: 0, length: nsText.length))
+
+                if matches.isEmpty {
+                    transformedContent.append(content)
+                    continue
+                }
+
+                let reasoningText = matches.compactMap { match -> String? in
+                    guard match.numberOfRanges > 1 else { return nil }
+                    let captureRange = match.range(at: 1)
+                    return nsText.substring(with: captureRange)
+                }.joined(separator: options.separator)
+
+                var textWithoutReasoning = text
+                for match in matches.reversed() {
+                    let currentText = textWithoutReasoning as NSString
+                    let matchRange = match.range
+                    let beforeMatch = currentText.substring(to: matchRange.location)
+                    let afterMatch = currentText.substring(from: matchRange.location + matchRange.length)
+
+                    let needsSeparator = !beforeMatch.isEmpty && !afterMatch.isEmpty
+                    textWithoutReasoning = beforeMatch + (needsSeparator ? options.separator : "") + afterMatch
+                }
+
+                transformedContent.append(.reasoning(LanguageModelV4Reasoning(
+                    text: reasoningText,
+                    providerMetadata: textPart.providerMetadata
+                )))
+
+                transformedContent.append(.text(LanguageModelV4Text(
+                    text: textWithoutReasoning,
+                    providerMetadata: textPart.providerMetadata
+                )))
+            }
+
+            return LanguageModelV4GenerateResult(
+                content: transformedContent,
+                finishReason: result.finishReason,
+                usage: result.usage,
+                providerMetadata: result.providerMetadata,
+                request: result.request,
+                response: result.response,
+                warnings: result.warnings
+            )
+        },
+        wrapStream: { _, doStream, _, _ in
+            let result = try await doStream()
+
+            actor ReasoningExtractionState {
+                var extractions: [String: ExtractionState] = [:]
+
+                struct ExtractionState {
+                    var isFirstReasoning: Bool = true
+                    var isFirstText: Bool = true
+                    var afterSwitch: Bool = false
+                    var isReasoning: Bool
+                    var buffer: String = ""
+                    var idCounter: Int = 0
+                    let textId: String
+                }
+
+                func getOrCreate(id: String, startWithReasoning: Bool) -> ExtractionState {
+                    if let existing = extractions[id] {
+                        return existing
+                    }
+                    let state = ExtractionState(
+                        isReasoning: startWithReasoning,
+                        textId: id
+                    )
+                    extractions[id] = state
+                    return state
+                }
+
+                func update(id: String, _ updater: (inout ExtractionState) -> Void) {
+                    guard var state = extractions[id] else { return }
+                    updater(&state)
+                    extractions[id] = state
+                }
+            }
+
+            let state = ReasoningExtractionState()
+
+            let transformedStream = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { continuation in
+                let task = Task {
+                    var delayedTextStart: LanguageModelV4StreamPart?
+
+                    do {
+                        for try await chunk in result.stream {
+                            if case .textStart = chunk {
+                                delayedTextStart = chunk
+                                continue
+                            }
+
+                            if case .textEnd = chunk, delayedTextStart != nil {
+                                continuation.yield(delayedTextStart!)
+                                delayedTextStart = nil
+                            }
+
+                            guard case .textDelta(let id, let delta, let providerMetadata) = chunk else {
+                                continuation.yield(chunk)
+                                continue
+                            }
+
+                            var activeExtraction = await state.getOrCreate(id: id, startWithReasoning: options.startWithReasoning)
+                            activeExtraction.buffer += delta
+
+                            func publish(text: String) {
+                                guard !text.isEmpty else { return }
+
+                                let prefix: String
+                                if activeExtraction.afterSwitch {
+                                    if activeExtraction.isReasoning {
+                                        prefix = !activeExtraction.isFirstReasoning ? options.separator : ""
+                                    } else {
+                                        prefix = !activeExtraction.isFirstText ? options.separator : ""
+                                    }
+                                } else {
+                                    prefix = ""
+                                }
+
+                                if activeExtraction.isReasoning &&
+                                   (activeExtraction.afterSwitch || activeExtraction.isFirstReasoning) {
+                                    continuation.yield(.reasoningStart(
+                                        id: "reasoning-\(activeExtraction.idCounter)",
+                                        providerMetadata: providerMetadata
+                                    ))
+                                }
+
+                                if activeExtraction.isReasoning {
+                                    continuation.yield(.reasoningDelta(
+                                        id: "reasoning-\(activeExtraction.idCounter)",
+                                        delta: prefix + text,
+                                        providerMetadata: providerMetadata
+                                    ))
+                                } else {
+                                    if let delayed = delayedTextStart {
+                                        continuation.yield(delayed)
+                                        delayedTextStart = nil
+                                    }
+                                    continuation.yield(.textDelta(
+                                        id: activeExtraction.textId,
+                                        delta: prefix + text,
+                                        providerMetadata: providerMetadata
+                                    ))
+                                }
+
+                                activeExtraction.afterSwitch = false
+
+                                if activeExtraction.isReasoning {
+                                    activeExtraction.isFirstReasoning = false
+                                } else {
+                                    activeExtraction.isFirstText = false
+                                }
+                            }
+
+                            while true {
+                                let nextTag = activeExtraction.isReasoning ? closingTag : openingTag
+
+                                let startIndex = getPotentialStartIndex(
+                                    text: activeExtraction.buffer,
+                                    searchedText: nextTag
+                                )
+
+                                guard let startIndex = startIndex else {
+                                    publish(text: activeExtraction.buffer)
+                                    activeExtraction.buffer = ""
+                                    break
+                                }
+
+                                let textBeforeTag = String(activeExtraction.buffer.prefix(startIndex))
+                                publish(text: textBeforeTag)
+
+                                let foundFullMatch = startIndex + nextTag.count <= activeExtraction.buffer.count
+
+                                if foundFullMatch {
+                                    let tagEndIndex = activeExtraction.buffer.index(
+                                        activeExtraction.buffer.startIndex,
+                                        offsetBy: startIndex + nextTag.count
+                                    )
+                                    activeExtraction.buffer = String(activeExtraction.buffer[tagEndIndex...])
+
+                                    if activeExtraction.isReasoning {
+                                        if activeExtraction.isFirstReasoning {
+                                            continuation.yield(.reasoningStart(
+                                                id: "reasoning-\(activeExtraction.idCounter)",
+                                                providerMetadata: providerMetadata
+                                            ))
+                                        }
+
+                                        continuation.yield(.reasoningEnd(
+                                            id: "reasoning-\(activeExtraction.idCounter)",
+                                            providerMetadata: providerMetadata
+                                        ))
+                                        activeExtraction.idCounter += 1
+                                    }
+
+                                    activeExtraction.isReasoning.toggle()
+                                    activeExtraction.afterSwitch = true
+                                } else {
+                                    let bufferStartIndex = activeExtraction.buffer.index(
+                                        activeExtraction.buffer.startIndex,
+                                        offsetBy: startIndex
+                                    )
+                                    activeExtraction.buffer = String(activeExtraction.buffer[bufferStartIndex...])
+                                    break
+                                }
+                            }
+
+                            await state.update(id: id) { $0 = activeExtraction }
+                        }
+
+                        continuation.finish()
+                    } catch is CancellationError {
+                    } catch {
+                        continuation.finish(throwing: error)
+                    }
+                }
+
+                continuation.onTermination = { termination in
+                    if case .cancelled = termination {
+                        task.cancel()
+                    }
+                }
+            }
+
+            return LanguageModelV4StreamResult(
+                stream: transformedStream,
+                request: result.request,
+                response: result.response
+            )
+        }
+    )
+}

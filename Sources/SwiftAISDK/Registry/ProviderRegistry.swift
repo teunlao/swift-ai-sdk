@@ -52,21 +52,33 @@ public protocol ProviderRegistryProvider: Sendable {
  */
 public struct ProviderRegistryOptions: Sendable {
     public var separator: String
-    public var languageModelMiddleware: LanguageModelMiddlewareInput?
+    public var languageModelMiddleware: LanguageModelV4MiddlewareInput?
+    public var legacyLanguageModelMiddleware: LanguageModelMiddlewareInput?
 
     public init(
         separator: String = ":",
-        languageModelMiddleware: LanguageModelMiddlewareInput? = nil
+        languageModelMiddleware: LanguageModelV4MiddlewareInput? = nil
     ) {
         self.separator = separator
         self.languageModelMiddleware = languageModelMiddleware
+        self.legacyLanguageModelMiddleware = nil
     }
 
     public init(
         separator: String = ":",
-        languageModelMiddleware: [LanguageModelV3Middleware]
+        legacyLanguageModelMiddleware: LanguageModelMiddlewareInput?
     ) {
         self.separator = separator
+        self.languageModelMiddleware = nil
+        self.legacyLanguageModelMiddleware = legacyLanguageModelMiddleware
+    }
+
+    public init(
+        separator: String = ":",
+        languageModelMiddleware: [LanguageModelV4Middleware]
+    ) {
+        self.separator = separator
+        self.legacyLanguageModelMiddleware = nil
         if languageModelMiddleware.isEmpty {
             self.languageModelMiddleware = nil
         } else if languageModelMiddleware.count == 1, let middleware = languageModelMiddleware.first {
@@ -78,10 +90,35 @@ public struct ProviderRegistryOptions: Sendable {
 
     public init(
         separator: String = ":",
-        languageModelMiddleware: LanguageModelV3Middleware
+        languageModelMiddleware: LanguageModelV4Middleware
     ) {
         self.separator = separator
         self.languageModelMiddleware = .single(languageModelMiddleware)
+        self.legacyLanguageModelMiddleware = nil
+    }
+
+    public init(
+        separator: String = ":",
+        languageModelMiddleware: [LanguageModelV3Middleware]
+    ) {
+        self.separator = separator
+        self.languageModelMiddleware = nil
+        if languageModelMiddleware.isEmpty {
+            self.legacyLanguageModelMiddleware = nil
+        } else if languageModelMiddleware.count == 1, let middleware = languageModelMiddleware.first {
+            self.legacyLanguageModelMiddleware = .single(middleware)
+        } else {
+            self.legacyLanguageModelMiddleware = .multiple(languageModelMiddleware)
+        }
+    }
+
+    public init(
+        separator: String = ":",
+        languageModelMiddleware: LanguageModelV3Middleware
+    ) {
+        self.separator = separator
+        self.languageModelMiddleware = nil
+        self.legacyLanguageModelMiddleware = .single(languageModelMiddleware)
     }
 }
 
@@ -92,6 +129,7 @@ public func createProviderRegistry(
     DefaultProviderRegistry(
         separator: options.separator,
         languageModelMiddleware: options.languageModelMiddleware,
+        legacyLanguageModelMiddleware: options.legacyLanguageModelMiddleware,
         providers: providers.mapValues(asProviderV4),
         legacyProviders: providers
     )
@@ -111,6 +149,7 @@ public func createProviderRegistryV4(
     DefaultProviderRegistry(
         separator: options.separator,
         languageModelMiddleware: options.languageModelMiddleware,
+        legacyLanguageModelMiddleware: options.legacyLanguageModelMiddleware,
         providers: providers,
         legacyProviders: [:]
     )
@@ -121,16 +160,19 @@ final class DefaultProviderRegistry: ProviderRegistryProvider {
     private let providers: [String: any ProviderV4]
     private let legacyProviders: [String: any ProviderV3]
     private let separator: String
-    private let languageModelMiddleware: LanguageModelMiddlewareInput?
+    private let languageModelMiddleware: LanguageModelV4MiddlewareInput?
+    private let legacyLanguageModelMiddleware: LanguageModelMiddlewareInput?
 
     init(
         separator: String,
-        languageModelMiddleware: LanguageModelMiddlewareInput?,
+        languageModelMiddleware: LanguageModelV4MiddlewareInput?,
+        legacyLanguageModelMiddleware: LanguageModelMiddlewareInput?,
         providers: [String: any ProviderV4] = [:],
         legacyProviders: [String: any ProviderV3] = [:]
     ) {
         self.separator = separator
         self.languageModelMiddleware = languageModelMiddleware
+        self.legacyLanguageModelMiddleware = legacyLanguageModelMiddleware
         self.providers = providers
         self.legacyProviders = legacyProviders
     }
@@ -143,6 +185,7 @@ final class DefaultProviderRegistry: ProviderRegistryProvider {
         return DefaultProviderRegistry(
             separator: separator,
             languageModelMiddleware: languageModelMiddleware,
+            legacyLanguageModelMiddleware: legacyLanguageModelMiddleware,
             providers: newProviders,
             legacyProviders: newLegacyProviders
         )
@@ -154,6 +197,7 @@ final class DefaultProviderRegistry: ProviderRegistryProvider {
         return DefaultProviderRegistry(
             separator: separator,
             languageModelMiddleware: languageModelMiddleware,
+            legacyLanguageModelMiddleware: legacyLanguageModelMiddleware,
             providers: newProviders,
             legacyProviders: legacyProviders
         )
@@ -193,13 +237,19 @@ final class DefaultProviderRegistry: ProviderRegistryProvider {
     public func languageModel(id: String) throws -> any LanguageModelV4 {
         let (providerId, modelId) = try splitId(id: id, modelType: .languageModel)
 
-        if let middleware = languageModelMiddleware, let legacyProvider = legacyProviders[providerId] {
+        let provider = try getProvider(id: providerId, modelType: .languageModel)
+        let model = try provider.languageModel(modelId: modelId)
+
+        if let middleware = languageModelMiddleware {
+            return wrapLanguageModel(model: model, middleware: middleware)
+        }
+
+        if let middleware = legacyLanguageModelMiddleware, let legacyProvider = legacyProviders[providerId] {
             let legacyModel = try legacyProvider.languageModel(modelId: modelId)
             return asLanguageModelV4(wrapLanguageModel(model: legacyModel, middleware: middleware))
         }
 
-        let provider = try getProvider(id: providerId, modelType: .languageModel)
-        return try provider.languageModel(modelId: modelId)
+        return model
     }
 
     public func embeddingModel(id: String) throws -> any EmbeddingModelV4 {

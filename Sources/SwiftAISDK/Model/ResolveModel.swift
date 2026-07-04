@@ -51,13 +51,13 @@ private final class LanguageModelV2ToV3Adapter: LanguageModelV3, @unchecked Send
     public func doGenerate(options: LanguageModelV3CallOptions) async throws -> LanguageModelV3GenerateResult {
         // Upstream behavior (@ai-sdk/ai): V2->V3 adaptation is currently "best effort".
         // In Swift we avoid unsafeBitCast and instead map the shared fields explicitly.
-        let v2Options = _convertLanguageModelV3CallOptionsToV2(options)
+        let v2Options = try _convertLanguageModelV3CallOptionsToV2(options)
         let v2Result = try await wrappedModel.doGenerate(options: v2Options)
         return _convertLanguageModelV2GenerateResultToV3(v2Result)
     }
 
     public func doStream(options: LanguageModelV3CallOptions) async throws -> LanguageModelV3StreamResult {
-        let v2Options = _convertLanguageModelV3CallOptionsToV2(options)
+        let v2Options = try _convertLanguageModelV3CallOptionsToV2(options)
         let v2Result = try await wrappedModel.doStream(options: v2Options)
         return _convertLanguageModelV2StreamResultToV3(v2Result)
     }
@@ -128,9 +128,9 @@ private final class EmbeddingModelV2ToV3Adapter<VALUE: Sendable>: EmbeddingModel
 // MARK: - V2 → V3 Mapping Helpers
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-private func _convertLanguageModelV3CallOptionsToV2(_ options: LanguageModelV3CallOptions) -> LanguageModelV2CallOptions {
+private func _convertLanguageModelV3CallOptionsToV2(_ options: LanguageModelV3CallOptions) throws -> LanguageModelV2CallOptions {
     LanguageModelV2CallOptions(
-        prompt: _convertLanguageModelV3PromptToV2(options.prompt),
+        prompt: try _convertLanguageModelV3PromptToV2(options.prompt),
         maxOutputTokens: options.maxOutputTokens,
         temperature: options.temperature,
         stopSequences: options.stopSequences,
@@ -197,12 +197,12 @@ private func _convertLanguageModelV3ToolToV2(_ value: LanguageModelV3Tool) -> La
 }
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-private func _convertLanguageModelV3PromptToV2(_ prompt: LanguageModelV3Prompt) -> LanguageModelV2Prompt {
-    prompt.map(_convertLanguageModelV3MessageToV2)
+private func _convertLanguageModelV3PromptToV2(_ prompt: LanguageModelV3Prompt) throws -> LanguageModelV2Prompt {
+    try prompt.map(_convertLanguageModelV3MessageToV2)
 }
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-private func _convertLanguageModelV3MessageToV2(_ message: LanguageModelV3Message) -> LanguageModelV2Message {
+private func _convertLanguageModelV3MessageToV2(_ message: LanguageModelV3Message) throws -> LanguageModelV2Message {
     switch message {
     case let .system(content, providerOptions):
         return .system(content: content, providerOptions: providerOptions)
@@ -215,7 +215,7 @@ private func _convertLanguageModelV3MessageToV2(_ message: LanguageModelV3Messag
 
     case let .assistant(content, providerOptions):
         return .assistant(
-            content: content.map(_convertLanguageModelV3MessagePartToV2),
+            content: try content.map(_convertLanguageModelV3MessagePartToV2),
             providerOptions: providerOptions
         )
 
@@ -243,7 +243,7 @@ private func _convertLanguageModelV3UserMessagePartToV2(_ part: LanguageModelV3U
 }
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-private func _convertLanguageModelV3MessagePartToV2(_ part: LanguageModelV3MessagePart) -> LanguageModelV2MessagePart {
+private func _convertLanguageModelV3MessagePartToV2(_ part: LanguageModelV3MessagePart) throws -> LanguageModelV2MessagePart {
     switch part {
     case .text(let value):
         return .text(LanguageModelV2TextPart(text: value.text, providerOptions: value.providerOptions))
@@ -271,6 +271,8 @@ private func _convertLanguageModelV3MessagePartToV2(_ part: LanguageModelV3Messa
             output: _convertLanguageModelV3ToolResultOutputToV2(value.output),
             providerOptions: value.providerOptions
         ))
+    case .custom:
+        throw UnsupportedFunctionalityError(functionality: "custom message parts on v2-backed language model")
     }
 }
 

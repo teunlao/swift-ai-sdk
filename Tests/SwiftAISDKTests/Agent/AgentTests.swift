@@ -72,6 +72,30 @@ struct AgentTests {
         #expect(options.providerOptions?["openai"]?["mode"] == .string("fast"))
     }
 
+    @Test("generate accepts direct V4 model in settings")
+    func generateAcceptsDirectV4ModelInSettings() async throws {
+        let mockModel = MockLanguageModelV4(
+            doGenerate: .function { _ in
+                LanguageModelV4GenerateResult(
+                    content: [.text(LanguageModelV4Text(text: "Hello from V4 agent"))],
+                    finishReason: LanguageModelV4FinishReason(unified: .stop),
+                    usage: LanguageModelV4Usage()
+                )
+            }
+        )
+
+        let settings = AgentSettings<Never, Never>(
+            system: "You are helpful",
+            model: mockModel
+        )
+
+        let agent = Agent<Never, Never>(settings: settings)
+        let result = try await agent.generate(prompt: .text("Hello"))
+
+        #expect(result.text == "Hello from V4 agent")
+        #expect(mockModel.doGenerateCalls.count == 1)
+    }
+
     @Test("generate forwards timeout as abort signal")
     func generateForwardsTimeoutAsAbortSignal() async throws {
         let mockModel = MockLanguageModel()

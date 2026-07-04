@@ -32,6 +32,27 @@ struct ProviderRegistryTests {
         #expect(resolved.specificationVersion == "v4")
     }
 
+    @Test("applies V4 middleware to V4 registry language model")
+    func appliesV4MiddlewareToV4RegistryLanguageModel() throws {
+        let baseModel = MockLanguageModelV4(provider: "v4-base", modelId: "v4-model")
+        let provider = customProviderV4(languageModels: ["model": baseModel])
+        let middleware = LanguageModelV4Middleware(
+            overrideProvider: { model in "\(model.provider)-wrapped" },
+            overrideModelId: { model in "\(model.modelId)-wrapped" }
+        )
+
+        let registry = createProviderRegistry(
+            providers: ["p": provider],
+            options: ProviderRegistryOptions(languageModelMiddleware: middleware)
+        )
+
+        let resolved = try registry.languageModel(id: "p:model")
+
+        #expect(resolved.provider == "v4-base-wrapped")
+        #expect(resolved.modelId == "v4-model-wrapped")
+        #expect(resolved.specificationVersion == "v4")
+    }
+
     @Test("customProviderV4 adapts legacy language models")
     func customProviderV4AdaptsLegacyLanguageModels() throws {
         let baseModel = TestLanguageModel(provider: "legacy-base", modelId: "legacy-model")
