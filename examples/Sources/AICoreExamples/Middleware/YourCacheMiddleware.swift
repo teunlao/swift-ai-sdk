@@ -2,15 +2,15 @@ import Foundation
 import SwiftAISDK
 
 actor GenerateResultCache {
-  private var store: [String: LanguageModelV3GenerateResult] = [:]
+  private var store: [String: LanguageModelV4GenerateResult] = [:]
 
-  func get(_ key: String) -> LanguageModelV3GenerateResult? { store[key] }
-  func set(_ key: String, value: LanguageModelV3GenerateResult) { store[key] = value }
+  func get(_ key: String) -> LanguageModelV4GenerateResult? { store[key] }
+  func set(_ key: String, value: LanguageModelV4GenerateResult) { store[key] = value }
 }
 
 private let generateCache = GenerateResultCache()
 
-let yourCacheMiddleware: LanguageModelV3Middleware = LanguageModelV3Middleware(
+let yourCacheMiddleware: LanguageModelV4Middleware = LanguageModelV4Middleware(
   wrapGenerate: { doGenerate, _, params, _ in
     let cacheKey = makeCacheKey(params: params)
 
@@ -26,7 +26,7 @@ let yourCacheMiddleware: LanguageModelV3Middleware = LanguageModelV3Middleware(
 )
 
 private struct CacheKey: Codable {
-  let prompt: LanguageModelV3Prompt
+  let prompt: LanguageModelV4Prompt
   let maxOutputTokens: Int?
   let temperature: Double?
   let stopSequences: [String]?
@@ -34,13 +34,14 @@ private struct CacheKey: Codable {
   let topK: Int?
   let presencePenalty: Double?
   let frequencyPenalty: Double?
-  let responseFormat: LanguageModelV3ResponseFormat?
+  let responseFormat: LanguageModelV4ResponseFormat?
   let seed: Int?
   let headers: [String: String]?
-  let providerOptions: SharedV3ProviderOptions?
+  let reasoning: LanguageModelV4ReasoningEffort?
+  let providerOptions: SharedV4ProviderOptions?
 }
 
-private func makeCacheKey(params: LanguageModelV3CallOptions) -> String {
+private func makeCacheKey(params: LanguageModelV4CallOptions) -> String {
   let key = CacheKey(
     prompt: params.prompt,
     maxOutputTokens: params.maxOutputTokens,
@@ -53,6 +54,7 @@ private func makeCacheKey(params: LanguageModelV3CallOptions) -> String {
     responseFormat: params.responseFormat,
     seed: params.seed,
     headers: params.headers,
+    reasoning: params.reasoning,
     providerOptions: params.providerOptions
   )
 

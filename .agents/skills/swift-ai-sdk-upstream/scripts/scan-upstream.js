@@ -130,6 +130,10 @@ const TARGET_OVERRIDES = {
   xai: "XAIProvider",
 };
 
+const TEST_TARGET_OVERRIDES = {
+  openai: ["SwiftAISDKTests"],
+};
+
 function parseArgs(argv) {
   const args = {
     out: ".upstream/current",
@@ -336,7 +340,7 @@ function hasKnownGaps(repoRoot, trackingPath) {
   const text = readText(path.join(repoRoot, trackingPath));
   const gapSection = text.split(/## Known gaps \/ TODO/i)[1] || "";
   const beforeNextSection = gapSection.split(/\n## /)[0] || gapSection;
-  if (/None known\./i.test(beforeNextSection) || /None known/i.test(beforeNextSection)) {
+  if (/\b(?:No|None) known\b/i.test(beforeNextSection)) {
     return false;
   }
   return /\[ \]|TODO|gap|not implemented|missing/i.test(beforeNextSection);
@@ -392,8 +396,8 @@ function buildComponents({ repoRoot, upstreamRoot }) {
   const components = packages.map((packageName) => {
     const expectedTarget = expectedTargetForPackage(packageName);
     const swiftTargets = swift.targets.has(expectedTarget) ? [expectedTarget] : [];
-    const testTarget = `${expectedTarget}Tests`;
-    const testTargets = swift.tests.has(testTarget) ? [testTarget] : [];
+    const expectedTestTargets = TEST_TARGET_OVERRIDES[packageName] || [`${expectedTarget}Tests`];
+    const testTargets = expectedTestTargets.filter((testTarget) => swift.tests.has(testTarget));
     const area = classifyArea(packageName, swiftTargets);
     const priority = priorityFor(packageName, area, swiftTargets);
     const trackingPath = trackingFor(repoRoot, packageName, area);

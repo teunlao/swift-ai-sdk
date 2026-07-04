@@ -152,6 +152,40 @@ struct OpenAIProviderOptionsParsingTests {
         }
     }
 
+    @Test("image generation options reject fractional outputCompression")
+    func imageGenerationOptionsRejectFractionalOutputCompression() async throws {
+        let providerOptions: SharedV3ProviderOptions = [
+            "openai": [
+                "outputCompression": .number(80.5)
+            ]
+        ]
+
+        do {
+            let _: OpenAIImageModelGenerationOptions? = try await parseProviderOptions(
+                provider: "openai",
+                providerOptions: providerOptions,
+                schema: openAIImageModelGenerationOptionsSchema
+            )
+            Issue.record("Expected InvalidArgumentError")
+        } catch let error as InvalidArgumentError {
+            #expect(error.argument == "providerOptions")
+            #expect(error.message == "invalid openai provider options")
+            guard let typeError = error.cause as? TypeValidationError else {
+                Issue.record("Expected TypeValidationError as cause")
+                return
+            }
+            guard let schemaError = typeError.cause as? SchemaValidationIssuesError else {
+                Issue.record("Expected SchemaValidationIssuesError as TypeValidationError cause")
+                return
+            }
+            #expect(schemaError.vendor == "openai")
+            #expect(
+                String(describing: schemaError.issues).contains("outputCompression must be an integer"),
+                "Expected outputCompression integer validation issue"
+            )
+        }
+    }
+
     @Test("responses options allow fractional maxToolCalls")
     func responsesOptionsAllowFractionalMaxToolCalls() async throws {
         let providerOptions: SharedV3ProviderOptions = [
@@ -167,6 +201,40 @@ struct OpenAIProviderOptionsParsingTests {
         )
 
         #expect(parsed?.maxToolCalls == 3.5)
+    }
+
+    @Test("responses options parse context management allowed tools and pass-through files")
+    func responsesOptionsParseContextManagementAllowedToolsAndPassThroughFiles() async throws {
+        let providerOptions: SharedV3ProviderOptions = [
+            "openai": [
+                "passThroughUnsupportedFiles": .bool(true),
+                "contextManagement": .array([
+                    .object([
+                        "type": .string("compaction"),
+                        "compactThreshold": .number(0.75)
+                    ])
+                ]),
+                "allowedTools": .object([
+                    "toolNames": .array([.string("weather"), .string("search")]),
+                    "mode": .string("required")
+                ])
+            ]
+        ]
+
+        let parsed: OpenAIResponsesProviderOptions? = try await parseProviderOptions(
+            provider: "openai",
+            providerOptions: providerOptions,
+            schema: openAIResponsesProviderOptionsSchema
+        )
+
+        #expect(parsed?.passThroughUnsupportedFiles == true)
+        #expect(parsed?.contextManagement == [
+            OpenAIResponsesContextManagement(compactThreshold: 0.75)
+        ])
+        #expect(parsed?.allowedTools == OpenAIResponsesAllowedTools(
+            toolNames: ["weather", "search"],
+            mode: "required"
+        ))
     }
 
     @Test("responses options allow include values from provider schema")

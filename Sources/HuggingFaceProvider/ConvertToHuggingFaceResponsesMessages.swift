@@ -93,7 +93,7 @@ func convertToHuggingFaceResponsesMessages(
                     // Tool calls/results are handled by the Responses API directly
                     continue
 
-                case .file:
+                case .file, .custom:
                     continue
                 }
             }

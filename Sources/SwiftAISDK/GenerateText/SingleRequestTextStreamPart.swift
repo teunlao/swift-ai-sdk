@@ -49,6 +49,7 @@ public enum SingleRequestTextStreamPart: Sendable {
     // MARK: - Content & Metadata
 
     case source(Source)
+    case custom(kind: String, providerMetadata: ProviderMetadata?)
     case file(GeneratedFile)
     case streamStart(warnings: [SharedV3Warning])
     case responseMetadata(id: String?, timestamp: Date?, modelId: String?)

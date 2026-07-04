@@ -40,16 +40,18 @@ public struct OpenAIResponsesResponse: Codable, Sendable {
     }
 
     public struct ErrorPayload: Codable, Sendable {
-        public let code: String
         public let message: String
+        public let type: String?
+        public let param: JSONValue?
+        public let code: String
     }
 
-    public let id: String
+    public let id: String?
     public let createdAt: TimeInterval?
-    public let model: String
-    public let output: [JSONValue]
+    public let model: String?
+    public let output: [JSONValue]?
     public let serviceTier: String?
-    public let usage: Usage
+    public let usage: Usage?
     public let warnings: [LanguageModelV3CallWarningRecord]?
     public let incompleteDetails: IncompleteDetails?
     public let finishReason: String?

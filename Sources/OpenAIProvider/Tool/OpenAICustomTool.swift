@@ -13,16 +13,13 @@ public enum OpenAICustomToolFormat: Sendable, Equatable {
 }
 
 public struct OpenAICustomToolArgs: Sendable, Equatable {
-    public let name: String
     public let description: String?
     public let format: OpenAICustomToolFormat?
 
     public init(
-        name: String,
         description: String? = nil,
         format: OpenAICustomToolFormat? = nil
     ) {
-        self.name = name
         self.description = description
         self.format = format
     }
@@ -31,11 +28,8 @@ public struct OpenAICustomToolArgs: Sendable, Equatable {
 private let customArgsJSONSchema: JSONValue = .object([
     "type": .string("object"),
     "additionalProperties": .bool(false),
-    "required": .array([.string("name")]),
+    "required": .array([]),
     "properties": .object([
-        "name": .object([
-            "type": .string("string")
-        ]),
         "description": .object([
             "type": .string("string")
         ]),
@@ -90,11 +84,6 @@ public let openaiCustomArgsSchema = FlexibleSchema<OpenAICustomToolArgs>(
                     return .failure(error: TypeValidationError.wrap(value: value, cause: error))
                 }
 
-                guard case .string(let name) = dict["name"] else {
-                    let error = SchemaValidationIssuesError(vendor: "openai", issues: "name must be a string")
-                    return .failure(error: TypeValidationError.wrap(value: value, cause: error))
-                }
-
                 let description: String?
                 if let rawDescription = dict["description"] {
                     guard case .string(let value) = rawDescription else {
@@ -136,7 +125,6 @@ public let openaiCustomArgsSchema = FlexibleSchema<OpenAICustomToolArgs>(
                 }
 
                 return .success(value: OpenAICustomToolArgs(
-                    name: name,
                     description: description,
                     format: format
                 ))
@@ -161,9 +149,7 @@ public let openaiCustomToolFactory = createProviderToolFactory(
 }
 
 private func encodeOpenAICustomToolArgs(_ args: OpenAICustomToolArgs) -> [String: JSONValue] {
-    var payload: [String: JSONValue] = [
-        "name": .string(args.name)
-    ]
+    var payload: [String: JSONValue] = [:]
 
     if let description = args.description {
         payload["description"] = .string(description)

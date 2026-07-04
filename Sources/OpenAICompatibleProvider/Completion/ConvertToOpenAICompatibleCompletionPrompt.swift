@@ -43,6 +43,8 @@ public enum OpenAICompatibleCompletionPromptConverter {
                         throw UnsupportedFunctionalityError(functionality: "tool-call messages in completion prompts")
                     case .reasoning:
                         throw UnsupportedFunctionalityError(functionality: "reasoning content in completion prompts")
+                    case .custom:
+                        throw UnsupportedFunctionalityError(functionality: "custom content in completion prompts")
                     case .file:
                         throw UnsupportedFunctionalityError(functionality: "file content in completion prompts")
                     case .toolResult:

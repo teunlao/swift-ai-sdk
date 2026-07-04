@@ -15,6 +15,48 @@ struct OpenAIChatAnnotation: Codable, Sendable {
         case endIndex = "end_index"
         case url
         case title
+        case urlCitation = "url_citation"
+    }
+
+    struct URLCitation: Codable, Sendable {
+        let startIndex: Int
+        let endIndex: Int
+        let url: String
+        let title: String
+
+        enum CodingKeys: String, CodingKey {
+            case startIndex = "start_index"
+            case endIndex = "end_index"
+            case url
+            case title
+        }
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        type = try container.decode(String.self, forKey: .type)
+
+        if let citation = try container.decodeIfPresent(URLCitation.self, forKey: .urlCitation) {
+            startIndex = citation.startIndex
+            endIndex = citation.endIndex
+            url = citation.url
+            title = citation.title
+            return
+        }
+
+        startIndex = try container.decode(Int.self, forKey: .startIndex)
+        endIndex = try container.decode(Int.self, forKey: .endIndex)
+        url = try container.decode(String.self, forKey: .url)
+        title = try container.decode(String.self, forKey: .title)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(type, forKey: .type)
+        try container.encode(
+            URLCitation(startIndex: startIndex, endIndex: endIndex, url: url, title: title),
+            forKey: .urlCitation
+        )
     }
 }
 

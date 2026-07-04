@@ -46,17 +46,20 @@ public enum StreamingToolCallTypeValidation: Sendable, Equatable {
 public struct StreamingToolCallTrackerOptions: Sendable {
     public let generateId: IDGenerator
     public let typeValidation: StreamingToolCallTypeValidation
+    public let emitsEmptyInitialArgumentDelta: Bool
     public let extractMetadata: (@Sendable (StreamingToolCallDelta) -> SharedV4ProviderMetadata?)?
     public let buildToolCallProviderMetadata: (@Sendable (SharedV4ProviderMetadata?) -> SharedV4ProviderMetadata?)?
 
     public init(
         generateId: @escaping IDGenerator = generateID,
         typeValidation: StreamingToolCallTypeValidation = .none,
+        emitsEmptyInitialArgumentDelta: Bool = false,
         extractMetadata: (@Sendable (StreamingToolCallDelta) -> SharedV4ProviderMetadata?)? = nil,
         buildToolCallProviderMetadata: (@Sendable (SharedV4ProviderMetadata?) -> SharedV4ProviderMetadata?)? = nil
     ) {
         self.generateId = generateId
         self.typeValidation = typeValidation
+        self.emitsEmptyInitialArgumentDelta = emitsEmptyInitialArgumentDelta
         self.extractMetadata = extractMetadata
         self.buildToolCallProviderMetadata = buildToolCallProviderMetadata
     }
@@ -78,6 +81,7 @@ public final class StreamingToolCallTracker: @unchecked Sendable {
     private let enqueue: Enqueue
     private let generateId: IDGenerator
     private let typeValidation: StreamingToolCallTypeValidation
+    private let emitsEmptyInitialArgumentDelta: Bool
     private let extractMetadata: (@Sendable (StreamingToolCallDelta) -> SharedV4ProviderMetadata?)?
     private let buildToolCallProviderMetadata: (@Sendable (SharedV4ProviderMetadata?) -> SharedV4ProviderMetadata?)?
 
@@ -88,6 +92,7 @@ public final class StreamingToolCallTracker: @unchecked Sendable {
         self.enqueue = enqueue
         self.generateId = options.generateId
         self.typeValidation = options.typeValidation
+        self.emitsEmptyInitialArgumentDelta = options.emitsEmptyInitialArgumentDelta
         self.extractMetadata = options.extractMetadata
         self.buildToolCallProviderMetadata = options.buildToolCallProviderMetadata
     }
@@ -151,7 +156,7 @@ public final class StreamingToolCallTracker: @unchecked Sendable {
 
         setTrackedToolCall(toolCall, at: index)
 
-        if !toolCall.arguments.isEmpty {
+        if !toolCall.arguments.isEmpty || (emitsEmptyInitialArgumentDelta && delta.function?.arguments != nil) {
             enqueue(.toolInputDelta(
                 id: toolCall.id,
                 delta: toolCall.arguments,

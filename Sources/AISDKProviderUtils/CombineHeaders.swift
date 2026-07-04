@@ -16,14 +16,21 @@ import Foundation
 public func combineHeaders(
     _ headers: [String: String?]?...
 ) -> [String: String?] {
-    return headers
-        .compactMap { $0 } // Remove nil dictionaries
-        .reduce(into: [:]) { result, dict in
-            // Explicitly set each key-value pair, preserving nil values
-            // This matches TypeScript's spread operator behavior where
-            // undefined values are preserved
-            for (key, value) in dict {
-                result[key] = value
+    var result: [String: String?] = [:]
+    var canonicalKeys: [String: String] = [:]
+
+    for dict in headers.compactMap({ $0 }) {
+        for (key, value) in dict {
+            let normalizedKey = key.lowercased()
+
+            if let existingKey = canonicalKeys[normalizedKey], existingKey != key {
+                result.removeValue(forKey: existingKey)
             }
+
+            canonicalKeys[normalizedKey] = key
+            result[key] = value
         }
+    }
+
+    return result
 }

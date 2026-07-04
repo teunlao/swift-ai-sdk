@@ -2,28 +2,29 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-public final class OpenAIChatLanguageModel: LanguageModelV3 {
+private struct OpenAIChatLanguageModelCore: Sendable {
     private let modelIdentifier: OpenAIChatModelId
     private let config: OpenAIConfig
 
-    public init(modelId: OpenAIChatModelId, config: OpenAIConfig) {
+    init(modelId: OpenAIChatModelId, config: OpenAIConfig) {
         self.modelIdentifier = modelId
         self.config = config
     }
 
-    public var provider: String { config.provider }
-    public var modelId: String { modelIdentifier.rawValue }
+    var provider: String { config.provider }
+    var modelId: String { modelIdentifier.rawValue }
 
-    public var supportedUrls: [String: [NSRegularExpression]] {
+    var supportedUrls: [String: [NSRegularExpression]] {
         get async throws {
             let regex = try NSRegularExpression(pattern: "^https?://.*$", options: [.caseInsensitive])
             return ["image/*": [regex]]
         }
     }
 
-    public func doGenerate(options: LanguageModelV3CallOptions) async throws -> LanguageModelV3GenerateResult {
+    func doGenerate(options: OpenAIChatCallSettings) async throws -> LanguageModelV4GenerateResult {
         let prepared = try await prepareRequest(options: options)
-        let headers = combineHeaders(try config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 }
+        let headers = combineHeaders(try config.headers(), options.headers?.mapValues { Optional($0) })
+            .compactMapValues { $0 }
 
         let response = try await postJsonToAPI(
             url: config.url(.init(modelId: modelIdentifier.rawValue, path: "/chat/completions")),
@@ -39,10 +40,10 @@ public final class OpenAIChatLanguageModel: LanguageModelV3 {
             throw UnsupportedFunctionalityError(functionality: "No chat choices returned")
         }
 
-        var content: [LanguageModelV3Content] = []
+        var content: [LanguageModelV4Content] = []
 
         if let text = choice.message.content, !text.isEmpty {
-            content.append(.text(LanguageModelV3Text(text: text)))
+            content.append(.text(LanguageModelV4Text(text: text)))
         }
 
         let responseIdGenerator = config.generateId ?? generateID
@@ -51,7 +52,7 @@ public final class OpenAIChatLanguageModel: LanguageModelV3 {
             guard let name = toolCall.function?.name else { continue }
             let arguments = toolCall.function?.arguments ?? "{}"
             let toolCallId = toolCall.id ?? responseIdGenerator()
-            content.append(.toolCall(LanguageModelV3ToolCall(
+            content.append(.toolCall(LanguageModelV4ToolCall(
                 toolCallId: toolCallId,
                 toolName: name,
                 input: arguments,
@@ -61,11 +62,9 @@ public final class OpenAIChatLanguageModel: LanguageModelV3 {
         }
 
         if let annotations = choice.message.annotations {
-            for annotation in annotations {
-                guard annotation.type == "url_citation" else { continue }
-                let id = responseIdGenerator()
+            for annotation in annotations where annotation.type == "url_citation" {
                 content.append(.source(.url(
-                    id: id,
+                    id: responseIdGenerator(),
                     url: annotation.url,
                     title: annotation.title,
                     providerMetadata: nil
@@ -73,38 +72,22 @@ public final class OpenAIChatLanguageModel: LanguageModelV3 {
             }
         }
 
-        var openaiMetadata: [String: JSONValue] = [:]
-
-        if let completionDetails = response.value.usage?.completionTokensDetails {
-            if let accepted = completionDetails.acceptedPredictionTokens {
-                openaiMetadata["acceptedPredictionTokens"] = .number(Double(accepted))
-            }
-            if let rejected = completionDetails.rejectedPredictionTokens {
-                openaiMetadata["rejectedPredictionTokens"] = .number(Double(rejected))
-            }
-        }
-
-        if let logprobs = choice.logprobs, let encoded = try? JSONEncoder().encodeToJSONValue(logprobs) {
-            openaiMetadata["logprobs"] = encoded
-        }
-
-        let providerMetadata: SharedV3ProviderMetadata? = openaiMetadata.isEmpty ? nil : ["openai": openaiMetadata]
-
-        let usage = mapUsage(response.value.usage)
-        let rawFinishReason = choice.finishReason
-        let finishReason = LanguageModelV3FinishReason(
-            unified: OpenAIChatFinishReasonMapper.map(rawFinishReason),
-            raw: rawFinishReason
-        )
         let metadata = responseMetadata(from: response.value)
 
-        let generateResult = LanguageModelV3GenerateResult(
+        return LanguageModelV4GenerateResult(
             content: content,
-            finishReason: finishReason,
-            usage: usage,
-            providerMetadata: providerMetadata,
-            request: LanguageModelV3RequestInfo(body: prepared.body),
-            response: LanguageModelV3ResponseInfo(
+            finishReason: LanguageModelV4FinishReason(
+                unified: OpenAIChatFinishReasonMapper.mapV4(choice.finishReason),
+                raw: choice.finishReason
+            ),
+            usage: convertOpenAIChatUsageToV4(response.value.usage),
+            providerMetadata: openAIChatProviderMetadata(
+                usage: response.value.usage,
+                logprobs: choice.logprobs,
+                shape: options.logprobsMetadataShape
+            ),
+            request: LanguageModelV4RequestInfo(body: prepared.body),
+            response: LanguageModelV4ResponseInfo(
                 id: metadata.id,
                 timestamp: metadata.timestamp,
                 modelId: metadata.modelId,
@@ -113,20 +96,20 @@ public final class OpenAIChatLanguageModel: LanguageModelV3 {
             ),
             warnings: prepared.warnings
         )
-
-        return generateResult
     }
 
-    public func doStream(options: LanguageModelV3CallOptions) async throws -> LanguageModelV3StreamResult {
+    func doStream(options: OpenAIChatCallSettings) async throws -> LanguageModelV4StreamResult {
         let prepared = try await prepareRequest(options: options)
         var body = prepared.body
         body["stream"] = .bool(true)
         body["stream_options"] = .object(["include_usage": .bool(true)])
 
-        let headers = combineHeaders(try config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 }
+        let headers = combineHeaders(try config.headers(), options.headers?.mapValues { Optional($0) })
+            .compactMapValues { $0 }
+        let url = config.url(.init(modelId: modelIdentifier.rawValue, path: "/chat/completions"))
 
         let eventStream = try await postJsonToAPI(
-            url: config.url(.init(modelId: modelIdentifier.rawValue, path: "/chat/completions")),
+            url: url,
             headers: headers,
             body: JSONValue.object(body),
             failedResponseHandler: openAIFailedResponseHandler,
@@ -135,19 +118,39 @@ public final class OpenAIChatLanguageModel: LanguageModelV3 {
             fetch: config.fetch
         )
 
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error>(bufferingPolicy: .unbounded) { continuation in
+        let checkedStream: AsyncThrowingStream<ParseJSONResult<OpenAIChatChunk>, Error>
+        if options.throwsPreOutputStreamErrors {
+            checkedStream = try await throwIfOpenAIChatStreamErrorBeforeOutput(
+                stream: eventStream.value,
+                url: url,
+                requestBodyValues: body,
+                responseHeaders: eventStream.responseHeaders
+            )
+        } else {
+            checkedStream = eventStream.value
+        }
+
+        let stream = AsyncThrowingStream<LanguageModelV4StreamPart, Error>(bufferingPolicy: .unbounded) { continuation in
             continuation.yield(.streamStart(warnings: prepared.warnings))
 
-            Task {
-                var finishReason: LanguageModelV3FinishReason = .init(unified: .other, raw: nil)
-                var usage = LanguageModelV3Usage()
-                var isFirstChunk = true
+            let task = Task {
+                var finishReason = LanguageModelV4FinishReason(unified: .other, raw: nil)
+                var usage = LanguageModelV4Usage()
+                var metadataExtracted = false
                 var isActiveText = false
-                var toolCalls: [Int: ToolCallState] = [:]
-                var openaiMetadata: [String: JSONValue] = [:]
+                var providerMetadata: SharedV4ProviderMetadata = ["openai": [:]]
+
+                let toolCallTracker = StreamingToolCallTracker(
+                    enqueue: { part in continuation.yield(part) },
+                    options: StreamingToolCallTrackerOptions(
+                        generateId: config.generateId ?? generateID,
+                        typeValidation: .ifPresent,
+                        emitsEmptyInitialArgumentDelta: options.emitsEmptyInitialToolArgumentDelta
+                    )
+                )
 
                 do {
-                    for try await parseResult in eventStream.value {
+                    for try await parseResult in checkedStream {
                         if options.includeRawChunks == true {
                             let rawJSON: JSONValue?
                             switch parseResult {
@@ -163,73 +166,84 @@ public final class OpenAIChatLanguageModel: LanguageModelV3 {
 
                         switch parseResult {
                         case .failure(let error, _):
-                            finishReason = .init(unified: .error, raw: nil)
+                            finishReason = LanguageModelV4FinishReason(unified: .error, raw: nil)
                             continuation.yield(.error(error: .string(String(describing: error))))
+
                         case .success(let chunk, _):
                             switch chunk {
                             case .error(let errorData):
-                                finishReason = .init(unified: .error, raw: nil)
-                                if let errorValue = try? JSONEncoder().encodeToJSONValue(errorData) {
+                                finishReason = LanguageModelV4FinishReason(unified: .error, raw: nil)
+                                if let errorValue = try? JSONEncoder().encodeToJSONValue(errorData.error) {
                                     continuation.yield(.error(error: errorValue))
                                 } else {
                                     continuation.yield(.error(error: .string(errorData.error.message)))
                                 }
+
                             case .data(let data):
-                                if isFirstChunk {
-                                    isFirstChunk = false
+                                if !metadataExtracted {
                                     let metadata = responseMetadata(from: data)
-                                    continuation.yield(.responseMetadata(id: metadata.id, modelId: metadata.modelId, timestamp: metadata.timestamp))
+                                    if metadata.id != nil || metadata.modelId != nil || metadata.timestamp != nil {
+                                        metadataExtracted = true
+                                        continuation.yield(.responseMetadata(
+                                            id: metadata.id,
+                                            modelId: metadata.modelId,
+                                            timestamp: metadata.timestamp
+                                        ))
+                                    }
                                 }
 
                                 if let usageValue = data.usage {
-                                    usage = mapUsage(usageValue)
-                                    if let accepted = usageValue.completionTokensDetails?.acceptedPredictionTokens {
-                                        openaiMetadata["acceptedPredictionTokens"] = .number(Double(accepted))
-                                    }
-                                    if let rejected = usageValue.completionTokensDetails?.rejectedPredictionTokens {
-                                        openaiMetadata["rejectedPredictionTokens"] = .number(Double(rejected))
-                                    }
+                                    usage = convertOpenAIChatUsageToV4(usageValue)
+                                    addOpenAIChatUsageMetadata(usageValue, to: &providerMetadata)
                                 }
 
                                 guard let choice = data.choices.first else { continue }
 
                                 if let finish = choice.finishReason {
-                                    finishReason = LanguageModelV3FinishReason(
-                                        unified: OpenAIChatFinishReasonMapper.map(finish),
+                                    finishReason = LanguageModelV4FinishReason(
+                                        unified: OpenAIChatFinishReasonMapper.mapV4(finish),
                                         raw: finish
                                     )
                                 }
 
-                                if let logprobs = choice.logprobs, let encoded = try? JSONEncoder().encodeToJSONValue(logprobs) {
-                                    openaiMetadata["logprobs"] = encoded
+                                addOpenAIChatLogprobsMetadata(
+                                    choice.logprobs,
+                                    shape: options.logprobsMetadataShape,
+                                    to: &providerMetadata
+                                )
+
+                                guard let delta = choice.delta else { continue }
+
+                                if let text = delta.content {
+                                    if !isActiveText {
+                                        isActiveText = true
+                                        continuation.yield(.textStart(id: "0", providerMetadata: nil))
+                                    }
+                                    continuation.yield(.textDelta(id: "0", delta: text, providerMetadata: nil))
                                 }
 
-                                if let delta = choice.delta {
-                                    if let text = delta.content {
-                                        if !isActiveText {
-                                            isActiveText = true
-                                            continuation.yield(.textStart(id: "0", providerMetadata: nil))
-                                        }
-                                        continuation.yield(.textDelta(id: "0", delta: text, providerMetadata: nil))
+                                if let toolCallDeltas = delta.toolCalls {
+                                    for delta in toolCallDeltas {
+                                        try toolCallTracker.processDelta(StreamingToolCallDelta(
+                                            index: delta.index,
+                                            id: delta.id,
+                                            type: delta.type,
+                                            function: StreamingToolCallFunctionDelta(
+                                                name: delta.function?.name,
+                                                arguments: delta.function?.arguments
+                                            )
+                                        ))
                                     }
+                                }
 
-                                    if let toolCallDeltas = delta.toolCalls {
-                                        try handleToolCallDeltas(
-                                            toolCallDeltas,
-                                            toolCalls: &toolCalls,
-                                            continuation: continuation
-                                        )
-                                    }
-
-                                    if let annotations = delta.annotations {
-                                        for annotation in annotations where annotation.type == "url_citation" {
-                                            continuation.yield(.source(.url(
-                                                id: config.generateId?() ?? generateID(),
-                                                url: annotation.url,
-                                                title: annotation.title,
-                                                providerMetadata: nil
-                                            )))
-                                        }
+                                if let annotations = delta.annotations {
+                                    for annotation in annotations where annotation.type == "url_citation" {
+                                        continuation.yield(.source(.url(
+                                            id: (config.generateId ?? generateID)(),
+                                            url: annotation.url,
+                                            title: annotation.title,
+                                            providerMetadata: nil
+                                        )))
                                     }
                                 }
                             }
@@ -240,29 +254,38 @@ public final class OpenAIChatLanguageModel: LanguageModelV3 {
                         continuation.yield(.textEnd(id: "0", providerMetadata: nil))
                     }
 
-                    let providerMetadata: SharedV3ProviderMetadata? = openaiMetadata.isEmpty ? nil : ["openai": openaiMetadata]
-                    continuation.yield(.finish(finishReason: finishReason, usage: usage, providerMetadata: providerMetadata))
+                    toolCallTracker.flush()
+
+                    continuation.yield(.finish(
+                        finishReason: finishReason,
+                        usage: usage,
+                        providerMetadata: providerMetadata
+                    ))
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)
                 }
             }
+
+            continuation.onTermination = { @Sendable _ in
+                task.cancel()
+            }
         }
 
-        return LanguageModelV3StreamResult(
+        return LanguageModelV4StreamResult(
             stream: stream,
-            request: LanguageModelV3RequestInfo(body: body),
-            response: LanguageModelV3StreamResponseInfo(headers: eventStream.responseHeaders)
+            request: LanguageModelV4RequestInfo(body: body),
+            response: LanguageModelV4StreamResponseInfo(headers: eventStream.responseHeaders)
         )
     }
 
     private struct PreparedRequest {
         let body: [String: JSONValue]
-        let warnings: [SharedV3Warning]
+        let warnings: [SharedV4Warning]
     }
 
-    private func prepareRequest(options: LanguageModelV3CallOptions) async throws -> PreparedRequest {
-        var warnings: [SharedV3Warning] = []
+    private func prepareRequest(options: OpenAIChatCallSettings) async throws -> PreparedRequest {
+        var warnings: [SharedV4Warning] = []
 
         if options.topK != nil {
             warnings.append(.unsupported(feature: "topK", details: nil))
@@ -277,21 +300,45 @@ public final class OpenAIChatLanguageModel: LanguageModelV3 {
 
         let modelId = modelIdentifier.rawValue
         let modelCapabilities = getOpenAILanguageModelCapabilities(for: modelId)
-        let modelIsReasoningModel = modelCapabilities.isReasoningModel
         let supportsNonReasoningParameters = modelCapabilities.supportsNonReasoningParameters
+        let resolvedReasoningEffort = resolvedReasoningEffort(
+            topLevelReasoning: options.reasoning,
+            openAIOptions: openAIOptions
+        )
         let isReasoningModel = openAIOptions?.forceReasoning ?? modelCapabilities.isReasoningModel
-
-        let modelDefaultSystemMode: OpenAIChatSystemMessageMode = modelIsReasoningModel ? .developer : .system
         let systemMode = openAIOptions?.systemMessageMode
-            ?? (isReasoningModel ? .developer : modelDefaultSystemMode)
+            ?? (isReasoningModel ? .developer : chatSystemMessageMode(from: modelCapabilities.systemMessageMode))
 
-        let conversion = try OpenAIChatMessagesConverter.convert(prompt: options.prompt, systemMessageMode: systemMode)
+        let conversion: (messages: OpenAIChatPrompt, warnings: [SharedV4Warning])
+        switch options.prompt {
+        case .v3(let prompt):
+            let v3Conversion = try OpenAIChatMessagesConverter.convert(prompt: prompt, systemMessageMode: systemMode)
+            conversion = (
+                messages: v3Conversion.messages,
+                warnings: v3Conversion.warnings.map(convertSharedV3WarningToV4)
+            )
+        case .v4(let prompt):
+            conversion = try OpenAIChatMessagesConverter.convertV4(prompt: prompt, systemMessageMode: systemMode)
+        }
         warnings.append(contentsOf: conversion.warnings)
 
-        let preparedTools = OpenAIChatToolPreparer.prepare(
-            tools: options.tools,
-            toolChoice: options.toolChoice
-        )
+        let preparedTools: (tools: JSONValue?, toolChoice: JSONValue?, warnings: [SharedV4Warning])
+        switch options.tools {
+        case .v3(let tools, let toolChoice):
+            let prepared = OpenAIChatToolPreparer.prepare(tools: tools, toolChoice: toolChoice)
+            preparedTools = (
+                tools: prepared.tools,
+                toolChoice: prepared.toolChoice,
+                warnings: prepared.warnings.map(convertSharedV3WarningToV4)
+            )
+        case .v4(let tools, let toolChoice):
+            let prepared = OpenAIChatToolPreparer.prepareV4(tools: tools, toolChoice: toolChoice)
+            preparedTools = (
+                tools: prepared.tools,
+                toolChoice: prepared.toolChoice,
+                warnings: prepared.warnings
+            )
+        }
         warnings.append(contentsOf: preparedTools.warnings)
 
         var body: [String: JSONValue] = [
@@ -351,7 +398,7 @@ public final class OpenAIChatLanguageModel: LanguageModelV3 {
         if let store = openAIOptions?.store {
             body["store"] = .bool(store)
         }
-        if let reasoningEffort = openAIOptions?.reasoningEffort {
+        if let reasoningEffort = resolvedReasoningEffort {
             body["reasoning_effort"] = .string(reasoningEffort.rawValue)
         }
         if let serviceTier = openAIOptions?.serviceTier {
@@ -407,7 +454,7 @@ public final class OpenAIChatLanguageModel: LanguageModelV3 {
             body["tool_choice"] = toolChoice
         }
 
-        let allowsNonReasoningParameters = openAIOptions?.reasoningEffort == OpenAIChatReasoningEffort.none && supportsNonReasoningParameters
+        let allowsNonReasoningParameters = resolvedReasoningEffort == OpenAIChatReasoningEffort.none && supportsNonReasoningParameters
         adjustForModelConstraints(
             body: &body,
             warnings: &warnings,
@@ -435,9 +482,33 @@ public final class OpenAIChatLanguageModel: LanguageModelV3 {
         return PreparedRequest(body: body, warnings: warnings)
     }
 
+    private func resolvedReasoningEffort(
+        topLevelReasoning: LanguageModelV4ReasoningEffort?,
+        openAIOptions: OpenAIChatProviderOptions?
+    ) -> OpenAIChatReasoningEffort? {
+        if let providerEffort = openAIOptions?.reasoningEffort {
+            return providerEffort
+        }
+        guard let topLevelReasoning, isCustomReasoning(topLevelReasoning) else {
+            return nil
+        }
+        return OpenAIChatReasoningEffort(rawValue: topLevelReasoning.rawValue)
+    }
+
+    private func chatSystemMessageMode(from mode: OpenAIResponsesSystemMessageMode) -> OpenAIChatSystemMessageMode {
+        switch mode {
+        case .system:
+            return .system
+        case .developer:
+            return .developer
+        case .remove:
+            return .remove
+        }
+    }
+
     private func adjustForModelConstraints(
         body: inout [String: JSONValue],
-        warnings: inout [SharedV3Warning],
+        warnings: inout [SharedV4Warning],
         isReasoningModel: Bool,
         allowsNonReasoningParameters: Bool,
         modelId: String
@@ -479,131 +550,592 @@ public final class OpenAIChatLanguageModel: LanguageModelV3 {
             }
         }
     }
+}
 
-    private func mapUsage(_ usage: OpenAIChatUsage?) -> LanguageModelV3Usage {
-        guard let usage else { return LanguageModelV3Usage() }
+private enum OpenAIChatPromptInput: Sendable {
+    case v3(LanguageModelV3Prompt)
+    case v4(LanguageModelV4Prompt)
+}
 
-        let promptTokens = usage.promptTokens ?? 0
-        let completionTokens = usage.completionTokens ?? 0
-        let cachedTokens = usage.promptTokensDetails?.cachedTokens ?? 0
-        let reasoningTokens = usage.completionTokensDetails?.reasoningTokens ?? 0
+private enum OpenAIChatToolsInput: Sendable {
+    case v3([LanguageModelV3Tool]?, LanguageModelV3ToolChoice?)
+    case v4([LanguageModelV4Tool]?, LanguageModelV4ToolChoice?)
+}
 
-        return LanguageModelV3Usage(
-            inputTokens: .init(
-                total: promptTokens,
-                noCache: promptTokens - cachedTokens,
-                cacheRead: cachedTokens,
-                cacheWrite: nil
-            ),
-            outputTokens: .init(
-                total: completionTokens,
-                text: completionTokens - reasoningTokens,
-                reasoning: reasoningTokens
-            ),
-            raw: try? jsonValue(from: usage)
+private enum OpenAIChatLogprobsMetadataShape: Sendable {
+    case v3Object
+    case v4Content
+}
+
+private struct OpenAIChatCallSettings: Sendable {
+    let prompt: OpenAIChatPromptInput
+    let maxOutputTokens: Int?
+    let temperature: Double?
+    let stopSequences: [String]?
+    let topP: Double?
+    let topK: Int?
+    let presencePenalty: Double?
+    let frequencyPenalty: Double?
+    let responseFormat: LanguageModelV4ResponseFormat?
+    let seed: Int?
+    let tools: OpenAIChatToolsInput
+    let includeRawChunks: Bool?
+    let throwsPreOutputStreamErrors: Bool
+    let abortSignal: (@Sendable () -> Bool)?
+    let headers: SharedV4Headers?
+    let reasoning: LanguageModelV4ReasoningEffort?
+    let providerOptions: SharedV4ProviderOptions?
+    let logprobsMetadataShape: OpenAIChatLogprobsMetadataShape
+    let emitsEmptyInitialToolArgumentDelta: Bool
+
+    init(v3 options: LanguageModelV3CallOptions) {
+        self.prompt = .v3(options.prompt)
+        self.maxOutputTokens = options.maxOutputTokens
+        self.temperature = options.temperature
+        self.stopSequences = options.stopSequences
+        self.topP = options.topP
+        self.topK = options.topK
+        self.presencePenalty = options.presencePenalty
+        self.frequencyPenalty = options.frequencyPenalty
+        self.responseFormat = options.responseFormat.map(convertLanguageModelV3ResponseFormatToV4)
+        self.seed = options.seed
+        self.tools = .v3(options.tools, options.toolChoice)
+        self.includeRawChunks = options.includeRawChunks
+        self.throwsPreOutputStreamErrors = false
+        self.abortSignal = options.abortSignal
+        self.headers = options.headers
+        self.reasoning = nil
+        self.providerOptions = options.providerOptions
+        self.logprobsMetadataShape = .v3Object
+        self.emitsEmptyInitialToolArgumentDelta = true
+    }
+
+    init(v4 options: LanguageModelV4CallOptions) {
+        self.prompt = .v4(options.prompt)
+        self.maxOutputTokens = options.maxOutputTokens
+        self.temperature = options.temperature
+        self.stopSequences = options.stopSequences
+        self.topP = options.topP
+        self.topK = options.topK
+        self.presencePenalty = options.presencePenalty
+        self.frequencyPenalty = options.frequencyPenalty
+        self.responseFormat = options.responseFormat
+        self.seed = options.seed
+        self.tools = .v4(options.tools, options.toolChoice)
+        self.includeRawChunks = options.includeRawChunks
+        self.throwsPreOutputStreamErrors = true
+        self.abortSignal = options.abortSignal
+        self.headers = options.headers
+        self.reasoning = options.reasoning
+        self.providerOptions = options.providerOptions
+        self.logprobsMetadataShape = .v4Content
+        self.emitsEmptyInitialToolArgumentDelta = false
+    }
+}
+
+public final class OpenAIChatLanguageModel: LanguageModelV3 {
+    private let core: OpenAIChatLanguageModelCore
+
+    public init(modelId: OpenAIChatModelId, config: OpenAIConfig) {
+        self.core = OpenAIChatLanguageModelCore(modelId: modelId, config: config)
+    }
+
+    public var provider: String { core.provider }
+    public var modelId: String { core.modelId }
+
+    public var supportedUrls: [String: [NSRegularExpression]] {
+        get async throws { try await core.supportedUrls }
+    }
+
+    public func doGenerate(options: LanguageModelV3CallOptions) async throws -> LanguageModelV3GenerateResult {
+        let result = try await core.doGenerate(options: OpenAIChatCallSettings(v3: options))
+        return try convertOpenAIChatGenerateResultToV3(result)
+    }
+
+    public func doStream(options: LanguageModelV3CallOptions) async throws -> LanguageModelV3StreamResult {
+        let result = try await core.doStream(options: OpenAIChatCallSettings(v3: options))
+        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error>(bufferingPolicy: .unbounded) { continuation in
+            let task = Task {
+                do {
+                    for try await part in result.stream {
+                        continuation.yield(try convertOpenAIChatStreamPartToV3(part))
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+
+            continuation.onTermination = { @Sendable _ in
+                task.cancel()
+            }
+        }
+
+        return LanguageModelV3StreamResult(
+            stream: stream,
+            request: result.request.map(convertLanguageModelV4RequestInfoToV3),
+            response: result.response.map(convertLanguageModelV4StreamResponseInfoToV3)
         )
     }
 
-    private func responseMetadata(from response: OpenAIChatResponse) -> (id: String?, modelId: String?, timestamp: Date?) {
-        let timestamp = response.created.map { Date(timeIntervalSince1970: $0) }
-        return (response.id, response.model, timestamp)
+    func asV4() -> OpenAIChatLanguageModelV4 {
+        OpenAIChatLanguageModelV4(core: core)
+    }
+}
+
+public final class OpenAIChatLanguageModelV4: LanguageModelV4 {
+    private let core: OpenAIChatLanguageModelCore
+
+    public init(modelId: OpenAIChatModelId, config: OpenAIConfig) {
+        self.core = OpenAIChatLanguageModelCore(modelId: modelId, config: config)
     }
 
-    private func responseMetadata(from chunk: OpenAIChatChunkData) -> (id: String?, modelId: String?, timestamp: Date?) {
-        let timestamp = chunk.created.map { Date(timeIntervalSince1970: $0) }
-        return (chunk.id, chunk.model, timestamp)
+    fileprivate init(core: OpenAIChatLanguageModelCore) {
+        self.core = core
     }
 
-    private func handleToolCallDeltas(
-        _ deltas: [OpenAIChatChunkToolCallDelta],
-        toolCalls: inout [Int: ToolCallState],
-        continuation: AsyncThrowingStream<LanguageModelV3StreamPart, Error>.Continuation
-    ) throws {
-        for delta in deltas {
-            let index = delta.index
+    public var provider: String { core.provider }
+    public var modelId: String { core.modelId }
 
-            if toolCalls[index] == nil {
-                guard delta.type == nil || delta.type == "function" else {
-                    throw InvalidResponseDataError(data: delta, message: "Expected 'function' type.")
-                }
-                guard let id = delta.id else {
-                    throw InvalidResponseDataError(data: delta, message: "Expected 'id' to be a string.")
-                }
-                guard let name = delta.function?.name else {
-                    throw InvalidResponseDataError(data: delta, message: "Expected function name.")
-                }
+    public var supportedUrls: [String: [NSRegularExpression]] {
+        get async throws { try await core.supportedUrls }
+    }
 
-                var state = ToolCallState(
-                    toolCallId: id,
-                    toolName: name,
-                    arguments: delta.function?.arguments ?? "",
-                    hasFinished: false
-                )
+    public func doGenerate(options: LanguageModelV4CallOptions) async throws -> LanguageModelV4GenerateResult {
+        try await core.doGenerate(options: OpenAIChatCallSettings(v4: options))
+    }
 
-                continuation.yield(.toolInputStart(
-                    id: id,
-                    toolName: name,
-                    providerMetadata: nil,
-                    providerExecuted: nil,
-                    dynamic: nil,
-                    title: nil
-                ))
+    public func doStream(options: LanguageModelV4CallOptions) async throws -> LanguageModelV4StreamResult {
+        try await core.doStream(options: OpenAIChatCallSettings(v4: options))
+    }
+}
 
-                if let args = delta.function?.arguments {
-                    continuation.yield(.toolInputDelta(id: id, delta: args, providerMetadata: nil))
-                    if isParsableJson(state.arguments) {
-                        continuation.yield(.toolInputEnd(id: id, providerMetadata: nil))
-                        continuation.yield(.toolCall(LanguageModelV3ToolCall(
-                            toolCallId: id,
-                            toolName: name,
-                            input: state.arguments,
-                            providerExecuted: nil,
-                            providerMetadata: nil
-                        )))
-                        state.hasFinished = true
-                    }
-                }
+private func convertLanguageModelV3ResponseFormatToV4(_ value: LanguageModelV3ResponseFormat) -> LanguageModelV4ResponseFormat {
+    switch value {
+    case .text:
+        return .text
+    case let .json(schema, name, description):
+        return .json(schema: schema, name: name, description: description)
+    }
+}
 
-                toolCalls[index] = state
-                continue
-            }
+private func openAIChatProviderMetadata(
+    usage: OpenAIChatUsage?,
+    logprobs: OpenAIChatChoiceLogprobs?,
+    shape: OpenAIChatLogprobsMetadataShape
+) -> SharedV4ProviderMetadata {
+    var metadata: SharedV4ProviderMetadata = ["openai": [:]]
+    if let usage {
+        addOpenAIChatUsageMetadata(usage, to: &metadata)
+    }
+    addOpenAIChatLogprobsMetadata(logprobs, shape: shape, to: &metadata)
+    return metadata
+}
 
-            var state = toolCalls[index]!
-            if state.hasFinished {
-                continue
-            }
+private func addOpenAIChatUsageMetadata(_ usage: OpenAIChatUsage, to metadata: inout SharedV4ProviderMetadata) {
+    if metadata["openai"] == nil {
+        metadata["openai"] = [:]
+    }
+    if let accepted = usage.completionTokensDetails?.acceptedPredictionTokens {
+        metadata["openai"]?["acceptedPredictionTokens"] = .number(Double(accepted))
+    }
+    if let rejected = usage.completionTokensDetails?.rejectedPredictionTokens {
+        metadata["openai"]?["rejectedPredictionTokens"] = .number(Double(rejected))
+    }
+}
 
-            if let name = delta.function?.name, !name.isEmpty {
-                state.toolName = name
-            }
+private func addOpenAIChatLogprobsMetadata(
+    _ logprobs: OpenAIChatChoiceLogprobs?,
+    shape: OpenAIChatLogprobsMetadataShape,
+    to metadata: inout SharedV4ProviderMetadata
+) {
+    guard let logprobs else { return }
+    if metadata["openai"] == nil {
+        metadata["openai"] = [:]
+    }
 
-            if let argumentDelta = delta.function?.arguments {
-                state.arguments += argumentDelta
-                continuation.yield(.toolInputDelta(id: state.toolCallId, delta: argumentDelta, providerMetadata: nil))
-
-                if isParsableJson(state.arguments) {
-                    continuation.yield(.toolInputEnd(id: state.toolCallId, providerMetadata: nil))
-                    continuation.yield(.toolCall(LanguageModelV3ToolCall(
-                        toolCallId: state.toolCallId,
-                        toolName: state.toolName,
-                        input: state.arguments,
-                        providerExecuted: nil,
-                        providerMetadata: nil
-                    )))
-                    state.hasFinished = true
-                }
-            }
-
-            toolCalls[index] = state
+    switch shape {
+    case .v3Object:
+        if let encoded = try? JSONEncoder().encodeToJSONValue(logprobs) {
+            metadata["openai"]?["logprobs"] = encoded
+        }
+    case .v4Content:
+        if let content = logprobs.content,
+           let encoded = try? JSONEncoder().encodeToJSONValue(content) {
+            metadata["openai"]?["logprobs"] = encoded
         }
     }
-    private struct ToolCallState {
-        var toolCallId: String
-        var toolName: String
-        var arguments: String
-        var hasFinished: Bool
+}
+
+private func convertOpenAIChatUsageToV4(_ usage: OpenAIChatUsage?) -> LanguageModelV4Usage {
+    guard let usage else { return LanguageModelV4Usage() }
+
+    let promptTokens = usage.promptTokens ?? 0
+    let completionTokens = usage.completionTokens ?? 0
+    let cachedTokens = usage.promptTokensDetails?.cachedTokens ?? 0
+    let reasoningTokens = usage.completionTokensDetails?.reasoningTokens ?? 0
+
+    return LanguageModelV4Usage(
+        inputTokens: .init(
+            total: promptTokens,
+            noCache: promptTokens - cachedTokens,
+            cacheRead: cachedTokens,
+            cacheWrite: nil
+        ),
+        outputTokens: .init(
+            total: completionTokens,
+            text: completionTokens - reasoningTokens,
+            reasoning: reasoningTokens
+        ),
+        raw: try? JSONEncoder().encodeToJSONValue(usage)
+    )
+}
+
+private func responseMetadata(from response: OpenAIChatResponse) -> (id: String?, modelId: String?, timestamp: Date?) {
+    let timestamp = openAIChatTimestamp(from: response.created)
+    return (response.id, response.model, timestamp)
+}
+
+private func responseMetadata(from chunk: OpenAIChatChunkData) -> (id: String?, modelId: String?, timestamp: Date?) {
+    let timestamp = openAIChatTimestamp(from: chunk.created)
+    return (chunk.id, chunk.model, timestamp)
+}
+
+private func openAIChatTimestamp(from created: Double?) -> Date? {
+    guard let created, created != 0 else { return nil }
+    return Date(timeIntervalSince1970: created)
+}
+
+private func convertOpenAIChatGenerateResultToV3(
+    _ result: LanguageModelV4GenerateResult
+) throws -> LanguageModelV3GenerateResult {
+    LanguageModelV3GenerateResult(
+        content: try result.content.map(convertOpenAIChatContentToV3),
+        finishReason: convertLanguageModelV4FinishReasonToV3(result.finishReason),
+        usage: convertLanguageModelV4UsageToV3(result.usage),
+        providerMetadata: nilIfEmptyOpenAIMetadata(result.providerMetadata),
+        request: result.request.map(convertLanguageModelV4RequestInfoToV3),
+        response: result.response.map(convertLanguageModelV4ResponseInfoToV3),
+        warnings: result.warnings.map(convertSharedV4WarningToV3)
+    )
+}
+
+private func convertOpenAIChatContentToV3(_ value: LanguageModelV4Content) throws -> LanguageModelV3Content {
+    switch value {
+    case .text(let content):
+        return .text(LanguageModelV3Text(text: content.text, providerMetadata: content.providerMetadata))
+    case .source(let source):
+        return .source(convertLanguageModelV4SourceToV3(source))
+    case .toolCall(let toolCall):
+        return .toolCall(convertLanguageModelV4ToolCallToV3(toolCall))
+    default:
+        throw UnsupportedFunctionalityError(functionality: "OpenAI chat V4 content \(value) on V3 facade")
+    }
+}
+
+private func convertOpenAIChatStreamPartToV3(
+    _ value: LanguageModelV4StreamPart
+) throws -> LanguageModelV3StreamPart {
+    switch value {
+    case let .textStart(id, providerMetadata):
+        return .textStart(id: id, providerMetadata: providerMetadata)
+    case let .textDelta(id, delta, providerMetadata):
+        return .textDelta(id: id, delta: delta, providerMetadata: providerMetadata)
+    case let .textEnd(id, providerMetadata):
+        return .textEnd(id: id, providerMetadata: providerMetadata)
+    case let .toolInputStart(id, toolName, providerMetadata, providerExecuted, dynamic, title):
+        return .toolInputStart(
+            id: id,
+            toolName: toolName,
+            providerMetadata: providerMetadata,
+            providerExecuted: providerExecuted,
+            dynamic: dynamic,
+            title: title
+        )
+    case let .toolInputDelta(id, delta, providerMetadata):
+        return .toolInputDelta(id: id, delta: delta, providerMetadata: providerMetadata)
+    case let .toolInputEnd(id, providerMetadata):
+        return .toolInputEnd(id: id, providerMetadata: providerMetadata)
+    case .toolCall(let toolCall):
+        return .toolCall(convertLanguageModelV4ToolCallToV3(toolCall))
+    case .source(let source):
+        return .source(convertLanguageModelV4SourceToV3(source))
+    case let .streamStart(warnings):
+        return .streamStart(warnings: warnings.map(convertSharedV4WarningToV3))
+    case let .responseMetadata(id, modelId, timestamp):
+        return .responseMetadata(id: id, modelId: modelId, timestamp: timestamp)
+    case let .finish(finishReason, usage, providerMetadata):
+        return .finish(
+            finishReason: convertLanguageModelV4FinishReasonToV3(finishReason),
+            usage: convertLanguageModelV4UsageToV3(usage),
+            providerMetadata: nilIfEmptyOpenAIMetadata(providerMetadata)
+        )
+    case let .raw(rawValue):
+        return .raw(rawValue: rawValue)
+    case let .error(error):
+        return .error(error: error)
+    default:
+        throw UnsupportedFunctionalityError(functionality: "OpenAI chat V4 stream part \(value) on V3 facade")
+    }
+}
+
+private func convertLanguageModelV4ToolCallToV3(_ value: LanguageModelV4ToolCall) -> LanguageModelV3ToolCall {
+    LanguageModelV3ToolCall(
+        toolCallId: value.toolCallId,
+        toolName: value.toolName,
+        input: value.input,
+        providerExecuted: value.providerExecuted,
+        dynamic: value.dynamic,
+        providerMetadata: value.providerMetadata
+    )
+}
+
+private func convertLanguageModelV4SourceToV3(_ value: LanguageModelV4Source) -> LanguageModelV3Source {
+    switch value {
+    case let .url(id, url, title, providerMetadata):
+        return .url(id: id, url: url, title: title, providerMetadata: providerMetadata)
+    case let .document(id, mediaType, title, filename, providerMetadata):
+        return .document(
+            id: id,
+            mediaType: mediaType,
+            title: title,
+            filename: filename,
+            providerMetadata: providerMetadata
+        )
+    }
+}
+
+private func convertLanguageModelV4FinishReasonToV3(_ value: LanguageModelV4FinishReason) -> LanguageModelV3FinishReason {
+    LanguageModelV3FinishReason(
+        unified: LanguageModelV3FinishReason.Unified(rawValue: value.unified.rawValue) ?? .other,
+        raw: value.raw
+    )
+}
+
+private func convertLanguageModelV4UsageToV3(_ value: LanguageModelV4Usage) -> LanguageModelV3Usage {
+    LanguageModelV3Usage(
+        inputTokens: .init(
+            total: value.inputTokens.total,
+            noCache: value.inputTokens.noCache,
+            cacheRead: value.inputTokens.cacheRead,
+            cacheWrite: value.inputTokens.cacheWrite
+        ),
+        outputTokens: .init(
+            total: value.outputTokens.total,
+            text: value.outputTokens.text,
+            reasoning: value.outputTokens.reasoning
+        ),
+        raw: value.raw
+    )
+}
+
+private func convertLanguageModelV4RequestInfoToV3(_ value: LanguageModelV4RequestInfo) -> LanguageModelV3RequestInfo {
+    LanguageModelV3RequestInfo(body: value.body)
+}
+
+private func convertLanguageModelV4ResponseInfoToV3(_ value: LanguageModelV4ResponseInfo) -> LanguageModelV3ResponseInfo {
+    LanguageModelV3ResponseInfo(
+        id: value.id,
+        timestamp: value.timestamp,
+        modelId: value.modelId,
+        headers: value.headers,
+        body: value.body
+    )
+}
+
+private func convertLanguageModelV4StreamResponseInfoToV3(
+    _ value: LanguageModelV4StreamResponseInfo
+) -> LanguageModelV3StreamResponseInfo {
+    LanguageModelV3StreamResponseInfo(headers: value.headers)
+}
+
+private func convertSharedV3WarningToV4(_ value: SharedV3Warning) -> SharedV4Warning {
+    switch value {
+    case let .unsupported(feature, details):
+        return .unsupported(feature: feature, details: details)
+    case let .compatibility(feature, details):
+        return .compatibility(feature: feature, details: details)
+    case let .other(message):
+        return .other(message: message)
+    }
+}
+
+private func convertSharedV4WarningToV3(_ value: SharedV4Warning) -> SharedV3Warning {
+    switch value {
+    case let .unsupported(feature, details):
+        return .unsupported(feature: feature, details: details)
+    case let .compatibility(feature, details):
+        return .compatibility(feature: feature, details: details)
+    case let .deprecated(setting, message):
+        return .other(message: "\(setting): \(message)")
+    case let .other(message):
+        return .other(message: message)
+    }
+}
+
+private func nilIfEmptyOpenAIMetadata(_ value: SharedV4ProviderMetadata?) -> SharedV3ProviderMetadata? {
+    guard let value else { return nil }
+    let withoutEmptyObjects = value.filter { !$0.value.isEmpty }
+    return withoutEmptyObjects.isEmpty ? nil : withoutEmptyObjects
+}
+
+private func throwIfOpenAIChatStreamErrorBeforeOutput(
+    stream: AsyncThrowingStream<ParseJSONResult<OpenAIChatChunk>, Error>,
+    url: String,
+    requestBodyValues: [String: JSONValue],
+    responseHeaders: SharedV4Headers?
+) async throws -> AsyncThrowingStream<ParseJSONResult<OpenAIChatChunk>, Error> {
+    let iteratorBox = OpenAIChatStreamIteratorBox(iterator: stream.makeAsyncIterator())
+    var buffered: [ParseJSONResult<OpenAIChatChunk>] = []
+
+    while let chunk = try await iteratorBox.next() {
+        switch chunk {
+        case .failure:
+            buffered.append(chunk)
+            return makeOpenAIChatCheckedStream(buffered: buffered, iteratorBox: iteratorBox)
+
+        case .success(let value, _):
+            if case .error(let errorData) = value {
+                throw openAIChatStreamError(
+                    errorData: errorData,
+                    url: url,
+                    requestBodyValues: requestBodyValues,
+                    responseHeaders: responseHeaders
+                )
+            }
+
+            buffered.append(chunk)
+            if isOpenAIChatOutputChunk(value) {
+                return makeOpenAIChatCheckedStream(buffered: buffered, iteratorBox: iteratorBox)
+            }
+        }
     }
 
+    return makeOpenAIChatCheckedStream(buffered: buffered, iteratorBox: iteratorBox)
+}
+
+private final class OpenAIChatStreamIteratorBox: @unchecked Sendable {
+    private var iterator: AsyncThrowingStream<ParseJSONResult<OpenAIChatChunk>, Error>.Iterator
+
+    init(iterator: AsyncThrowingStream<ParseJSONResult<OpenAIChatChunk>, Error>.Iterator) {
+        self.iterator = iterator
+    }
+
+    func next() async throws -> ParseJSONResult<OpenAIChatChunk>? {
+        try await iterator.next()
+    }
+}
+
+private func makeOpenAIChatCheckedStream(
+    buffered: [ParseJSONResult<OpenAIChatChunk>],
+    iteratorBox: OpenAIChatStreamIteratorBox
+) -> AsyncThrowingStream<ParseJSONResult<OpenAIChatChunk>, Error> {
+    AsyncThrowingStream(bufferingPolicy: .unbounded) { continuation in
+        let task = Task {
+            do {
+                for chunk in buffered {
+                    continuation.yield(chunk)
+                }
+                while let chunk = try await iteratorBox.next() {
+                    continuation.yield(chunk)
+                }
+                continuation.finish()
+            } catch {
+                continuation.finish(throwing: error)
+            }
+        }
+
+        continuation.onTermination = { @Sendable _ in
+            task.cancel()
+        }
+    }
+}
+
+private func isOpenAIChatOutputChunk(_ chunk: OpenAIChatChunk) -> Bool {
+    guard case .data(let data) = chunk else { return false }
+    return data.choices.contains { choice in
+        guard let delta = choice.delta else { return false }
+        return (delta.content?.isEmpty == false)
+            || (delta.toolCalls?.isEmpty == false)
+            || (delta.annotations?.isEmpty == false)
+    }
+}
+
+private func openAIChatStreamError(
+    errorData: OpenAIErrorData,
+    url: String,
+    requestBodyValues: [String: JSONValue],
+    responseHeaders: SharedV4Headers?
+) -> APICallError {
+    let frameJSON = (try? JSONEncoder().encodeToJSONValue(errorData.error)) ?? .string(errorData.error.message)
+    return APICallError(
+        message: errorData.error.message,
+        url: url,
+        requestBodyValues: requestBodyValues,
+        statusCode: openAIChatStreamErrorStatusCode(errorData.error),
+        responseHeaders: responseHeaders,
+        responseBody: jsonString(from: frameJSON),
+        data: frameJSON
+    )
+}
+
+private func openAIChatStreamErrorStatusCode(_ error: OpenAIErrorData.ErrorPayload) -> Int {
+    if let code = error.code {
+        switch code {
+        case .number(let value):
+            let intValue = Int(value)
+            if Double(intValue) == value, (400...599).contains(intValue) {
+                return intValue
+            }
+        case .string(let value):
+            if value.range(of: #"^\d{3}$"#, options: .regularExpression) != nil,
+               let intValue = Int(value),
+               (400...599).contains(intValue) {
+                return intValue
+            }
+        }
+    }
+
+    let discriminator = [openAIErrorCodeDescription(error.code), error.type]
+        .compactMap { $0 }
+        .joined(separator: " ")
+        .lowercased()
+
+    if discriminator.contains("insufficient_quota") || discriminator.contains("rate_limit") {
+        return 429
+    }
+    if discriminator.contains("authentication") { return 401 }
+    if discriminator.contains("permission") { return 403 }
+    if discriminator.contains("not_found") { return 404 }
+    if discriminator.contains("invalid")
+        || discriminator.contains("bad_request")
+        || discriminator.contains("context_length") {
+        return 400
+    }
+    if discriminator.contains("overload") { return 503 }
+    if discriminator.contains("timeout") { return 504 }
+
+    return 500
+}
+
+private func openAIErrorCodeDescription(_ code: OpenAIErrorCode?) -> String? {
+    switch code {
+    case .none:
+        return nil
+    case .number(let value):
+        return String(value)
+    case .string(let value):
+        return value
+    }
+}
+
+private func jsonString(from value: JSONValue) -> String? {
+    do {
+        let data = try JSONEncoder().encode(value)
+        return String(data: data, encoding: .utf8)
+    } catch {
+        return nil
+    }
 }
 
 private extension JSONEncoder {

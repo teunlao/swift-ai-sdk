@@ -809,6 +809,13 @@ private func updateLastContentProviderMetadata(
                 providerMetadata: providerMetadata
             )
         )
+    case .custom(let custom):
+        content[lastIndex] = .custom(
+            LanguageModelV3CustomContent(
+                kind: custom.kind,
+                providerMetadata: providerMetadata
+            )
+        )
     case .toolApprovalRequest:
         break
     }

@@ -1,5 +1,5 @@
 /**
- Wraps a LanguageModelV3 instance with middleware functionality.
+ Wraps language models with middleware functionality.
 
  Port of `@ai-sdk/ai/src/middleware/wrap-language-model.ts`.
 
@@ -48,6 +48,61 @@ public func wrapLanguageModel(
     }
 }
 
+/**
+ Wraps a LanguageModelV4 instance with V4 middleware functionality.
+
+ - Parameters:
+   - model: The original LanguageModelV4 instance to be wrapped.
+   - middleware: The middleware to be applied to the language model. When multiple middlewares are provided, the first middleware will transform the input first, and the last middleware will be wrapped directly around the model.
+   - modelId: Optional custom model ID to override the original model's ID.
+   - providerId: Optional custom provider ID to override the original model's provider ID.
+ - Returns: A new LanguageModelV4 instance with middleware applied.
+ */
+public func wrapLanguageModel(
+    model: any LanguageModelV4,
+    middleware: LanguageModelV4MiddlewareInput,
+    modelId: String? = nil,
+    providerId: String? = nil
+) -> any LanguageModelV4 {
+    let middlewareArray: [LanguageModelV4Middleware]
+
+    switch middleware {
+    case .single(let m):
+        middlewareArray = [m]
+    case .multiple(let arr):
+        middlewareArray = arr
+    }
+
+    return middlewareArray.reversed().reduce(model) { wrappedModel, mw in
+        doWrapV4(
+            model: wrappedModel,
+            middleware: mw,
+            modelId: modelId,
+            providerId: providerId
+        )
+    }
+}
+
+/**
+ Wraps a legacy LanguageModelV3 instance with V4 middleware by adapting the model to V4 first.
+
+ This mirrors upstream's `wrapLanguageModel` behavior, where V2/V3/V4 input models resolve to
+ the V4 surface before middleware is applied.
+ */
+public func wrapLanguageModel(
+    model: any LanguageModelV3,
+    middleware: LanguageModelV4MiddlewareInput,
+    modelId: String? = nil,
+    providerId: String? = nil
+) -> any LanguageModelV4 {
+    wrapLanguageModel(
+        model: asLanguageModelV4(model),
+        middleware: middleware,
+        modelId: modelId,
+        providerId: providerId
+    )
+}
+
 /// Input type for middleware parameter - can be single or multiple
 public enum MiddlewareInput: Sendable {
     case single(LanguageModelV3Middleware)
@@ -57,6 +112,12 @@ public enum MiddlewareInput: Sendable {
 /// Alias for readability when configuring provider registries.
 public typealias LanguageModelMiddlewareInput = MiddlewareInput
 
+/// Input type for V4 middleware parameter - can be single or multiple.
+public enum LanguageModelV4MiddlewareInput: Sendable {
+    case single(LanguageModelV4Middleware)
+    case multiple([LanguageModelV4Middleware])
+}
+
 /// Internal function that wraps a model with a single middleware
 private func doWrap(
     model: any LanguageModelV3,
@@ -65,6 +126,21 @@ private func doWrap(
     providerId: String?
 ) -> any LanguageModelV3 {
     return WrappedLanguageModel(
+        model: model,
+        middleware: middleware,
+        modelId: modelId,
+        providerId: providerId
+    )
+}
+
+/// Internal function that wraps a V4 model with a single middleware.
+private func doWrapV4(
+    model: any LanguageModelV4,
+    middleware: LanguageModelV4Middleware,
+    modelId: String?,
+    providerId: String?
+) -> any LanguageModelV4 {
+    WrappedLanguageModelV4(
         model: model,
         middleware: middleware,
         modelId: modelId,
@@ -195,6 +271,123 @@ private final class WrappedLanguageModel: LanguageModelV3, @unchecked Sendable {
         options: LanguageModelV3CallOptions,
         type: LanguageModelV3Middleware.OperationType
     ) async throws -> LanguageModelV3CallOptions {
+        if let transformParams = middleware.transformParams {
+            return try await transformParams(type, options, baseModel)
+        }
+        return options
+    }
+}
+
+/// Internal wrapped V4 language model implementation.
+private final class WrappedLanguageModelV4: LanguageModelV4, @unchecked Sendable {
+    let specificationVersion: String = "v4"
+
+    private let baseModel: any LanguageModelV4
+    private let middleware: LanguageModelV4Middleware
+    private let customModelId: String?
+    private let customProviderId: String?
+
+    init(
+        model: any LanguageModelV4,
+        middleware: LanguageModelV4Middleware,
+        modelId: String?,
+        providerId: String?
+    ) {
+        self.baseModel = model
+        self.middleware = middleware
+        self.customModelId = modelId
+        self.customProviderId = providerId
+    }
+
+    var provider: String {
+        if let customProviderId = customProviderId {
+            return customProviderId
+        }
+        if let overrideProvider = middleware.overrideProvider {
+            return overrideProvider(baseModel)
+        }
+        return baseModel.provider
+    }
+
+    var modelId: String {
+        if let customModelId = customModelId {
+            return customModelId
+        }
+        if let overrideModelId = middleware.overrideModelId {
+            return overrideModelId(baseModel)
+        }
+        return baseModel.modelId
+    }
+
+    var supportedUrls: [String: [NSRegularExpression]] {
+        get async throws {
+            if let overrideSupportedUrls = middleware.overrideSupportedUrls {
+                return try await overrideSupportedUrls(baseModel)
+            }
+            return try await baseModel.supportedUrls
+        }
+    }
+
+    func doGenerate(options: LanguageModelV4CallOptions) async throws -> LanguageModelV4GenerateResult {
+        let transformedOptions = try await doTransform(
+            options: options,
+            type: .generate
+        )
+
+        let base = self.baseModel
+
+        let doGenerateClosure: @Sendable () async throws -> LanguageModelV4GenerateResult = {
+            try await base.doGenerate(options: transformedOptions)
+        }
+
+        let doStreamClosure: @Sendable () async throws -> LanguageModelV4StreamResult = {
+            try await base.doStream(options: transformedOptions)
+        }
+
+        if let wrapGenerate = middleware.wrapGenerate {
+            return try await wrapGenerate(
+                doGenerateClosure,
+                doStreamClosure,
+                transformedOptions,
+                baseModel
+            )
+        } else {
+            return try await doGenerateClosure()
+        }
+    }
+
+    func doStream(options: LanguageModelV4CallOptions) async throws -> LanguageModelV4StreamResult {
+        let transformedOptions = try await doTransform(
+            options: options,
+            type: .stream
+        )
+
+        let base = self.baseModel
+
+        let doGenerateClosure: @Sendable () async throws -> LanguageModelV4GenerateResult = {
+            try await base.doGenerate(options: transformedOptions)
+        }
+
+        let doStreamClosure: @Sendable () async throws -> LanguageModelV4StreamResult = {
+            try await base.doStream(options: transformedOptions)
+        }
+
+        if let wrapStream = middleware.wrapStream {
+            return try await wrapStream(
+                doGenerateClosure,
+                doStreamClosure,
+                transformedOptions,
+                baseModel
+            )
+        } else {
+            return try await doStreamClosure()
+        }
+    }
+
+    private func doTransform(
+        options: LanguageModelV4CallOptions,
+        type: LanguageModelV4Middleware.OperationType
+    ) async throws -> LanguageModelV4CallOptions {
         if let transformParams = middleware.transformParams {
             return try await transformParams(type, options, baseModel)
         }

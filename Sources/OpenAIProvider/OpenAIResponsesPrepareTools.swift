@@ -11,6 +11,7 @@ struct OpenAIResponsesPreparedTools: Sendable {
 func prepareOpenAIResponsesTools(
     tools: [LanguageModelV3Tool]?,
     toolChoice: LanguageModelV3ToolChoice?,
+    allowedTools: OpenAIResponsesAllowedTools? = nil,
     toolNameMapping: OpenAIToolNameMapping = .init(),
     customProviderToolNames: Set<String> = []
 ) async throws -> OpenAIResponsesPreparedTools {
@@ -20,11 +21,13 @@ func prepareOpenAIResponsesTools(
 
     let warnings: [SharedV3Warning] = []
     var openAITools: [JSONValue] = []
+    var namespaceTools: [String: (description: String, index: Int)] = [:]
     var resolvedCustomProviderToolNames = customProviderToolNames
 
     for tool in tools {
         switch tool {
         case .function(let functionTool):
+            let openAIOptions = parseOpenAIFunctionToolOptions(functionTool.providerOptions)
             var payload: [String: JSONValue] = [
                 "type": .string("function"),
                 "name": .string(functionTool.name),
@@ -36,7 +39,35 @@ func prepareOpenAIResponsesTools(
             if let strict = functionTool.strict {
                 payload["strict"] = .bool(strict)
             }
-            openAITools.append(.object(payload))
+            if let deferLoading = openAIOptions.deferLoading {
+                payload["defer_loading"] = .bool(deferLoading)
+            }
+
+            if let namespace = openAIOptions.namespace {
+                if let existing = namespaceTools[namespace.name] {
+                    guard existing.description == namespace.description else {
+                        throw UnsupportedFunctionalityError(functionality: "conflicting descriptions for OpenAI tool namespace \"\(namespace.name)\"")
+                    }
+                    guard case .object(var namespaceObject) = openAITools[existing.index],
+                          case .array(var namespaceFunctionTools)? = namespaceObject["tools"] else {
+                        throw UnsupportedFunctionalityError(functionality: "invalid OpenAI tool namespace state")
+                    }
+                    namespaceFunctionTools.append(.object(payload))
+                    namespaceObject["tools"] = .array(namespaceFunctionTools)
+                    openAITools[existing.index] = .object(namespaceObject)
+                } else {
+                    let index = openAITools.count
+                    namespaceTools[namespace.name] = (namespace.description, index)
+                    openAITools.append(.object([
+                        "type": .string("namespace"),
+                        "name": .string(namespace.name),
+                        "description": .string(namespace.description),
+                        "tools": .array([.object(payload)])
+                    ]))
+                }
+            } else {
+                openAITools.append(.object(payload))
+            }
 
         case .provider(let providerTool):
             switch providerTool.id {
@@ -86,7 +117,7 @@ func prepareOpenAIResponsesTools(
                     "type": .string("shell")
                 ]
                 if let environment = parsed.environment {
-                    payload["environment"] = mapShellEnvironment(environment)
+                    payload["environment"] = try mapShellEnvironment(environment)
                 }
                 openAITools.append(.object(payload))
 
@@ -292,7 +323,7 @@ func prepareOpenAIResponsesTools(
 
                 var payload: [String: JSONValue] = [
                     "type": .string("custom"),
-                    "name": .string(parsed.name)
+                    "name": .string(providerTool.name)
                 ]
                 if let description = parsed.description {
                     payload["description"] = .string(description)
@@ -312,7 +343,25 @@ func prepareOpenAIResponsesTools(
                     }
                 }
                 openAITools.append(.object(payload))
-                resolvedCustomProviderToolNames.insert(parsed.name)
+                resolvedCustomProviderToolNames.insert(providerTool.name)
+
+            case "openai.tool_search":
+                let parsed = try await validateTypes(
+                    ValidateTypesOptions(value: providerTool.args, schema: openaiToolSearchArgsSchema)
+                )
+                var payload: [String: JSONValue] = [
+                    "type": .string("tool_search")
+                ]
+                if let execution = parsed.execution {
+                    payload["execution"] = .string(execution.rawValue)
+                }
+                if let description = parsed.description {
+                    payload["description"] = .string(description)
+                }
+                if let parameters = parsed.parameters {
+                    payload["parameters"] = parameters
+                }
+                openAITools.append(.object(payload))
 
             default:
                 break
@@ -321,13 +370,61 @@ func prepareOpenAIResponsesTools(
     }
 
     let finalTools = openAITools
-    let finalToolChoice = try mapToolChoice(
-        toolChoice,
-        toolNameMapping: toolNameMapping,
-        customProviderToolNames: resolvedCustomProviderToolNames
-    )
+    let finalToolChoice: JSONValue?
+    if let allowedTools {
+        finalToolChoice = .object([
+            "type": .string("allowed_tools"),
+            "mode": .string(allowedTools.mode ?? "auto"),
+            "tools": .array(allowedTools.toolNames.map { name in
+                .object([
+                    "type": .string("function"),
+                    "name": .string(toolNameMapping.toProviderToolName(name))
+                ])
+            })
+        ])
+    } else {
+        finalToolChoice = try mapToolChoice(
+            toolChoice,
+            toolNameMapping: toolNameMapping,
+            customProviderToolNames: resolvedCustomProviderToolNames
+        )
+    }
 
     return OpenAIResponsesPreparedTools(tools: finalTools, toolChoice: finalToolChoice, warnings: warnings)
+}
+
+private struct OpenAIFunctionToolOptions {
+    struct Namespace {
+        let name: String
+        let description: String
+    }
+
+    var deferLoading: Bool?
+    var namespace: Namespace?
+}
+
+private func parseOpenAIFunctionToolOptions(_ providerOptions: SharedV3ProviderOptions?) -> OpenAIFunctionToolOptions {
+    guard let raw = providerOptions?["openai"] else {
+        return OpenAIFunctionToolOptions()
+    }
+
+    let deferLoading: Bool?
+    if case .bool(let value)? = raw["deferLoading"] {
+        deferLoading = value
+    } else {
+        deferLoading = nil
+    }
+
+    let namespace: OpenAIFunctionToolOptions.Namespace?
+    if case .object(let object)? = raw["namespace"],
+       case .string(let name)? = object["name"],
+       case .string(let description)? = object["description"] {
+        namespace = .init(name: name, description: description)
+    } else {
+        namespace = nil
+    }
+
+    return OpenAIFunctionToolOptions(deferLoading: deferLoading, namespace: namespace)
 }
 
 private func makeUserLocationJSON(_ location: OpenAIWebSearchArgs.UserLocation) -> JSONValue {
@@ -349,7 +446,7 @@ private func makeUserLocationJSON(_ location: OpenAIWebSearchArgs.UserLocation) 
     return .object(payload)
 }
 
-private func mapShellEnvironment(_ environment: [String: JSONValue]) -> JSONValue {
+private func mapShellEnvironment(_ environment: [String: JSONValue]) throws -> JSONValue {
     let type = environment["type"]?.stringValue ?? "local"
 
     if type == "containerReference" {
@@ -376,7 +473,7 @@ private func mapShellEnvironment(_ environment: [String: JSONValue]) -> JSONValu
             payload["network_policy"] = mapShellNetworkPolicy(networkPolicy)
         }
         if let skills = environment["skills"] {
-            payload["skills"] = mapShellSkills(skills)
+            payload["skills"] = try mapShellSkills(skills)
         }
         return .object(payload)
     }
@@ -415,12 +512,12 @@ private func mapShellNetworkPolicy(_ policy: JSONValue) -> JSONValue {
     }
 }
 
-private func mapShellSkills(_ skillsValue: JSONValue) -> JSONValue {
+private func mapShellSkills(_ skillsValue: JSONValue) throws -> JSONValue {
     guard case .array(let skills) = skillsValue else {
         return skillsValue
     }
 
-    let mapped: [JSONValue] = skills.map { skill in
+    let mapped: [JSONValue] = try skills.map { skill in
         guard case .object(let object) = skill,
               let type = object["type"]?.stringValue else {
             return skill
@@ -428,12 +525,20 @@ private func mapShellSkills(_ skillsValue: JSONValue) -> JSONValue {
 
         switch type {
         case "skillReference":
-            var payload: [String: JSONValue] = [
-                "type": .string("skill_reference")
-            ]
-            if let skillId = object["skillId"] {
-                payload["skill_id"] = skillId
+            guard case .object(let referenceObject)? = object["providerReference"] else {
+                return skill
             }
+            let reference = Dictionary(uniqueKeysWithValues: referenceObject.compactMap { key, value -> (String, String)? in
+                guard case .string(let providerId) = value else {
+                    return nil
+                }
+                return (key, providerId)
+            })
+            var payload: [String: JSONValue] = [
+                "type": .string("skill_reference"),
+                "skill_id": .string(try resolveProviderReference(reference: reference, provider: "openai")),
+                "version": .string("latest")
+            ]
             if let version = object["version"] {
                 payload["version"] = version
             }

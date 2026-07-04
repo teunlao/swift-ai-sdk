@@ -4,11 +4,7 @@ import OpenAIProvider
 
 /// Factory for creating OpenAI language models in the playground.
 ///
-/// Demonstrates multiple ways to use the OpenAI provider API:
-/// 1. Global `openai` constant (default instance)
-/// 2. Custom provider via `createOpenAIProvider(settings:)`
-/// 3. Shortcut methods: `.chat()`, `.embedding()`, `.image()`, etc.
-/// 4. `callAsFunction` syntax: `openai("gpt-4o")`
+/// Demonstrates the legacy V3 OpenAI provider API used by this playground path.
 enum OpenAIPlaygroundFactory {
     static func makeLanguageModel(
         modelId: String,
@@ -25,21 +21,18 @@ enum OpenAIPlaygroundFactory {
 
         Task {
             await logger.verbose("Using openai provider (model=\(modelId))")
-            await logger.verbose("🆕 New API: can use global `openai` constant or shortcut methods")
+            await logger.verbose("Using legacy createOpenAIProvider because this playground path expects LanguageModelV3")
         }
 
-        // If no custom settings, use global `openai` constant (NEW!)
+        // This playground path is still V3-oriented; the package default `openai`
+        // is V4 for upstream parity.
         if baseURL == nil && organization == nil && project == nil {
             Task {
-                await logger.verbose("✅ Using global openai.languageModel(\"\(modelId)\")")
+                await logger.verbose("Using createOpenAIProvider().languageModel(\"\(modelId)\")")
             }
-            // NEW: Using global `openai` constant (parity with TypeScript)
-            return try openai.languageModel(modelId: modelId)
-
-            // Alternative syntaxes (all equivalent):
-            // return openai(modelId)  // callAsFunction syntax
-            // return openai.chat(.gpt4o)  // typed model ID
-            // return openai.responses(.gpt4o)  // responses API
+            return try createOpenAIProvider(
+                settings: OpenAIProviderSettings(apiKey: apiKey)
+            ).languageModel(modelId: modelId)
         }
 
         // Custom provider when settings are provided

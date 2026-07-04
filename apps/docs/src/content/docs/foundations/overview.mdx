@@ -35,9 +35,9 @@ print(result.text)
 
 ```swift
 import SwiftAISDK
-import AISDKProvider
+import AnthropicProvider
 
-let provider = createAnthropicProvider()
+let provider = createAnthropic()
 let model = provider.languageModel(modelId: "claude-3-5-sonnet")
 
 let result = try await generateText(model: .v3(model), input: "What is love?")
@@ -49,7 +49,7 @@ print(result.text)
 
 ```swift
 import SwiftAISDK
-import AISDKProvider
+import GoogleProvider
 
 let provider = createGoogleGenerativeAI()
 let model = provider.generativeAI(modelId: "gemini-1.5-pro")
@@ -63,13 +63,19 @@ print(result.text)
 
 ```swift
 import SwiftAISDK
-import AISDKProvider
+import OpenAICompatibleProvider
 
 // OpenAI-compatible gateway or self-hosted endpoint via baseURL override
-let provider = createOpenAIProvider(settings: .init(baseURL: "https://gateway.example.com/v1"))
-let model = provider.languageModel(modelId: "gpt-5")
+let provider = createOpenAICompatible(
+  settings: .init(
+    name: "gateway",
+    baseURL: "https://gateway.example.com/v1",
+    apiKey: "sk-..."
+  )
+)
+let model = try provider.languageModel(modelId: "gpt-5")
 
-let result = try await generateText(model: .v3(model), input: "What is love?")
+let result = try await generateText(model: model, input: "What is love?")
 print(result.text)
 ```
 

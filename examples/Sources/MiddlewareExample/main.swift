@@ -123,9 +123,9 @@ struct MiddlewareExample: CLIExample {
     Logger.section("Example 5: Custom Logging Middleware")
     Logger.info("Creating custom middleware that logs parameters...")
 
-    let loggingMiddleware = LanguageModelV3Middleware(
+    let loggingMiddleware = LanguageModelV4Middleware(
       wrapGenerate: { doGenerate, _, params, model in
-        Logger.info("🔍 Logging Middleware: doGenerate called")
+        Logger.info("Logging Middleware: doGenerate called")
         Logger.info("  Model: \(model.modelId)")
         Logger.info("  Messages: \(params.prompt.count)")
 

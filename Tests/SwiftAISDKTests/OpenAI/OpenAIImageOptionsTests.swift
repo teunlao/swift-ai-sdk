@@ -8,11 +8,15 @@ struct OpenAIImageOptionsTests {
         #expect(openAIImageHasDefaultResponseFormat(modelId: "gpt-image-1"))
         #expect(openAIImageHasDefaultResponseFormat(modelId: "gpt-image-1-mini"))
         #expect(openAIImageHasDefaultResponseFormat(modelId: "gpt-image-1.5"))
+        #expect(openAIImageHasDefaultResponseFormat(modelId: "gpt-image-2"))
+        #expect(openAIImageHasDefaultResponseFormat(modelId: "chatgpt-image-latest"))
 
         // Azure deployment names often embed date suffixes.
         #expect(openAIImageHasDefaultResponseFormat(modelId: "gpt-image-1-2024-12-17"))
         #expect(openAIImageHasDefaultResponseFormat(modelId: "gpt-image-1-mini-2024-12-17"))
         #expect(openAIImageHasDefaultResponseFormat(modelId: "gpt-image-1.5-2024-12-17"))
+        #expect(openAIImageHasDefaultResponseFormat(modelId: "gpt-image-2-2024-12-17"))
+        #expect(openAIImageHasDefaultResponseFormat(modelId: "chatgpt-image-preview"))
 
         // Ensure we don't accidentally match unrelated models.
         #expect(!openAIImageHasDefaultResponseFormat(modelId: "dall-e-3"))
@@ -21,4 +25,3 @@ struct OpenAIImageOptionsTests {
         #expect(!openAIImageHasDefaultResponseFormat(modelId: ""))
     }
 }
-

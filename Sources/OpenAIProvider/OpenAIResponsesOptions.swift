@@ -23,13 +23,16 @@ public let openAIResponsesReasoningModelIds: [OpenAIResponsesModelId] = [
     "gpt-5-pro",
     "gpt-5-pro-2025-10-06",
     "gpt-5.1",
+    "gpt-5.1-2025-11-13",
     "gpt-5.1-chat-latest",
     "gpt-5.1-codex-mini",
     "gpt-5.1-codex",
     "gpt-5.1-codex-max",
     "gpt-5.2",
+    "gpt-5.2-2025-12-11",
     "gpt-5.2-chat-latest",
     "gpt-5.2-pro",
+    "gpt-5.2-pro-2025-12-11",
     "gpt-5.2-codex",
     "gpt-5.3-chat-latest",
     "gpt-5.3-codex",
@@ -40,7 +43,9 @@ public let openAIResponsesReasoningModelIds: [OpenAIResponsesModelId] = [
     "gpt-5.4-nano",
     "gpt-5.4-nano-2026-03-17",
     "gpt-5.4-pro",
-    "gpt-5.4-pro-2026-03-05"
+    "gpt-5.4-pro-2026-03-05",
+    "gpt-5.5",
+    "gpt-5.5-2026-04-23"
 ].map(OpenAIResponsesModelId.init(rawValue:))
 
 public let openAIResponsesModelIds: [OpenAIResponsesModelId] = (
@@ -102,6 +107,26 @@ public enum OpenAIResponsesLogprobsOption: Sendable, Equatable {
     case number(Double)
 }
 
+public struct OpenAIResponsesContextManagement: Sendable, Equatable {
+    public var type: String
+    public var compactThreshold: Double
+
+    public init(type: String = "compaction", compactThreshold: Double) {
+        self.type = type
+        self.compactThreshold = compactThreshold
+    }
+}
+
+public struct OpenAIResponsesAllowedTools: Sendable, Equatable {
+    public var toolNames: [String]
+    public var mode: String?
+
+    public init(toolNames: [String], mode: String? = nil) {
+        self.toolNames = toolNames
+        self.mode = mode
+    }
+}
+
 public struct OpenAIResponsesProviderOptions: Sendable, Equatable {
     public var conversation: String?
     public var include: [OpenAIResponsesProviderOptionsIncludeValue]?
@@ -118,12 +143,15 @@ public struct OpenAIResponsesProviderOptions: Sendable, Equatable {
     public var safetyIdentifier: String?
     public var serviceTier: String?
     public var store: Bool?
+    public var passThroughUnsupportedFiles: Bool?
     public var strictJsonSchema: Bool?
     public var textVerbosity: String?
     public var truncation: String?
     public var user: String?
     public var systemMessageMode: OpenAIResponsesSystemMessageMode?
     public var forceReasoning: Bool?
+    public var contextManagement: [OpenAIResponsesContextManagement]?
+    public var allowedTools: OpenAIResponsesAllowedTools?
 
     public init(
         conversation: String? = nil,
@@ -141,12 +169,15 @@ public struct OpenAIResponsesProviderOptions: Sendable, Equatable {
         safetyIdentifier: String? = nil,
         serviceTier: String? = nil,
         store: Bool? = nil,
+        passThroughUnsupportedFiles: Bool? = nil,
         strictJsonSchema: Bool? = nil,
         textVerbosity: String? = nil,
         truncation: String? = nil,
         user: String? = nil,
         systemMessageMode: OpenAIResponsesSystemMessageMode? = nil,
-        forceReasoning: Bool? = nil
+        forceReasoning: Bool? = nil,
+        contextManagement: [OpenAIResponsesContextManagement]? = nil,
+        allowedTools: OpenAIResponsesAllowedTools? = nil
     ) {
         self.conversation = conversation
         self.include = include
@@ -163,14 +194,19 @@ public struct OpenAIResponsesProviderOptions: Sendable, Equatable {
         self.safetyIdentifier = safetyIdentifier
         self.serviceTier = serviceTier
         self.store = store
+        self.passThroughUnsupportedFiles = passThroughUnsupportedFiles
         self.strictJsonSchema = strictJsonSchema
         self.textVerbosity = textVerbosity
         self.truncation = truncation
         self.user = user
         self.systemMessageMode = systemMessageMode
         self.forceReasoning = forceReasoning
+        self.contextManagement = contextManagement
+        self.allowedTools = allowedTools
     }
 }
+
+public typealias OpenAILanguageModelResponsesOptions = OpenAIResponsesProviderOptions
 
 private let openAIResponsesProviderOptionsJSONSchema: JSONValue = .object([
     "type": .string("object"),
@@ -225,6 +261,9 @@ private let openAIResponsesProviderOptionsJSONSchema: JSONValue = .object([
         "store": .object([
             "type": .array([.string("boolean"), .string("null")])
         ]),
+        "passThroughUnsupportedFiles": .object([
+            "type": .string("boolean")
+        ]),
         "strictJsonSchema": .object([
             "type": .array([.string("boolean"), .string("null")])
         ]),
@@ -242,6 +281,32 @@ private let openAIResponsesProviderOptionsJSONSchema: JSONValue = .object([
         ]),
         "forceReasoning": .object([
             "type": .string("boolean")
+        ]),
+        "contextManagement": .object([
+            "type": .array([.string("array"), .string("null")]),
+            "items": .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "type": .object(["const": .string("compaction")]),
+                    "compactThreshold": .object(["type": .string("number")])
+                ]),
+                "required": .array([.string("type"), .string("compactThreshold")])
+            ])
+        ]),
+        "allowedTools": .object([
+            "type": .string("object"),
+            "properties": .object([
+                "toolNames": .object([
+                    "type": .string("array"),
+                    "items": .object(["type": .string("string")]),
+                    "minItems": .number(1)
+                ]),
+                "mode": .object([
+                    "type": .string("string"),
+                    "enum": .array([.string("auto"), .string("required")])
+                ])
+            ]),
+            "required": .array([.string("toolNames")])
         ])
     ])
 ])
@@ -330,6 +395,7 @@ private func parseOpenAIResponsesProviderOptions(dict: [String: JSONValue]) thro
         options.serviceTier = serviceTier
     }
     options.store = try parseOptionalBool(dict, key: "store")
+    options.passThroughUnsupportedFiles = try parseOptionalBool(dict, key: "passThroughUnsupportedFiles", allowNull: false)
     options.strictJsonSchema = try parseOptionalBool(dict, key: "strictJsonSchema")
     if let verbosityValue = dict["textVerbosity"], verbosityValue != .null {
         guard case .string(let verbosity) = verbosityValue else {
@@ -373,6 +439,8 @@ private func parseOpenAIResponsesProviderOptions(dict: [String: JSONValue]) thro
     }
 
     options.forceReasoning = try parseOptionalBool(dict, key: "forceReasoning", allowNull: false)
+    options.contextManagement = try parseContextManagement(dict["contextManagement"])
+    options.allowedTools = try parseAllowedTools(dict["allowedTools"])
 
     if let logprobsValue = dict["logprobs"] {
         guard logprobsValue != .null else {
@@ -392,6 +460,58 @@ private func parseOpenAIResponsesProviderOptions(dict: [String: JSONValue]) thro
     }
 
     return options
+}
+
+private func parseContextManagement(_ value: JSONValue?) throws -> [OpenAIResponsesContextManagement]? {
+    guard let value else { return nil }
+    if value == .null { return nil }
+    guard case .array(let items) = value else {
+        throw TypeValidationError.wrap(value: value, cause: SchemaValidationIssuesError(vendor: "openai", issues: "contextManagement must be an array"))
+    }
+
+    return try items.map { item in
+        guard case .object(let object) = item else {
+            throw TypeValidationError.wrap(value: item, cause: SchemaValidationIssuesError(vendor: "openai", issues: "contextManagement entries must be objects"))
+        }
+        guard case .string("compaction")? = object["type"] else {
+            throw TypeValidationError.wrap(value: item, cause: SchemaValidationIssuesError(vendor: "openai", issues: "contextManagement.type must be compaction"))
+        }
+        guard case .number(let threshold)? = object["compactThreshold"] else {
+            throw TypeValidationError.wrap(value: item, cause: SchemaValidationIssuesError(vendor: "openai", issues: "contextManagement.compactThreshold must be a number"))
+        }
+        return OpenAIResponsesContextManagement(compactThreshold: threshold)
+    }
+}
+
+private func parseAllowedTools(_ value: JSONValue?) throws -> OpenAIResponsesAllowedTools? {
+    guard let value else { return nil }
+    guard value != .null else {
+        throw TypeValidationError.wrap(value: value, cause: SchemaValidationIssuesError(vendor: "openai", issues: "allowedTools must be an object"))
+    }
+    guard case .object(let object) = value else {
+        throw TypeValidationError.wrap(value: value, cause: SchemaValidationIssuesError(vendor: "openai", issues: "allowedTools must be an object"))
+    }
+    guard case .array(let rawNames)? = object["toolNames"], !rawNames.isEmpty else {
+        throw TypeValidationError.wrap(value: value, cause: SchemaValidationIssuesError(vendor: "openai", issues: "allowedTools.toolNames must be a non-empty array"))
+    }
+
+    let names = try rawNames.map { raw -> String in
+        guard case .string(let name) = raw else {
+            throw TypeValidationError.wrap(value: raw, cause: SchemaValidationIssuesError(vendor: "openai", issues: "allowedTools.toolNames must contain strings"))
+        }
+        return name
+    }
+
+    var mode: String?
+    if let modeValue = object["mode"] {
+        guard case .string(let rawMode) = modeValue,
+              rawMode == "auto" || rawMode == "required" else {
+            throw TypeValidationError.wrap(value: modeValue, cause: SchemaValidationIssuesError(vendor: "openai", issues: "allowedTools.mode must be auto or required"))
+        }
+        mode = rawMode
+    }
+
+    return OpenAIResponsesAllowedTools(toolNames: names, mode: mode)
 }
 
 private func parseOptionalString(_ dict: [String: JSONValue], key: String, allowNull: Bool = true) throws -> String? {

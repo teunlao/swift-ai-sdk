@@ -7,6 +7,12 @@ struct OpenAIChatPreparedTools {
     let warnings: [SharedV3Warning]
 }
 
+struct OpenAIChatPreparedToolsV4 {
+    let tools: JSONValue?
+    let toolChoice: JSONValue?
+    let warnings: [SharedV4Warning]
+}
+
 enum OpenAIChatToolPreparer {
     static func prepare(
         tools: [LanguageModelV3Tool]?,
@@ -66,6 +72,70 @@ enum OpenAIChatToolPreparer {
         }
 
         return OpenAIChatPreparedTools(
+            tools: .array(preparedTools),
+            toolChoice: toolChoiceValue,
+            warnings: warnings
+        )
+    }
+
+    static func prepareV4(
+        tools: [LanguageModelV4Tool]?,
+        toolChoice: LanguageModelV4ToolChoice?
+    ) -> OpenAIChatPreparedToolsV4 {
+        guard let tools, !tools.isEmpty else {
+            return OpenAIChatPreparedToolsV4(tools: nil, toolChoice: nil, warnings: [])
+        }
+
+        var warnings: [SharedV4Warning] = []
+        var preparedTools: [JSONValue] = []
+
+        for tool in tools {
+            switch tool {
+            case .function(let function):
+                var functionObject: [String: JSONValue] = [
+                    "name": .string(function.name),
+                    "parameters": function.inputSchema
+                ]
+
+                if let description = function.description {
+                    functionObject["description"] = .string(description)
+                }
+
+                if let strict = function.strict {
+                    functionObject["strict"] = .bool(strict)
+                }
+
+                preparedTools.append(.object([
+                    "type": .string("function"),
+                    "function": .object(functionObject)
+                ]))
+
+            case .provider:
+                warnings.append(.unsupported(feature: "tool type: provider", details: nil))
+            }
+        }
+
+        let toolChoiceValue: JSONValue? = if let toolChoice {
+            switch toolChoice {
+            case .auto:
+                .string("auto")
+            case .none:
+                .string("none")
+            case .required:
+                .string("required")
+            case .tool(let toolName):
+                .object([
+                    "type": .string("function"),
+                    "function": .object([
+                        "name": .string(toolName)
+                    ])
+                ])
+            }
+        } else {
+            nil
+        }
+
+        return OpenAIChatPreparedToolsV4(
             tools: .array(preparedTools),
             toolChoice: toolChoiceValue,
             warnings: warnings

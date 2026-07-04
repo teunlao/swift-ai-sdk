@@ -2,10 +2,17 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-struct OpenAISpeechProviderOptions: Sendable, Equatable {
-    var instructions: String?
-    var speed: Double?
+public struct OpenAISpeechProviderOptions: Sendable, Equatable {
+    public var instructions: String?
+    public var speed: Double?
+
+    public init(instructions: String? = nil, speed: Double? = nil) {
+        self.instructions = instructions
+        self.speed = speed
+    }
 }
+
+public typealias OpenAISpeechModelOptions = OpenAISpeechProviderOptions
 
 private let openAISpeechProviderOptionsJSONSchema: JSONValue = .object([
     "type": .string("object"),

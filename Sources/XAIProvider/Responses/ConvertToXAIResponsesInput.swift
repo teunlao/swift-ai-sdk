@@ -102,6 +102,9 @@ func convertToXAIResponsesInput(
 
                 case .file:
                     warnings.append(.other(message: "xAI Responses API does not support file in assistant messages"))
+
+                case .custom:
+                    warnings.append(.other(message: "xAI Responses API does not support custom content in assistant messages"))
                 }
             }
 
@@ -159,4 +162,3 @@ private func stringifyJSONValue(_ value: JSONValue) -> String {
     }
     return "null"
 }
-

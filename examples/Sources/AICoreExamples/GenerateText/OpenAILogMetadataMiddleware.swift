@@ -12,7 +12,7 @@ struct GenerateTextOpenAILogMetadataMiddlewareExample: Example {
       let apiKey = try EnvLoader.require("OPENAI_API_KEY")
       Logger.debug("Using OPENAI_API_KEY prefix: \(apiKey.prefix(8))...")
 
-      let logMiddleware = LanguageModelV3Middleware(transformParams: { _, params, _ in
+      let logMiddleware = LanguageModelV4Middleware(transformParams: { _, params, _ in
         if let providerOptions = params.providerOptions {
           if let json = Self.encodeProviderOptions(providerOptions) {
             Logger.info("providerOptions: \(json)")

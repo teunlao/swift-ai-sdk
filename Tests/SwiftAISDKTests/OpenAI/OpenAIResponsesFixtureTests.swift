@@ -262,14 +262,12 @@ struct OpenAIResponsesFixtureTests {
     }
 
     private func makeCustomTool(
-        toolName: String = "write_sql",
-        providerName: String = "write_sql"
+        toolName: String = "write_sql"
     ) -> LanguageModelV3Tool {
         .provider(.init(
             id: "openai.custom",
             name: toolName,
             args: [
-                "name": .string(providerName),
                 "description": .string("Write a SQL SELECT query to answer the user question."),
                 "format": .object([
                     "type": .string("grammar"),
@@ -323,6 +321,273 @@ struct OpenAIResponsesFixtureTests {
             ]),
             description: "A minimal calculator for basic arithmetic. Call it once per step."
         ))
+    }
+
+    private func makeWeatherTool(deferLoading: Bool = true) -> LanguageModelV3Tool {
+        .function(.init(
+            name: "get_weather",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "location": .object([
+                        "type": .string("string"),
+                        "description": .string("The city and state, e.g. San Francisco, CA")
+                    ]),
+                    "unit": .object([
+                        "type": .string("string"),
+                        "enum": .array([
+                            .string("celsius"),
+                            .string("fahrenheit")
+                        ]),
+                        "description": .string("Temperature unit")
+                    ])
+                ]),
+                "required": .array([
+                    .string("location"),
+                    .string("unit")
+                ]),
+                "additionalProperties": .bool(false)
+            ]),
+            description: "Get the current weather at a specific location",
+            strict: true,
+            providerOptions: deferLoading ? [
+                "openai": [
+                    "deferLoading": .bool(true)
+                ]
+            ] : nil
+        ))
+    }
+
+    private func makeSearchFilesTool() -> LanguageModelV3Tool {
+        .function(.init(
+            name: "search_files",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "query": .object([
+                        "type": .string("string"),
+                        "description": .string("The search query")
+                    ]),
+                    "file_types": .object([
+                        "type": .string("array"),
+                        "items": .object([
+                            "type": .string("string")
+                        ]),
+                        "description": .string("Filter by file types")
+                    ])
+                ]),
+                "required": .array([
+                    .string("query"),
+                    .string("file_types")
+                ]),
+                "additionalProperties": .bool(false)
+            ]),
+            description: "Search through files in the workspace",
+            strict: true,
+            providerOptions: [
+                "openai": [
+                    "deferLoading": .bool(true)
+                ]
+            ]
+        ))
+    }
+
+    private func makeSendEmailTool() -> LanguageModelV3Tool {
+        .function(.init(
+            name: "send_email",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "to": .object([
+                        "type": .string("string"),
+                        "description": .string("Recipient email address")
+                    ]),
+                    "subject": .object([
+                        "type": .string("string"),
+                        "description": .string("Email subject")
+                    ]),
+                    "body": .object([
+                        "type": .string("string"),
+                        "description": .string("Email body content")
+                    ])
+                ]),
+                "required": .array([
+                    .string("to"),
+                    .string("subject"),
+                    .string("body")
+                ]),
+                "additionalProperties": .bool(false)
+            ]),
+            description: "Send an email to a recipient",
+            strict: true,
+            providerOptions: [
+                "openai": [
+                    "deferLoading": .bool(true)
+                ]
+            ]
+        ))
+    }
+
+    private func makeHostedToolSearchTools() -> [LanguageModelV3Tool] {
+        [
+            .provider(.init(
+                id: "openai.tool_search",
+                name: "toolSearch",
+                args: [:]
+            )),
+            makeWeatherTool(),
+            makeSearchFilesTool(),
+            makeSendEmailTool()
+        ]
+    }
+
+    private func makeClientToolSearchTools() -> [LanguageModelV3Tool] {
+        [
+            .provider(.init(
+                id: "openai.tool_search",
+                name: "toolSearch",
+                args: [
+                    "execution": .string("client"),
+                    "description": .string("Search for available tools based on what the user needs."),
+                    "parameters": .object([
+                        "type": .string("object"),
+                        "properties": .object([
+                            "goal": .object([
+                                "type": .string("string"),
+                                "description": .string("What the user is trying to accomplish")
+                            ])
+                        ]),
+                        "required": .array([.string("goal")]),
+                        "additionalProperties": .bool(false)
+                    ])
+                ]
+            )),
+            makeWeatherTool(),
+            makeSearchFilesTool()
+        ]
+    }
+
+    private func makeShellContainerMultiturnPrompt() -> LanguageModelV3Prompt {
+        [
+            .user(
+                content: [.text(.init(text: "Run uname -a"))],
+                providerOptions: nil
+            ),
+            .assistant(
+                content: [
+                    .toolCall(.init(
+                        toolCallId: "call_abc123def456ghi789jkl012",
+                        toolName: "shell",
+                        input: .object([
+                            "action": .object([
+                                "commands": .array([.string("uname -a")])
+                            ])
+                        ]),
+                        providerExecuted: true,
+                        providerOptions: [
+                            "openai": [
+                                "itemId": .string("sh_0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e50")
+                            ]
+                        ]
+                    )),
+                    .toolResult(.init(
+                        toolCallId: "call_abc123def456ghi789jkl012",
+                        toolName: "shell",
+                        output: .json(value: .object([
+                            "output": .array([
+                                .object([
+                                    "stdout": .string("Linux container-host 6.1.0 #1 SMP x86_64 GNU/Linux\n"),
+                                    "stderr": .string(""),
+                                    "outcome": .object([
+                                        "type": .string("exit"),
+                                        "exitCode": .number(0)
+                                    ])
+                                ])
+                            ])
+                        ]))
+                    )),
+                    .text(.init(
+                        text: "Linux container-host 6.1.0 #1 SMP x86_64 GNU/Linux",
+                        providerOptions: [
+                            "openai": [
+                                "itemId": .string("msg_0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e52")
+                            ]
+                        ]
+                    ))
+                ],
+                providerOptions: nil
+            ),
+            .user(
+                content: [.text(.init(text: "What architecture do you run in?"))],
+                providerOptions: nil
+            )
+        ]
+    }
+
+    private func makeShellLocalMultiturnPrompt() -> LanguageModelV3Prompt {
+        [
+            .user(
+                content: [.text(.init(text: "Run uname -a"))],
+                providerOptions: nil
+            ),
+            .assistant(
+                content: [
+                    .toolCall(.init(
+                        toolCallId: "call_abc123def456ghi789jkl012",
+                        toolName: "shell",
+                        input: .object([
+                            "action": .object([
+                                "commands": .array([.string("uname -a")])
+                            ])
+                        ]),
+                        providerOptions: [
+                            "openai": [
+                                "itemId": .string("sh_0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e50")
+                            ]
+                        ]
+                    ))
+                ],
+                providerOptions: nil
+            ),
+            .tool(
+                content: [
+                    .toolResult(.init(
+                        toolCallId: "call_abc123def456ghi789jkl012",
+                        toolName: "shell",
+                        output: .json(value: .object([
+                            "output": .array([
+                                .object([
+                                    "stdout": .string("Darwin mac-host 24.6.0 Darwin Kernel Version 24.6.0 root:xnu-11417.60.45.601.5~1/RELEASE_ARM64_T6041 arm64\n"),
+                                    "stderr": .string(""),
+                                    "outcome": .object([
+                                        "type": .string("exit"),
+                                        "exitCode": .number(0)
+                                    ])
+                                ])
+                            ])
+                        ]))
+                    ))
+                ],
+                providerOptions: nil
+            ),
+            .assistant(
+                content: [
+                    .text(.init(
+                        text: "Darwin mac-host 24.6.0 Darwin Kernel Version 24.6.0 arm64",
+                        providerOptions: [
+                            "openai": [
+                                "itemId": .string("msg_0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e52")
+                            ]
+                        ]
+                    ))
+                ],
+                providerOptions: nil
+            ),
+            .user(
+                content: [.text(.init(text: "What architecture do you run in?"))],
+                providerOptions: nil
+            )
+        ]
     }
 
     private func makeMCPApprovalTurn2Prompt() -> LanguageModelV3Prompt {
@@ -2063,8 +2328,8 @@ struct OpenAIResponsesFixtureTests {
         #expect(format["definition"] as? String == "SELECT .+")
     }
 
-    @Test("doGenerate decodes aliased custom tool fixture")
-    func doGenerateDecodesAliasedCustomToolFixture() async throws {
+    @Test("doGenerate decodes custom tool choice fixture")
+    func doGenerateDecodesCustomToolChoiceFixture() async throws {
         let capture = RequestCapture()
         let model = try makeModel(
             modelId: "gpt-5.2-codex",
@@ -2073,8 +2338,8 @@ struct OpenAIResponsesFixtureTests {
 
         let result = try await model.doGenerate(options: .init(
             prompt: samplePrompt,
-            tools: [makeCustomTool(toolName: "alias_name", providerName: "write_sql")],
-            toolChoice: .tool(toolName: "alias_name")
+            tools: [makeCustomTool()],
+            toolChoice: .tool(toolName: "write_sql")
         ))
 
         let toolCalls = result.content.compactMap { content -> LanguageModelV3ToolCall? in
@@ -2085,13 +2350,13 @@ struct OpenAIResponsesFixtureTests {
         #expect(toolCalls.count == 1)
         #expect(result.finishReason.unified == .toolCalls)
         #expect(toolCalls[0].toolCallId == "call_custom_sql_001")
-        #expect(toolCalls[0].toolName == "alias_name")
+        #expect(toolCalls[0].toolName == "write_sql")
         #expect(toolCalls[0].input == "\"SELECT * FROM users WHERE age > 25\"")
         #expect(toolCalls[0].providerMetadata?["openai"]?["itemId"] == .string("ct_abc123def456"))
 
         guard let requestBody = decodeRequestBody(await capture.current()),
               let toolChoice = requestBody["tool_choice"] as? [String: Any] else {
-            Issue.record("Missing aliased custom tool request body")
+            Issue.record("Missing custom tool choice request body")
             return
         }
 
@@ -2179,8 +2444,8 @@ struct OpenAIResponsesFixtureTests {
         #expect(firstTool["name"] as? String == "write_sql")
     }
 
-    @Test("doStream emits aliased custom tool fixture events")
-    func doStreamEmitsAliasedCustomToolFixtureEvents() async throws {
+    @Test("doStream emits custom tool choice fixture events")
+    func doStreamEmitsCustomToolChoiceFixtureEvents() async throws {
         let capture = RequestCapture()
         let model = try makeModel(
             modelId: "gpt-5.2-codex",
@@ -2189,8 +2454,8 @@ struct OpenAIResponsesFixtureTests {
 
         let result = try await model.doStream(options: .init(
             prompt: samplePrompt,
-            tools: [makeCustomTool(toolName: "alias_name", providerName: "write_sql")],
-            toolChoice: .tool(toolName: "alias_name")
+            tools: [makeCustomTool()],
+            toolChoice: .tool(toolName: "write_sql")
         ))
         let parts = try await collectStreamParts(result)
 
@@ -2211,16 +2476,16 @@ struct OpenAIResponsesFixtureTests {
 
         #expect(inputStarts.count == 1)
         #expect(inputStarts[0].0 == "call_custom_sql_001")
-        #expect(inputStarts[0].1 == "alias_name")
+        #expect(inputStarts[0].1 == "write_sql")
         #expect(toolCalls.count == 1)
-        #expect(toolCalls[0].toolName == "alias_name")
+        #expect(toolCalls[0].toolName == "write_sql")
         #expect(toolCalls[0].input == "\"SELECT * FROM users WHERE age > 25\"")
         #expect(finishParts.count == 1)
         #expect(finishParts[0].unified == .toolCalls)
 
         guard let requestBody = decodeRequestBody(await capture.current()),
               let toolChoice = requestBody["tool_choice"] as? [String: Any] else {
-            Issue.record("Missing streamed aliased custom tool request body")
+            Issue.record("Missing streamed custom tool choice request body")
             return
         }
 
@@ -2560,6 +2825,620 @@ struct OpenAIResponsesFixtureTests {
         #expect(include.contains("code_interpreter_call.outputs"))
         #expect(firstTool["type"] as? String == "code_interpreter")
         #expect(container["type"] as? String == "auto")
+    }
+
+    @Test("doGenerate decodes hosted tool search fixture")
+    func doGenerateDecodesHostedToolSearchFixture() async throws {
+        let capture = RequestCapture()
+        let model = try makeModel(
+            modelId: "gpt-5-nano",
+            fetch: makeJSONFetch(fixture: "openai-tool-search.1", capture: capture)
+        )
+
+        let result = try await model.doGenerate(options: .init(
+            prompt: samplePrompt,
+            tools: makeHostedToolSearchTools()
+        ))
+
+        let toolCalls = result.content.compactMap { content -> LanguageModelV3ToolCall? in
+            if case .toolCall(let call) = content { return call }
+            return nil
+        }
+        let toolResults = result.content.compactMap { content -> LanguageModelV3ToolResult? in
+            if case .toolResult(let result) = content { return result }
+            return nil
+        }
+
+        let toolSearchCall = try #require(toolCalls.first { $0.toolName == "toolSearch" })
+        let toolSearchResult = try #require(toolResults.first { $0.toolName == "toolSearch" })
+        let weatherCall = try #require(toolCalls.first { $0.toolName == "get_weather" })
+
+        #expect(toolSearchCall.toolCallId == "tsc_04bd69550b37ba260069aa689605cc8190bd2d9bf1199fa630")
+        #expect(toolSearchCall.providerExecuted == true)
+        #expect(toolSearchCall.providerMetadata?["openai"]?["itemId"] == .string("tsc_04bd69550b37ba260069aa689605cc8190bd2d9bf1199fa630"))
+        guard let toolSearchInput = decodeToolInput(toolSearchCall.input),
+              let arguments = toolSearchInput["arguments"] as? [String: Any],
+              let paths = arguments["paths"] as? [String] else {
+            Issue.record("Expected hosted tool_search input")
+            return
+        }
+        #expect(paths == ["get_weather"])
+        #expect(toolSearchInput["call_id"] is NSNull)
+
+        #expect(toolSearchResult.toolCallId == toolSearchCall.toolCallId)
+        if case .object(let payload) = toolSearchResult.result,
+           case .array(let tools)? = payload["tools"],
+           case .object(let weatherTool)? = tools.first {
+            #expect(weatherTool["name"] == .string("get_weather"))
+            #expect(weatherTool["defer_loading"] == .bool(true))
+            #expect(weatherTool["strict"] == .bool(true))
+        } else {
+            Issue.record("Expected hosted tool_search output payload")
+        }
+
+        #expect(weatherCall.toolCallId == "call_ytqozXvUXG8NN1b0IODxzUaE")
+        guard let weatherInput = decodeToolInput(weatherCall.input) else {
+            Issue.record("Expected function call input")
+            return
+        }
+        #expect(weatherInput["location"] as? String == "San Francisco, CA")
+        #expect(weatherInput["unit"] as? String == "fahrenheit")
+
+        guard let requestBody = decodeRequestBody(await capture.current()),
+              let tools = requestBody["tools"] as? [[String: Any]],
+              let toolSearchRequest = tools.first(where: { $0["type"] as? String == "tool_search" }),
+              let weatherRequest = tools.first(where: { $0["name"] as? String == "get_weather" }) else {
+            Issue.record("Missing request body for hosted tool_search fixture")
+            return
+        }
+
+        #expect(requestBody["model"] as? String == "gpt-5-nano")
+        #expect(toolSearchRequest["type"] as? String == "tool_search")
+        #expect(weatherRequest["defer_loading"] as? Bool == true)
+    }
+
+    @Test("doStream emits hosted tool search fixture events")
+    func doStreamEmitsHostedToolSearchFixtureEvents() async throws {
+        let model = try makeModel(
+            modelId: "gpt-5-nano",
+            fetch: makeStreamFetch(fixture: "openai-tool-search.1")
+        )
+
+        let result = try await model.doStream(options: .init(
+            prompt: samplePrompt,
+            tools: makeHostedToolSearchTools()
+        ))
+        let parts = try await collectStreamParts(result)
+
+        let inputStarts = parts.compactMap { part -> (id: String, toolName: String, providerExecuted: Bool?)? in
+            if case .toolInputStart(let id, let toolName, _, let providerExecuted, _, _) = part {
+                return (id, toolName, providerExecuted)
+            }
+            return nil
+        }
+        let inputEnds = parts.compactMap { part -> String? in
+            if case .toolInputEnd(let id, _) = part { return id }
+            return nil
+        }
+        let toolCalls = parts.compactMap { part -> LanguageModelV3ToolCall? in
+            if case .toolCall(let call) = part { return call }
+            return nil
+        }
+        let toolResults = parts.compactMap { part -> LanguageModelV3ToolResult? in
+            if case .toolResult(let result) = part { return result }
+            return nil
+        }
+
+        let toolSearchStart = try #require(inputStarts.first { $0.toolName == "toolSearch" })
+        let toolSearchCall = try #require(toolCalls.first { $0.toolName == "toolSearch" })
+        let toolSearchResult = try #require(toolResults.first { $0.toolName == "toolSearch" })
+        let weatherCall = try #require(toolCalls.first { $0.toolName == "get_weather" })
+
+        #expect(toolSearchStart.id == "tsc_08a14073c7135dc10069aa686296c88190bff77ad137e79d59")
+        #expect(toolSearchStart.providerExecuted == true)
+        #expect(inputEnds.contains(toolSearchStart.id))
+        #expect(toolSearchCall.toolCallId == toolSearchStart.id)
+        #expect(toolSearchCall.providerExecuted == true)
+        #expect(toolSearchResult.toolCallId == toolSearchCall.toolCallId)
+        #expect(toolSearchResult.providerMetadata?["openai"]?["itemId"] == .string("tso_08a14073c7135dc10069aa6862b1248190ba40cbba918ecfa2"))
+        #expect(weatherCall.toolCallId == "call_pddfxhfOx4gY56zn4vIIEbFp")
+        guard let weatherInput = decodeToolInput(weatherCall.input) else {
+            Issue.record("Expected streamed weather function input")
+            return
+        }
+        #expect(weatherInput["location"] as? String == "San Francisco, CA")
+        #expect(weatherInput["unit"] as? String == "fahrenheit")
+    }
+
+    @Test("doGenerate decodes client tool search fixture")
+    func doGenerateDecodesClientToolSearchFixture() async throws {
+        let capture = RequestCapture()
+        let model = try makeModel(
+            modelId: "gpt-5.4",
+            fetch: makeJSONFetch(fixture: "openai-client-tool-search.1", capture: capture)
+        )
+
+        let result = try await model.doGenerate(options: .init(
+            prompt: samplePrompt,
+            tools: makeClientToolSearchTools(),
+            providerOptions: [
+                "openai": [
+                    "store": .bool(false)
+                ]
+            ]
+        ))
+
+        let toolCalls = result.content.compactMap { content -> LanguageModelV3ToolCall? in
+            if case .toolCall(let call) = content { return call }
+            return nil
+        }
+        let toolSearchCall = try #require(toolCalls.first { $0.toolName == "toolSearch" })
+
+        #expect(toolSearchCall.toolCallId == "call_AEvXZ1rvYpxHh8QZb7wGlTGH")
+        #expect(toolSearchCall.providerExecuted == nil)
+        #expect(toolSearchCall.providerMetadata?["openai"]?["itemId"] == .string("tsc_01166e06cf473fc80169ab66ea404881968795bb327c429d35"))
+        guard let input = decodeToolInput(toolSearchCall.input),
+              let arguments = input["arguments"] as? [String: Any] else {
+            Issue.record("Expected client tool_search input")
+            return
+        }
+        #expect(arguments["goal"] as? String == "Find a tool to get current weather for San Francisco")
+        #expect(input["call_id"] as? String == "call_AEvXZ1rvYpxHh8QZb7wGlTGH")
+
+        guard let requestBody = decodeRequestBody(await capture.current()),
+              let tools = requestBody["tools"] as? [[String: Any]],
+              let toolSearchRequest = tools.first(where: { $0["type"] as? String == "tool_search" }),
+              let parameters = toolSearchRequest["parameters"] as? [String: Any],
+              let properties = parameters["properties"] as? [String: Any] else {
+            Issue.record("Missing request body for client tool_search fixture")
+            return
+        }
+
+        #expect(requestBody["model"] as? String == "gpt-5.4")
+        #expect(requestBody["store"] as? Bool == false)
+        #expect(toolSearchRequest["execution"] as? String == "client")
+        #expect(toolSearchRequest["description"] as? String == "Search for available tools based on what the user needs.")
+        #expect(properties["goal"] is [String: Any])
+    }
+
+    @Test("doStream emits client tool search fixture events")
+    func doStreamEmitsClientToolSearchFixtureEvents() async throws {
+        let model = try makeModel(
+            modelId: "gpt-5.4",
+            fetch: makeStreamFetch(fixture: "openai-client-tool-search.1")
+        )
+
+        let result = try await model.doStream(options: .init(
+            prompt: samplePrompt,
+            tools: makeClientToolSearchTools()
+        ))
+        let parts = try await collectStreamParts(result)
+
+        let inputStarts = parts.compactMap { part -> (id: String, toolName: String, providerExecuted: Bool?)? in
+            if case .toolInputStart(let id, let toolName, _, let providerExecuted, _, _) = part {
+                return (id, toolName, providerExecuted)
+            }
+            return nil
+        }
+        let inputEnds = parts.compactMap { part -> String? in
+            if case .toolInputEnd(let id, _) = part { return id }
+            return nil
+        }
+        let toolCalls = parts.compactMap { part -> LanguageModelV3ToolCall? in
+            if case .toolCall(let call) = part { return call }
+            return nil
+        }
+        let toolSearchStart = try #require(inputStarts.first { $0.toolName == "toolSearch" })
+        let toolSearchCall = try #require(toolCalls.first { $0.toolName == "toolSearch" })
+
+        #expect(toolSearchStart.id == "call_RWTIIVfxsJW9fecsg6fy23Dy")
+        #expect(toolSearchStart.providerExecuted == nil)
+        #expect(inputEnds.contains("call_RWTIIVfxsJW9fecsg6fy23Dy"))
+        #expect(toolSearchCall.toolCallId == "call_RWTIIVfxsJW9fecsg6fy23Dy")
+        #expect(toolSearchCall.providerExecuted == nil)
+        #expect(toolSearchCall.providerMetadata?["openai"]?["itemId"] == .string("tsc_05147bbe356953b60069ab673598f88196b499a756b524b64c"))
+        guard let input = decodeToolInput(toolSearchCall.input),
+              let arguments = input["arguments"] as? [String: Any] else {
+            Issue.record("Expected streamed client tool_search input")
+            return
+        }
+        #expect(input["call_id"] as? String == "call_RWTIIVfxsJW9fecsg6fy23Dy")
+        #expect(arguments["goal"] as? String == "Find a tool that can provide current weather information for San Francisco.")
+    }
+
+    @Test("doStream emits function call after client tool search output")
+    func doStreamEmitsFunctionCallAfterClientToolSearchOutput() async throws {
+        let model = try makeModel(
+            modelId: "gpt-5.4",
+            fetch: makeStreamFetch(fixture: "openai-client-tool-search.2")
+        )
+
+        let result = try await model.doStream(options: .init(
+            prompt: samplePrompt,
+            tools: makeClientToolSearchTools()
+        ))
+        let parts = try await collectStreamParts(result)
+
+        let toolCalls = parts.compactMap { part -> LanguageModelV3ToolCall? in
+            if case .toolCall(let call) = part { return call }
+            return nil
+        }
+        let weatherCall = try #require(toolCalls.first { $0.toolName == "get_weather" })
+
+        #expect(weatherCall.toolCallId == "call_Q7pq6EfVGRnauPLWSSYBGJ1l")
+        guard let weatherInput = decodeToolInput(weatherCall.input) else {
+            Issue.record("Expected streamed post-search function input")
+            return
+        }
+        #expect(weatherInput["location"] as? String == "San Francisco, CA")
+        #expect(weatherInput["unit"] as? String == "fahrenheit")
+    }
+
+    @Test("doGenerate decodes shell container fixture")
+    func doGenerateDecodesShellContainerFixture() async throws {
+        let capture = RequestCapture()
+        let model = try makeModel(
+            modelId: "gpt-5.2",
+            fetch: makeJSONFetch(fixture: "openai-shell-container.1", capture: capture)
+        )
+
+        let result = try await model.doGenerate(options: .init(
+            prompt: samplePrompt,
+            tools: [makeShellTool()]
+        ))
+
+        let toolCalls = result.content.compactMap { content -> LanguageModelV3ToolCall? in
+            if case .toolCall(let call) = content { return call }
+            return nil
+        }
+        let toolResults = result.content.compactMap { content -> LanguageModelV3ToolResult? in
+            if case .toolResult(let result) = content { return result }
+            return nil
+        }
+        let textParts = result.content.compactMap { content -> LanguageModelV3Text? in
+            if case .text(let text) = content { return text }
+            return nil
+        }
+
+        #expect(toolCalls.count == 1)
+        #expect(toolResults.count == 1)
+        #expect(textParts.count == 1)
+        #expect(toolCalls[0].toolCallId == "call_abc123def456ghi789jkl012")
+        #expect(toolCalls[0].providerExecuted == true)
+        #expect(toolCalls[0].providerMetadata?["openai"]?["itemId"] == .string("sh_0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e50"))
+        if case .object(let payload) = toolResults[0].result,
+           case .array(let output)? = payload["output"],
+           case .object(let firstOutput)? = output.first {
+            #expect(firstOutput["stdout"] == .string("Hello from container!\nLinux container-host 6.1.0 #1 SMP x86_64 GNU/Linux\n"))
+        } else {
+            Issue.record("Expected shell container output payload")
+        }
+        #expect(textParts[0].text.contains("Hello from container"))
+        #expect(textParts[0].text.contains("x86_64 architecture"))
+
+        guard let requestBody = decodeRequestBody(await capture.current()),
+              let tools = requestBody["tools"] as? [[String: Any]],
+              let environment = tools.first?["environment"] as? [String: Any] else {
+            Issue.record("Missing request body for shell container fixture")
+            return
+        }
+
+        #expect(requestBody["model"] as? String == "gpt-5.2")
+        #expect(tools.first?["type"] as? String == "shell")
+        #expect(environment["type"] as? String == "container_auto")
+    }
+
+    @Test("doStream emits shell container fixture events")
+    func doStreamEmitsShellContainerFixtureEvents() async throws {
+        let model = try makeModel(
+            modelId: "gpt-5.2",
+            fetch: makeStreamFetch(fixture: "openai-shell-container.1")
+        )
+
+        let result = try await model.doStream(options: .init(
+            prompt: samplePrompt,
+            tools: [makeShellTool()]
+        ))
+        let parts = try await collectStreamParts(result)
+
+        let toolCalls = parts.compactMap { part -> LanguageModelV3ToolCall? in
+            if case .toolCall(let call) = part { return call }
+            return nil
+        }
+        let toolResults = parts.compactMap { part -> LanguageModelV3ToolResult? in
+            if case .toolResult(let result) = part { return result }
+            return nil
+        }
+
+        #expect(toolCalls.count == 1)
+        #expect(toolResults.count == 1)
+        #expect(toolCalls[0].toolCallId == "call_abc123def456ghi789jkl012")
+        #expect(toolCalls[0].providerExecuted == true)
+        if case .object(let payload) = toolResults[0].result,
+           case .array(let output)? = payload["output"],
+           case .object(let firstOutput)? = output.first {
+            #expect(firstOutput["stdout"] == .string("Hello from container!\nLinux container-host 6.1.0 #1 SMP x86_64 GNU/Linux\n"))
+        } else {
+            Issue.record("Expected streamed shell container output payload")
+        }
+        #expect(collectText(parts).contains("The command ran successfully."))
+    }
+
+    @Test("doGenerate reconstructs shell container multiturn fixture request")
+    func doGenerateReconstructsShellContainerMultiturnFixtureRequest() async throws {
+        let capture = RequestCapture()
+        let model = try makeModel(
+            modelId: "gpt-5.2",
+            fetch: makeJSONFetch(fixture: "openai-shell-container-multiturn.1", capture: capture)
+        )
+
+        let result = try await model.doGenerate(options: .init(
+            prompt: makeShellContainerMultiturnPrompt(),
+            tools: [makeShellTool()]
+        ))
+
+        let textParts = result.content.compactMap { content -> LanguageModelV3Text? in
+            if case .text(let text) = content { return text }
+            return nil
+        }
+        #expect(textParts.count == 1)
+        #expect(textParts[0].text == "`x86_64` (64-bit x86 / AMD64).")
+
+        guard let requestBody = decodeRequestBody(await capture.current()),
+              let input = requestBody["input"] as? [[String: Any]],
+              let shellOutput = input.first(where: { $0["type"] as? String == "shell_call_output" }),
+              let output = shellOutput["output"] as? [[String: Any]],
+              let firstOutput = output.first,
+              let outcome = firstOutput["outcome"] as? [String: Any],
+              let tools = requestBody["tools"] as? [[String: Any]],
+              let environment = tools.first?["environment"] as? [String: Any] else {
+            Issue.record("Missing shell container multiturn request body")
+            return
+        }
+
+        #expect(input.count == 5)
+        #expect(input[1]["type"] as? String == "item_reference")
+        #expect(input[1]["id"] as? String == "sh_0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e50")
+        #expect(shellOutput["call_id"] as? String == "call_abc123def456ghi789jkl012")
+        #expect(firstOutput["stdout"] as? String == "Linux container-host 6.1.0 #1 SMP x86_64 GNU/Linux\n")
+        #expect(outcome["type"] as? String == "exit")
+        #expect(outcome["exit_code"] as? Double == 0)
+        #expect(input[3]["type"] as? String == "item_reference")
+        #expect(environment["type"] as? String == "container_auto")
+    }
+
+    @Test("doStream emits shell container multiturn fixture events")
+    func doStreamEmitsShellContainerMultiturnFixtureEvents() async throws {
+        let capture = RequestCapture()
+        let model = try makeModel(
+            modelId: "gpt-5.2",
+            fetch: makeStreamFetch(fixture: "openai-shell-container-multiturn.1", capture: capture)
+        )
+
+        let result = try await model.doStream(options: .init(
+            prompt: makeShellContainerMultiturnPrompt(),
+            tools: [makeShellTool()]
+        ))
+        let parts = try await collectStreamParts(result)
+
+        #expect(collectText(parts) == "The architecture is **x86_64** (64-bit Intel/AMD).")
+
+        guard let requestBody = decodeRequestBody(await capture.current()),
+              let input = requestBody["input"] as? [[String: Any]],
+              let shellOutput = input.first(where: { $0["type"] as? String == "shell_call_output" }) else {
+            Issue.record("Missing streamed shell container multiturn request body")
+            return
+        }
+
+        #expect(input.count == 5)
+        #expect(shellOutput["call_id"] as? String == "call_abc123def456ghi789jkl012")
+    }
+
+    @Test("doGenerate reconstructs local shell multiturn fixture request")
+    func doGenerateReconstructsLocalShellMultiturnFixtureRequest() async throws {
+        let capture = RequestCapture()
+        let model = try makeModel(
+            modelId: "gpt-5.2",
+            fetch: makeJSONFetch(fixture: "openai-shell-local-multiturn.1", capture: capture)
+        )
+
+        let result = try await model.doGenerate(options: .init(
+            prompt: makeShellLocalMultiturnPrompt(),
+            tools: [makePlainShellTool()]
+        ))
+
+        let textParts = result.content.compactMap { content -> LanguageModelV3Text? in
+            if case .text(let text) = content { return text }
+            return nil
+        }
+        #expect(textParts.count == 1)
+        #expect(textParts[0].text == "`arm64` (Apple Silicon).")
+
+        guard let requestBody = decodeRequestBody(await capture.current()),
+              let input = requestBody["input"] as? [[String: Any]],
+              let shellOutput = input.first(where: { $0["type"] as? String == "shell_call_output" }),
+              let output = shellOutput["output"] as? [[String: Any]],
+              let firstOutput = output.first,
+              let tools = requestBody["tools"] as? [[String: Any]] else {
+            Issue.record("Missing local shell multiturn request body")
+            return
+        }
+
+        #expect(input.count == 5)
+        #expect(input[1]["type"] as? String == "item_reference")
+        #expect(shellOutput["call_id"] as? String == "call_abc123def456ghi789jkl012")
+        #expect((firstOutput["stdout"] as? String)?.contains("RELEASE_ARM64_T6041 arm64") == true)
+        #expect(tools.first?["type"] as? String == "shell")
+        #expect(tools.first?["environment"] == nil)
+    }
+
+    @Test("doStream emits local shell multiturn fixture events")
+    func doStreamEmitsLocalShellMultiturnFixtureEvents() async throws {
+        let capture = RequestCapture()
+        let model = try makeModel(
+            modelId: "gpt-5.2",
+            fetch: makeStreamFetch(fixture: "openai-shell-local-multiturn.1", capture: capture)
+        )
+
+        let result = try await model.doStream(options: .init(
+            prompt: makeShellLocalMultiturnPrompt(),
+            tools: [makePlainShellTool()]
+        ))
+        let parts = try await collectStreamParts(result)
+
+        #expect(collectText(parts) == "`arm64` (Apple Silicon).")
+
+        guard let requestBody = decodeRequestBody(await capture.current()),
+              let input = requestBody["input"] as? [[String: Any]],
+              let shellOutput = input.first(where: { $0["type"] as? String == "shell_call_output" }) else {
+            Issue.record("Missing streamed local shell multiturn request body")
+            return
+        }
+
+        #expect(input.count == 5)
+        #expect(shellOutput["call_id"] as? String == "call_abc123def456ghi789jkl012")
+    }
+
+    @Test("doGenerate decodes compaction fixture")
+    func doGenerateDecodesCompactionFixture() async throws {
+        let capture = RequestCapture()
+        let model = try makeModel(
+            modelId: "gpt-5.2",
+            fetch: makeJSONFetch(fixture: "openai-compaction.1", capture: capture)
+        )
+
+        let result = try await model.doGenerate(options: .init(
+            prompt: samplePrompt,
+            providerOptions: [
+                "openai": [
+                    "store": .bool(false),
+                    "contextManagement": .array([
+                        .object([
+                            "type": .string("compaction"),
+                            "compactThreshold": .number(50_000)
+                        ])
+                    ])
+                ]
+            ]
+        ))
+
+        let customParts = result.content.compactMap { content -> LanguageModelV3CustomContent? in
+            if case .custom(let custom) = content { return custom }
+            return nil
+        }
+
+        #expect(result.usage.inputTokens.total == 51_097)
+        #expect(result.usage.outputTokens.total == 2_056)
+        #expect(customParts.count == 1)
+        #expect(customParts[0].kind == "openai.compaction")
+        #expect(customParts[0].providerMetadata?["openai"]?["type"] == .string("compaction"))
+        #expect(customParts[0].providerMetadata?["openai"]?["itemId"] == .string("cmp_0a311635443846b4016994b3fb8f6481968df9bf035c612c83"))
+        if case .string(let encrypted)? = customParts[0].providerMetadata?["openai"]?["encryptedContent"] {
+            #expect(encrypted.count > 1_000)
+        } else {
+            Issue.record("Expected compaction encrypted content")
+        }
+
+        guard let requestBody = decodeRequestBody(await capture.current()),
+              let contextManagement = requestBody["context_management"] as? [[String: Any]] else {
+            Issue.record("Missing compaction request body")
+            return
+        }
+
+        #expect(requestBody["store"] as? Bool == false)
+        #expect(contextManagement.count == 1)
+        #expect(contextManagement[0]["type"] as? String == "compaction")
+        #expect(contextManagement[0]["compact_threshold"] as? Double == 50_000)
+    }
+
+    @Test("doStream emits compaction fixture events")
+    func doStreamEmitsCompactionFixtureEvents() async throws {
+        let capture = RequestCapture()
+        let model = try makeModel(
+            modelId: "gpt-5.2",
+            fetch: makeStreamFetch(fixture: "openai-compaction.1", capture: capture)
+        )
+
+        let result = try await model.doStream(options: .init(
+            prompt: samplePrompt,
+            providerOptions: [
+                "openai": [
+                    "store": .bool(false),
+                    "contextManagement": .array([
+                        .object([
+                            "type": .string("compaction"),
+                            "compactThreshold": .number(50_000)
+                        ])
+                    ])
+                ]
+            ]
+        ))
+        let parts = try await collectStreamParts(result)
+
+        let customParts = parts.compactMap { part -> LanguageModelV3CustomContent? in
+            if case .custom(let custom) = part { return custom }
+            return nil
+        }
+        let finishParts = parts.compactMap { part -> LanguageModelV3Usage? in
+            if case .finish(_, let usage, _) = part { return usage }
+            return nil
+        }
+
+        #expect(customParts.count == 1)
+        #expect(customParts[0].kind == "openai.compaction")
+        #expect(customParts[0].providerMetadata?["openai"]?["itemId"] == .string("cmp_0e2ed64344ac7f31016994b32006d881978568fd34e3e7fb5f"))
+        #expect(finishParts.first?.inputTokens.total == 51_097)
+        #expect(finishParts.first?.outputTokens.total == 2_505)
+
+        guard let requestBody = decodeRequestBody(await capture.current()),
+              let contextManagement = requestBody["context_management"] as? [[String: Any]] else {
+            Issue.record("Missing streamed compaction request body")
+            return
+        }
+
+        #expect(requestBody["stream"] as? Bool == true)
+        #expect(requestBody["store"] as? Bool == false)
+        #expect(contextManagement[0]["compact_threshold"] as? Double == 50_000)
+    }
+
+    @Test("doGenerate throws OpenAI error fixture")
+    func doGenerateThrowsOpenAIErrorFixture() async throws {
+        let model = try makeModel(
+            modelId: "gpt-4o",
+            fetch: makeJSONFetch(fixture: "openai-error.1")
+        )
+
+        do {
+            _ = try await model.doGenerate(options: .init(prompt: samplePrompt))
+            Issue.record("Expected APICallError for OpenAI error fixture")
+        } catch let error as APICallError {
+            #expect(error.message.contains("You exceeded your current quota"))
+        } catch {
+            Issue.record("Expected APICallError, got \(type(of: error))")
+        }
+    }
+
+    @Test("V4 doStream throws pre-output OpenAI error fixture")
+    func v4DoStreamThrowsPreOutputOpenAIErrorFixture() async throws {
+        let model = try makeModel(
+            modelId: "gpt-4o-mini",
+            fetch: makeStreamFetch(fixture: "openai-error.1")
+        ).asV4()
+
+        let prompt: LanguageModelV4Prompt = [
+            .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
+        ]
+
+        do {
+            _ = try await model.doStream(options: .init(prompt: prompt, includeRawChunks: false))
+            Issue.record("Expected APICallError before a stream result is returned")
+        } catch let error as APICallError {
+            #expect(error.message.contains("You exceeded your current quota"))
+            #expect(error.statusCode == 429)
+            #expect(error.isRetryable == true)
+        } catch {
+            Issue.record("Expected APICallError, got \(type(of: error))")
+        }
     }
 
     @Test("doGenerate emits MCP approval request turn 1")

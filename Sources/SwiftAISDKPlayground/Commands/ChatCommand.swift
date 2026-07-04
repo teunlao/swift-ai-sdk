@@ -221,7 +221,7 @@ struct ChatCommand: AsyncParsableCommand {
             switch part {
             case .text(let textPart):
                 output.append(textPart.text)
-            case .toolCall, .toolResult, .toolApprovalRequest, .reasoning, .file, .source:
+            case .toolCall, .toolResult, .toolApprovalRequest, .reasoning, .custom, .file, .source:
                 continue
             }
         }

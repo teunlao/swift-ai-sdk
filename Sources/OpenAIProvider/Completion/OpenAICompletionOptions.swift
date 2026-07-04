@@ -2,7 +2,7 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-enum OpenAICompletionLogprobsOption: Sendable, Equatable {
+public enum OpenAICompletionLogprobsOption: Sendable, Equatable {
     case bool(Bool)
     case number(Double)
 
@@ -16,25 +16,29 @@ enum OpenAICompletionLogprobsOption: Sendable, Equatable {
     }
 }
 
-struct OpenAICompletionProviderOptions: Sendable, Equatable {
-    var echo: Bool?
-    var logitBias: [String: Double]?
-    var suffix: String?
-    var user: String?
-    var logprobs: OpenAICompletionLogprobsOption?
+public struct OpenAICompletionProviderOptions: Sendable, Equatable {
+    public var echo: Bool?
+    public var logitBias: [String: Double]?
+    public var suffix: String?
+    public var user: String?
+    public var logprobs: OpenAICompletionLogprobsOption?
 
-    init(echo: Bool? = nil, logitBias: [String: Double]? = nil, suffix: String? = nil, user: String? = nil, logprobs: OpenAICompletionLogprobsOption? = nil) {
+    public init(
+        echo: Bool? = nil,
+        logitBias: [String: Double]? = nil,
+        suffix: String? = nil,
+        user: String? = nil,
+        logprobs: OpenAICompletionLogprobsOption? = nil
+    ) {
         self.echo = echo
         self.logitBias = logitBias
         self.suffix = suffix
         self.user = user
         self.logprobs = logprobs
     }
-
-    init() {
-        self.init(echo: nil, logitBias: nil, suffix: nil, user: nil, logprobs: nil)
-    }
 }
+
+public typealias OpenAILanguageModelCompletionOptions = OpenAICompletionProviderOptions
 
 private let openAICompletionProviderOptionsJSONSchema: JSONValue = .object([
     "type": .string("object"),

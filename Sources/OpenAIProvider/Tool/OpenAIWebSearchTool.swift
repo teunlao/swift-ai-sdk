@@ -247,6 +247,10 @@ private let webSearchOutputJSONSchema: JSONValue = .object([
                         ]),
                         "query": .object([
                             "type": .string("string")
+                        ]),
+                        "queries": .object([
+                            "type": .string("array"),
+                            "items": .object(["type": .string("string")])
                         ])
                     ])
                 ]),

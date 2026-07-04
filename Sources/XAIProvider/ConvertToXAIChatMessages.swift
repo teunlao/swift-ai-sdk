@@ -64,7 +64,7 @@ func convertToXAIChatMessages(_ prompt: LanguageModelV3Prompt) throws -> (messag
                             arguments: stringifyJSONValue(toolCallPart.input)
                         )
                     )
-                case .reasoning, .file, .toolResult:
+                case .reasoning, .file, .toolResult, .custom:
                     continue
                 }
             }

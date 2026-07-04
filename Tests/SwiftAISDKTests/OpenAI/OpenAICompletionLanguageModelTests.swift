@@ -13,6 +13,15 @@ private let completionPrompt: LanguageModelV3Prompt = [
     )
 ]
 
+private let completionPromptV4: LanguageModelV4Prompt = [
+    .user(
+        content: [
+            .text(LanguageModelV4TextPart(text: "Hello"))
+        ],
+        providerOptions: nil
+    )
+]
+
 @Suite("OpenAICompletionLanguageModel")
 struct OpenAICompletionLanguageModelTests {
     private func makeConfig(fetch: @escaping FetchFunction) -> OpenAIConfig {
@@ -837,6 +846,113 @@ struct OpenAICompletionLanguageModelTests {
         }
     }
 
+    @Test("native V4 doGenerate sends V4 prompt and maps OpenAI response")
+    func testNativeV4DoGenerateSendsPromptAndMapsResponse() async throws {
+        actor RequestCapture {
+            var request: URLRequest?
+            func store(_ request: URLRequest) { self.request = request }
+            func current() -> URLRequest? { request }
+        }
+
+        let capture = RequestCapture()
+        let logprobsValue = makeLogprobsValue()
+        let responseJSON: [String: Any] = [
+            "id": "cmpl-v4",
+            "object": "text_completion",
+            "created": 1_711_363_706,
+            "model": "gpt-3.5-turbo-instruct",
+            "choices": [[
+                "text": "Hello, World!",
+                "index": 0,
+                "logprobs": try logprobsValue.asJSONObject(),
+                "finish_reason": "stop"
+            ]],
+            "usage": [
+                "prompt_tokens": 4,
+                "completion_tokens": 6,
+                "total_tokens": 10
+            ]
+        ]
+
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.openai.com/v1/completions")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: [
+                "Content-Type": "application/json",
+                "X-Test-Header": "response-value"
+            ]
+        )!
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let model = OpenAICompletionLanguageModelV4(
+            modelId: "gpt-3.5-turbo-instruct",
+            config: makeConfig(fetch: fetch)
+        )
+        let prompt: LanguageModelV4Prompt = [
+            .system(content: "You are terse.", providerOptions: nil),
+            .user(
+                content: [
+                    .text(LanguageModelV4TextPart(text: "Hello")),
+                    .file(LanguageModelV4FilePart(data: .text("ignored-file"), mediaType: "text/plain"))
+                ],
+                providerOptions: nil
+            )
+        ]
+
+        let result = try await model.doGenerate(options: LanguageModelV4CallOptions(
+            prompt: prompt,
+            maxOutputTokens: 12,
+            topK: 3,
+            responseFormat: .json(schema: nil, name: nil, description: nil),
+            providerOptions: [
+                "openai": [
+                    "logprobs": .bool(true),
+                    "user": .string("user-123")
+                ]
+            ]
+        ))
+
+        #expect(result.content == [.text(LanguageModelV4Text(text: "Hello, World!"))])
+        #expect(result.finishReason == LanguageModelV4FinishReason(unified: .stop, raw: "stop"))
+        #expect(result.usage.inputTokens.total == 4)
+        #expect(result.usage.outputTokens.total == 6)
+        #expect(result.providerMetadata?["openai"]?["logprobs"] == logprobsValue)
+        #expect(result.response?.id == "cmpl-v4")
+        #expect(result.response?.modelId == "gpt-3.5-turbo-instruct")
+        #expect(result.response?.timestamp == Date(timeIntervalSince1970: 1_711_363_706))
+        #expect(result.warnings == [
+            .unsupported(feature: "topK", details: nil),
+            .unsupported(feature: "responseFormat", details: "JSON response format is not supported.")
+        ])
+
+        guard let request = await capture.current(),
+              let body = request.httpBody,
+              let json = try JSONSerialization.jsonObject(with: body) as? [String: Any]
+        else {
+            Issue.record("Missing captured V4 request")
+            return
+        }
+
+        #expect(request.url?.absoluteString == "https://api.openai.com/v1/completions")
+        #expect(json["model"] as? String == "gpt-3.5-turbo-instruct")
+        #expect(json["prompt"] as? String == "You are terse.\n\nuser:\nHello\n\nassistant:\n")
+        #expect((json["prompt"] as? String)?.contains("ignored-file") == false)
+        #expect(json["max_tokens"] as? Int == 12 || json["max_tokens"] as? Double == 12)
+        #expect(json["logprobs"] as? Int == 0 || json["logprobs"] as? Double == 0)
+        #expect(json["user"] as? String == "user-123")
+        if let stop = json["stop"] as? [String] {
+            #expect(stop == ["\nuser:"])
+        } else {
+            Issue.record("Missing V4 stop sequences")
+        }
+    }
+
     // MARK: - doStream Tests
 
     @Test("should stream text deltas")
@@ -1443,6 +1559,202 @@ struct OpenAICompletionLanguageModelTests {
             #expect(streamOptions["include_usage"] as? Bool == true)
         } else {
             Issue.record("Missing stream_options")
+        }
+    }
+
+    @Test("native V4 doStream emits V4 stream parts and request body")
+    func testNativeV4DoStreamEmitsV4Parts() async throws {
+        actor RequestBodyCapture {
+            var data: Data?
+            func store(_ body: Data?) { data = body }
+            func current() -> Data? { data }
+        }
+
+        let capture = RequestBodyCapture()
+        let logprobsValue = makeLogprobsValue()
+
+        func chunk(_ dictionary: [String: Any]) throws -> String {
+            let data = try JSONSerialization.data(withJSONObject: dictionary)
+            guard let string = String(data: data, encoding: .utf8) else {
+                throw UnsupportedFunctionalityError(functionality: "Unable to encode chunk")
+            }
+            return "data: \(string)\n\n"
+        }
+
+        let chunks: [String] = [
+            try chunk([
+                "id": "cmpl-v4-stream",
+                "object": "text_completion",
+                "created": 1_711_363_706,
+                "model": "gpt-3.5-turbo-instruct",
+                "choices": [[
+                    "text": "Hello",
+                    "index": 0,
+                    "logprobs": try logprobsValue.asJSONObject(),
+                    "finish_reason": NSNull()
+                ]]
+            ]),
+            try chunk([
+                "id": "cmpl-v4-stream",
+                "object": "text_completion",
+                "created": 1_711_363_706,
+                "model": "gpt-3.5-turbo-instruct",
+                "choices": [[
+                    "text": "!",
+                    "index": 0,
+                    "logprobs": try logprobsValue.asJSONObject(),
+                    "finish_reason": "stop"
+                ]]
+            ]),
+            try chunk([
+                "id": "cmpl-v4-stream",
+                "object": "text_completion",
+                "created": 1_711_363_706,
+                "model": "gpt-3.5-turbo-instruct",
+                "usage": [
+                    "prompt_tokens": 5,
+                    "completion_tokens": 2,
+                    "total_tokens": 7
+                ],
+                "choices": []
+            ]),
+            "data: [DONE]\n\n"
+        ]
+
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.openai.com/v1/completions")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "text/event-stream"]
+        )!
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request.httpBody)
+            let stream = AsyncThrowingStream<Data, Error> { continuation in
+                for entry in chunks {
+                    continuation.yield(Data(entry.utf8))
+                }
+                continuation.finish()
+            }
+            return FetchResponse(body: .stream(stream), urlResponse: httpResponse)
+        }
+
+        let model = OpenAICompletionLanguageModelV4(
+            modelId: "gpt-3.5-turbo-instruct",
+            config: makeConfig(fetch: fetch)
+        )
+
+        let result = try await model.doStream(options: LanguageModelV4CallOptions(
+            prompt: completionPromptV4,
+            includeRawChunks: false,
+            providerOptions: [
+                "openai": ["logprobs": .bool(true)]
+            ]
+        ))
+
+        var parts: [LanguageModelV4StreamPart] = []
+        for try await part in result.stream {
+            parts.append(part)
+        }
+
+        #expect(parts.count >= 7)
+        if case .streamStart(let warnings) = parts.first {
+            #expect(warnings.isEmpty)
+        } else {
+            Issue.record("Expected V4 stream-start")
+        }
+
+        if parts.count > 1, case .responseMetadata(let id, let modelId, let timestamp) = parts[1] {
+            #expect(id == "cmpl-v4-stream")
+            #expect(modelId == "gpt-3.5-turbo-instruct")
+            #expect(timestamp == Date(timeIntervalSince1970: 1_711_363_706))
+        } else {
+            Issue.record("Expected V4 response metadata")
+        }
+
+        let deltas = parts.compactMap { part -> String? in
+            if case .textDelta(_, let delta, _) = part {
+                return delta
+            }
+            return nil
+        }
+        #expect(deltas == ["Hello", "!"])
+
+        if let last = parts.last, case .finish(let finishReason, let usage, let metadata) = last {
+            #expect(finishReason == LanguageModelV4FinishReason(unified: .stop, raw: "stop"))
+            #expect(usage.inputTokens.total == 5)
+            #expect(usage.outputTokens.total == 2)
+            #expect(metadata?["openai"]?["logprobs"] == logprobsValue)
+        } else {
+            Issue.record("Expected V4 finish part")
+        }
+
+        guard let body = await capture.current(),
+              let json = try JSONSerialization.jsonObject(with: body) as? [String: Any]
+        else {
+            Issue.record("Missing V4 stream request")
+            return
+        }
+
+        #expect(json["model"] as? String == "gpt-3.5-turbo-instruct")
+        #expect((json["prompt"] as? String)?.contains("Hello") == true)
+        #expect(json["logprobs"] as? Int == 0 || json["logprobs"] as? Double == 0)
+        #expect(json["stream"] as? Bool == true)
+        if let streamOptions = json["stream_options"] as? [String: Any] {
+            #expect(streamOptions["include_usage"] as? Bool == true)
+        } else {
+            Issue.record("Missing V4 stream_options")
+        }
+    }
+
+    @Test("native V4 doStream throws API error when first stream chunk is OpenAI error")
+    func testNativeV4DoStreamThrowsOnPreOutputOpenAIError() async throws {
+        let errorChunk: String = {
+            let value: [String: Any] = [
+                "error": [
+                    "message": "The server had an error processing your request.",
+                    "type": "server_error",
+                    "param": NSNull(),
+                    "code": NSNull()
+                ]
+            ]
+            let data = try! JSONSerialization.data(withJSONObject: value)
+            return "data: \(String(data: data, encoding: .utf8)!)\n\n"
+        }()
+
+        let httpResponse = HTTPURLResponse(
+            url: URL(string: "https://api.openai.com/v1/completions")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "text/event-stream"]
+        )!
+
+        let fetch: FetchFunction = { _ in
+            let stream = AsyncThrowingStream<Data, Error> { continuation in
+                continuation.yield(Data(errorChunk.utf8))
+                continuation.yield(Data("data: [DONE]\n\n".utf8))
+                continuation.finish()
+            }
+            return FetchResponse(body: .stream(stream), urlResponse: httpResponse)
+        }
+
+        let model = OpenAICompletionLanguageModelV4(
+            modelId: "gpt-3.5-turbo-instruct",
+            config: makeConfig(fetch: fetch)
+        )
+
+        do {
+            _ = try await model.doStream(options: LanguageModelV4CallOptions(
+                prompt: completionPromptV4,
+                includeRawChunks: false
+            ))
+            Issue.record("Expected pre-output OpenAI stream error")
+        } catch let error as APICallError {
+            #expect(error.message == "The server had an error processing your request.")
+            #expect(error.statusCode == 500)
+            #expect(error.isRetryable)
+        } catch {
+            Issue.record("Expected APICallError, got \(type(of: error))")
         }
     }
 

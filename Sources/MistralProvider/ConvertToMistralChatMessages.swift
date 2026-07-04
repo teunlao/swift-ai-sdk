@@ -99,6 +99,8 @@ public func convertToMistralChatMessages(
                     throw UnsupportedFunctionalityError(functionality: "file content in assistant messages")
                 case .toolResult:
                     throw UnsupportedFunctionalityError(functionality: "tool result content in assistant messages")
+                case .custom:
+                    throw UnsupportedFunctionalityError(functionality: "custom content in assistant messages")
                 }
             }
 

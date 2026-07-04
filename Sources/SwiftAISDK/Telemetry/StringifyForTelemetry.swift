@@ -98,7 +98,7 @@ private func transformUserMessagePart(_ part: LanguageModelV3UserMessagePart) ->
 /// Transform message part (text, file, reasoning, tool-call, tool-result)
 private func transformMessagePart(_ part: LanguageModelV3MessagePart) -> LanguageModelV3MessagePart {
     switch part {
-    case .text, .reasoning, .toolCall, .toolResult:
+    case .text, .reasoning, .custom, .toolCall, .toolResult:
         // These don't contain Data, no transformation needed
         return part
     case .file(let filePart):

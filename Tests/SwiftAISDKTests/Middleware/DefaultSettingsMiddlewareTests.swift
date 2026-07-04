@@ -28,11 +28,25 @@ struct DefaultSettingsMiddlewareTests {
 
     static let mockModel = MockLanguageModelV3()
 
+    static let baseV4Params = LanguageModelV4CallOptions(
+        prompt: [
+            .user(
+                content: [
+                    .text(LanguageModelV4TextPart(text: "Hello, world!"))
+                ],
+                providerOptions: nil
+            )
+        ],
+        reasoning: .high
+    )
+
+    static let mockV4Model = MockLanguageModelV4()
+
     // MARK: - transformParams Tests
 
     @Test("should apply default settings")
     func testApplyDefaultSettings() async throws {
-        let middleware = defaultSettingsMiddleware(
+        let middleware: LanguageModelV3Middleware = defaultSettingsMiddleware(
             settings: DefaultSettings(temperature: 0.7)
         )
 
@@ -45,9 +59,33 @@ struct DefaultSettingsMiddlewareTests {
         #expect(result.temperature == 0.7)
     }
 
+    @Test("should apply default settings to V4 params without replacing reasoning")
+    func testApplyDefaultSettingsToV4Params() async throws {
+        let middleware: LanguageModelV4Middleware = defaultSettingsMiddleware(
+            settings: DefaultSettings(
+                maxOutputTokens: 100,
+                temperature: 0.7,
+                providerOptions: [
+                    "openai": ["store": .bool(false)]
+                ]
+            )
+        )
+
+        let result = try await middleware.transformParams!(
+            .generate,
+            Self.baseV4Params,
+            Self.mockV4Model
+        )
+
+        #expect(result.maxOutputTokens == 100)
+        #expect(result.temperature == 0.7)
+        #expect(result.reasoning == .high)
+        #expect(result.providerOptions?["openai"]?["store"] == .bool(false))
+    }
+
     @Test("should give precedence to user-provided settings")
     func testUserProvidedSettingsPrecedence() async throws {
-        let middleware = defaultSettingsMiddleware(
+        let middleware: LanguageModelV3Middleware = defaultSettingsMiddleware(
             settings: DefaultSettings(temperature: 0.7)
         )
 
@@ -67,7 +105,7 @@ struct DefaultSettingsMiddlewareTests {
 
     @Test("should merge provider metadata with default settings")
     func testMergeProviderMetadata() async throws {
-        let middleware = defaultSettingsMiddleware(
+        let middleware: LanguageModelV3Middleware = defaultSettingsMiddleware(
             settings: DefaultSettings(
                 temperature: 0.7,
                 providerOptions: [
@@ -97,7 +135,7 @@ struct DefaultSettingsMiddlewareTests {
 
     @Test("should merge complex provider metadata objects")
     func testMergeComplexProviderMetadata() async throws {
-        let middleware = defaultSettingsMiddleware(
+        let middleware: LanguageModelV3Middleware = defaultSettingsMiddleware(
             settings: DefaultSettings(
                 providerOptions: [
                     "anthropic": [
@@ -156,7 +194,7 @@ struct DefaultSettingsMiddlewareTests {
 
     @Test("should handle nested provider metadata objects correctly")
     func testNestedProviderMetadata() async throws {
-        let middleware = defaultSettingsMiddleware(
+        let middleware: LanguageModelV3Middleware = defaultSettingsMiddleware(
             settings: DefaultSettings(
                 providerOptions: [
                     "anthropic": [
@@ -213,7 +251,7 @@ struct DefaultSettingsMiddlewareTests {
 
     @Test("should keep 0 if settings.temperature is not set")
     func testKeepZeroTemperature() async throws {
-        let middleware = defaultSettingsMiddleware(
+        let middleware: LanguageModelV3Middleware = defaultSettingsMiddleware(
             settings: DefaultSettings()
         )
 
@@ -233,7 +271,7 @@ struct DefaultSettingsMiddlewareTests {
 
     @Test("should use default temperature if param temperature is undefined")
     func testDefaultTemperatureWhenUndefined() async throws {
-        let middleware = defaultSettingsMiddleware(
+        let middleware: LanguageModelV3Middleware = defaultSettingsMiddleware(
             settings: DefaultSettings(temperature: 0.7)
         )
 
@@ -248,10 +286,6 @@ struct DefaultSettingsMiddlewareTests {
 
     @Test("should not use default temperature if param temperature is null")
     func testExplicitNullTemperature() async throws {
-        let middleware = defaultSettingsMiddleware(
-            settings: DefaultSettings(temperature: 0.7)
-        )
-
         // In Swift, we test the dictionary-level null handling
         // TypeScript: temperature: null as any
         // Swift: temperature key exists in dictionary with NSNull value
@@ -286,7 +320,7 @@ struct DefaultSettingsMiddlewareTests {
 
     @Test("should use param temperature by default")
     func testParamTemperaturePrecedence() async throws {
-        let middleware = defaultSettingsMiddleware(
+        let middleware: LanguageModelV3Middleware = defaultSettingsMiddleware(
             settings: DefaultSettings(temperature: 0.7)
         )
 
@@ -308,7 +342,7 @@ struct DefaultSettingsMiddlewareTests {
 
     @Test("should apply default maxOutputTokens")
     func testDefaultMaxOutputTokens() async throws {
-        let middleware = defaultSettingsMiddleware(
+        let middleware: LanguageModelV3Middleware = defaultSettingsMiddleware(
             settings: DefaultSettings(maxOutputTokens: 100)
         )
 
@@ -323,7 +357,7 @@ struct DefaultSettingsMiddlewareTests {
 
     @Test("should prioritize param maxOutputTokens")
     func testParamMaxOutputTokensPrecedence() async throws {
-        let middleware = defaultSettingsMiddleware(
+        let middleware: LanguageModelV3Middleware = defaultSettingsMiddleware(
             settings: DefaultSettings(maxOutputTokens: 100)
         )
 
@@ -343,7 +377,7 @@ struct DefaultSettingsMiddlewareTests {
 
     @Test("should apply default stopSequences")
     func testDefaultStopSequences() async throws {
-        let middleware = defaultSettingsMiddleware(
+        let middleware: LanguageModelV3Middleware = defaultSettingsMiddleware(
             settings: DefaultSettings(stopSequences: ["stop"])
         )
 
@@ -358,7 +392,7 @@ struct DefaultSettingsMiddlewareTests {
 
     @Test("should prioritize param stopSequences")
     func testParamStopSequencesPrecedence() async throws {
-        let middleware = defaultSettingsMiddleware(
+        let middleware: LanguageModelV3Middleware = defaultSettingsMiddleware(
             settings: DefaultSettings(stopSequences: ["stop"])
         )
 
@@ -378,7 +412,7 @@ struct DefaultSettingsMiddlewareTests {
 
     @Test("should apply default topP")
     func testDefaultTopP() async throws {
-        let middleware = defaultSettingsMiddleware(
+        let middleware: LanguageModelV3Middleware = defaultSettingsMiddleware(
             settings: DefaultSettings(topP: 0.9)
         )
 
@@ -393,7 +427,7 @@ struct DefaultSettingsMiddlewareTests {
 
     @Test("should prioritize param topP")
     func testParamTopPPrecedence() async throws {
-        let middleware = defaultSettingsMiddleware(
+        let middleware: LanguageModelV3Middleware = defaultSettingsMiddleware(
             settings: DefaultSettings(topP: 0.9)
         )
 
@@ -415,7 +449,7 @@ struct DefaultSettingsMiddlewareTests {
 
     @Test("should merge headers")
     func testMergeHeaders() async throws {
-        let middleware = defaultSettingsMiddleware(
+        let middleware: LanguageModelV3Middleware = defaultSettingsMiddleware(
             settings: DefaultSettings(
                 headers: [
                     "X-Custom-Header": "test",
@@ -441,7 +475,7 @@ struct DefaultSettingsMiddlewareTests {
 
     @Test("should handle empty default headers")
     func testEmptyDefaultHeaders() async throws {
-        let middleware = defaultSettingsMiddleware(
+        let middleware: LanguageModelV3Middleware = defaultSettingsMiddleware(
             settings: DefaultSettings(headers: [:])
         )
 
@@ -461,7 +495,7 @@ struct DefaultSettingsMiddlewareTests {
 
     @Test("should handle empty param headers")
     func testEmptyParamHeaders() async throws {
-        let middleware = defaultSettingsMiddleware(
+        let middleware: LanguageModelV3Middleware = defaultSettingsMiddleware(
             settings: DefaultSettings(
                 headers: ["X-Default-Header": "default"]
             )
@@ -483,7 +517,7 @@ struct DefaultSettingsMiddlewareTests {
 
     @Test("should handle both headers being undefined")
     func testUndefinedHeaders() async throws {
-        let middleware = defaultSettingsMiddleware(
+        let middleware: LanguageModelV3Middleware = defaultSettingsMiddleware(
             settings: DefaultSettings()
         )
 
@@ -500,7 +534,7 @@ struct DefaultSettingsMiddlewareTests {
 
     @Test("should handle empty default providerOptions")
     func testEmptyDefaultProviderOptions() async throws {
-        let middleware = defaultSettingsMiddleware(
+        let middleware: LanguageModelV3Middleware = defaultSettingsMiddleware(
             settings: DefaultSettings(
                 providerOptions: [:]
             )
@@ -528,7 +562,7 @@ struct DefaultSettingsMiddlewareTests {
 
     @Test("should handle empty param providerOptions")
     func testEmptyParamProviderOptions() async throws {
-        let middleware = defaultSettingsMiddleware(
+        let middleware: LanguageModelV3Middleware = defaultSettingsMiddleware(
             settings: DefaultSettings(
                 providerOptions: [
                     "anthropic": ["user": .string("default-user")]
@@ -556,7 +590,7 @@ struct DefaultSettingsMiddlewareTests {
 
     @Test("should handle both providerOptions being undefined")
     func testUndefinedProviderOptions() async throws {
-        let middleware = defaultSettingsMiddleware(
+        let middleware: LanguageModelV3Middleware = defaultSettingsMiddleware(
             settings: DefaultSettings()
         )
 

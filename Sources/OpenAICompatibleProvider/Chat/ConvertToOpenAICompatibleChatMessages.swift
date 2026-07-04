@@ -143,6 +143,8 @@ public func convertToOpenAICompatibleChatMessages(
                     throw UnsupportedFunctionalityError(functionality: "file content in assistant message")
                 case .toolResult:
                     throw UnsupportedFunctionalityError(functionality: "tool result content in assistant message")
+                case .custom:
+                    throw UnsupportedFunctionalityError(functionality: "custom content in assistant message")
                 }
             }
 

@@ -2,7 +2,7 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-enum OpenAIChatLogprobsOption: Sendable, Equatable {
+public enum OpenAIChatLogprobsOption: Sendable, Equatable {
     case bool(Bool)
     case number(Double)
 
@@ -16,7 +16,7 @@ enum OpenAIChatLogprobsOption: Sendable, Equatable {
     }
 }
 
-enum OpenAIChatReasoningEffort: String, Sendable {
+public enum OpenAIChatReasoningEffort: String, Sendable {
     case none
     case minimal
     case low
@@ -25,50 +25,90 @@ enum OpenAIChatReasoningEffort: String, Sendable {
     case xhigh
 }
 
-enum OpenAIChatServiceTier: String, Sendable {
+public enum OpenAIChatServiceTier: String, Sendable {
     case auto
     case flex
     case priority
     case `default`
 }
 
-enum OpenAIChatTextVerbosity: String, Sendable {
+public enum OpenAIChatTextVerbosity: String, Sendable {
     case low
     case medium
     case high
 }
 
-enum OpenAIChatSystemMessageMode: Sendable, Equatable {
+public enum OpenAIChatSystemMessageMode: Sendable, Equatable {
     case system
     case developer
     case remove
 }
 
-enum OpenAIChatPromptCacheRetention: String, Sendable {
+public enum OpenAIChatPromptCacheRetention: String, Sendable {
     case inMemory = "in_memory"
     case twentyFourHours = "24h"
 }
 
-struct OpenAIChatProviderOptions: Sendable, Equatable {
-    var logitBias: [String: Double]?
-    var logprobs: OpenAIChatLogprobsOption?
-    var parallelToolCalls: Bool?
-    var user: String?
-    var reasoningEffort: OpenAIChatReasoningEffort?
-    var maxCompletionTokens: Double?
-    var store: Bool?
-    var metadata: [String: String]?
-    var prediction: [String: JSONValue]?
-    var serviceTier: OpenAIChatServiceTier?
-    var strictJsonSchema: Bool?
-    var textVerbosity: OpenAIChatTextVerbosity?
-    var promptCacheKey: String?
-    var promptCacheRetention: OpenAIChatPromptCacheRetention?
-    var safetyIdentifier: String?
-    var systemMessageMode: OpenAIChatSystemMessageMode?
-    var forceReasoning: Bool?
+public struct OpenAIChatProviderOptions: Sendable, Equatable {
+    public var logitBias: [String: Double]?
+    public var logprobs: OpenAIChatLogprobsOption?
+    public var parallelToolCalls: Bool?
+    public var user: String?
+    public var reasoningEffort: OpenAIChatReasoningEffort?
+    public var maxCompletionTokens: Double?
+    public var store: Bool?
+    public var metadata: [String: String]?
+    public var prediction: [String: JSONValue]?
+    public var serviceTier: OpenAIChatServiceTier?
+    public var strictJsonSchema: Bool?
+    public var textVerbosity: OpenAIChatTextVerbosity?
+    public var promptCacheKey: String?
+    public var promptCacheRetention: OpenAIChatPromptCacheRetention?
+    public var safetyIdentifier: String?
+    public var systemMessageMode: OpenAIChatSystemMessageMode?
+    public var forceReasoning: Bool?
+
+    public init(
+        logitBias: [String: Double]? = nil,
+        logprobs: OpenAIChatLogprobsOption? = nil,
+        parallelToolCalls: Bool? = nil,
+        user: String? = nil,
+        reasoningEffort: OpenAIChatReasoningEffort? = nil,
+        maxCompletionTokens: Double? = nil,
+        store: Bool? = nil,
+        metadata: [String: String]? = nil,
+        prediction: [String: JSONValue]? = nil,
+        serviceTier: OpenAIChatServiceTier? = nil,
+        strictJsonSchema: Bool? = nil,
+        textVerbosity: OpenAIChatTextVerbosity? = nil,
+        promptCacheKey: String? = nil,
+        promptCacheRetention: OpenAIChatPromptCacheRetention? = nil,
+        safetyIdentifier: String? = nil,
+        systemMessageMode: OpenAIChatSystemMessageMode? = nil,
+        forceReasoning: Bool? = nil
+    ) {
+        self.logitBias = logitBias
+        self.logprobs = logprobs
+        self.parallelToolCalls = parallelToolCalls
+        self.user = user
+        self.reasoningEffort = reasoningEffort
+        self.maxCompletionTokens = maxCompletionTokens
+        self.store = store
+        self.metadata = metadata
+        self.prediction = prediction
+        self.serviceTier = serviceTier
+        self.strictJsonSchema = strictJsonSchema
+        self.textVerbosity = textVerbosity
+        self.promptCacheKey = promptCacheKey
+        self.promptCacheRetention = promptCacheRetention
+        self.safetyIdentifier = safetyIdentifier
+        self.systemMessageMode = systemMessageMode
+        self.forceReasoning = forceReasoning
+    }
 }
 
+public typealias OpenAILanguageModelChatOptions = OpenAIChatProviderOptions
+public typealias OpenAIChatLanguageModelOptions = OpenAIChatProviderOptions
 
 
 private let openAIChatProviderOptionsJSONSchema: JSONValue = .object([

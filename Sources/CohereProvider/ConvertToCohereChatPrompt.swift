@@ -96,7 +96,7 @@ func convertToCohereChatPrompt(_ prompt: LanguageModelV3Prompt) throws -> Cohere
                             "arguments": .string(arguments)
                         ])
                     ]))
-                case .file, .toolResult:
+                case .file, .toolResult, .custom:
                     continue
                 }
             }

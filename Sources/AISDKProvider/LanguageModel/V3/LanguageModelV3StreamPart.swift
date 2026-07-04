@@ -73,6 +73,9 @@ public enum LanguageModelV3StreamPart: Sendable, Equatable, Codable {
     case toolCall(LanguageModelV3ToolCall)
     case toolResult(LanguageModelV3ToolResult)
 
+    // Provider-defined custom output:
+    case custom(LanguageModelV3CustomContent)
+
     // Files and sources:
     case file(LanguageModelV3File)
     case source(LanguageModelV3Source)
@@ -190,6 +193,10 @@ public enum LanguageModelV3StreamPart: Sendable, Equatable, Codable {
             let toolResult = try LanguageModelV3ToolResult(from: decoder)
             self = .toolResult(toolResult)
 
+        case "custom":
+            let custom = try LanguageModelV3CustomContent(from: decoder)
+            self = .custom(custom)
+
         // Files and sources:
         case "file":
             let file = try LanguageModelV3File(from: decoder)
@@ -305,6 +312,9 @@ public enum LanguageModelV3StreamPart: Sendable, Equatable, Codable {
 
         case .toolResult(let toolResult):
             try toolResult.encode(to: encoder)
+
+        case .custom(let custom):
+            try custom.encode(to: encoder)
 
         // Files and sources:
         case .file(let file):

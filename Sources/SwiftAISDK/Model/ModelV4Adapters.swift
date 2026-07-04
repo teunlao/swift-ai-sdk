@@ -343,11 +343,11 @@ private final class ProviderV3ToV4Adapter: ProviderV4, @unchecked Sendable {
     }
 
     func files() throws -> (any FilesV4)? {
-        nil
+        (provider as? any FilesProvider)?.files()
     }
 
     func skills() throws -> (any SkillsV4)? {
-        nil
+        (provider as? any SkillsProvider)?.skills()
     }
 }
 
@@ -530,8 +530,8 @@ private func _convertLanguageModelV4MessagePartToV3(_ value: LanguageModelV4Mess
                 providerOptions: part.providerOptions
             )
         )
-    case .custom:
-        throw UnsupportedFunctionalityError(functionality: "language model v4 custom prompt parts on v3 model")
+    case .custom(let part):
+        return .custom(LanguageModelV3CustomPart(kind: part.kind, providerOptions: part.providerOptions))
     case .reasoningFile:
         throw UnsupportedFunctionalityError(functionality: "language model v4 reasoning-file prompt parts on v3 model")
     }
@@ -644,6 +644,8 @@ private func _convertLanguageModelV3ContentToV4(_ value: LanguageModelV3Content)
         return .text(LanguageModelV4Text(text: content.text, providerMetadata: content.providerMetadata))
     case .reasoning(let content):
         return .reasoning(LanguageModelV4Reasoning(text: content.text, providerMetadata: content.providerMetadata))
+    case .custom(let content):
+        return .custom(LanguageModelV4CustomContent(kind: content.kind, providerMetadata: content.providerMetadata))
     case .file(let content):
         return .file(_convertLanguageModelV3FileToV4(content))
     case .toolApprovalRequest(let request):
@@ -690,6 +692,8 @@ private func _convertLanguageModelV3StreamPartToV4(_ value: LanguageModelV3Strea
         return .toolCall(_convertLanguageModelV3ToolCallToV4(toolCall))
     case .toolResult(let toolResult):
         return .toolResult(_convertLanguageModelV3ToolResultToV4(toolResult))
+    case .custom(let custom):
+        return .custom(LanguageModelV4CustomContent(kind: custom.kind, providerMetadata: custom.providerMetadata))
     case .file(let file):
         return .file(_convertLanguageModelV3FileToV4(file))
     case .source(let source):
@@ -1277,6 +1281,13 @@ private final class TranscriptionModelV2ToV4Adapter: TranscriptionModelV4, @unch
             providerMetadata: result.providerMetadata
         )
     }
+
+    func doStream(options: TranscriptionModelV4StreamOptions) async throws -> TranscriptionModelV4StreamResult {
+        if let streamingModel = model as? any TranscriptionModelV4Streaming {
+            return try await streamingModel.doStream(options: options)
+        }
+        throw UnsupportedFunctionalityError(functionality: "streaming transcription with \(modelId)")
+    }
 }
 
 private func _convertTranscriptionModelV4CallOptionsToV2(
@@ -1345,6 +1356,13 @@ private final class TranscriptionModelV3ToV4Adapter: TranscriptionModelV4, @unch
             ),
             providerMetadata: result.providerMetadata
         )
+    }
+
+    func doStream(options: TranscriptionModelV4StreamOptions) async throws -> TranscriptionModelV4StreamResult {
+        if let streamingModel = model as? any TranscriptionModelV4Streaming {
+            return try await streamingModel.doStream(options: options)
+        }
+        throw UnsupportedFunctionalityError(functionality: "streaming transcription with \(modelId)")
     }
 }
 

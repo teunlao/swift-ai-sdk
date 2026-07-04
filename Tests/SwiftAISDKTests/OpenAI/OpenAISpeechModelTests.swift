@@ -58,6 +58,101 @@ struct OpenAISpeechModelTests {
         #expect(jsonObject?["input"] as? String == "Hello from the AI SDK!")
     }
 
+    @Test("V4 doGenerate maps request, warnings, audio and response")
+    func testV4DoGenerateMapsRequestWarningsAudioAndResponse() async throws {
+        actor Capture {
+            var request: URLRequest?
+            func store(_ request: URLRequest) { self.request = request }
+            func value() -> URLRequest? { request }
+        }
+
+        let capture = Capture()
+        let mockFetch: FetchFunction = { request in
+            await capture.store(request)
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: [
+                    "Content-Type": "audio/mp3",
+                    "X-Request-ID": "test-request-id"
+                ]
+            )!
+            return FetchResponse(body: .data(speechAudioData), urlResponse: response)
+        }
+
+        let testDate = Date(timeIntervalSince1970: 0)
+        let config = OpenAIConfig(
+            provider: "openai.speech",
+            url: { _ in "https://api.openai.com/v1/audio/speech" },
+            headers: {
+                [
+                    "Authorization": "Bearer test-key",
+                    "Custom-Provider-Header": "provider-header-value"
+                ]
+            },
+            fetch: mockFetch,
+            _internal: .init(currentDate: { testDate })
+        )
+
+        let model = OpenAISpeechModelV4(modelId: "tts-1", config: config)
+
+        #expect(model.specificationVersion == "v4")
+
+        let result = try await model.doGenerate(
+            options: SpeechModelV4CallOptions(
+                text: "Hello from Swift V4",
+                voice: "nova",
+                outputFormat: "unsupported-format",
+                instructions: "Speak clearly",
+                speed: 1.25,
+                language: "fr",
+                providerOptions: [
+                    "openai": [
+                        "speed": .number(1.25)
+                    ]
+                ],
+                headers: ["Custom-Request-Header": "request-header-value"]
+            )
+        )
+
+        #expect(result.audio == .binary(speechAudioData))
+        #expect(result.response.timestamp == testDate)
+        #expect(result.response.modelId == "tts-1")
+        #expect(result.response.headers?["content-type"] == "audio/mp3")
+        #expect(result.response.headers?["x-request-id"] == "test-request-id")
+        #expect(result.warnings.contains(.unsupported(
+            feature: "outputFormat",
+            details: "Unsupported output format: unsupported-format. Using mp3 instead."
+        )))
+        #expect(result.warnings.contains(.unsupported(
+            feature: "language",
+            details: "OpenAI speech models do not support language selection. Language parameter \"fr\" was ignored."
+        )))
+
+        guard let request = await capture.value(),
+              let body = request.httpBody,
+              let jsonObject = try JSONSerialization.jsonObject(with: body) as? [String: Any]
+        else {
+            Issue.record("Missing captured request")
+            return
+        }
+
+        let headers = request.allHTTPHeaderFields ?? [:]
+        let normalizedHeaders = Dictionary(uniqueKeysWithValues: headers.map { ($0.key.lowercased(), $0.value) })
+        #expect(normalizedHeaders["authorization"] == "Bearer test-key")
+        #expect(normalizedHeaders["custom-provider-header"] == "provider-header-value")
+        #expect(normalizedHeaders["custom-request-header"] == "request-header-value")
+        #expect(normalizedHeaders["content-type"] == "application/json")
+
+        #expect(jsonObject["model"] as? String == "tts-1")
+        #expect(jsonObject["input"] as? String == "Hello from Swift V4")
+        #expect(jsonObject["voice"] as? String == "nova")
+        #expect(jsonObject["instructions"] as? String == "Speak clearly")
+        #expect(jsonObject["speed"] as? Double == 1.25)
+        #expect(jsonObject["response_format"] as? String == "mp3")
+    }
+
     // Port of openai-speech-model.test.ts: "should pass headers"
     @Test("doGenerate passes headers correctly")
     func testPassesHeaders() async throws {

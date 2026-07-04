@@ -12,6 +12,8 @@ struct OpenAIResponsesInputBuilder {
         fileIdPrefixes: [String]? = ["file-"],
         store: Bool = true,
         hasConversation: Bool = false,
+        hasPreviousResponseId: Bool = false,
+        passThroughUnsupportedFiles: Bool = false,
         hasLocalShellTool: Bool = false,
         hasShellTool: Bool = false,
         hasApplyPatchTool: Bool = false
@@ -39,7 +41,8 @@ struct OpenAIResponsesInputBuilder {
                         part,
                         index: index,
                         prefixes: fileIdPrefixes,
-                        providerOptionsName: providerOptionsName
+                        providerOptionsName: providerOptionsName,
+                        passThroughUnsupportedFiles: passThroughUnsupportedFiles
                     )
                 }
 
@@ -115,6 +118,10 @@ struct OpenAIResponsesInputBuilder {
                             continue
                         }
 
+                        if hasPreviousResponseId, store, itemId != nil {
+                            continue
+                        }
+
                         if store, let itemId {
                             items.append(.object([
                                 "type": .string("item_reference"),
@@ -124,6 +131,33 @@ struct OpenAIResponsesInputBuilder {
                         }
 
                         let resolvedToolName = toolNameMapping.toProviderToolName(callPart.toolName)
+
+                        if resolvedToolName == "tool_search" {
+                            if store, let itemId {
+                                items.append(.object([
+                                    "type": .string("item_reference"),
+                                    "id": .string(itemId)
+                                ]))
+                                continue
+                            }
+
+                            let parsedInput = try await validateTypes(
+                                ValidateTypesOptions(value: jsonValueToFoundation(callPart.input), schema: openaiToolSearchInputSchema)
+                            )
+                            let execution = parsedInput.callId != nil ? "client" : "server"
+                            var payload: [String: JSONValue] = [
+                                "type": .string("tool_search_call"),
+                                "id": .string(itemId ?? callPart.toolCallId),
+                                "execution": .string(execution),
+                                "call_id": parsedInput.callId.map(JSONValue.string) ?? .null,
+                                "status": .string("completed")
+                            ]
+                            if let arguments = parsedInput.arguments {
+                                payload["arguments"] = arguments
+                            }
+                            items.append(.object(payload))
+                            continue
+                        }
 
                         if hasLocalShellTool, resolvedToolName == "local_shell" {
                             let parsed = try await validateTypes(
@@ -281,6 +315,33 @@ struct OpenAIResponsesInputBuilder {
 
                         let resolvedResultToolName = toolNameMapping.toProviderToolName(resultPart.toolName)
 
+                        if resolvedResultToolName == "tool_search" {
+                            let itemId =
+                                extractOpenAIItemId(from: resultPart.providerOptions, providerOptionsName: providerOptionsName)
+                                ?? extractOpenAIItemId(from: resultPart.providerMetadata, providerOptionsName: providerOptionsName)
+                                ?? resultPart.toolCallId
+
+                            if store {
+                                items.append(.object([
+                                    "type": .string("item_reference"),
+                                    "id": .string(itemId)
+                                ]))
+                            } else if case .json(let value, _) = resultPart.output {
+                                let parsedOutput = try await validateTypes(
+                                    ValidateTypesOptions(value: jsonValueToFoundation(value), schema: openaiToolSearchOutputSchema)
+                                )
+                                items.append(.object([
+                                    "type": .string("tool_search_output"),
+                                    "id": .string(itemId),
+                                    "execution": .string("server"),
+                                    "call_id": .null,
+                                    "status": .string("completed"),
+                                    "tools": .array(parsedOutput.tools)
+                                ]))
+                            }
+                            continue
+                        }
+
                         // shell_call_output has a separate item identity in OpenAI store, so
                         // we reconstruct it instead of referencing the shell_call item id.
                         if hasShellTool, resolvedResultToolName == "shell" {
@@ -336,7 +397,7 @@ struct OpenAIResponsesInputBuilder {
                         )
 
                         if let reasoningId = providerOptions?.itemId {
-                            if hasConversation {
+                            if hasConversation || hasPreviousResponseId {
                                 continue
                             }
 
@@ -408,6 +469,32 @@ struct OpenAIResponsesInputBuilder {
                         let partDescription = stringifyReasoningPart(reasoningPart)
                         warnings.append(.other(message: "Non-OpenAI reasoning parts are not supported. Skipping reasoning part: \(partDescription)."))
 
+                    case .custom(let customPart):
+                        guard customPart.kind == "openai.compaction" else { continue }
+                        let providerOptions = customPart.providerOptions?[providerOptionsName]
+                        let itemId = providerOptions?["itemId"]?.stringValue
+
+                        if hasConversation, itemId != nil {
+                            continue
+                        }
+
+                        if store, let itemId {
+                            items.append(.object([
+                                "type": .string("item_reference"),
+                                "id": .string(itemId)
+                            ]))
+                            continue
+                        }
+
+                        if let itemId,
+                           let encryptedContent = providerOptions?["encryptedContent"]?.stringValue {
+                            items.append(.object([
+                                "type": .string("compaction"),
+                                "id": .string(itemId),
+                                "encrypted_content": .string(encryptedContent)
+                            ]))
+                        }
+
                     case .file:
                         continue
                     }
@@ -443,6 +530,21 @@ struct OpenAIResponsesInputBuilder {
                         }
 
                         let resolvedToolName = toolNameMapping.toProviderToolName(toolResult.toolName)
+
+                        if resolvedToolName == "tool_search",
+                           case .json(let value, _) = toolResult.output {
+                            let parsedOutput = try await validateTypes(
+                                ValidateTypesOptions(value: jsonValueToFoundation(value), schema: openaiToolSearchOutputSchema)
+                            )
+                            items.append(.object([
+                                "type": .string("tool_search_output"),
+                                "execution": .string("client"),
+                                "call_id": .string(toolResult.toolCallId),
+                                "status": .string("completed"),
+                                "tools": .array(parsedOutput.tools)
+                            ]))
+                            continue
+                        }
 
                         switch toolResult.output {
                         case .json(let value, _):
@@ -640,7 +742,8 @@ struct OpenAIResponsesInputBuilder {
         _ part: LanguageModelV3UserMessagePart,
         index: Int,
         prefixes: [String]?,
-        providerOptionsName: String
+        providerOptionsName: String,
+        passThroughUnsupportedFiles: Bool
     ) throws -> JSONValue {
         switch part {
         case .text(let textPart):
@@ -653,7 +756,8 @@ struct OpenAIResponsesInputBuilder {
                 part: filePart,
                 index: index,
                 prefixes: prefixes,
-                providerOptionsName: providerOptionsName
+                providerOptionsName: providerOptionsName,
+                passThroughUnsupportedFiles: passThroughUnsupportedFiles
             )
         }
     }
@@ -662,7 +766,8 @@ struct OpenAIResponsesInputBuilder {
         part: LanguageModelV3FilePart,
         index: Int,
         prefixes: [String]?,
-        providerOptionsName: String
+        providerOptionsName: String,
+        passThroughUnsupportedFiles: Bool
     ) throws -> JSONValue {
         if part.mediaType.hasPrefix("image/") {
             let mediaType = part.mediaType == "image/*" ? "image/jpeg" : part.mediaType
@@ -713,48 +818,6 @@ struct OpenAIResponsesInputBuilder {
             }
         }
 
-        if part.mediaType.hasPrefix("audio/") {
-            let format: String
-            switch part.mediaType {
-            case "audio/wav":
-                format = "wav"
-            case "audio/mp3", "audio/mpeg":
-                format = "mp3"
-            default:
-                throw UnsupportedFunctionalityError(functionality: "audio content parts with media type \(part.mediaType)")
-            }
-
-            switch part.data {
-            case .url:
-                throw UnsupportedFunctionalityError(functionality: "audio file parts with URLs")
-            case .data(let data):
-                let base64 = convertDataToBase64(data)
-                return .object([
-                    "type": .string("input_audio"),
-                    "input_audio": .object([
-                        "data": .string(base64),
-                        "format": .string(format)
-                    ])
-                ])
-            case .base64(let value):
-                if isFileId(value, prefixes: prefixes) {
-                    return .object([
-                        "type": .string("input_audio"),
-                        "file_id": .string(value)
-                    ])
-                }
-                return .object([
-                    "type": .string("input_audio"),
-                    "input_audio": .object([
-                        "data": .string(value),
-                        "format": .string(format)
-                    ])
-                ])
-            }
-        }
-
-
-
         if part.mediaType == "application/pdf" {
             switch part.data {
             case .url(let url):
@@ -784,7 +847,38 @@ struct OpenAIResponsesInputBuilder {
             }
         }
 
-        throw UnsupportedFunctionalityError(functionality: "file media type \(part.mediaType)")
+        switch part.data {
+        case .url(let url):
+            return .object([
+                "type": .string("input_file"),
+                "file_url": .string(url.absoluteString)
+            ])
+        case .base64(let value):
+            guard passThroughUnsupportedFiles else {
+                throw UnsupportedFunctionalityError(functionality: "file media type \(part.mediaType)")
+            }
+            if isFileId(value, prefixes: prefixes) {
+                return .object([
+                    "type": .string("input_file"),
+                    "file_id": .string(value)
+                ])
+            }
+            return .object([
+                "type": .string("input_file"),
+                "filename": .string(part.filename ?? "part-\(index)"),
+                "file_data": .string("data:\(part.mediaType);base64,\(value)")
+            ])
+        case .data(let data):
+            guard passThroughUnsupportedFiles else {
+                throw UnsupportedFunctionalityError(functionality: "file media type \(part.mediaType)")
+            }
+            let base64 = convertDataToBase64(data)
+            return .object([
+                "type": .string("input_file"),
+                "filename": .string(part.filename ?? "part-\(index)"),
+                "file_data": .string("data:\(part.mediaType);base64,\(base64)")
+            ])
+        }
     }
 
     private static func isFileId(_ value: String, prefixes: [String]?) -> Bool {
@@ -976,4 +1070,13 @@ private func parseOptionalString(_ dict: [String: JSONValue], key: String) throw
         throw TypeValidationError.wrap(value: value, cause: error)
     }
     return stringValue
+}
+
+private extension JSONValue {
+    var stringValue: String? {
+        if case .string(let value) = self {
+            return value
+        }
+        return nil
+    }
 }

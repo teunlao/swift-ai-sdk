@@ -96,6 +96,9 @@ public func runToolsTransformation(
                     case .source(let source):
                         emit(.source(asSource(source)))
 
+                    case .custom(let custom):
+                        emit(.custom(kind: custom.kind, providerMetadata: custom.providerMetadata))
+
                     case .file(let fileChunk):
                         let generatedFile: GeneratedFile
                         switch fileChunk.data {

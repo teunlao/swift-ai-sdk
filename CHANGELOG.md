@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.18.1] - 2026-07-03
+
+Upstream parity refresh against Vercel AI SDK commit `0c3c7e426d359c236952d6f8da7b0081eb6f1a7a`.
+
+### Added
+- Provider contracts: add V4 streaming transcription options, stream parts, stream results, and default unsupported behavior for providers that do not expose streaming transcription.
+- OpenAI: add realtime transcription streaming for `gpt-realtime-whisper*`, including WebSocket transport injection, session setup, audio append/commit messages, transcript delta/final/finish mapping, and provider error propagation.
+- Core adapters: forward V3 transcription models that explicitly expose the V4 streaming capability through the V4 adapter rail.
+
+### Fixed
+- OpenAI: reject non-streaming transcription calls for realtime-only transcription models.
+- OpenAI: reject streaming transcription calls for regular REST transcription models.
+- OpenAI: warn when REST-only transcription provider options are passed to realtime streaming.
+
+### Docs
+- README and Starlight install snippets now reference `0.18.1`.
+- Upstream evidence records the refreshed `0c3c7e4` baseline and the targeted OpenAI transcription parity slice.
+
 ## [0.18.0] - 2026-07-02
 
 Upstream parity refresh against Vercel AI SDK commit `85a80fc6e71558717899e30c9f1fc0e9eb7d733d`.
