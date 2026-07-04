@@ -1,14 +1,14 @@
 import SwiftAISDK
 
-let yourGuardrailMiddleware: LanguageModelV3Middleware = LanguageModelV3Middleware(
+let yourGuardrailMiddleware: LanguageModelV4Middleware = LanguageModelV4Middleware(
   wrapGenerate: { doGenerate, _, _, _ in
     let result = try await doGenerate()
 
-    let cleanedContent: [LanguageModelV3Content] = result.content.map { part in
+    let cleanedContent: [LanguageModelV4Content] = result.content.map { part in
       switch part {
       case .text(let text):
         return .text(
-          LanguageModelV3Text(
+          LanguageModelV4Text(
             text: text.text.replacingOccurrences(of: "badword", with: "<REDACTED>"),
             providerMetadata: text.providerMetadata
           )
@@ -18,7 +18,7 @@ let yourGuardrailMiddleware: LanguageModelV3Middleware = LanguageModelV3Middlewa
       }
     }
 
-    return LanguageModelV3GenerateResult(
+    return LanguageModelV4GenerateResult(
       content: cleanedContent,
       finishReason: result.finishReason,
       usage: result.usage,
@@ -30,4 +30,3 @@ let yourGuardrailMiddleware: LanguageModelV3Middleware = LanguageModelV3Middlewa
   }
   // streaming guardrails intentionally not implemented (mirrors upstream comment)
 )
-

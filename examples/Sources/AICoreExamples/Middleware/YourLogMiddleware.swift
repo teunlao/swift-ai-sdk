@@ -2,7 +2,7 @@ import ExamplesCore
 import Foundation
 import SwiftAISDK
 
-let yourLogMiddleware: LanguageModelV3Middleware = LanguageModelV3Middleware(
+let yourLogMiddleware: LanguageModelV4Middleware = LanguageModelV4Middleware(
   wrapGenerate: { doGenerate, _, params, _ in
     Logger.info("doGenerate called")
     Logger.info("prompt: \(encodeJSON(params.prompt) ?? "<unencodable>")")
@@ -20,7 +20,7 @@ let yourLogMiddleware: LanguageModelV3Middleware = LanguageModelV3Middleware(
     let result = try await doStream()
     var generatedText = ""
 
-    let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+    let stream = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { continuation in
       let task = Task {
         do {
           for try await chunk in result.stream {
@@ -40,7 +40,7 @@ let yourLogMiddleware: LanguageModelV3Middleware = LanguageModelV3Middleware(
       continuation.onTermination = { _ in task.cancel() }
     }
 
-    return LanguageModelV3StreamResult(stream: stream, request: result.request, response: result.response)
+    return LanguageModelV4StreamResult(stream: stream, request: result.request, response: result.response)
   }
 )
 
@@ -50,4 +50,3 @@ private func encodeJSON<T: Encodable>(_ value: T) -> String? {
   guard let data = try? encoder.encode(value) else { return nil }
   return String(data: data, encoding: .utf8)
 }
-

@@ -1,7 +1,7 @@
 import Foundation
 import SwiftAISDK
 
-let yourRagMiddleware: LanguageModelV3Middleware = LanguageModelV3Middleware(
+let yourRagMiddleware: LanguageModelV4Middleware = LanguageModelV4Middleware(
   transformParams: { _, params, _ in
     guard let lastUserMessageText = getLastUserMessageText(prompt: params.prompt) else {
       return params

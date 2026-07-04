@@ -52,7 +52,7 @@ let toCelsius = tool(
 }
 
 let agent = Agent<Never, Never>(settings: .init(
-  model: .v3(openai("gpt-4o")),
+  model: openai("gpt-4o"),
   tools: [
     "weather": weather.eraseToTool(),
     "convertFahrenheitToCelsius": toCelsius.eraseToTool()

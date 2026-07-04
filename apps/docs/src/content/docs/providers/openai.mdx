@@ -31,31 +31,34 @@ targets: [
 
 ## Provider Instance
 
-You can import the default provider instance `openai` from `OpenAIProvider`:
+You can import the default Provider V4 instance `openai` from `OpenAIProvider`:
 
 ```swift
 import SwiftAISDK
 import OpenAIProvider
 
 // Uses OPENAI_API_KEY environment variable automatically
-let model = openai("gpt-4o")
+let model = try openai("gpt-4o")
 ```
 
-If you need a customized setup, you can use `createOpenAIProvider` with your settings:
+If you need a customized setup, use `createOpenAI(settings:)` with your settings:
 
 ```swift
 import OpenAIProvider
 
-let provider = createOpenAIProvider(
-    OpenAIProviderSettings(
+let provider = createOpenAI(
+    settings: OpenAIProviderSettings(
         apiKey: "sk-...",
         organization: "org-...",
         headers: ["Custom-Header": "value"]
     )
 )
 
-let model = provider("gpt-4o")
+let model = try provider("gpt-4o")
 ```
+
+The older `createOpenAIProvider(settings:)` factory remains available for
+legacy V3 model integrations.
 
 You can use the following optional settings to customize the OpenAI provider instance:
 
@@ -63,6 +66,10 @@ You can use the following optional settings to customize the OpenAI provider ins
 
   Use a different URL prefix for API calls, e.g. to use proxy servers.
   The default prefix is `https://api.openai.com/v1`.
+  The default model factory, `openai("model-id")`, uses the Responses API. If
+  your custom base URL only supports the Chat Completions API, create chat
+  models with `openai.chat("model-id")` instead or use the OpenAI-compatible
+  provider.
 
 - **apiKey** _string_
 
@@ -97,18 +104,12 @@ You can use the following optional settings to customize the OpenAI provider ins
 The OpenAI provider instance is a function that you can invoke to create a language model:
 
 ```swift
-let model = openai("gpt-5")
+let model = try openai("gpt-5")
 ```
 
-It automatically selects the correct API based on the model id.
-You can also pass additional settings in the second argument:
-
-```swift
-let model = openai("gpt-5", /* additional settings */)
-```
-
-The available options depend on the API that's automatically chosen for the model (see below).
-If you want to explicitly select a specific model API, you can use `.responses`, `.chat`, or `.completion`.
+The default OpenAI model factory uses the Responses API. If you want to
+explicitly select a specific model API, use `.responses`, `.chat`, or
+`.completion`.
 
 <Aside type="note">
   Since AI SDK 5, the OpenAI responses API is called by default (unless you
@@ -139,7 +140,7 @@ OpenAI language models can also be used in the `streamText`, `generateObject`, a
 You can use the OpenAI responses API with the `openai(modelId)` or `openai.responses(modelId)` factory methods. It is the default API that is used by the OpenAI provider (since AI SDK 5).
 
 ```swift
-let model = openai("gpt-5")
+let model = try openai("gpt-5")
 ```
 
 Further configuration can be done using OpenAI provider options.
@@ -149,7 +150,7 @@ import SwiftAISDK
 import OpenAIProvider
 
 let result = try await generateText(
-  model: openai("gpt-5"), // or openai.responses("gpt-5")
+  model: try openai("gpt-5"), // or openai.responses("gpt-5")
   providerOptions: [
     "openai": [
       "parallelToolCalls": false,

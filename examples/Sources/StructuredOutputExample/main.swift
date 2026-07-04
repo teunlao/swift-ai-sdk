@@ -23,7 +23,7 @@ struct StructuredOutputExample: CLIExample {
 
         do {
             let result: DefaultGenerateTextResult<Summary> = try await generateText(
-                model: .v3(openai.responses("gpt-4.1-mini")),
+                model: openai.responses("gpt-4.1-mini"),
                 prompt: "Summarize Swift AI SDK and rate the sentiment.",
                 experimentalOutput: outputSpec
             )

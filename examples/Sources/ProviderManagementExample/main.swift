@@ -20,7 +20,7 @@ struct ProviderManagementExample: CLIExample {
     Logger.section("Example 1: Custom Provider with Model Aliases")
     Logger.info("Creating custom provider with semantic names...")
 
-    let customOpenAI = customProvider(
+    let customOpenAI = customProviderV4(
       languageModels: [
         // Semantic aliases for easy version updates
         "fast": try openai.languageModel("gpt-4o-mini"),
@@ -65,14 +65,14 @@ struct ProviderManagementExample: CLIExample {
 
     Logger.info("Accessing model via registry: 'openai:gpt-4o-mini'")
     let registryResult: DefaultGenerateTextResult<JSONValue> = try await generateText(
-      model: .v4(registry.languageModel(id: "openai:gpt-4o-mini")),
+      model: registry.languageModel(id: "openai:gpt-4o-mini"),
       prompt: "Say hello in Spanish"
     )
     Logger.info(registryResult.text)
 
     Logger.info("Accessing custom provider model: 'custom:fast'")
     let customResult: DefaultGenerateTextResult<JSONValue> = try await generateText(
-      model: .v4(registry.languageModel(id: "custom:fast")),
+      model: registry.languageModel(id: "custom:fast"),
       prompt: "Say hello in French"
     )
     Logger.info(customResult.text)
@@ -91,7 +91,7 @@ struct ProviderManagementExample: CLIExample {
 
     Logger.info("Accessing model: 'openai > gpt-4o'")
     let separatorResult: DefaultGenerateTextResult<JSONValue> = try await generateText(
-      model: .v4(readableRegistry.languageModel(id: "openai > gpt-4o")),
+      model: readableRegistry.languageModel(id: "openai > gpt-4o"),
       prompt: "What is Swift?"
     )
     Logger.info(separatorResult.text.prefix(100) + "...")
@@ -115,7 +115,7 @@ struct ProviderManagementExample: CLIExample {
 
     Logger.info("All models from this registry extract <think> tags:")
     let thinkResult: DefaultGenerateTextResult<JSONValue> = try await generateText(
-      model: .v4(middlewareRegistry.languageModel(id: "openai:gpt-4o")),
+      model: middlewareRegistry.languageModel(id: "openai:gpt-4o"),
       prompt: "Calculate 15 * 7. Wrap your reasoning in <think> tags."
     )
 
@@ -135,7 +135,7 @@ struct ProviderManagementExample: CLIExample {
     Logger.section("Example 5: Limited Provider Without Fallback")
     Logger.info("Creating provider with only specific models...")
 
-    let limitedProvider = customProvider(
+    let limitedProvider = customProviderV4(
       languageModels: [
         "mini": try openai.languageModel("gpt-4o-mini"),
         "standard": try openai.languageModel("gpt-4o")
@@ -157,7 +157,7 @@ struct ProviderManagementExample: CLIExample {
     Logger.separator()
     Logger.info("Provider management examples complete!")
     Logger.info("Key concepts:")
-    Logger.info("  • customProvider() - Create providers with aliases and settings")
+    Logger.info("  • customProviderV4() - Create providers with aliases and settings")
     Logger.info("  • createProviderRegistry() - Manage multiple providers")
     Logger.info("  • Custom separators - Use : or > or / for readability")
     Logger.info("  • Middleware - Apply to all models in registry")

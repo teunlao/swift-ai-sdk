@@ -1,19 +1,19 @@
 import SwiftAISDK
 
-func addToLastUserMessage(text: String, params: LanguageModelV3CallOptions) -> LanguageModelV3CallOptions {
+func addToLastUserMessage(text: String, params: LanguageModelV4CallOptions) -> LanguageModelV4CallOptions {
   guard let lastMessage = params.prompt.last else { return params }
   guard case .user(let content, let providerOptions) = lastMessage else { return params }
 
-  let updatedPrompt: LanguageModelV3Prompt =
+  let updatedPrompt: LanguageModelV4Prompt =
     params.prompt.dropLast()
     + [
       .user(
-        content: [.text(LanguageModelV3TextPart(text: text))] + content,
+        content: [.text(LanguageModelV4TextPart(text: text))] + content,
         providerOptions: providerOptions
       )
     ]
 
-  return LanguageModelV3CallOptions(
+  return LanguageModelV4CallOptions(
     prompt: Array(updatedPrompt),
     maxOutputTokens: params.maxOutputTokens,
     temperature: params.temperature,
@@ -29,7 +29,7 @@ func addToLastUserMessage(text: String, params: LanguageModelV3CallOptions) -> L
     includeRawChunks: params.includeRawChunks,
     abortSignal: params.abortSignal,
     headers: params.headers,
+    reasoning: params.reasoning,
     providerOptions: params.providerOptions
   )
 }
-

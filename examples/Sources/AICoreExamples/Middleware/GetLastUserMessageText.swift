@@ -1,6 +1,6 @@
 import SwiftAISDK
 
-func getLastUserMessageText(prompt: LanguageModelV3Prompt) -> String? {
+func getLastUserMessageText(prompt: LanguageModelV4Prompt) -> String? {
   guard let lastMessage = prompt.last else { return nil }
   guard case .user(let content, _) = lastMessage else { return nil }
 
@@ -15,4 +15,3 @@ func getLastUserMessageText(prompt: LanguageModelV3Prompt) -> String? {
 
   return text.isEmpty ? nil : text
 }
-

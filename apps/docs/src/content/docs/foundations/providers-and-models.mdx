@@ -28,14 +28,14 @@ The Swift port currently ships with **38 provider modules** (one SwiftPM product
 
 A few common examples:
 
-- [OpenAI Provider](/providers/openai) — `import OpenAIProvider`, then call `openai("gpt-4o")` or `createOpenAIProvider(settings:)`.
+- [OpenAI Provider](/providers/openai) — `import OpenAIProvider`, then call `openai("gpt-4o")` or `createOpenAI(settings:)`.
 - [Anthropic Provider](/providers/anthropic) — `import AnthropicProvider`, use `anthropic("claude-3-5-sonnet")` or `createAnthropicProvider(settings:)`.
 - [Google Generative AI Provider](/providers/google-generative-ai) — `import GoogleProvider`, use `google("gemini-1.5-pro")` or `createGoogleGenerativeAI(settings:)`.
 - [Alibaba Provider](/providers/alibaba) — `import AlibabaProvider`, then call `alibaba("qwen-plus")` or `createAlibaba(settings:)`.
 - Vercel Provider — `import VercelProvider`, then call `vercel("v0-1.0-md")` or `createVercelProvider(settings:)`. _(Documentation coming soon)_
 - TogetherAI Provider — `import TogetherAIProvider`, then call `togetherai("meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo")` or `createTogetherAIProvider(settings:)`. _(Documentation coming soon)_
 
-Each shortcut performs lazy API-key loading (via environment variables such as `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, `GROQ_API_KEY`) and returns a ready-to-use `LanguageModelV3` instance for the higher-level Swift AI SDK APIs.
+Each shortcut performs lazy API-key loading (via environment variables such as `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, `GROQ_API_KEY`) and returns a ready-to-use model for the higher-level Swift AI SDK APIs. OpenAI uses the current Provider V4 facade by default; legacy provider modules may still expose V3-backed models that are adapted by the high-level APIs.
 
 ## Self-hosted and upstream-compatible APIs
 
@@ -54,7 +54,7 @@ The upstream TypeScript AI SDK also maintains a larger catalog of official and c
 | Anthropic (`anthropic`) | `claude-3-5-sonnet`, `claude-3-opus` | ✅ | ❌ | ❌ | ❌ |
 | Google Generative AI (`google`) | `gemini-1.5-pro`, `gemini-2.0-flash-exp` | ✅ | ✅ | ✅ | ❌ |
 | Groq (`groq`) | `llama-3.1-8b-instant`, `mixtral-8x7b-32768` | ✅ | ❌ | ❌ | ✅ (transcription) |
-| OpenAI-compatible (`createOpenAICompatibleProvider`) | Depends on upstream service | ✅ | ✅ | ✅ | ✅ |
+| OpenAI-compatible (`createOpenAICompatible`) | Depends on upstream service | ✅ | ✅ | ✅ | ✅ |
 
 > Model catalogs evolve quickly. Inspect the individual provider modules (`Sources/OpenAIProvider`, `Sources/AnthropicProvider`, `Sources/GoogleProvider`, `Sources/GroqProvider`, and `Sources/OpenAICompatibleProvider`) for authoritative `ModelId` helpers and supported feature sets.
 

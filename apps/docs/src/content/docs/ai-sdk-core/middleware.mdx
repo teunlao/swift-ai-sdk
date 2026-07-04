@@ -152,8 +152,8 @@ This example shows how to log the parameters and generated text of a language mo
 import Foundation
 import AISDKProvider
 
-func yourLogMiddleware() -> LanguageModelV3Middleware {
-  LanguageModelV3Middleware(
+func yourLogMiddleware() -> LanguageModelV4Middleware {
+  LanguageModelV4Middleware(
     wrapGenerate: { doGenerate, _, params, _ in
       print("doGenerate called")
       print("params: \(params)")
@@ -184,7 +184,7 @@ func yourLogMiddleware() -> LanguageModelV3Middleware {
       var generatedText = ""
       var textBlocks: [String: String] = [:]
 
-      let transformedStream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+      let transformedStream = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { continuation in
         Task {
           do {
             for try await chunk in result.stream {
@@ -217,7 +217,7 @@ func yourLogMiddleware() -> LanguageModelV3Middleware {
         }
       }
 
-      return LanguageModelV3StreamResult(
+      return LanguageModelV4StreamResult(
         stream: transformedStream,
         request: result.request,
         response: result.response
@@ -236,19 +236,19 @@ import Foundation
 import AISDKProvider
 
 actor CacheStorage {
-  private var cache: [String: LanguageModelV3GenerateResult] = [:]
+  private var cache: [String: LanguageModelV4GenerateResult] = [:]
 
-  func get(_ key: String) -> LanguageModelV3GenerateResult? {
+  func get(_ key: String) -> LanguageModelV4GenerateResult? {
     cache[key]
   }
 
-  func set(_ key: String, value: LanguageModelV3GenerateResult) {
+  func set(_ key: String, value: LanguageModelV4GenerateResult) {
     cache[key] = value
   }
 }
 
-func yourCacheMiddleware(cache: CacheStorage) -> LanguageModelV3Middleware {
-  LanguageModelV3Middleware(
+func yourCacheMiddleware(cache: CacheStorage) -> LanguageModelV4Middleware {
+  LanguageModelV4Middleware(
     wrapGenerate: { doGenerate, _, params, _ in
       // Create cache key from params
       let encoder = JSONEncoder()
@@ -282,16 +282,16 @@ This example shows how to use RAG as middleware.
 import Foundation
 import AISDKProvider
 
-func yourRagMiddleware(findSources: @escaping (String) -> [String]) -> LanguageModelV3Middleware {
-  LanguageModelV3Middleware(
+func yourRagMiddleware(findSources: @escaping (String) -> [String]) -> LanguageModelV4Middleware {
+  LanguageModelV4Middleware(
     transformParams: { type, params, model in
       // Extract last user message
-      let lastUserMessage = params.prompt.messages.last { message in
-        if case .user = message.role {
+      let lastUserMessage = params.prompt.last(where: { message in
+        if case .user = message {
           return true
         }
         return false
-      }
+      })
 
       guard let userMessage = lastUserMessage,
             let text = getLastUserMessageText(message: userMessage) else {
@@ -306,26 +306,62 @@ func yourRagMiddleware(findSources: @escaping (String) -> [String]) -> LanguageM
         """
 
       // Add instruction to last user message
-      return addToLastUserMessage(params: params, text: instruction)
+      return addToLastUserMessage(text: instruction, params: params)
     }
   )
 }
 
 // Helper function (example implementation)
-func getLastUserMessageText(message: LanguageModelV3Prompt.Message) -> String? {
-  if case .user(let content) = message.role {
-    if case .text(let text) = content.first {
-      return text
+func getLastUserMessageText(message: LanguageModelV4Message) -> String? {
+  guard case .user(let content, _) = message else { return nil }
+
+  let text = content.compactMap { part -> String? in
+    switch part {
+    case .text(let textPart):
+      return textPart.text
+    case .file:
+      return nil
     }
-  }
-  return nil
+  }.joined(separator: "\n")
+
+  return text.isEmpty ? nil : text
 }
 
 // Helper function (example implementation)
-func addToLastUserMessage(params: LanguageModelV3CallOptions, text: String) -> LanguageModelV3CallOptions {
-  // Implementation would modify the last user message to include the instruction
-  // This is simplified - actual implementation depends on your prompt structure
-  return params
+func addToLastUserMessage(text: String, params: LanguageModelV4CallOptions) -> LanguageModelV4CallOptions {
+  guard let lastMessage = params.prompt.last else { return params }
+  guard case .user(let content, let providerOptions) = lastMessage else {
+    return params
+  }
+
+  let updatedPrompt: LanguageModelV4Prompt =
+    params.prompt.dropLast()
+    + [
+      .user(
+        content: [.text(LanguageModelV4TextPart(text: text))] + content,
+        providerOptions: providerOptions
+      )
+    ]
+
+  return LanguageModelV4CallOptions(
+    prompt: Array(updatedPrompt),
+    maxOutputTokens: params.maxOutputTokens,
+    temperature: params.temperature,
+    stopSequences: params.stopSequences,
+    topP: params.topP,
+    topK: params.topK,
+    presencePenalty: params.presencePenalty,
+    frequencyPenalty: params.frequencyPenalty,
+    responseFormat: params.responseFormat,
+    seed: params.seed,
+    tools: params.tools,
+    toolChoice: params.toolChoice,
+    includeRawChunks: params.includeRawChunks,
+    abortSignal: params.abortSignal,
+    headers: params.headers,
+    reasoning: params.reasoning,
+    providerOptions: params.providerOptions
+  )
 }
 ```
 
@@ -338,19 +374,19 @@ is safe and appropriate. This example shows how to use guardrails as middleware.
 import Foundation
 import AISDKProvider
 
-func yourGuardrailMiddleware(badWords: [String]) -> LanguageModelV3Middleware {
-  LanguageModelV3Middleware(
+func yourGuardrailMiddleware(badWords: [String]) -> LanguageModelV4Middleware {
+  LanguageModelV4Middleware(
     wrapGenerate: { doGenerate, _, _, _ in
       let result = try await doGenerate()
 
       // Filter approach, e.g. for PII or other sensitive information
-      let cleanedContent = result.content.map { content -> LanguageModelV3Content in
+      let cleanedContent = result.content.map { content -> LanguageModelV4Content in
         if case .text(let textPart) = content {
           var cleanedText = textPart.text
           for badWord in badWords {
             cleanedText = cleanedText.replacingOccurrences(of: badWord, with: "<REDACTED>")
           }
-          return .text(LanguageModelV3Text(
+          return .text(LanguageModelV4Text(
             text: cleanedText,
             providerMetadata: textPart.providerMetadata
           ))
@@ -358,7 +394,7 @@ func yourGuardrailMiddleware(badWords: [String]) -> LanguageModelV3Middleware {
         return content
       }
 
-      return LanguageModelV3GenerateResult(
+      return LanguageModelV4GenerateResult(
         content: cleanedContent,
         finishReason: result.finishReason,
         usage: result.usage,
@@ -384,8 +420,8 @@ To send and access custom metadata in Middleware, you can use `providerOptions`.
 import SwiftAISDK
 import OpenAIProvider
 
-func yourLogMiddleware() -> LanguageModelV3Middleware {
-  LanguageModelV3Middleware(
+func yourLogMiddleware() -> LanguageModelV4Middleware {
+  LanguageModelV4Middleware(
     wrapGenerate: { doGenerate, _, params, _ in
       if let metadata = params.providerOptions?["yourLogMiddleware"] {
         print("METADATA", metadata)

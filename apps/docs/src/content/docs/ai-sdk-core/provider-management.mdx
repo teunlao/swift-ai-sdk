@@ -18,7 +18,8 @@ You can mix and match custom providers, the provider registry, and [middleware](
 
 ## Custom Providers
 
-You can create a custom provider using `customProvider`.
+You can create a current Provider V4 custom provider using `customProviderV4`.
+The legacy `customProvider` helper remains available for V3-only integrations.
 
 ### Example: Custom Model Settings
 
@@ -30,11 +31,11 @@ import SwiftAISDK
 import OpenAIProvider
 
 // Custom provider with different provider options:
-let customOpenAI = customProvider(
+let customOpenAI = customProviderV4(
   languageModels: [
     // Replacement model with custom provider options:
     "gpt-4o": wrapLanguageModel(
-      model: openai.languageModel("gpt-4o"),
+      model: try openai.languageModel("gpt-4o"),
       middleware: .single(defaultSettingsMiddleware(
         settings: DefaultSettings(
           providerOptions: openai.options.responses(reasoningEffort: "high")
@@ -43,7 +44,7 @@ let customOpenAI = customProvider(
     ),
     // Alias model with custom provider options:
     "gpt-4o-mini-high-reasoning": wrapLanguageModel(
-      model: openai.languageModel("gpt-4o-mini"),
+      model: try openai.languageModel("gpt-4o-mini"),
       middleware: .single(defaultSettingsMiddleware(
         settings: DefaultSettings(
           providerOptions: openai.options.responses(reasoningEffort: "high")
@@ -64,13 +65,13 @@ import SwiftAISDK
 import AnthropicProvider
 
 // Custom provider with alias names:
-let customAnthropic = customProvider(
-  languageModels: [
-    "opus": anthropic.languageModel(modelId: "claude-3-opus-20240229"),
-    "sonnet": anthropic.languageModel(modelId: "claude-3-5-sonnet-20240620"),
-    "haiku": anthropic.languageModel(modelId: "claude-3-haiku-20240307")
+let customAnthropic = customProviderV4(
+  legacyLanguageModels: [
+    "opus": try anthropic.languageModel(modelId: "claude-3-opus-20240229"),
+    "sonnet": try anthropic.languageModel(modelId: "claude-3-5-sonnet-20240620"),
+    "haiku": try anthropic.languageModel(modelId: "claude-3-haiku-20240307")
   ],
-  fallbackProvider: anthropic
+  legacyFallbackProvider: anthropic
 )
 ```
 
@@ -83,12 +84,12 @@ import SwiftAISDK
 import AnthropicProvider
 import OpenAIProvider
 
-let myProvider = customProvider(
+let myProvider = customProviderV4(
   languageModels: [
-    "text-medium": anthropic.languageModel(modelId: "claude-3-5-sonnet-20240620"),
-    "text-small": openai.languageModel("gpt-4o-mini"),
+    "text-medium": asLanguageModelV4(try anthropic.languageModel(modelId: "claude-3-5-sonnet-20240620")),
+    "text-small": try openai.languageModel("gpt-4o-mini"),
     "reasoning-medium": wrapLanguageModel(
-      model: openai.languageModel("gpt-4o"),
+      model: try openai.languageModel("gpt-4o"),
       middleware: .single(defaultSettingsMiddleware(
         settings: DefaultSettings(
           providerOptions: openai.options.responses(reasoningEffort: "high")
@@ -96,7 +97,7 @@ let myProvider = customProvider(
       ))
     ),
     "reasoning-fast": wrapLanguageModel(
-      model: openai.languageModel("gpt-4o-mini"),
+      model: try openai.languageModel("gpt-4o-mini"),
       middleware: .single(defaultSettingsMiddleware(
         settings: DefaultSettings(
           providerOptions: openai.options.responses(reasoningEffort: "high")
@@ -104,8 +105,8 @@ let myProvider = customProvider(
       ))
     )
   ],
-  textEmbeddingModels: [
-    "embedding": openai.textEmbeddingModel("text-embedding-3-small")
+  embeddingModels: [
+    "embedding": openai.textEmbedding("text-embedding-3-small")
   ]
   // No fallback provider
 )
@@ -125,11 +126,13 @@ import OpenAIProvider
 let registry = createProviderRegistry(
   providers: [
     // Register provider with prefix:
-    "anthropic": anthropic,
+    "anthropic": asProviderV4(anthropic),
 
     // Register provider with custom configuration:
     "openai": createOpenAI(
-      apiKey: ProcessInfo.processInfo.environment["OPENAI_API_KEY"]
+      settings: OpenAIProviderSettings(
+        apiKey: ProcessInfo.processInfo.environment["OPENAI_API_KEY"]
+      )
     )
   ]
 )
@@ -146,7 +149,7 @@ import OpenAIProvider
 
 let customSeparatorRegistry = createProviderRegistry(
   providers: [
-    "anthropic": anthropic,
+    "anthropic": asProviderV4(anthropic),
     "openai": openai
   ],
   options: ProviderRegistryOptions(separator: " > ")
@@ -162,9 +165,9 @@ The provider id will become the prefix of the model id: `providerId:modelId`.
 import SwiftAISDK
 
 let result = try await generateText(
-  model: .v4(registry.languageModel(id: "openai:gpt-4o")), // default separator
+  model: try registry.languageModel(id: "openai:gpt-4o"), // default separator
   // or with custom separator:
-  // model: .v4(customSeparatorRegistry.languageModel(id: "openai > gpt-4o")),
+  // model: try customSeparatorRegistry.languageModel(id: "openai > gpt-4o"),
   prompt: "Invent a new holiday and describe its traditions."
 )
 ```
@@ -178,7 +181,7 @@ The provider id will become the prefix of the model id: `providerId:modelId`.
 import SwiftAISDK
 
 let result = try await embed(
-  model: .v3(registry.textEmbeddingModel(id: "openai:text-embedding-3-small")),
+  model: try registry.textEmbeddingModel(id: "openai:text-embedding-3-small"),
   value: "sunny day at the beach"
 )
 ```
@@ -192,7 +195,7 @@ The provider id will become the prefix of the model id: `providerId:modelId`.
 import SwiftAISDK
 
 let result = try await generateImage(
-  model: registry.imageModel(id: "openai:dall-e-3"),
+  model: try registry.imageModel(id: "openai:dall-e-3"),
   prompt: "A beautiful sunset over a calm ocean"
 )
 ```
@@ -220,20 +223,20 @@ import GroqProvider
 let registry = createProviderRegistry(
   providers: [
     // Pass through a full provider with a namespace prefix
-    "xai": xai,
+    "xai": asProviderV4(xai),
 
     // Setup model name aliases
-    "anthropic": customProvider(
+    "anthropic": customProviderV4(
       languageModels: [
-        "fast": anthropic.languageModel(modelId: "claude-3-haiku-20240307"),
+        "fast": asLanguageModelV4(try anthropic.languageModel(modelId: "claude-3-haiku-20240307")),
 
         // Simple model
-        "writing": anthropic.languageModel(modelId: "claude-3-7-sonnet-20250219"),
+        "writing": asLanguageModelV4(try anthropic.languageModel(modelId: "claude-3-7-sonnet-20250219")),
 
         // Extended reasoning model configuration:
-        "reasoning": wrapLanguageModel(
-          model: anthropic.languageModel(modelId: "claude-3-7-sonnet-20250219"),
-          middleware: .single(defaultSettingsMiddleware(
+        "reasoning": asLanguageModelV4(wrapLanguageModel(
+          model: try anthropic.languageModel(modelId: "claude-3-7-sonnet-20250219"),
+          middleware: LanguageModelV4MiddlewareInput.single(defaultSettingsMiddleware(
             settings: DefaultSettings(
               maxOutputTokens: 100000, // example default setting
               providerOptions: ["anthropic": [
@@ -244,16 +247,16 @@ let registry = createProviderRegistry(
               ]]
             )
           ))
-        )
+        ))
       ],
-      fallbackProvider: anthropic
+      fallbackProvider: asProviderV4(anthropic)
     ),
 
     // Limit a provider to certain models without a fallback
-    "groq": customProvider(
-      languageModels: [
-        "gemma2-9b-it": groq.languageModel(modelId: "gemma2-9b-it"),
-        "qwen-qwq-32b": groq.languageModel(modelId: "qwen-qwq-32b")
+    "groq": customProviderV4(
+      legacyLanguageModels: [
+        "gemma2-9b-it": try groq.languageModel(modelId: "gemma2-9b-it"),
+        "qwen-qwq-32b": try groq.languageModel(modelId: "qwen-qwq-32b")
       ]
     )
   ],
@@ -287,7 +290,7 @@ let registry = createProviderRegistry(
 
 // All language models from this registry will have reasoning extraction enabled
 let result = try await generateText(
-  model: .v4(registry.languageModel(id: "openai:gpt-4o")),
+  model: try registry.languageModel(id: "openai:gpt-4o"),
   prompt: "Think step by step and wrap reasoning in <think> tags"
 )
 ```
