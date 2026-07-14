@@ -33,7 +33,8 @@ foundation slices, plus targeted `core:provider/transcription-stream` and
 `provider:openai/native-v4-rest-transcription`, and
 `provider:openai/native-v4-completion`, and
 `provider:openai/native-v4-chat`, and
-`provider:openai/native-v4-responses`
+`provider:openai/native-v4-responses`, and
+`provider:openai-compatible/native-v4-chat`
 evidence against `c8d2726ae045a28142cb46df5e41cdd51d8dcc71`.
 
 Status:
@@ -69,6 +70,19 @@ Status:
   provider-driven integration behavior, not unidentified exported helper drift.
 
 Latest validation:
+- `2026-07-15`: `AGENT=1 swift test`
+  passed all 4070 Swift Testing tests in 461 suites after the native
+  OpenAI-compatible V4 Chat slice and shared tool-call tracker correction.
+- `2026-07-15`: `AGENT=1 swift test --filter OpenAICompatibleProviderTests`
+  passed 150 Swift Testing tests in 10 suites across native V4 Chat and the
+  preserved V3/adapter surfaces.
+- `2026-07-15`: `AGENT=1 swift test --filter OpenAICompatibleProviderV4Tests`,
+  `AGENT=1 swift test --filter OpenAICompatibleChatMessagesConverterV4Tests`,
+  and `AGENT=1 swift test --filter StreamingToolCallTrackerTests` passed 9, 2,
+  and 15 Swift Testing tests for the direct V4 factory/model, prompt boundary,
+  and shared streaming state machine.
+- `2026-07-15`: `swift build` passed after the native OpenAI-compatible V4
+  Chat implementation.
 - `2026-07-04`: `node .agents/skills/swift-ai-sdk-upstream/scripts/scan-upstream.js --out .upstream/current`
   reports `openai | provider | P0 | verified | current | OpenAIProvider |
   SwiftAISDKTests | upstream/providers/openai.md |
@@ -331,6 +345,60 @@ Latest validation:
 3) Docs updates only after behavior parity is green
 
 ## Current upstream intake snapshot
+
+### 2026-07-15: `provider:openai-compatible/native-v4-chat` against upstream `c8d2726ae045a28142cb46df5e41cdd51d8dcc71`
+
+Scope: `provider:openai-compatible/native-v4-chat` plus the required
+`core:provider-utils/streaming-tool-call-tracker` boundary.
+
+Initial finding:
+- The public V4 provider factory returned a V3-backed Chat adapter even though
+  the pinned upstream package owns Chat directly as a `LanguageModelV4`.
+- Swift lacked direct V4 prompt conversion for media, reasoning, approval
+  responses, Google thought signatures, and the V4 provider-option surface.
+- The shared streaming tracker finalized a tool call as soon as its argument
+  buffer became parsable JSON. A parsable prefix can still receive later
+  deltas, so this could expose truncated tool input before stream completion.
+
+Implementation:
+- Added a native `OpenAICompatibleChatLanguageModelV4` facade over one
+  provider-owned Chat transport core shared with the preserved V3 facade.
+- Routed V4 `languageModel` and `chatModel` factories directly to native Chat;
+  Completion, Embedding, and Image remain explicitly on their existing adapter
+  rail.
+- Added direct V4 prompt/tool conversion, top-level reasoning mapping,
+  canonical and raw provider options, custom usage conversion over the complete
+  loose usage object, detailed usage, response reasoning fallback, and Google
+  thought-signature round-tripping.
+- Added native V4 streaming lifecycle mapping for reasoning/text parts, late
+  tool names, missing tool-call indexes, raw/error chunks, usage, finish
+  metadata, and cancellation while retaining the established V3 behavior.
+- Changed the shared tool-call tracker to finalize unfinished calls only from
+  `flush()`. It continues forwarding a trailing empty argument delta but emits
+  exactly one completed tool call.
+
+Validation:
+- `AGENT=1 swift test --filter OpenAICompatibleProviderTests` passed 150 tests
+  in 10 suites.
+- `AGENT=1 swift test --filter OpenAICompatibleProviderV4Tests` passed 9 tests.
+- `AGENT=1 swift test --filter OpenAICompatibleChatMessagesConverterV4Tests`
+  passed 2 tests.
+- `AGENT=1 swift test --filter StreamingToolCallTrackerTests` passed 15 tests.
+- `AGENT=1 swift test --filter testNotDuplicateToolCallsWithEmptyChunk` passed
+  the main OpenAI Chat integration regression.
+- `AGENT=1 swift test` passed all 4070 tests in 461 suites.
+
+Evidence:
+- Upstream provider and Chat:
+  `external/vercel-ai-sdk/packages/openai-compatible/src/openai-compatible-provider.ts`
+  and `external/vercel-ai-sdk/packages/openai-compatible/src/chat/**`.
+- Swift provider and Chat:
+  `Sources/OpenAICompatibleProvider/OpenAICompatibleProvider.swift` and
+  `Sources/OpenAICompatibleProvider/Chat/**`.
+- Shared tracker: `Sources/AISDKProviderUtils/StreamingToolCallTracker.swift`.
+- Provider tests: `Tests/OpenAICompatibleProviderTests/**`.
+- Shared tracker tests:
+  `Tests/AISDKProviderUtilsTests/StreamingToolCallTrackerTests.swift`.
 
 ### 2026-07-03: upstream `c8d2726ae045a28142cb46df5e41cdd51d8dcc71`
 
@@ -2078,8 +2146,9 @@ Implementation slice 26: streaming tool-call delta tracker:
 - The tracker emits `LanguageModelV4StreamPart.toolInputStart`,
   `toolInputDelta`, `toolInputEnd`, and `toolCall` in upstream order.
 - It accumulates argument deltas by index, falls back to append-order index when
-  omitted, skips late deltas after finish, finalizes parsable JSON
-  automatically, and finalizes unfinished calls on `flush()`.
+  omitted, skips late deltas after finish, forwards empty argument deltas, and
+  finalizes unfinished calls only on `flush()` so a parsable JSON prefix cannot
+  be exposed as a completed tool call.
 - It preserves upstream validation modes (`none`, `ifPresent`, `required`) and
   throws `InvalidResponseDataError` with upstream messages for invalid type,
   missing id, and missing function name.

@@ -1,46 +1,75 @@
 # Provider: OpenAI-compatible
 
-- Audited against upstream commit: `85a80fc6e71558717899e30c9f1fc0e9eb7d733d`
+- Audited against upstream commit: `c8d2726ae045a28142cb46df5e41cdd51d8dcc71`
+- Status: partial/current; Chat is native V4, while Completion, Embedding, and
+  Image still use the provider-local adapter rail.
 - Upstream package: `external/vercel-ai-sdk/packages/openai-compatible/src/**`
 - Swift implementation: `Sources/OpenAICompatibleProvider/**`
 
 ## What is verified (checked + tested)
 
-- [x] V4 provider entrypoint shape:
-  `createOpenAICompatible(settings:) -> OpenAICompatibleProviderV4`.
-- [x] V4 model factory surface:
-  `languageModel`, `chatModel`, `completionModel`, `embeddingModel`,
-  `textEmbeddingModel`, and `imageModel`.
-- [x] V3 API preservation:
-  `createOpenAICompatibleProvider(settings:) -> OpenAICompatibleProvider`
-  remains the V3 entrypoint.
-- [x] Request URL/header/query construction is shared by V3 and V4 surfaces.
-- [x] `supportedUrls` is accepted in provider settings and forwarded to V4
-  language models through the existing chat config.
-- [x] V4 language `doGenerate` wrapper maps V4 call options into the current
-  V3-backed OpenAI-compatible chat model and maps content, finish reason, usage,
-  request/response metadata, provider metadata, and warnings back to V4.
-- [x] V4 language `doStream` wrapper maps V3 stream parts into V4 stream parts,
-  including text deltas and finish usage.
-- [x] V4 embedding wrapper preserves embeddings, usage, provider metadata,
-  response headers/body, and warnings.
-- [x] V4 image wrapper preserves base64/binary images, warnings, provider
-  metadata, response metadata, and usage when the V3 model returns it.
+- [x] `createOpenAICompatible(settings:)` routes `languageModel` and
+  `chatModel` directly to `OpenAICompatibleChatLanguageModelV4`; Chat no
+  longer crosses a V3-to-V4 adapter.
+- [x] `createOpenAICompatibleProvider(settings:)` and the public
+  `OpenAICompatibleChatLanguageModel` V3 facade remain available. Both Chat
+  facades delegate to one provider-owned transport core so request and stream
+  behavior cannot drift between duplicate implementations.
+- [x] Native V4 prompt conversion covers system/user metadata, inline and URL
+  images, WAV/MP3 audio, PDF files, text files, assistant reasoning, function
+  tool calls/results, approval responses, and execution-denied results.
+- [x] V4 Chat request mapping covers top-level `reasoning` to
+  `reasoning_effort`, function tools and tool choice, raw provider options,
+  canonical camel-case provider options, request transforms, headers, and
+  `supportedUrls`.
+- [x] Non-streaming V4 output maps text, reasoning, tool calls, finish reason,
+  response metadata, warnings, provider metadata, detailed usage, custom
+  `convertUsage` over the complete loose usage object, reasoning fallback, and
+  Google thought signatures.
+- [x] Streaming V4 output preserves reasoning-before-text lifecycle ordering,
+  late tool names, missing tool-call indexes, thought signatures, raw chunks,
+  error chunks, usage, finish metadata, and cancellation. Tool calls finalize
+  once during stream flush so a parsable argument prefix is not executed as a
+  truncated call.
+- [x] The shared tracker still forwards an upstream trailing empty argument
+  delta while emitting exactly one final tool call.
+- [x] Existing OpenAI-compatible V3 Chat behavior remains covered by the full
+  provider test target, including V3-specific stream ids, initial empty tool
+  deltas, provider-option handling, and error payloads.
+- [x] The V4 provider factory still exposes Completion, Embedding,
+  `textEmbeddingModel`, and Image through their existing adapters.
 
 ## Known gaps / TODO
 
-- [ ] Native OpenAI-compatible model implementations are still V3-backed under
-  the new V4 provider surface; this diff intentionally adds the V4 entrypoint
-  and wrappers rather than rewriting the provider internals.
-- [ ] Upstream `convertUsage` setting is not exposed yet. Swift currently maps
-  OpenAI-compatible raw usage inside the V3 chat model and the raw upstream
-  usage type is not a public provider-level setting contract.
-- [ ] Full upstream fixture parity for every chat/completion/tool/error path is
-  not claimed by this tracker entry.
+- [ ] Migrate OpenAI-compatible Completion, Embedding, and Image from the
+  provider-local V3 adapter rail to native V4 implementations.
+- [ ] Full upstream fixture parity for every Chat, Completion, Embedding,
+  Image, and error path is not claimed by this tracker entry.
 
-## Notes
+## Evidence
 
-- Added provider tests:
-  `Tests/OpenAICompatibleProviderTests/OpenAICompatibleProviderV4Tests.swift`.
-- Targeted verification:
-  `swift test --filter OpenAICompatibleProviderV4Tests`.
+- Upstream Chat model and tests:
+  `external/vercel-ai-sdk/packages/openai-compatible/src/chat/**`.
+- Upstream provider factory:
+  `external/vercel-ai-sdk/packages/openai-compatible/src/openai-compatible-provider.ts`.
+- Swift Chat model:
+  `Sources/OpenAICompatibleProvider/Chat/OpenAICompatibleChatLanguageModel.swift`.
+- Swift prompt/tool conversion:
+  `Sources/OpenAICompatibleProvider/Chat/ConvertToOpenAICompatibleChatMessages.swift`
+  and `Sources/OpenAICompatibleProvider/Chat/OpenAICompatiblePrepareTools.swift`.
+- Swift provider factory:
+  `Sources/OpenAICompatibleProvider/OpenAICompatibleProvider.swift`.
+- Swift V4 tests:
+  `Tests/OpenAICompatibleProviderTests/OpenAICompatibleProviderV4Tests.swift`
+  and
+  `Tests/OpenAICompatibleProviderTests/OpenAICompatibleChatMessagesConverterV4Tests.swift`.
+
+## Validation
+
+- `AGENT=1 swift test --filter OpenAICompatibleProviderTests` passed 150 tests
+  in 10 suites.
+- `AGENT=1 swift test --filter OpenAICompatibleProviderV4Tests` passed 9 tests.
+- `AGENT=1 swift test --filter OpenAICompatibleChatMessagesConverterV4Tests`
+  passed 2 tests.
+- `AGENT=1 swift test --filter StreamingToolCallTrackerTests` passed 15 tests.
+- `AGENT=1 swift test` passed all 4070 tests in 461 suites.
