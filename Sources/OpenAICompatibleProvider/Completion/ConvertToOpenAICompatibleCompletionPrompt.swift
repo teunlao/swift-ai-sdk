@@ -62,4 +62,55 @@ public enum OpenAICompatibleCompletionPromptConverter {
 
         return OpenAICompatibleCompletionPromptConversion(prompt: text, stopSequences: stopSequences)
     }
+
+    public static func convert(
+        prompt: LanguageModelV4Prompt,
+        user: String = "user",
+        assistant: String = "assistant"
+    ) throws -> OpenAICompatibleCompletionPromptConversion {
+        var prompt = prompt
+        var text = ""
+
+        if let first = prompt.first, case .system(let content, _) = first {
+            text += "\(content)\n\n"
+            prompt = Array(prompt.dropFirst())
+        }
+
+        for message in prompt {
+            switch message {
+            case .system:
+                throw InvalidPromptError(prompt: String(describing: prompt), message: "Unexpected system message in completion prompt")
+            case .user(let parts, _):
+                let userMessage = parts.compactMap { part -> String? in
+                    switch part {
+                    case .text(let textPart):
+                        return textPart.text
+                    case .file:
+                        return nil
+                    }
+                }.joined()
+                text += "\(user):\n\(userMessage)\n\n"
+            case .assistant(let parts, _):
+                let assistantMessage = try parts.compactMap { part -> String? in
+                    switch part {
+                    case .text(let textPart):
+                        return textPart.text
+                    case .toolCall:
+                        throw UnsupportedFunctionalityError(functionality: "tool-call messages in completion prompts")
+                    case .file, .custom, .reasoning, .reasoningFile, .toolResult:
+                        return nil
+                    }
+                }.joined()
+                text += "\(assistant):\n\(assistantMessage)\n\n"
+            case .tool:
+                throw UnsupportedFunctionalityError(functionality: "tool messages in completion prompts")
+            }
+        }
+
+        text += "\(assistant):\n"
+        return OpenAICompatibleCompletionPromptConversion(
+            prompt: text,
+            stopSequences: ["\n\(user):"]
+        )
+    }
 }

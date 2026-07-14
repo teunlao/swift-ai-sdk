@@ -500,12 +500,11 @@ private struct OpenAICompatibleChatLanguageModelCore: Sendable {
 
         let camelCaseProviderOptionsName = openAICompatibleCamelCase(providerOptionsName)
         if options.contract.usesCamelCaseProviderOptions,
-           camelCaseProviderOptionsName != providerOptionsName,
-           options.providerOptions?[providerOptionsName] != nil {
-            warnings.append(.deprecated(
-                setting: "providerOptions key '\(providerOptionsName)'",
-                message: "Use '\(camelCaseProviderOptionsName)' instead."
-            ))
+           let warning = openAICompatibleDeprecatedProviderOptionsWarning(
+               rawName: providerOptionsName,
+               providerOptions: options.providerOptions
+           ) {
+            warnings.append(warning)
         }
 
         let compatibleOptions = try await parseProviderOptions(
@@ -1125,25 +1124,6 @@ private func convertOpenAICompatibleWarningToV3(_ value: SharedV4Warning) -> Sha
     case let .other(message):
         return .other(message: message)
     }
-}
-
-private func openAICompatibleCamelCase(_ value: String) -> String {
-    var result = ""
-    var uppercaseNext = false
-
-    for character in value {
-        if character == "-" || character == "_" {
-            uppercaseNext = true
-        } else if uppercaseNext, character.isLowercase {
-            result.append(contentsOf: character.uppercased())
-            uppercaseNext = false
-        } else {
-            result.append(character)
-            uppercaseNext = false
-        }
-    }
-
-    return result
 }
 
 private let genericJSONObjectSchema: JSONValue = .object(["type": .string("object")])
