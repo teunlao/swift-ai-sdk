@@ -283,7 +283,8 @@ struct OpenAIChatStreamingTests {
             parts.append(part)
         }
 
-        // Extract tool-input-delta parts - should have 5, not 6 (empty chunk should not produce delta)
+        // Upstream forwards the trailing empty arguments chunk as a delta while
+        // still finalizing the tool call exactly once at stream completion.
         let toolInputDeltas = parts.compactMap { part -> String? in
             if case .toolInputDelta(id: _, delta: let delta, providerMetadata: _) = part {
                 return delta
@@ -291,12 +292,13 @@ struct OpenAIChatStreamingTests {
             return nil
         }
 
-        #expect(toolInputDeltas.count == 5)
+        #expect(toolInputDeltas.count == 6)
         #expect(toolInputDeltas[0] == "{\"query\": \"")
         #expect(toolInputDeltas[1] == "latest")
         #expect(toolInputDeltas[2] == " news")
         #expect(toolInputDeltas[3] == " on")
         #expect(toolInputDeltas[4] == " ai\"}")
+        #expect(toolInputDeltas[5] == "")
 
         // Verify exactly 1 tool call (no duplicates)
         let toolCalls = parts.compactMap { part -> LanguageModelV3ToolCall? in

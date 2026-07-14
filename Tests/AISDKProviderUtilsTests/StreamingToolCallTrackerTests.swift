@@ -39,6 +39,11 @@ struct StreamingToolCallTrackerTests {
 
         #expect(collector.take() == [
             .toolInputDelta(id: "call_1", delta: #" Francisco"}"#, providerMetadata: nil),
+        ])
+
+        tracker.flush()
+
+        #expect(collector.take() == [
             .toolInputEnd(id: "call_1", providerMetadata: nil),
             .toolCall(.init(
                 toolCallId: "call_1",
@@ -63,6 +68,11 @@ struct StreamingToolCallTrackerTests {
         #expect(collector.take() == [
             .toolInputStart(id: "call_1", toolName: "get_weather", providerMetadata: nil, providerExecuted: nil, dynamic: nil, title: nil),
             .toolInputDelta(id: "call_1", delta: #"{"city": "London"}"#, providerMetadata: nil),
+        ])
+
+        tracker.flush()
+
+        #expect(collector.take() == [
             .toolInputEnd(id: "call_1", providerMetadata: nil),
             .toolCall(.init(
                 toolCallId: "call_1",
@@ -107,6 +117,7 @@ struct StreamingToolCallTrackerTests {
             type: "function",
             function: .init(name: "fn", arguments: "{}")
         ))
+        tracker.flush()
         _ = collector.take()
 
         try tracker.processDelta(.init(
@@ -199,6 +210,7 @@ struct StreamingToolCallTrackerTests {
             type: "function",
             function: .init(name: "fn", arguments: "{}")
         ))
+        tracker.flush()
 
         #expect(collector.take() == [
             .toolInputStart(id: "", toolName: "fn", providerMetadata: nil, providerExecuted: nil, dynamic: nil, title: nil),
@@ -333,6 +345,7 @@ struct StreamingToolCallTrackerTests {
             type: "function",
             function: .init(name: "fn", arguments: "{}")
         ))
+        tracker.flush()
         _ = collector.take()
 
         tracker.flush()
@@ -367,6 +380,7 @@ struct StreamingToolCallTrackerTests {
             function: .init(name: "fn", arguments: "{}"),
             providerMetadata: ["google": ["thoughtSignature": "sig123"]]
         ))
+        tracker.flush()
 
         let toolCall = collector.take().first { part in
             if case .toolCall = part { return true }
