@@ -218,6 +218,342 @@ struct OpenAICompatibleProviderV4Tests {
         }
     }
 
+    @Test("native V4 chat forwards reasoning tools and camel-case provider options")
+    func nativeV4ChatForwardsV4RequestContracts() async throws {
+        let capture = RequestCapture()
+        let responseJSON: [String: Any] = [
+            "choices": [[
+                "message": ["content": "done"],
+                "finish_reason": "stop"
+            ]]
+        ]
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let targetURL = URL(string: "https://api.example.com/v1/chat/completions")!
+        let httpResponse = makeHTTPResponse(
+            url: targetURL,
+            headers: ["Content-Type": "application/json"]
+        )
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let provider = createOpenAICompatible(settings: .init(
+            baseURL: "https://api.example.com/v1",
+            name: "example-provider",
+            fetch: fetch
+        ))
+        let model = try provider.languageModel(modelId: "reasoning-model")
+
+        #expect(model is OpenAICompatibleChatLanguageModelV4)
+
+        let result = try await model.doGenerate(options: .init(
+            prompt: v4ChatPrompt,
+            tools: [
+                .function(.init(
+                    name: "lookup",
+                    inputSchema: .object(["type": .string("object")]),
+                    strict: true
+                ))
+            ],
+            toolChoice: .tool(toolName: "lookup"),
+            reasoning: .high,
+            providerOptions: [
+                "example-provider": [
+                    "user": .string("raw-user"),
+                    "routing": .string("raw")
+                ],
+                "exampleProvider": [
+                    "user": .string("camel-user"),
+                    "routing": .string("camel")
+                ]
+            ]
+        ))
+
+        #expect(result.warnings.contains(.deprecated(
+            setting: "providerOptions key 'example-provider'",
+            message: "Use 'exampleProvider' instead."
+        )))
+
+        guard let request = await capture.current(),
+              let body = request.httpBody,
+              let json = try JSONSerialization.jsonObject(with: body) as? [String: Any],
+              let tools = json["tools"] as? [[String: Any]],
+              let tool = tools.first,
+              let function = tool["function"] as? [String: Any],
+              let toolChoice = json["tool_choice"] as? [String: Any],
+              let selectedFunction = toolChoice["function"] as? [String: Any] else {
+            Issue.record("Expected native V4 request body")
+            return
+        }
+
+        #expect(json["reasoning_effort"] as? String == "high")
+        #expect(json["user"] as? String == "camel-user")
+        #expect(json["routing"] as? String == "camel")
+        #expect(function["name"] as? String == "lookup")
+        #expect(function["strict"] as? Bool == true)
+        #expect(selectedFunction["name"] as? String == "lookup")
+    }
+
+    @Test("native V4 generate preserves reasoning thought signatures and custom usage")
+    func nativeV4GeneratePreservesResponseContracts() async throws {
+        let responseJSON: [String: Any] = [
+            "id": "chatcmpl-native-v4",
+            "created": 1_712_000_000,
+            "model": "reasoning-model",
+            "choices": [[
+                "message": [
+                    "content": "answer",
+                    "reasoning": "fallback reasoning",
+                    "tool_calls": [[
+                        "id": "call-1",
+                        "type": "function",
+                        "function": [
+                            "name": "lookup",
+                            "arguments": #"{"id":1}"#
+                        ],
+                        "extra_content": [
+                            "google": ["thought_signature": "signature-1"]
+                        ]
+                    ]]
+                ],
+                "finish_reason": "tool_calls"
+            ]],
+            "usage": [
+                "prompt_tokens": 5,
+                "completion_tokens": 7,
+                "total_tokens": 12,
+                "provider_input_tokens": 812
+            ]
+        ]
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let targetURL = URL(string: "https://api.example.com/v1/chat/completions")!
+        let httpResponse = makeHTTPResponse(
+            url: targetURL,
+            headers: ["Content-Type": "application/json"]
+        )
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+        let provider = createOpenAICompatible(settings: .init(
+            baseURL: "https://api.example.com/v1",
+            name: "example-provider",
+            fetch: fetch,
+            convertUsage: { usage in
+                let providerInputTokens: Int?
+                if case .object(let raw)? = usage?.raw,
+                   case .number(let value)? = raw["provider_input_tokens"] {
+                    providerInputTokens = Int(value)
+                } else {
+                    providerInputTokens = nil
+                }
+                return LanguageModelV4Usage(
+                    inputTokens: .init(total: providerInputTokens),
+                    outputTokens: .init(total: 900)
+                )
+            }
+        ))
+        let model = try provider.languageModel(modelId: "reasoning-model")
+
+        let result = try await model.doGenerate(options: .init(prompt: v4ChatPrompt))
+
+        #expect(result.finishReason.unified == .toolCalls)
+        #expect(result.usage.inputTokens.total == 812)
+        #expect(result.usage.outputTokens.total == 900)
+        #expect(result.content.count == 3)
+
+        guard case .reasoning(let reasoning) = result.content[1],
+              case .toolCall(let toolCall) = result.content[2] else {
+            Issue.record("Expected reasoning followed by a tool call")
+            return
+        }
+
+        #expect(reasoning.text == "fallback reasoning")
+        #expect(toolCall.toolCallId == "call-1")
+        #expect(toolCall.toolName == "lookup")
+        #expect(toolCall.input == #"{"id":1}"#)
+        #expect(toolCall.providerMetadata == [
+            "example-provider": ["thoughtSignature": .string("signature-1")]
+        ])
+    }
+
+    @Test("native V4 stream orders reasoning text and supports late-name and indexless tool calls")
+    func nativeV4StreamPreservesOrderingAndBufferedToolCalls() async throws {
+        let eventObjects: [[String: Any]] = [
+            [
+                "id": "chatcmpl-stream-v4",
+                "created": 1_712_000_000,
+                "model": "reasoning-model",
+                "choices": [[
+                    "delta": ["reasoning": "think"],
+                    "finish_reason": NSNull()
+                ]]
+            ],
+            [
+                "id": "chatcmpl-stream-v4",
+                "created": 1_712_000_000,
+                "model": "reasoning-model",
+                "choices": [[
+                    "delta": ["content": "answer"],
+                    "finish_reason": NSNull()
+                ]]
+            ],
+            [
+                "id": "chatcmpl-stream-v4",
+                "created": 1_712_000_000,
+                "model": "reasoning-model",
+                "choices": [[
+                    "delta": [
+                        "tool_calls": [[
+                            "index": 0,
+                            "id": "call-1",
+                            "type": "function",
+                            "function": ["arguments": #"{"city":"#],
+                            "extra_content": [
+                                "google": ["thought_signature": "signature-1"]
+                            ]
+                        ]]
+                    ],
+                    "finish_reason": NSNull()
+                ]]
+            ],
+            [
+                "id": "chatcmpl-stream-v4",
+                "created": 1_712_000_000,
+                "model": "reasoning-model",
+                "choices": [[
+                    "delta": [
+                        "tool_calls": [[
+                            "index": 0,
+                            "function": [
+                                "name": "weather",
+                                "arguments": "\"Paris\"}"
+                            ]
+                        ]]
+                    ],
+                    "finish_reason": NSNull()
+                ]]
+            ],
+            [
+                "id": "chatcmpl-stream-v4",
+                "created": 1_712_000_000,
+                "model": "reasoning-model",
+                "choices": [[
+                    "delta": [
+                        "tool_calls": [[
+                            "id": "call-2",
+                            "function": [
+                                "name": "clock",
+                                "arguments": "{}"
+                            ]
+                        ]]
+                    ],
+                    "finish_reason": NSNull()
+                ]]
+            ],
+            [
+                "id": "chatcmpl-stream-v4",
+                "created": 1_712_000_000,
+                "model": "reasoning-model",
+                "choices": [[
+                    "delta": [:],
+                    "finish_reason": "tool_calls"
+                ]],
+                "usage": [
+                    "prompt_tokens": 2,
+                    "completion_tokens": 3,
+                    "total_tokens": 5,
+                    "provider_output_tokens": 901
+                ]
+            ]
+        ]
+        let events = try eventObjects.map {
+            String(decoding: try JSONSerialization.data(withJSONObject: $0), as: UTF8.self)
+        }
+        let targetURL = URL(string: "https://api.example.com/v1/chat/completions")!
+        let httpResponse = makeHTTPResponse(
+            url: targetURL,
+            headers: ["Content-Type": "text/event-stream"]
+        )
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: makeStreamBody(from: events), urlResponse: httpResponse)
+        }
+        let provider = createOpenAICompatible(settings: .init(
+            baseURL: "https://api.example.com/v1",
+            name: "example-provider",
+            fetch: fetch,
+            includeUsage: true,
+            convertUsage: { usage in
+                let providerOutputTokens: Int?
+                if case .object(let raw)? = usage?.raw,
+                   case .number(let value)? = raw["provider_output_tokens"] {
+                    providerOutputTokens = Int(value)
+                } else {
+                    providerOutputTokens = nil
+                }
+                return LanguageModelV4Usage(
+                    inputTokens: .init(total: usage?.totalTokens),
+                    outputTokens: .init(total: providerOutputTokens)
+                )
+            }
+        ))
+        let model = try provider.languageModel(modelId: "reasoning-model")
+        let result = try await model.doStream(options: .init(prompt: v4ChatPrompt))
+
+        var parts: [LanguageModelV4StreamPart] = []
+        for try await part in result.stream {
+            parts.append(part)
+        }
+
+        guard let reasoningEndIndex = parts.firstIndex(where: {
+            if case .reasoningEnd(id: "reasoning-0", providerMetadata: nil) = $0 { return true }
+            return false
+        }),
+        let textStartIndex = parts.firstIndex(where: {
+            if case .textStart(id: "txt-0", providerMetadata: nil) = $0 { return true }
+            return false
+        }),
+        let textEndIndex = parts.firstIndex(where: {
+            if case .textEnd(id: "txt-0", providerMetadata: nil) = $0 { return true }
+            return false
+        }),
+        let toolCallIndex = parts.firstIndex(where: {
+            if case .toolCall = $0 { return true }
+            return false
+        }) else {
+            Issue.record("Expected reasoning text and tool-call lifecycle events")
+            return
+        }
+
+        #expect(reasoningEndIndex < textStartIndex)
+        #expect(textEndIndex < toolCallIndex)
+
+        guard case .toolCall(let toolCall) = parts[toolCallIndex],
+              case let .finish(finishReason, usage, _) = parts.last else {
+            Issue.record("Expected finalized tool call and finish")
+            return
+        }
+
+        #expect(toolCall.toolCallId == "call-1")
+        #expect(toolCall.toolName == "weather")
+        #expect(toolCall.input == #"{"city":"Paris"}"#)
+        #expect(toolCall.providerMetadata == [
+            "example-provider": ["thoughtSignature": .string("signature-1")]
+        ])
+
+        let completedToolCalls = parts.compactMap { part -> LanguageModelV4ToolCall? in
+            guard case .toolCall(let value) = part else { return nil }
+            return value
+        }
+        #expect(completedToolCalls.count == 2)
+        let indexlessToolCall = completedToolCalls.first { $0.toolCallId == "call-2" }
+        #expect(indexlessToolCall?.toolName == "clock")
+        #expect(indexlessToolCall?.input == "{}")
+        #expect(finishReason.unified == .toolCalls)
+        #expect(usage.inputTokens.total == 5)
+        #expect(usage.outputTokens.total == 901)
+    }
+
     @Test("embedding doEmbed maps V4 result metadata and usage")
     func embeddingDoEmbedUsesV4Surface() async throws {
         let responseJSON: [String: Any] = [
