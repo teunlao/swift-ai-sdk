@@ -18,61 +18,49 @@ struct OpenAICompatibleCompletionLanguageModelTests {
 
     // MARK: - Config Tests
 
-    @Test("should extract base name from provider string")
-    func extractBaseNameFromProviderString() throws {
-        let model = OpenAICompatibleCompletionLanguageModel(
-            modelId: OpenAICompatibleCompletionModelId(rawValue: "gpt-4"),
-            config: OpenAICompatibleCompletionConfig(
-                provider: "anthropic.beta",
-                headers: { [:] },
-                url: { _ in "" }
+    @Test("provider options use the base provider name")
+    func providerOptionsUseBaseProviderName() async throws {
+        let cases = [
+            (provider: "anthropic.beta", key: "anthropic"),
+            (provider: "openai", key: "openai"),
+            (provider: "", key: "")
+        ]
+
+        for testCase in cases {
+            let capture = RequestCapture()
+            let responseData = try JSONSerialization.data(withJSONObject: makeCompletionResponse())
+            let targetURL = URL(string: "https://my.api.com/v1/completions")!
+            let fetch: FetchFunction = { request in
+                await capture.store(request)
+                return FetchResponse(
+                    body: .data(responseData),
+                    urlResponse: makeHTTPResponse(url: targetURL)
+                )
+            }
+            let model = OpenAICompatibleCompletionLanguageModel(
+                modelId: OpenAICompatibleCompletionModelId(rawValue: "gpt-4"),
+                config: OpenAICompatibleCompletionConfig(
+                    provider: testCase.provider,
+                    headers: { [:] },
+                    url: { _ in targetURL.absoluteString },
+                    fetch: fetch
+                )
             )
-        )
 
-        // Access private property for testing
-        let mirror = Mirror(reflecting: model)
-        if let providerOptionsName = mirror.children.first(where: { $0.label == "providerOptionsName" })?.value as? String {
-            #expect(providerOptionsName == "anthropic")
-        } else {
-            Issue.record("Could not access providerOptionsName")
-        }
-    }
+            _ = try await model.doGenerate(options: LanguageModelV3CallOptions(
+                prompt: testPrompt,
+                providerOptions: [
+                    testCase.key: ["namespaceMarker": .string(testCase.provider)]
+                ]
+            ))
 
-    @Test("should handle provider without dot notation")
-    func handleProviderWithoutDotNotation() throws {
-        let model = OpenAICompatibleCompletionLanguageModel(
-            modelId: OpenAICompatibleCompletionModelId(rawValue: "gpt-4"),
-            config: OpenAICompatibleCompletionConfig(
-                provider: "openai",
-                headers: { [:] },
-                url: { _ in "" }
-            )
-        )
-
-        let mirror = Mirror(reflecting: model)
-        if let providerOptionsName = mirror.children.first(where: { $0.label == "providerOptionsName" })?.value as? String {
-            #expect(providerOptionsName == "openai")
-        } else {
-            Issue.record("Could not access providerOptionsName")
-        }
-    }
-
-    @Test("should return empty for empty provider")
-    func returnEmptyForEmptyProvider() throws {
-        let model = OpenAICompatibleCompletionLanguageModel(
-            modelId: OpenAICompatibleCompletionModelId(rawValue: "gpt-4"),
-            config: OpenAICompatibleCompletionConfig(
-                provider: "",
-                headers: { [:] },
-                url: { _ in "" }
-            )
-        )
-
-        let mirror = Mirror(reflecting: model)
-        if let providerOptionsName = mirror.children.first(where: { $0.label == "providerOptionsName" })?.value as? String {
-            #expect(providerOptionsName == "")
-        } else {
-            Issue.record("Could not access providerOptionsName")
+            guard let request = await capture.current(),
+                  let body = request.httpBody,
+                  let json = try JSONSerialization.jsonObject(with: body) as? [String: Any] else {
+                Issue.record("Missing request for provider '\(testCase.provider)'")
+                continue
+            }
+            #expect(json["namespaceMarker"] as? String == testCase.provider)
         }
     }
 
