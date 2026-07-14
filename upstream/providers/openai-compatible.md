@@ -1,8 +1,8 @@
 # Provider: OpenAI-compatible
 
 - Audited against upstream commit: `c8d2726ae045a28142cb46df5e41cdd51d8dcc71`
-- Status: partial/current; Chat and Completion are native V4, while Embedding
-  and Image still use the provider-local adapter rail.
+- Status: partial/current; Chat, Completion, and Embedding are native V4, while
+  Image still uses the provider-local adapter rail.
 - Upstream package: `external/vercel-ai-sdk/packages/openai-compatible/src/**`
 - Swift implementation: `Sources/OpenAICompatibleProvider/**`
 
@@ -54,13 +54,25 @@
 - [x] Existing OpenAI-compatible V3 Completion behavior remains covered by the
   provider test target while retaining its V3-specific warnings and stream
   behavior.
-- [x] The V4 provider factory still exposes Embedding,
-  `textEmbeddingModel`, and Image through their existing adapters.
+- [x] `createOpenAICompatible(settings:)` routes `embeddingModel` and
+  `textEmbeddingModel` directly to `OpenAICompatibleEmbeddingModelV4`;
+  Embedding no longer crosses a V3-to-V4 adapter. The public V3 and native V4
+  facades share one provider-owned transport core.
+- [x] Native V4 Embedding matches upstream provider-option ordering across the
+  deprecated `openai-compatible`, canonical `openaiCompatible`, and raw
+  provider namespaces, including both deprecation warning forms.
+- [x] V4 Embedding request and response mapping covers model/input,
+  `encoding_format`, dimensions, user, merged headers, embeddings, usage,
+  provider metadata, raw response information, configurable call limits, and
+  parallel-call capability.
+- [x] Existing OpenAI-compatible V3 Embedding request precedence and warning
+  behavior remain covered by the provider test target.
+- [x] The V4 provider factory still exposes Image through its existing adapter.
 
 ## Known gaps / TODO
 
-- [ ] Migrate OpenAI-compatible Embedding and Image from the provider-local V3
-  adapter rail to native V4 implementations.
+- [ ] Migrate OpenAI-compatible Image from the provider-local V3 adapter rail
+  to a native V4 implementation.
 - [ ] Full upstream fixture parity for every Chat, Completion, Embedding,
   Image, and error path is not claimed by this tracker entry.
 
@@ -72,12 +84,16 @@
   `external/vercel-ai-sdk/packages/openai-compatible/src/openai-compatible-provider.ts`.
 - Upstream Completion model and tests:
   `external/vercel-ai-sdk/packages/openai-compatible/src/completion/**`.
+- Upstream Embedding model and tests:
+  `external/vercel-ai-sdk/packages/openai-compatible/src/embedding/**`.
 - Swift Chat model:
   `Sources/OpenAICompatibleProvider/Chat/OpenAICompatibleChatLanguageModel.swift`.
 - Swift Completion model and prompt conversion:
   `Sources/OpenAICompatibleProvider/Completion/OpenAICompatibleCompletionLanguageModel.swift`
   and
   `Sources/OpenAICompatibleProvider/Completion/ConvertToOpenAICompatibleCompletionPrompt.swift`.
+- Swift Embedding model:
+  `Sources/OpenAICompatibleProvider/Embedding/OpenAICompatibleEmbeddingModel.swift`.
 - Swift prompt/tool conversion:
   `Sources/OpenAICompatibleProvider/Chat/ConvertToOpenAICompatibleChatMessages.swift`
   and `Sources/OpenAICompatibleProvider/Chat/OpenAICompatiblePrepareTools.swift`.
@@ -88,17 +104,21 @@
   and
   `Tests/OpenAICompatibleProviderTests/OpenAICompatibleChatMessagesConverterV4Tests.swift`
   and
-  `Tests/OpenAICompatibleProviderTests/OpenAICompatibleCompletionLanguageModelV4Tests.swift`.
+  `Tests/OpenAICompatibleProviderTests/OpenAICompatibleCompletionLanguageModelV4Tests.swift`
+  and
+  `Tests/OpenAICompatibleProviderTests/OpenAICompatibleEmbeddingModelV4Tests.swift`.
 
 ## Validation
 
-- `AGENT=1 swift test --filter OpenAICompatibleProviderTests` passed 154 tests
-  in 11 suites.
+- `AGENT=1 swift test --filter OpenAICompatibleProviderTests` passed 157 tests
+  in 12 suites.
 - `AGENT=1 swift test --filter OpenAICompatibleProviderV4Tests` passed 9 tests.
 - `AGENT=1 swift test --filter OpenAICompatibleChatMessagesConverterV4Tests`
   passed 2 tests.
 - `AGENT=1 swift test --filter OpenAICompatibleCompletionLanguageModelV4Tests`
   passed 6 tests.
+- `AGENT=1 swift test --filter OpenAICompatibleEmbeddingModelV4Tests` passed 3
+  tests.
 - `AGENT=1 swift test --filter StreamingToolCallTrackerTests` passed 15 tests.
 - `swift build` passed.
-- `AGENT=1 swift test` passed all 4074 tests in 462 suites.
+- `AGENT=1 swift test` passed all 4077 tests in 463 suites.
