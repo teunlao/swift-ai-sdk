@@ -318,6 +318,7 @@ struct OpenAICompatibleProviderTests {
             Issue.record("Missing embedding result")
         }
         #expect(result.usage?.tokens == 3)
+        #expect(result.warnings.isEmpty)
 
         guard let request = await capture.current(),
               let body = request.httpBody,
