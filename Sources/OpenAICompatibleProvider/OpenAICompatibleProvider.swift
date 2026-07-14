@@ -139,6 +139,7 @@ private struct OpenAICompatibleModelFactories: Sendable {
     let completionFactory: @Sendable (OpenAICompatibleCompletionModelId) -> OpenAICompatibleCompletionLanguageModel
     let completionFactoryV4: @Sendable (OpenAICompatibleCompletionModelId) -> OpenAICompatibleCompletionLanguageModelV4
     let embeddingFactory: @Sendable (OpenAICompatibleEmbeddingModelId) -> OpenAICompatibleEmbeddingModel
+    let embeddingFactoryV4: @Sendable (OpenAICompatibleEmbeddingModelId) -> OpenAICompatibleEmbeddingModelV4
     let imageFactory: @Sendable (OpenAICompatibleImageModelId) -> OpenAICompatibleImageModel
 }
 
@@ -233,17 +234,22 @@ private func makeOpenAICompatibleModelFactories(
         OpenAICompatibleCompletionLanguageModelV4(modelId: modelId, config: completionConfig())
     }
 
-    let embeddingFactory: @Sendable (OpenAICompatibleEmbeddingModelId) -> OpenAICompatibleEmbeddingModel = { modelId in
-        OpenAICompatibleEmbeddingModel(
-            modelId: modelId,
-            config: OpenAICompatibleEmbeddingConfig(
-                provider: "\(providerName).embedding",
-                url: urlBuilder,
-                headers: headersClosure,
-                fetch: commonFetch,
-                errorConfiguration: errorConfiguration
-            )
+    let embeddingConfig: @Sendable () -> OpenAICompatibleEmbeddingConfig = {
+        OpenAICompatibleEmbeddingConfig(
+            provider: "\(providerName).embedding",
+            url: urlBuilder,
+            headers: headersClosure,
+            fetch: commonFetch,
+            errorConfiguration: errorConfiguration
         )
+    }
+
+    let embeddingFactory: @Sendable (OpenAICompatibleEmbeddingModelId) -> OpenAICompatibleEmbeddingModel = { modelId in
+        OpenAICompatibleEmbeddingModel(modelId: modelId, config: embeddingConfig())
+    }
+
+    let embeddingFactoryV4: @Sendable (OpenAICompatibleEmbeddingModelId) -> OpenAICompatibleEmbeddingModelV4 = { modelId in
+        OpenAICompatibleEmbeddingModelV4(modelId: modelId, config: embeddingConfig())
     }
 
     let imageFactory: @Sendable (OpenAICompatibleImageModelId) -> OpenAICompatibleImageModel = { modelId in
@@ -265,6 +271,7 @@ private func makeOpenAICompatibleModelFactories(
         completionFactory: completionFactory,
         completionFactoryV4: completionFactoryV4,
         embeddingFactory: embeddingFactory,
+        embeddingFactoryV4: embeddingFactoryV4,
         imageFactory: imageFactory
     )
 }
@@ -278,7 +285,7 @@ public func createOpenAICompatible(
         languageFactory: factories.languageFactoryV4,
         chatFactory: factories.languageFactoryV4,
         completionFactory: factories.completionFactoryV4,
-        embeddingFactory: { OpenAICompatibleEmbeddingModelV4Adapter(wrapping: factories.embeddingFactory($0)) },
+        embeddingFactory: factories.embeddingFactoryV4,
         imageFactory: { OpenAICompatibleImageModelV4Adapter(wrapping: factories.imageFactory($0)) }
     )
 }

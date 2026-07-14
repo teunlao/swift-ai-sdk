@@ -1,40 +1,6 @@
 import Foundation
 import AISDKProvider
 
-final class OpenAICompatibleEmbeddingModelV4Adapter: EmbeddingModelV4, @unchecked Sendable {
-    let specificationVersion = "v4"
-
-    private let model: any EmbeddingModelV3<String>
-
-    var provider: String { model.provider }
-    var modelId: String { model.modelId }
-    var maxEmbeddingsPerCall: Int? { get async throws { try await model.maxEmbeddingsPerCall } }
-    var supportsParallelCalls: Bool { get async throws { try await model.supportsParallelCalls } }
-
-    init(wrapping model: any EmbeddingModelV3<String>) {
-        self.model = model
-    }
-
-    func doEmbed(options: EmbeddingModelV4CallOptions) async throws -> EmbeddingModelV4Result {
-        let result = try await model.doEmbed(
-            options: EmbeddingModelV3DoEmbedOptions(
-                values: options.values,
-                abortSignal: options.abortSignal,
-                providerOptions: options.providerOptions,
-                headers: options.headers
-            )
-        )
-
-        return EmbeddingModelV4Result(
-            embeddings: result.embeddings,
-            usage: result.usage.map { EmbeddingModelV4Usage(tokens: $0.tokens) },
-            providerMetadata: result.providerMetadata,
-            response: result.response.map { EmbeddingModelV4ResponseInfo(headers: $0.headers, body: $0.body) },
-            warnings: result.warnings.map(convertSharedV3WarningToV4)
-        )
-    }
-}
-
 final class OpenAICompatibleImageModelV4Adapter: ImageModelV4, @unchecked Sendable {
     let specificationVersion = "v4"
 
