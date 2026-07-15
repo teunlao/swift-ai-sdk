@@ -148,7 +148,11 @@ private struct OpenAICompatibleCompletionLanguageModelCore: Sendable {
             headers: headers,
             body: JSONValue.object(prepared.body),
             failedResponseHandler: config.errorConfiguration.failedResponseHandler,
-            successfulResponseHandler: createJsonResponseHandler(responseSchema: openAICompatibleCompletionResponseSchema),
+            successfulResponseHandler: createJsonResponseHandler(
+                responseSchema: options.contract.isV4
+                    ? openAICompatibleCompletionResponseSchemaV4
+                    : openAICompatibleCompletionResponseSchema
+            ),
             isAborted: options.abortSignal,
             fetch: config.fetch
         )
@@ -214,7 +218,11 @@ private struct OpenAICompatibleCompletionLanguageModelCore: Sendable {
             headers: requestHeaders(for: options.headers),
             body: JSONValue.object(body),
             failedResponseHandler: config.errorConfiguration.failedResponseHandler,
-            successfulResponseHandler: createEventSourceResponseHandler(chunkSchema: openAICompatibleCompletionChunkSchema),
+            successfulResponseHandler: createEventSourceResponseHandler(
+                chunkSchema: options.contract.isV4
+                    ? openAICompatibleCompletionChunkSchemaV4
+                    : openAICompatibleCompletionChunkSchema
+            ),
             isAborted: options.abortSignal,
             fetch: config.fetch
         )
@@ -757,8 +765,8 @@ private func convertOpenAICompatibleCompletionWarningToV3(
 
 private let genericJSONObjectSchema: JSONValue = .object(["type": .string("object")])
 
-private struct OpenAICompatibleCompletionResponse: Codable {
-    struct Choice: Codable {
+private struct OpenAICompatibleCompletionResponse: Codable, Sendable {
+    struct Choice: Codable, Sendable {
         let text: String?
         let finishReason: String?
 
@@ -809,8 +817,8 @@ private struct OpenAICompatibleCompletionUsage: Codable, Sendable {
     }
 }
 
-private struct OpenAICompatibleCompletionStreamChunk: Codable {
-    struct Choice: Codable {
+private struct OpenAICompatibleCompletionStreamChunk: Codable, Sendable {
+    struct Choice: Codable, Sendable {
         let textDelta: String?
         let finishReason: String?
 
@@ -827,7 +835,7 @@ private struct OpenAICompatibleCompletionStreamChunk: Codable {
     let usage: OpenAICompatibleCompletionUsage?
 }
 
-private enum OpenAICompatibleCompletionStreamEvent: Codable {
+private enum OpenAICompatibleCompletionStreamEvent: Codable, Sendable {
     case data(OpenAICompatibleCompletionStreamChunk)
     case error(OpenAICompatibleErrorData)
 
@@ -852,6 +860,146 @@ private enum OpenAICompatibleCompletionStreamEvent: Codable {
     }
 }
 
+private struct OpenAICompatibleCompletionResponseV4: Decodable, Sendable {
+    struct Choice: Decodable, Sendable {
+        let text: String
+        let finishReason: String
+
+        private enum CodingKeys: String, CodingKey {
+            case text
+            case finishReason = "finish_reason"
+        }
+    }
+
+    let id: String?
+    let created: Double?
+    let model: String?
+    let choices: [Choice]
+    let usage: OpenAICompatibleCompletionUsageV4?
+
+    var normalized: OpenAICompatibleCompletionResponse {
+        OpenAICompatibleCompletionResponse(
+            id: id,
+            created: created,
+            model: model,
+            choices: choices.map {
+                OpenAICompatibleCompletionResponse.Choice(
+                    text: $0.text,
+                    finishReason: $0.finishReason
+                )
+            },
+            usage: usage?.normalized
+        )
+    }
+}
+
+private struct OpenAICompatibleCompletionUsageV4: Decodable, Sendable {
+    let promptTokens: Int
+    let completionTokens: Int
+    let totalTokens: Int
+
+    private enum CodingKeys: String, CodingKey {
+        case promptTokens = "prompt_tokens"
+        case completionTokens = "completion_tokens"
+        case totalTokens = "total_tokens"
+    }
+
+    var normalized: OpenAICompatibleCompletionUsage {
+        OpenAICompatibleCompletionUsage(
+            promptTokens: promptTokens,
+            completionTokens: completionTokens,
+            totalTokens: totalTokens,
+            promptTokensDetails: nil,
+            completionTokensDetails: nil
+        )
+    }
+}
+
+private struct OpenAICompatibleCompletionStreamChunkV4: Decodable, Sendable {
+    struct Choice: Decodable, Sendable {
+        let text: String
+        let finishReason: String?
+        let index: Double
+
+        private enum CodingKeys: String, CodingKey {
+            case text
+            case finishReason = "finish_reason"
+            case index
+        }
+    }
+
+    let id: String?
+    let created: Double?
+    let model: String?
+    let choices: [Choice]
+    let usage: OpenAICompatibleCompletionUsageV4?
+
+    var normalized: OpenAICompatibleCompletionStreamChunk {
+        OpenAICompatibleCompletionStreamChunk(
+            id: id,
+            created: created,
+            model: model,
+            choices: choices.map {
+                OpenAICompatibleCompletionStreamChunk.Choice(
+                    textDelta: $0.text,
+                    finishReason: $0.finishReason
+                )
+            },
+            usage: usage?.normalized
+        )
+    }
+}
+
+private enum OpenAICompatibleCompletionStreamEventV4: Decodable, Sendable {
+    case data(OpenAICompatibleCompletionStreamChunkV4)
+    case error(OpenAICompatibleErrorData)
+
+    private enum CodingKeys: String, CodingKey { case error }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        if container.contains(.error) {
+            self = .error(try OpenAICompatibleErrorData(from: decoder))
+        } else {
+            self = .data(try OpenAICompatibleCompletionStreamChunkV4(from: decoder))
+        }
+    }
+
+    var normalized: OpenAICompatibleCompletionStreamEvent {
+        switch self {
+        case .data(let chunk):
+            return .data(chunk.normalized)
+        case .error(let error):
+            return .error(error)
+        }
+    }
+}
+
+private func openAICompatibleCompletionMappedSchema<Input: Decodable & Sendable, Output>(
+    _ inputType: Input.Type,
+    transform: @escaping @Sendable (Input) -> Output
+) -> FlexibleSchema<Output> {
+    FlexibleSchema(Schema<Output>(
+        jsonSchemaResolver: { genericJSONObjectSchema },
+        validator: { value in
+            guard JSONSerialization.isValidJSONObject(value) else {
+                return .failure(error: TypeValidationError.wrap(
+                    value: value,
+                    cause: SchemaJSONSerializationError(value: value)
+                ))
+            }
+
+            do {
+                let data = try JSONSerialization.data(withJSONObject: value)
+                let decoded = try JSONDecoder().decode(inputType, from: data)
+                return .success(value: transform(decoded))
+            } catch {
+                return .failure(error: TypeValidationError.wrap(value: value, cause: error))
+            }
+        }
+    ))
+}
+
 private let openAICompatibleCompletionResponseSchema = FlexibleSchema(
     Schema<OpenAICompatibleCompletionResponse>.codable(
         OpenAICompatibleCompletionResponse.self,
@@ -859,11 +1007,21 @@ private let openAICompatibleCompletionResponseSchema = FlexibleSchema(
     )
 )
 
+private let openAICompatibleCompletionResponseSchemaV4 = openAICompatibleCompletionMappedSchema(
+    OpenAICompatibleCompletionResponseV4.self,
+    transform: { $0.normalized }
+)
+
 private let openAICompatibleCompletionChunkSchema = FlexibleSchema(
     Schema<OpenAICompatibleCompletionStreamEvent>.codable(
         OpenAICompatibleCompletionStreamEvent.self,
         jsonSchema: genericJSONObjectSchema
     )
+)
+
+private let openAICompatibleCompletionChunkSchemaV4 = openAICompatibleCompletionMappedSchema(
+    OpenAICompatibleCompletionStreamEventV4.self,
+    transform: { $0.normalized }
 )
 
 private extension ParseJSONResult where Output == OpenAICompatibleCompletionStreamEvent {

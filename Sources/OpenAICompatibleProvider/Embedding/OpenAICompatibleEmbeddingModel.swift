@@ -303,7 +303,7 @@ private struct OpenAICompatibleEmbeddingResponse: Codable {
     }
 
     struct Usage: Codable {
-        let promptTokens: Int?
+        let promptTokens: Int
 
         private enum CodingKeys: String, CodingKey {
             case promptTokens = "prompt_tokens"
