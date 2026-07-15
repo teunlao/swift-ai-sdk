@@ -197,8 +197,7 @@ private struct OpenAICompatibleChatLanguageModelCore: Sendable {
 
         if let toolCalls = choice.message.toolCalls {
             for toolCall in toolCalls {
-                guard let function = toolCall.function, let name = function.name else { continue }
-                let arguments = function.arguments ?? "{}"
+                let function = toolCall.function
                 let toolCallId = toolCall.id ?? generateID()
                 let thoughtSignature = toolCall.extraContent?.google?.thoughtSignature
                 let toolMetadata = options.contract.includesToolCallProviderMetadata
@@ -208,8 +207,8 @@ private struct OpenAICompatibleChatLanguageModelCore: Sendable {
                     : nil
                 content.append(.toolCall(LanguageModelV4ToolCall(
                     toolCallId: toolCallId,
-                    toolName: name,
-                    input: arguments,
+                    toolName: function.name,
+                    input: function.arguments,
                     providerExecuted: nil,
                     providerMetadata: toolMetadata
                 )))
@@ -1306,8 +1305,8 @@ private struct OpenAICompatibleChatResponse: Codable {
         struct Message: Codable {
             struct ToolCall: Codable {
                 struct ToolFunction: Codable {
-                    let name: String?
-                    let arguments: String?
+                    let name: String
+                    let arguments: String
 
                     private enum CodingKeys: String, CodingKey {
                         case name
@@ -1317,7 +1316,7 @@ private struct OpenAICompatibleChatResponse: Codable {
 
                 let id: String?
                 let type: String?
-                let function: ToolFunction?
+                let function: ToolFunction
                 let extraContent: OpenAICompatibleChatExtraContent?
 
                 private enum CodingKeys: String, CodingKey {
