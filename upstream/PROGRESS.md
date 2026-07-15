@@ -2706,6 +2706,15 @@ For source-of-truth code, always follow the commits and tests.
 
 ### Unreleased (main)
 
+### v0.19.0 - 2026-07-15
+
+- 2026-07-15
+  - OpenAI Compatible: native Provider V4 Chat, Completion, Embedding, and Image surfaces are verified against `c8d2726ae045a28142cb46df5e41cdd51d8dcc71`, including prompt/tool conversion, typed HTTP/SSE errors, strict response validation, multipart image editing, and exact upstream xAI fixtures while preserving explicit V3 facades.
+  - Anthropic: the default facade is now native Provider V4 with current model/reasoning gates, provider-reference and container-upload prompt parts, advisor tool support, and high-level file/skill upload routing; the explicit V3 facade remains available.
+  - OpenAI: the targeted latest-main delta through `5b4a299200ec3d061a2cae087d78d13f74d6c90f` adds GPT-5.6 models, `max` effort, reasoning mode/context, prompt-cache options and breakpoints, cache-write usage, web-search results, base-URL validation, and hardened realtime transcription lifecycle handling.
+  - Validation: `swift build`, all 4158 Swift tests in 473 suites, the examples package, Starlight checks/build, parity scan, and `git diff --check` passed before release preparation.
+  - Release/docs: README, shared SDK release version, Starlight install snippets, changelog, and upstream evidence now point at `0.19.0`.
+
 ### v0.18.2 - 2026-07-04
 
 - 2026-07-04
