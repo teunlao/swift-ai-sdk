@@ -62,17 +62,49 @@ private func thoughtSignature(from providerOptions: SharedV4ProviderOptions?) ->
         return nil
     }
 
-    switch value {
-    case .string(let signature):
-        return signature
-    case .number(let number):
-        return String(number)
-    case .bool(let flag):
-        return String(flag)
-    case .null:
+    guard isJavaScriptTruthy(value) else {
         return nil
+    }
+
+    return javaScriptString(from: value)
+}
+
+private func isJavaScriptTruthy(_ value: JSONValue) -> Bool {
+    switch value {
+    case .null:
+        return false
+    case .bool(let value):
+        return value
+    case .number(let value):
+        return value != 0 && !value.isNaN
+    case .string(let value):
+        return !value.isEmpty
     case .array, .object:
-        return try? encodedJSONString(value)
+        return true
+    }
+}
+
+private func javaScriptString(from value: JSONValue, insideArray: Bool = false) -> String {
+    switch value {
+    case .null:
+        return insideArray ? "" : "null"
+    case .string(let value):
+        return value
+    case .number(let value):
+        if value == 0 {
+            return "0"
+        }
+        if let integer = Int(exactly: value) {
+            return String(integer)
+        }
+        return String(value)
+    case .bool(let value):
+        return value ? "true" : "false"
+    case .array(let values):
+        return values.map { javaScriptString(from: $0, insideArray: true) }
+            .joined(separator: ",")
+    case .object:
+        return "[object Object]"
     }
 }
 
