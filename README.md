@@ -65,7 +65,7 @@ struct Demo {
 
     // Streaming text
     let stream = try streamText(
-      model: openai("gpt-5"),
+      model: openai("gpt-5.6"),
       prompt: "Stream one sentence about structured outputs."
     )
     for try await delta in stream.textStream {
@@ -88,7 +88,7 @@ import AnthropicProvider
 import GoogleProvider
 
 let models: [LanguageModel] = [
-  openai("gpt-5"),
+  openai("gpt-5.6"),
   anthropic("claude-4.5-sonnet"),
   google("gemini-2.5-pro")
 ]
@@ -119,7 +119,7 @@ struct Release: Codable, Sendable {
 }
 
 let summary = try await generateObject(
-  model: openai("gpt-5"),
+  model: openai("gpt-5.6"),
   schema: Release.self,
   schemaName: "release_summary",
   prompt: "Summarize Swift AI SDK 0.18.2: streaming + tools."

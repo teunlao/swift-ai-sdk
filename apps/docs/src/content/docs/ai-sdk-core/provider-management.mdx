@@ -129,7 +129,7 @@ let registry = createProviderRegistry(
     "anthropic": anthropic,
 
     // Register provider with custom configuration:
-    "openai": createOpenAI(
+    "openai": try createOpenAI(
       settings: OpenAIProviderSettings(
         apiKey: ProcessInfo.processInfo.environment["OPENAI_API_KEY"]
       )

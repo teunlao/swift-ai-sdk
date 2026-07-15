@@ -10,6 +10,10 @@
 - Commit date: `2026-07-03`
 - Last refreshed (local): `2026-07-03`
 
+## Supplemental targeted snapshots
+
+- `2026-07-15`: OpenAI latest-main delta audited at `5b4a299200ec3d061a2cae087d78d13f74d6c90f` without changing the repository-wide pinned reference.
+
 ## Refresh history
 
 - `2026-01-18`: Pinned at `c0fff0368638adbf2c6f9197e13c432c37760751`

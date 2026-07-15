@@ -26,6 +26,7 @@ foundation slices, plus targeted `core:provider/transcription-stream` and
 `provider:openai/index-export-surface`,
 `provider:openai/chat-prompt-conversion-v4`,
 `provider:openai/package-source-closure`,
+`provider:openai/gpt-5.6-v4`,
 `core:ai/openai-v4-dx`, `docs:openai-v4`, and
 `provider:openai/native-v4-embedding`, and
 `provider:openai/native-v4-speech`, and
@@ -38,7 +39,9 @@ foundation slices, plus targeted `core:provider/transcription-stream` and
 `provider:openai-compatible/native-v4-image`, and
 `provider:openai-compatible/package-audit`, and
 `provider:anthropic/native-v4`
-evidence against `c8d2726ae045a28142cb46df5e41cdd51d8dcc71`.
+evidence against `c8d2726ae045a28142cb46df5e41cdd51d8dcc71`, plus the
+targeted OpenAI GPT-5.6 V4 latest-main delta against
+`5b4a299200ec3d061a2cae087d78d13f74d6c90f`.
 
 Status:
 - `core:provider`: partial/current. Swift now has the V4 provider, model,
@@ -76,6 +79,24 @@ Status:
   provider-driven integration behavior, not unidentified exported helper drift.
 
 Latest validation:
+- `2026-07-15`: the parity scanner reports OpenAI as `verified/current` at
+  the repository-wide pinned baseline; `git diff --check` also passed after
+  the targeted latest-main delta.
+- `2026-07-15`: `AGENT=1 swift test --filter OpenAI` passed 707 tests in
+  49 suites across the main OpenAI and OpenAI-compatible namespaces after the
+  final GPT-5.6 V4 boundary additions.
+- `2026-07-15`: `AGENT=1 swift test` passed all 4158 Swift Testing tests in
+  473 suites after the targeted OpenAI GPT-5.6 V4 latest-main delta;
+  `swift build` also passed.
+- `2026-07-15`: the focused OpenAI Responses V4 and realtime transcription
+  validation passed 36 tests in 2 suites, including GPT-5.6 `max`/`pro`
+  reasoning, effective reasoning context, prompt cache writes and explicit
+  breakpoints, non-reasoning warnings, WebSocket auth normalization, and audio
+  cancellation on pre-open and mid-stream failures.
+- `2026-07-15`: `pnpm run examples:build`, `pnpm run docs:check`, and
+  `pnpm run docs:build` passed after the OpenAI GPT-5.6 V4 documentation and
+  example update; the docs build generated 53 pages and emitted the known
+  nonfatal sitemap/npx ENOENT warning.
 - `2026-07-15`: `AGENT=1 swift test` passed all 4145 Swift Testing tests in
   472 suites after the native Anthropic Provider V4 and high-level
   provider-reference/upload slice; `swift build` also passed.

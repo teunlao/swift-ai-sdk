@@ -46,7 +46,7 @@ If you need a customized setup, use `createOpenAI(settings:)` with your settings
 ```swift
 import OpenAIProvider
 
-let provider = createOpenAI(
+let provider = try createOpenAI(
     settings: OpenAIProviderSettings(
         apiKey: "sk-...",
         organization: "org-...",
@@ -196,17 +196,22 @@ The following provider options are available:
 - **user** _string_
   A unique identifier representing your end-user, which can help OpenAI to monitor and detect abuse. Defaults to `undefined`.
 
-- **reasoningEffort** _'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'_
+- **reasoningEffort** _'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'_
   Reasoning effort for reasoning models. Defaults to `medium`. If you use `providerOptions` to set the `reasoningEffort` option, this model setting will be ignored.
 
 <Aside type="note">
-  The 'none' type for `reasoningEffort` is available for OpenAI's GPT-5.1,
-  GPT-5.2, GPT-5.3, and GPT-5.4 model families. The 'xhigh' type for
-  `reasoningEffort` is only available for OpenAI's GPT-5.1-Codex-Max model.
+  Supported reasoning efforts vary by model. GPT-5.6 supports `none`, `low`,
+  `medium`, `high`, `xhigh`, and `max`.
   When `reasoningEffort` is set to `none`, the SDK also keeps
   `temperature`, `topP`, and `logprobs` enabled for those supported GPT-5
   families.
 </Aside>
+
+- **reasoningMode** _'standard' | 'pro'_
+  Controls how much model work GPT-5.6 performs before returning a final answer. Use `pro` when quality matters more than latency and token usage.
+
+- **reasoningContext** _'auto' | 'current_turn' | 'all_turns'_
+  Controls which available reasoning items GPT-5.6 can reuse. The effective context is returned as `providerMetadata.openai.reasoningContext`.
 
 - **reasoningSummary** _'auto' | 'detailed'_
   Controls whether the model returns its reasoning process. Set to `'auto'` for a condensed summary, `'detailed'` for more comprehensive reasoning. Defaults to `undefined` (no reasoning summaries). When enabled, reasoning summaries appear in the stream as events with type `'reasoning'` and in non-streaming responses within the `reasoning` field.
@@ -237,6 +242,7 @@ The following provider options are available:
 - **include** _Array&lt;string&gt;_
   Specifies additional content to include in the response. Supported values:
   `['file_search_call.results']` for including file search results in responses.
+  `['web_search_call.results']` for including web search results.
   `['message.output_text.logprobs']` for logprobs.
   Defaults to `undefined`.
 
@@ -249,8 +255,11 @@ The following provider options are available:
 - **promptCacheKey** _string_
   A cache key for manual prompt caching control. Used by OpenAI to cache responses for similar requests to optimize your cache hit rates.
 
+- **promptCacheOptions** _object_
+  Configures prompt caching for GPT-5.6 and later models. `mode` can be `implicit` or `explicit`, and `ttl` currently supports `30m`. Explicit mode caches only content blocks marked with `promptCacheBreakpoint`.
+
 - **promptCacheRetention** _'in_memory' | '24h'_
-  The retention policy for the prompt cache. Set to `'24h'` to enable extended prompt caching, which keeps cached prefixes active for up to 24 hours. Defaults to `'in_memory'` for standard prompt caching. Note: `'24h'` is currently only available for the 5.1 series of models.
+  Legacy cache retention for models before GPT-5.6. For GPT-5.6 and later models, use `promptCacheOptions.ttl`.
 
 - **safetyIdentifier** _string_
   A stable identifier used to help detect users of your application that may be violating OpenAI's usage policies. The IDs should be a string that uniquely identifies each user.
@@ -276,11 +285,16 @@ The following OpenAI-specific metadata is returned:
 - **responseId** _string_
   The ID of the response. Can be used to continue a conversation.
 
-- **cachedPromptTokens** _number_
-  The number of prompt tokens that were a cache hit.
+- **logprobs** _(optional)_
+  Log probabilities of output tokens when enabled.
 
-- **reasoningTokens** _number_
-  The number of reasoning tokens that the model generated.
+- **serviceTier** _(optional)_
+  Service tier returned by the API.
+
+- **reasoningContext** _(optional)_
+  Effective persisted-reasoning context returned by GPT-5.6.
+
+Cache reads and writes are reported through `result.usage.inputTokens.cacheRead` and `result.usage.inputTokens.cacheWrite`; reasoning tokens are reported through `result.usage.outputTokens.reasoning` on the provider V4 result.
 
 #### Reasoning Output
 
@@ -879,16 +893,15 @@ The following optional provider options are available for OpenAI chat models:
   A unique identifier representing your end-user, which can help OpenAI to
   monitor and detect abuse. [Learn more](https://platform.openai.com/docs/guides/safety-best-practices/end-user-ids).
 
-- **reasoningEffort** _'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'_
+- **reasoningEffort** _'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'_
 
   Reasoning effort for reasoning models. Defaults to `medium`. If you use
   `providerOptions` to set the `reasoningEffort` option, this
   model setting will be ignored.
 
 <Aside type="note">
-  The 'none' type for `reasoningEffort` is available for OpenAI's GPT-5.1,
-  GPT-5.2, GPT-5.3, and GPT-5.4 model families. The 'xhigh' type for
-  `reasoningEffort` is only available for OpenAI's GPT-5.1-Codex-Max model.
+  Supported reasoning efforts vary by model. GPT-5.6 supports `none`, `low`,
+  `medium`, `high`, `xhigh`, and `max`.
   When `reasoningEffort` is set to `none`, the SDK also keeps
   `temperature`, `topP`, and `logprobs` enabled for those supported GPT-5
   families.
@@ -931,9 +944,13 @@ The following optional provider options are available for OpenAI chat models:
 
   A cache key for manual prompt caching control. Used by OpenAI to cache responses for similar requests to optimize your cache hit rates.
 
+- **promptCacheOptions** _object_
+
+  Configures prompt caching for GPT-5.6 and later models. `mode` can be `implicit` or `explicit`, and `ttl` currently supports `30m`.
+
 - **promptCacheRetention** _'in_memory' | '24h'_
 
-  The retention policy for the prompt cache. Set to `'24h'` to enable extended prompt caching, which keeps cached prefixes active for up to 24 hours. Defaults to `'in_memory'` for standard prompt caching. Note: `'24h'` is currently only available for the 5.1 series of models.
+  Legacy cache retention for models before GPT-5.6. For GPT-5.6 and later models, use `promptCacheOptions.ttl`.
 
 - **safetyIdentifier** _string_
 
@@ -1332,6 +1349,42 @@ print("usage:", [
 ])
 ```
 
+GPT-5.6 also supports explicit cache control. Set `promptCacheOptions.mode` to `explicit` and mark each cache boundary with `promptCacheBreakpoint`:
+
+```swift
+import AISDKProvider
+import OpenAIProvider
+
+let breakpoint: SharedV4ProviderOptions = [
+  "openai": [
+    "promptCacheBreakpoint": .object(["mode": .string("explicit")])
+  ]
+]
+
+let result = try await openai.responses("gpt-5.6-sol").doGenerate(
+  options: .init(
+    prompt: [
+      .system(content: "Stable instructions", providerOptions: breakpoint),
+      .user(
+        content: [.text(.init(text: "Reusable context", providerOptions: breakpoint))],
+        providerOptions: nil
+      )
+    ],
+    providerOptions: [
+      "openai": [
+        "promptCacheOptions": .object([
+          "mode": .string("explicit"),
+          "ttl": .string("30m")
+        ])
+      ]
+    ]
+  )
+)
+
+print(result.usage.inputTokens.cacheRead as Any)
+print(result.usage.inputTokens.cacheWrite as Any)
+```
+
 #### Audio Input
 
 With the `gpt-4o-audio-preview` model, you can pass audio files to the model.
@@ -1440,6 +1493,11 @@ The following optional provider options are available for OpenAI completion mode
 
 | Model                 | Image Input         | Audio Input         | Object Generation   | Tool Usage          |
 | --------------------- | ------------------- | ------------------- | ------------------- | ------------------- |
+| `gpt-5.6`             | <Check size={18} /> | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| `gpt-5.6-luna`        | <Check size={18} /> | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| `gpt-5.6-sol`         | <Check size={18} /> | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| `gpt-5.6-terra`       | <Check size={18} /> | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| `gpt-5.5`             | <Check size={18} /> | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> |
 | `gpt-5.4-pro`         | <Check size={18} /> | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> |
 | `gpt-5.4`             | <Check size={18} /> | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> |
 | `gpt-5.4-mini`        | <Check size={18} /> | <Cross size={18} /> | <Check size={18} /> | <Check size={18} /> |
