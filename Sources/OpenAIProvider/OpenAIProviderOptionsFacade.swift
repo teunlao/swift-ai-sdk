@@ -15,8 +15,11 @@ public struct OpenAIOptionsFacade: Sendable {
     conversation: String? = nil,
     previousResponseId: String? = nil,
     promptCacheKey: String? = nil,
+    promptCacheOptions: OpenAIPromptCacheOptions? = nil,
     promptCacheRetention: String? = nil,
     reasoningEffort: String? = nil,
+    reasoningMode: OpenAIResponsesReasoningMode? = nil,
+    reasoningContext: OpenAIResponsesReasoningContext? = nil,
     reasoningSummary: String? = nil,
     textVerbosity: String? = nil,
     truncation: String? = nil,
@@ -53,11 +56,20 @@ public struct OpenAIOptionsFacade: Sendable {
     if let promptCacheKey {
       inner["promptCacheKey"] = JSONValue.string(promptCacheKey)
     }
+    if let promptCacheOptions {
+      inner["promptCacheOptions"] = promptCacheOptions.jsonValue
+    }
     if let promptCacheRetention {
       inner["promptCacheRetention"] = JSONValue.string(promptCacheRetention)
     }
     if let reasoningEffort {
       inner["reasoningEffort"] = JSONValue.string(reasoningEffort)
+    }
+    if let reasoningMode {
+      inner["reasoningMode"] = JSONValue.string(reasoningMode.rawValue)
+    }
+    if let reasoningContext {
+      inner["reasoningContext"] = JSONValue.string(reasoningContext.rawValue)
     }
     if let reasoningSummary {
       inner["reasoningSummary"] = JSONValue.string(reasoningSummary)

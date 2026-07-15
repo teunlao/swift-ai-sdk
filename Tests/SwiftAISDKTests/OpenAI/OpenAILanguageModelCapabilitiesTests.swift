@@ -53,6 +53,10 @@ struct OpenAILanguageModelCapabilitiesTests {
             ("gpt-5.4-nano-2026-03-17", true),
             ("gpt-5.5", true),
             ("gpt-5.5-2026-04-23", true),
+            ("gpt-5.6", true),
+            ("gpt-5.6-luna", true),
+            ("gpt-5.6-sol", true),
+            ("gpt-5.6-terra", true),
             ("new-unknown-model", false),
             ("ft:gpt-4o-2024-08-06:org:custom:abc123", false),
             ("custom-model", false)
@@ -80,6 +84,10 @@ struct OpenAILanguageModelCapabilitiesTests {
             ("gpt-5.4-nano-2026-03-17", false),
             ("gpt-5.5", true),
             ("gpt-5.5-2026-04-23", true),
+            ("gpt-5.6", true),
+            ("gpt-5.6-luna", true),
+            ("gpt-5.6-sol", true),
+            ("gpt-5.6-terra", true),
             ("o3", true),
             ("o4-mini", true),
             ("custom-model", false)
@@ -113,6 +121,10 @@ struct OpenAILanguageModelCapabilitiesTests {
             ("gpt-5.4-nano-2026-03-17", true),
             ("gpt-5.5", true),
             ("gpt-5.5-2026-04-23", true),
+            ("gpt-5.6", true),
+            ("gpt-5.6-luna", true),
+            ("gpt-5.6-sol", true),
+            ("gpt-5.6-terra", true),
             ("gpt-5", false),
             ("gpt-5-mini", false),
             ("gpt-5-nano", false),
@@ -143,12 +155,19 @@ struct OpenAILanguageModelCapabilitiesTests {
             "gpt-5.4-pro",
             "gpt-5.4-pro-2026-03-05",
             "gpt-5.5",
-            "gpt-5.5-2026-04-23"
+            "gpt-5.5-2026-04-23",
+            "gpt-5.6",
+            "gpt-5.6-luna",
+            "gpt-5.6-sol",
+            "gpt-5.6-terra"
         ]
 
         let removedReasoningIds = [
             "codex-mini-latest",
-            "computer-use-preview"
+            "computer-use-preview",
+            "gpt-5.1-2025-11-13",
+            "gpt-5.2-2025-12-11",
+            "gpt-5.2-pro-2025-12-11"
         ]
 
         let removedModelIds = [

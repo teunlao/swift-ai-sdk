@@ -20,7 +20,7 @@ struct OpenAIResponsesLanguageModelV4Tests {
 
     @Test("V4 responses facade returns native Responses model")
     func v4ResponsesFacadeReturnsNativeModel() throws {
-        let provider = createOpenAI(settings: .init(apiKey: "test-api-key"))
+        let provider = try createOpenAI(settings: .init(apiKey: "test-api-key"))
         let model = provider.responses("gpt-5")
 
         #expect(type(of: model) == OpenAIResponsesLanguageModelV4.self)
@@ -74,7 +74,7 @@ struct OpenAIResponsesLanguageModelV4Tests {
             "error": NSNull()
         ])
 
-        let provider = createOpenAI(settings: .init(
+        let provider = try createOpenAI(settings: .init(
             baseURL: "https://proxy.openai.example/v1",
             apiKey: "test-api-key",
             fetch: { request in
@@ -143,10 +143,201 @@ struct OpenAIResponsesLanguageModelV4Tests {
         #expect(warnings.contains("temperature"))
     }
 
+    @Test("V4 responses preserves cache breakpoints and GPT-5.6 reasoning metadata")
+    func v4ResponsesPreservesCacheBreakpointsAndGPT56ReasoningMetadata() async throws {
+        let capture = RequestCapture()
+        let breakpoint: SharedV4ProviderOptions = [
+            "openai": [
+                "promptCacheBreakpoint": .object(["mode": .string("explicit")])
+            ]
+        ]
+        let provider = try createOpenAI(settings: .init(
+            baseURL: "https://proxy.openai.example/v1",
+            apiKey: "test-api-key",
+            fetch: { request in
+                await capture.store(request)
+                return FetchResponse(
+                    body: .data(try jsonData([
+                        "id": "resp-gpt-5-6",
+                        "created_at": 1_711_115_037.0,
+                        "model": "gpt-5.6-terra",
+                        "output": [],
+                        "reasoning": ["context": "all_turns"],
+                        "usage": [
+                            "input_tokens": 120,
+                            "input_tokens_details": [
+                                "cached_tokens": 50,
+                                "cache_write_tokens": 30
+                            ],
+                            "output_tokens": 10,
+                            "output_tokens_details": ["reasoning_tokens": 4]
+                        ],
+                        "warnings": [],
+                        "incomplete_details": ["reason": NSNull()],
+                        "finish_reason": NSNull(),
+                        "error": NSNull()
+                    ])),
+                    urlResponse: HTTPURLResponse(
+                        url: request.url!,
+                        statusCode: 200,
+                        httpVersion: "HTTP/1.1",
+                        headerFields: ["Content-Type": "application/json"]
+                    )!
+                )
+            }
+        ))
+
+        let result = try await provider.responses("gpt-5.6-terra").doGenerate(options: .init(
+            prompt: [
+                .system(content: "System", providerOptions: breakpoint),
+                .user(content: [
+                    .text(.init(text: "User", providerOptions: breakpoint))
+                ], providerOptions: nil),
+                .tool(content: [
+                    .toolResult(.init(
+                        toolCallId: "call-1",
+                        toolName: "lookup",
+                        output: .content(value: [
+                            .text(text: "Cached result", providerOptions: breakpoint),
+                            .file(
+                                data: .url(URL(string: "https://example.com/result.png")!),
+                                mediaType: "image/png",
+                                filename: "result.png",
+                                providerOptions: breakpoint
+                            )
+                        ])
+                    ))
+                ], providerOptions: nil)
+            ],
+            providerOptions: [
+                "openai": [
+                    "include": .array([.string("web_search_call.results")]),
+                    "promptCacheOptions": .object([
+                        "mode": .string("explicit"),
+                        "ttl": .string("30m")
+                    ]),
+                    "reasoningEffort": .string("max"),
+                    "reasoningMode": .string("pro"),
+                    "reasoningContext": .string("all_turns")
+                ]
+            ]
+        ))
+
+        #expect(result.usage.inputTokens.total == 120)
+        #expect(result.usage.inputTokens.noCache == 40)
+        #expect(result.usage.inputTokens.cacheRead == 50)
+        #expect(result.usage.inputTokens.cacheWrite == 30)
+        #expect(result.providerMetadata?["openai"]?["reasoningContext"] == .string("all_turns"))
+
+        let body = try requestBodyJSON(try #require(await capture.last()))
+        #expect(body["model"] as? String == "gpt-5.6-terra")
+        #expect(body["include"] as? [String] == ["web_search_call.results"])
+
+        let cacheOptions = try #require(body["prompt_cache_options"] as? [String: Any])
+        #expect(cacheOptions["mode"] as? String == "explicit")
+        #expect(cacheOptions["ttl"] as? String == "30m")
+
+        let reasoning = try #require(body["reasoning"] as? [String: Any])
+        #expect(reasoning["effort"] as? String == "max")
+        #expect(reasoning["mode"] as? String == "pro")
+        #expect(reasoning["context"] as? String == "all_turns")
+
+        let input = try #require(body["input"] as? [[String: Any]])
+        let systemContent = try #require(input[0]["content"] as? [[String: Any]])
+        #expect((systemContent[0]["prompt_cache_breakpoint"] as? [String: String])?["mode"] == "explicit")
+        let userContent = try #require(input[1]["content"] as? [[String: Any]])
+        #expect((userContent[0]["prompt_cache_breakpoint"] as? [String: String])?["mode"] == "explicit")
+        let toolOutput = try #require(input[2]["output"] as? [[String: Any]])
+        #expect((toolOutput[0]["prompt_cache_breakpoint"] as? [String: String])?["mode"] == "explicit")
+        #expect((toolOutput[1]["prompt_cache_breakpoint"] as? [String: String])?["mode"] == "explicit")
+        #expect(toolOutput[1]["image_url"] as? String == "https://example.com/result.png")
+    }
+
+    @Test("V4 responses sends GPT-5.6 pro mode without forcing an effort")
+    func v4ResponsesSendsGPT56ProModeWithoutForcingEffort() async throws {
+        let capture = RequestCapture()
+        let provider = try createOpenAI(settings: .init(
+            apiKey: "test-api-key",
+            fetch: { request in
+                await capture.store(request)
+                return FetchResponse(
+                    body: .data(try jsonData([
+                        "id": "resp-gpt-5-6-pro",
+                        "model": "gpt-5.6",
+                        "output": [],
+                        "usage": ["input_tokens": 0, "output_tokens": 0]
+                    ])),
+                    urlResponse: HTTPURLResponse(
+                        url: request.url!,
+                        statusCode: 200,
+                        httpVersion: "HTTP/1.1",
+                        headerFields: ["Content-Type": "application/json"]
+                    )!
+                )
+            }
+        ))
+
+        _ = try await provider.responses("gpt-5.6").doGenerate(options: .init(
+            prompt: v4TextPrompt,
+            providerOptions: [
+                "openai": ["reasoningMode": .string("pro")]
+            ]
+        ))
+
+        let body = try requestBodyJSON(try #require(await capture.last()))
+        let reasoning = try #require(body["reasoning"] as? [String: Any])
+        #expect(reasoning["mode"] as? String == "pro")
+        #expect(reasoning["effort"] == nil)
+    }
+
+    @Test("V4 responses warns about GPT-5.6 reasoning controls on non-reasoning models")
+    func v4ResponsesWarnsAboutGPT56ControlsOnNonReasoningModels() async throws {
+        let capture = RequestCapture()
+        let provider = try createOpenAI(settings: .init(
+            apiKey: "test-api-key",
+            fetch: { request in
+                await capture.store(request)
+                return FetchResponse(
+                    body: .data(try jsonData([
+                        "id": "resp-gpt-4-1",
+                        "model": "gpt-4.1",
+                        "output": [],
+                        "usage": ["input_tokens": 0, "output_tokens": 0]
+                    ])),
+                    urlResponse: HTTPURLResponse(
+                        url: request.url!,
+                        statusCode: 200,
+                        httpVersion: "HTTP/1.1",
+                        headerFields: ["Content-Type": "application/json"]
+                    )!
+                )
+            }
+        ))
+
+        let result = try await provider.responses("gpt-4.1").doGenerate(options: .init(
+            prompt: v4TextPrompt,
+            providerOptions: [
+                "openai": [
+                    "reasoningMode": .string("pro"),
+                    "reasoningContext": .string("all_turns")
+                ]
+            ]
+        ))
+
+        let unsupportedFeatures = Set(result.warnings.compactMap { warning -> String? in
+            guard case .unsupported(let feature, _) = warning else { return nil }
+            return feature
+        })
+        #expect(unsupportedFeatures == ["reasoningMode", "reasoningContext"])
+
+        let body = try requestBodyJSON(try #require(await capture.last()))
+        #expect(body["reasoning"] == nil)
+    }
+
     @Test("V4 responses respects provider reasoning overrides")
     func v4ResponsesRespectsProviderReasoningOverrides() async throws {
         let capture = RequestCapture()
-        let provider = createOpenAI(settings: .init(
+        let provider = try createOpenAI(settings: .init(
             baseURL: "https://proxy.openai.example/v1",
             apiKey: "test-api-key",
             fetch: { request in
@@ -233,7 +424,7 @@ struct OpenAIResponsesLanguageModelV4Tests {
             "error": NSNull()
         ])
 
-        let provider = createOpenAI(settings: .init(
+        let provider = try createOpenAI(settings: .init(
             baseURL: "https://proxy.openai.example/v1",
             apiKey: "test-api-key",
             fetch: { request in
@@ -306,7 +497,7 @@ struct OpenAIResponsesLanguageModelV4Tests {
     @Test("V4 responses sends context management allowed tools and pass-through files")
     func v4ResponsesSendsContextManagementAllowedToolsAndPassThroughFiles() async throws {
         let capture = RequestCapture()
-        let provider = createOpenAI(settings: .init(
+        let provider = try createOpenAI(settings: .init(
             baseURL: "https://proxy.openai.example/v1",
             apiKey: "test-api-key",
             fetch: { request in
@@ -392,7 +583,7 @@ struct OpenAIResponsesLanguageModelV4Tests {
 
     @Test("V4 responses maps compaction generate and stream custom content")
     func v4ResponsesMapsCompactionGenerateAndStreamCustomContent() async throws {
-        let generateProvider = createOpenAI(settings: .init(
+        let generateProvider = try createOpenAI(settings: .init(
             baseURL: "https://proxy.openai.example/v1",
             apiKey: "test-api-key",
             fetch: { request in
@@ -434,7 +625,7 @@ struct OpenAIResponsesLanguageModelV4Tests {
         #expect(custom.providerMetadata?["openai"]?["itemId"] == .string("cmp-1"))
         #expect(custom.providerMetadata?["openai"]?["encryptedContent"] == .string("encrypted-compaction"))
 
-        let streamProvider = createOpenAI(settings: .init(
+        let streamProvider = try createOpenAI(settings: .init(
             baseURL: "https://proxy.openai.example/v1",
             apiKey: "test-api-key",
             fetch: { request in
@@ -468,7 +659,7 @@ struct OpenAIResponsesLanguageModelV4Tests {
 
     @Test("V4 responses throws API error for pre-output stream errors")
     func v4ResponsesThrowsPreOutputStreamErrors() async throws {
-        let provider = createOpenAI(settings: .init(
+        let provider = try createOpenAI(settings: .init(
             baseURL: "https://proxy.openai.example/v1",
             apiKey: "test-api-key",
             fetch: { request in
@@ -502,7 +693,7 @@ struct OpenAIResponsesLanguageModelV4Tests {
 
     @Test("V4 responses throws API error when response.failed arrives before output")
     func v4ResponsesThrowsPreOutputResponseFailedStreamErrors() async throws {
-        let provider = createOpenAI(settings: .init(
+        let provider = try createOpenAI(settings: .init(
             baseURL: "https://proxy.openai.example/v1",
             apiKey: "test-api-key",
             fetch: { request in
@@ -537,7 +728,7 @@ struct OpenAIResponsesLanguageModelV4Tests {
 
     @Test("V4 responses emits late response.failed error and finish reason")
     func v4ResponsesEmitsLateResponseFailedStreamErrorAndFinishReason() async throws {
-        let provider = createOpenAI(settings: .init(
+        let provider = try createOpenAI(settings: .init(
             baseURL: "https://proxy.openai.example/v1",
             apiKey: "test-api-key",
             fetch: { request in
@@ -545,7 +736,7 @@ struct OpenAIResponsesLanguageModelV4Tests {
                     body: streamBody(from: [
                         #"{"type":"response.created","sequence_number":0,"response":{"id":"resp-failed-late","created_at":1711115037,"model":"gpt-5","service_tier":null}}"#,
                         #"{"type":"response.output_item.added","sequence_number":1,"output_index":0,"item":{"id":"msg-failed-late","type":"message"}}"#,
-                        #"{"type":"response.failed","sequence_number":2,"response":{"error":{"code":"server_error","message":"response failed"},"incomplete_details":{"reason":"max_output_tokens"},"usage":{"input_tokens":7,"input_tokens_details":{"cached_tokens":2},"output_tokens":5,"output_tokens_details":{"reasoning_tokens":1}},"service_tier":"auto"}}"#
+                        #"{"type":"response.failed","sequence_number":2,"response":{"error":{"code":"server_error","message":"response failed"},"incomplete_details":{"reason":"max_output_tokens"},"reasoning":{"context":"current_turn"},"usage":{"input_tokens":7,"input_tokens_details":{"cached_tokens":2,"cache_write_tokens":3},"output_tokens":5,"output_tokens_details":{"reasoning_tokens":1}},"service_tier":"auto"}}"#
                     ]),
                     urlResponse: HTTPURLResponse(
                         url: request.url!,
@@ -599,11 +790,14 @@ struct OpenAIResponsesLanguageModelV4Tests {
 
         #expect(finishReason == LanguageModelV4FinishReason(unified: .length, raw: "max_output_tokens"))
         #expect(usage?.inputTokens.total == 7)
+        #expect(usage?.inputTokens.noCache == 2)
         #expect(usage?.inputTokens.cacheRead == 2)
+        #expect(usage?.inputTokens.cacheWrite == 3)
         #expect(usage?.outputTokens.total == 5)
         #expect(usage?.outputTokens.reasoning == 1)
         #expect(providerMetadata?["openai"]?["serviceTier"] == .string("auto"))
         #expect(providerMetadata?["openai"]?["responseId"] == .string("resp-failed-late"))
+        #expect(providerMetadata?["openai"]?["reasoningContext"] == .string("current_turn"))
     }
 }
 

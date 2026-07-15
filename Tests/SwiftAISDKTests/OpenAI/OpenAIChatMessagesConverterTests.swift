@@ -428,8 +428,8 @@ struct OpenAIChatMessagesConverterTests {
         }
     }
 
-    @Test("V4 image top-level media types use raw base64 and URL values")
-    func v4ImageTopLevelMediaTypesUseRawBase64AndURLValues() throws {
+    @Test("V4 image top-level media types use data URLs and URL values")
+    func v4ImageTopLevelMediaTypesUseDataURLsAndURLValues() throws {
         let prompt: LanguageModelV4Prompt = [
             .user(
                 content: [
@@ -455,7 +455,7 @@ struct OpenAIChatMessagesConverterTests {
                     .object([
                         "type": .string("image_url"),
                         "image_url": .object([
-                            "url": .string("iVBORw0KGgo=")
+                            "url": .string("data:image/png;base64,iVBORw0KGgo=")
                         ])
                     ]),
                     .object([
@@ -469,6 +469,58 @@ struct OpenAIChatMessagesConverterTests {
         ]
 
         #expect(result.messages == expected)
+    }
+
+    @Test("V4 prompt cache breakpoints map across message content")
+    func v4PromptCacheBreakpointsMapAcrossMessageContent() throws {
+        let breakpoint: SharedV4ProviderOptions = [
+            "openai": [
+                "promptCacheBreakpoint": .object(["mode": .string("explicit")])
+            ]
+        ]
+        let prompt: LanguageModelV4Prompt = [
+            .system(content: "System", providerOptions: breakpoint),
+            .user(content: [
+                .text(.init(text: "User", providerOptions: breakpoint))
+            ], providerOptions: nil),
+            .assistant(content: [
+                .text(.init(text: "First", providerOptions: nil)),
+                .text(.init(text: "Second", providerOptions: breakpoint))
+            ], providerOptions: nil),
+            .tool(content: [
+                .toolResult(.init(
+                    toolCallId: "call-1",
+                    toolName: "lookup",
+                    output: .text(value: "Result", providerOptions: breakpoint)
+                ))
+            ], providerOptions: nil)
+        ]
+
+        let result = try OpenAIChatMessagesConverter.convertV4(prompt: prompt, systemMessageMode: .developer)
+        let explicit: JSONValue = .object(["mode": .string("explicit")])
+
+        guard case .object(let system) = result.messages[0],
+              case .array(let systemContent)? = system["content"],
+              case .object(let systemText)? = systemContent.first,
+              case .object(let user) = result.messages[1],
+              case .array(let userContent)? = user["content"],
+              case .object(let userText)? = userContent.first,
+              case .object(let assistant) = result.messages[2],
+              case .array(let assistantContent)? = assistant["content"],
+              case .object(let assistantSecond) = assistantContent.last,
+              case .object(let tool) = result.messages[3],
+              case .array(let toolContent)? = tool["content"],
+              case .object(let toolText)? = toolContent.first else {
+            Issue.record("Expected cache-aware OpenAI chat content arrays")
+            return
+        }
+
+        #expect(system["role"] == .string("developer"))
+        #expect(systemText["prompt_cache_breakpoint"] == explicit)
+        #expect(userText["prompt_cache_breakpoint"] == explicit)
+        #expect(assistantContent.count == 2)
+        #expect(assistantSecond["prompt_cache_breakpoint"] == explicit)
+        #expect(toolText["prompt_cache_breakpoint"] == explicit)
     }
 
     @Test("V4 provider reference file parts map to OpenAI file ids")

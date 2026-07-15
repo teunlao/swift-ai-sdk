@@ -76,7 +76,7 @@ struct OpenAIChatLanguageModelV4Tests {
             ]
         ])
 
-        let provider = createOpenAI(settings: .init(
+        let provider = try createOpenAI(settings: .init(
             baseURL: "https://proxy.openai.example/v1",
             apiKey: "test-api-key",
             fetch: { request in
@@ -167,6 +167,70 @@ struct OpenAIChatLanguageModelV4Tests {
         #expect(fileObject["file_id"] as? String == "file-openai-123")
     }
 
+    @Test("V4 chat sends GPT-5.6 max effort and reports cache writes")
+    func v4ChatSendsGPT56MaxEffortAndReportsCacheWrites() async throws {
+        let capture = RequestCapture()
+        let provider = try createOpenAI(settings: .init(
+            baseURL: "https://proxy.openai.example/v1",
+            apiKey: "test-api-key",
+            fetch: { request in
+                await capture.store(request)
+                return FetchResponse(
+                    body: .data(try jsonData([
+                        "id": "chatcmpl-gpt-5-6",
+                        "created": 1_711_115_037,
+                        "model": "gpt-5.6-sol",
+                        "choices": [[
+                            "index": 0,
+                            "message": ["role": "assistant", "content": "Done"],
+                            "finish_reason": "stop"
+                        ]],
+                        "usage": [
+                            "prompt_tokens": 100,
+                            "completion_tokens": 12,
+                            "total_tokens": 112,
+                            "prompt_tokens_details": [
+                                "cached_tokens": 40,
+                                "cache_write_tokens": 20
+                            ]
+                        ]
+                    ])),
+                    urlResponse: HTTPURLResponse(
+                        url: request.url!,
+                        statusCode: 200,
+                        httpVersion: "HTTP/1.1",
+                        headerFields: ["Content-Type": "application/json"]
+                    )!
+                )
+            }
+        ))
+
+        let result = try await provider.chat("gpt-5.6-sol").doGenerate(options: .init(
+            prompt: v4TextPrompt,
+            providerOptions: [
+                "openai": [
+                    "reasoningEffort": .string("max"),
+                    "promptCacheOptions": .object([
+                        "mode": .string("explicit"),
+                        "ttl": .string("30m")
+                    ])
+                ]
+            ]
+        ))
+
+        #expect(result.usage.inputTokens.total == 100)
+        #expect(result.usage.inputTokens.noCache == 40)
+        #expect(result.usage.inputTokens.cacheRead == 40)
+        #expect(result.usage.inputTokens.cacheWrite == 20)
+
+        let body = try requestBodyJSON(try #require(await capture.last()))
+        #expect(body["model"] as? String == "gpt-5.6-sol")
+        #expect(body["reasoning_effort"] as? String == "max")
+        let cacheOptions = try #require(body["prompt_cache_options"] as? [String: Any])
+        #expect(cacheOptions["mode"] as? String == "explicit")
+        #expect(cacheOptions["ttl"] as? String == "30m")
+    }
+
     @Test("V4 chat streams V4 parts and includes usage stream options")
     func v4ChatStreamsPartsAndRequestShape() async throws {
         let capture = RequestCapture()
@@ -179,7 +243,7 @@ struct OpenAIChatLanguageModelV4Tests {
             #"{"id":"chatcmpl-stream","object":"chat.completion.chunk","created":1702657020,"model":"gpt-4o-mini","choices":[],"usage":{"prompt_tokens":9,"completion_tokens":4,"total_tokens":13,"completion_tokens_details":{"accepted_prediction_tokens":3,"rejected_prediction_tokens":1}}}"#
         ]
 
-        let provider = createOpenAI(settings: .init(
+        let provider = try createOpenAI(settings: .init(
             baseURL: "https://proxy.openai.example/v1",
             apiKey: "test-api-key",
             fetch: { request in
@@ -246,7 +310,7 @@ struct OpenAIChatLanguageModelV4Tests {
 
     @Test("V4 chat throws API error for OpenAI stream errors before output")
     func v4ChatThrowsPreOutputStreamErrors() async throws {
-        let provider = createOpenAI(settings: .init(
+        let provider = try createOpenAI(settings: .init(
             baseURL: "https://proxy.openai.example/v1",
             apiKey: "test-api-key",
             fetch: { request in
@@ -336,7 +400,7 @@ struct OpenAIChatLanguageModelV4Tests {
         }
 
         let state = FetchState()
-        let provider = createOpenAI(settings: .init(
+        let provider = try createOpenAI(settings: .init(
             baseURL: "https://proxy.openai.example/v1",
             apiKey: "test-api-key",
             fetch: { request in

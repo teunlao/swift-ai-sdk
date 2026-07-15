@@ -655,7 +655,7 @@ struct OpenAIImageModelTests {
     // Port of should respect maxImagesPerCall setting
     @Test("maxImagesPerCall returns correct values for different models")
     func testMaxImagesPerCall() throws {
-        let provider = createOpenAIProvider(settings: OpenAIProviderSettings(apiKey: "test-api-key"))
+        let provider = try createOpenAIProvider(settings: OpenAIProviderSettings(apiKey: "test-api-key"))
 
         let dalleE2Model = try provider.imageModel(modelId: "dall-e-2")
         // Swift adaptation: enum case instead of direct number

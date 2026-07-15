@@ -43,7 +43,7 @@ enum OpenAIPlaygroundFactory {
             project: project
         )
 
-        let provider = createOpenAIProvider(settings: settings)
+        let provider = try createOpenAIProvider(settings: settings)
 
         // Demonstrate different API methods
         Task {

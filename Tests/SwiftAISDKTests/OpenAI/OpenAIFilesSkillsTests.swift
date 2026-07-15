@@ -126,8 +126,8 @@ private func openAIMultipartDispositionValue(_ part: OpenAIMultipartPart, key: S
 @Suite("OpenAI Files and Skills")
 struct OpenAIFilesSkillsTests {
     @Test("provider wires files and skills interfaces with upstream ids")
-    func providerWiresUploadInterfaces() {
-        let provider = createOpenAIProvider(settings: .init(apiKey: "test-api-key"))
+    func providerWiresUploadInterfaces() throws {
+        let provider = try createOpenAIProvider(settings: .init(apiKey: "test-api-key"))
 
         #expect(provider.files().provider == "openai.files")
         #expect(provider.files().specificationVersion == "v4")
@@ -138,7 +138,7 @@ struct OpenAIFilesSkillsTests {
     @Test("uploadFile sends OpenAI multipart payload and maps response metadata")
     func uploadFileSendsMultipartPayloadAndMapsMetadata() async throws {
         let capture = OpenAIUploadRequestCapture()
-        let provider = createOpenAIProvider(settings: .init(
+        let provider = try createOpenAIProvider(settings: .init(
             baseURL: "https://api.openai.com/v1",
             apiKey: "test-api-key",
             organization: "test-org",
@@ -216,7 +216,7 @@ struct OpenAIFilesSkillsTests {
     @Test("uploadFile defaults purpose to assistants")
     func uploadFileDefaultsPurpose() async throws {
         let capture = OpenAIUploadRequestCapture()
-        let provider = createOpenAIProvider(settings: .init(
+        let provider = try createOpenAIProvider(settings: .init(
             apiKey: "test-api-key",
             fetch: openAIFetch(capture: capture) { _ in
                 ["id": "file-abc123"]
@@ -252,7 +252,7 @@ struct OpenAIFilesSkillsTests {
     @Test("uploadSkill sends OpenAI skill files and maps warnings/result")
     func uploadSkillSendsMultipartPayloadAndMapsResult() async throws {
         let capture = OpenAIUploadRequestCapture()
-        let provider = createOpenAIProvider(settings: .init(
+        let provider = try createOpenAIProvider(settings: .init(
             apiKey: "test-api-key",
             fetch: openAIFetch(capture: capture) { _ in
                 [
@@ -309,7 +309,7 @@ struct OpenAIFilesSkillsTests {
     @Test("uploadSkill sends binary OpenAI skill file without displayTitle warning")
     func uploadSkillSendsBinaryFileWithoutDisplayTitleWarning() async throws {
         let capture = OpenAIUploadRequestCapture()
-        let provider = createOpenAIProvider(settings: .init(
+        let provider = try createOpenAIProvider(settings: .init(
             apiKey: "test-api-key",
             fetch: openAIFetch(capture: capture) { _ in
                 [

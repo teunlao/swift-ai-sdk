@@ -152,8 +152,8 @@ public final class OpenAIProviderV4: ProviderV4 {
     }
 }
 
-public func createOpenAI(settings: OpenAIProviderSettings = .init()) -> OpenAIProviderV4 {
-    OpenAIProviderV4(wrapping: createOpenAIProvider(settings: settings))
+public func createOpenAI(settings: OpenAIProviderSettings = .init()) throws -> OpenAIProviderV4 {
+    OpenAIProviderV4(wrapping: try createOpenAIProvider(settings: settings))
 }
 
-public let openaiV4: OpenAIProviderV4 = createOpenAI()
+public let openaiV4: OpenAIProviderV4 = try! createOpenAI()

@@ -40,6 +40,26 @@ struct OpenAIProviderOptionsParsingTests {
         }
     }
 
+    @Test("chat options parse GPT-5.6 max effort and prompt cache options")
+    func chatOptionsParseMaxEffortAndPromptCacheOptions() async throws {
+        let parsed: OpenAIChatProviderOptions? = try await parseProviderOptions(
+            provider: "openai",
+            providerOptions: [
+                "openai": [
+                    "reasoningEffort": .string("max"),
+                    "promptCacheOptions": .object([
+                        "mode": .string("explicit"),
+                        "ttl": .string("30m")
+                    ])
+                ]
+            ],
+            schema: openAIChatProviderOptionsSchema
+        )
+
+        #expect(parsed?.reasoningEffort == .max)
+        #expect(parsed?.promptCacheOptions == .init(mode: .explicit, ttl: .thirtyMinutes))
+    }
+
     @Test("completion options allow fractional logprobs")
     func completionOptionsAllowFractionalLogprobs() async throws {
         let providerOptions: SharedV3ProviderOptions = [
@@ -244,6 +264,7 @@ struct OpenAIProviderOptionsParsingTests {
                 "include": .array([
                     .string("reasoning.encrypted_content"),
                     .string("file_search_call.results"),
+                    .string("web_search_call.results"),
                     .string("message.output_text.logprobs")
                 ])
             ]
@@ -258,8 +279,33 @@ struct OpenAIProviderOptionsParsingTests {
         #expect(parsed?.include == [
             .reasoningEncryptedContent,
             .fileSearchCallResults,
+            .webSearchCallResults,
             .messageOutputTextLogprobs
         ])
+    }
+
+    @Test("responses options parse GPT-5.6 cache and reasoning controls")
+    func responsesOptionsParseCacheAndReasoningControls() async throws {
+        let parsed: OpenAIResponsesProviderOptions? = try await parseProviderOptions(
+            provider: "openai",
+            providerOptions: [
+                "openai": [
+                    "promptCacheOptions": .object([
+                        "mode": .string("explicit"),
+                        "ttl": .string("30m")
+                    ]),
+                    "reasoningEffort": .string("max"),
+                    "reasoningMode": .string("pro"),
+                    "reasoningContext": .string("all_turns")
+                ]
+            ],
+            schema: openAIResponsesProviderOptionsSchema
+        )
+
+        #expect(parsed?.promptCacheOptions == .init(mode: .explicit, ttl: .thirtyMinutes))
+        #expect(parsed?.reasoningEffort == "max")
+        #expect(parsed?.reasoningMode == .pro)
+        #expect(parsed?.reasoningContext == .allTurns)
     }
 
     @Test("responses options reject include values outside provider schema")

@@ -48,7 +48,21 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
     }
 
     public func doGenerate(options: LanguageModelV3CallOptions) async throws -> LanguageModelV3GenerateResult {
-        let prepared = try await prepareRequest(options: options)
+        try await doGenerate(options: options, inputPrompt: .v3(options.prompt))
+    }
+
+    func doGenerate(
+        options: LanguageModelV3CallOptions,
+        v4Prompt: LanguageModelV4Prompt
+    ) async throws -> LanguageModelV3GenerateResult {
+        try await doGenerate(options: options, inputPrompt: .v4(v4Prompt))
+    }
+
+    private func doGenerate(
+        options: LanguageModelV3CallOptions,
+        inputPrompt: InputPrompt
+    ) async throws -> LanguageModelV3GenerateResult {
+        let prepared = try await prepareRequest(options: options, inputPrompt: inputPrompt)
 
         let url = config.url(.init(modelId: modelIdentifier.rawValue, path: "/responses"))
         let headers = combineHeaders(try config.headers(), options.headers?.mapValues { Optional($0) })
@@ -103,7 +117,8 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
         let providerMetadata = makeProviderMetadata(
             responseId: value.id,
             logprobs: mapped.logprobs,
-            serviceTier: value.serviceTier
+            serviceTier: value.serviceTier,
+            reasoningContext: value.reasoning?.context
         )
 
         let usage = convertOpenAIResponsesUsage(value.usage)
@@ -136,7 +151,21 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
     }
 
     public func doStream(options: LanguageModelV3CallOptions) async throws -> LanguageModelV3StreamResult {
-        let prepared = try await prepareRequest(options: options)
+        try await doStream(options: options, inputPrompt: .v3(options.prompt))
+    }
+
+    func doStream(
+        options: LanguageModelV3CallOptions,
+        v4Prompt: LanguageModelV4Prompt
+    ) async throws -> LanguageModelV3StreamResult {
+        try await doStream(options: options, inputPrompt: .v4(v4Prompt))
+    }
+
+    private func doStream(
+        options: LanguageModelV3CallOptions,
+        inputPrompt: InputPrompt
+    ) async throws -> LanguageModelV3StreamResult {
+        let prepared = try await prepareRequest(options: options, inputPrompt: inputPrompt)
 
         let url = config.url(.init(modelId: modelIdentifier.rawValue, path: "/responses"))
         let headers = combineHeaders(try config.headers(), options.headers?.mapValues { Optional($0) })
@@ -178,6 +207,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 var logprobs: [JSONValue] = []
                 var responseId: String?
                 var serviceTier: String?
+                var reasoningContext: String?
                 var hasFunctionCall = false
                 var encounteredStreamError = false
 
@@ -332,11 +362,18 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                                         serviceTier = tier
                                     }
 
+                                    if let context = responseObject["reasoning"]?.objectValue?["context"]?.stringValue {
+                                        reasoningContext = context
+                                    }
+
                                     if responseId == nil, let id = responseObject["id"]?.stringValue {
                                         responseId = id
                                     }
                                 }
                             case "response.failed":
+                                if let context = chunkObject["response"]?.objectValue?["reasoning"]?.objectValue?["context"]?.stringValue {
+                                    reasoningContext = context
+                                }
                                 handleResponseFailed(
                                     chunkObject,
                                     hasFunctionCall: hasFunctionCall,
@@ -364,7 +401,8 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                     let metadata = makeProviderMetadata(
                         responseId: responseId,
                         logprobs: logprobs,
-                        serviceTier: serviceTier
+                        serviceTier: serviceTier,
+                        reasoningContext: reasoningContext
                     )
 
                     continuation.yield(.finish(
@@ -396,6 +434,11 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
         let isShellProviderExecuted: Bool
     }
 
+    private enum InputPrompt {
+        case v3(LanguageModelV3Prompt)
+        case v4(LanguageModelV4Prompt)
+    }
+
     private static func resolveProviderToolName(_ tool: LanguageModelV3ProviderTool) -> String? {
         guard tool.id == "openai.custom" else {
             return nil
@@ -417,7 +460,10 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
         return names
     }
 
-    private func prepareRequest(options: LanguageModelV3CallOptions) async throws -> PreparedRequest {
+    private func prepareRequest(
+        options: LanguageModelV3CallOptions,
+        inputPrompt: InputPrompt
+    ) async throws -> PreparedRequest {
         var warnings: [SharedV3Warning] = []
 
         func addUnsupportedSetting(_ name: String, details: String? = nil) {
@@ -464,21 +510,42 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             resolveProviderToolName: Self.resolveProviderToolName
         )
 
-        let (input, inputWarnings) = try await OpenAIResponsesInputBuilder.makeInput(
-            prompt: options.prompt,
-            providerOptionsName: providerOptionsName,
-            toolNameMapping: toolNameMapping,
-            customProviderToolNames: customProviderToolNames,
-            systemMessageMode: systemMessageMode,
-            fileIdPrefixes: config.fileIdPrefixes,
-            store: storeForInput,
-            hasConversation: hasConversation,
-            hasPreviousResponseId: openAIOptions?.previousResponseId != nil,
-            passThroughUnsupportedFiles: openAIOptions?.passThroughUnsupportedFiles ?? false,
-            hasLocalShellTool: hasLocalShellTool,
-            hasShellTool: hasShellTool,
-            hasApplyPatchTool: hasApplyPatchTool
-        )
+        let inputResult: (input: OpenAIResponsesInput, warnings: [SharedV3Warning])
+        switch inputPrompt {
+        case .v3(let prompt):
+            inputResult = try await OpenAIResponsesInputBuilder.makeInput(
+                prompt: prompt,
+                providerOptionsName: providerOptionsName,
+                toolNameMapping: toolNameMapping,
+                customProviderToolNames: customProviderToolNames,
+                systemMessageMode: systemMessageMode,
+                fileIdPrefixes: config.fileIdPrefixes,
+                store: storeForInput,
+                hasConversation: hasConversation,
+                hasPreviousResponseId: openAIOptions?.previousResponseId != nil,
+                passThroughUnsupportedFiles: openAIOptions?.passThroughUnsupportedFiles ?? false,
+                hasLocalShellTool: hasLocalShellTool,
+                hasShellTool: hasShellTool,
+                hasApplyPatchTool: hasApplyPatchTool
+            )
+        case .v4(let prompt):
+            inputResult = try await OpenAIResponsesInputBuilder.makeInput(
+                prompt: prompt,
+                providerOptionsName: providerOptionsName,
+                toolNameMapping: toolNameMapping,
+                customProviderToolNames: customProviderToolNames,
+                systemMessageMode: systemMessageMode,
+                fileIdPrefixes: config.fileIdPrefixes,
+                store: storeForInput,
+                hasConversation: hasConversation,
+                hasPreviousResponseId: openAIOptions?.previousResponseId != nil,
+                passThroughUnsupportedFiles: openAIOptions?.passThroughUnsupportedFiles ?? false,
+                hasLocalShellTool: hasLocalShellTool,
+                hasShellTool: hasShellTool,
+                hasApplyPatchTool: hasApplyPatchTool
+            )
+        }
+        let (input, inputWarnings) = inputResult
         warnings.append(contentsOf: inputWarnings)
 
         let strictJsonSchema = openAIOptions?.strictJsonSchema ?? true
@@ -536,13 +603,22 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
 
         var reasoningValue: JSONValue?
         if isReasoningModel,
-           openAIOptions?.reasoningEffort != nil || openAIOptions?.reasoningSummary != nil {
+           openAIOptions?.reasoningEffort != nil
+            || openAIOptions?.reasoningSummary != nil
+            || openAIOptions?.reasoningMode != nil
+            || openAIOptions?.reasoningContext != nil {
             var payload: [String: JSONValue] = [:]
             if let effort = openAIOptions?.reasoningEffort {
                 payload["effort"] = .string(effort)
             }
             if let summary = openAIOptions?.reasoningSummary {
                 payload["summary"] = .string(summary)
+            }
+            if let mode = openAIOptions?.reasoningMode {
+                payload["mode"] = .string(mode.rawValue)
+            }
+            if let context = openAIOptions?.reasoningContext {
+                payload["context"] = .string(context.rawValue)
             }
             reasoningValue = .object(payload)
         } else {
@@ -551,6 +627,12 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             }
             if openAIOptions?.reasoningSummary != nil {
                 addUnsupportedSetting("reasoningSummary", details: "reasoningSummary is not supported for non-reasoning models")
+            }
+            if openAIOptions?.reasoningMode != nil {
+                addUnsupportedSetting("reasoningMode", details: "reasoningMode is not supported for non-reasoning models")
+            }
+            if openAIOptions?.reasoningContext != nil {
+                addUnsupportedSetting("reasoningContext", details: "reasoningContext is not supported for non-reasoning models")
             }
         }
 
@@ -572,6 +654,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             serviceTier: openAIOptions?.serviceTier,
             include: includeSet.isEmpty ? nil : includeSet.map { $0.rawValue },
             promptCacheKey: openAIOptions?.promptCacheKey,
+            promptCacheOptions: openAIOptions?.promptCacheOptions,
             promptCacheRetention: openAIOptions?.promptCacheRetention,
             safetyIdentifier: openAIOptions?.safetyIdentifier,
             topLogprobs: topLogprobs,
@@ -1347,7 +1430,8 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
     private func makeProviderMetadata(
         responseId: String?,
         logprobs: [JSONValue],
-        serviceTier: String?
+        serviceTier: String?,
+        reasoningContext: String?
     ) -> SharedV3ProviderMetadata? {
         var inner: [String: JSONValue] = [:]
         if let responseId {
@@ -1358,6 +1442,9 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
         }
         if let serviceTier {
             inner["serviceTier"] = .string(serviceTier)
+        }
+        if let reasoningContext {
+            inner["reasoningContext"] = .string(reasoningContext)
         }
         return inner.isEmpty ? nil : [providerOptionsName: inner]
     }
@@ -1383,14 +1470,15 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
         }
 
         let cachedTokens = object["input_tokens_details"]?.objectValue?["cached_tokens"]?.intValue ?? 0
+        let cacheWriteTokens = object["input_tokens_details"]?.objectValue?["cache_write_tokens"]?.intValue
         let reasoningTokens = object["output_tokens_details"]?.objectValue?["reasoning_tokens"]?.intValue ?? 0
 
         return LanguageModelV3Usage(
             inputTokens: .init(
                 total: inputTokens,
-                noCache: inputTokens - cachedTokens,
+                noCache: inputTokens - cachedTokens - (cacheWriteTokens ?? 0),
                 cacheRead: cachedTokens,
-                cacheWrite: nil
+                cacheWrite: cacheWriteTokens
             ),
             outputTokens: .init(
                 total: outputTokens,
@@ -2747,14 +2835,15 @@ private func convertOpenAIResponsesUsage(_ usage: OpenAIResponsesResponse.Usage?
     let inputTokens = usage.inputTokens
     let outputTokens = usage.outputTokens
     let cachedTokens = usage.inputTokensDetails?.cachedTokens ?? 0
+    let cacheWriteTokens = usage.inputTokensDetails?.cacheWriteTokens
     let reasoningTokens = usage.outputTokensDetails?.reasoningTokens ?? 0
 
     return LanguageModelV3Usage(
         inputTokens: .init(
             total: inputTokens,
-            noCache: inputTokens - cachedTokens,
+            noCache: inputTokens - cachedTokens - (cacheWriteTokens ?? 0),
             cacheRead: cachedTokens,
-            cacheWrite: nil
+            cacheWrite: cacheWriteTokens
         ),
         outputTokens: .init(
             total: outputTokens,

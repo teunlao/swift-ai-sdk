@@ -78,6 +78,7 @@ private struct OpenAITranscriptionModelCore: Sendable {
         let warnings = streamingWarnings(from: options.providerOptions?["openai"] ?? [:])
         let headers = combineHeaders(try config.headers(), options.headers?.mapValues { Optional($0) })
             .compactMapValues { $0 }
+        let realtimeConnection = openAIRealtimeConnection(headers: headers)
         let sessionUpdate = buildRealtimeTranscriptionSession(
             modelId: modelIdentifier.rawValue,
             inputAudioFormat: options.inputAudioFormat,
@@ -92,8 +93,8 @@ private struct OpenAITranscriptionModelCore: Sendable {
                 webSocketFactory: config.webSocket ?? makeDefaultOpenAIWebSocketConnection,
                 request: OpenAIWebSocketRequest(
                     url: webSocketURL,
-                    protocols: openAIRealtimeProtocols(headers: headers),
-                    headers: headers
+                    protocols: realtimeConnection.protocols,
+                    headers: realtimeConnection.headers
                 ),
                 sessionUpdate: sessionUpdate,
                 language: openAIOptions?.language,
@@ -520,6 +521,7 @@ private func createRealtimeTranscriptionStream(
         do {
             connection = try webSocketFactory(request)
         } catch {
+            cancelRealtimeAudio(audio)
             continuation.finish(throwing: error)
             return
         }
@@ -564,6 +566,7 @@ private func createRealtimeTranscriptionStream(
                 }
             } catch {
                 if await state.finish() {
+                    cancelRealtimeAudio(audio)
                     close(nil)
                     continuation.finish(throwing: error)
                 }
@@ -712,14 +715,42 @@ private func makeWebSocketURL(from url: String) throws -> URL {
     return webSocketURL
 }
 
-private func openAIRealtimeProtocols(headers: [String: String]) -> [String] {
-    let authorization = headers["Authorization"] ?? headers["authorization"]
-    guard let authorization, authorization.hasPrefix("Bearer ") else {
-        return ["realtime"]
+private func openAIRealtimeConnection(
+    headers: [String: String]
+) -> (protocols: [String], headers: [String: String]) {
+    var authorization: String?
+    for (key, value) in headers where key.lowercased() == "authorization" {
+        authorization = value
     }
 
-    let token = String(authorization.dropFirst("Bearer ".count))
-    return ["realtime", "openai-insecure-api-key.\(token)"]
+    guard let authorization else {
+        return (["realtime"], headers)
+    }
+
+    let components = authorization.split(
+        maxSplits: 1,
+        omittingEmptySubsequences: true,
+        whereSeparator: { $0.isWhitespace }
+    )
+    guard components.count == 2,
+          components[0].lowercased() == "bearer",
+          !components[1].isEmpty else {
+        return (["realtime"], headers)
+    }
+
+    let token = String(components[1])
+    let handshakeHeaders = headers.filter { $0.key.lowercased() != "authorization" }
+    return (["realtime", "openai-insecure-api-key.\(token)"], handshakeHeaders)
+}
+
+private func cancelRealtimeAudio(
+    _ audio: AsyncThrowingStream<TranscriptionModelV4StreamAudio, Error>
+) {
+    let cancellationTask = Task {
+        var iterator = audio.makeAsyncIterator()
+        _ = try await iterator.next()
+    }
+    cancellationTask.cancel()
 }
 
 private func jsonString(from value: JSONValue) throws -> String {

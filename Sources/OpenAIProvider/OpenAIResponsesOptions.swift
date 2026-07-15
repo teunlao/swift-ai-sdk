@@ -23,16 +23,13 @@ public let openAIResponsesReasoningModelIds: [OpenAIResponsesModelId] = [
     "gpt-5-pro",
     "gpt-5-pro-2025-10-06",
     "gpt-5.1",
-    "gpt-5.1-2025-11-13",
     "gpt-5.1-chat-latest",
     "gpt-5.1-codex-mini",
     "gpt-5.1-codex",
     "gpt-5.1-codex-max",
     "gpt-5.2",
-    "gpt-5.2-2025-12-11",
     "gpt-5.2-chat-latest",
     "gpt-5.2-pro",
-    "gpt-5.2-pro-2025-12-11",
     "gpt-5.2-codex",
     "gpt-5.3-chat-latest",
     "gpt-5.3-codex",
@@ -45,7 +42,11 @@ public let openAIResponsesReasoningModelIds: [OpenAIResponsesModelId] = [
     "gpt-5.4-pro",
     "gpt-5.4-pro-2026-03-05",
     "gpt-5.5",
-    "gpt-5.5-2026-04-23"
+    "gpt-5.5-2026-04-23",
+    "gpt-5.6",
+    "gpt-5.6-luna",
+    "gpt-5.6-sol",
+    "gpt-5.6-terra"
 ].map(OpenAIResponsesModelId.init(rawValue:))
 
 public let openAIResponsesModelIds: [OpenAIResponsesModelId] = (
@@ -83,11 +84,13 @@ public enum OpenAIResponsesIncludeValue: String, CaseIterable, Sendable {
     case messageInputImageURL = "message.input_image.image_url"
     case messageOutputTextLogprobs = "message.output_text.logprobs"
     case reasoningEncryptedContent = "reasoning.encrypted_content"
+    case webSearchCallResults = "web_search_call.results"
 }
 
 public enum OpenAIResponsesProviderOptionsIncludeValue: String, CaseIterable, Sendable {
     case reasoningEncryptedContent = "reasoning.encrypted_content"
     case fileSearchCallResults = "file_search_call.results"
+    case webSearchCallResults = "web_search_call.results"
     case messageOutputTextLogprobs = "message.output_text.logprobs"
 
     var requestIncludeValue: OpenAIResponsesIncludeValue {
@@ -96,10 +99,23 @@ public enum OpenAIResponsesProviderOptionsIncludeValue: String, CaseIterable, Se
             return .reasoningEncryptedContent
         case .fileSearchCallResults:
             return .fileSearchCallResults
+        case .webSearchCallResults:
+            return .webSearchCallResults
         case .messageOutputTextLogprobs:
             return .messageOutputTextLogprobs
         }
     }
+}
+
+public enum OpenAIResponsesReasoningMode: String, Sendable, Equatable {
+    case standard
+    case pro
+}
+
+public enum OpenAIResponsesReasoningContext: String, Sendable, Equatable {
+    case auto
+    case currentTurn = "current_turn"
+    case allTurns = "all_turns"
 }
 
 public enum OpenAIResponsesLogprobsOption: Sendable, Equatable {
@@ -137,8 +153,11 @@ public struct OpenAIResponsesProviderOptions: Sendable, Equatable {
     public var parallelToolCalls: Bool?
     public var previousResponseId: String?
     public var promptCacheKey: String?
+    public var promptCacheOptions: OpenAIPromptCacheOptions?
     public var promptCacheRetention: String?
     public var reasoningEffort: String?
+    public var reasoningMode: OpenAIResponsesReasoningMode?
+    public var reasoningContext: OpenAIResponsesReasoningContext?
     public var reasoningSummary: String?
     public var safetyIdentifier: String?
     public var serviceTier: String?
@@ -163,8 +182,11 @@ public struct OpenAIResponsesProviderOptions: Sendable, Equatable {
         parallelToolCalls: Bool? = nil,
         previousResponseId: String? = nil,
         promptCacheKey: String? = nil,
+        promptCacheOptions: OpenAIPromptCacheOptions? = nil,
         promptCacheRetention: String? = nil,
         reasoningEffort: String? = nil,
+        reasoningMode: OpenAIResponsesReasoningMode? = nil,
+        reasoningContext: OpenAIResponsesReasoningContext? = nil,
         reasoningSummary: String? = nil,
         safetyIdentifier: String? = nil,
         serviceTier: String? = nil,
@@ -188,8 +210,11 @@ public struct OpenAIResponsesProviderOptions: Sendable, Equatable {
         self.parallelToolCalls = parallelToolCalls
         self.previousResponseId = previousResponseId
         self.promptCacheKey = promptCacheKey
+        self.promptCacheOptions = promptCacheOptions
         self.promptCacheRetention = promptCacheRetention
         self.reasoningEffort = reasoningEffort
+        self.reasoningMode = reasoningMode
+        self.reasoningContext = reasoningContext
         self.reasoningSummary = reasoningSummary
         self.safetyIdentifier = safetyIdentifier
         self.serviceTier = serviceTier
@@ -243,11 +268,22 @@ private let openAIResponsesProviderOptionsJSONSchema: JSONValue = .object([
         "promptCacheKey": .object([
             "type": .array([.string("string"), .string("null")])
         ]),
+        "promptCacheOptions": .object([
+            "type": .array([.string("object"), .string("null")])
+        ]),
         "promptCacheRetention": .object([
             "type": .array([.string("string"), .string("null")])
         ]),
         "reasoningEffort": .object([
             "type": .array([.string("string"), .string("null")])
+        ]),
+        "reasoningMode": .object([
+            "type": .array([.string("string"), .string("null")]),
+            "enum": .array([.string("standard"), .string("pro"), .null])
+        ]),
+        "reasoningContext": .object([
+            "type": .array([.string("string"), .string("null")]),
+            "enum": .array([.string("auto"), .string("current_turn"), .string("all_turns"), .null])
         ]),
         "reasoningSummary": .object([
             "type": .array([.string("string"), .string("null")])
@@ -314,6 +350,7 @@ private let openAIResponsesProviderOptionsJSONSchema: JSONValue = .object([
 private let openAIResponsesProviderOptionIncludeValues: [OpenAIResponsesProviderOptionsIncludeValue] = [
     .reasoningEncryptedContent,
     .fileSearchCallResults,
+    .webSearchCallResults,
     .messageOutputTextLogprobs
 ]
 
@@ -371,6 +408,7 @@ private func parseOpenAIResponsesProviderOptions(dict: [String: JSONValue]) thro
     options.parallelToolCalls = try parseOptionalBool(dict, key: "parallelToolCalls")
     options.previousResponseId = try parseOptionalString(dict, key: "previousResponseId")
     options.promptCacheKey = try parseOptionalString(dict, key: "promptCacheKey")
+    options.promptCacheOptions = try parseOpenAIPromptCacheOptions(dict["promptCacheOptions"])
     if let retentionValue = dict["promptCacheRetention"], retentionValue != .null {
         guard case .string(let retention) = retentionValue else {
             throw TypeValidationError.wrap(value: retentionValue, cause: SchemaValidationIssuesError(vendor: "openai", issues: "promptCacheRetention must be a string"))
@@ -382,6 +420,18 @@ private func parseOpenAIResponsesProviderOptions(dict: [String: JSONValue]) thro
         options.promptCacheRetention = retention
     }
     options.reasoningEffort = try parseOptionalString(dict, key: "reasoningEffort")
+    if let reasoningMode = try parseOptionalString(dict, key: "reasoningMode") {
+        guard let value = OpenAIResponsesReasoningMode(rawValue: reasoningMode) else {
+            throw TypeValidationError.wrap(value: reasoningMode, cause: SchemaValidationIssuesError(vendor: "openai", issues: "invalid reasoningMode"))
+        }
+        options.reasoningMode = value
+    }
+    if let reasoningContext = try parseOptionalString(dict, key: "reasoningContext") {
+        guard let value = OpenAIResponsesReasoningContext(rawValue: reasoningContext) else {
+            throw TypeValidationError.wrap(value: reasoningContext, cause: SchemaValidationIssuesError(vendor: "openai", issues: "invalid reasoningContext"))
+        }
+        options.reasoningContext = value
+    }
     options.reasoningSummary = try parseOptionalString(dict, key: "reasoningSummary")
     options.safetyIdentifier = try parseOptionalString(dict, key: "safetyIdentifier")
     if let serviceTierValue = dict["serviceTier"], serviceTierValue != .null {

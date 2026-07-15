@@ -8,9 +8,11 @@ public struct OpenAIResponsesResponse: Codable, Sendable {
     public struct Usage: Codable, Sendable {
         public struct InputTokensDetails: Codable, Sendable {
             public let cachedTokens: Int?
+            public let cacheWriteTokens: Int?
 
             enum CodingKeys: String, CodingKey {
                 case cachedTokens = "cached_tokens"
+                case cacheWriteTokens = "cache_write_tokens"
             }
         }
 
@@ -46,6 +48,10 @@ public struct OpenAIResponsesResponse: Codable, Sendable {
         public let code: String
     }
 
+    public struct Reasoning: Codable, Sendable {
+        public let context: String?
+    }
+
     public let id: String?
     public let createdAt: TimeInterval?
     public let model: String?
@@ -56,6 +62,7 @@ public struct OpenAIResponsesResponse: Codable, Sendable {
     public let incompleteDetails: IncompleteDetails?
     public let finishReason: String?
     public let error: ErrorPayload?
+    public let reasoning: Reasoning?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -68,6 +75,7 @@ public struct OpenAIResponsesResponse: Codable, Sendable {
         case incompleteDetails = "incomplete_details"
         case finishReason = "finish_reason"
         case error
+        case reasoning
     }
 }
 

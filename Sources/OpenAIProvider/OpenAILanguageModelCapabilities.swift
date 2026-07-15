@@ -40,6 +40,7 @@ func getOpenAILanguageModelCapabilities(for modelId: String) -> OpenAILanguageMo
         || modelId.hasPrefix("gpt-5.3")
         || modelId.hasPrefix("gpt-5.4")
         || modelId.hasPrefix("gpt-5.5")
+        || modelId.hasPrefix("gpt-5.6")
 
     let systemMessageMode: OpenAIResponsesSystemMessageMode = isReasoningModel ? .developer : .system
 
