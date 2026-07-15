@@ -1,8 +1,8 @@
 # Provider: OpenAI-compatible
 
 - Audited against upstream commit: `c8d2726ae045a28142cb46df5e41cdd51d8dcc71`
-- Status: partial/current; Chat, Completion, and Embedding are native V4, while
-  Image still uses the provider-local adapter rail.
+- Status: partial/current; Chat, Completion, Embedding, and Image use native V4
+  provider-owned model facades.
 - Upstream package: `external/vercel-ai-sdk/packages/openai-compatible/src/**`
 - Swift implementation: `Sources/OpenAICompatibleProvider/**`
 
@@ -67,12 +67,26 @@
   parallel-call capability.
 - [x] Existing OpenAI-compatible V3 Embedding request precedence and warning
   behavior remain covered by the provider test target.
-- [x] The V4 provider factory still exposes Image through its existing adapter.
+- [x] `createOpenAICompatible(settings:)` routes Image models directly to
+  `OpenAICompatibleImageModelV4`; Image no longer crosses the provider-local
+  V3-to-V4 adapter. The public V3 and native V4 facades share one
+  provider-owned transport core while preserving the V3 JSON-generation
+  request contract.
+- [x] Native V4 Image provider options use the base provider namespace, emit
+  the upstream deprecation warning for raw hyphenated keys, prefer the
+  canonical camel-case namespace, and keep `response_format: b64_json`
+  authoritative for generation requests.
+- [x] Native V4 Image editing uses `/images/edits` multipart requests for one or
+  multiple binary, base64, or URL-backed images plus an optional mask. Form
+  fields, array-key behavior, downloaded media types, response images,
+  timestamps, headers, and unsupported-setting warnings match the audited
+  upstream contract.
+- [x] Existing OpenAI-compatible V3 Image behavior remains covered by its model
+  tests, including the legacy `openai` provider-options namespace, request
+  shape, errors, headers, warnings, and response metadata.
 
 ## Known gaps / TODO
 
-- [ ] Migrate OpenAI-compatible Image from the provider-local V3 adapter rail
-  to a native V4 implementation.
 - [ ] Full upstream fixture parity for every Chat, Completion, Embedding,
   Image, and error path is not claimed by this tracker entry.
 
@@ -86,6 +100,8 @@
   `external/vercel-ai-sdk/packages/openai-compatible/src/completion/**`.
 - Upstream Embedding model and tests:
   `external/vercel-ai-sdk/packages/openai-compatible/src/embedding/**`.
+- Upstream Image model and tests:
+  `external/vercel-ai-sdk/packages/openai-compatible/src/image/**`.
 - Swift Chat model:
   `Sources/OpenAICompatibleProvider/Chat/OpenAICompatibleChatLanguageModel.swift`.
 - Swift Completion model and prompt conversion:
@@ -94,6 +110,8 @@
   `Sources/OpenAICompatibleProvider/Completion/ConvertToOpenAICompatibleCompletionPrompt.swift`.
 - Swift Embedding model:
   `Sources/OpenAICompatibleProvider/Embedding/OpenAICompatibleEmbeddingModel.swift`.
+- Swift Image model:
+  `Sources/OpenAICompatibleProvider/Image/OpenAICompatibleImageModel.swift`.
 - Swift prompt/tool conversion:
   `Sources/OpenAICompatibleProvider/Chat/ConvertToOpenAICompatibleChatMessages.swift`
   and `Sources/OpenAICompatibleProvider/Chat/OpenAICompatiblePrepareTools.swift`.
@@ -106,12 +124,14 @@
   and
   `Tests/OpenAICompatibleProviderTests/OpenAICompatibleCompletionLanguageModelV4Tests.swift`
   and
-  `Tests/OpenAICompatibleProviderTests/OpenAICompatibleEmbeddingModelV4Tests.swift`.
+  `Tests/OpenAICompatibleProviderTests/OpenAICompatibleEmbeddingModelV4Tests.swift`
+  and
+  `Tests/OpenAICompatibleProviderTests/OpenAICompatibleImageModelV4Tests.swift`.
 
 ## Validation
 
-- `AGENT=1 swift test --filter OpenAICompatibleProviderTests` passed 157 tests
-  in 12 suites.
+- `AGENT=1 swift test --filter OpenAICompatibleProviderTests` passed 159 tests
+  in 13 suites.
 - `AGENT=1 swift test --filter OpenAICompatibleProviderV4Tests` passed 9 tests.
 - `AGENT=1 swift test --filter OpenAICompatibleChatMessagesConverterV4Tests`
   passed 2 tests.
@@ -119,6 +139,8 @@
   passed 6 tests.
 - `AGENT=1 swift test --filter OpenAICompatibleEmbeddingModelV4Tests` passed 3
   tests.
+- `AGENT=1 swift test --filter OpenAICompatibleImageModel` passed 13 tests in
+  2 suites.
 - `AGENT=1 swift test --filter StreamingToolCallTrackerTests` passed 15 tests.
 - `swift build` passed.
-- `AGENT=1 swift test` passed all 4077 tests in 463 suites.
+- `AGENT=1 swift test` passed all 4079 tests in 464 suites.

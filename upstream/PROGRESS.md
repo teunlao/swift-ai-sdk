@@ -34,7 +34,8 @@ foundation slices, plus targeted `core:provider/transcription-stream` and
 `provider:openai/native-v4-completion`, and
 `provider:openai/native-v4-chat`, and
 `provider:openai/native-v4-responses`, and
-`provider:openai-compatible/native-v4-chat`
+`provider:openai-compatible/native-v4-chat`, and
+`provider:openai-compatible/native-v4-image`
 evidence against `c8d2726ae045a28142cb46df5e41cdd51d8dcc71`.
 
 Status:
@@ -70,6 +71,16 @@ Status:
   provider-driven integration behavior, not unidentified exported helper drift.
 
 Latest validation:
+- `2026-07-15`: `AGENT=1 swift test` passed all 4079 Swift Testing tests in
+  464 suites after the native OpenAI-compatible V4 Image slice.
+- `2026-07-15`: `AGENT=1 swift test --filter OpenAICompatibleProviderTests`
+  passed 159 tests in 13 suites across native V4 Chat, Completion, Embedding,
+  Image, and the preserved V3 facades.
+- `2026-07-15`: `AGENT=1 swift test --filter OpenAICompatibleImageModel`
+  passed 13 tests in 2 suites for the preserved V3 contract and native V4 JSON,
+  provider-option, URL download, and multipart-edit boundaries.
+- `2026-07-15`: `swift build` passed after the native OpenAI-compatible V4
+  Image implementation.
 - `2026-07-15`: `AGENT=1 swift test`
   passed all 4070 Swift Testing tests in 461 suites after the native
   OpenAI-compatible V4 Chat slice and shared tool-call tracker correction.
