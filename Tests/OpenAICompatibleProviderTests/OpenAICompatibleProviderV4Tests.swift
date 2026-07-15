@@ -175,6 +175,58 @@ struct OpenAICompatibleProviderV4Tests {
         #expect(json["user"] as? String == "override-user")
     }
 
+    @Test("native V4 generate rejects malformed tool-call functions")
+    func nativeV4GenerateRejectsMalformedToolCallFunctions() async throws {
+        let malformedToolCalls: [(label: String, toolCall: [String: Any])] = [
+            ("missing function", ["id": "call-1"]),
+            ("missing function name", [
+                "id": "call-1",
+                "function": ["arguments": "{}"]
+            ]),
+            ("missing function arguments", [
+                "id": "call-1",
+                "function": ["name": "lookup"]
+            ])
+        ]
+
+        for malformed in malformedToolCalls {
+            let responseJSON: [String: Any] = [
+                "choices": [[
+                    "message": [
+                        "content": NSNull(),
+                        "tool_calls": [malformed.toolCall]
+                    ],
+                    "finish_reason": "tool_calls"
+                ]]
+            ]
+            let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+            let targetURL = URL(string: "https://api.example.com/v1/chat/completions")!
+            let httpResponse = makeHTTPResponse(
+                url: targetURL,
+                headers: ["Content-Type": "application/json"]
+            )
+            let fetch: FetchFunction = { _ in
+                FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+            }
+            let provider = createOpenAICompatible(settings: .init(
+                baseURL: "https://api.example.com/v1",
+                name: "example-provider",
+                fetch: fetch
+            ))
+            let model = try provider.languageModel(modelId: "tool-model")
+
+            do {
+                _ = try await model.doGenerate(options: .init(prompt: v4ChatPrompt))
+                Issue.record("Expected APICallError for \(malformed.label)")
+            } catch let error as APICallError {
+                #expect(error.message == "Invalid JSON response")
+                _ = try #require(error.cause as? TypeValidationError)
+            } catch {
+                Issue.record("Expected APICallError for \(malformed.label), got \(error)")
+            }
+        }
+    }
+
     @Test("language doStream maps V4 text delta and finish")
     func languageDoStreamUsesV4Surface() async throws {
         let events = [
