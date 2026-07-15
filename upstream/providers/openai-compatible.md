@@ -26,6 +26,10 @@
   response metadata, warnings, provider metadata, detailed usage, custom
   `convertUsage` over the complete loose usage object, reasoning fallback, and
   Google thought signatures.
+- [x] Non-streaming Chat rejects malformed tool calls at the response boundary:
+  `function`, `function.name`, and `function.arguments` are required exactly as
+  in the audited upstream response schema instead of being dropped or defaulted
+  after decoding.
 - [x] Streaming V4 output preserves reasoning-before-text lifecycle ordering,
   late tool names, missing tool-call indexes, thought signatures, raw chunks,
   error chunks, usage, finish metadata, and cancellation. Tool calls finalize
@@ -130,9 +134,9 @@
 
 ## Validation
 
-- `AGENT=1 swift test --filter OpenAICompatibleProviderTests` passed 159 tests
+- `AGENT=1 swift test --filter OpenAICompatibleProviderTests` passed 160 tests
   in 13 suites.
-- `AGENT=1 swift test --filter OpenAICompatibleProviderV4Tests` passed 9 tests.
+- `AGENT=1 swift test --filter OpenAICompatibleProviderV4Tests` passed 10 tests.
 - `AGENT=1 swift test --filter OpenAICompatibleChatMessagesConverterV4Tests`
   passed 2 tests.
 - `AGENT=1 swift test --filter OpenAICompatibleCompletionLanguageModelV4Tests`
@@ -143,4 +147,4 @@
   2 suites.
 - `AGENT=1 swift test --filter StreamingToolCallTrackerTests` passed 15 tests.
 - `swift build` passed.
-- `AGENT=1 swift test` passed all 4079 tests in 464 suites.
+- `AGENT=1 swift test` passed all 4080 tests in 464 suites.
