@@ -25,6 +25,27 @@ struct OpenAICompatibleProviderV4Tests {
         }
     }
 
+    final class MetadataProbe: @unchecked Sendable {
+        private let lock = NSLock()
+        private var traces: [String] = []
+
+        func record(_ chunk: JSONValue) {
+            guard case let .object(object) = chunk,
+                  case let .string(trace)? = object["provider_trace"] else {
+                return
+            }
+            lock.lock()
+            traces.append(trace)
+            lock.unlock()
+        }
+
+        func values() -> [String] {
+            lock.lock()
+            defer { lock.unlock() }
+            return traces
+        }
+    }
+
     private func makeHTTPResponse(
         url: URL,
         statusCode: Int = 200,
@@ -75,6 +96,7 @@ struct OpenAICompatibleProviderV4Tests {
         let imageModel = try provider.imageModel(modelId: "dall-e-3")
         #expect(imageModel.specificationVersion == "v4")
         #expect(imageModel.provider == "example.image")
+        #expect(imageModel is OpenAICompatibleImageModelV4)
     }
 
     @Test("language model forwards supportedUrls")
@@ -90,6 +112,100 @@ struct OpenAICompatibleProviderV4Tests {
         let supportedUrls = try await model.supportedUrls
 
         #expect(supportedUrls["image/*"]?.first?.pattern == #"^https://files\.example/"#)
+    }
+
+    @Test("factory forwards metadata extraction through generate and stream")
+    func factoryForwardsMetadataExtractor() async throws {
+        let probe = MetadataProbe()
+        let extractor = OpenAICompatibleMetadataExtractor(
+            extractMetadata: { parsedBody in
+                guard case let .object(object) = parsedBody,
+                      case let .string(trace)? = object["provider_trace"] else {
+                    return nil
+                }
+                return ["custom": ["trace": .string(trace)]]
+            },
+            createStreamExtractor: {
+                OpenAICompatibleStreamMetadataExtractor(
+                    processChunk: { probe.record($0) },
+                    buildMetadata: {
+                        ["custom": [
+                            "traces": .array(probe.values().map(JSONValue.string))
+                        ]]
+                    }
+                )
+            }
+        )
+        let generateResponse: [String: Any] = [
+            "provider_trace": "generate",
+            "choices": [[
+                "message": ["content": "response"],
+                "finish_reason": "stop"
+            ]]
+        ]
+        let generateData = try JSONSerialization.data(withJSONObject: generateResponse)
+        let streamObjects: [[String: Any]] = [
+            [
+                "provider_trace": "stream-1",
+                "choices": [[
+                    "delta": ["content": "streamed"],
+                    "finish_reason": NSNull()
+                ]]
+            ],
+            [
+                "provider_trace": "stream-2",
+                "choices": [[
+                    "delta": [:],
+                    "finish_reason": "stop"
+                ]]
+            ]
+        ]
+        let streamEvents = try streamObjects.map {
+            String(decoding: try JSONSerialization.data(withJSONObject: $0), as: UTF8.self)
+        }
+        let targetURL = URL(string: "https://api.example.com/v1/chat/completions")!
+        let fetch: FetchFunction = { request in
+            let isStream: Bool
+            if let body = request.httpBody,
+               let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] {
+                isStream = json["stream"] as? Bool == true
+            } else {
+                isStream = false
+            }
+            return FetchResponse(
+                body: isStream ? makeStreamBody(from: streamEvents) : .data(generateData),
+                urlResponse: makeHTTPResponse(
+                    url: targetURL,
+                    headers: [
+                        "Content-Type": isStream ? "text/event-stream" : "application/json"
+                    ]
+                )
+            )
+        }
+        let provider = createOpenAICompatible(settings: .init(
+            baseURL: "https://api.example.com/v1",
+            name: "test-provider",
+            fetch: fetch,
+            metadataExtractor: extractor
+        ))
+        let model = try provider.languageModel(modelId: "chat-model")
+
+        let generated = try await model.doGenerate(options: .init(prompt: v4ChatPrompt))
+        #expect(generated.providerMetadata?["custom"]?["trace"] == .string("generate"))
+
+        let streamed = try await model.doStream(options: .init(prompt: v4ChatPrompt))
+        var finishMetadata: SharedV4ProviderMetadata?
+        for try await part in streamed.stream {
+            if case let .finish(_, _, providerMetadata) = part {
+                finishMetadata = providerMetadata
+            }
+        }
+
+        #expect(probe.values() == ["stream-1", "stream-2"])
+        #expect(finishMetadata?["custom"]?["traces"] == .array([
+            .string("stream-1"),
+            .string("stream-2")
+        ]))
     }
 
     @Test("language doGenerate forwards V4 options and maps V4 result")
@@ -174,10 +290,228 @@ struct OpenAICompatibleProviderV4Tests {
         #expect(json["user"] as? String == "override-user")
     }
 
-    @Test("language doStream maps V4 text delta and finish")
+    @Test("native V4 generate rejects malformed tool-call functions")
+    func nativeV4GenerateRejectsMalformedToolCallFunctions() async throws {
+        let malformedToolCalls: [(label: String, toolCall: [String: Any])] = [
+            ("missing function", ["id": "call-1"]),
+            ("missing function name", [
+                "id": "call-1",
+                "function": ["arguments": "{}"]
+            ]),
+            ("missing function arguments", [
+                "id": "call-1",
+                "function": ["name": "lookup"]
+            ])
+        ]
+
+        for malformed in malformedToolCalls {
+            let responseJSON: [String: Any] = [
+                "choices": [[
+                    "message": [
+                        "content": NSNull(),
+                        "tool_calls": [malformed.toolCall]
+                    ],
+                    "finish_reason": "tool_calls"
+                ]]
+            ]
+            let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+            let targetURL = URL(string: "https://api.example.com/v1/chat/completions")!
+            let httpResponse = makeHTTPResponse(
+                url: targetURL,
+                headers: ["Content-Type": "application/json"]
+            )
+            let fetch: FetchFunction = { _ in
+                FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+            }
+            let provider = createOpenAICompatible(settings: .init(
+                baseURL: "https://api.example.com/v1",
+                name: "example-provider",
+                fetch: fetch
+            ))
+            let model = try provider.languageModel(modelId: "tool-model")
+
+            do {
+                _ = try await model.doGenerate(options: .init(prompt: v4ChatPrompt))
+                Issue.record("Expected APICallError for \(malformed.label)")
+            } catch let error as APICallError {
+                #expect(error.message == "Invalid JSON response")
+                _ = try #require(error.cause as? TypeValidationError)
+            } catch {
+                Issue.record("Expected APICallError for \(malformed.label), got \(error)")
+            }
+        }
+    }
+
+    @Test("native V4 generate rejects unsupported response roles")
+    func nativeV4GenerateRejectsUnsupportedResponseRoles() async throws {
+        let responseJSON: [String: Any] = [
+            "choices": [[
+                "message": [
+                    "role": "user",
+                    "content": "invalid role"
+                ],
+                "finish_reason": "stop"
+            ]]
+        ]
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let targetURL = URL(string: "https://api.example.com/v1/chat/completions")!
+        let httpResponse = makeHTTPResponse(
+            url: targetURL,
+            headers: ["Content-Type": "application/json"]
+        )
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+        let provider = createOpenAICompatible(settings: .init(
+            baseURL: "https://api.example.com/v1",
+            name: "example-provider",
+            fetch: fetch
+        ))
+        let model = try provider.languageModel(modelId: "chat-model")
+
+        do {
+            _ = try await model.doGenerate(options: .init(prompt: v4ChatPrompt))
+            Issue.record("Expected unsupported response role to fail validation")
+        } catch let error as APICallError {
+            #expect(error.message == "Invalid JSON response")
+            _ = try #require(error.cause as? TypeValidationError)
+        } catch {
+            Issue.record("Expected APICallError, got \(error)")
+        }
+    }
+
+    @Test("native V4 stream accepts empty role and rejects unsupported roles")
+    func nativeV4StreamValidatesResponseRoles() async throws {
+        func streamParts(role: String) async throws -> [LanguageModelV4StreamPart] {
+            let eventObject: [String: Any] = [
+                "id": "chatcmpl-role",
+                "choices": [[
+                    "delta": [
+                        "role": role,
+                        "content": "response"
+                    ],
+                    "finish_reason": "stop"
+                ]]
+            ]
+            let event = String(
+                decoding: try JSONSerialization.data(withJSONObject: eventObject),
+                as: UTF8.self
+            )
+            let targetURL = URL(string: "https://api.example.com/v1/chat/completions")!
+            let httpResponse = makeHTTPResponse(
+                url: targetURL,
+                headers: ["Content-Type": "text/event-stream"]
+            )
+            let fetch: FetchFunction = { _ in
+                FetchResponse(body: makeStreamBody(from: [event]), urlResponse: httpResponse)
+            }
+            let provider = createOpenAICompatible(settings: .init(
+                baseURL: "https://api.example.com/v1",
+                name: "example-provider",
+                fetch: fetch
+            ))
+            let model = try provider.languageModel(modelId: "chat-model")
+            let result = try await model.doStream(options: .init(prompt: v4ChatPrompt))
+
+            var parts: [LanguageModelV4StreamPart] = []
+            for try await part in result.stream {
+                parts.append(part)
+            }
+            return parts
+        }
+
+        let emptyRoleParts = try await streamParts(role: "")
+        #expect(emptyRoleParts.contains {
+            if case .textDelta(_, delta: "response", _) = $0 { return true }
+            return false
+        })
+
+        let unsupportedRoleParts = try await streamParts(role: "user")
+        #expect(!unsupportedRoleParts.contains {
+            if case .textDelta = $0 { return true }
+            return false
+        })
+        #expect(unsupportedRoleParts.contains {
+            if case .error = $0 { return true }
+            return false
+        })
+        guard case let .finish(finishReason, _, _) = unsupportedRoleParts.last else {
+            Issue.record("Expected error finish for unsupported response role")
+            return
+        }
+        #expect(finishReason.unified == .error)
+    }
+
+    @Test("native V4 stream rejects tool-call deltas without function objects")
+    func nativeV4StreamRejectsMissingToolCallFunction() async throws {
+        let eventObjects: [[String: Any]] = [
+            [
+                "id": "chatcmpl-malformed-tool-call",
+                "choices": [[
+                    "delta": [
+                        "tool_calls": [[
+                            "index": 0,
+                            "id": "call-1"
+                        ]]
+                    ],
+                    "finish_reason": NSNull()
+                ]]
+            ],
+            [
+                "id": "chatcmpl-malformed-tool-call",
+                "choices": [[
+                    "delta": ["content": "still valid"],
+                    "finish_reason": "stop"
+                ]]
+            ]
+        ]
+        let events = try eventObjects.map {
+            String(decoding: try JSONSerialization.data(withJSONObject: $0), as: UTF8.self)
+        }
+        let targetURL = URL(string: "https://api.example.com/v1/chat/completions")!
+        let httpResponse = makeHTTPResponse(
+            url: targetURL,
+            headers: ["Content-Type": "text/event-stream"]
+        )
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: makeStreamBody(from: events), urlResponse: httpResponse)
+        }
+        let provider = createOpenAICompatible(settings: .init(
+            baseURL: "https://api.example.com/v1",
+            name: "example-provider",
+            fetch: fetch
+        ))
+        let model = try provider.languageModel(modelId: "chat-model")
+        let result = try await model.doStream(options: .init(prompt: v4ChatPrompt))
+
+        var parts: [LanguageModelV4StreamPart] = []
+        for try await part in result.stream {
+            parts.append(part)
+        }
+
+        #expect(parts.contains {
+            if case .error = $0 { return true }
+            return false
+        })
+        #expect(parts.contains {
+            if case .textDelta(_, delta: "still valid", _) = $0 { return true }
+            return false
+        })
+        #expect(!parts.contains {
+            if case .toolCall = $0 { return true }
+            return false
+        })
+        guard case let .finish(finishReason, _, _) = parts.last else {
+            Issue.record("Expected the valid trailing chunk to finish the stream")
+            return
+        }
+        #expect(finishReason.unified == .stop)
+    }
+
+    @Test("language doStream maps V4 text and prefers the data union branch")
     func languageDoStreamUsesV4Surface() async throws {
         let events = [
-            "{\"id\":\"chatcmpl-v4\",\"created\":1712000000,\"model\":\"gpt-oss\",\"choices\":[{\"delta\":{\"content\":\"Hello\"},\"finish_reason\":null}]}",
+            "{\"id\":\"chatcmpl-v4\",\"created\":1712000000,\"model\":\"gpt-oss\",\"choices\":[{\"delta\":{\"content\":\"Hello\"},\"finish_reason\":null}],\"error\":{\"message\":\"ignored extra field\"}}",
             "{\"id\":\"chatcmpl-v4\",\"created\":1712000000,\"model\":\"gpt-oss\",\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1,\"total_tokens\":2}}"
         ]
         let targetURL = URL(string: "https://api.example.com/v1/chat/completions")!
@@ -215,6 +549,392 @@ struct OpenAICompatibleProviderV4Tests {
             #expect((usage.inputTokens.total ?? 0) + (usage.outputTokens.total ?? 0) == 2)
         } else {
             Issue.record("Missing V4 finish")
+        }
+    }
+
+    @Test("native V4 chat forwards reasoning tools and camel-case provider options")
+    func nativeV4ChatForwardsV4RequestContracts() async throws {
+        let capture = RequestCapture()
+        let responseJSON: [String: Any] = [
+            "choices": [[
+                "message": ["content": "done"],
+                "finish_reason": "stop"
+            ]]
+        ]
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let targetURL = URL(string: "https://api.example.com/v1/chat/completions")!
+        let httpResponse = makeHTTPResponse(
+            url: targetURL,
+            headers: ["Content-Type": "application/json"]
+        )
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+
+        let provider = createOpenAICompatible(settings: .init(
+            baseURL: "https://api.example.com/v1",
+            name: "example-provider",
+            fetch: fetch
+        ))
+        let model = try provider.languageModel(modelId: "reasoning-model")
+
+        #expect(model is OpenAICompatibleChatLanguageModelV4)
+
+        let result = try await model.doGenerate(options: .init(
+            prompt: v4ChatPrompt,
+            temperature: 0.25,
+            tools: [
+                .function(.init(
+                    name: "lookup",
+                    inputSchema: .object(["type": .string("object")]),
+                    strict: true
+                ))
+            ],
+            toolChoice: .tool(toolName: "lookup"),
+            reasoning: .high,
+            providerOptions: [
+                "example-provider": [
+                    "user": .string("raw-user"),
+                    "routing": .string("raw")
+                ],
+                "exampleProvider": [
+                    "user": .string("camel-user"),
+                    "routing": .string("camel"),
+                    "model": .string("provider-model"),
+                    "temperature": .number(0.9),
+                    "messages": .array([
+                        .object(["role": .string("system"), "content": .string("override")])
+                    ]),
+                    "reasoning_effort": .string("provider-reasoning"),
+                    "textVerbosity": .string("low"),
+                    "verbosity": .string("provider-verbosity"),
+                    "tools": .array([]),
+                    "tool_choice": .string("none")
+                ]
+            ]
+        ))
+
+        #expect(result.warnings.contains(.deprecated(
+            setting: "providerOptions key 'example-provider'",
+            message: "Use 'exampleProvider' instead."
+        )))
+
+        guard let request = await capture.current(),
+              let body = request.httpBody,
+              let json = try JSONSerialization.jsonObject(with: body) as? [String: Any],
+              let tools = json["tools"] as? [[String: Any]],
+              let tool = tools.first,
+              let function = tool["function"] as? [String: Any],
+              let toolChoice = json["tool_choice"] as? [String: Any],
+              let selectedFunction = toolChoice["function"] as? [String: Any] else {
+            Issue.record("Expected native V4 request body")
+            return
+        }
+
+        #expect(json["reasoning_effort"] as? String == "high")
+        #expect(json["verbosity"] as? String == "low")
+        #expect(json["user"] as? String == "camel-user")
+        #expect(json["routing"] as? String == "camel")
+        #expect(json["model"] as? String == "provider-model")
+        #expect(json["temperature"] as? Double == 0.9)
+        let messages = json["messages"] as? [[String: Any]]
+        #expect(messages?.count == 1)
+        #expect(messages?.first?["role"] as? String == "user")
+        #expect(messages?.first?["content"] as? String == "Hello")
+        #expect(tools.count == 1)
+        #expect(function["name"] as? String == "lookup")
+        #expect(function["strict"] as? Bool == true)
+        #expect(selectedFunction["name"] as? String == "lookup")
+    }
+
+    @Test("native V4 generate preserves response contracts and ignores unmodeled tool fields")
+    func nativeV4GeneratePreservesResponseContracts() async throws {
+        let responseJSON: [String: Any] = [
+            "id": "chatcmpl-native-v4",
+            "created": 1_712_000_000,
+            "model": "reasoning-model",
+            "choices": [[
+                "message": [
+                    "content": "answer",
+                    "reasoning": "fallback reasoning",
+                    "tool_calls": [[
+                        "id": "call-1",
+                        "type": ["provider-specific": true],
+                        "function": [
+                            "name": "lookup",
+                            "arguments": #"{"id":1}"#
+                        ],
+                        "extra_content": [
+                            "google": ["thought_signature": "signature-1"]
+                        ]
+                    ]]
+                ],
+                "finish_reason": "tool_calls"
+            ]],
+            "usage": [
+                "prompt_tokens": 5,
+                "completion_tokens": 7,
+                "total_tokens": 12,
+                "provider_input_tokens": 812
+            ]
+        ]
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let targetURL = URL(string: "https://api.example.com/v1/chat/completions")!
+        let httpResponse = makeHTTPResponse(
+            url: targetURL,
+            headers: ["Content-Type": "application/json"]
+        )
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+        let provider = createOpenAICompatible(settings: .init(
+            baseURL: "https://api.example.com/v1",
+            name: "example-provider",
+            fetch: fetch,
+            convertUsage: { usage in
+                let providerInputTokens: Int?
+                if case .object(let raw)? = usage?.raw,
+                   case .number(let value)? = raw["provider_input_tokens"] {
+                    providerInputTokens = Int(value)
+                } else {
+                    providerInputTokens = nil
+                }
+                return LanguageModelV4Usage(
+                    inputTokens: .init(total: providerInputTokens),
+                    outputTokens: .init(total: 900)
+                )
+            }
+        ))
+        let model = try provider.languageModel(modelId: "reasoning-model")
+
+        let result = try await model.doGenerate(options: .init(prompt: v4ChatPrompt))
+
+        #expect(result.finishReason.unified == .toolCalls)
+        #expect(result.usage.inputTokens.total == 812)
+        #expect(result.usage.outputTokens.total == 900)
+        #expect(result.content.count == 3)
+
+        guard case .reasoning(let reasoning) = result.content[1],
+              case .toolCall(let toolCall) = result.content[2] else {
+            Issue.record("Expected reasoning followed by a tool call")
+            return
+        }
+
+        #expect(reasoning.text == "fallback reasoning")
+        #expect(toolCall.toolCallId == "call-1")
+        #expect(toolCall.toolName == "lookup")
+        #expect(toolCall.input == #"{"id":1}"#)
+        #expect(toolCall.providerMetadata == [
+            "example-provider": ["thoughtSignature": .string("signature-1")]
+        ])
+    }
+
+    @Test("native V4 stream orders content, buffers tool calls, and ignores unmodeled tool fields")
+    func nativeV4StreamPreservesOrderingAndBufferedToolCalls() async throws {
+        let eventObjects: [[String: Any]] = [
+            [
+                "id": "chatcmpl-stream-v4",
+                "created": 1_712_000_000,
+                "model": "reasoning-model",
+                "choices": [[
+                    "delta": ["reasoning": "think"],
+                    "finish_reason": NSNull()
+                ]]
+            ],
+            [
+                "id": "chatcmpl-stream-v4",
+                "created": 1_712_000_000,
+                "model": "reasoning-model",
+                "choices": [[
+                    "delta": ["content": "answer"],
+                    "finish_reason": NSNull()
+                ]]
+            ],
+            [
+                "id": "chatcmpl-stream-v4",
+                "created": 1_712_000_000,
+                "model": "reasoning-model",
+                "choices": [[
+                    "delta": [
+                        "tool_calls": [[
+                            "index": 0,
+                            "id": "call-1",
+                            "type": ["provider-specific": true],
+                            "function": ["arguments": #"{"city":"#],
+                            "extra_content": [
+                                "google": ["thought_signature": "signature-1"]
+                            ]
+                        ]]
+                    ],
+                    "finish_reason": NSNull()
+                ]]
+            ],
+            [
+                "id": "chatcmpl-stream-v4",
+                "created": 1_712_000_000,
+                "model": "reasoning-model",
+                "choices": [[
+                    "delta": [
+                        "tool_calls": [[
+                            "index": 0,
+                            "function": [
+                                "name": "weather",
+                                "arguments": "\"Paris\"}"
+                            ]
+                        ]]
+                    ],
+                    "finish_reason": NSNull()
+                ]]
+            ],
+            [
+                "id": "chatcmpl-stream-v4",
+                "created": 1_712_000_000,
+                "model": "reasoning-model",
+                "choices": [[
+                    "delta": [
+                        "tool_calls": [[
+                            "id": "call-2",
+                            "function": [
+                                "name": "clock",
+                                "arguments": "{}"
+                            ]
+                        ]]
+                    ],
+                    "finish_reason": NSNull()
+                ]]
+            ],
+            [
+                "id": "chatcmpl-stream-v4",
+                "created": 1_712_000_000,
+                "model": "reasoning-model",
+                "choices": [[
+                    "delta": [:],
+                    "finish_reason": "tool_calls"
+                ]],
+                "usage": [
+                    "prompt_tokens": 2,
+                    "completion_tokens": 3,
+                    "total_tokens": 5,
+                    "provider_output_tokens": 901
+                ]
+            ]
+        ]
+        let events = try eventObjects.map {
+            String(decoding: try JSONSerialization.data(withJSONObject: $0), as: UTF8.self)
+        }
+        let targetURL = URL(string: "https://api.example.com/v1/chat/completions")!
+        let httpResponse = makeHTTPResponse(
+            url: targetURL,
+            headers: ["Content-Type": "text/event-stream"]
+        )
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: makeStreamBody(from: events), urlResponse: httpResponse)
+        }
+        let provider = createOpenAICompatible(settings: .init(
+            baseURL: "https://api.example.com/v1",
+            name: "example-provider",
+            fetch: fetch,
+            includeUsage: true,
+            convertUsage: { usage in
+                let providerOutputTokens: Int?
+                if case .object(let raw)? = usage?.raw,
+                   case .number(let value)? = raw["provider_output_tokens"] {
+                    providerOutputTokens = Int(value)
+                } else {
+                    providerOutputTokens = nil
+                }
+                return LanguageModelV4Usage(
+                    inputTokens: .init(total: usage?.totalTokens),
+                    outputTokens: .init(total: providerOutputTokens)
+                )
+            }
+        ))
+        let model = try provider.languageModel(modelId: "reasoning-model")
+        let result = try await model.doStream(options: .init(prompt: v4ChatPrompt))
+
+        var parts: [LanguageModelV4StreamPart] = []
+        for try await part in result.stream {
+            parts.append(part)
+        }
+
+        guard let reasoningEndIndex = parts.firstIndex(where: {
+            if case .reasoningEnd(id: "reasoning-0", providerMetadata: nil) = $0 { return true }
+            return false
+        }),
+        let textStartIndex = parts.firstIndex(where: {
+            if case .textStart(id: "txt-0", providerMetadata: nil) = $0 { return true }
+            return false
+        }),
+        let textEndIndex = parts.firstIndex(where: {
+            if case .textEnd(id: "txt-0", providerMetadata: nil) = $0 { return true }
+            return false
+        }),
+        let toolCallIndex = parts.firstIndex(where: {
+            if case .toolCall = $0 { return true }
+            return false
+        }) else {
+            Issue.record("Expected reasoning text and tool-call lifecycle events")
+            return
+        }
+
+        #expect(reasoningEndIndex < textStartIndex)
+        #expect(textEndIndex < toolCallIndex)
+
+        guard case .toolCall(let toolCall) = parts[toolCallIndex],
+              case let .finish(finishReason, usage, _) = parts.last else {
+            Issue.record("Expected finalized tool call and finish")
+            return
+        }
+
+        #expect(toolCall.toolCallId == "call-1")
+        #expect(toolCall.toolName == "weather")
+        #expect(toolCall.input == #"{"city":"Paris"}"#)
+        #expect(toolCall.providerMetadata == [
+            "example-provider": ["thoughtSignature": .string("signature-1")]
+        ])
+
+        let completedToolCalls = parts.compactMap { part -> LanguageModelV4ToolCall? in
+            guard case .toolCall(let value) = part else { return nil }
+            return value
+        }
+        #expect(completedToolCalls.count == 2)
+        let indexlessToolCall = completedToolCalls.first { $0.toolCallId == "call-2" }
+        #expect(indexlessToolCall?.toolName == "clock")
+        #expect(indexlessToolCall?.input == "{}")
+        #expect(finishReason.unified == .toolCalls)
+        #expect(usage.inputTokens.total == 5)
+        #expect(usage.outputTokens.total == 901)
+    }
+
+    @Test("native V4 stream fails when a buffered tool call never receives a name")
+    func nativeV4StreamRejectsBufferedToolCallWithoutName() async throws {
+        let event = #"{"id":"chatcmpl-v4","choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-1","type":"function","function":{"arguments":"{}"}}]},"finish_reason":"tool_calls"}]}"#
+        let targetURL = URL(string: "https://api.example.com/v1/chat/completions")!
+        let fetch: FetchFunction = { _ in
+            FetchResponse(
+                body: makeStreamBody(from: [event]),
+                urlResponse: makeHTTPResponse(
+                    url: targetURL,
+                    headers: ["Content-Type": "text/event-stream"]
+                )
+            )
+        }
+        let provider = createOpenAICompatible(settings: .init(
+            baseURL: "https://api.example.com/v1",
+            name: "example-provider",
+            fetch: fetch
+        ))
+        let model = try provider.languageModel(modelId: "chat-model")
+        let result = try await model.doStream(options: .init(prompt: v4ChatPrompt))
+
+        do {
+            for try await _ in result.stream {}
+            Issue.record("Expected the incomplete tool call to fail the stream")
+        } catch let error as InvalidResponseDataError {
+            #expect(error.message == "Expected 'function.name' to be a string.")
+        } catch {
+            Issue.record("Expected InvalidResponseDataError, got \(error)")
         }
     }
 
@@ -260,7 +980,7 @@ struct OpenAICompatibleProviderV4Tests {
         }
     }
 
-    @Test("image doGenerate maps V4 base64 images warnings and response")
+    @Test("native image doGenerate maps V4 base64 images warnings and response")
     func imageDoGenerateUsesV4Surface() async throws {
         let capture = RequestCapture()
         let responseJSON: [String: Any] = [
@@ -284,6 +1004,7 @@ struct OpenAICompatibleProviderV4Tests {
             fetch: fetch
         ))
         let model = try provider.imageModel(modelId: "dall-e-3")
+        #expect(model is OpenAICompatibleImageModelV4)
 
         let result = try await model.doGenerate(options: ImageModelV4CallOptions(
             prompt: "A geometric city",
@@ -291,7 +1012,7 @@ struct OpenAICompatibleProviderV4Tests {
             size: "1024x1024",
             aspectRatio: "1:1",
             seed: 42,
-            providerOptions: ["openai": ["quality": .string("hd")]]
+            providerOptions: ["example": ["quality": .string("hd")]]
         ))
 
         if case .base64(let images) = result.images {

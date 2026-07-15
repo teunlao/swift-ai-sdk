@@ -19,61 +19,54 @@ struct OpenAICompatibleChatLanguageModelTests {
     // MARK: - Config Tests
 
     @Test("should extract base name from provider string")
-    func extractBaseNameFromProviderString() throws {
-        let model = OpenAICompatibleChatLanguageModel(
-            modelId: OpenAICompatibleChatModelId(rawValue: "gpt-4"),
-            config: OpenAICompatibleChatConfig(
-                provider: "anthropic.beta",
-                headers: { [:] },
-                url: { _ in "" }
-            )
-        )
-
-        // Access private property for testing
-        let mirror = Mirror(reflecting: model)
-        if let providerOptionsName = mirror.children.first(where: { $0.label == "providerOptionsName" })?.value as? String {
-            #expect(providerOptionsName == "anthropic")
-        } else {
-            Issue.record("Could not access providerOptionsName")
-        }
+    func extractBaseNameFromProviderString() async throws {
+        try await assertProviderOptionsKey(provider: "anthropic.beta", key: "anthropic")
     }
 
     @Test("should handle provider without dot notation")
-    func handleProviderWithoutDotNotation() throws {
-        let model = OpenAICompatibleChatLanguageModel(
-            modelId: OpenAICompatibleChatModelId(rawValue: "gpt-4"),
-            config: OpenAICompatibleChatConfig(
-                provider: "openai",
-                headers: { [:] },
-                url: { _ in "" }
-            )
-        )
-
-        let mirror = Mirror(reflecting: model)
-        if let providerOptionsName = mirror.children.first(where: { $0.label == "providerOptionsName" })?.value as? String {
-            #expect(providerOptionsName == "openai")
-        } else {
-            Issue.record("Could not access providerOptionsName")
-        }
+    func handleProviderWithoutDotNotation() async throws {
+        try await assertProviderOptionsKey(provider: "openai", key: "openai")
     }
 
     @Test("should return empty for empty provider")
-    func returnEmptyForEmptyProvider() throws {
+    func returnEmptyForEmptyProvider() async throws {
+        try await assertProviderOptionsKey(provider: "", key: "")
+    }
+
+    private func assertProviderOptionsKey(provider: String, key: String) async throws {
+        let targetURL = URL(string: "https://my.api.com/v1/chat/completions")!
+        let response = try JSONSerialization.data(withJSONObject: makeChatResponse())
+        let capture = RequestCapture()
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(
+                body: .data(response),
+                urlResponse: makeHTTPResponse(url: targetURL)
+            )
+        }
         let model = OpenAICompatibleChatLanguageModel(
             modelId: OpenAICompatibleChatModelId(rawValue: "gpt-4"),
             config: OpenAICompatibleChatConfig(
-                provider: "",
+                provider: provider,
                 headers: { [:] },
-                url: { _ in "" }
+                url: { _ in targetURL.absoluteString },
+                fetch: fetch
             )
         )
 
-        let mirror = Mirror(reflecting: model)
-        if let providerOptionsName = mirror.children.first(where: { $0.label == "providerOptionsName" })?.value as? String {
-            #expect(providerOptionsName == "")
-        } else {
-            Issue.record("Could not access providerOptionsName")
+        _ = try await model.doGenerate(options: .init(
+            prompt: testPrompt,
+            providerOptions: [key: ["providerFlag": .string("forwarded")]]
+        ))
+
+        guard let request = await capture.current(),
+              let body = request.httpBody,
+              let json = try JSONSerialization.jsonObject(with: body) as? [String: Any] else {
+            Issue.record("Missing captured request")
+            return
         }
+
+        #expect(json["providerFlag"] as? String == "forwarded")
     }
 
     // MARK: - doGenerate Tests

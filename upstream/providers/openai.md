@@ -1,7 +1,8 @@
 # Provider: OpenAI
 
 - Audited against upstream commit: `c8d2726ae045a28142cb46df5e41cdd51d8dcc71`. The older broad audit at `a921fbb381cf2d19ef75ae27906f8d1cb0b8325b` is superseded by the targeted V4/source-closure slices below.
-- Latest targeted slice: `provider:openai/package-source-closure` against `c8d2726ae045a28142cb46df5e41cdd51d8dcc71`
+- Supplemental latest-main audit: `5b4a299200ec3d061a2cae087d78d13f74d6c90f` (2026-07-15), covering every OpenAI source/test file changed since the pinned reference.
+- Latest targeted slice: `provider:openai/gpt-5.6-v4` against `5b4a299200ec3d061a2cae087d78d13f74d6c90f`
 - Upstream package: `external/vercel-ai-sdk/packages/openai/src/**`
 - Swift implementation: `Sources/OpenAIProvider/**`
 
@@ -13,6 +14,12 @@
 - [x] Streaming SSE mapping (text deltas, tool workflows, citations, errors)
 - [x] Error mapping (OpenAI error payloads; response error parts)
 - [x] Model/feature gates (reasoning model rules, strictJsonSchema defaults)
+- [x] GPT-5.6 family parity: `gpt-5.6`, `gpt-5.6-luna`, `gpt-5.6-sol`, and `gpt-5.6-terra`, including `none`/`low`/`medium`/`high`/`xhigh`/`max` reasoning effort support and non-reasoning parameter compatibility at `none`
+- [x] GPT-5.6 Responses reasoning controls: `reasoningMode` (`standard`/`pro`), `reasoningContext` (`auto`/`current_turn`/`all_turns`), non-reasoning-model warnings, and generated/streamed `reasoningContext` provider metadata
+- [x] GPT-5.6 prompt caching in Chat and Responses: request-level `promptCacheOptions`, explicit cache breakpoints on system/developer/user/assistant/tool-result text, image, and file parts, full data-URL image serialization, and cache read/write/no-cache usage accounting
+- [x] Current Responses include surface includes `web_search_call.results`
+- [x] Provider construction rejects empty explicit or environment `baseURL` values through the shared provider-utils boundary
+- [x] Realtime transcription uses case-insensitive bearer extraction, strips all Authorization header variants when subprotocol auth is used, honors per-call overrides, and cancels caller audio on pre-open/send failures
 - [x] Provider option validation (Chat `metadata` + `logitBias` constraints)
 - [x] Responses parity for provider tools: `shell`/`local_shell`/`apply_patch` and `web_search` output mapping
 - [x] Local shell input contract matches upstream (`timeout_ms`, `working_directory` in tool input/output mapping)
@@ -48,9 +55,33 @@
 
 ## Known gaps / TODO
 
-- No known OpenAI runtime source-owner gaps remain at `c8d2726ae045a28142cb46df5e41cdd51d8dcc71` after the package source closure slice. Future upstream OpenAI source/test drift should reopen this page before changing broad status.
+- No known OpenAI runtime source-owner gaps remain at the pinned `c8d2726ae045a28142cb46df5e41cdd51d8dcc71` baseline or in the targeted OpenAI delta through `5b4a299200ec3d061a2cae087d78d13f74d6c90f`. Future upstream OpenAI source/test drift should reopen this page before changing broad status.
 
 ## Notes
+
+- 2026-07-15 targeted GPT-5.6 V4 latest-main audit at `5b4a299200ec3d061a2cae087d78d13f74d6c90f`: compared all 22 OpenAI source/test files changed from the pinned baseline. The changed owners were Chat usage/prompt/API/options/model, Responses usage/prompt/API/options/model/provider metadata, provider construction, language-model capabilities, and realtime transcription.
+- Swift runtime owners for this slice:
+  - `Sources/AISDKProviderUtils/ValidateBaseURL.swift`
+  - `Sources/OpenAIProvider/OpenAIPromptCache.swift`
+  - `Sources/OpenAIProvider/Chat/**`
+  - `Sources/OpenAIProvider/OpenAILanguageModelCapabilities.swift`
+  - `Sources/OpenAIProvider/OpenAIProvider.swift`
+  - `Sources/OpenAIProvider/OpenAIProviderV4.swift`
+  - `Sources/OpenAIProvider/OpenAIResponses{API,Input,LanguageModelV4,Model,Options,Prompt,ProviderMetadata,RequestBody}.swift`
+  - `Sources/OpenAIProvider/Transcription/OpenAITranscriptionModel.swift`
+- Swift boundary evidence for this slice:
+  - `Tests/AISDKProviderUtilsTests/ValidateBaseURLTests.swift`
+  - `Tests/SwiftAISDKTests/OpenAI/OpenAIChatLanguageModelV4Tests.swift`
+  - `Tests/SwiftAISDKTests/OpenAI/OpenAIChatMessagesConverterTests.swift`
+  - `Tests/SwiftAISDKTests/OpenAI/OpenAILanguageModelCapabilitiesTests.swift`
+  - `Tests/SwiftAISDKTests/OpenAI/OpenAIProviderOptionsParsingTests.swift`
+  - `Tests/SwiftAISDKTests/OpenAI/OpenAIProviderTests.swift`
+  - `Tests/SwiftAISDKTests/OpenAI/OpenAIResponsesLanguageModelV4Tests.swift`
+  - `Tests/SwiftAISDKTests/OpenAI/OpenAITranscriptionModelTests.swift`
+- Result: `AGENT=1 swift test --filter OpenAI` passed 707 tests in 49 suites across the complete OpenAI/OpenAI-compatible namespace; the final full run passed all 4158 tests in 473 suites.
+- Result: `AGENT=1 swift test --filter 'OpenAIResponsesLanguageModelV4|OpenAITranscriptionModel'` passed 36 tests in 2 suites.
+- Result: `swift build`, `pnpm run examples:build`, `pnpm run docs:check`, and `pnpm run docs:build` passed; the docs build generated 53 pages with the known nonfatal sitemap/npx ENOENT warning.
+- Result: the parity scanner reports `openai | provider | P0 | verified | current` at the pinned baseline; `git diff --check` passed after the targeted latest-main delta.
 
 - 2026-03-30 targeted refresh against upstream `0a56c9eedb1b421f85b6b81eda9cd01c98995051` (not a full provider re-audit): aligned `getOpenAILanguageModelCapabilities` and Responses model-id allowlists with upstream additions/removals, including `gpt-5.3-chat-latest`, `gpt-5.4-mini*`, `gpt-5.4-nano*`, and removal of legacy `codex-mini-latest`, `computer-use-preview`, `gpt-4-turbo*`, `gpt-4.5-preview*`, `chatgpt-4o-latest`, and `gpt-4o-audio-preview-2024-10-01`.
 

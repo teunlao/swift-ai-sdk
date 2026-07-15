@@ -44,8 +44,8 @@ private func openAIRealtimeRequestJSON(_ request: URLRequest) throws -> JSONValu
 @Suite("OpenAI Realtime Model")
 struct OpenAIRealtimeModelTests {
     @Test("provider exposes upstream experimental realtime factory")
-    func providerExposesExperimentalRealtimeFactory() {
-        let provider = createOpenAIProvider(settings: .init(apiKey: "test-api-key", name: "custom-openai"))
+    func providerExposesExperimentalRealtimeFactory() throws {
+        let provider = try createOpenAIProvider(settings: .init(apiKey: "test-api-key", name: "custom-openai"))
         let model = provider.experimental_realtime.realtimeModel(modelId: "gpt-realtime")
 
         #expect(model.specificationVersion == "v4")
@@ -56,7 +56,7 @@ struct OpenAIRealtimeModelTests {
     @Test("getToken creates client secret without expires_after by default")
     func getTokenCreatesClientSecretWithoutExpiresAfterByDefault() async throws {
         let capture = OpenAIRealtimeRequestCapture()
-        let provider = createOpenAIProvider(settings: .init(
+        let provider = try createOpenAIProvider(settings: .init(
             baseURL: "https://api.openai.com/v1",
             apiKey: "test-api-key",
             organization: "test-org",
@@ -93,7 +93,7 @@ struct OpenAIRealtimeModelTests {
     @Test("client secret request includes expires_after anchor and session config")
     func clientSecretRequestIncludesExpiresAfterAnchorAndSessionConfig() async throws {
         let capture = OpenAIRealtimeRequestCapture()
-        let provider = createOpenAIProvider(settings: .init(
+        let provider = try createOpenAIProvider(settings: .init(
             apiKey: "test-api-key",
             fetch: openAIRealtimeFetch(capture: capture)
         ))

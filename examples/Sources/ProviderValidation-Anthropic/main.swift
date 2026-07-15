@@ -1,8 +1,8 @@
 /**
  Anthropic Provider Documentation Validation
 
- This example validates all code samples from the Anthropic provider documentation.
- Each example from docs/providers/anthropic.mdx is tested here to ensure correctness.
+ This executable keeps the public Swift examples in the Anthropic provider
+ documentation type-checked against the current Provider V4 surface.
 
  Run with: swift run ProviderValidation-Anthropic
  */
@@ -16,400 +16,366 @@ import ExamplesCore
 
 struct WeatherQuery: Codable, Sendable { let location: String }
 struct WeatherReport: Codable, Sendable { let location: String; let forecast: String }
-struct ReleaseSummary: Codable, Sendable { let summary: String }
-
-// MARK: - Main Test Runner
 
 @main
 struct ProviderValidationAnthropic {
     static func main() async {
-        // Load environment variables from .env file
-        do {
-            try EnvLoader.load()
-        } catch {
-            print("⚠️  Warning: Could not load .env file: \(error)")
-            print("   Continuing with system environment variables...")
-        }
+        try? EnvLoader.load()
 
-        printHeader("Anthropic Provider Documentation Validation")
+        printHeader("Anthropic Provider V4 Documentation Validation")
+
+        let tests: [(String, () async throws -> Void)] = [
+            ("Native V4 provider", testNativeV4Provider),
+            ("Custom V4 provider", testCustomV4Provider),
+            ("Frontier model IDs", testFrontierModelIds),
+            ("Normalized xhigh reasoning", testNormalizedXhighReasoning),
+            ("Anthropic max effort", testAnthropicMaxEffort),
+            ("Adaptive thinking options", testAdaptiveThinkingOptions),
+            ("Typed cache-control messages", testCacheControlMessages),
+            ("Provider-defined tools", testProviderDefinedTools),
+            ("Provider file reference", testProviderFileReference),
+            ("V4 upload helpers", testUploadHelperSignatures),
+            ("Typed PDF prompt", testPDFPrompt),
+            ("Typed tool generation", testTypedToolGeneration),
+            ("Live generateText", testLiveGenerateText),
+            ("Live streamText", testLiveStreamText),
+        ]
 
         var passed = 0
         var failed = 0
         var skipped = 0
 
-        // Run all validation tests
-        let tests: [(String, () async throws -> Void)] = [
-            // Setup & Provider Instance
-            ("1. Basic Provider Instance", testBasicProviderInstance),
-            ("2. Custom Provider Settings", testCustomProviderSettings),
-            ("3. Language Model Creation", testLanguageModelCreation),
-
-            // Language Models - Generation (require API)
-            ("4. Generate Text Basic", testGenerateTextBasic),
-            ("5. Stream Text Basic", testStreamTextBasic),
-
-            // Advanced Features
-            ("6. Tool Call with Typed Schema", testToolCallWithTypedSchema),
-            ("7. Generate Object with Typed Schema", testGenerateObjectTyped),
-            ("8. Reasoning Syntax", testReasoningSyntax),
-            ("9. Cache Control Syntax", testCacheControlSyntax),
-            ("10. Cache Control System Messages", testCacheControlSystemMessages),
-
-            // Tools
-            ("11. Bash Tool Syntax", testBashToolSyntax),
-            ("12. Text Editor Tool Syntax", testTextEditorToolSyntax),
-            ("13. Computer Tool Syntax", testComputerToolSyntax),
-            ("14. Web Search Tool Syntax", testWebSearchToolSyntax),
-            ("15. Web Fetch Tool Syntax", testWebFetchToolSyntax),
-            ("16. Code Execution Tool Syntax", testCodeExecutionToolSyntax),
-
-            // Multi-modal
-            ("17. PDF Support Syntax", testPdfSupportSyntax),
-        ]
-
         for (name, test) in tests {
             do {
-                print("\n\n📋 Running: \(name)")
+                print("\nRunning: \(name)")
                 try await test()
-                print("✅ PASSED: \(name)")
+                print("PASSED: \(name)")
                 passed += 1
             } catch is SkippedTest {
-                print("⏭️  SKIPPED: \(name)")
+                print("SKIPPED: \(name)")
                 skipped += 1
             } catch {
-                print("❌ FAILED: \(name)")
-                print("   Error: \(error)")
+                print("FAILED: \(name): \(error)")
                 failed += 1
             }
         }
 
-        // Print summary
         printHeader("Validation Summary")
-        print("✅ Passed: \(passed)")
-        print("❌ Failed: \(failed)")
-        print("⏭️  Skipped: \(skipped)")
-        print("\nTotal: \(passed + failed + skipped) tests")
+        print("Passed: \(passed)")
+        print("Failed: \(failed)")
+        print("Skipped: \(skipped)")
 
         if failed > 0 {
-            print("\n⚠️  Some tests failed. Documentation may need updates.")
             exit(1)
-        } else {
-            print("\n🎉 All tests passed! Documentation is valid.")
         }
     }
 }
 
-// MARK: - Setup & Provider Instance Tests
+// MARK: - Provider V4
 
-func testBasicProviderInstance() async throws {
-    // From docs: anthropic is a global instance
-    print("   Testing basic provider instance access")
+func testNativeV4Provider() async throws {
+    guard anthropic.specificationVersion == "v4" else {
+        throw ValidationError.unexpectedValue("default anthropic provider is not V4")
+    }
 
-    let anthropicInstance = anthropic
-    let instanceType = String(describing: type(of: anthropicInstance))
-    print("   Using provider: \(instanceType)")
-
-    print("   ✓ Provider instance accessible successfully")
+    let model = try anthropic("claude-sonnet-5")
+    guard model.specificationVersion == "v4" else {
+        throw ValidationError.unexpectedValue("default Anthropic model is not V4")
+    }
 }
 
-func testCustomProviderSettings() async throws {
-    // From docs: createAnthropicProvider with custom settings
-    print("   Testing custom provider settings")
-
-    let anthropic = createAnthropicProvider(
+func testCustomV4Provider() async throws {
+    let provider = createAnthropic(
         settings: AnthropicProviderSettings(
-            baseURL: "https://custom.api.com/v1",
-            apiKey: "test-key"
+            baseURL: "https://proxy.example.com/v1",
+            apiKey: "test-key",
+            headers: ["x-application": "documentation-validation"]
         )
     )
 
-    let instanceType = String(describing: type(of: anthropic))
-    print("   Created custom provider: \(instanceType)")
-
-    print("   ✓ Custom provider instance created successfully")
+    let model = try provider.languageModel(modelId: "claude-opus-4-8")
+    guard model.specificationVersion == "v4" else {
+        throw ValidationError.unexpectedValue("custom Anthropic model is not V4")
+    }
 }
 
-func testLanguageModelCreation() async throws {
-    // From docs: anthropic("model-id")
-    print("   Testing language model creation")
-
-    let model = try anthropic("claude-3-haiku-20240307")
-    let modelType = String(describing: type(of: model))
-    print("   Created model: \(modelType)")
-
-    print("   ✓ Model conforms to LanguageModelV3")
-}
-
-// MARK: - Language Models - Basic Generation Tests
-
-func testGenerateTextBasic() async throws {
-    // From docs (line 95-98): Basic text generation with Claude
-    print("   Testing generate text with Claude API...")
-
-    let result = try await generateText(
-        model: try anthropic("claude-3-haiku-20240307"),
-        prompt: "Write a vegetarian lasagna recipe for 4 people."
-    )
-
-    print("   ✓ Generated text: \(result.text.prefix(100))...")
-    print("   ✓ Tokens used: \(result.usage.totalTokens ?? 0)")
-    print("   ✓ Finish reason: \(result.finishReason)")
-}
-
-func testStreamTextBasic() async throws {
-    // From docs: Stream text generation
-    print("   Testing stream text with Claude API...")
-
-    let stream = try streamText(
-        model: try anthropic("claude-3-haiku-20240307"),
-        prompt: "Write a 2-sentence description of Swift programming language."
-    )
-
-    var chunkCount = 0
-    for try await chunk in stream.textStream {
-        chunkCount += 1
-        if chunkCount <= 3 {
-            print("   Chunk \(chunkCount): \(chunk.prefix(50))...")
+func testFrontierModelIds() async throws {
+    for modelId in [
+        "claude-sonnet-5",
+        "claude-fable-5",
+        "claude-opus-4-8",
+        "claude-opus-4-7",
+        "claude-opus-4-6",
+        "claude-sonnet-4-6",
+    ] {
+        let model = try anthropic(modelId)
+        guard model.specificationVersion == "v4" else {
+            throw ValidationError.unexpectedValue("\(modelId) is not a V4 model")
         }
     }
 
-    print("   ✓ Received \(chunkCount) text chunks")
+    _ = anthropic.chat("claude-sonnet-5")
+    _ = anthropic.messages("claude-sonnet-5")
 }
 
-// MARK: - Typed Tool & Structured Output
+// MARK: - Reasoning and provider options
 
-func testToolCallWithTypedSchema() async throws {
-    print("   Testing tool call with typed schema")
+func testNormalizedXhighReasoning() async throws {
+    let settings = CallSettings(reasoning: .xhigh)
+    guard settings.reasoning == .xhigh else {
+        throw ValidationError.unexpectedValue("xhigh reasoning was not preserved")
+    }
+}
+
+func testAnthropicMaxEffort() async throws {
+    let options: ProviderOptions = [
+        "anthropic": ["effort": "max"]
+    ]
+
+    guard options["anthropic"]?["effort"] == .string("max") else {
+        throw ValidationError.unexpectedValue("Anthropic max effort was not preserved")
+    }
+}
+
+func testAdaptiveThinkingOptions() async throws {
+    let options: ProviderOptions = [
+        "anthropic": [
+            "thinking": [
+                "type": "adaptive",
+                "display": "summarized",
+            ],
+            "effort": "max",
+        ]
+    ]
+
+    guard case .object(let thinking)? = options["anthropic"]?["thinking"],
+          thinking["type"] == .string("adaptive"),
+          options["anthropic"]?["effort"] == .string("max") else {
+        throw ValidationError.unexpectedValue("adaptive thinking options are malformed")
+    }
+}
+
+func testCacheControlMessages() async throws {
+    let messages: [ModelMessage] = [
+        .system(SystemModelMessage(
+            content: "You are a Swift concurrency expert.",
+            providerOptions: [
+                "anthropic": [
+                    "cacheControl": ["type": "ephemeral", "ttl": "1h"]
+                ]
+            ]
+        )),
+        .user(UserModelMessage(content: .parts([
+            .text(TextPart(text: "Review this failure:")),
+            .text(TextPart(
+                text: "Task cancellation did not reach the stream owner.",
+                providerOptions: [
+                    "anthropic": ["cacheControl": ["type": "ephemeral"]]
+                ]
+            )),
+        ]))),
+    ]
+
+    guard messages.count == 2 else {
+        throw ValidationError.unexpectedValue("typed cache-control prompt was not built")
+    }
+}
+
+// MARK: - Provider-defined tools
+
+func testProviderDefinedTools() async throws {
+    let tools: [String: Tool] = [
+        "bash": anthropic.tools.bash20250124(),
+        "str_replace_based_edit_tool": anthropic.tools.textEditor20250728(
+            AnthropicTextEditor20250728Args(maxCharacters: 10_000)
+        ),
+        "computer": anthropic.tools.computer20251124(
+            AnthropicComputerOptions(
+                displayWidthPx: 1920,
+                displayHeightPx: 1080,
+                enableZoom: true
+            )
+        ),
+        "web_search": anthropic.tools.webSearch20260209(
+            AnthropicWebSearchOptions(maxUses: 5)
+        ),
+        "web_fetch": anthropic.tools.webFetch20260209(
+            AnthropicWebFetchOptions(
+                maxUses: 2,
+                citationsEnabled: true,
+                maxContentTokens: 20_000
+            )
+        ),
+        "code_execution": anthropic.tools.codeExecution20260120(),
+        "memory": anthropic.tools.memory20250818(),
+        "advisor": anthropic.tools.advisor20260301(
+            AnthropicAdvisor20260301Options(
+                model: "claude-opus-4-8",
+                maxUses: 3
+            )
+        ),
+        "tool_search": anthropic.tools.toolSearchBm2520251119(),
+    ]
+
+    guard tools.count == 9 else {
+        throw ValidationError.unexpectedValue("provider-defined tool set is incomplete")
+    }
+}
+
+// MARK: - Files and skills
+
+func testProviderFileReference() async throws {
+    let reference: ProviderReference = ["anthropic": "file_123"]
+    let message = ModelMessage.user(UserModelMessage(content: .parts([
+        .text(TextPart(text: "Analyze this CSV file.")),
+        .file(FilePart(
+            data: .reference(reference),
+            mediaType: "text/csv",
+            filename: "data.csv",
+            providerOptions: [
+                "anthropic": ["containerUpload": true]
+            ]
+        )),
+    ])))
+
+    guard case .user(let user) = message,
+          case .parts(let parts) = user.content,
+          parts.count == 2 else {
+        throw ValidationError.unexpectedValue("provider-reference prompt was not built")
+    }
+}
+
+func uploadCSVForCodeExecution(_ data: Data) async throws -> DefaultUploadFileResult {
+    try await uploadFile(
+        api: anthropic,
+        data: DataContentOrURL.data(data),
+        mediaType: "text/csv",
+        filename: "data.csv"
+    )
+}
+
+func uploadDocumentationSkill() async throws -> DefaultUploadSkillResult {
+    try await uploadSkill(
+        api: anthropic,
+        files: [
+            SkillsV4File(
+                path: "SKILL.md",
+                content: .text("# Data review\nAnalyze the supplied dataset.")
+            )
+        ],
+        displayTitle: "Data review"
+    )
+}
+
+func testUploadHelperSignatures() async throws {
+    let fileUploader: (Data) async throws -> DefaultUploadFileResult =
+        uploadCSVForCodeExecution
+    let skillUploader: () async throws -> DefaultUploadSkillResult =
+        uploadDocumentationSkill
+
+    _ = fileUploader
+    _ = skillUploader
+}
+
+func testPDFPrompt() async throws {
+    let message = ModelMessage.user(UserModelMessage(content: .parts([
+        .text(TextPart(text: "Summarize this PDF.")),
+        .file(FilePart(
+            data: .data(Data([0x25, 0x50, 0x44, 0x46])),
+            mediaType: "application/pdf",
+            filename: "guide.pdf"
+        )),
+    ])))
+
+    guard case .user = message else {
+        throw ValidationError.unexpectedValue("typed PDF prompt was not built")
+    }
+}
+
+// MARK: - Live API examples
+
+func testTypedToolGeneration() async throws {
+    try requireAnthropicAPIKey()
 
     let weatherTool = tool(
         description: "Return a canned forecast",
         inputSchema: WeatherQuery.self
     ) { query, _ in
-        WeatherReport(location: query.location, forecast: "72°F and sunny")
+        WeatherReport(location: query.location, forecast: "22 C and sunny")
     }
 
     let result = try await generateText(
-        model: try anthropic("claude-3-5-sonnet-20241022"),
+        model: try anthropic("claude-sonnet-5"),
         tools: ["weather": weatherTool.eraseToTool()],
         toolChoice: .tool(toolName: "weather"),
-        prompt: "Call the weather tool for San Francisco and summarize the response."
+        prompt: "Call the weather tool for San Francisco."
     )
 
-    guard let toolCall = result.toolCalls.first(where: { !$0.isDynamic }) else {
-        print("   ⚠️ Model did not invoke the tool; skipping")
-        throw SkippedTest()
+    guard let call = result.toolCalls.first(where: { !$0.isDynamic }) else {
+        throw ValidationError.missingFeature("model did not call the weather tool")
     }
 
-    let decodedCall = try await weatherTool.decodeInput(from: toolCall)
-    print("   Tool call args: location=\(decodedCall.location)")
+    _ = try await weatherTool.decodeInput(from: call)
+}
 
-    guard let toolResult = result.toolResults.first(where: { !$0.isDynamic }) else {
-        print("   ⚠️ Model produced no tool result; skipping")
-        throw SkippedTest()
+func testLiveGenerateText() async throws {
+    try requireAnthropicAPIKey()
+
+    let result = try await generateText(
+        model: try anthropic("claude-sonnet-5"),
+        prompt: "Describe Swift structured concurrency in one sentence.",
+        settings: CallSettings(reasoning: .high)
+    )
+
+    guard !result.text.isEmpty else {
+        throw ValidationError.unexpectedValue("generateText returned no text")
+    }
+}
+
+func testLiveStreamText() async throws {
+    try requireAnthropicAPIKey()
+
+    let result = try streamText(
+        model: try anthropic("claude-sonnet-5"),
+        prompt: "Give one benefit of actor isolation."
+    )
+
+    var receivedText = false
+    for try await text in result.textStream {
+        receivedText = receivedText || !text.isEmpty
     }
 
-    let decodedResult = try weatherTool.decodeOutput(from: toolResult)
-    print("   Tool result: \(decodedResult.forecast)")
-    print("   ✓ Tool execution pipeline completed")
-}
-
-func testGenerateObjectTyped() async throws {
-    print("   Testing generateObject with typed schema")
-
-    let summary = try await generateObject(
-        model: try anthropic("claude-3-5-sonnet-20241022"),
-        schema: ReleaseSummary.self,
-        prompt: "Summarize the Swift AI SDK key features in one sentence.",
-        schemaName: "release_summary"
-    ).object
-
-    print("   Summary: \(summary.summary)")
-    print("   ✓ generateObject returned typed value")
-}
-
-// MARK: - Advanced Features Tests
-
-func testReasoningSyntax() async throws {
-    // From docs: thinking parameter with budgetTokens
-    print("   Testing reasoning syntax")
-
-    let _: [String: Any] = [
-        "anthropic": [
-            "thinking": [
-                "type": "enabled",
-                "budgetTokens": 12000
-            ]
-        ]
-    ]
-
-    print("   ✓ Reasoning providerOptions structure is valid")
-    print("   Options: thinking with budgetTokens")
-}
-
-func testCacheControlSyntax() async throws {
-    // From docs: cacheControl in message content
-    print("   Testing cache control syntax")
-
-    let _: [[String: Any]] = [
-        [
-            "role": "user",
-            "content": [
-                ["type": "text", "text": "You are a JavaScript expert."],
-                [
-                    "type": "text",
-                    "text": "Error message: test error",
-                    "providerOptions": [
-                        "anthropic": ["cacheControl": ["type": "ephemeral"]]
-                    ]
-                ],
-                ["type": "text", "text": "Explain the error message."]
-            ]
-        ]
-    ]
-
-    print("   ✓ Cache control in content structure is valid")
-    print("   Format: cacheControl in providerOptions per message part")
-}
-
-func testCacheControlSystemMessages() async throws {
-    // From docs: cacheControl on system messages
-    print("   Testing cache control on system messages syntax")
-
-    let _: [[String: Any]] = [
-        [
-            "role": "system",
-            "content": "You are a JavaScript expert."
-        ],
-        [
-            "role": "system",
-            "content": "Long context here",
-            "providerOptions": [
-                "anthropic": ["cacheControl": ["type": "ephemeral"]]
-            ]
-        ],
-        [
-            "role": "user",
-            "content": "Explain this code"
-        ]
-    ]
-
-    print("   ✓ Cache control on system messages structure is valid")
-    print("   Format: Multiple system messages with cacheControl")
-}
-
-// MARK: - Tools Tests
-
-func testBashToolSyntax() async throws {
-    // From docs: anthropic.tools.bash_20241022
-    print("   Testing bash tool syntax")
-
-    print("   ⏭️  Skipping: bash tool requires execute closure implementation")
-    throw SkippedTest()
-}
-
-func testTextEditorToolSyntax() async throws {
-    // From docs: anthropic.tools.textEditor_20250728
-    print("   Testing text editor tool syntax")
-
-    print("   ⏭️  Skipping: text editor tool requires execute closure implementation")
-    throw SkippedTest()
-}
-
-func testComputerToolSyntax() async throws {
-    // From docs: anthropic.tools.computer_20241022
-    print("   Testing computer tool syntax")
-
-    print("   ⏭️  Skipping: computer tool requires execute closure implementation")
-    throw SkippedTest()
-}
-
-func testWebSearchToolSyntax() async throws {
-    // From docs: anthropic.tools.webSearch_20250305
-    print("   Testing web search tool syntax")
-
-    let _ = anthropic.tools.webSearch20250305()
-
-    print("   ✓ Web search tool created successfully")
-    print("   Tool: anthropic.tools.webSearch20250305()")
-}
-
-func testWebFetchToolSyntax() async throws {
-    // From docs: anthropic.tools.webFetch_20250910
-    print("   Testing web fetch tool syntax")
-
-    let _ = anthropic.tools.webFetch20250910()
-
-    print("   ✓ Web fetch tool created successfully")
-    print("   Tool: anthropic.tools.webFetch20250910()")
-}
-
-func testCodeExecutionToolSyntax() async throws {
-    // From docs: anthropic.tools.codeExecution_20250522
-    print("   Testing code execution tool syntax")
-
-    let _ = anthropic.tools.codeExecution20250522()
-
-    print("   ✓ Code execution tool created successfully")
-    print("   Tool: anthropic.tools.codeExecution20250522()")
-}
-
-// MARK: - Multi-modal Tests
-
-func testPdfSupportSyntax() async throws {
-    // From docs: PDF in message content
-    print("   Testing PDF support syntax")
-
-    let _: [[String: Any]] = [
-        [
-            "role": "user",
-            "content": [
-                ["type": "text", "text": "What is in this PDF?"],
-                [
-                    "type": "file",
-                    "data": Data(),
-                    "mediaType": "application/pdf"
-                ]
-            ]
-        ]
-    ]
-
-    print("   ✓ PDF support structure is valid")
-    print("   Format: [\"type\": \"file\", \"mediaType\": \"application/pdf\"]")
+    guard receivedText else {
+        throw ValidationError.unexpectedValue("streamText returned no text")
+    }
 }
 
 // MARK: - Utilities
 
-func printHeader(_ title: String) {
-    let separator = String(repeating: "=", count: 60)
-    print("\n\(separator)")
-    print(title.centered(width: 60))
-    print(separator)
-}
-
-extension String {
-    func centered(width: Int) -> String {
-        let padding = max(0, width - count) / 2
-        let leftPad = String(repeating: " ", count: padding)
-        let rightPad = String(repeating: " ", count: width - padding - count)
-        return leftPad + self + rightPad
+func requireAnthropicAPIKey() throws {
+    guard let key = ProcessInfo.processInfo.environment["ANTHROPIC_API_KEY"],
+          !key.isEmpty else {
+        throw SkippedTest()
     }
 }
 
-// MARK: - Error Types
+func printHeader(_ title: String) {
+    let separator = String(repeating: "=", count: 64)
+    print("\n\(separator)")
+    print(title)
+    print(separator)
+}
 
 enum ValidationError: Error, CustomStringConvertible {
-    case typeMismatch(String)
     case unexpectedValue(String)
     case missingFeature(String)
 
     var description: String {
         switch self {
-        case .typeMismatch(let msg):
-            return "Type mismatch: \(msg)"
-        case .unexpectedValue(let msg):
-            return "Unexpected value: \(msg)"
-        case .missingFeature(let msg):
-            return "Missing feature: \(msg)"
+        case .unexpectedValue(let message):
+            return "Unexpected value: \(message)"
+        case .missingFeature(let message):
+            return "Missing feature: \(message)"
         }
     }
 }

@@ -8,7 +8,7 @@ struct RegistryTranscribeOpenAIExample: Example {
 
   static func run() async throws {
     do {
-      _ = createProviderRegistry(providers: ["openai": createOpenAIProvider()])
+      _ = createProviderRegistry(providers: ["openai": try createOpenAIProvider()])
       let model = openai.transcription("whisper-1")
 
       // Generate a small sample audio using TTS first (to avoid external files)

@@ -542,6 +542,63 @@ struct AnthropicPrepareToolsProviderDefinedTests {
         ])
     }
 
+    @Test("advisor_20260301 adds required model and beta")
+    func advisor20260301RequiredModel() async throws {
+        let result = try await prepareAnthropicTools(
+            tools: [makeProviderTool(
+                id: "anthropic.advisor_20260301",
+                name: "advisor",
+                args: ["model": .string("claude-opus-4-7")]
+            )],
+            toolChoice: nil,
+            disableParallelToolUse: nil
+        )
+
+        #expect(result.betas == Set(["advisor-tool-2026-03-01"]))
+        #expect(result.warnings.isEmpty)
+        #expect(result.tools == [
+            .object([
+                "type": .string("advisor_20260301"),
+                "name": .string("advisor"),
+                "model": .string("claude-opus-4-7"),
+            ])
+        ])
+    }
+
+    @Test("advisor_20260301 maps optional arguments")
+    func advisor20260301OptionalArguments() async throws {
+        let result = try await prepareAnthropicTools(
+            tools: [makeProviderTool(
+                id: "anthropic.advisor_20260301",
+                name: "advisor",
+                args: [
+                    "model": .string("claude-opus-4-7"),
+                    "maxUses": .number(5),
+                    "caching": .object([
+                        "type": .string("ephemeral"),
+                        "ttl": .string("1h"),
+                    ]),
+                ]
+            )],
+            toolChoice: nil,
+            disableParallelToolUse: nil
+        )
+
+        #expect(result.betas == Set(["advisor-tool-2026-03-01"]))
+        #expect(result.tools == [
+            .object([
+                "type": .string("advisor_20260301"),
+                "name": .string("advisor"),
+                "model": .string("claude-opus-4-7"),
+                "max_uses": .number(5),
+                "caching": .object([
+                    "type": .string("ephemeral"),
+                    "ttl": .string("1h"),
+                ]),
+            ])
+        ])
+    }
+
     @Test("text_editor_20250728 handles max characters")
     func textEditor20250728WithMax() async throws {
         let args: [String: JSONValue] = ["maxCharacters": .number(10_000)]

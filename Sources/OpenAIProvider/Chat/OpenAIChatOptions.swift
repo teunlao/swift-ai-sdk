@@ -23,6 +23,7 @@ public enum OpenAIChatReasoningEffort: String, Sendable {
     case medium
     case high
     case xhigh
+    case max
 }
 
 public enum OpenAIChatServiceTier: String, Sendable {
@@ -63,6 +64,7 @@ public struct OpenAIChatProviderOptions: Sendable, Equatable {
     public var strictJsonSchema: Bool?
     public var textVerbosity: OpenAIChatTextVerbosity?
     public var promptCacheKey: String?
+    public var promptCacheOptions: OpenAIPromptCacheOptions?
     public var promptCacheRetention: OpenAIChatPromptCacheRetention?
     public var safetyIdentifier: String?
     public var systemMessageMode: OpenAIChatSystemMessageMode?
@@ -82,6 +84,7 @@ public struct OpenAIChatProviderOptions: Sendable, Equatable {
         strictJsonSchema: Bool? = nil,
         textVerbosity: OpenAIChatTextVerbosity? = nil,
         promptCacheKey: String? = nil,
+        promptCacheOptions: OpenAIPromptCacheOptions? = nil,
         promptCacheRetention: OpenAIChatPromptCacheRetention? = nil,
         safetyIdentifier: String? = nil,
         systemMessageMode: OpenAIChatSystemMessageMode? = nil,
@@ -100,6 +103,7 @@ public struct OpenAIChatProviderOptions: Sendable, Equatable {
         self.strictJsonSchema = strictJsonSchema
         self.textVerbosity = textVerbosity
         self.promptCacheKey = promptCacheKey
+        self.promptCacheOptions = promptCacheOptions
         self.promptCacheRetention = promptCacheRetention
         self.safetyIdentifier = safetyIdentifier
         self.systemMessageMode = systemMessageMode
@@ -188,10 +192,10 @@ let openAIChatProviderOptionsSchema = FlexibleSchema<OpenAIChatProviderOptions>(
                     result.user = string
                 }
 
-                if let reasoningValue = try field("reasoningEffort", message: "reasoningEffort must be one of minimal, low, medium, high") {
+                if let reasoningValue = try field("reasoningEffort", message: "reasoningEffort must be one of none, minimal, low, medium, high, xhigh, max") {
                     guard case .string(let string) = reasoningValue,
                           let effort = OpenAIChatReasoningEffort(rawValue: string) else {
-                        let error = SchemaValidationIssuesError(vendor: "openai", issues: "reasoningEffort must be one of minimal, low, medium, high")
+                        let error = SchemaValidationIssuesError(vendor: "openai", issues: "reasoningEffort must be one of none, minimal, low, medium, high, xhigh, max")
                         return .failure(error: TypeValidationError.wrap(value: reasoningValue, cause: error))
                     }
                     result.reasoningEffort = effort
@@ -278,6 +282,8 @@ let openAIChatProviderOptionsSchema = FlexibleSchema<OpenAIChatProviderOptions>(
                     }
                     result.promptCacheKey = string
                 }
+
+                result.promptCacheOptions = try parseOpenAIPromptCacheOptions(dict["promptCacheOptions"])
 
                 if let cacheRetentionValue = try field("promptCacheRetention", message: "promptCacheRetention must be one of in_memory, 24h") {
                     guard case .string(let string) = cacheRetentionValue,

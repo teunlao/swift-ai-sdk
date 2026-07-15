@@ -26,6 +26,7 @@ foundation slices, plus targeted `core:provider/transcription-stream` and
 `provider:openai/index-export-surface`,
 `provider:openai/chat-prompt-conversion-v4`,
 `provider:openai/package-source-closure`,
+`provider:openai/gpt-5.6-v4`,
 `core:ai/openai-v4-dx`, `docs:openai-v4`, and
 `provider:openai/native-v4-embedding`, and
 `provider:openai/native-v4-speech`, and
@@ -33,14 +34,21 @@ foundation slices, plus targeted `core:provider/transcription-stream` and
 `provider:openai/native-v4-rest-transcription`, and
 `provider:openai/native-v4-completion`, and
 `provider:openai/native-v4-chat`, and
-`provider:openai/native-v4-responses`
-evidence against `c8d2726ae045a28142cb46df5e41cdd51d8dcc71`.
+`provider:openai/native-v4-responses`, and
+`provider:openai-compatible/native-v4-chat`, and
+`provider:openai-compatible/native-v4-image`, and
+`provider:openai-compatible/package-audit`, and
+`provider:anthropic/native-v4`
+evidence against `c8d2726ae045a28142cb46df5e41cdd51d8dcc71`, plus the
+targeted OpenAI GPT-5.6 V4 latest-main delta against
+`5b4a299200ec3d061a2cae087d78d13f74d6c90f`.
 
 Status:
 - `core:provider`: partial/current. Swift now has the V4 provider, model,
   realtime, middleware, shared-file, warning, and provider-reference foundation,
   plus the V4 transcription streaming contract needed by upstream realtime
-  transcription; concrete provider targets still need native V4 vertical
+  transcription; Anthropic now also has a native V4 language-model vertical,
+  while remaining concrete provider targets still need provider-first V4
   migrations.
 - `core:ai`: partial/current. Swift high-level model resolution and runtime
   entrypoints now use the V4 rail for text, object, embed, rerank, image,
@@ -50,7 +58,9 @@ Status:
   `createDownload`/`DownloadFileFunction` hooks. OpenAI's default provider now
   drives the direct V4 examples, agent settings, middleware, custom provider,
   provider registry, and docs paths without requiring `.v3(...)`/`.v4(...)`
-  wrappers at the call site.
+  wrappers at the call site. Anthropic now follows the same direct V4 path for
+  text generation, reasoning, provider-reference files, file uploads, and skill
+  uploads.
 - `core:provider-utils`: partial/current for the shared content/data helper
   support touched by the V4 prompt/upload flow and provider-reference
   detection/resolution, V4 reasoning-to-provider mapping helpers, and shared
@@ -69,6 +79,67 @@ Status:
   provider-driven integration behavior, not unidentified exported helper drift.
 
 Latest validation:
+- `2026-07-15`: the parity scanner reports OpenAI as `verified/current` at
+  the repository-wide pinned baseline; `git diff --check` also passed after
+  the targeted latest-main delta.
+- `2026-07-15`: `AGENT=1 swift test --filter OpenAI` passed 707 tests in
+  49 suites across the main OpenAI and OpenAI-compatible namespaces after the
+  final GPT-5.6 V4 boundary additions.
+- `2026-07-15`: `AGENT=1 swift test` passed all 4158 Swift Testing tests in
+  473 suites after the targeted OpenAI GPT-5.6 V4 latest-main delta;
+  `swift build` also passed.
+- `2026-07-15`: the focused OpenAI Responses V4 and realtime transcription
+  validation passed 36 tests in 2 suites, including GPT-5.6 `max`/`pro`
+  reasoning, effective reasoning context, prompt cache writes and explicit
+  breakpoints, non-reasoning warnings, WebSocket auth normalization, and audio
+  cancellation on pre-open and mid-stream failures.
+- `2026-07-15`: `pnpm run examples:build`, `pnpm run docs:check`, and
+  `pnpm run docs:build` passed after the OpenAI GPT-5.6 V4 documentation and
+  example update; the docs build generated 53 pages and emitted the known
+  nonfatal sitemap/npx ENOENT warning.
+- `2026-07-15`: `AGENT=1 swift test` passed all 4145 Swift Testing tests in
+  472 suites after the native Anthropic Provider V4 and high-level
+  provider-reference/upload slice; `swift build` also passed.
+- `2026-07-15`: `AGENT=1 swift test --filter Anthropic` passed 293 tests in
+  45 suites, including the direct `xhigh` and `max` model matrix, normalized
+  reasoning mappings, provider-reference files, and container uploads.
+- `2026-07-15`: `pnpm run examples:build`, `pnpm run docs:check`, and
+  `pnpm run docs:build` passed after the Anthropic V4 documentation update;
+  the docs build generated 53 pages and emitted the known nonfatal
+  sitemap/npx ENOENT warning.
+- `2026-07-15`: the parity scanner reports Anthropic as `verified/current` at
+  `c8d2726ae045a28142cb46df5e41cdd51d8dcc71`; `git diff --check` also passed.
+- `2026-07-15`: the complete `provider:openai-compatible/package-audit`
+  passed 185 provider tests in 18 suites; exact upstream xAI fixtures,
+  converter/tools/options, Chat, Completion, Embedding, Image, custom error,
+  and V3/V4 contracts are included.
+- `2026-07-15`: `AGENT=1 swift test` passed all 4105 Swift Testing tests in
+  469 suites; `swift build`, `git diff --check`, and the parity scanner also
+  passed. The scanner reports OpenAI-compatible as `verified/current` at
+  `c8d2726ae045a28142cb46df5e41cdd51d8dcc71`.
+- `2026-07-15`: `AGENT=1 swift test` passed all 4079 Swift Testing tests in
+  464 suites after the native OpenAI-compatible V4 Image slice.
+- `2026-07-15`: `AGENT=1 swift test --filter OpenAICompatibleProviderTests`
+  passed 159 tests in 13 suites across native V4 Chat, Completion, Embedding,
+  Image, and the preserved V3 facades.
+- `2026-07-15`: `AGENT=1 swift test --filter OpenAICompatibleImageModel`
+  passed 13 tests in 2 suites for the preserved V3 contract and native V4 JSON,
+  provider-option, URL download, and multipart-edit boundaries.
+- `2026-07-15`: `swift build` passed after the native OpenAI-compatible V4
+  Image implementation.
+- `2026-07-15`: `AGENT=1 swift test`
+  passed all 4070 Swift Testing tests in 461 suites after the native
+  OpenAI-compatible V4 Chat slice and shared tool-call tracker correction.
+- `2026-07-15`: `AGENT=1 swift test --filter OpenAICompatibleProviderTests`
+  passed 150 Swift Testing tests in 10 suites across native V4 Chat and the
+  preserved V3/adapter surfaces.
+- `2026-07-15`: `AGENT=1 swift test --filter OpenAICompatibleProviderV4Tests`,
+  `AGENT=1 swift test --filter OpenAICompatibleChatMessagesConverterV4Tests`,
+  and `AGENT=1 swift test --filter StreamingToolCallTrackerTests` passed 9, 2,
+  and 15 Swift Testing tests for the direct V4 factory/model, prompt boundary,
+  and shared streaming state machine.
+- `2026-07-15`: `swift build` passed after the native OpenAI-compatible V4
+  Chat implementation.
 - `2026-07-04`: `node .agents/skills/swift-ai-sdk-upstream/scripts/scan-upstream.js --out .upstream/current`
   reports `openai | provider | P0 | verified | current | OpenAIProvider |
   SwiftAISDKTests | upstream/providers/openai.md |
@@ -311,8 +382,9 @@ Latest validation:
 
 ## Known gaps / TODO
 
-- [ ] Migrate concrete provider targets to native V4 contracts in
-  provider-first vertical slices.
+- [ ] Migrate remaining concrete provider targets to native V4 contracts in
+  provider-first vertical slices. OpenAI, OpenAI-compatible, and Anthropic now
+  have audited native V4 verticals for their documented current surfaces.
 - [ ] Keep provider-utils re-audits tied to provider-driven integration slices.
   The Swift-applicable exported helper/type surface has current evidence; JS
   runtime/type-only exports such as Node `Buffer` guards, TypeScript
@@ -331,6 +403,109 @@ Latest validation:
 3) Docs updates only after behavior parity is green
 
 ## Current upstream intake snapshot
+
+### 2026-07-15: `provider:anthropic/native-v4` against upstream `c8d2726ae045a28142cb46df5e41cdd51d8dcc71`
+
+- `anthropic` and `createAnthropic(settings:)` now expose a native Provider V4
+  Messages model while the explicitly named V3 factory remains available for
+  compatibility.
+- V4 reasoning maps normalized effort to adaptive or token-budget thinking;
+  `xhigh` remains distinct from Anthropic provider `max`, and the full current
+  model support matrix is protected at the HTTP request boundary.
+- V4 provider-reference files, container uploads, files, and skills flow
+  through the public high-level APIs without projecting V4-only data into V3.
+- The Anthropic provider page, foundation/provider-management examples, and
+  compile-checked validation executable now use the direct V4 facade and
+  current model/tool names.
+
+### 2026-07-15: `provider:openai-compatible/package-audit` against upstream `c8d2726ae045a28142cb46df5e41cdd51d8dcc71`
+
+Scope: the full `packages/openai-compatible/src/**` runtime and test surface.
+
+Result:
+- Promoted the provider tracker from `partial/current` to
+  `verified/current` after auditing factory, errors, option-key utilities,
+  Chat, Completion, Embedding, Image, tools, exports, and version owners.
+- Added byte-identical tracked copies of all four upstream xAI Chat fixtures;
+  Swift tests consume all 344 text and 230 tool-call stream payloads.
+- Matched JavaScript thought-signature coercion on input and truthiness on
+  output, request-body ownership order, metadata-key resolution, and
+  data-first stream unions.
+- Unified typed provider error schemas across HTTP and SSE paths, including
+  custom Baseten, Cerebras, Fireworks, and xAI configurations.
+- Classified JavaScript workflow symbols and the ignored partial Chat config
+  argument as explicit Swift adaptations rather than runtime gaps.
+
+Validation:
+- `AGENT=1 swift test --filter OpenAICompatibleProviderTests` passed 185 tests
+  in 18 suites.
+- Baseten, Cerebras, Fireworks, and xAI provider suites passed 26, 9, 3, and
+  163 tests respectively.
+- `swift build`, `git diff --check`, and byte-for-byte fixture `cmp` checks
+  passed.
+- `AGENT=1 swift test` passed all 4105 tests in 469 suites.
+- The component scanner reports `openai-compatible | provider | P0 | verified
+  | current`.
+
+Evidence:
+- Durable provider matrix: `upstream/providers/openai-compatible.md`.
+- Swift owners: `Sources/OpenAICompatibleProvider/**`.
+- Swift tests and tracked fixtures: `Tests/OpenAICompatibleProviderTests/**`.
+- Pinned upstream: `external/vercel-ai-sdk/packages/openai-compatible/src/**`.
+
+### 2026-07-15: `provider:openai-compatible/native-v4-chat` against upstream `c8d2726ae045a28142cb46df5e41cdd51d8dcc71`
+
+Scope: `provider:openai-compatible/native-v4-chat` plus the required
+`core:provider-utils/streaming-tool-call-tracker` boundary.
+
+Initial finding:
+- The public V4 provider factory returned a V3-backed Chat adapter even though
+  the pinned upstream package owns Chat directly as a `LanguageModelV4`.
+- Swift lacked direct V4 prompt conversion for media, reasoning, approval
+  responses, Google thought signatures, and the V4 provider-option surface.
+- The shared streaming tracker finalized a tool call as soon as its argument
+  buffer became parsable JSON. A parsable prefix can still receive later
+  deltas, so this could expose truncated tool input before stream completion.
+
+Implementation:
+- Added a native `OpenAICompatibleChatLanguageModelV4` facade over one
+  provider-owned Chat transport core shared with the preserved V3 facade.
+- Routed V4 `languageModel` and `chatModel` factories directly to native Chat;
+  Completion, Embedding, and Image remain explicitly on their existing adapter
+  rail.
+- Added direct V4 prompt/tool conversion, top-level reasoning mapping,
+  canonical and raw provider options, custom usage conversion over the complete
+  loose usage object, detailed usage, response reasoning fallback, and Google
+  thought-signature round-tripping.
+- Added native V4 streaming lifecycle mapping for reasoning/text parts, late
+  tool names, missing tool-call indexes, raw/error chunks, usage, finish
+  metadata, and cancellation while retaining the established V3 behavior.
+- Changed the shared tool-call tracker to finalize unfinished calls only from
+  `flush()`. It continues forwarding a trailing empty argument delta but emits
+  exactly one completed tool call.
+
+Validation:
+- `AGENT=1 swift test --filter OpenAICompatibleProviderTests` passed 150 tests
+  in 10 suites.
+- `AGENT=1 swift test --filter OpenAICompatibleProviderV4Tests` passed 9 tests.
+- `AGENT=1 swift test --filter OpenAICompatibleChatMessagesConverterV4Tests`
+  passed 2 tests.
+- `AGENT=1 swift test --filter StreamingToolCallTrackerTests` passed 15 tests.
+- `AGENT=1 swift test --filter testNotDuplicateToolCallsWithEmptyChunk` passed
+  the main OpenAI Chat integration regression.
+- `AGENT=1 swift test` passed all 4070 tests in 461 suites.
+
+Evidence:
+- Upstream provider and Chat:
+  `external/vercel-ai-sdk/packages/openai-compatible/src/openai-compatible-provider.ts`
+  and `external/vercel-ai-sdk/packages/openai-compatible/src/chat/**`.
+- Swift provider and Chat:
+  `Sources/OpenAICompatibleProvider/OpenAICompatibleProvider.swift` and
+  `Sources/OpenAICompatibleProvider/Chat/**`.
+- Shared tracker: `Sources/AISDKProviderUtils/StreamingToolCallTracker.swift`.
+- Provider tests: `Tests/OpenAICompatibleProviderTests/**`.
+- Shared tracker tests:
+  `Tests/AISDKProviderUtilsTests/StreamingToolCallTrackerTests.swift`.
 
 ### 2026-07-03: upstream `c8d2726ae045a28142cb46df5e41cdd51d8dcc71`
 
@@ -2078,8 +2253,9 @@ Implementation slice 26: streaming tool-call delta tracker:
 - The tracker emits `LanguageModelV4StreamPart.toolInputStart`,
   `toolInputDelta`, `toolInputEnd`, and `toolCall` in upstream order.
 - It accumulates argument deltas by index, falls back to append-order index when
-  omitted, skips late deltas after finish, finalizes parsable JSON
-  automatically, and finalizes unfinished calls on `flush()`.
+  omitted, skips late deltas after finish, forwards empty argument deltas, and
+  finalizes unfinished calls only on `flush()` so a parsable JSON prefix cannot
+  be exposed as a completed tool call.
 - It preserves upstream validation modes (`none`, `ifPresent`, `required`) and
   throws `InvalidResponseDataError` with upstream messages for invalid type,
   missing id, and missing function name.
@@ -2529,6 +2705,15 @@ This is a lightweight “memory log” of what we shipped while chasing upstream
 For source-of-truth code, always follow the commits and tests.
 
 ### Unreleased (main)
+
+### v0.19.0 - 2026-07-15
+
+- 2026-07-15
+  - OpenAI Compatible: native Provider V4 Chat, Completion, Embedding, and Image surfaces are verified against `c8d2726ae045a28142cb46df5e41cdd51d8dcc71`, including prompt/tool conversion, typed HTTP/SSE errors, strict response validation, multipart image editing, and exact upstream xAI fixtures while preserving explicit V3 facades.
+  - Anthropic: the default facade is now native Provider V4 with current model/reasoning gates, provider-reference and container-upload prompt parts, advisor tool support, and high-level file/skill upload routing; the explicit V3 facade remains available.
+  - OpenAI: the targeted latest-main delta through `5b4a299200ec3d061a2cae087d78d13f74d6c90f` adds GPT-5.6 models, `max` effort, reasoning mode/context, prompt-cache options and breakpoints, cache-write usage, web-search results, base-URL validation, and hardened realtime transcription lifecycle handling.
+  - Validation: `swift build`, all 4158 Swift tests in 473 suites, the examples package, Starlight checks/build, parity scan, and `git diff --check` passed before release preparation.
+  - Release/docs: README, shared SDK release version, Starlight install snippets, changelog, and upstream evidence now point at `0.19.0`.
 
 ### v0.18.2 - 2026-07-04
 

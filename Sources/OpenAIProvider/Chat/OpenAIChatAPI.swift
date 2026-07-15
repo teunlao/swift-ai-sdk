@@ -139,9 +139,11 @@ struct OpenAIChatUsageCompletionDetails: Codable, Sendable {
 
 struct OpenAIChatUsagePromptDetails: Codable, Sendable {
     let cachedTokens: Int?
+    let cacheWriteTokens: Int?
 
     enum CodingKeys: String, CodingKey {
         case cachedTokens = "cached_tokens"
+        case cacheWriteTokens = "cache_write_tokens"
     }
 }
 

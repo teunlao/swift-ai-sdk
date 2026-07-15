@@ -218,12 +218,10 @@ struct OpenAICompatibleImageModelTests {
         }
 
         let customErrorConfig = OpenAICompatibleErrorConfiguration(
-            failedResponseHandler: createJsonErrorResponseHandler(
-                errorSchema: CustomErrorSchema.schema,
-                errorToMessage: { data in
-                    "Error \(data.details.errorCode): \(data.details.errorMessage)"
-                }
-            ),
+            errorSchema: CustomErrorSchema.schema,
+            errorToMessage: { data in
+                "Error \(data.details.errorCode): \(data.details.errorMessage)"
+            },
             extractMessage: { json in
                 let data = try JSONEncoder().encode(json)
                 let payload = try JSONDecoder().decode(CustomErrorSchema.self, from: data)
@@ -509,8 +507,8 @@ struct OpenAICompatibleImageModelTests {
 }
 
 // Custom error schema for testing
-private struct CustomErrorSchema: Codable {
-    struct Details: Codable {
+private struct CustomErrorSchema: Codable, Sendable {
+    struct Details: Codable, Sendable {
         let errorMessage: String
         let errorCode: Int
     }

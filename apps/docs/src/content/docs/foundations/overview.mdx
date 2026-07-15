@@ -37,10 +37,10 @@ print(result.text)
 import SwiftAISDK
 import AnthropicProvider
 
-let provider = createAnthropic()
-let model = provider.languageModel(modelId: "claude-3-5-sonnet")
-
-let result = try await generateText(model: .v3(model), input: "What is love?")
+let result = try await generateText(
+  model: try anthropic("claude-sonnet-5"),
+  prompt: "What is love?"
+)
 print(result.text)
 ```
 

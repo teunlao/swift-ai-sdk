@@ -180,11 +180,13 @@ public final class OpenAIProvider: ProviderV3, FilesProvider, SkillsProvider {
     }
 }
 
-public func createOpenAIProvider(settings: OpenAIProviderSettings = .init()) -> OpenAIProvider {
+public func createOpenAIProvider(settings: OpenAIProviderSettings = .init()) throws -> OpenAIProvider {
     let baseURL = withoutTrailingSlash(
-        loadOptionalSetting(
-            settingValue: settings.baseURL,
-            environmentVariableName: "OPENAI_BASE_URL"
+        try validateBaseURL(
+            loadOptionalSetting(
+                settingValue: settings.baseURL,
+                environmentVariableName: "OPENAI_BASE_URL"
+            )
         )
     ) ?? "https://api.openai.com/v1"
 
@@ -439,4 +441,4 @@ public extension OpenAIProvider {
 
 // MARK: - Default provider instance (parity with TS `export const openai = createOpenAI()`)
 
-public let openai: OpenAIProviderV4 = createOpenAI()
+public let openai: OpenAIProviderV4 = try! createOpenAI()

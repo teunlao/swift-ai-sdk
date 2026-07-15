@@ -29,7 +29,7 @@ public final class OpenAIResponsesLanguageModelV4: LanguageModelV4, @unchecked S
             options,
             providerOptionsName: providerOptionsName
         )
-        let result = try await v3Model.doGenerate(options: v3Options)
+        let result = try await v3Model.doGenerate(options: v3Options, v4Prompt: options.prompt)
         return try convertLanguageModelV3GenerateResultToV4(result)
     }
 
@@ -38,7 +38,7 @@ public final class OpenAIResponsesLanguageModelV4: LanguageModelV4, @unchecked S
             options,
             providerOptionsName: providerOptionsName
         )
-        let result = try await v3Model.doStream(options: v3Options)
+        let result = try await v3Model.doStream(options: v3Options, v4Prompt: options.prompt)
         let url = config.url(.init(modelId: modelIdentifier.rawValue, path: "/responses"))
         let checkedStream = try await throwIfOpenAIResponsesStreamErrorBeforeOutput(
             stream: result.stream,
@@ -194,7 +194,7 @@ private func convertOpenAIResponsesV4MessageToV3(
     }
 }
 
-private func convertOpenAIResponsesV4UserMessagePartToV3(
+func convertOpenAIResponsesV4UserMessagePartToV3(
     _ value: LanguageModelV4UserMessagePart,
     providerOptionsName: String
 ) throws -> LanguageModelV3UserMessagePart {
@@ -313,7 +313,7 @@ private func convertOpenAIResponsesV4ToolResultContentPartToV3(
     }
 }
 
-private func convertOpenAIResponsesV4FileDataToV3(
+func convertOpenAIResponsesV4FileDataToV3(
     _ value: SharedV4FileData,
     providerOptionsName: String
 ) throws -> LanguageModelV3DataContent {
@@ -342,8 +342,8 @@ private func convertOpenAIResponsesV4FileDataToBase64String(
         return base64
     case .text(let text):
         return Data(text.utf8).base64EncodedString()
-    case .url:
-        throw UnsupportedFunctionalityError(functionality: "tool result file URLs on OpenAI Responses")
+    case .url(let url):
+        return url.absoluteString
     case .reference(let reference):
         return try resolveProviderReference(reference: reference, provider: providerOptionsName)
     }

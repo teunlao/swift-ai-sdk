@@ -9,9 +9,29 @@ private let sampleAudioData = Data("ABC".utf8)
 private final class MockOpenAIWebSocketFactory: @unchecked Sendable {
     private let lock = NSLock()
     private var connections: [MockOpenAIWebSocketConnection] = []
+    private let factoryError: Error?
+    private let sendError: Error?
+    private let successfulSendsBeforeError: Int
+
+    init(
+        factoryError: Error? = nil,
+        sendError: Error? = nil,
+        successfulSendsBeforeError: Int = 0
+    ) {
+        self.factoryError = factoryError
+        self.sendError = sendError
+        self.successfulSendsBeforeError = successfulSendsBeforeError
+    }
 
     func make(_ request: OpenAIWebSocketRequest) throws -> any OpenAIWebSocketConnection {
-        let connection = MockOpenAIWebSocketConnection(request: request)
+        if let factoryError {
+            throw factoryError
+        }
+        let connection = MockOpenAIWebSocketConnection(
+            request: request,
+            sendError: sendError,
+            successfulSendsBeforeError: successfulSendsBeforeError
+        )
         lock.withLock {
             connections.append(connection)
         }
@@ -35,9 +55,17 @@ private final class MockOpenAIWebSocketConnection: OpenAIWebSocketConnection, @u
     private var opened = false
     private var sentTexts: [String] = []
     private var closeCodeValues: [Int?] = []
+    private let sendError: Error?
+    private let successfulSendsBeforeError: Int
 
-    init(request: OpenAIWebSocketRequest) {
+    init(
+        request: OpenAIWebSocketRequest,
+        sendError: Error? = nil,
+        successfulSendsBeforeError: Int = 0
+    ) {
         self.request = request
+        self.sendError = sendError
+        self.successfulSendsBeforeError = successfulSendsBeforeError
 
         var continuation: AsyncThrowingStream<String, Error>.Continuation?
         self.messages = AsyncThrowingStream { streamContinuation in
@@ -62,8 +90,15 @@ private final class MockOpenAIWebSocketConnection: OpenAIWebSocketConnection, @u
     }
 
     func send(_ text: String) async throws {
-        lock.withLock {
+        let error = lock.withLock { () -> Error? in
+            if let sendError, sentTexts.count >= successfulSendsBeforeError {
+                return sendError
+            }
             sentTexts.append(text)
+            return nil
+        }
+        if let error {
+            throw error
         }
     }
 
@@ -110,6 +145,29 @@ private final class MockOpenAIWebSocketConnection: OpenAIWebSocketConnection, @u
     }
 }
 
+private enum MockOpenAIWebSocketError: Error {
+    case factory
+    case send
+}
+
+private actor AudioTerminationCapture {
+    private var terminated = false
+
+    func markTerminated() {
+        terminated = true
+    }
+
+    func waitUntilTerminated() async -> Bool {
+        for _ in 0..<200 {
+            if terminated {
+                return true
+            }
+            try? await Task.sleep(nanoseconds: 5_000_000)
+        }
+        return terminated
+    }
+}
+
 private func transcriptionAudioStream(
     _ chunks: [TranscriptionModelV4StreamAudio]
 ) -> AsyncThrowingStream<TranscriptionModelV4StreamAudio, Error> {
@@ -118,6 +176,22 @@ private func transcriptionAudioStream(
             continuation.yield(chunk)
         }
         continuation.finish()
+    }
+}
+
+private func cancellableTranscriptionAudioStream(
+    capture: AudioTerminationCapture,
+    chunks: [TranscriptionModelV4StreamAudio] = []
+) -> AsyncThrowingStream<TranscriptionModelV4StreamAudio, Error> {
+    AsyncThrowingStream { continuation in
+        for chunk in chunks {
+            continuation.yield(chunk)
+        }
+        continuation.onTermination = { @Sendable _ in
+            Task {
+                await capture.markTerminated()
+            }
+        }
     }
 }
 
@@ -201,7 +275,7 @@ struct OpenAITranscriptionModelTests {
         let config = OpenAIConfig(
             provider: "openai.transcription",
             url: { options in "https://api.openai.com/v1\(options.path)" },
-            headers: { ["Authorization": "Bearer test-api-key"] },
+            headers: { ["aUtHoRiZaTiOn": "Bearer configured-api-key"] },
             webSocket: webSocketFactory.make,
             _internal: .init(currentDate: { testDate })
         )
@@ -219,6 +293,10 @@ struct OpenAITranscriptionModelTests {
                             "include": .array([.string("item.input_audio_transcription.logprobs")])
                         ])
                     ]
+                ],
+                headers: [
+                    "AUTHORIZATION": "bEaReR per-call-api-key",
+                    "X-Realtime-Test": "present"
                 ]
             )
         )
@@ -229,7 +307,9 @@ struct OpenAITranscriptionModelTests {
         }
 
         #expect(connection.request.url.absoluteString == "wss://api.openai.com/v1/realtime?intent=transcription")
-        #expect(connection.request.protocols == ["realtime", "openai-insecure-api-key.test-api-key"])
+        #expect(connection.request.protocols == ["realtime", "openai-insecure-api-key.per-call-api-key"])
+        #expect(connection.request.headers["X-Realtime-Test"] == "present")
+        #expect(connection.request.headers.keys.allSatisfy { $0.lowercased() != "authorization" })
 
         let partsTask = Task {
             try await collectTranscriptionParts(result.stream)
@@ -301,6 +381,110 @@ struct OpenAITranscriptionModelTests {
         ])
         #expect(result.response?.timestamp == testDate)
         #expect(result.response?.modelId == "gpt-realtime-whisper")
+    }
+
+    @Test("doStream keeps non-auth headers when Authorization is absent")
+    func testDoStreamWithoutAuthorizationKeepsHandshakeHeaders() async throws {
+        let webSocketFactory = MockOpenAIWebSocketFactory()
+        let model = OpenAITranscriptionModel(
+            modelId: "gpt-realtime-whisper",
+            config: OpenAIConfig(
+                provider: "openai.transcription",
+                url: { options in "https://api.openai.com/v1\(options.path)" },
+                headers: { ["X-Realtime-Test": "present"] },
+                webSocket: webSocketFactory.make
+            )
+        )
+
+        let result = try await model.doStream(options: .init(
+            audio: transcriptionAudioStream([]),
+            inputAudioFormat: .init(type: "audio/pcm", rate: 24_000)
+        ))
+        let connection = try #require(webSocketFactory.firstConnection())
+
+        #expect(connection.request.protocols == ["realtime"])
+        #expect(connection.request.headers == ["X-Realtime-Test": "present"])
+
+        let partsTask = Task {
+            try await collectTranscriptionParts(result.stream)
+        }
+        connection.open()
+        try await connection.waitForSentCount(2)
+        try connection.message(.object([
+            "type": .string("conversation.item.input_audio_transcription.completed"),
+            "item_id": .string("item-no-auth"),
+            "transcript": .string("")
+        ]))
+        _ = try await partsTask.value
+    }
+
+    @Test("doStream cancels audio when WebSocket creation fails")
+    func testDoStreamCancelsAudioWhenWebSocketCreationFails() async throws {
+        let audioTermination = AudioTerminationCapture()
+        let webSocketFactory = MockOpenAIWebSocketFactory(factoryError: MockOpenAIWebSocketError.factory)
+        let model = OpenAITranscriptionModel(
+            modelId: "gpt-realtime-whisper",
+            config: OpenAIConfig(
+                provider: "openai.transcription",
+                url: { options in "https://api.openai.com/v1\(options.path)" },
+                headers: { ["Authorization": "Bearer test-api-key"] },
+                webSocket: webSocketFactory.make
+            )
+        )
+
+        let result = try await model.doStream(options: .init(
+            audio: cancellableTranscriptionAudioStream(capture: audioTermination),
+            inputAudioFormat: .init(type: "audio/pcm", rate: 24_000)
+        ))
+
+        do {
+            _ = try await collectTranscriptionParts(result.stream)
+            Issue.record("Expected WebSocket factory error")
+        } catch MockOpenAIWebSocketError.factory {
+        } catch {
+            Issue.record("Expected factory error, got \(error)")
+        }
+        #expect(await audioTermination.waitUntilTerminated())
+    }
+
+    @Test("doStream cancels audio when a WebSocket audio send fails mid-stream")
+    func testDoStreamCancelsAudioWhenAudioSendFailsMidStream() async throws {
+        let audioTermination = AudioTerminationCapture()
+        let webSocketFactory = MockOpenAIWebSocketFactory(
+            sendError: MockOpenAIWebSocketError.send,
+            successfulSendsBeforeError: 2
+        )
+        let model = OpenAITranscriptionModel(
+            modelId: "gpt-realtime-whisper",
+            config: OpenAIConfig(
+                provider: "openai.transcription",
+                url: { options in "https://api.openai.com/v1\(options.path)" },
+                headers: { ["Authorization": "Bearer test-api-key"] },
+                webSocket: webSocketFactory.make
+            )
+        )
+
+        let result = try await model.doStream(options: .init(
+            audio: cancellableTranscriptionAudioStream(
+                capture: audioTermination,
+                chunks: [.binary(Data([1])), .binary(Data([2]))]
+            ),
+            inputAudioFormat: .init(type: "audio/pcm", rate: 24_000)
+        ))
+        let partsTask = Task {
+            try await collectTranscriptionParts(result.stream)
+        }
+        let connection = try #require(webSocketFactory.firstConnection())
+        connection.open()
+
+        do {
+            _ = try await partsTask.value
+            Issue.record("Expected WebSocket send error")
+        } catch MockOpenAIWebSocketError.send {
+        } catch {
+            Issue.record("Expected send error, got \(error)")
+        }
+        #expect(await audioTermination.waitUntilTerminated())
     }
 
     @Test("doStream warns about REST-only OpenAI transcription options")

@@ -27,13 +27,7 @@ func convertToAnthropicMessagesPrompt(
 
         switch block {
         case .system(let systemMessages):
-            if systemContent != nil {
-                throw UnsupportedFunctionalityError(
-                    functionality: "Multiple system messages that are separated by user/assistant messages"
-                )
-            }
-
-            var aggregated = systemContent ?? []
+            var content: [JSONValue] = []
 
             for case let .system(text, providerOptions) in systemMessages {
                 var payload: [String: JSONValue] = [
@@ -47,10 +41,15 @@ func convertToAnthropicMessagesPrompt(
                 if let cacheControlJSON = cacheControlJSON(from: cacheControl) {
                     payload["cache_control"] = cacheControlJSON
                 }
-                aggregated.append(.object(payload))
+                content.append(.object(payload))
             }
 
-            systemContent = aggregated.isEmpty ? nil : aggregated
+            if systemContent == nil {
+                systemContent = content.isEmpty ? nil : content
+            } else {
+                messages.append(AnthropicMessage(role: "system", content: content))
+                betas.insert("mid-conversation-system-2026-04-07")
+            }
 
         case .user(let userMessages):
             var content: [JSONValue] = []
@@ -103,12 +102,237 @@ func convertToAnthropicMessagesPrompt(
                 )
             }
 
-            messages.append(AnthropicMessage(role: "assistant", content: content))
+            messages.append(AnthropicMessage(
+                role: "assistant",
+                content: moveAnthropicToolUseBlocksToEnd(content)
+            ))
         }
     }
 
     let payload = AnthropicMessagesPrompt(system: systemContent, messages: messages)
     return AnthropicPromptConversionResult(prompt: payload, betas: betas)
+}
+
+func convertLanguageModelV4ToAnthropicMessagesPrompt(
+    prompt: LanguageModelV4Prompt,
+    sendReasoning: Bool,
+    toolNameMapping: AnthropicToolNameMapping = .init(),
+    warnings: inout [SharedV3Warning],
+    cacheControlValidator: CacheControlValidator? = nil
+) async throws -> AnthropicPromptConversionResult {
+    let blocks = groupIntoAnthropicBlocks(prompt)
+
+    var systemContent: [JSONValue]? = nil
+    var messages: [AnthropicMessage] = []
+    var betas = Set<String>()
+    var mcpToolUseIds = Set<String>()
+    let validator = cacheControlValidator ?? CacheControlValidator()
+
+    for (blockIndex, block) in blocks.enumerated() {
+        let isLastBlock = blockIndex == blocks.count - 1
+
+        switch block {
+        case .system(let systemMessages):
+            var content: [JSONValue] = []
+            for case let .system(text, providerOptions) in systemMessages {
+                var payload: [String: JSONValue] = [
+                    "type": .string("text"),
+                    "text": .string(text),
+                ]
+                let cacheControl = validator.getCacheControl(
+                    providerOptions,
+                    context: CacheControlContext(type: "system message", canCache: true)
+                )
+                if let cacheControlJSON = cacheControlJSON(from: cacheControl) {
+                    payload["cache_control"] = cacheControlJSON
+                }
+                content.append(.object(payload))
+            }
+
+            if systemContent == nil {
+                systemContent = content.isEmpty ? nil : content
+            } else {
+                messages.append(AnthropicMessage(role: "system", content: content))
+                betas.insert("mid-conversation-system-2026-04-07")
+            }
+
+        case .user(let userMessages):
+            var content: [JSONValue] = []
+            for message in userMessages {
+                switch message {
+                case let .user(parts, providerOptions):
+                    try await appendV4UserMessageParts(
+                        parts,
+                        messageProviderOptions: providerOptions,
+                        anthropicContent: &content,
+                        betas: &betas,
+                        cacheControlValidator: validator
+                    )
+                case let .tool(parts, providerOptions):
+                    try await appendToolMessageParts(
+                        try parts.map(convertAnthropicToolMessagePartToV3),
+                        messageProviderOptions: providerOptions,
+                        anthropicContent: &content,
+                        betas: &betas,
+                        cacheControlValidator: validator,
+                        warnings: &warnings
+                    )
+                default:
+                    break
+                }
+            }
+            messages.append(AnthropicMessage(role: "user", content: content))
+
+        case .assistant(let assistantMessages):
+            var content: [JSONValue] = []
+            for (messageIndex, message) in assistantMessages.enumerated() {
+                guard case let .assistant(parts, providerOptions) = message else { continue }
+                try await appendAssistantMessageParts(
+                    try parts.map(convertAnthropicMessagePartToV3),
+                    messageProviderOptions: providerOptions,
+                    isLastBlock: isLastBlock,
+                    isLastMessage: messageIndex == assistantMessages.count - 1,
+                    anthropicContent: &content,
+                    betas: &betas,
+                    mcpToolUseIds: &mcpToolUseIds,
+                    sendReasoning: sendReasoning,
+                    toolNameMapping: toolNameMapping,
+                    cacheControlValidator: validator,
+                    warnings: &warnings
+                )
+            }
+            messages.append(AnthropicMessage(
+                role: "assistant",
+                content: moveAnthropicToolUseBlocksToEnd(content)
+            ))
+        }
+    }
+
+    return AnthropicPromptConversionResult(
+        prompt: AnthropicMessagesPrompt(system: systemContent, messages: messages),
+        betas: betas
+    )
+}
+
+private enum AnthropicV4PromptBlock: Sendable {
+    case system([LanguageModelV4Message])
+    case assistant([LanguageModelV4Message])
+    case user([LanguageModelV4Message])
+}
+
+private func groupIntoAnthropicBlocks(_ prompt: LanguageModelV4Prompt) -> [AnthropicV4PromptBlock] {
+    var blocks: [AnthropicV4PromptBlock] = []
+
+    for message in prompt {
+        switch message {
+        case .system:
+            if let last = blocks.indices.last, case var .system(messages) = blocks[last] {
+                messages.append(message)
+                blocks[last] = .system(messages)
+            } else {
+                blocks.append(.system([message]))
+            }
+        case .assistant:
+            if let last = blocks.indices.last, case var .assistant(messages) = blocks[last] {
+                messages.append(message)
+                blocks[last] = .assistant(messages)
+            } else {
+                blocks.append(.assistant([message]))
+            }
+        case .user, .tool:
+            if let last = blocks.indices.last, case var .user(messages) = blocks[last] {
+                messages.append(message)
+                blocks[last] = .user(messages)
+            } else {
+                blocks.append(.user([message]))
+            }
+        }
+    }
+
+    return blocks
+}
+
+private func appendV4UserMessageParts(
+    _ parts: [LanguageModelV4UserMessagePart],
+    messageProviderOptions: SharedV4ProviderOptions?,
+    anthropicContent: inout [JSONValue],
+    betas: inout Set<String>,
+    cacheControlValidator: CacheControlValidator
+) async throws {
+    for (index, part) in parts.enumerated() {
+        let isLastPart = index == parts.count - 1
+        let partProviderOptions: SharedV4ProviderOptions? = switch part {
+        case .text(let textPart): textPart.providerOptions
+        case .file(let filePart): filePart.providerOptions
+        }
+        let cacheControl =
+            cacheControlValidator.getCacheControl(
+                partProviderOptions,
+                context: CacheControlContext(type: "user message part", canCache: true)
+            )
+            ?? (isLastPart
+                ? cacheControlValidator.getCacheControl(
+                    messageProviderOptions,
+                    context: CacheControlContext(type: "user message", canCache: true)
+                )
+                : nil)
+        let cacheControlJSON = cacheControlJSON(from: cacheControl)
+
+        switch part {
+        case .text(let textPart):
+            var payload: [String: JSONValue] = [
+                "type": .string("text"),
+                "text": .string(textPart.text),
+            ]
+            if let cacheControlJSON { payload["cache_control"] = cacheControlJSON }
+            anthropicContent.append(.object(payload))
+
+        case .file(let filePart):
+            if case .reference(let reference) = filePart.data {
+                let fileId = try resolveProviderReference(reference: reference, provider: "anthropic")
+                let providerOptions = try await parseProviderOptions(
+                    provider: "anthropic",
+                    providerOptions: filePart.providerOptions,
+                    schema: anthropicFilePartProviderOptionsSchema
+                )
+                betas.insert("files-api-2025-04-14")
+
+                if providerOptions?.containerUpload == true {
+                    anthropicContent.append(.object([
+                        "type": .string("container_upload"),
+                        "file_id": .string(fileId),
+                    ]))
+                    continue
+                }
+
+                let contentType = filePart.mediaType.hasPrefix("image/") ? "image" : "document"
+                var payload: [String: JSONValue] = [
+                    "type": .string(contentType),
+                    "source": .object([
+                        "type": .string("file"),
+                        "file_id": .string(fileId),
+                    ]),
+                ]
+                if let cacheControlJSON { payload["cache_control"] = cacheControlJSON }
+                anthropicContent.append(.object(payload))
+                continue
+            }
+
+            let v3File = LanguageModelV3FilePart(
+                data: try convertAnthropicFileDataToV3(filePart.data),
+                mediaType: filePart.mediaType,
+                filename: filePart.filename,
+                providerOptions: filePart.providerOptions
+            )
+            try await appendUserFile(
+                v3File,
+                messageProviderOptions: messageProviderOptions,
+                cacheControlJSON: cacheControlJSON,
+                anthropicContent: &anthropicContent,
+                betas: &betas
+            )
+        }
+    }
 }
 
 private enum AnthropicPromptBlock: Sendable {
@@ -444,10 +668,10 @@ private func appendAssistantMessageParts(
                 text = text.trimmingCharacters(in: .whitespacesAndNewlines)
             }
 
-            var payload: [String: JSONValue] = [
-                "type": .string("text"),
-                "text": .string(text)
-            ]
+            let isCompaction = textPart.providerOptions?["anthropic"]?["type"] == .string("compaction")
+            var payload: [String: JSONValue] = isCompaction
+                ? ["type": .string("compaction"), "content": .string(text)]
+                : ["type": .string("text"), "text": .string(text)]
             if let cacheControlJSON { payload["cache_control"] = cacheControlJSON }
             anthropicContent.append(.object(payload))
 
@@ -555,6 +779,13 @@ private func appendAssistantMessageParts(
                         "name": .string(providerToolName),
                         "input": toolCallPart.input
                     ]
+                } else if providerToolName == "advisor" {
+                    payload = [
+                        "type": .string("server_tool_use"),
+                        "id": .string(toolCallPart.toolCallId),
+                        "name": .string("advisor"),
+                        "input": .object([:]),
+                    ]
                 } else {
                     warnings.append(.other(message: "provider executed tool call for tool \(toolCallPart.toolName) is not supported"))
                     continue
@@ -607,6 +838,39 @@ private func appendAssistantMessageParts(
         }
     }
 }
+
+private func moveAnthropicToolUseBlocksToEnd(_ content: [JSONValue]) -> [JSONValue] {
+    var result: [JSONValue] = []
+    var segment: [JSONValue] = []
+
+    func contentType(_ value: JSONValue) -> String? {
+        guard case .object(let object) = value,
+              case .string(let type) = object["type"] else {
+            return nil
+        }
+        return type
+    }
+
+    func flushSegment() {
+        result.append(contentsOf: segment.filter { contentType($0) != "tool_use" })
+        result.append(contentsOf: segment.filter { contentType($0) == "tool_use" })
+        segment.removeAll(keepingCapacity: true)
+    }
+
+    for part in content {
+        let type = contentType(part)
+        if type == "thinking" || type == "redacted_thinking" {
+            flushSegment()
+            result.append(part)
+        } else {
+            segment.append(part)
+        }
+    }
+
+    flushSegment()
+    return result
+}
+
 private func appendAssistantToolResult(
     _ part: LanguageModelV3ToolResultPart,
     cacheControlJSON: JSONValue?,
@@ -646,6 +910,50 @@ private func appendAssistantToolResult(
     let providerToolName = toolNameMapping.toProviderToolName(part.toolName)
 
     switch providerToolName {
+    case "advisor":
+        let value: JSONValue
+        switch part.output {
+        case .json(let output, _), .errorJson(let output, _):
+            value = output
+        default:
+            warnings.append(.other(message: "provider executed tool result output type for tool \(part.toolName) is not supported"))
+            return
+        }
+
+        let parsed = try await validateTypes(
+            ValidateTypesOptions(
+                value: jsonValueToFoundation(value),
+                schema: anthropicAdvisor20260301OutputSchema
+            )
+        )
+        guard case .object(let output) = parsed,
+              let typeValue = output["type"],
+              case .string(let type) = typeValue
+        else { return }
+
+        var resultContent: [String: JSONValue] = ["type": .string(type)]
+        switch type {
+        case "advisor_result":
+            guard let text = output["text"] else { return }
+            resultContent["text"] = text
+        case "advisor_redacted_result":
+            guard let encryptedContent = output["encryptedContent"] else { return }
+            resultContent["encrypted_content"] = encryptedContent
+        case "advisor_tool_result_error":
+            guard let errorCode = output["errorCode"] else { return }
+            resultContent["error_code"] = errorCode
+        default:
+            return
+        }
+
+        var payload: [String: JSONValue] = [
+            "type": .string("advisor_tool_result"),
+            "tool_use_id": .string(part.toolCallId),
+            "content": .object(resultContent),
+        ]
+        if let cacheControlJSON { payload["cache_control"] = cacheControlJSON }
+        anthropicContent.append(.object(payload))
+
     case "code_execution":
         switch part.output {
         case .errorJson(let value, _):

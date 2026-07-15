@@ -75,6 +75,29 @@ public func uploadFile(
 }
 
 public func uploadFile(
+    api: any ProviderV4,
+    data: DataContentOrURL,
+    mediaType: String? = nil,
+    filename: String? = nil,
+    providerOptions: ProviderOptions? = nil
+) async throws -> DefaultUploadFileResult {
+    guard let filesAPI = try api.files() else {
+        throw InvalidArgumentError(
+            argument: "api",
+            message: "The provider does not support file uploads. Make sure it exposes a files() method."
+        )
+    }
+
+    return try await uploadFile(
+        api: filesAPI,
+        data: data,
+        mediaType: mediaType,
+        filename: filename,
+        providerOptions: providerOptions
+    )
+}
+
+public func uploadFile(
     api: any ProviderV3,
     data: DataContent,
     mediaType: String? = nil,
@@ -90,7 +113,35 @@ public func uploadFile(
     )
 }
 
+public func uploadFile(
+    api: any ProviderV4,
+    data: DataContent,
+    mediaType: String? = nil,
+    filename: String? = nil,
+    providerOptions: ProviderOptions? = nil
+) async throws -> DefaultUploadFileResult {
+    try await uploadFile(
+        api: api,
+        data: toDataContentOrURL(data),
+        mediaType: mediaType,
+        filename: filename,
+        providerOptions: providerOptions
+    )
+}
+
 private func normalizeUploadData(_ data: DataContentOrURL) throws -> SharedV4DataContent {
+    switch data {
+    case .text(let text):
+        return .text(text)
+    case .reference:
+        throw InvalidArgumentError(
+            argument: "data",
+            message: "Provider reference data cannot be uploaded again. Pass the original file bytes or text."
+        )
+    case .data, .string, .url:
+        break
+    }
+
     let converted = try convertToLanguageModelV3DataContent(data)
 
     switch converted.data {

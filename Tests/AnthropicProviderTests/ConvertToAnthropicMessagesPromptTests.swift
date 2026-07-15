@@ -76,6 +76,29 @@ struct ConvertToAnthropicMessagesPromptSystemTests {
         #expect(result.betas.isEmpty)
     }
 
+    @Test("mid-conversation system message is emitted inline with beta")
+    func midConversationSystemMessage() async throws {
+        let prompt: LanguageModelV3Prompt = [
+            .system(content: "initial", providerOptions: nil),
+            .user(content: [.text(.init(text: "hi"))], providerOptions: nil),
+            .assistant(content: [.text(.init(text: "hello"))], providerOptions: nil),
+            .system(content: "switch tone", providerOptions: nil),
+            .user(content: [.text(.init(text: "go"))], providerOptions: nil),
+        ]
+
+        let (result, warnings) = try await convert(prompt)
+
+        #expect(warnings.isEmpty)
+        #expect(result.prompt.system == [
+            .object(["type": .string("text"), "text": .string("initial")])
+        ])
+        #expect(result.prompt.messages.contains(AnthropicMessage(
+            role: "system",
+            content: [.object(["type": .string("text"), "text": .string("switch tone")])]
+        )))
+        #expect(result.betas == Set(["mid-conversation-system-2026-04-07"]))
+    }
+
     @Test("system message uses cache control from provider options")
     func systemMessageCacheControl() async throws {
         let prompt: LanguageModelV3Prompt = [
@@ -460,6 +483,123 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
                 ]
             )
         ])
+    }
+
+    @Test("assistant compaction text preserves its API discriminator")
+    func assistantCompactionText() async throws {
+        let prompt: LanguageModelV3Prompt = [
+            .assistant(
+                content: [
+                    .text(.init(
+                        text: "Condensed context",
+                        providerOptions: anthropicOptions(["type": .string("compaction")])
+                    ))
+                ],
+                providerOptions: nil
+            )
+        ]
+
+        let (result, warnings) = try await convert(prompt)
+
+        #expect(warnings.isEmpty)
+        #expect(result.prompt.messages == [
+            AnthropicMessage(
+                role: "assistant",
+                content: [
+                    .object([
+                        "type": .string("compaction"),
+                        "content": .string("Condensed context"),
+                    ])
+                ]
+            )
+        ])
+    }
+
+    @Test("assistant client tool use follows provider-executed tool results")
+    func clientToolUseFollowsProviderToolResults() async throws {
+        let prompt: LanguageModelV3Prompt = [
+            .assistant(
+                content: [
+                    .text(.init(text: "I will save a note and search.")),
+                    .toolCall(.init(
+                        toolCallId: "toolu_regular",
+                        toolName: "saveNote",
+                        input: .object(["note": .string("basketball news")])
+                    )),
+                    .toolCall(.init(
+                        toolCallId: "srvtoolu_web_search",
+                        toolName: "web_search",
+                        input: .object(["query": .string("basketball news today")]),
+                        providerExecuted: true
+                    )),
+                    .toolResult(.init(
+                        toolCallId: "srvtoolu_web_search",
+                        toolName: "web_search",
+                        output: .json(value: .array([
+                            .object([
+                                "url": .string("https://www.nba.com/news"),
+                                "title": .string("NBA News"),
+                                "pageAge": .string("1 hour ago"),
+                                "encryptedContent": .string("encrypted-content"),
+                                "type": .string("web_search_result"),
+                            ])
+                        ]))
+                    )),
+                ],
+                providerOptions: nil
+            )
+        ]
+
+        let (result, warnings) = try await convert(prompt)
+        let content = try #require(result.prompt.messages.first?.content)
+        let types = content.compactMap { value -> String? in
+            guard case .object(let object) = value,
+                  case .string(let type) = object["type"] else { return nil }
+            return type
+        }
+
+        #expect(warnings.isEmpty)
+        #expect(types == ["text", "server_tool_use", "web_search_tool_result", "tool_use"])
+    }
+
+    @Test("assistant tool-use reordering does not cross thinking boundaries")
+    func toolUseReorderingPreservesThinkingBoundaries() async throws {
+        let prompt: LanguageModelV3Prompt = [
+            .assistant(
+                content: [
+                    .reasoning(.init(
+                        text: "Think before the initial note.",
+                        providerOptions: anthropicOptions(["signature": .string("sig-1")])
+                    )),
+                    .toolCall(.init(
+                        toolCallId: "toolu_initial",
+                        toolName: "saveNote",
+                        input: .object([:])
+                    )),
+                    .reasoning(.init(
+                        text: "Think before the revised note.",
+                        providerOptions: anthropicOptions(["signature": .string("sig-2")])
+                    )),
+                    .toolCall(.init(
+                        toolCallId: "toolu_revised",
+                        toolName: "saveNote",
+                        input: .object([:])
+                    )),
+                ],
+                providerOptions: nil
+            )
+        ]
+
+        let (result, warnings) = try await convert(prompt)
+        let content = try #require(result.prompt.messages.first?.content)
+        let types = content.compactMap { value -> String? in
+            guard case .object(let object) = value,
+                  case .string(let type) = object["type"] else { return nil }
+            return type
+        }
+
+        #expect(warnings.isEmpty)
+        #expect(types == ["thinking", "tool_use", "thinking", "tool_use"])
     }
 
     @Test("assistant reasoning requires signature metadata")
@@ -893,6 +1033,109 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
                                     "tool_name": .string("get_weather"),
                                 ])
                             ]),
+                        ]),
+                    ]),
+                ]
+            )
+        ])
+    }
+
+    @Test("assistant advisor calls and result variants round-trip to API blocks")
+    func assistantAdvisorRoundTrip() async throws {
+        let prompt: LanguageModelV3Prompt = [
+            .assistant(content: [
+                .toolCall(.init(
+                    toolCallId: "advisor-plain",
+                    toolName: "advisor",
+                    input: .object(["ignored": .bool(true)]),
+                    providerExecuted: true
+                )),
+                .toolResult(.init(
+                    toolCallId: "advisor-plain",
+                    toolName: "advisor",
+                    output: .json(value: .object([
+                        "type": .string("advisor_result"),
+                        "text": .string("Use a channel-based coordination pattern."),
+                    ]))
+                )),
+                .toolCall(.init(
+                    toolCallId: "advisor-redacted",
+                    toolName: "advisor",
+                    input: .object([:]),
+                    providerExecuted: true
+                )),
+                .toolResult(.init(
+                    toolCallId: "advisor-redacted",
+                    toolName: "advisor",
+                    output: .json(value: .object([
+                        "type": .string("advisor_redacted_result"),
+                        "encryptedContent": .string("opaque-encrypted-advice"),
+                    ]))
+                )),
+                .toolCall(.init(
+                    toolCallId: "advisor-error",
+                    toolName: "advisor",
+                    input: .object([:]),
+                    providerExecuted: true
+                )),
+                .toolResult(.init(
+                    toolCallId: "advisor-error",
+                    toolName: "advisor",
+                    output: .errorJson(value: .object([
+                        "type": .string("advisor_tool_result_error"),
+                        "errorCode": .string("max_uses_exceeded"),
+                    ]))
+                )),
+            ], providerOptions: nil)
+        ]
+
+        let (result, warnings) = try await convert(prompt)
+
+        #expect(warnings.isEmpty)
+        #expect(result.prompt.messages == [
+            AnthropicMessage(
+                role: "assistant",
+                content: [
+                    .object([
+                        "type": .string("server_tool_use"),
+                        "id": .string("advisor-plain"),
+                        "name": .string("advisor"),
+                        "input": .object([:]),
+                    ]),
+                    .object([
+                        "type": .string("advisor_tool_result"),
+                        "tool_use_id": .string("advisor-plain"),
+                        "content": .object([
+                            "type": .string("advisor_result"),
+                            "text": .string("Use a channel-based coordination pattern."),
+                        ]),
+                    ]),
+                    .object([
+                        "type": .string("server_tool_use"),
+                        "id": .string("advisor-redacted"),
+                        "name": .string("advisor"),
+                        "input": .object([:]),
+                    ]),
+                    .object([
+                        "type": .string("advisor_tool_result"),
+                        "tool_use_id": .string("advisor-redacted"),
+                        "content": .object([
+                            "type": .string("advisor_redacted_result"),
+                            "encrypted_content": .string("opaque-encrypted-advice"),
+                        ]),
+                    ]),
+                    .object([
+                        "type": .string("server_tool_use"),
+                        "id": .string("advisor-error"),
+                        "name": .string("advisor"),
+                        "input": .object([:]),
+                    ]),
+                    .object([
+                        "type": .string("advisor_tool_result"),
+                        "tool_use_id": .string("advisor-error"),
+                        "content": .object([
+                            "type": .string("advisor_tool_result_error"),
+                            "error_code": .string("max_uses_exceeded"),
                         ]),
                     ]),
                 ]

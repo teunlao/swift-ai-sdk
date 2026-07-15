@@ -4,11 +4,18 @@ public struct OpenAIResponsesProviderMetadataPayload: Sendable, Equatable {
     public var responseId: String?
     public var logprobs: [JSONValue]?
     public var serviceTier: String?
+    public var reasoningContext: String?
 
-    public init(responseId: String? = nil, logprobs: [JSONValue]? = nil, serviceTier: String? = nil) {
+    public init(
+        responseId: String? = nil,
+        logprobs: [JSONValue]? = nil,
+        serviceTier: String? = nil,
+        reasoningContext: String? = nil
+    ) {
         self.responseId = responseId
         self.logprobs = logprobs
         self.serviceTier = serviceTier
+        self.reasoningContext = reasoningContext
     }
 }
 

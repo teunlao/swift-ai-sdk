@@ -407,6 +407,9 @@ private struct OpenAIChatLanguageModelCore: Sendable {
         if let promptCacheKey = openAIOptions?.promptCacheKey {
             body["prompt_cache_key"] = .string(promptCacheKey)
         }
+        if let promptCacheOptions = openAIOptions?.promptCacheOptions {
+            body["prompt_cache_options"] = promptCacheOptions.jsonValue
+        }
         if let promptCacheRetention = openAIOptions?.promptCacheRetention {
             body["prompt_cache_retention"] = .string(promptCacheRetention.rawValue)
         }
@@ -773,14 +776,15 @@ private func convertOpenAIChatUsageToV4(_ usage: OpenAIChatUsage?) -> LanguageMo
     let promptTokens = usage.promptTokens ?? 0
     let completionTokens = usage.completionTokens ?? 0
     let cachedTokens = usage.promptTokensDetails?.cachedTokens ?? 0
+    let cacheWriteTokens = usage.promptTokensDetails?.cacheWriteTokens
     let reasoningTokens = usage.completionTokensDetails?.reasoningTokens ?? 0
 
     return LanguageModelV4Usage(
         inputTokens: .init(
             total: promptTokens,
-            noCache: promptTokens - cachedTokens,
+            noCache: promptTokens - cachedTokens - (cacheWriteTokens ?? 0),
             cacheRead: cachedTokens,
-            cacheWrite: nil
+            cacheWrite: cacheWriteTokens
         ),
         outputTokens: .init(
             total: completionTokens,

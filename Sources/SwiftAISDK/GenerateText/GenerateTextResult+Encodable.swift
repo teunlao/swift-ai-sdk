@@ -571,6 +571,16 @@ private enum GenerateTextResultJSONEncoder {
                 "kind": .string("url"),
                 "value": .string(url.absoluteString)
             ])
+        case .reference(let reference):
+            return object([
+                "kind": .string("reference"),
+                "value": .object(reference.mapValues(JSONValue.string))
+            ])
+        case .text(let text):
+            return object([
+                "kind": .string("text"),
+                "value": .string(text)
+            ])
         }
     }
 

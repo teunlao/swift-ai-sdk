@@ -33,7 +33,7 @@ struct GenerateTextOpenAICustomHeadersExample: Example {
         }
       }
 
-      let customProvider = createOpenAIProvider(
+      let customProvider = try createOpenAIProvider(
         settings: OpenAIProviderSettings(
           apiKey: apiKey,
           headers: ["custom-provider-header": "value-1"],

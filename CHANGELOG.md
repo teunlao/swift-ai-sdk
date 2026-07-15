@@ -6,6 +6,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-07-15
+
+Upstream parity release against Vercel AI SDK commit `c8d2726ae045a28142cb46df5e41cdd51d8dcc71`, plus the targeted OpenAI latest-main delta at `5b4a299200ec3d061a2cae087d78d13f74d6c90f`.
+
+### Changed
+- BREAKING (OpenAI construction): `createOpenAI(settings:)` and `createOpenAIProvider(settings:)` now throw when an explicit or environment-provided base URL is empty. Custom provider construction must use `try`; the default `openai` facade remains ready to use.
+- OpenAI Compatible: the V4 provider now owns native Chat, Completion, Embedding, and Image models instead of routing those surfaces through V3 adapters. Explicit V3 facades remain available.
+- Anthropic: the default `anthropic` and `createAnthropic(settings:)` facades now expose native Provider V4 language models, files, and skills. `createAnthropicProvider(settings:)` preserves the explicit V3 surface.
+
+### Added
+- OpenAI Compatible: add native V4 prompt conversion, provider options, tools, reasoning, detailed usage, provider metadata, typed HTTP/SSE errors, multipart image editing, and exact xAI fixture coverage.
+- Anthropic: add native V4 reasoning and prompt mapping, provider-reference files, container uploads, high-level file/skill uploads, the `advisor_20260301` tool, and current model support including Claude Sonnet 5, Fable 5, and Opus 4.8. Direct `xhigh` reasoning and provider `effort: max` remain distinct.
+- OpenAI: add the GPT-5.6 model family, `max` reasoning effort, Responses reasoning mode/context controls, prompt cache options and explicit breakpoints, cache-write usage, and `web_search_call.results`.
+
+### Fixed
+- OpenAI Compatible: validate malformed response roles, tool calls, stream chunks, completion usage, and embedding usage at the provider boundary; finalize streamed tool calls only on flush so a valid JSON prefix cannot execute as a truncated call.
+- OpenAI: normalize realtime transcription authorization headers and cancel caller audio when connection setup or sending fails.
+
+### Docs
+- Refresh README, Starlight provider documentation, compile-checked examples, and durable upstream parity evidence for the OpenAI Compatible, Anthropic, and OpenAI V4 surfaces.
+
+## [0.18.2] - 2026-07-04
+
+### Fixed
+- Google and Google Vertex: normalize video polling abort races to provider abort errors instead of leaking raw Swift `CancellationError`.
+
+### Docs
+- README, shared SDK release version, and Starlight install snippets now reference `0.18.2`.
+
 ## [0.18.1] - 2026-07-03
 
 Upstream parity refresh against Vercel AI SDK commit `0c3c7e426d359c236952d6f8da7b0081eb6f1a7a`.

@@ -146,7 +146,7 @@ public final class StreamingToolCallTracker: @unchecked Sendable {
             title: nil
         ))
 
-        var toolCall = TrackedToolCall(
+        let toolCall = TrackedToolCall(
             id: id,
             name: name,
             arguments: delta.function?.arguments ?? "",
@@ -164,10 +164,7 @@ public final class StreamingToolCallTracker: @unchecked Sendable {
             ))
         }
 
-        if isParsableJson(toolCall.arguments) {
-            finishToolCall(&toolCall)
-            setTrackedToolCall(toolCall, at: index)
-        }
+        // Parsable JSON can still be a prefix of a later delta. Finalize only in flush().
     }
 
     private func processExistingToolCall(index: Int, delta: StreamingToolCallDelta) {
@@ -182,10 +179,6 @@ public final class StreamingToolCallTracker: @unchecked Sendable {
                 delta: arguments,
                 providerMetadata: nil
             ))
-        }
-
-        if isParsableJson(toolCall.arguments) {
-            finishToolCall(&toolCall)
         }
 
         setTrackedToolCall(toolCall, at: index)

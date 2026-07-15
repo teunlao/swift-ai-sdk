@@ -9,7 +9,7 @@ struct RegistryEmbedOpenAIExample: Example {
   static func run() async throws {
     do {
       let registry = createProviderRegistry(providers: [
-        "openai": createOpenAIProvider()
+        "openai": try createOpenAIProvider()
       ])
 
       let model = try registry.textEmbeddingModel(id: "openai:text-embedding-3-small")

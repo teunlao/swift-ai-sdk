@@ -61,9 +61,7 @@ private func extractCerebrasMessage(from json: JSONValue) throws -> String {
 }
 
 public let cerebrasErrorConfiguration = OpenAICompatibleErrorConfiguration(
-    failedResponseHandler: createJsonErrorResponseHandler(
-        errorSchema: cerebrasErrorSchema,
-        errorToMessage: { $0.error.message }
-    ),
+    errorSchema: cerebrasErrorSchema,
+    errorToMessage: { $0.error.message },
     extractMessage: extractCerebrasMessage
 )

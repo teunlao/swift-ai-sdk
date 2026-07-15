@@ -18,6 +18,70 @@ struct OpenAIResponsesInputBuilder {
         hasShellTool: Bool = false,
         hasApplyPatchTool: Bool = false
     ) async throws -> (input: OpenAIResponsesInput, warnings: [SharedV3Warning]) {
+        try await makeInput(
+            prompt: OpenAIResponsesPrompt(v3: prompt),
+            providerOptionsName: providerOptionsName,
+            toolNameMapping: toolNameMapping,
+            customProviderToolNames: customProviderToolNames,
+            systemMessageMode: systemMessageMode,
+            fileIdPrefixes: fileIdPrefixes,
+            store: store,
+            hasConversation: hasConversation,
+            hasPreviousResponseId: hasPreviousResponseId,
+            passThroughUnsupportedFiles: passThroughUnsupportedFiles,
+            hasLocalShellTool: hasLocalShellTool,
+            hasShellTool: hasShellTool,
+            hasApplyPatchTool: hasApplyPatchTool
+        )
+    }
+
+    static func makeInput(
+        prompt: LanguageModelV4Prompt,
+        providerOptionsName: String = "openai",
+        toolNameMapping: OpenAIToolNameMapping = .init(),
+        customProviderToolNames: Set<String> = [],
+        systemMessageMode: OpenAIResponsesSystemMessageMode = .system,
+        fileIdPrefixes: [String]? = ["file-"],
+        store: Bool = true,
+        hasConversation: Bool = false,
+        hasPreviousResponseId: Bool = false,
+        passThroughUnsupportedFiles: Bool = false,
+        hasLocalShellTool: Bool = false,
+        hasShellTool: Bool = false,
+        hasApplyPatchTool: Bool = false
+    ) async throws -> (input: OpenAIResponsesInput, warnings: [SharedV3Warning]) {
+        try await makeInput(
+            prompt: OpenAIResponsesPrompt(v4: prompt, providerOptionsName: providerOptionsName),
+            providerOptionsName: providerOptionsName,
+            toolNameMapping: toolNameMapping,
+            customProviderToolNames: customProviderToolNames,
+            systemMessageMode: systemMessageMode,
+            fileIdPrefixes: fileIdPrefixes,
+            store: store,
+            hasConversation: hasConversation,
+            hasPreviousResponseId: hasPreviousResponseId,
+            passThroughUnsupportedFiles: passThroughUnsupportedFiles,
+            hasLocalShellTool: hasLocalShellTool,
+            hasShellTool: hasShellTool,
+            hasApplyPatchTool: hasApplyPatchTool
+        )
+    }
+
+    private static func makeInput(
+        prompt: OpenAIResponsesPrompt,
+        providerOptionsName: String,
+        toolNameMapping: OpenAIToolNameMapping,
+        customProviderToolNames: Set<String>,
+        systemMessageMode: OpenAIResponsesSystemMessageMode,
+        fileIdPrefixes: [String]?,
+        store: Bool,
+        hasConversation: Bool,
+        hasPreviousResponseId: Bool,
+        passThroughUnsupportedFiles: Bool,
+        hasLocalShellTool: Bool,
+        hasShellTool: Bool,
+        hasApplyPatchTool: Bool
+    ) async throws -> (input: OpenAIResponsesInput, warnings: [SharedV3Warning]) {
         var items: [JSONValue] = []
         var warnings: [SharedV3Warning] = []
         var reasoningReferences: Set<String> = []
@@ -25,12 +89,22 @@ struct OpenAIResponsesInputBuilder {
 
         for message in prompt {
             switch message {
-            case let .system(content, _):
+            case let .system(content, providerOptions):
                 switch systemMessageMode {
                 case .system:
-                    items.append(systemItem(role: "system", content: content))
+                    items.append(systemItem(
+                        role: "system",
+                        content: content,
+                        providerOptions: providerOptions,
+                        providerOptionsName: providerOptionsName
+                    ))
                 case .developer:
-                    items.append(systemItem(role: "developer", content: content))
+                    items.append(systemItem(
+                        role: "developer",
+                        content: content,
+                        providerOptions: providerOptions,
+                        providerOptionsName: providerOptionsName
+                    ))
                 case .remove:
                     warnings.append(.other(message: "system messages are removed for this model"))
                 }
@@ -670,26 +744,13 @@ struct OpenAIResponsesInputBuilder {
 
                         case .content(let contentParts, _):
                             if customProviderToolNames.contains(resolvedToolName) {
-                                let converted = contentParts.compactMap { item -> JSONValue? in
-                                    switch item {
-                                    case .text(let text):
-                                        return .object([
-                                            "type": .string("input_text"),
-                                            "text": .string(text)
-                                        ])
-                                    case .media(let data, let mediaType):
-                                        if mediaType.hasPrefix("image/") {
-                                            return .object([
-                                                "type": .string("input_image"),
-                                                "image_url": .string("data:\(mediaType);base64,\(data)")
-                                            ])
-                                        }
-                                        return .object([
-                                            "type": .string("input_file"),
-                                            "filename": .string("data"),
-                                            "file_data": .string("data:\(mediaType);base64,\(data)")
-                                        ])
-                                    }
+                                let converted = try contentParts.compactMap { item in
+                                    try convertToolResultContentPart(
+                                        item,
+                                        providerOptionsName: providerOptionsName,
+                                        warningPrefix: "unsupported custom tool content part",
+                                        warnings: &warnings
+                                    )
                                 }
 
                                 items.append(.object([
@@ -700,26 +761,13 @@ struct OpenAIResponsesInputBuilder {
                                 continue
                             }
 
-                            let converted = contentParts.map { item -> JSONValue in
-                                switch item {
-                                case .text(let text):
-                                    return .object([
-                                        "type": .string("input_text"),
-                                        "text": .string(text)
-                                    ])
-                                case .media(let data, let mediaType):
-                                    if mediaType.hasPrefix("image/") {
-                                        return .object([
-                                            "type": .string("input_image"),
-                                            "image_url": .string("data:\(mediaType);base64,\(data)")
-                                        ])
-                                    }
-                                    return .object([
-                                        "type": .string("input_file"),
-                                        "filename": .string("data"),
-                                        "file_data": .string("data:\(mediaType);base64,\(data)")
-                                    ])
-                                }
+                            let converted = try contentParts.compactMap { item in
+                                try convertToolResultContentPart(
+                                    item,
+                                    providerOptionsName: providerOptionsName,
+                                    warningPrefix: "unsupported tool content part",
+                                    warnings: &warnings
+                                )
                             }
                             items.append(makeToolResultObject(toolCallId: toolResult.toolCallId, output: .array(converted)))
                         }
@@ -731,10 +779,149 @@ struct OpenAIResponsesInputBuilder {
         return (items, warnings)
     }
 
-    private static func systemItem(role: String, content: String) -> JSONValue {
-        .object([
+    private static func convertToolResultContentPart(
+        _ part: OpenAIResponsesToolResultContentPart,
+        providerOptionsName: String,
+        warningPrefix: String,
+        warnings: inout [SharedV3Warning]
+    ) throws -> JSONValue? {
+        switch part {
+        case let .text(text, providerOptions):
+            var payload: [String: JSONValue] = [
+                "type": .string("input_text"),
+                "text": .string(text)
+            ]
+            addPromptCacheBreakpoint(
+                to: &payload,
+                providerOptions: providerOptions,
+                providerOptionsName: providerOptionsName
+            )
+            return .object(payload)
+
+        case let .file(data, mediaType, filename, providerOptions):
+            let topLevel = getTopLevelMediaType(mediaType)
+            let fullMediaType: String
+            let inlineBase64: String?
+            let url: URL?
+
+            switch data {
+            case .data(let value):
+                fullMediaType = try resolveToolResultMediaType(mediaType, data: value)
+                inlineBase64 = convertDataToBase64(value)
+                url = nil
+            case .base64(let value):
+                fullMediaType = try resolveToolResultMediaType(mediaType, base64: value)
+                inlineBase64 = value
+                url = nil
+            case .url(let value):
+                guard isFullMediaType(mediaType) else {
+                    warnings.append(.other(message: "\(warningPrefix) type: file with data type: url"))
+                    return nil
+                }
+                fullMediaType = mediaType
+                inlineBase64 = nil
+                url = value
+            case .reference, .text:
+                warnings.append(.other(message: "\(warningPrefix) type: file with unsupported data type"))
+                return nil
+            }
+
+            var payload: [String: JSONValue]
+            if topLevel == "image" {
+                payload = ["type": .string("input_image")]
+                if let url {
+                    payload["image_url"] = .string(url.absoluteString)
+                } else if let inlineBase64 {
+                    payload["image_url"] = .string("data:\(fullMediaType);base64,\(inlineBase64)")
+                }
+                if let detail = extractOpenAIStringOption(
+                    from: providerOptions,
+                    providerOptionsName: providerOptionsName,
+                    key: "imageDetail"
+                ) {
+                    payload["detail"] = .string(detail)
+                }
+            } else {
+                payload = ["type": .string("input_file")]
+                if let url {
+                    payload["file_url"] = .string(url.absoluteString)
+                } else if let inlineBase64 {
+                    payload["filename"] = .string(filename ?? "data")
+                    payload["file_data"] = .string("data:\(fullMediaType);base64,\(inlineBase64)")
+                }
+            }
+            addPromptCacheBreakpoint(
+                to: &payload,
+                providerOptions: providerOptions,
+                providerOptionsName: providerOptionsName
+            )
+            return .object(payload)
+
+        case .custom:
+            warnings.append(.other(message: "\(warningPrefix) type: custom"))
+            return nil
+        }
+    }
+
+    private static func resolveToolResultMediaType(_ mediaType: String, data: Data) throws -> String {
+        if isFullMediaType(mediaType) {
+            return mediaType
+        }
+        if let detected = detectMediaType(data: data, topLevelType: getTopLevelMediaType(mediaType)) {
+            return detected
+        }
+        throw UnsupportedFunctionalityError(
+            functionality: "file of media type \"\(mediaType)\" must specify subtype since it could not be auto-detected"
+        )
+    }
+
+    private static func resolveToolResultMediaType(_ mediaType: String, base64: String) throws -> String {
+        if isFullMediaType(mediaType) {
+            return mediaType
+        }
+        if let detected = detectMediaType(data: base64, topLevelType: getTopLevelMediaType(mediaType)) {
+            return detected
+        }
+        throw UnsupportedFunctionalityError(
+            functionality: "file of media type \"\(mediaType)\" must specify subtype since it could not be auto-detected"
+        )
+    }
+
+    private static func addPromptCacheBreakpoint(
+        to payload: inout [String: JSONValue],
+        providerOptions: SharedV3ProviderOptions?,
+        providerOptionsName: String
+    ) {
+        if let breakpoint = openAIPromptCacheBreakpoint(
+            from: providerOptions,
+            providerOptionsName: providerOptionsName
+        ) {
+            payload["prompt_cache_breakpoint"] = breakpoint
+        }
+    }
+
+    private static func systemItem(
+        role: String,
+        content: String,
+        providerOptions: SharedV3ProviderOptions?,
+        providerOptionsName: String
+    ) -> JSONValue {
+        let contentValue: JSONValue
+        if let breakpoint = openAIPromptCacheBreakpoint(
+            from: providerOptions,
+            providerOptionsName: providerOptionsName
+        ) {
+            contentValue = .array([.object([
+                "type": .string("input_text"),
+                "text": .string(content),
+                "prompt_cache_breakpoint": breakpoint
+            ])])
+        } else {
+            contentValue = .string(content)
+        }
+        return .object([
             "role": .string(role),
-            "content": .string(content)
+            "content": contentValue
         ])
     }
 
@@ -747,18 +934,33 @@ struct OpenAIResponsesInputBuilder {
     ) throws -> JSONValue {
         switch part {
         case .text(let textPart):
-            return .object([
+            var payload: [String: JSONValue] = [
                 "type": .string("input_text"),
                 "text": .string(textPart.text)
-            ])
+            ]
+            addPromptCacheBreakpoint(
+                to: &payload,
+                providerOptions: textPart.providerOptions,
+                providerOptionsName: providerOptionsName
+            )
+            return .object(payload)
         case .file(let filePart):
-            return try convertFilePart(
+            let converted = try convertFilePart(
                 part: filePart,
                 index: index,
                 prefixes: prefixes,
                 providerOptionsName: providerOptionsName,
                 passThroughUnsupportedFiles: passThroughUnsupportedFiles
             )
+            guard case .object(var payload) = converted else {
+                return converted
+            }
+            addPromptCacheBreakpoint(
+                to: &payload,
+                providerOptions: filePart.providerOptions,
+                providerOptionsName: providerOptionsName
+            )
+            return .object(payload)
         }
     }
 

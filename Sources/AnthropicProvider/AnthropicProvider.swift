@@ -11,6 +11,14 @@ private let anthropicHTTPSRegex: NSRegularExpression = {
     try! NSRegularExpression(pattern: "^https?://.*$", options: [.caseInsensitive])
 }()
 
+private let anthropicAPIURL = "https://api.anthropic.com"
+private let anthropicVersionedAPIURL = "\(anthropicAPIURL)/v1"
+
+private func normalizeAnthropicBaseURL(_ baseURL: String?) -> String? {
+    let normalized = withoutTrailingSlash(baseURL)
+    return normalized == anthropicAPIURL ? anthropicVersionedAPIURL : normalized
+}
+
 public struct AnthropicProviderSettings: Sendable {
     public var baseURL: String?
     public var apiKey: String?
@@ -73,6 +81,14 @@ public final class AnthropicProvider: ProviderV3, FilesProvider, SkillsProvider 
         makeMessagesModel(modelId)
     }
 
+    public func chatV4(modelId: AnthropicMessagesModelId) -> AnthropicMessagesLanguageModelV4 {
+        makeMessagesModel(modelId).asV4()
+    }
+
+    public func messagesV4(modelId: AnthropicMessagesModelId) -> AnthropicMessagesLanguageModelV4 {
+        makeMessagesModel(modelId).asV4()
+    }
+
     public func textEmbeddingModel(modelId: String) throws -> any EmbeddingModelV3<String> {
         throw NoSuchModelError(modelId: modelId, modelType: .textEmbeddingModel)
     }
@@ -91,9 +107,9 @@ public final class AnthropicProvider: ProviderV3, FilesProvider, SkillsProvider 
 }
 
 public func createAnthropicProvider(settings: AnthropicProviderSettings = .init()) -> AnthropicProvider {
-    let baseURL = withoutTrailingSlash(
+    let baseURL = normalizeAnthropicBaseURL(
         loadOptionalSetting(settingValue: settings.baseURL, environmentVariableName: "ANTHROPIC_BASE_URL")
-    ) ?? "https://api.anthropic.com/v1"
+    ) ?? anthropicVersionedAPIURL
 
     let providerName = settings.name ?? "anthropic.messages"
 
@@ -186,4 +202,4 @@ public extension AnthropicProvider {
     }
 }
 
-public let anthropic = createAnthropicProvider()
+public let anthropic: AnthropicProviderV4 = createAnthropic()

@@ -614,7 +614,6 @@ struct AnthropicMessagesLanguageModelStreamAdvancedTests {
         #expect(usage.inputTokens.cacheRead == 5)
         #expect(usage.inputTokens.cacheWrite == 10)
         #expect(usage.inputTokens.total == 32)
-        #expect(metadata?["anthropic"]?["cacheCreationInputTokens"] == .number(10))
         if case .object(let usageMetadata) = metadata?["anthropic"]?["usage"] {
             #expect(usageMetadata["cache_creation_input_tokens"] == .number(10))
             #expect(usageMetadata["cache_read_input_tokens"] == .number(5))
@@ -869,5 +868,178 @@ struct AnthropicMessagesLanguageModelStreamAdvancedTests {
 
         let finishPart = parts.last { if case .finish = $0 { return true } else { return false } }
         #expect(finishPart != nil)
+    }
+
+    @Test("message delta overrides input usage and maps stop details")
+    func messageDeltaUsageAndStopDetails() async throws {
+        let payloads = [
+            #"{"type":"message_start","message":{"id":"msg_refusal","type":"message","role":"assistant","model":"claude-fable-5","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":10,"output_tokens":0}}}"#,
+            #"{"type":"message_delta","delta":{"stop_reason":"refusal","stop_sequence":null,"stop_details":{"type":"refusal","category":"cyber","explanation":"Blocked by policy","recommended_model":"claude-fable-5"}},"usage":{"input_tokens":20,"output_tokens":5}}"#,
+            #"{"type":"message_stop"}"#,
+        ]
+        let streamEvents = events(from: payloads)
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .stream(makeStream(from: streamEvents)), urlResponse: makeHTTPResponse())
+        }
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-fable-5"),
+            config: makeAdvancedConfig(fetch: fetch)
+        )
+
+        let result = try await model.doStream(options: .init(prompt: advancedTestPrompt))
+        let parts = try await collectParts(from: result.stream)
+        guard let finishPart = parts.last(where: {
+            if case .finish = $0 { return true }
+            return false
+        }), case .finish(let finishReason, let usage, let metadata) = finishPart else {
+            Issue.record("Missing finish part")
+            return
+        }
+
+        #expect(finishReason == .init(unified: .contentFilter, raw: "refusal"))
+        #expect(usage.inputTokens.noCache == 20)
+        #expect(usage.outputTokens.total == 5)
+        #expect(metadata?["anthropic"]?["stopDetails"] == .object([
+            "type": .string("refusal"),
+            "category": .string("cyber"),
+            "explanation": .string("Blocked by policy"),
+            "recommendedModel": .string("claude-fable-5"),
+        ]))
+    }
+
+    @Test("drops streamed fallback block and uses served fallback totals")
+    func streamFallbackResponse() async throws {
+        let payloads = [
+            #"{"type":"message_start","message":{"id":"msg_fallback","type":"message","role":"assistant","model":"claude-fable-5","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":408,"output_tokens":1}}}"#,
+            #"{"type":"content_block_start","index":0,"content_block":{"type":"fallback","from":{"model":"claude-fable-5"},"to":{"model":"claude-opus-4-8"}}}"#,
+            #"{"type":"content_block_stop","index":0}"#,
+            #"{"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}}"#,
+            #"{"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"Fallback answer"}}"#,
+            #"{"type":"content_block_stop","index":1}"#,
+            #"{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"input_tokens":412,"output_tokens":264,"iterations":[{"type":"message","model":"claude-fable-5","input_tokens":408,"output_tokens":0},{"type":"fallback_message","model":"claude-opus-4-8","input_tokens":412,"output_tokens":264}]}}"#,
+            #"{"type":"message_stop"}"#,
+        ]
+        let streamEvents = events(from: payloads)
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .stream(makeStream(from: streamEvents)), urlResponse: makeHTTPResponse())
+        }
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-fable-5"),
+            config: makeAdvancedConfig(fetch: fetch)
+        )
+
+        let result = try await model.doStream(options: .init(prompt: advancedTestPrompt))
+        let parts = try await collectParts(from: result.stream)
+        let textDeltas = parts.compactMap { part -> String? in
+            if case .textDelta(_, let delta, _) = part { return delta }
+            return nil
+        }
+        #expect(textDeltas == ["Fallback answer"])
+        #expect(parts.filter {
+            if case .textStart = $0 { return true }
+            return false
+        }.count == 1)
+
+        guard let finishPart = parts.last(where: {
+            if case .finish = $0 { return true }
+            return false
+        }), case .finish(_, let usage, let metadata) = finishPart else {
+            Issue.record("Missing finish part")
+            return
+        }
+        #expect(usage.inputTokens.noCache == 412)
+        #expect(usage.outputTokens.total == 264)
+        if case .array(let iterations) = metadata?["anthropic"]?["iterations"] {
+            #expect(iterations.count == 2)
+        } else {
+            Issue.record("Missing fallback iterations metadata")
+        }
+    }
+
+    @Test("streams compaction text and aggregates executor iterations")
+    func streamCompactionResponse() async throws {
+        let payloads = [
+            #"{"type":"message_start","message":{"id":"msg_compaction","type":"message","role":"assistant","model":"claude-opus-4-6","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":100,"output_tokens":1}}}"#,
+            #"{"type":"content_block_start","index":0,"content_block":{"type":"compaction","content":null}}"#,
+            #"{"type":"content_block_delta","index":0,"delta":{"type":"compaction_delta","content":"Conversation summary"}}"#,
+            #"{"type":"content_block_delta","index":0,"delta":{"type":"compaction_delta","content":null}}"#,
+            #"{"type":"content_block_stop","index":0}"#,
+            #"{"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}}"#,
+            #"{"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"Final answer"}}"#,
+            #"{"type":"content_block_stop","index":1}"#,
+            #"{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"input_tokens":5,"output_tokens":6,"iterations":[{"type":"compaction","input_tokens":100,"output_tokens":10},{"type":"message","input_tokens":5,"output_tokens":6},{"type":"advisor_message","model":"claude-haiku-4-5","input_tokens":50,"output_tokens":7}]}}"#,
+            #"{"type":"message_stop"}"#,
+        ]
+        let streamEvents = events(from: payloads)
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .stream(makeStream(from: streamEvents)), urlResponse: makeHTTPResponse())
+        }
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-opus-4-6"),
+            config: makeAdvancedConfig(fetch: fetch)
+        )
+
+        let result = try await model.doStream(options: .init(prompt: advancedTestPrompt))
+        let parts = try await collectParts(from: result.stream)
+
+        let compactionStart = parts.first { part in
+            if case .textStart(let id, let metadata) = part {
+                return id == "0" && metadata?["anthropic"]?["type"] == .string("compaction")
+            }
+            return false
+        }
+        #expect(compactionStart != nil)
+        let textDeltas = parts.compactMap { part -> (String, String)? in
+            if case .textDelta(let id, let delta, _) = part { return (id, delta) }
+            return nil
+        }
+        #expect(textDeltas.map(\.0) == ["0", "1"])
+        #expect(textDeltas.map(\.1) == ["Conversation summary", "Final answer"])
+
+        guard let finishPart = parts.last(where: {
+            if case .finish = $0 { return true }
+            return false
+        }), case .finish(_, let usage, _) = finishPart else {
+            Issue.record("Missing finish part")
+            return
+        }
+        #expect(usage.inputTokens.noCache == 105)
+        #expect(usage.outputTokens.total == 16)
+    }
+
+    @Test("injects programmatic type into first streamed code execution delta")
+    func streamCodeExecutionInputType() async throws {
+        let payloads = [
+            #"{"type":"message_start","message":{"id":"msg_code","type":"message","role":"assistant","model":"claude-sonnet-4-6","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":10,"output_tokens":0}}}"#,
+            #"{"type":"content_block_start","index":0,"content_block":{"type":"server_tool_use","id":"srvtoolu_1","name":"code_execution","input":{}}}"#,
+            #"{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"code\":\"print(1)\"}"}}"#,
+            #"{"type":"content_block_stop","index":0}"#,
+            #"{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"input_tokens":10,"output_tokens":5}}"#,
+            #"{"type":"message_stop"}"#,
+        ]
+        let streamEvents = events(from: payloads)
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .stream(makeStream(from: streamEvents)), urlResponse: makeHTTPResponse())
+        }
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-sonnet-4-6"),
+            config: makeAdvancedConfig(fetch: fetch)
+        )
+
+        let result = try await model.doStream(options: .init(prompt: advancedTestPrompt))
+        let parts = try await collectParts(from: result.stream)
+        let inputDelta = parts.compactMap { part -> String? in
+            if case .toolInputDelta(let id, let delta, _) = part, id == "srvtoolu_1" {
+                return delta
+            }
+            return nil
+        }.joined()
+
+        let input = try #require(inputDelta.data(using: .utf8))
+        let inputJSON = try JSONDecoder().decode(JSONValue.self, from: input)
+        #expect(inputJSON == .object([
+            "type": .string("programmatic-tool-call"),
+            "code": .string("print(1)"),
+        ]))
     }
 }

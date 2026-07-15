@@ -14,24 +14,26 @@ struct OpenAIChatMessagesConverter {
 
         for message in prompt {
             switch message {
-            case .system(let content, _):
+            case .system(let content, let providerOptions):
                 switch systemMessageMode {
                 case .system:
                     messages.append(.object([
                         "role": .string("system"),
-                        "content": .string(content)
+                        "content": systemContent(content, providerOptions: providerOptions)
                     ]))
                 case .developer:
                     messages.append(.object([
                         "role": .string("developer"),
-                        "content": .string(content)
+                        "content": systemContent(content, providerOptions: providerOptions)
                     ]))
                 case .remove:
                     warnings.append(.other(message: "system messages are removed for this model"))
                 }
 
             case .user(let parts, _):
-                if parts.count == 1, case .text(let textPart) = parts[0] {
+                if parts.count == 1,
+                   case .text(let textPart) = parts[0],
+                   openAIPromptCacheBreakpoint(from: textPart.providerOptions) == nil {
                     messages.append(.object([
                         "role": .string("user"),
                         "content": .string(textPart.text)
@@ -45,10 +47,10 @@ struct OpenAIChatMessagesConverter {
                 for (partIndex, part) in parts.enumerated() {
                     switch part {
                     case .text(let textPart):
-                        convertedParts.append(.object([
+                        convertedParts.append(contentPart([
                             "type": .string("text"),
                             "text": .string(textPart.text)
-                        ]))
+                        ], providerOptions: textPart.providerOptions))
 
                     case .file(let filePart):
                         let mediaType = filePart.mediaType
@@ -74,10 +76,10 @@ struct OpenAIChatMessagesConverter {
                                 imageURL["detail"] = .string(detail)
                             }
 
-                            convertedParts.append(.object([
+                            convertedParts.append(contentPart([
                                 "type": .string("image_url"),
                                 "image_url": .object(imageURL)
-                            ]))
+                            ], providerOptions: filePart.providerOptions))
                         } else if mediaType.hasPrefix("audio/") {
                             let format = try audioFormat(for: mediaType)
                             let base64Data: String
@@ -90,13 +92,13 @@ struct OpenAIChatMessagesConverter {
                                 throw UnsupportedFunctionalityError(functionality: "audio file parts with URLs")
                             }
 
-                            convertedParts.append(.object([
+                            convertedParts.append(contentPart([
                                 "type": .string("input_audio"),
                                 "input_audio": .object([
                                     "data": .string(base64Data),
                                     "format": .string(format)
                                 ])
-                            ]))
+                            ], providerOptions: filePart.providerOptions))
                         } else if mediaType == "application/pdf" {
                             guard case .url = filePart.data else {
                                 let fileObject: JSONValue
@@ -123,10 +125,10 @@ struct OpenAIChatMessagesConverter {
                                     throw UnsupportedFunctionalityError(functionality: "PDF file parts with URLs")
                                 }
 
-                                convertedParts.append(.object([
+                                convertedParts.append(contentPart([
                                     "type": .string("file"),
                                     "file": fileObject
-                                ]))
+                                ], providerOptions: filePart.providerOptions))
                                 continue
                             }
                             throw UnsupportedFunctionalityError(functionality: "PDF file parts with URLs")
@@ -143,12 +145,21 @@ struct OpenAIChatMessagesConverter {
 
             case .assistant(let parts, _):
                 var text = ""
+                var textParts: [JSONValue] = []
+                var hasPromptCacheBreakpoint = false
                 var toolCalls: [JSONValue] = []
 
                 for part in parts {
                     switch part {
                     case .text(let textPart):
                         text.append(textPart.text)
+                        let converted = contentPart([
+                            "type": .string("text"),
+                            "text": .string(textPart.text)
+                        ], providerOptions: textPart.providerOptions)
+                        textParts.append(converted)
+                        hasPromptCacheBreakpoint = hasPromptCacheBreakpoint
+                            || openAIPromptCacheBreakpoint(from: textPart.providerOptions) != nil
                     case .toolCall(let toolCall):
                         let arguments = try encodeJSONValue(toolCall.input)
                         toolCalls.append(.object([
@@ -166,7 +177,7 @@ struct OpenAIChatMessagesConverter {
 
                 var messageObject: [String: JSONValue] = [
                     "role": .string("assistant"),
-                    "content": .string(text)
+                    "content": hasPromptCacheBreakpoint ? .array(textParts) : .string(text)
                 ]
 
                 if !toolCalls.isEmpty {
@@ -190,10 +201,22 @@ struct OpenAIChatMessagesConverter {
                         contentValue = try encodeEncodable(parts)
                     }
 
+                    let breakpoint = promptCacheBreakpoint(from: toolResponse.output)
+                        ?? openAIPromptCacheBreakpoint(from: toolResponse.providerOptions)
+                    let content: JSONValue = if let breakpoint {
+                        .array([.object([
+                            "type": .string("text"),
+                            "text": .string(contentValue),
+                            "prompt_cache_breakpoint": breakpoint
+                        ])])
+                    } else {
+                        .string(contentValue)
+                    }
+
                     messages.append(.object([
                         "role": .string("tool"),
                         "tool_call_id": .string(toolResponse.toolCallId),
-                        "content": .string(contentValue)
+                        "content": content
                     ]))
                 }
             }
@@ -211,24 +234,26 @@ struct OpenAIChatMessagesConverter {
 
         for message in prompt {
             switch message {
-            case .system(let content, _):
+            case .system(let content, let providerOptions):
                 switch systemMessageMode {
                 case .system:
                     messages.append(.object([
                         "role": .string("system"),
-                        "content": .string(content)
+                        "content": systemContent(content, providerOptions: providerOptions)
                     ]))
                 case .developer:
                     messages.append(.object([
                         "role": .string("developer"),
-                        "content": .string(content)
+                        "content": systemContent(content, providerOptions: providerOptions)
                     ]))
                 case .remove:
                     warnings.append(.other(message: "system messages are removed for this model"))
                 }
 
             case .user(let parts, _):
-                if parts.count == 1, case .text(let textPart) = parts[0] {
+                if parts.count == 1,
+                   case .text(let textPart) = parts[0],
+                   openAIPromptCacheBreakpoint(from: textPart.providerOptions) == nil {
                     messages.append(.object([
                         "role": .string("user"),
                         "content": .string(textPart.text)
@@ -242,20 +267,20 @@ struct OpenAIChatMessagesConverter {
                 for (partIndex, part) in parts.enumerated() {
                     switch part {
                     case .text(let textPart):
-                        convertedParts.append(.object([
+                        convertedParts.append(contentPart([
                             "type": .string("text"),
                             "text": .string(textPart.text)
-                        ]))
+                        ], providerOptions: textPart.providerOptions))
 
                     case .file(let filePart):
                         switch filePart.data {
                         case .reference(let reference):
-                            convertedParts.append(.object([
+                            convertedParts.append(contentPart([
                                 "type": .string("file"),
                                 "file": .object([
                                     "file_id": .string(try resolveProviderReference(reference: reference, provider: "openai"))
                                 ])
-                            ]))
+                            ], providerOptions: filePart.providerOptions))
 
                         case .text:
                             throw UnsupportedFunctionalityError(functionality: "text file parts")
@@ -269,9 +294,9 @@ struct OpenAIChatMessagesConverter {
                                 case .url(let url):
                                     urlValue = url.absoluteString
                                 case .data(let data):
-                                    urlValue = convertDataToBase64(data)
+                                    urlValue = "data:\(try resolveFullMediaType(part: filePart));base64,\(convertDataToBase64(data))"
                                 case .base64(let base64):
-                                    urlValue = base64
+                                    urlValue = "data:\(try resolveFullMediaType(part: filePart));base64,\(base64)"
                                 case .reference, .text:
                                     throw UnsupportedFunctionalityError(functionality: "unsupported image file data")
                                 }
@@ -284,10 +309,10 @@ struct OpenAIChatMessagesConverter {
                                     imageURL["detail"] = .string(detail)
                                 }
 
-                                convertedParts.append(.object([
+                                convertedParts.append(contentPart([
                                     "type": .string("image_url"),
                                     "image_url": .object(imageURL)
-                                ]))
+                                ], providerOptions: filePart.providerOptions))
                                 continue
                             }
 
@@ -295,13 +320,13 @@ struct OpenAIChatMessagesConverter {
                                 guard case .url = filePart.data else {
                                     let fullMediaType = try resolveFullMediaType(part: filePart)
                                     let format = try audioFormat(for: fullMediaType)
-                                    convertedParts.append(.object([
+                                    convertedParts.append(contentPart([
                                         "type": .string("input_audio"),
                                         "input_audio": .object([
                                             "data": .string(try base64Data(from: filePart.data)),
                                             "format": .string(format)
                                         ])
-                                    ]))
+                                    ], providerOptions: filePart.providerOptions))
                                     continue
                                 }
                                 throw UnsupportedFunctionalityError(functionality: "audio file parts with URLs")
@@ -312,13 +337,13 @@ struct OpenAIChatMessagesConverter {
                                 throw UnsupportedFunctionalityError(functionality: "file part media type \(fullMediaType)")
                             }
                             guard case .url = filePart.data else {
-                                convertedParts.append(.object([
+                                convertedParts.append(contentPart([
                                     "type": .string("file"),
                                     "file": .object([
                                         "filename": .string(filePart.filename ?? "part-\(partIndex).pdf"),
                                         "file_data": .string("data:application/pdf;base64,\(try base64Data(from: filePart.data))")
                                     ])
-                                ]))
+                                ], providerOptions: filePart.providerOptions))
                                 continue
                             }
                             throw UnsupportedFunctionalityError(functionality: "PDF file parts with URLs")
@@ -333,12 +358,20 @@ struct OpenAIChatMessagesConverter {
 
             case .assistant(let parts, _):
                 var text = ""
+                var textParts: [JSONValue] = []
+                var hasPromptCacheBreakpoint = false
                 var toolCalls: [JSONValue] = []
 
                 for part in parts {
                     switch part {
                     case .text(let textPart):
                         text.append(textPart.text)
+                        textParts.append(contentPart([
+                            "type": .string("text"),
+                            "text": .string(textPart.text)
+                        ], providerOptions: textPart.providerOptions))
+                        hasPromptCacheBreakpoint = hasPromptCacheBreakpoint
+                            || openAIPromptCacheBreakpoint(from: textPart.providerOptions) != nil
                     case .toolCall(let toolCall):
                         toolCalls.append(.object([
                             "type": .string("function"),
@@ -355,7 +388,9 @@ struct OpenAIChatMessagesConverter {
 
                 var messageObject: [String: JSONValue] = [
                     "role": .string("assistant"),
-                    "content": toolCalls.isEmpty || !text.isEmpty ? .string(text) : .null
+                    "content": hasPromptCacheBreakpoint
+                        ? .array(textParts)
+                        : (toolCalls.isEmpty || !text.isEmpty ? .string(text) : .null)
                 ]
 
                 if !toolCalls.isEmpty {
@@ -382,10 +417,22 @@ struct OpenAIChatMessagesConverter {
                             contentValue = try encodeEncodable(parts)
                         }
 
+                        let breakpoint = promptCacheBreakpoint(from: toolResponse.output)
+                            ?? openAIPromptCacheBreakpoint(from: toolResponse.providerOptions)
+                        let content: JSONValue = if let breakpoint {
+                            .array([.object([
+                                "type": .string("text"),
+                                "text": .string(contentValue),
+                                "prompt_cache_breakpoint": breakpoint
+                            ])])
+                        } else {
+                            .string(contentValue)
+                        }
+
                         messages.append(.object([
                             "role": .string("tool"),
                             "tool_call_id": .string(toolResponse.toolCallId),
-                            "content": .string(contentValue)
+                            "content": content
                         ]))
                     }
                 }
@@ -393,6 +440,63 @@ struct OpenAIChatMessagesConverter {
         }
 
         return (messages, warnings)
+    }
+
+    private static func systemContent(
+        _ content: String,
+        providerOptions: SharedV3ProviderOptions?
+    ) -> JSONValue {
+        guard let breakpoint = openAIPromptCacheBreakpoint(from: providerOptions) else {
+            return .string(content)
+        }
+        return .array([.object([
+            "type": .string("text"),
+            "text": .string(content),
+            "prompt_cache_breakpoint": breakpoint
+        ])])
+    }
+
+    private static func contentPart(
+        _ content: [String: JSONValue],
+        providerOptions: SharedV3ProviderOptions?
+    ) -> JSONValue {
+        var content = content
+        if let breakpoint = openAIPromptCacheBreakpoint(from: providerOptions) {
+            content["prompt_cache_breakpoint"] = breakpoint
+        }
+        return .object(content)
+    }
+
+    private static func promptCacheBreakpoint(
+        from output: LanguageModelV3ToolResultOutput
+    ) -> JSONValue? {
+        switch output {
+        case .text(_, let options), .json(_, let options), .executionDenied(_, let options),
+             .errorText(_, let options), .errorJson(_, let options), .content(_, let options):
+            return openAIPromptCacheBreakpoint(from: options)
+        }
+    }
+
+    private static func promptCacheBreakpoint(
+        from output: LanguageModelV4ToolResultOutput
+    ) -> JSONValue? {
+        switch output {
+        case .text(_, let options), .json(_, let options), .executionDenied(_, let options),
+             .errorText(_, let options), .errorJson(_, let options):
+            return openAIPromptCacheBreakpoint(from: options)
+        case .content(let parts):
+            for part in parts {
+                let providerOptions: SharedV4ProviderOptions?
+                switch part {
+                case .text(_, let options), .file(_, _, _, let options), .custom(let options):
+                    providerOptions = options
+                }
+                if let breakpoint = openAIPromptCacheBreakpoint(from: providerOptions) {
+                    return breakpoint
+                }
+            }
+            return nil
+        }
     }
 
     private static func openAIImageDetail(from options: SharedV3ProviderOptions?) -> String? {

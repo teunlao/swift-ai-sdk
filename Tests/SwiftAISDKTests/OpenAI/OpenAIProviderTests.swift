@@ -105,7 +105,7 @@ struct OpenAIProviderTests {
 
             unsetenv("OPENAI_API_KEY")
             let capture = URLCapture()
-            let provider = createOpenAIProvider(
+            let provider = try createOpenAIProvider(
                 settings: OpenAIProviderSettings(fetch: makeFetch(capture: capture))
             )
 
@@ -137,7 +137,7 @@ struct OpenAIProviderTests {
 
             unsetenv("OPENAI_BASE_URL")
             let capture = URLCapture()
-            let provider = createOpenAIProvider(
+            let provider = try createOpenAIProvider(
                 settings: OpenAIProviderSettings(apiKey: "test-api-key", fetch: makeFetch(capture: capture))
             )
             _ = try await provider.textEmbeddingModel(modelId: "text-embedding-3-small").doEmbed(
@@ -161,7 +161,7 @@ struct OpenAIProviderTests {
 
             setenv("OPENAI_BASE_URL", "https://proxy.openai.example/v1/", 1)
             let capture = URLCapture()
-            let provider = createOpenAIProvider(
+            let provider = try createOpenAIProvider(
                 settings: OpenAIProviderSettings(apiKey: "test-api-key", fetch: makeFetch(capture: capture))
             )
             _ = try await provider.textEmbeddingModel(modelId: "text-embedding-3-small").doEmbed(
@@ -185,7 +185,7 @@ struct OpenAIProviderTests {
 
             setenv("OPENAI_BASE_URL", "https://env.openai.example/v1", 1)
             let capture = URLCapture()
-            let provider = createOpenAIProvider(
+            let provider = try createOpenAIProvider(
                 settings: OpenAIProviderSettings(
                     baseURL: "https://option.openai.example/v1/",
                     apiKey: "test-api-key",
@@ -216,7 +216,7 @@ struct OpenAIProviderTests {
 
     @Test("embeddingModel String alias creates embedding model")
     func embeddingModelStringAliasCreatesEmbeddingModel() throws {
-        let provider = createOpenAIProvider(
+        let provider = try createOpenAIProvider(
             settings: OpenAIProviderSettings(apiKey: "test-api-key")
         )
 
@@ -227,8 +227,8 @@ struct OpenAIProviderTests {
     }
 
     @Test("typed embeddingModel alias matches embedding alias")
-    func typedEmbeddingModelAliasMatchesEmbeddingAlias() {
-        let provider = createOpenAIProvider(
+    func typedEmbeddingModelAliasMatchesEmbeddingAlias() throws {
+        let provider = try createOpenAIProvider(
             settings: OpenAIProviderSettings(apiKey: "test-api-key")
         )
 
@@ -243,7 +243,7 @@ struct OpenAIProviderTests {
 
     @Test("createOpenAI exposes upstream V4 provider surface")
     func createOpenAIExposesV4ProviderSurface() throws {
-        let provider = createOpenAI(settings: .init(apiKey: "test-api-key", name: "custom-openai"))
+        let provider = try createOpenAI(settings: .init(apiKey: "test-api-key", name: "custom-openai"))
 
         #expect(provider.specificationVersion == "v4")
 
@@ -285,7 +285,7 @@ struct OpenAIProviderTests {
     func createOpenAIV4RoutesRequestsLikeUpstream() async throws {
         do {
             let capture = URLCapture()
-            let provider = createOpenAI(settings: .init(
+            let provider = try createOpenAI(settings: .init(
                 baseURL: "https://proxy.openai.example/v1/",
                 apiKey: "test-api-key",
                 fetch: makeFailingFetch(capture: capture)
@@ -300,7 +300,7 @@ struct OpenAIProviderTests {
 
         do {
             let capture = URLCapture()
-            let provider = createOpenAI(settings: .init(
+            let provider = try createOpenAI(settings: .init(
                 baseURL: "https://proxy.openai.example/v1/",
                 apiKey: "test-api-key",
                 fetch: makeFailingFetch(capture: capture)
@@ -314,7 +314,7 @@ struct OpenAIProviderTests {
 
         do {
             let capture = URLCapture()
-            let provider = createOpenAI(settings: .init(
+            let provider = try createOpenAI(settings: .init(
                 baseURL: "https://proxy.openai.example/v1/",
                 apiKey: "test-api-key",
                 fetch: makeFailingFetch(capture: capture)
@@ -328,7 +328,7 @@ struct OpenAIProviderTests {
 
         do {
             let capture = URLCapture()
-            let provider = createOpenAI(settings: .init(
+            let provider = try createOpenAI(settings: .init(
                 baseURL: "https://proxy.openai.example/v1/",
                 apiKey: "test-api-key",
                 fetch: makeFailingFetch(capture: capture)
@@ -342,7 +342,7 @@ struct OpenAIProviderTests {
 
         do {
             let capture = URLCapture()
-            let provider = createOpenAI(settings: .init(
+            let provider = try createOpenAI(settings: .init(
                 baseURL: "https://proxy.openai.example/v1/",
                 apiKey: "test-api-key",
                 fetch: makeFailingFetch(capture: capture)
@@ -358,7 +358,7 @@ struct OpenAIProviderTests {
 
         do {
             let capture = URLCapture()
-            let provider = createOpenAI(settings: .init(
+            let provider = try createOpenAI(settings: .init(
                 baseURL: "https://proxy.openai.example/v1/",
                 apiKey: "test-api-key",
                 fetch: makeFailingFetch(capture: capture)
@@ -374,7 +374,7 @@ struct OpenAIProviderTests {
     @Test("createOpenAI V4 applies auth, organization, project, custom headers, and user-agent like upstream")
     func createOpenAIV4AppliesProviderHeadersLikeUpstream() async throws {
         let capture = RequestCapture()
-        let provider = createOpenAI(settings: .init(
+        let provider = try createOpenAI(settings: .init(
             apiKey: "base-api-key",
             organization: "base-organization",
             project: "base-project",
@@ -405,5 +405,23 @@ struct OpenAIProviderTests {
         #expect(normalizedHeaders["user-agent"]?.contains("Client/1.0") == true)
         #expect(normalizedHeaders["user-agent"]?.contains("ai-sdk/openai/") == true)
         #expect(normalizedHeaders["user-agent"]?.contains("ai-sdk/provider-utils/") == true)
+    }
+
+    @Test("OpenAI factories reject empty baseURL at creation")
+    func openAIFactoriesRejectEmptyBaseURLAtCreation() {
+        for createProvider in [
+            { try createOpenAIProvider(settings: .init(baseURL: "")) as Any },
+            { try createOpenAI(settings: .init(baseURL: "  ")) as Any }
+        ] {
+            do {
+                _ = try createProvider()
+                Issue.record("Expected InvalidArgumentError")
+            } catch let error as InvalidArgumentError {
+                #expect(error.argument == "baseURL")
+                #expect(error.message == "baseURL must be a non-empty string.")
+            } catch {
+                Issue.record("Expected InvalidArgumentError, got \(error)")
+            }
+        }
     }
 }

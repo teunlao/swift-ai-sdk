@@ -862,12 +862,6 @@ private func makeConfig(fetch: @escaping FetchFunction) -> AnthropicMessagesConf
                 Issue.record("Expected usage in metadata")
             }
 
-            // Check cacheCreationInputTokens is null (top-level)
-            if let cacheTokens = metadata["cacheCreationInputTokens"], case .null = cacheTokens {
-                // Expected null value
-            } else {
-                Issue.record("Expected cacheCreationInputTokens to be null")
-            }
         } else {
             Issue.record("Expected anthropic provider metadata")
         }
@@ -1411,10 +1405,6 @@ private func makeConfig(fetch: @escaping FetchFunction) -> AnthropicMessagesConf
         // Verify cache tokens in response metadata
         #expect(result.providerMetadata != nil)
         if let metadata = result.providerMetadata?["anthropic"] {
-            if let cacheTokens = metadata["cacheCreationInputTokens"], case .number(let tokens) = cacheTokens {
-                #expect(tokens == 10)
-            }
-
             if let usage = metadata["usage"], case .object(let usageObj) = usage {
                 #expect(usageObj["cache_creation_input_tokens"] == .number(10))
                 #expect(usageObj["cache_read_input_tokens"] == .number(5))
@@ -2037,7 +2027,6 @@ struct AnthropicMessagesLanguageModelStreamTests {
             // Verify provider metadata
             if let providerMetadata = providerMetadata,
                let metaObj = providerMetadata["anthropic"] {
-                #expect(metaObj["cacheCreationInputTokens"] == JSONValue.null)
                 #expect(metaObj["stopSequence"] == JSONValue.null)
                 if case .object(let usageObj) = metaObj["usage"] {
                     #expect(usageObj["input_tokens"] == JSONValue.number(17))
@@ -2101,7 +2090,6 @@ struct AnthropicMessagesLanguageModelStreamTests {
             // Verify provider metadata includes stopSequence
             if let providerMetadata = providerMetadata,
                let metaObj = providerMetadata["anthropic"] {
-                #expect(metaObj["cacheCreationInputTokens"] == JSONValue.null)
                 #expect(metaObj["stopSequence"] == JSONValue.string("STOP"))
                 if case .object(let usageObj) = metaObj["usage"] {
                     #expect(usageObj["input_tokens"] == JSONValue.number(17))
@@ -2167,7 +2155,6 @@ struct AnthropicMessagesLanguageModelStreamTests {
             // Verify provider metadata includes cache tokens
             if let providerMetadata = providerMetadata,
                let metaObj = providerMetadata["anthropic"] {
-                #expect(metaObj["cacheCreationInputTokens"] == JSONValue.number(10))
                 #expect(metaObj["stopSequence"] == JSONValue.null)
                 if case .object(let usageObj) = metaObj["usage"] {
                     #expect(usageObj["cache_creation_input_tokens"] == JSONValue.number(10))
@@ -2235,7 +2222,6 @@ struct AnthropicMessagesLanguageModelStreamTests {
             // Verify provider metadata includes cache_creation
             if let providerMetadata = providerMetadata,
                let metaObj = providerMetadata["anthropic"] {
-                #expect(metaObj["cacheCreationInputTokens"] == JSONValue.number(10))
                 if case .object(let usageObj) = metaObj["usage"] {
                     #expect(usageObj["cache_creation_input_tokens"] == JSONValue.number(10))
                     #expect(usageObj["cache_read_input_tokens"] == JSONValue.number(5))
@@ -5484,8 +5470,9 @@ struct AnthropicMessagesLanguageModelCapabilitiesTests {
         let json = try? JSONSerialization.jsonObject(
             with: (await capture.current())!.httpBody!
         ) as? [String: Any]
-        // Native output_format used instead of json tool fallback
-        #expect(json?["output_format"] != nil)
+        let outputConfig = json?["output_config"] as? [String: Any]
+        #expect(outputConfig?["format"] != nil)
+        #expect(json?["output_format"] == nil)
         #expect(json?["tools"] == nil)
     }
 }

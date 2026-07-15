@@ -26,6 +26,12 @@ public func convertToLanguageModelV3DataContent(
         } else {
             return (data: .url(url), mediaType: nil)
         }
+
+    case .reference:
+        throw UnsupportedFunctionalityError(functionality: "provider reference file data on a v3 model")
+
+    case .text(let text):
+        return (data: .data(Data(text.utf8)), mediaType: nil)
     }
 }
 
@@ -33,6 +39,15 @@ public func convertToLanguageModelV3DataContent(
 public func convertToSharedV4FileData(
     _ content: DataContentOrURL
 ) throws -> (data: SharedV4FileData, mediaType: String?) {
+    switch content {
+    case .reference(let reference):
+        return (data: .reference(reference), mediaType: nil)
+    case .text(let text):
+        return (data: .text(text), mediaType: nil)
+    case .data, .string, .url:
+        break
+    }
+
     let converted = try convertToLanguageModelV3DataContent(content)
     switch converted.data {
     case .data(let data):

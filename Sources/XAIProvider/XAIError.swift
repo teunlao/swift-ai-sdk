@@ -99,6 +99,7 @@ private func extractXAIErrorMessage(from json: JSONValue) throws -> String {
 }
 
 public let xaiErrorConfiguration = OpenAICompatibleErrorConfiguration(
-    failedResponseHandler: xaiFailedResponseHandler,
+    errorSchema: xaiErrorDataSchema,
+    errorToMessage: { $0.error.message },
     extractMessage: extractXAIErrorMessage
 )

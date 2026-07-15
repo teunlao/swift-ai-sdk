@@ -20,6 +20,7 @@ struct OpenAIResponsesRequestBody: Encodable, Sendable {
     var serviceTier: String?
     var include: [String]?
     var promptCacheKey: String?
+    var promptCacheOptions: OpenAIPromptCacheOptions?
     var promptCacheRetention: String?
     var safetyIdentifier: String?
     var topLogprobs: Double?
@@ -48,6 +49,7 @@ struct OpenAIResponsesRequestBody: Encodable, Sendable {
         case serviceTier = "service_tier"
         case include
         case promptCacheKey = "prompt_cache_key"
+        case promptCacheOptions = "prompt_cache_options"
         case promptCacheRetention = "prompt_cache_retention"
         case safetyIdentifier = "safety_identifier"
         case topLogprobs = "top_logprobs"
@@ -78,6 +80,7 @@ struct OpenAIResponsesRequestBody: Encodable, Sendable {
         try container.encodeIfPresent(serviceTier, forKey: .serviceTier)
         try container.encodeIfPresent(include, forKey: .include)
         try container.encodeIfPresent(promptCacheKey, forKey: .promptCacheKey)
+        try container.encodeIfPresent(promptCacheOptions?.jsonValue, forKey: .promptCacheOptions)
         try container.encodeIfPresent(promptCacheRetention, forKey: .promptCacheRetention)
         try container.encodeIfPresent(safetyIdentifier, forKey: .safetyIdentifier)
         try container.encodeIfPresent(topLogprobs, forKey: .topLogprobs)

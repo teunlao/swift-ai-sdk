@@ -146,4 +146,59 @@ struct GenerateTextV4Tests {
             Issue.record("Expected V4 deprecated warning")
         }
     }
+
+    @Test("generateText preserves provider-reference and text file data for V4 models")
+    func generateTextPreservesV4FileData() async throws {
+        let captured = CapturedV4Options()
+        let model = MockLanguageModelV4(
+            provider: "mock-v4-provider",
+            modelId: "mock-v4-model",
+            doGenerate: .function { options in
+                await captured.record(options)
+                return LanguageModelV4GenerateResult(
+                    content: [.text(.init(text: "done"))],
+                    finishReason: .init(unified: .stop, raw: "end_turn"),
+                    usage: .init(inputTokens: .init(total: 1), outputTokens: .init(total: 1)),
+                    warnings: []
+                )
+            }
+        )
+
+        _ = try await generateText(
+            model: model,
+            messages: [
+                .user(.init(content: .parts([
+                    .file(.init(
+                        data: .reference(["anthropic": "file_123"]),
+                        mediaType: "application/pdf",
+                        filename: "guide.pdf",
+                        providerOptions: ["anthropic": ["containerUpload": .bool(true)]]
+                    )),
+                    .file(.init(data: .text("inline notes"), mediaType: "text/plain")),
+                ])))
+            ]
+        ) as DefaultGenerateTextResult<JSONValue>
+
+        let options = try #require(await captured.recorded())
+        guard case .user(let content, _) = try #require(options.prompt.first) else {
+            Issue.record("Expected V4 user message")
+            return
+        }
+
+        #expect(content.count == 2)
+        guard case .file(let referencedFile) = content[0],
+              case .reference(let reference) = referencedFile.data else {
+            Issue.record("Expected provider-reference file data")
+            return
+        }
+        #expect(reference == ["anthropic": "file_123"])
+        #expect(referencedFile.providerOptions?["anthropic"]?["containerUpload"] == .bool(true))
+
+        guard case .file(let textFile) = content[1],
+              case .text(let text) = textFile.data else {
+            Issue.record("Expected inline text file data")
+            return
+        }
+        #expect(text == "inline notes")
+    }
 }

@@ -5,7 +5,7 @@ import SwiftAISDK
 
 struct GenerateTextOpenAIProviderOptionsExample: Example {
   static let name = "generate-text/openai-provider-options"
-  static let description = "Demonstrates advanced OpenAI-specific provider options (logprobs, cache, tiers, etc.)."
+  static let description = "Demonstrates GPT-5.6 reasoning, prompt caching, and request controls."
 
   static func run() async throws {
     do {
@@ -14,24 +14,29 @@ struct GenerateTextOpenAIProviderOptionsExample: Example {
 
       let providerOptions: ProviderOptions = [
         "openai": [
-          "logitBias": .object([:]),
-          "logprobs": .number(1),
           "user": .string("<user_id>"),
-          "maxCompletionTokens": .number(100),
           "store": .bool(false),
           "serviceTier": .string("auto"),
           "strictJsonSchema": .bool(false),
           "textVerbosity": .string("medium"),
           "promptCacheKey": .string("<prompt_cache_key>"),
+          "promptCacheOptions": .object([
+            "mode": .string("implicit"),
+            "ttl": .string("30m")
+          ]),
+          "reasoningEffort": .string("max"),
+          "reasoningMode": .string("pro"),
+          "reasoningContext": .string("all_turns"),
+          "reasoningSummary": .string("auto"),
           "safetyIdentifier": .string("<safety_identifier>"),
-          "invalidOption": .null
         ]
       ]
 
       let result = try await generateText(
-        model: openai.chat("gpt-4o"),
+        model: openai("gpt-5.6"),
         prompt: "Invent a new holiday and describe its traditions.",
-        providerOptions: providerOptions
+        providerOptions: providerOptions,
+        settings: CallSettings(maxOutputTokens: 100)
       )
 
       Logger.section("Assistant Text")

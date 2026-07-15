@@ -52,7 +52,7 @@ struct GenerateTextOpenAICustomFetchExample: Example {
         }
       }
 
-      let customOpenAI = createOpenAIProvider(settings: OpenAIProviderSettings(fetch: loggingFetch))
+      let customOpenAI = try createOpenAIProvider(settings: OpenAIProviderSettings(fetch: loggingFetch))
 
       let result = try await generateText(
         model: try customOpenAI("gpt-4o-mini"),
