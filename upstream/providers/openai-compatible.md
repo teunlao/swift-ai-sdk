@@ -62,6 +62,11 @@
 - [x] Non-streaming V4 Completion maps text, finish reason, response metadata,
   detailed usage, and the parsed provider usage object exposed through
   `usage.raw`.
+- [x] V4 Completion validates the full audited response schemas: generate
+  requires `choices[].text`, `choices[].finish_reason`, and all three usage
+  counters when usage is present; stream additionally requires each choice
+  index. Invalid stream chunks emit errors without contaminating later valid
+  text, finish reason, or usage.
 - [x] Streaming V4 Completion preserves text lifecycle ordering, including an
   initial empty delta, raw chunks, inner provider error payloads, unparsable
   error/finish events, and usage.
@@ -79,6 +84,9 @@
   `encoding_format`, dimensions, user, merged headers, embeddings, usage,
   provider metadata, raw response information, configurable call limits, and
   parallel-call capability.
+- [x] Embedding response validation requires `usage.prompt_tokens` whenever a
+  usage object is present, matching the upstream response schema instead of
+  silently treating malformed usage as absent.
 - [x] Existing OpenAI-compatible V3 Embedding request precedence and warning
   behavior remain covered by the provider test target.
 - [x] `createOpenAICompatible(settings:)` routes Image models directly to
@@ -144,14 +152,14 @@
 
 ## Validation
 
-- `AGENT=1 swift test --filter OpenAICompatibleProviderTests` passed 163 tests
+- `AGENT=1 swift test --filter OpenAICompatibleProviderTests` passed 166 tests
   in 13 suites.
 - `AGENT=1 swift test --filter OpenAICompatibleProviderV4Tests` passed 13 tests.
 - `AGENT=1 swift test --filter OpenAICompatibleChatMessagesConverterV4Tests`
   passed 2 tests.
 - `AGENT=1 swift test --filter OpenAICompatibleCompletionLanguageModelV4Tests`
-  passed 6 tests.
-- `AGENT=1 swift test --filter OpenAICompatibleEmbeddingModelV4Tests` passed 3
+  passed 8 tests.
+- `AGENT=1 swift test --filter OpenAICompatibleEmbeddingModelV4Tests` passed 4
   tests.
 - `AGENT=1 swift test --filter OpenAICompatibleImageModel` passed 13 tests in
   2 suites.
