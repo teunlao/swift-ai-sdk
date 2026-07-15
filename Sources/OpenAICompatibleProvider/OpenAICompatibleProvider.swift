@@ -141,6 +141,7 @@ private struct OpenAICompatibleModelFactories: Sendable {
     let embeddingFactory: @Sendable (OpenAICompatibleEmbeddingModelId) -> OpenAICompatibleEmbeddingModel
     let embeddingFactoryV4: @Sendable (OpenAICompatibleEmbeddingModelId) -> OpenAICompatibleEmbeddingModelV4
     let imageFactory: @Sendable (OpenAICompatibleImageModelId) -> OpenAICompatibleImageModel
+    let imageFactoryV4: @Sendable (OpenAICompatibleImageModelId) -> OpenAICompatibleImageModelV4
 }
 
 private func makeOpenAICompatibleModelFactories(
@@ -252,17 +253,22 @@ private func makeOpenAICompatibleModelFactories(
         OpenAICompatibleEmbeddingModelV4(modelId: modelId, config: embeddingConfig())
     }
 
-    let imageFactory: @Sendable (OpenAICompatibleImageModelId) -> OpenAICompatibleImageModel = { modelId in
-        OpenAICompatibleImageModel(
-            modelId: modelId,
-            config: OpenAICompatibleImageModelConfig(
-                provider: "\(providerName).image",
-                headers: headersClosure,
-                url: urlBuilder,
-                fetch: commonFetch,
-                errorConfiguration: errorConfiguration
-            )
+    let imageConfig: @Sendable () -> OpenAICompatibleImageModelConfig = {
+        OpenAICompatibleImageModelConfig(
+            provider: "\(providerName).image",
+            headers: headersClosure,
+            url: urlBuilder,
+            fetch: commonFetch,
+            errorConfiguration: errorConfiguration
         )
+    }
+
+    let imageFactory: @Sendable (OpenAICompatibleImageModelId) -> OpenAICompatibleImageModel = { modelId in
+        OpenAICompatibleImageModel(modelId: modelId, config: imageConfig())
+    }
+
+    let imageFactoryV4: @Sendable (OpenAICompatibleImageModelId) -> OpenAICompatibleImageModelV4 = { modelId in
+        OpenAICompatibleImageModelV4(modelId: modelId, config: imageConfig())
     }
 
     return OpenAICompatibleModelFactories(
@@ -272,7 +278,8 @@ private func makeOpenAICompatibleModelFactories(
         completionFactoryV4: completionFactoryV4,
         embeddingFactory: embeddingFactory,
         embeddingFactoryV4: embeddingFactoryV4,
-        imageFactory: imageFactory
+        imageFactory: imageFactory,
+        imageFactoryV4: imageFactoryV4
     )
 }
 
@@ -286,7 +293,7 @@ public func createOpenAICompatible(
         chatFactory: factories.languageFactoryV4,
         completionFactory: factories.completionFactoryV4,
         embeddingFactory: factories.embeddingFactoryV4,
-        imageFactory: { OpenAICompatibleImageModelV4Adapter(wrapping: factories.imageFactory($0)) }
+        imageFactory: factories.imageFactoryV4
     )
 }
 
