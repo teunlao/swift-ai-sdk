@@ -142,7 +142,11 @@ let package = Package(
                 dependencies: ["SwiftAISDK", "OpenAIProvider", "OpenAICompatibleProvider", "CohereProvider", "AmazonBedrockProvider"],
                 resources: [.copy("OpenAI/Fixtures")]
             ),
-	        .testTarget(name: "OpenAICompatibleProviderTests", dependencies: ["OpenAICompatibleProvider", "AISDKProvider", "AISDKProviderUtils"]),
+	        .testTarget(
+                name: "OpenAICompatibleProviderTests",
+                dependencies: ["OpenAICompatibleProvider", "AISDKProvider", "AISDKProviderUtils"],
+                resources: [.copy("Fixtures")]
+            ),
 	        .testTarget(name: "MoonshotAIProviderTests", dependencies: ["MoonshotAIProvider", "AISDKProvider", "AISDKProviderUtils", "OpenAICompatibleProvider"]),
 	        .testTarget(name: "OpenResponsesProviderTests", dependencies: ["OpenResponsesProvider", "AISDKProvider", "AISDKProviderUtils"]),
 	        .testTarget(name: "ByteDanceProviderTests", dependencies: ["ByteDanceProvider", "AISDKProvider", "AISDKProviderUtils"]),
