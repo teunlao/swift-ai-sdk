@@ -263,7 +263,7 @@ struct OpenAICompatibleCompletionLanguageModelV4Tests {
             #"{"id":"cmpl-v4","choices":[{"text":"missing index","finish_reason":null}]}"#,
             #"{"id":"cmpl-v4","choices":[{"index":0,"finish_reason":null}]}"#,
             #"{"id":"cmpl-v4","choices":[],"usage":{"prompt_tokens":1}}"#,
-            #"{"id":"cmpl-v4","choices":[{"text":"valid","index":0,"finish_reason":"stop"}]}"#
+            #"{"id":"cmpl-v4","choices":[{"text":"valid","index":0,"finish_reason":"stop"}],"error":{"message":"ignored extra field"}}"#
         ]
         let targetURL = URL(string: "https://my.api.com/v1/completions")!
         let fetch: FetchFunction = { _ in

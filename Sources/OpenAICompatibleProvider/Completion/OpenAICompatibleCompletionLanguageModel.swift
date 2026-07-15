@@ -839,15 +839,12 @@ private enum OpenAICompatibleCompletionStreamEvent: Codable, Sendable {
     case data(OpenAICompatibleCompletionStreamChunk)
     case error(OpenAICompatibleErrorData)
 
-    private enum CodingKeys: String, CodingKey { case error }
-
     init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        if container.contains(.error) {
-            self = .error(try OpenAICompatibleErrorData(from: decoder))
-        } else {
-            self = .data(try OpenAICompatibleCompletionStreamChunk(from: decoder))
+        if let chunk = try? OpenAICompatibleCompletionStreamChunk(from: decoder) {
+            self = .data(chunk)
+            return
         }
+        self = .error(try OpenAICompatibleErrorData(from: decoder))
     }
 
     func encode(to encoder: Encoder) throws {
@@ -954,15 +951,12 @@ private enum OpenAICompatibleCompletionStreamEventV4: Decodable, Sendable {
     case data(OpenAICompatibleCompletionStreamChunkV4)
     case error(OpenAICompatibleErrorData)
 
-    private enum CodingKeys: String, CodingKey { case error }
-
     init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        if container.contains(.error) {
-            self = .error(try OpenAICompatibleErrorData(from: decoder))
-        } else {
-            self = .data(try OpenAICompatibleCompletionStreamChunkV4(from: decoder))
+        if let chunk = try? OpenAICompatibleCompletionStreamChunkV4(from: decoder) {
+            self = .data(chunk)
+            return
         }
+        self = .error(try OpenAICompatibleErrorData(from: decoder))
     }
 
     var normalized: OpenAICompatibleCompletionStreamEvent {

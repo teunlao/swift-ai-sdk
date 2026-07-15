@@ -39,3 +39,14 @@ func openAICompatibleDeprecatedProviderOptionsWarning(
         message: "Use '\(camelCaseName)' instead."
     )
 }
+
+func openAICompatibleProviderOptionsKey(
+    rawName: String,
+    providerOptions: SharedV4ProviderOptions?
+) -> String {
+    let camelCaseName = openAICompatibleCamelCase(rawName)
+    guard camelCaseName != rawName, providerOptions?[camelCaseName] != nil else {
+        return rawName
+    }
+    return camelCaseName
+}

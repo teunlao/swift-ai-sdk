@@ -605,8 +605,7 @@ private struct OpenAICompatibleChatLanguageModelCore: Sendable {
         warnings.append(contentsOf: preparedTools.warnings)
 
         var body: [String: JSONValue] = [
-            "model": .string(modelIdentifier.rawValue),
-            "messages": .array(messages)
+            "model": .string(modelIdentifier.rawValue)
         ]
 
         if let user = mergedOptions.user {
@@ -661,6 +660,12 @@ private struct OpenAICompatibleChatLanguageModelCore: Sendable {
             }
         }
 
+        if options.contract.usesCamelCaseProviderOptions {
+            for (key, value) in forwardedOptions {
+                body[key] = value
+            }
+        }
+
         let topLevelReasoning: String?
         switch options.reasoning {
         case .some(.minimal), .some(.low), .some(.medium), .some(.high), .some(.xhigh):
@@ -675,6 +680,8 @@ private struct OpenAICompatibleChatLanguageModelCore: Sendable {
             body["verbosity"] = .string(verbosity)
         }
 
+        body["messages"] = .array(messages)
+
         if let tools = preparedTools.tools {
             body["tools"] = tools
         }
@@ -682,14 +689,17 @@ private struct OpenAICompatibleChatLanguageModelCore: Sendable {
             body["tool_choice"] = toolChoice
         }
 
-        for (key, value) in forwardedOptions {
-            body[key] = value
+        if !options.contract.usesCamelCaseProviderOptions {
+            for (key, value) in forwardedOptions {
+                body[key] = value
+            }
         }
 
         let metadataKey = options.contract.usesCamelCaseProviderOptions
-            && camelCaseProviderOptionsName != providerOptionsName
-            && options.providerOptions?[camelCaseProviderOptionsName] != nil
-            ? camelCaseProviderOptionsName
+            ? openAICompatibleProviderOptionsKey(
+                rawName: providerOptionsName,
+                providerOptions: options.providerOptions
+            )
             : providerOptionsName
 
         return PreparedRequest(body: body, warnings: warnings, metadataKey: metadataKey)
@@ -1371,19 +1381,12 @@ private enum OpenAICompatibleChatStreamChunk: Codable {
     case data(OpenAICompatibleChatStreamData)
     case error(OpenAICompatibleErrorData)
 
-    private enum CodingKeys: String, CodingKey {
-        case error
-    }
-
     init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        if container.contains(.error) {
-            let error = try OpenAICompatibleErrorData(from: decoder)
-            self = .error(error)
-        } else {
-            let data = try OpenAICompatibleChatStreamData(from: decoder)
+        if let data = try? OpenAICompatibleChatStreamData(from: decoder) {
             self = .data(data)
+            return
         }
+        self = .error(try OpenAICompatibleErrorData(from: decoder))
     }
 
     func encode(to encoder: Encoder) throws {

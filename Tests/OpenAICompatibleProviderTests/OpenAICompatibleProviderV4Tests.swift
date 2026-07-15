@@ -25,6 +25,27 @@ struct OpenAICompatibleProviderV4Tests {
         }
     }
 
+    final class MetadataProbe: @unchecked Sendable {
+        private let lock = NSLock()
+        private var traces: [String] = []
+
+        func record(_ chunk: JSONValue) {
+            guard case let .object(object) = chunk,
+                  case let .string(trace)? = object["provider_trace"] else {
+                return
+            }
+            lock.lock()
+            traces.append(trace)
+            lock.unlock()
+        }
+
+        func values() -> [String] {
+            lock.lock()
+            defer { lock.unlock() }
+            return traces
+        }
+    }
+
     private func makeHTTPResponse(
         url: URL,
         statusCode: Int = 200,
@@ -91,6 +112,100 @@ struct OpenAICompatibleProviderV4Tests {
         let supportedUrls = try await model.supportedUrls
 
         #expect(supportedUrls["image/*"]?.first?.pattern == #"^https://files\.example/"#)
+    }
+
+    @Test("factory forwards metadata extraction through generate and stream")
+    func factoryForwardsMetadataExtractor() async throws {
+        let probe = MetadataProbe()
+        let extractor = OpenAICompatibleMetadataExtractor(
+            extractMetadata: { parsedBody in
+                guard case let .object(object) = parsedBody,
+                      case let .string(trace)? = object["provider_trace"] else {
+                    return nil
+                }
+                return ["custom": ["trace": .string(trace)]]
+            },
+            createStreamExtractor: {
+                OpenAICompatibleStreamMetadataExtractor(
+                    processChunk: { probe.record($0) },
+                    buildMetadata: {
+                        ["custom": [
+                            "traces": .array(probe.values().map(JSONValue.string))
+                        ]]
+                    }
+                )
+            }
+        )
+        let generateResponse: [String: Any] = [
+            "provider_trace": "generate",
+            "choices": [[
+                "message": ["content": "response"],
+                "finish_reason": "stop"
+            ]]
+        ]
+        let generateData = try JSONSerialization.data(withJSONObject: generateResponse)
+        let streamObjects: [[String: Any]] = [
+            [
+                "provider_trace": "stream-1",
+                "choices": [[
+                    "delta": ["content": "streamed"],
+                    "finish_reason": NSNull()
+                ]]
+            ],
+            [
+                "provider_trace": "stream-2",
+                "choices": [[
+                    "delta": [:],
+                    "finish_reason": "stop"
+                ]]
+            ]
+        ]
+        let streamEvents = try streamObjects.map {
+            String(decoding: try JSONSerialization.data(withJSONObject: $0), as: UTF8.self)
+        }
+        let targetURL = URL(string: "https://api.example.com/v1/chat/completions")!
+        let fetch: FetchFunction = { request in
+            let isStream: Bool
+            if let body = request.httpBody,
+               let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] {
+                isStream = json["stream"] as? Bool == true
+            } else {
+                isStream = false
+            }
+            return FetchResponse(
+                body: isStream ? makeStreamBody(from: streamEvents) : .data(generateData),
+                urlResponse: makeHTTPResponse(
+                    url: targetURL,
+                    headers: [
+                        "Content-Type": isStream ? "text/event-stream" : "application/json"
+                    ]
+                )
+            )
+        }
+        let provider = createOpenAICompatible(settings: .init(
+            baseURL: "https://api.example.com/v1",
+            name: "test-provider",
+            fetch: fetch,
+            metadataExtractor: extractor
+        ))
+        let model = try provider.languageModel(modelId: "chat-model")
+
+        let generated = try await model.doGenerate(options: .init(prompt: v4ChatPrompt))
+        #expect(generated.providerMetadata?["custom"]?["trace"] == .string("generate"))
+
+        let streamed = try await model.doStream(options: .init(prompt: v4ChatPrompt))
+        var finishMetadata: SharedV4ProviderMetadata?
+        for try await part in streamed.stream {
+            if case let .finish(_, _, providerMetadata) = part {
+                finishMetadata = providerMetadata
+            }
+        }
+
+        #expect(probe.values() == ["stream-1", "stream-2"])
+        #expect(finishMetadata?["custom"]?["traces"] == .array([
+            .string("stream-1"),
+            .string("stream-2")
+        ]))
     }
 
     @Test("language doGenerate forwards V4 options and maps V4 result")
@@ -393,10 +508,10 @@ struct OpenAICompatibleProviderV4Tests {
         #expect(finishReason.unified == .stop)
     }
 
-    @Test("language doStream maps V4 text delta and finish")
+    @Test("language doStream maps V4 text and prefers the data union branch")
     func languageDoStreamUsesV4Surface() async throws {
         let events = [
-            "{\"id\":\"chatcmpl-v4\",\"created\":1712000000,\"model\":\"gpt-oss\",\"choices\":[{\"delta\":{\"content\":\"Hello\"},\"finish_reason\":null}]}",
+            "{\"id\":\"chatcmpl-v4\",\"created\":1712000000,\"model\":\"gpt-oss\",\"choices\":[{\"delta\":{\"content\":\"Hello\"},\"finish_reason\":null}],\"error\":{\"message\":\"ignored extra field\"}}",
             "{\"id\":\"chatcmpl-v4\",\"created\":1712000000,\"model\":\"gpt-oss\",\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1,\"total_tokens\":2}}"
         ]
         let targetURL = URL(string: "https://api.example.com/v1/chat/completions")!
@@ -468,6 +583,7 @@ struct OpenAICompatibleProviderV4Tests {
 
         let result = try await model.doGenerate(options: .init(
             prompt: v4ChatPrompt,
+            temperature: 0.25,
             tools: [
                 .function(.init(
                     name: "lookup",
@@ -484,7 +600,17 @@ struct OpenAICompatibleProviderV4Tests {
                 ],
                 "exampleProvider": [
                     "user": .string("camel-user"),
-                    "routing": .string("camel")
+                    "routing": .string("camel"),
+                    "model": .string("provider-model"),
+                    "temperature": .number(0.9),
+                    "messages": .array([
+                        .object(["role": .string("system"), "content": .string("override")])
+                    ]),
+                    "reasoning_effort": .string("provider-reasoning"),
+                    "textVerbosity": .string("low"),
+                    "verbosity": .string("provider-verbosity"),
+                    "tools": .array([]),
+                    "tool_choice": .string("none")
                 ]
             ]
         ))
@@ -507,8 +633,16 @@ struct OpenAICompatibleProviderV4Tests {
         }
 
         #expect(json["reasoning_effort"] as? String == "high")
+        #expect(json["verbosity"] as? String == "low")
         #expect(json["user"] as? String == "camel-user")
         #expect(json["routing"] as? String == "camel")
+        #expect(json["model"] as? String == "provider-model")
+        #expect(json["temperature"] as? Double == 0.9)
+        let messages = json["messages"] as? [[String: Any]]
+        #expect(messages?.count == 1)
+        #expect(messages?.first?["role"] as? String == "user")
+        #expect(messages?.first?["content"] as? String == "Hello")
+        #expect(tools.count == 1)
         #expect(function["name"] as? String == "lookup")
         #expect(function["strict"] as? Bool == true)
         #expect(selectedFunction["name"] as? String == "lookup")
