@@ -800,10 +800,9 @@ private struct OpenAICompatibleChatLanguageModelCore: Sendable {
             try tracker.processDelta(StreamingToolCallDelta(
                 index: delta.index,
                 id: delta.id,
-                type: delta.type,
                 function: StreamingToolCallFunctionDelta(
-                    name: delta.function?.name,
-                    arguments: delta.function?.arguments
+                    name: delta.function.name,
+                    arguments: delta.function.arguments
                 )
             ))
             return
@@ -812,10 +811,9 @@ private struct OpenAICompatibleChatLanguageModelCore: Sendable {
         guard let index = delta.index else {
             try tracker.processDelta(StreamingToolCallDelta(
                 id: delta.id,
-                type: delta.type,
                 function: StreamingToolCallFunctionDelta(
-                    name: delta.function?.name,
-                    arguments: delta.function?.arguments
+                    name: delta.function.name,
+                    arguments: delta.function.arguments
                 ),
                 providerMetadata: providerMetadata
             ))
@@ -826,10 +824,9 @@ private struct OpenAICompatibleChatLanguageModelCore: Sendable {
             try tracker.processDelta(StreamingToolCallDelta(
                 index: index,
                 id: delta.id,
-                type: delta.type,
                 function: StreamingToolCallFunctionDelta(
-                    name: delta.function?.name,
-                    arguments: delta.function?.arguments
+                    name: delta.function.name,
+                    arguments: delta.function.arguments
                 ),
                 providerMetadata: providerMetadata
             ))
@@ -847,11 +844,11 @@ private struct OpenAICompatibleChatLanguageModelCore: Sendable {
         if state.providerMetadata == nil {
             state.providerMetadata = providerMetadata
         }
-        if let arguments = delta.function?.arguments {
+        if let arguments = delta.function.arguments {
             state.arguments += arguments
         }
 
-        guard let name = delta.function?.name else {
+        guard let name = delta.function.name else {
             pending[index] = state
             return
         }
@@ -1319,13 +1316,11 @@ private struct OpenAICompatibleChatResponse: Codable {
                 }
 
                 let id: String?
-                let type: String?
                 let function: ToolFunction
                 let extraContent: OpenAICompatibleChatExtraContent?
 
                 private enum CodingKeys: String, CodingKey {
                     case id
-                    case type
                     case function
                     case extraContent = "extra_content"
                 }
@@ -1461,14 +1456,12 @@ private struct OpenAICompatibleChatChunkToolCallDelta: Codable {
 
     let index: Int?
     let id: String?
-    let type: String?
-    let function: ToolFunction?
+    let function: ToolFunction
     let extraContent: OpenAICompatibleChatExtraContent?
 
     private enum CodingKeys: String, CodingKey {
         case index
         case id
-        case type
         case function
         case extraContent = "extra_content"
     }
