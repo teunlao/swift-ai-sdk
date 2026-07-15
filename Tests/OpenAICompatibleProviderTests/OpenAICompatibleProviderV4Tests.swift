@@ -327,6 +327,72 @@ struct OpenAICompatibleProviderV4Tests {
         #expect(finishReason.unified == .error)
     }
 
+    @Test("native V4 stream rejects tool-call deltas without function objects")
+    func nativeV4StreamRejectsMissingToolCallFunction() async throws {
+        let eventObjects: [[String: Any]] = [
+            [
+                "id": "chatcmpl-malformed-tool-call",
+                "choices": [[
+                    "delta": [
+                        "tool_calls": [[
+                            "index": 0,
+                            "id": "call-1"
+                        ]]
+                    ],
+                    "finish_reason": NSNull()
+                ]]
+            ],
+            [
+                "id": "chatcmpl-malformed-tool-call",
+                "choices": [[
+                    "delta": ["content": "still valid"],
+                    "finish_reason": "stop"
+                ]]
+            ]
+        ]
+        let events = try eventObjects.map {
+            String(decoding: try JSONSerialization.data(withJSONObject: $0), as: UTF8.self)
+        }
+        let targetURL = URL(string: "https://api.example.com/v1/chat/completions")!
+        let httpResponse = makeHTTPResponse(
+            url: targetURL,
+            headers: ["Content-Type": "text/event-stream"]
+        )
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: makeStreamBody(from: events), urlResponse: httpResponse)
+        }
+        let provider = createOpenAICompatible(settings: .init(
+            baseURL: "https://api.example.com/v1",
+            name: "example-provider",
+            fetch: fetch
+        ))
+        let model = try provider.languageModel(modelId: "chat-model")
+        let result = try await model.doStream(options: .init(prompt: v4ChatPrompt))
+
+        var parts: [LanguageModelV4StreamPart] = []
+        for try await part in result.stream {
+            parts.append(part)
+        }
+
+        #expect(parts.contains {
+            if case .error = $0 { return true }
+            return false
+        })
+        #expect(parts.contains {
+            if case .textDelta(_, delta: "still valid", _) = $0 { return true }
+            return false
+        })
+        #expect(!parts.contains {
+            if case .toolCall = $0 { return true }
+            return false
+        })
+        guard case let .finish(finishReason, _, _) = parts.last else {
+            Issue.record("Expected the valid trailing chunk to finish the stream")
+            return
+        }
+        #expect(finishReason.unified == .stop)
+    }
+
     @Test("language doStream maps V4 text delta and finish")
     func languageDoStreamUsesV4Surface() async throws {
         let events = [
@@ -448,7 +514,7 @@ struct OpenAICompatibleProviderV4Tests {
         #expect(selectedFunction["name"] as? String == "lookup")
     }
 
-    @Test("native V4 generate preserves reasoning thought signatures and custom usage")
+    @Test("native V4 generate preserves response contracts and ignores unmodeled tool fields")
     func nativeV4GeneratePreservesResponseContracts() async throws {
         let responseJSON: [String: Any] = [
             "id": "chatcmpl-native-v4",
@@ -460,7 +526,7 @@ struct OpenAICompatibleProviderV4Tests {
                     "reasoning": "fallback reasoning",
                     "tool_calls": [[
                         "id": "call-1",
-                        "type": "function",
+                        "type": ["provider-specific": true],
                         "function": [
                             "name": "lookup",
                             "arguments": #"{"id":1}"#
@@ -530,7 +596,7 @@ struct OpenAICompatibleProviderV4Tests {
         ])
     }
 
-    @Test("native V4 stream orders reasoning text and supports late-name and indexless tool calls")
+    @Test("native V4 stream orders content, buffers tool calls, and ignores unmodeled tool fields")
     func nativeV4StreamPreservesOrderingAndBufferedToolCalls() async throws {
         let eventObjects: [[String: Any]] = [
             [
@@ -560,7 +626,7 @@ struct OpenAICompatibleProviderV4Tests {
                         "tool_calls": [[
                             "index": 0,
                             "id": "call-1",
-                            "type": "function",
+                            "type": ["provider-specific": true],
                             "function": ["arguments": #"{"city":"#],
                             "extra_content": [
                                 "google": ["thought_signature": "signature-1"]
