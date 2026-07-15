@@ -907,6 +907,37 @@ struct OpenAICompatibleProviderV4Tests {
         #expect(usage.outputTokens.total == 901)
     }
 
+    @Test("native V4 stream fails when a buffered tool call never receives a name")
+    func nativeV4StreamRejectsBufferedToolCallWithoutName() async throws {
+        let event = #"{"id":"chatcmpl-v4","choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-1","type":"function","function":{"arguments":"{}"}}]},"finish_reason":"tool_calls"}]}"#
+        let targetURL = URL(string: "https://api.example.com/v1/chat/completions")!
+        let fetch: FetchFunction = { _ in
+            FetchResponse(
+                body: makeStreamBody(from: [event]),
+                urlResponse: makeHTTPResponse(
+                    url: targetURL,
+                    headers: ["Content-Type": "text/event-stream"]
+                )
+            )
+        }
+        let provider = createOpenAICompatible(settings: .init(
+            baseURL: "https://api.example.com/v1",
+            name: "example-provider",
+            fetch: fetch
+        ))
+        let model = try provider.languageModel(modelId: "chat-model")
+        let result = try await model.doStream(options: .init(prompt: v4ChatPrompt))
+
+        do {
+            for try await _ in result.stream {}
+            Issue.record("Expected the incomplete tool call to fail the stream")
+        } catch let error as InvalidResponseDataError {
+            #expect(error.message == "Expected 'function.name' to be a string.")
+        } catch {
+            Issue.record("Expected InvalidResponseDataError, got \(error)")
+        }
+    }
+
     @Test("embedding doEmbed maps V4 result metadata and usage")
     func embeddingDoEmbedUsesV4Surface() async throws {
         let responseJSON: [String: Any] = [
