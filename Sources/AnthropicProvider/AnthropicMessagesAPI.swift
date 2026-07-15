@@ -60,6 +60,7 @@ public struct AnthropicMessagesResponse: Codable, Sendable {
     public let content: [AnthropicMessageContent]
     public let stopReason: String?
     public let stopSequence: String?
+    public let stopDetails: AnthropicStopDetails?
     public let usage: AnthropicUsage
     public let container: AnthropicContainer?
     public let contextManagement: AnthropicResponseContextManagement?
@@ -71,9 +72,24 @@ public struct AnthropicMessagesResponse: Codable, Sendable {
         case content
         case stopReason = "stop_reason"
         case stopSequence = "stop_sequence"
+        case stopDetails = "stop_details"
         case usage
         case container
         case contextManagement = "context_management"
+    }
+}
+
+public struct AnthropicStopDetails: Codable, Sendable {
+    public let type: String
+    public let category: String?
+    public let explanation: String?
+    public let recommendedModel: String?
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case category
+        case explanation
+        case recommendedModel = "recommended_model"
     }
 }
 
@@ -197,11 +213,30 @@ public struct AnthropicUsage: Codable, Sendable {
         }
     }
 
+    public struct Iteration: Codable, Sendable {
+        public let type: String
+        public let model: String?
+        public let inputTokens: Int
+        public let outputTokens: Int
+        public let cacheCreationInputTokens: Int?
+        public let cacheReadInputTokens: Int?
+
+        enum CodingKeys: String, CodingKey {
+            case type
+            case model
+            case inputTokens = "input_tokens"
+            case outputTokens = "output_tokens"
+            case cacheCreationInputTokens = "cache_creation_input_tokens"
+            case cacheReadInputTokens = "cache_read_input_tokens"
+        }
+    }
+
     public let inputTokens: Int?
     public let outputTokens: Int?
     public let cacheCreationInputTokens: Int?
     public let cacheReadInputTokens: Int?
     public let cacheCreation: CacheCreation?
+    public let iterations: [Iteration]?
 
     enum CodingKeys: String, CodingKey {
         case inputTokens = "input_tokens"
@@ -209,6 +244,7 @@ public struct AnthropicUsage: Codable, Sendable {
         case cacheCreationInputTokens = "cache_creation_input_tokens"
         case cacheReadInputTokens = "cache_read_input_tokens"
         case cacheCreation = "cache_creation"
+        case iterations
     }
 }
 
@@ -216,8 +252,11 @@ public enum AnthropicMessageContent: Codable, Sendable {
     case text(TextContent)
     case thinking(ThinkingContent)
     case redactedThinking(RedactedThinkingContent)
+    case compaction(CompactionContent)
+    case fallback(FallbackContent)
     case toolUse(ToolUseContent)
     case serverToolUse(ServerToolUseContent)
+    case advisorToolResult(AdvisorToolResultContent)
     case mcpToolUse(McpToolUseContent)
     case mcpToolResult(McpToolResultContent)
     case toolSearchToolResult(ToolSearchToolResultContent)
@@ -235,8 +274,11 @@ public enum AnthropicMessageContent: Codable, Sendable {
         case text
         case thinking
         case redactedThinking = "redacted_thinking"
+        case compaction
+        case fallback
         case toolUse = "tool_use"
         case serverToolUse = "server_tool_use"
+        case advisorToolResult = "advisor_tool_result"
         case mcpToolUse = "mcp_tool_use"
         case mcpToolResult = "mcp_tool_result"
         case toolSearchToolResult = "tool_search_tool_result"
@@ -262,10 +304,16 @@ public enum AnthropicMessageContent: Codable, Sendable {
             self = .thinking(try singleValue.decode(ThinkingContent.self))
         case .redactedThinking:
             self = .redactedThinking(try singleValue.decode(RedactedThinkingContent.self))
+        case .compaction:
+            self = .compaction(try singleValue.decode(CompactionContent.self))
+        case .fallback:
+            self = .fallback(try singleValue.decode(FallbackContent.self))
         case .toolUse:
             self = .toolUse(try singleValue.decode(ToolUseContent.self))
         case .serverToolUse:
             self = .serverToolUse(try singleValue.decode(ServerToolUseContent.self))
+        case .advisorToolResult:
+            self = .advisorToolResult(try singleValue.decode(AdvisorToolResultContent.self))
         case .mcpToolUse:
             self = .mcpToolUse(try singleValue.decode(McpToolUseContent.self))
         case .mcpToolResult:
@@ -293,9 +341,15 @@ public enum AnthropicMessageContent: Codable, Sendable {
             try value.encode(to: encoder)
         case .redactedThinking(let value):
             try value.encode(to: encoder)
+        case .compaction(let value):
+            try value.encode(to: encoder)
+        case .fallback(let value):
+            try value.encode(to: encoder)
         case .toolUse(let value):
             try value.encode(to: encoder)
         case .serverToolUse(let value):
+            try value.encode(to: encoder)
+        case .advisorToolResult(let value):
             try value.encode(to: encoder)
         case .mcpToolUse(let value):
             try value.encode(to: encoder)
@@ -332,6 +386,15 @@ public struct ThinkingContent: Codable, Sendable {
 public struct RedactedThinkingContent: Codable, Sendable {
     public let type: String
     public let data: String
+}
+
+public struct CompactionContent: Codable, Sendable {
+    public let type: String
+    public let content: String?
+}
+
+public struct FallbackContent: Codable, Sendable {
+    public let type: String
 }
 
 public struct ToolUseContent: Codable, Sendable {
@@ -388,6 +451,18 @@ public struct ServerToolUseContent: Codable, Sendable {
         id = try container.decode(String.self, forKey: .id)
         name = try container.decode(String.self, forKey: .name)
         input = try? container.decode(JSONValue.self, forKey: .input)
+    }
+}
+
+public struct AdvisorToolResultContent: Codable, Sendable {
+    public let type: String
+    public let toolUseId: String
+    public let content: JSONValue
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case toolUseId = "tool_use_id"
+        case content
     }
 }
 
@@ -724,6 +799,7 @@ public struct ContentBlockDelta: Codable, Sendable {
         case textDelta(String)
         case thinkingDelta(String)
         case signatureDelta(String)
+        case compactionDelta(String?)
         case citationsDelta(AnthropicCitation)
 
         enum CodingKeys: String, CodingKey {
@@ -735,6 +811,7 @@ public struct ContentBlockDelta: Codable, Sendable {
             case textDelta = "text_delta"
             case thinkingDelta = "thinking_delta"
             case signatureDelta = "signature_delta"
+            case compactionDelta = "compaction_delta"
             case citationsDelta = "citations_delta"
         }
 
@@ -758,6 +835,9 @@ public struct ContentBlockDelta: Codable, Sendable {
             case .signatureDelta:
                 let wrapper = try single.decode(SignatureDelta.self)
                 self = .signatureDelta(wrapper.signature)
+            case .compactionDelta:
+                let wrapper = try single.decode(CompactionDelta.self)
+                self = .compactionDelta(wrapper.content)
             case .citationsDelta:
                 let wrapper = try single.decode(CitationsDelta.self)
                 self = .citationsDelta(wrapper.citation)
@@ -774,6 +854,8 @@ public struct ContentBlockDelta: Codable, Sendable {
                 try ThinkingDelta(thinking: thinking).encode(to: encoder)
             case .signatureDelta(let signature):
                 try SignatureDelta(signature: signature).encode(to: encoder)
+            case .compactionDelta(let content):
+                try CompactionDelta(content: content).encode(to: encoder)
             case .citationsDelta(let citation):
                 try CitationsDelta(citation: citation).encode(to: encoder)
             }
@@ -816,6 +898,15 @@ public struct ContentBlockDelta: Codable, Sendable {
             }
         }
 
+        private struct CompactionDelta: Codable, Sendable {
+            let type = "compaction_delta"
+            let content: String?
+
+            enum CodingKeys: String, CodingKey {
+                case type, content
+            }
+        }
+
         private struct CitationsDelta: Codable, Sendable {
             let type = "citations_delta"
             let citation: AnthropicCitation
@@ -850,11 +941,13 @@ public struct MessageDelta: Codable, Sendable {
     public struct Delta: Codable, Sendable {
         public let stopReason: String?
         public let stopSequence: String?
+        public let stopDetails: AnthropicStopDetails?
         public let container: AnthropicContainer?
 
         enum CodingKeys: String, CodingKey {
             case stopReason = "stop_reason"
             case stopSequence = "stop_sequence"
+            case stopDetails = "stop_details"
             case container
         }
     }

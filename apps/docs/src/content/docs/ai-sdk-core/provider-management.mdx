@@ -66,12 +66,12 @@ import AnthropicProvider
 
 // Custom provider with alias names:
 let customAnthropic = customProviderV4(
-  legacyLanguageModels: [
-    "opus": try anthropic.languageModel(modelId: "claude-3-opus-20240229"),
-    "sonnet": try anthropic.languageModel(modelId: "claude-3-5-sonnet-20240620"),
-    "haiku": try anthropic.languageModel(modelId: "claude-3-haiku-20240307")
+  languageModels: [
+    "opus": try anthropic.languageModel(modelId: "claude-opus-4-8"),
+    "sonnet": try anthropic.languageModel(modelId: "claude-sonnet-5"),
+    "fable": try anthropic.languageModel(modelId: "claude-fable-5")
   ],
-  legacyFallbackProvider: anthropic
+  fallbackProvider: anthropic
 )
 ```
 
@@ -86,7 +86,7 @@ import OpenAIProvider
 
 let myProvider = customProviderV4(
   languageModels: [
-    "text-medium": asLanguageModelV4(try anthropic.languageModel(modelId: "claude-3-5-sonnet-20240620")),
+    "text-medium": try anthropic.languageModel(modelId: "claude-sonnet-5"),
     "text-small": try openai.languageModel("gpt-4o-mini"),
     "reasoning-medium": wrapLanguageModel(
       model: try openai.languageModel("gpt-4o"),
@@ -126,7 +126,7 @@ import OpenAIProvider
 let registry = createProviderRegistry(
   providers: [
     // Register provider with prefix:
-    "anthropic": asProviderV4(anthropic),
+    "anthropic": anthropic,
 
     // Register provider with custom configuration:
     "openai": createOpenAI(
@@ -149,7 +149,7 @@ import OpenAIProvider
 
 let customSeparatorRegistry = createProviderRegistry(
   providers: [
-    "anthropic": asProviderV4(anthropic),
+    "anthropic": anthropic,
     "openai": openai
   ],
   options: ProviderRegistryOptions(separator: " > ")
@@ -228,28 +228,29 @@ let registry = createProviderRegistry(
     // Setup model name aliases
     "anthropic": customProviderV4(
       languageModels: [
-        "fast": asLanguageModelV4(try anthropic.languageModel(modelId: "claude-3-haiku-20240307")),
+        "fast": try anthropic.languageModel(modelId: "claude-haiku-4-5"),
 
         // Simple model
-        "writing": asLanguageModelV4(try anthropic.languageModel(modelId: "claude-3-7-sonnet-20250219")),
+        "writing": try anthropic.languageModel(modelId: "claude-sonnet-5"),
 
         // Extended reasoning model configuration:
-        "reasoning": asLanguageModelV4(wrapLanguageModel(
-          model: try anthropic.languageModel(modelId: "claude-3-7-sonnet-20250219"),
+        "reasoning": wrapLanguageModel(
+          model: try anthropic.languageModel(modelId: "claude-opus-4-8"),
           middleware: LanguageModelV4MiddlewareInput.single(defaultSettingsMiddleware(
             settings: DefaultSettings(
-              maxOutputTokens: 100000, // example default setting
+              maxOutputTokens: 100000,
               providerOptions: ["anthropic": [
                 "thinking": [
-                  "type": "enabled",
-                  "budgetTokens": 32000
-                ]
+                  "type": "adaptive",
+                  "display": "summarized"
+                ],
+                "effort": "max"
               ]]
             )
           ))
-        ))
+        )
       ],
-      fallbackProvider: asProviderV4(anthropic)
+      fallbackProvider: anthropic
     ),
 
     // Limit a provider to certain models without a fallback

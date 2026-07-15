@@ -1,693 +1,583 @@
 ---
 title: Anthropic
-description: Learn how to use the Anthropic provider for the AI SDK.
+description: Use Claude models, reasoning, files, skills, and provider-defined tools with the Swift AI SDK.
 ---
 
 import { Aside } from '@astrojs/starlight/components';
 import Check from '../../../components/Check.astro';
 import Cross from '../../../components/Cross.astro';
 
-The [Anthropic](https://www.anthropic.com/) provider contains language model support for the [Anthropic Messages API](https://docs.anthropic.com/claude/reference/messages_post).
+<Aside type="note">
+  This page is adapted from the upstream [Vercel AI SDK Anthropic provider
+  documentation](https://ai-sdk.dev/providers/ai-sdk-providers/anthropic) for
+  the public Swift AI SDK API.
+</Aside>
+
+The `AnthropicProvider` module integrates the [Anthropic Messages API](https://platform.claude.com/docs/en/api/messages)
+with the Swift AI SDK. Its default `anthropic` instance is a native Provider V4
+facade and supports text generation, streaming, reasoning, files, skills, and
+Anthropic provider-defined tools.
 
 ## Setup
 
-The Anthropic provider is available in the `AnthropicProvider` module. Add it to your Swift package:
+Add the package and both the high-level SDK and Anthropic products to your target:
 
 ```swift
 // Package.swift
 dependencies: [
-    .package(url: "https://github.com/teunlao/swift-ai-sdk", from: "0.18.2")
+  .package(
+    url: "https://github.com/teunlao/swift-ai-sdk",
+    from: "0.18.2"
+  )
 ],
 targets: [
-    .target(
-        name: "YourTarget",
-        dependencies: [
-            .product(name: "SwiftAISDK", package: "swift-ai-sdk"),
-            .product(name: "AnthropicProvider", package: "swift-ai-sdk")
-        ]
-    )
+  .target(
+    name: "YourTarget",
+    dependencies: [
+      .product(name: "SwiftAISDK", package: "swift-ai-sdk"),
+      .product(name: "AnthropicProvider", package: "swift-ai-sdk")
+    ]
+  )
 ]
 ```
+
+Set `ANTHROPIC_API_KEY` in the process environment. Authentication is loaded
+lazily when the first request is made, so constructing a model does not require
+the environment variable to be present yet.
 
 ## Provider Instance
 
-You can import the default provider instance `anthropic` from `AnthropicProvider`:
+Import the default V4 provider and create a model by ID:
 
 ```swift
+import SwiftAISDK
 import AnthropicProvider
 
-// Use the global anthropic instance
-let model = anthropic("claude-3-haiku-20240307")
+let model = try anthropic("claude-sonnet-5")
 ```
 
-If you need a customized setup, you can use `createAnthropicProvider` to create a provider instance with your settings:
+Use `createAnthropic(settings:)` when you need custom provider settings:
 
 ```swift
-import AnthropicProvider
-
-let customAnthropic = createAnthropicProvider(
+let customAnthropic = createAnthropic(
   settings: AnthropicProviderSettings(
-    baseURL: "https://custom.api.com/v1",
-    apiKey: "your-api-key"
+    baseURL: "https://proxy.example.com/v1",
+    apiKey: "your-api-key",
+    headers: ["x-application": "example"]
   )
 )
+
+let model = try customAnthropic("claude-opus-4-8")
 ```
 
-You can use the following optional settings to customize the Anthropic provider instance:
+The settings are:
 
-- **baseURL** _string_
+- `baseURL`: API URL prefix. Defaults to `https://api.anthropic.com/v1`.
+- `apiKey`: value for the `x-api-key` header. Defaults to `ANTHROPIC_API_KEY`.
+- `authToken`: value for `Authorization: Bearer`. Use either `apiKey` or
+  `authToken`, never both.
+- `headers`: additional request headers.
+- `fetch`: custom `FetchFunction`, useful for proxies, recording, and tests.
+- `generateId`: request ID generator used by provider internals.
+- `name`: provider name override.
 
-  Use a different URL prefix for API calls, e.g. to use proxy servers.
-  The default prefix is `https://api.anthropic.com/v1`.
-
-- **apiKey** _string_
-
-  API key that is being sent using the `x-api-key` header.
-  It defaults to the `ANTHROPIC_API_KEY` environment variable.
-
-- **headers** _Record&lt;string,string&gt;_
-
-  Custom headers to include in the requests.
-
-- **fetch** _(input: RequestInfo, init?: RequestInit) => Promise&lt;Response&gt;_
-
-  Custom [fetch](https://developer.mozilla.org/en-US/docs/Web/API/fetch) implementation.
-  Defaults to the global `fetch` function.
-  You can use it as a middleware to intercept requests,
-  or to provide a custom fetch implementation for e.g. testing.
+The explicitly named `createAnthropicProvider(settings:)` factory remains
+available for code that must construct a legacy Provider V3 model. New code
+should use `anthropic` or `createAnthropic(settings:)`.
 
 ## Language Models
 
-You can create models that call the [Anthropic Messages API](https://docs.anthropic.com/claude/reference/messages_post) using the provider instance.
-The first argument is the model id, e.g. `claude-3-haiku-20240307`.
-Some models have multi-modal capabilities.
+The V4 facade exposes equivalent model factories:
 
 ```swift
-let model = anthropic("claude-3-haiku-20240307")
+let generic = try anthropic.languageModel(modelId: "claude-sonnet-5")
+let chat = anthropic.chat("claude-sonnet-5")
+let messages = anthropic.messages("claude-sonnet-5")
 ```
 
-You can use Anthropic language models to generate text with the `generateText` function:
+Pass any of them to the high-level generation APIs:
 
 ```swift
-import SwiftAISDK
-import AnthropicProvider
-
 let result = try await generateText(
-  model: anthropic("claude-3-haiku-20240307"),
-  prompt: "Write a vegetarian lasagna recipe for 4 people."
-)
-let text = result.text
-```
-
-Anthropic language models can also be used in the `streamText`, `generateObject`, and `streamObject` functions
-(see [AI SDK Core](/ai-sdk-core/generate-text)).
-
-<Aside type="note">
-  The Anthropic API returns streaming tool calls all at once after a delay. This
-  causes the `streamObject` function to generate the object fully after a delay
-  instead of streaming it incrementally.
-</Aside>
-
-The following optional provider options are available for Anthropic models:
-
-- `sendReasoning` _boolean_
-
-  Optional. Include reasoning content in requests sent to the model. Defaults to `true`.
-
-  If you are experiencing issues with the model handling requests involving
-  reasoning content, you can set this to `false` to omit them from the request.
-
-- `thinking` _object_
-
-  Optional. See [Reasoning section](#reasoning) for more details.
-
-### Reasoning
-
-Anthropic has reasoning support for `claude-opus-4-20250514`, `claude-sonnet-4-20250514`, and `claude-3-7-sonnet-20250219` models.
-
-You can enable it using the `thinking` provider option
-and specifying a thinking budget in tokens.
-
-```swift
-import SwiftAISDK
-import AnthropicProvider
-
-let result = try await generateText(
-  model: anthropic("claude-opus-4-20250514"),
-  prompt: "How many people will live in the world in 2040?",
-  providerOptions: [
-    "anthropic": [
-      "thinking": ["type": "enabled", "budgetTokens": 12000]
-    ]
-  ]
-)
-
-print(result.reasoning) // reasoning text
-print(result.reasoningDetails) // reasoning details including redacted reasoning
-print(result.text) // text response
-```
-
-See [AI SDK UI: Chatbot](/docs/ai-sdk-ui/chatbot#reasoning) for more details
-on how to integrate reasoning into your chatbot.
-
-### Cache Control
-
-In the messages and message parts, you can use the `providerOptions` property to set cache control breakpoints.
-You need to set the `anthropic` property in the `providerOptions` object to `{ cacheControl: { type: 'ephemeral' } }` to set a cache control breakpoint.
-
-The cache creation input tokens are then returned in the `providerMetadata` object
-for `generateText` and `generateObject`, again under the `anthropic` property.
-When you use `streamText` or `streamObject`, the response contains a promise
-that resolves to the metadata. Alternatively you can receive it in the
-`onFinish` callback.
-
-```swift highlight="8,18-20,29-30"
-import SwiftAISDK
-import AnthropicProvider
-
-let errorMessage = "... long error message ..."
-
-let result = try await generateText(
-  model: anthropic("claude-3-5-sonnet-20240620"),
-  messages: [
-    [
-      "role": "user",
-      "content": [
-        ["type": "text", "text": "You are a JavaScript expert."],
-        [
-          "type": "text",
-          "text": "Error message: \(errorMessage)",
-          "providerOptions": [
-            "anthropic": ["cacheControl": ["type": "ephemeral"]]
-          ]
-        ],
-        ["type": "text", "text": "Explain the error message."]
-      ]
-    ]
-  ]
+  model: try anthropic("claude-sonnet-5"),
+  prompt: "Write a vegetarian lasagna recipe for four people."
 )
 
 print(result.text)
-print(result.providerMetadata?.anthropic as Any)
-// e.g. { cacheCreationInputTokens: 2118 }
 ```
 
-You can also use cache control on system messages by providing multiple system messages at the head of your messages array:
+Anthropic models also work with `streamText`, `generateObject`, and
+`streamObject`. See [AI SDK Core](/ai-sdk-core/generate-text) for the shared
+generation contract.
 
-```swift highlight="3,7-9"
-let result = try await generateText(
-  model: anthropic("claude-3-5-sonnet-20240620"),
-  messages: [
-    [
-      "role": "system",
-      "content": "Cached system message part",
-      "providerOptions": [
-        "anthropic": ["cacheControl": ["type": "ephemeral"]]
-      ]
-    ],
-    [
-      "role": "system",
-      "content": "Uncached system message part"
-    ],
-    [
-      "role": "user",
-      "content": "User prompt"
-    ]
+### Provider Options
+
+Provider-specific options are passed under the `anthropic` key:
+
+```swift
+let options: ProviderOptions = [
+  "anthropic": [
+    "sendReasoning": true,
+    "toolStreaming": true,
+    "disableParallelToolUse": false
   ]
-)
-```
-
-Cache control for tools:
-
-```swift
-struct CityQuery: Codable, Sendable { let city: String }
-
-let result = try await generateText(
-  model: try anthropic("claude-3-5-haiku-latest"),
-  tools: [
-    "cityAttractions": tool(
-      inputSchema: CityQuery.self,
-      providerOptions: [
-        "anthropic": [
-          "cacheControl": ["type": "ephemeral"]
-        ]
-      ]
-    )
-  ],
-  messages: [
-    [
-      "role": "user",
-      "content": "User prompt"
-    ]
-  ]
-)
-```
-
-#### Longer cache TTL
-
-Anthropic also supports a longer 1-hour cache duration.
-
-Here's an example:
-
-```swift
-let result = try await generateText(
-  model: anthropic("claude-3-5-haiku-latest"),
-  messages: [
-    [
-      "role": "user",
-      "content": [
-        [
-          "type": "text",
-          "text": "Long cached message",
-          "providerOptions": [
-            "anthropic": [
-              "cacheControl": ["type": "ephemeral", "ttl": "1h"]
-            ]
-          ]
-        ]
-      ]
-    ]
-  ]
-)
-```
-
-#### Limitations
-
-The minimum cacheable prompt length is:
-
-- 1024 tokens for Claude 3.7 Sonnet, Claude 3.5 Sonnet and Claude 3 Opus
-- 2048 tokens for Claude 3.5 Haiku and Claude 3 Haiku
-
-Shorter prompts cannot be cached, even if marked with `cacheControl`. Any requests to cache fewer than this number of tokens will be processed without caching.
-
-For more on prompt caching with Anthropic, see [Anthropic's Cache Control documentation](https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching).
-
-<Aside type="caution">
-  Because the `UIMessage` type (used by AI SDK UI hooks like `useChat`) does not
-  support the `providerOptions` property, you can use `convertToModelMessages`
-  first before passing the messages to functions like `generateText` or
-  `streamText`. For more details on `providerOptions` usage, see
-  [here](/docs/foundations/prompts#provider-options).
-</Aside>
-
-### Bash Tool
-
-The Bash Tool allows running bash commands. Here's how to create and use it:
-
-```swift
-let bashTool = anthropic.tools.bash_20241022(
-  execute: { command, restart in
-    // Implement your bash command execution logic here
-    // Return the result of the command execution
-  }
-)
-```
-
-Parameters:
-
-- `command` (string): The bash command to run. Required unless the tool is being restarted.
-- `restart` (boolean, optional): Specifying true will restart this tool.
-
-### Text Editor Tool
-
-The Text Editor Tool provides functionality for viewing and editing text files.
-
-```swift
-let tools: [String: Tool] = [
-  // tool name must be str_replace_based_edit_tool
-  "str_replace_based_edit_tool": anthropic.tools.textEditor_20250728(
-    maxCharacters: 10000, // optional
-    execute: { command, path, old_str, new_str in
-      // ...
-    }
-  )
 ]
 ```
 
-<Aside type="note">
-  Different models support different versions of the tool. For Claude Sonnet 3.5
-  and 3.7 you need to use older tool versions and tool names.
-</Aside>
+The Anthropic request parser supports:
 
-Parameters:
+- `sendReasoning`: include prior reasoning content in the request. Defaults to
+  `true`.
+- `structuredOutputMode`: `outputFormat`, `jsonTool`, or `auto`.
+- `thinking`: adaptive, budget-based, or disabled thinking configuration.
+- `effort`: `low`, `medium`, `high`, `xhigh`, or `max`.
+- `disableParallelToolUse`: force at most one tool call at a time.
+- `toolStreaming`: enable streamed tool inputs and structured output. Defaults
+  to `true`.
+- `cacheControl`: request-level cache control.
+- `metadata`: request metadata such as an opaque `userId`.
+- `mcpServers`: Anthropic server-side MCP connectors.
+- `container`: container ID and Anthropic or custom skills.
+- `taskBudget`: advisory total and remaining token budget.
+- `speed`: `fast` or `standard`.
+- `inferenceGeo`: `us` or `global`.
+- `fallbacks`: server-side fallback model chain.
+- `contextManagement`: context editing and compaction rules.
+- `anthropicBeta`: extra beta header values not inferred by the provider.
 
-- `command` ('view' | 'create' | 'str_replace' | 'insert' | 'undo_edit'): The command to run. Note: `undo_edit` is only available in Claude 3.5 Sonnet and earlier models.
-- `path` (string): Absolute path to file or directory, e.g. `/repo/file.py` or `/repo`.
-- `file_text` (string, optional): Required for `create` command, with the content of the file to be created.
-- `insert_line` (number, optional): Required for `insert` command. The line number after which to insert the new string.
-- `new_str` (string, optional): New string for `str_replace` or `insert` commands.
-- `old_str` (string, optional): Required for `str_replace` command, containing the string to replace.
-- `view_range` (number[], optional): Optional for `view` command to specify line range to show.
+### Structured Outputs and Tool Streaming
 
-### Computer Tool
-
-The Computer Tool enables control of keyboard and mouse actions on a computer:
-
-```swift
-let computerTool = anthropic.tools.computer_20241022(
-  displayWidthPx: 1920,
-  displayHeightPx: 1080,
-  displayNumber: 0, // Optional, for X11 environments
-
-  execute: { action, coordinate, text in
-    // Implement your computer control logic here
-    // Return the result of the action
-
-    // Example code:
-    switch action {
-      case "screenshot":
-        // multipart result:
-        return [
-          "type": "image",
-          "data": try Data(contentsOf: URL(fileURLWithPath: "./data/screenshot-editor.png")).base64EncodedString()
-        ]
-      default:
-        print("Action:", action)
-        print("Coordinate:", coordinate as Any)
-        print("Text:", text as Any)
-        return "executed \(action)"
-    }
-  },
-
-  // map to tool result content for LLM consumption:
-  toModelOutput: { result in
-    if let stringResult = result as? String {
-      return [["type": "text", "text": stringResult]]
-    } else if let dictResult = result as? [String: Any], let data = dictResult["data"] {
-      return [["type": "image", "data": data, "mediaType": "image/png"]]
-    }
-    return []
-  }
-)
-```
-
-Parameters:
-
-- `action` ('key' | 'type' | 'mouse_move' | 'left_click' | 'left_click_drag' | 'right_click' | 'middle_click' | 'double_click' | 'screenshot' | 'cursor_position'): The action to perform.
-- `coordinate` (number[], optional): Required for `mouse_move` and `left_click_drag` actions. Specifies the (x, y) coordinates.
-- `text` (string, optional): Required for `type` and `key` actions.
-
-These tools can be used in conjunction with the `sonnet-3-5-sonnet-20240620` model to enable more complex interactions and tasks.
-
-### Web Search Tool
-
-Anthropic provides a provider-defined web search tool that gives Claude direct access to real-time web content, allowing it to answer questions with up-to-date information beyond its knowledge cutoff.
-
-You can enable web search using the provider-defined web search tool:
+Tool input streaming and structured output streaming are enabled by default.
+Disable them for a request with:
 
 ```swift
-import SwiftAISDK
-import AnthropicProvider
-
-let webSearchTool = anthropic.tools.webSearch_20250305(
-  maxUses: 5
-)
-
 let result = try await generateText(
-  model: anthropic("claude-opus-4-20250514"),
-  prompt: "What are the latest developments in AI?",
-  tools: [
-    "web_search": webSearchTool
-  ]
-)
-```
-
-<Aside type="note">
-  Web search must be enabled in your organization's [Console
-  settings](https://console.anthropic.com/settings/privacy).
-</Aside>
-
-#### Configuration Options
-
-The web search tool supports several configuration options:
-
-- **maxUses** _number_
-
-  Maximum number of web searches Claude can perform during the conversation.
-
-- **allowedDomains** _string[]_
-
-  Optional list of domains that Claude is allowed to search. If provided, searches will be restricted to these domains.
-
-- **blockedDomains** _string[]_
-
-  Optional list of domains that Claude should avoid when searching.
-
-- **userLocation** _object_
-
-  Optional user location information to provide geographically relevant search results.
-
-```swift
-let webSearchTool = anthropic.tools.webSearch_20250305(
-  maxUses: 3,
-  allowedDomains: ["techcrunch.com", "wired.com"],
-  blockedDomains: ["example-spam-site.com"],
-  userLocation: [
-    "type": "approximate",
-    "country": "US",
-    "region": "California",
-    "city": "San Francisco",
-    "timezone": "America/Los_Angeles"
-  ]
-)
-
-let result = try await generateText(
-  model: anthropic("claude-opus-4-20250514"),
-  prompt: "Find local news about technology",
-  tools: [
-    "web_search": webSearchTool
-  ]
-)
-```
-
-### Web Fetch Tool
-
-Anthropic provides a provider-defined web fetch tool that allows Claude to retrieve content from specific URLs. This is useful when you want Claude to analyze or reference content from a particular webpage or document.
-
-You can enable web fetch using the provider-defined web fetch tool:
-
-```swift
-import SwiftAISDK
-import AnthropicProvider
-
-let result = try await generateText(
-  model: anthropic("claude-sonnet-4-0"),
-  prompt: "What is this page about? https://en.wikipedia.org/wiki/Maglemosian_culture",
-  tools: [
-    "web_fetch": anthropic.tools.webFetch_20250910(maxUses: 1)
-  ]
-)
-```
-
-#### Configuration Options
-
-The web fetch tool supports several configuration options:
-
-- **maxUses** _number_
-
-  The maxUses parameter limits the number of web fetches performed.
-
-- **allowedDomains** _string[]_
-
-  Only fetch from these domains.
-
-- **blockedDomains** _string[]_
-
-  Never fetch from these domains.
-
-- **citations** _object_
-
-  Unlike web search where citations are always enabled, citations are optional for web fetch. Set `"citations": {"enabled": true}` to enable Claude to cite specific passages from fetched documents.
-
-- **maxContentTokens** _number_
-
-  The maxContentTokens parameter limits the amount of content that will be included in the context.
-
-#### Error Handling
-
-Web search errors are handled differently depending on whether you're using streaming or non-streaming:
-
-**Non-streaming (`generateText`, `generateObject`):**
-Web search errors throw exceptions that you can catch:
-
-```swift
-do {
-  let result = try await generateText(
-    model: anthropic("claude-opus-4-20250514"),
-    prompt: "Search for something",
-    tools: [
-      "web_search": webSearchTool
+  model: try anthropic("claude-sonnet-5"),
+  prompt: "Return a compact project status.",
+  providerOptions: [
+    "anthropic": [
+      "toolStreaming": false,
+      "structuredOutputMode": "outputFormat"
     ]
+  ]
+)
+```
+
+## Effort
+
+Anthropic effort controls how much work Claude spends across reasoning, normal
+text, and tool calls. `xhigh` and `max` are distinct levels. The generic V4
+reasoning enum ends at `xhigh`; the Anthropic-only `max` level must be passed as
+the provider `effort` option.
+
+Use the normalized V4 setting when portable reasoning control is preferred:
+
+```swift
+let result = try await generateText(
+  model: try anthropic("claude-sonnet-5"),
+  prompt: "Design a lock-free queue and explain its memory ordering.",
+  settings: CallSettings(reasoning: .xhigh)
+)
+```
+
+Use the provider option for the actual Anthropic maximum:
+
+```swift
+let result = try await generateText(
+  model: try anthropic("claude-opus-4-8"),
+  prompt: "Find and prove the strongest invariant for this protocol.",
+  providerOptions: [
+    "anthropic": ["effort": "max"]
+  ]
+)
+```
+
+An explicit provider `effort` takes precedence over the normalized `reasoning`
+setting. This lets a request use `CallSettings(reasoning: .high)` as a portable
+default while selecting Anthropic `max` explicitly.
+
+| Model | `xhigh` | `max` |
+| --- | --- | --- |
+| `claude-sonnet-5` | <Check size={18} /> | <Check size={18} /> |
+| `claude-fable-5` | <Check size={18} /> | <Check size={18} /> |
+| `claude-opus-4-8` | <Check size={18} /> | <Check size={18} /> |
+| `claude-opus-4-7` | <Check size={18} /> | <Check size={18} /> |
+| `claude-opus-4-6` | <Cross size={18} /> | <Check size={18} /> |
+| `claude-sonnet-4-6` | <Cross size={18} /> | <Check size={18} /> |
+
+For `claude-opus-4-6` and `claude-sonnet-4-6`, normalized `.xhigh` maps to
+Anthropic `max` and returns a compatibility warning. Older budget-thinking
+models map normalized levels to a token budget instead. See Anthropic's
+[effort documentation](https://platform.claude.com/docs/en/build-with-claude/effort)
+for the provider's current model matrix.
+
+## Reasoning
+
+### Adaptive Thinking
+
+Current frontier models support adaptive thinking. Claude chooses whether and
+how much to reason for each request:
+
+```swift
+let result = try await generateText(
+  model: try anthropic("claude-opus-4-8"),
+  prompt: "How many people will live in the world in 2040?",
+  providerOptions: [
+    "anthropic": [
+      "thinking": [
+        "type": "adaptive",
+        "display": "summarized"
+      ],
+      "effort": "max"
+    ]
+  ]
+)
+
+print(result.reasoningText as Any)
+print(result.reasoning)
+print(result.text)
+```
+
+On models whose default thinking display is omitted, use
+`display: "summarized"` when visible reasoning progress is required.
+
+### Budget-Based Thinking
+
+Earlier Claude models use an explicit thinking-token budget:
+
+```swift
+let result = try await generateText(
+  model: try anthropic("claude-sonnet-4-5-20250929"),
+  prompt: "Derive a capacity plan for this service.",
+  providerOptions: [
+    "anthropic": [
+      "thinking": [
+        "type": "enabled",
+        "budgetTokens": 12_000
+      ]
+    ]
+  ]
+)
+```
+
+Do not combine manual sampling controls such as `temperature`, `topP`, or
+`topK` with adaptive-thinking models that reject those controls. The provider
+emits warnings or omits incompatible settings according to the model's
+capability contract.
+
+## Request Controls
+
+Fast mode, task budgets, data residency, and fallbacks use the same provider
+options boundary:
+
+```swift
+let result = try await generateText(
+  model: try anthropic("claude-opus-4-8"),
+  prompt: "Compare Rust and Go for a long-running CLI agent.",
+  providerOptions: [
+    "anthropic": [
+      "taskBudget": [
+        "type": "tokens",
+        "total": 400_000,
+        "remaining": 215_000
+      ],
+      "inferenceGeo": "us",
+      "fallbacks": [
+        ["model": "claude-fable-5"]
+      ]
+    ]
+  ]
+)
+```
+
+`taskBudget` is advisory; it does not replace `maxOutputTokens`. The `speed`
+option accepts `fast` or `standard` on models that expose fast mode. A safety
+classifier refusal is normalized to the `content-filter` finish reason, and
+provider stop details remain available in Anthropic provider metadata.
+
+## Cache Control
+
+Set cache breakpoints on system messages, user messages, content parts, or
+tools with Anthropic provider options:
+
+```swift
+let messages: [ModelMessage] = [
+  .system(SystemModelMessage(
+    content: "You are a Swift concurrency expert.",
+    providerOptions: [
+      "anthropic": [
+        "cacheControl": ["type": "ephemeral", "ttl": "1h"]
+      ]
+    ]
+  )),
+  .user(UserModelMessage(content: .parts([
+    .text(TextPart(text: "Review this failure:")),
+    .text(TextPart(
+      text: longFailureLog,
+      providerOptions: [
+        "anthropic": ["cacheControl": ["type": "ephemeral"]]
+      ]
+    ))
+  ])))
+]
+
+let result = try await generateText(
+  model: try anthropic("claude-sonnet-5"),
+  messages: messages
+)
+```
+
+Cache creation and read token counts are returned in Anthropic provider
+metadata. Anthropic still applies its model-specific minimum cacheable prompt
+lengths.
+
+## Provider-Defined Tools
+
+Anthropic tools are exposed from `anthropic.tools`. The Swift factory names are
+camelCase and include the provider version:
+
+```swift
+let tools: [String: Tool] = [
+  "web_search": anthropic.tools.webSearch20260209(
+    AnthropicWebSearchOptions(maxUses: 5)
+  ),
+  "web_fetch": anthropic.tools.webFetch20260209(
+    AnthropicWebFetchOptions(
+      maxUses: 2,
+      citationsEnabled: true,
+      maxContentTokens: 20_000
+    )
+  ),
+  "code_execution": anthropic.tools.codeExecution20260120()
+]
+```
+
+Available factories include:
+
+- `bash20241022` and `bash20250124`
+- `textEditor20241022`, `textEditor20250124`, and `textEditor20250728`
+- `computer20241022`, `computer20250124`, and `computer20251124`
+- `webSearch20250305` and `webSearch20260209`
+- `webFetch20250910` and `webFetch20260209`
+- `codeExecution20250522`, `codeExecution20250825`, and
+  `codeExecution20260120`
+- `memory20250818`
+- `advisor20260301`
+- `toolSearchRegex20251119` and `toolSearchBm2520251119`
+
+Choose the tool version supported by the selected Claude model. For example:
+
+```swift
+let editor = anthropic.tools.textEditor20250728(
+  AnthropicTextEditor20250728Args(maxCharacters: 10_000)
+)
+
+let computer = anthropic.tools.computer20251124(
+  AnthropicComputerOptions(
+    displayWidthPx: 1920,
+    displayHeightPx: 1080,
+    enableZoom: true
   )
-} catch {
-  if error.localizedDescription.contains("Web search failed") {
-    print("Search error:", error.localizedDescription)
-    // Handle search error appropriately
-  }
-}
-```
-
-**Streaming (`streamText`, `streamObject`):**
-Web search errors are delivered as error parts in the stream:
-
-```swift
-let result = try streamText(
-  model: anthropic("claude-opus-4-20250514"),
-  prompt: "Search for something",
-  tools: [
-    "web_search": webSearchTool
-  ]
 )
 
-for try await part in result.textStream {
-  if part.type == "error" {
-    print("Search error:", part.error)
-    // Handle search error appropriately
-  }
-}
-```
-
-## Code Execution
-
-Anthropic provides a provider-defined code execution tool that gives Claude direct access to a real Python environment allowing it to execute code to inform its responses.
-
-You can enable code execution using the provider-defined code execution tool:
-
-```swift
-import SwiftAISDK
-import AnthropicProvider
-
-let codeExecutionTool = anthropic.tools.codeExecution_20250522()
-let result = try await generateText(
-  model: anthropic("claude-opus-4-20250514"),
-  prompt: "Calculate the mean and standard deviation of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]",
-  tools: [
-    "code_execution": codeExecutionTool
-  ]
+let advisor = anthropic.tools.advisor20260301(
+  AnthropicAdvisor20260301Options(
+    model: "claude-opus-4-8",
+    maxUses: 3
+  )
 )
 ```
 
-#### Error Handling
+Provider-defined tools execute on Anthropic infrastructure unless their
+contract explicitly describes a client-side implementation. Use the exact tool
+dictionary name documented by each factory, such as `code_execution`,
+`web_search`, `computer`, or `advisor`.
 
-Code execution errors are handled differently depending on whether you're using streaming or non-streaming:
+### Tool Search
 
-**Non-streaming (`generateText`, `generateObject`):**
-Code execution errors are delivered as tool result parts in the response:
+Tool search lets Claude discover deferred tools without loading all schemas at
+once:
 
 ```swift
 let result = try await generateText(
-  model: anthropic("claude-opus-4-20250514"),
-  prompt: "Execute some Python script",
+  model: try anthropic("claude-sonnet-5"),
   tools: [
-    "code_execution": codeExecutionTool
-  ]
+    "tool_search": anthropic.tools.toolSearchBm2520251119(),
+    "weather": weatherTool.eraseToTool()
+  ],
+  prompt: "Find the weather tool and use it.",
+  providerOptions: nil
 )
-
-let toolErrors = result.content?.filter { content in
-  content.type == "tool-error"
-}
-
-toolErrors?.forEach { error in
-  print("Tool execution error:", [
-    "toolName": error.toolName,
-    "toolCallId": error.toolCallId,
-    "error": error.error
-  ])
-}
 ```
 
-**Streaming (`streamText`, `streamObject`):**
-Code execution errors are delivered as error parts in the stream:
+Mark individual deferred tools with
+`providerOptions: ["anthropic": ["deferLoading": true]]` when constructing
+them. Programmatic tool calling similarly uses the tool-level `allowedCallers`
+provider option.
 
-```swift
-let result = try streamText(
-  model: anthropic("claude-opus-4-20250514"),
-  prompt: "Execute some Python script",
-  tools: [
-    "code_execution": codeExecutionTool
-  ]
-)
+### MCP Connectors
 
-for try await part in result.textStream {
-  if part.type == "error" {
-    print("Code execution error:", part.error)
-    // Handle code execution error appropriately
-  }
-}
-```
-
-### PDF support
-
-Anthropic Sonnet `claude-3-5-sonnet-20241022` supports reading PDF files.
-You can pass PDF files as part of the message content using the `file` type:
-
-Option 1: URL-based PDF document
+Anthropic can connect to remote MCP servers within a request:
 
 ```swift
 let result = try await generateText(
-  model: anthropic("claude-3-5-sonnet-20241022"),
-  messages: [
-    [
-      "role": "user",
-      "content": [
-        [
-          "type": "text",
-          "text": "What is an embedding model according to this document?"
-        ],
-        [
-          "type": "file",
-          "data": URL(string: "https://github.com/vercel/ai/blob/main/examples/ai-core/data/ai.pdf?raw=true")!,
-          "mimeType": "application/pdf"
+  model: try anthropic("claude-sonnet-5"),
+  prompt: "Call the remote echo tool with hello.",
+  providerOptions: [
+    "anthropic": [
+      "mcpServers": [[
+        "type": "url",
+        "name": "echo",
+        "url": "https://example.com/mcp",
+        "authorizationToken": mcpToken,
+        "toolConfiguration": [
+          "enabled": true,
+          "allowedTools": ["echo"]
         ]
+      ]]
+    ]
+  ]
+)
+```
+
+## Code Execution and File Uploads
+
+Use the current code execution tool for a provider-managed execution
+environment:
+
+```swift
+let result = try await generateText(
+  model: try anthropic("claude-sonnet-5"),
+  tools: [
+    "code_execution": anthropic.tools.codeExecution20260120()
+  ],
+  prompt: "Calculate the mean and standard deviation of 1 through 10."
+)
+```
+
+Upload a file through the V4 provider, then pass the returned provider
+reference into a typed `FilePart`. Set `containerUpload` when the file should be
+mounted in the code execution container:
+
+```swift
+let upload = try await uploadFile(
+  api: anthropic,
+  data: DataContentOrURL.data(
+    try Data(contentsOf: URL(fileURLWithPath: "./data.csv"))
+  ),
+  mediaType: "text/csv",
+  filename: "data.csv"
+)
+
+let result = try await generateText(
+  model: try anthropic("claude-sonnet-5"),
+  tools: [
+    "code_execution": anthropic.tools.codeExecution20260120()
+  ],
+  messages: [
+    .user(UserModelMessage(content: .parts([
+      .text(TextPart(text: "Analyze this CSV file.")),
+      .file(FilePart(
+        data: .reference(upload.providerReference),
+        mediaType: "text/csv",
+        filename: "data.csv",
+        providerOptions: [
+          "anthropic": ["containerUpload": true]
+        ]
+      ))
+    ])))
+  ]
+)
+```
+
+Without `containerUpload`, an Anthropic provider reference is serialized as a
+normal Files API source. The provider automatically attaches the Files API beta
+header for referenced files.
+
+## Agent Skills
+
+Built-in Anthropic skills are selected through the request container and
+require code execution:
+
+```swift
+let result = try await generateText(
+  model: try anthropic("claude-sonnet-5"),
+  tools: [
+    "code_execution": anthropic.tools.codeExecution20260120()
+  ],
+  prompt: "Create a five-slide presentation about renewable energy.",
+  providerOptions: [
+    "anthropic": [
+      "container": [
+        "skills": [[
+          "type": "anthropic",
+          "skillId": "pptx",
+          "version": "latest"
+        ]]
       ]
     ]
   ]
 )
 ```
 
-Option 2: Base64-encoded PDF document
+Custom skills can be uploaded directly through the V4 provider:
+
+```swift
+let uploadedSkill = try await uploadSkill(
+  api: anthropic,
+  files: [
+    SkillsV4File(
+      path: "SKILL.md",
+      content: .text("# Data review\nAnalyze the supplied dataset.")
+    )
+  ],
+  displayTitle: "Data review"
+)
+```
+
+Use the returned Anthropic skill identity in a custom container skill entry.
+
+## PDF Support
+
+Pass a PDF URL, bytes, or an uploaded provider reference in a typed file part:
 
 ```swift
 let result = try await generateText(
-  model: anthropic("claude-3-5-sonnet-20241022"),
+  model: try anthropic("claude-sonnet-5"),
   messages: [
-    [
-      "role": "user",
-      "content": [
-        [
-          "type": "text",
-          "text": "What is an embedding model according to this document?"
-        ],
-        [
-          "type": "file",
-          "data": try Data(contentsOf: URL(fileURLWithPath: "./data/ai.pdf")),
-          "mediaType": "application/pdf"
-        ]
-      ]
-    ]
+    .user(UserModelMessage(content: .parts([
+      .text(TextPart(
+        text: "What is an embedding model according to this document?"
+      )),
+      .file(FilePart(
+        data: .url(URL(
+          string: "https://example.com/guide.pdf"
+        )!),
+        mediaType: "application/pdf",
+        filename: "guide.pdf"
+      ))
+    ])))
   ]
 )
 ```
 
-The model will have access to the contents of the PDF file and
-respond to questions about it.
-The PDF file should be passed using the `data` field,
-and the `mediaType` should be set to `'application/pdf'`.
+For local PDF data, use `DataContentOrURL.data(pdfData)`. For an upload result,
+use `.reference(upload.providerReference)`.
 
-### Model Capabilities
+## Model Capabilities
 
-| Model                      | Image Input         | Object Generation   | Tool Usage          | Computer Use        | Web Search          |
-| -------------------------- | ------------------- | ------------------- | ------------------- | ------------------- | ------------------- |
-| `claude-sonnet-4-5`        | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> |
-| `claude-opus-4-1`          | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> |
-| `claude-opus-4-0`          | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> |
-| `claude-sonnet-4-0`        | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> |
-| `claude-3-7-sonnet-latest` | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> |
-| `claude-3-5-haiku-latest`  | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| Model | Image Input | Object Generation | Tool Usage | Computer Use | Web Search | Tool Search | Compaction |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `claude-sonnet-5` | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| `claude-fable-5` | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| `claude-opus-4-8` | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| `claude-opus-4-7` | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| `claude-opus-4-6` | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> |
+| `claude-sonnet-4-6` | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> | <Cross size={18} /> |
+| `claude-opus-4-5` | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> | <Cross size={18} /> |
+| `claude-haiku-4-5` | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> | <Cross size={18} /> | <Cross size={18} /> |
+| `claude-sonnet-4-5` | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> | <Check size={18} /> | <Cross size={18} /> |
 
-<Aside type="note">
-  The table above lists popular models. Please see the [Anthropic
-  docs](https://docs.anthropic.com/en/docs/about-claude/models) for a full list
-  of available models. The table above lists popular models. You can also pass
-  any available provider model ID as a string if needed.
-</Aside>
+The model list is open-ended: pass any Anthropic model ID as a string when a
+new provider model becomes available. The helpers above document the model
+families audited by this SDK baseline.

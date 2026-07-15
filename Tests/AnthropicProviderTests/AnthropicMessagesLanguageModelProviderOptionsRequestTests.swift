@@ -279,7 +279,7 @@ struct AnthropicMessagesLanguageModelProviderOptionsRequestTests {
         }
     }
 
-    @Test("uses native output_format for structured outputs when supported")
+    @Test("uses native output_config format for structured outputs when supported")
     func usesNativeStructuredOutputs() async throws {
         let capture = RequestCapture()
         let responseData = try makeProviderOptionsTestResponseData(model: "claude-sonnet-4-5-20250929")
@@ -310,16 +310,18 @@ struct AnthropicMessagesLanguageModelProviderOptionsRequestTests {
         ))
 
         let json = decodeRequestJSON(await capture.current())
-        if let outputFormat = json?["output_format"] as? [String: Any] {
-            #expect(outputFormat["type"] as? String == "json_schema")
-            #expect(outputFormat["schema"] != nil)
+        if let outputConfig = json?["output_config"] as? [String: Any],
+           let format = outputConfig["format"] as? [String: Any] {
+            #expect(format["type"] as? String == "json_schema")
+            #expect(format["schema"] != nil)
         } else {
-            Issue.record("Expected output_format payload")
+            Issue.record("Expected output_config.format payload")
         }
 
+        #expect(json?["output_format"] == nil)
         #expect(json?["tool_choice"] == nil)
         #expect(json?["tools"] == nil)
-        #expect(anthropicBetaSet(await capture.current()) == Set(["structured-outputs-2025-11-13"]))
+        #expect(anthropicBetaSet(await capture.current()) == nil)
     }
 
     @Test("sends context_management edits mapping and beta")
@@ -1416,5 +1418,164 @@ struct AnthropicMessagesLanguageModelProviderOptionsRequestTests {
         let json = decodeRequestJSON(await capture.current())
         let tools = json?["tools"] as? [[String: Any]]
         #expect(tools?.first?["eager_input_streaming"] == nil)
+    }
+
+    @Test("serializes current Anthropic request options into their API fields")
+    func serializesCurrentRequestOptions() async throws {
+        let capture = RequestCapture()
+        let responseData = try makeProviderOptionsTestResponseData(model: "claude-opus-4-7")
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: makeProviderOptionsTestHTTPResponse())
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-opus-4-7"),
+            config: makeProviderOptionsTestConfig(fetch: fetch)
+        )
+
+        let schema: JSONValue = .object([
+            "type": .string("object"),
+            "properties": .object([
+                "name": .object([
+                    "type": .string("string"),
+                    "minLength": .number(1),
+                ])
+            ]),
+            "required": .array([.string("name")]),
+        ])
+
+        _ = try await model.doGenerate(options: .init(
+            prompt: providerOptionsTestPrompt,
+            responseFormat: .json(schema: schema, name: nil, description: nil),
+            providerOptions: [
+                "anthropic": [
+                    "effort": .string("high"),
+                    "taskBudget": .object([
+                        "type": .string("tokens"),
+                        "total": .number(400_000),
+                        "remaining": .number(215_000),
+                    ]),
+                    "inferenceGeo": .string("us"),
+                    "metadata": .object(["userId": .string("user-123")]),
+                    "fallbacks": .array([
+                        .object([
+                            "model": .string("claude-sonnet-4-6"),
+                            "max_tokens": .number(32_000),
+                            "thinking": .object(["type": .string("adaptive")]),
+                            "output_config": .object(["effort": .string("medium")]),
+                            "speed": .string("standard"),
+                        ])
+                    ]),
+                ]
+            ]
+        ))
+
+        let request = await capture.current()
+        let json = decodeRequestJSON(request)
+
+        let outputConfig = json?["output_config"] as? [String: Any]
+        #expect(outputConfig?["effort"] as? String == "high")
+        let taskBudget = outputConfig?["task_budget"] as? [String: Any]
+        #expect(taskBudget?["type"] as? String == "tokens")
+        #expect(taskBudget?["total"] as? Int == 400_000)
+        #expect(taskBudget?["remaining"] as? Int == 215_000)
+
+        let format = outputConfig?["format"] as? [String: Any]
+        let sanitizedSchema = format?["schema"] as? [String: Any]
+        let properties = sanitizedSchema?["properties"] as? [String: Any]
+        let name = properties?["name"] as? [String: Any]
+        #expect(format?["type"] as? String == "json_schema")
+        #expect(name?["minLength"] == nil)
+        #expect(name?["description"] as? String == "min length: 1.")
+
+        #expect(json?["inference_geo"] as? String == "us")
+        let metadata = json?["metadata"] as? [String: Any]
+        #expect(metadata?["user_id"] as? String == "user-123")
+
+        let fallbacks = json?["fallbacks"] as? [[String: Any]]
+        #expect(fallbacks?.first?["model"] as? String == "claude-sonnet-4-6")
+        #expect(fallbacks?.first?["max_tokens"] as? Int == 32_000)
+        #expect((fallbacks?.first?["thinking"] as? [String: Any])?["type"] as? String == "adaptive")
+        #expect((fallbacks?.first?["output_config"] as? [String: Any])?["effort"] as? String == "medium")
+        #expect(fallbacks?.first?["speed"] as? String == "standard")
+
+        #expect(anthropicBetaSet(request) == Set([
+            "server-side-fallback-2026-06-01",
+            "task-budgets-2026-03-13",
+        ]))
+    }
+
+    @Test("new Anthropic models reject sampling parameters")
+    func newModelsRejectSamplingParameters() async throws {
+        let capture = RequestCapture()
+        let responseData = try makeProviderOptionsTestResponseData(model: "claude-opus-4-8")
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: makeProviderOptionsTestHTTPResponse())
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-opus-4-8"),
+            config: makeProviderOptionsTestConfig(fetch: fetch)
+        )
+
+        let result = try await model.doGenerate(options: .init(
+            prompt: providerOptionsTestPrompt,
+            temperature: 0.7,
+            topP: 0.9,
+            topK: 40
+        ))
+
+        let json = decodeRequestJSON(await capture.current())
+        #expect(json?["temperature"] == nil)
+        #expect(json?["top_p"] == nil)
+        #expect(json?["top_k"] == nil)
+        #expect(json?["max_tokens"] as? Int == 128_000)
+
+        let unsupportedFeatures = result.warnings.compactMap { warning -> String? in
+            guard case .unsupported(let feature, _) = warning else { return nil }
+            return feature
+        }
+        #expect(Set(unsupportedFeatures).isSuperset(of: ["temperature", "topP", "topK"]))
+    }
+
+    @Test("non-Anthropic compatible models can send temperature and topP together")
+    func compatibleModelsKeepTemperatureAndTopP() async throws {
+        let capture = RequestCapture()
+        let responseData = try makeProviderOptionsTestResponseData(model: "minimax-compatible-model")
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: makeProviderOptionsTestHTTPResponse())
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "minimax-compatible-model"),
+            config: makeProviderOptionsTestConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(options: .init(
+            prompt: providerOptionsTestPrompt,
+            temperature: 0.7,
+            topP: 0.9
+        ))
+
+        let json = decodeRequestJSON(await capture.current())
+        #expect(json?["temperature"] as? Double == 0.7)
+        #expect(json?["top_p"] as? Double == 0.9)
+    }
+
+    @Test("model ID suggestions include the current Anthropic models")
+    func currentModelIDSuggestions() {
+        let modelIds = Set(anthropicMessagesModelIds.map(\.rawValue))
+        #expect(modelIds.isSuperset(of: [
+            "claude-opus-4-7",
+            "claude-opus-4-8",
+            "claude-fable-5",
+            "claude-sonnet-5",
+        ]))
     }
 }

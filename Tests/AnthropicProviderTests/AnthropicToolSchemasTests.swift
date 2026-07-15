@@ -824,6 +824,89 @@ struct AnthropicToolSchemasTests {
         #expect(output == legacyOutput)
     }
 
+    @Test("advisor_20260301 factory and schemas match upstream contract")
+    func advisor20260301ToolContract() async throws {
+        let tool = anthropicAdvisor20260301(.init(
+            model: "claude-opus-4-7",
+            maxUses: 4,
+            caching: .init(ttl: .oneHour)
+        ))
+
+        let args = try await anthropicAdvisor20260301ArgsSchema.resolve().jsonSchema()
+        let input = try await tool.inputSchema.resolve().jsonSchema()
+        let output = try await tool.outputSchema?.resolve().jsonSchema()
+
+        #expect(tool.id == "anthropic.advisor_20260301")
+        #expect(tool.name == "advisor")
+        #expect(tool.supportsDeferredResults == true)
+        #expect(tool.args == [
+            "model": .string("claude-opus-4-7"),
+            "maxUses": .number(4),
+            "caching": .object([
+                "type": .string("ephemeral"),
+                "ttl": .string("1h"),
+            ]),
+        ])
+        #expect(args == .object([
+            "type": .string("object"),
+            "properties": .object([
+                "model": .object(["type": .string("string")]),
+                "maxUses": .object(["type": .string("number")]),
+                "caching": .object([
+                    "type": .string("object"),
+                    "properties": .object([
+                        "type": .object(["const": .string("ephemeral")]),
+                        "ttl": .object([
+                            "type": .string("string"),
+                            "enum": .array([.string("5m"), .string("1h")]),
+                        ]),
+                    ]),
+                    "required": .array([.string("type"), .string("ttl")]),
+                    "additionalProperties": .bool(false),
+                ]),
+            ]),
+            "required": .array([.string("model")]),
+            "additionalProperties": .bool(false),
+        ]))
+        #expect(input == .object([
+            "type": .string("object"),
+            "properties": .object([:]),
+            "additionalProperties": .bool(false),
+        ]))
+        #expect(output == .object([
+            "type": .string("object"),
+            "oneOf": .array([
+                .object([
+                    "type": .string("object"),
+                    "properties": .object([
+                        "type": .object(["const": .string("advisor_result")]),
+                        "text": .object(["type": .string("string")]),
+                    ]),
+                    "required": .array([.string("type"), .string("text")]),
+                    "additionalProperties": .bool(false),
+                ]),
+                .object([
+                    "type": .string("object"),
+                    "properties": .object([
+                        "type": .object(["const": .string("advisor_redacted_result")]),
+                        "encryptedContent": .object(["type": .string("string")]),
+                    ]),
+                    "required": .array([.string("type"), .string("encryptedContent")]),
+                    "additionalProperties": .bool(false),
+                ]),
+                .object([
+                    "type": .string("object"),
+                    "properties": .object([
+                        "type": .object(["const": .string("advisor_tool_result_error")]),
+                        "errorCode": .object(["type": .string("string")]),
+                    ]),
+                    "required": .array([.string("type"), .string("errorCode")]),
+                    "additionalProperties": .bool(false),
+                ]),
+            ]),
+        ]))
+    }
+
     @Test("memory_20250818 tool input schema matches upstream shape")
     func memory20250818ToolSchema() async throws {
         let tool = anthropicMemory20250818()

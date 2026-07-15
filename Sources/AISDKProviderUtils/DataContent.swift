@@ -15,12 +15,16 @@ public enum DataContentOrURL: Sendable, Equatable, Codable {
     case data(Data)
     case string(String)
     case url(URL)
+    case reference(ProviderReference)
+    case text(String)
 
     private enum CodingKeys: String, CodingKey {
         case type
         case data
         case value
         case url
+        case reference
+        case text
     }
 
     public init(from decoder: Decoder) throws {
@@ -44,6 +48,10 @@ public enum DataContentOrURL: Sendable, Equatable, Codable {
         case "url":
             let url = try container.decode(URL.self, forKey: .url)
             self = .url(url)
+        case "reference":
+            self = .reference(try container.decode(ProviderReference.self, forKey: .reference))
+        case "text":
+            self = .text(try container.decode(String.self, forKey: .text))
         default:
             throw DecodingError.dataCorruptedError(
                 forKey: .type,
@@ -66,6 +74,12 @@ public enum DataContentOrURL: Sendable, Equatable, Codable {
         case .url(let url):
             try container.encode("url", forKey: .type)
             try container.encode(url, forKey: .url)
+        case .reference(let reference):
+            try container.encode("reference", forKey: .type)
+            try container.encode(reference, forKey: .reference)
+        case .text(let text):
+            try container.encode("text", forKey: .type)
+            try container.encode(text, forKey: .text)
         }
     }
 }

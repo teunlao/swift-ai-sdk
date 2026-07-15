@@ -68,6 +68,48 @@ struct AnthropicProviderBaseURLTests {
         #expect(url == "https://proxy.anthropic.example/v1/messages")
     }
 
+    @Test("normalizes bare Anthropic API URL from ANTHROPIC_BASE_URL")
+    func normalizesBareEnvironmentBaseURL() async throws {
+        let original = getenv("ANTHROPIC_BASE_URL").flatMap { String(validatingCString: $0) }
+        defer {
+            if let original {
+                setenv("ANTHROPIC_BASE_URL", original, 1)
+            } else {
+                unsetenv("ANTHROPIC_BASE_URL")
+            }
+        }
+
+        setenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com/", 1)
+
+        let capture = URLCapture()
+        let provider = createAnthropicProvider(settings: .init(
+            apiKey: "test-api-key",
+            fetch: makeFetch(capture: capture)
+        ))
+
+        let model = provider.messages(modelId: .init(rawValue: "claude-3-haiku-20240307"))
+        _ = try await model.doGenerate(options: .init(prompt: baseURLTestPrompt))
+
+        let url = await capture.current()
+        #expect(url == "https://api.anthropic.com/v1/messages")
+    }
+
+    @Test("normalizes bare Anthropic API URL from explicit option")
+    func normalizesBareExplicitBaseURL() async throws {
+        let capture = URLCapture()
+        let provider = createAnthropicProvider(settings: .init(
+            baseURL: "https://api.anthropic.com/",
+            apiKey: "test-api-key",
+            fetch: makeFetch(capture: capture)
+        ))
+
+        let model = provider.messages(modelId: .init(rawValue: "claude-3-haiku-20240307"))
+        _ = try await model.doGenerate(options: .init(prompt: baseURLTestPrompt))
+
+        let url = await capture.current()
+        #expect(url == "https://api.anthropic.com/v1/messages")
+    }
+
     @Test("prefers explicit baseURL option over environment")
     func prefersExplicitBaseURL() async throws {
         let original = getenv("ANTHROPIC_BASE_URL").flatMap { String(validatingCString: $0) }
@@ -123,4 +165,3 @@ struct AnthropicProviderBaseURLTests {
         return try! JSONSerialization.data(withJSONObject: json)
     }
 }
-

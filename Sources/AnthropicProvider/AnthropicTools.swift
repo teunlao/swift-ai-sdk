@@ -10,6 +10,14 @@ import AISDKProviderUtils
 public struct AnthropicTools: Sendable {
     public init() {}
 
+    /// Creates an advisor tool that lets Claude consult another Anthropic model.
+    ///
+    /// Tool name must be `advisor`.
+    @discardableResult
+    public func advisor20260301(_ options: AnthropicAdvisor20260301Options) -> Tool {
+        anthropicAdvisor20260301(options)
+    }
+
     /// The bash tool enables Claude to execute shell commands in a persistent bash session,
     /// allowing system operations, script execution, and command-line automation.
     ///

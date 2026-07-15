@@ -134,6 +134,30 @@ public func prepareAnthropicTools(
 
         case .provider(let providerTool):
             switch providerTool.id {
+            case "anthropic.advisor_20260301":
+                betas.insert("advisor-tool-2026-03-01")
+                let parsed = try await validateTypes(
+                    ValidateTypesOptions(
+                        value: foundationArgs(providerTool.args),
+                        schema: anthropicAdvisor20260301ArgsSchema
+                    )
+                )
+                var payload: [String: JSONValue] = [
+                    "type": .string("advisor_20260301"),
+                    "name": .string("advisor"),
+                    "model": .string(parsed.model),
+                ]
+                if let maxUses = parsed.maxUses {
+                    payload["max_uses"] = .number(Double(maxUses))
+                }
+                if let caching = parsed.caching {
+                    payload["caching"] = .object([
+                        "type": .string(caching.type.rawValue),
+                        "ttl": .string(caching.ttl.rawValue),
+                    ])
+                }
+                anthropicTools.append(.object(payload))
+
             case "anthropic.code_execution_20250522":
                 betas.insert("code-execution-2025-05-22")
                 anthropicTools.append(.object([

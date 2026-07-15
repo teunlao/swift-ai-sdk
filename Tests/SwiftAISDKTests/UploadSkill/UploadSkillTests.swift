@@ -72,6 +72,44 @@ private final class UnsupportedSkillsProvider: ProviderV3 {
     }
 }
 
+private final class MockSkillsProviderV4: ProviderV4 {
+    private let skillsAPI: any SkillsV4
+
+    init(skillsAPI: any SkillsV4) {
+        self.skillsAPI = skillsAPI
+    }
+
+    func skills() throws -> (any SkillsV4)? {
+        skillsAPI
+    }
+
+    func languageModel(modelId: String) throws -> any LanguageModelV4 {
+        throw NoSuchModelError(modelId: modelId, modelType: .languageModel)
+    }
+
+    func embeddingModel(modelId: String) throws -> any EmbeddingModelV4 {
+        throw NoSuchModelError(modelId: modelId, modelType: .textEmbeddingModel)
+    }
+
+    func imageModel(modelId: String) throws -> any ImageModelV4 {
+        throw NoSuchModelError(modelId: modelId, modelType: .imageModel)
+    }
+}
+
+private final class UnsupportedSkillsProviderV4: ProviderV4 {
+    func languageModel(modelId: String) throws -> any LanguageModelV4 {
+        throw NoSuchModelError(modelId: modelId, modelType: .languageModel)
+    }
+
+    func embeddingModel(modelId: String) throws -> any EmbeddingModelV4 {
+        throw NoSuchModelError(modelId: modelId, modelType: .textEmbeddingModel)
+    }
+
+    func imageModel(modelId: String) throws -> any ImageModelV4 {
+        throw NoSuchModelError(modelId: modelId, modelType: .imageModel)
+    }
+}
+
 @Suite("uploadSkill")
 struct UploadSkillTests {
     @Test("passes files, display title, and provider options through to the skills API")
@@ -129,6 +167,23 @@ struct UploadSkillTests {
         #expect(await capture.first()?.files.first?.content == .base64("AQID"))
     }
 
+    @Test("V4 provider overload routes through skills capability")
+    func providerV4OverloadUsesSkillsCapability() async throws {
+        let capture = UploadSkillOptionsCapture()
+        let api = MockSkillsAPI(
+            capture: capture,
+            result: .init(providerReference: ["anthropic": "skill-v4"], name: "v4-skill")
+        )
+
+        let result = try await uploadSkill(
+            api: MockSkillsProviderV4(skillsAPI: api),
+            files: [SkillsV4File(path: "SKILL.md", content: .text("# Skill"))]
+        )
+
+        #expect(result.providerReference["anthropic"] == "skill-v4")
+        #expect(await capture.first()?.files.first?.content == .text("# Skill"))
+    }
+
     @Test("rejects unsupported providers with upstream-style message")
     func rejectsUnsupportedProvider() async throws {
         do {
@@ -139,6 +194,16 @@ struct UploadSkillTests {
                 ]
             )
             Issue.record("Expected unsupported provider to throw")
+        } catch let error as InvalidArgumentError {
+            #expect(error.message == "The provider does not support skills. Make sure it exposes a skills() method.")
+        }
+
+        do {
+            _ = try await uploadSkill(
+                api: UnsupportedSkillsProviderV4(),
+                files: [SkillsV4File(path: "index.ts", content: .data(Data([0x01])))]
+            )
+            Issue.record("Expected unsupported V4 provider to throw")
         } catch let error as InvalidArgumentError {
             #expect(error.message == "The provider does not support skills. Make sure it exposes a skills() method.")
         }

@@ -379,4 +379,174 @@ struct AnthropicMessagesLanguageModelProviderMetadataTests {
         #expect(metadata?["custom-anthropic"] == nil)
         #expect(metadata?.keys.sorted() == ["anthropic"])
     }
+
+    @Test("maps refusal stop details into provider metadata")
+    func mapsRefusalStopDetails() async throws {
+        let responseJSON: [String: Any] = [
+            "type": "message",
+            "id": "msg_refusal",
+            "model": "claude-fable-5",
+            "content": [],
+            "stop_reason": "refusal",
+            "stop_sequence": NSNull(),
+            "stop_details": [
+                "type": "refusal",
+                "category": "cyber",
+                "explanation": "The request was blocked by policy.",
+                "recommended_model": "claude-fable-5",
+            ],
+            "usage": [
+                "input_tokens": 18,
+                "output_tokens": 5,
+            ],
+        ]
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .data(responseData), urlResponse: makeMetadataTestHTTPResponse())
+        }
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-fable-5"),
+            config: makeMetadataTestConfig(fetch: fetch)
+        )
+
+        let result = try await model.doGenerate(options: .init(prompt: metadataTestPrompt))
+
+        #expect(result.finishReason == .init(unified: .contentFilter, raw: "refusal"))
+        #expect(result.providerMetadata?["anthropic"]?["stopDetails"] == .object([
+            "type": .string("refusal"),
+            "category": .string("cyber"),
+            "explanation": .string("The request was blocked by policy."),
+            "recommendedModel": .string("claude-fable-5"),
+        ]))
+        #expect(result.providerMetadata?["anthropic"]?["iterations"] == .null)
+    }
+
+    @Test("drops fallback content and preserves fallback iteration metadata")
+    func mapsFallbackResponse() async throws {
+        let responseJSON: [String: Any] = [
+            "type": "message",
+            "id": "msg_fallback",
+            "model": "claude-opus-4-8",
+            "content": [
+                [
+                    "type": "fallback",
+                    "from": ["model": "claude-fable-5"],
+                    "to": ["model": "claude-opus-4-8"],
+                ],
+                ["type": "text", "text": "Fallback answer"],
+            ],
+            "stop_reason": "end_turn",
+            "stop_sequence": NSNull(),
+            "usage": [
+                "input_tokens": 412,
+                "output_tokens": 264,
+                "iterations": [
+                    [
+                        "type": "message",
+                        "model": "claude-fable-5",
+                        "input_tokens": 408,
+                        "output_tokens": 0,
+                    ],
+                    [
+                        "type": "fallback_message",
+                        "model": "claude-opus-4-8",
+                        "input_tokens": 412,
+                        "output_tokens": 264,
+                    ],
+                ],
+            ],
+        ]
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .data(responseData), urlResponse: makeMetadataTestHTTPResponse())
+        }
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-fable-5"),
+            config: makeMetadataTestConfig(fetch: fetch)
+        )
+
+        let result = try await model.doGenerate(options: .init(prompt: metadataTestPrompt))
+
+        #expect(result.content == [.text(.init(text: "Fallback answer"))])
+        #expect(result.usage.inputTokens.noCache == 412)
+        #expect(result.usage.outputTokens.total == 264)
+        #expect(result.providerMetadata?["anthropic"]?["iterations"] == .array([
+            .object([
+                "type": .string("message"),
+                "model": .string("claude-fable-5"),
+                "inputTokens": .number(408),
+                "outputTokens": .number(0),
+            ]),
+            .object([
+                "type": .string("fallback_message"),
+                "model": .string("claude-opus-4-8"),
+                "inputTokens": .number(412),
+                "outputTokens": .number(264),
+            ]),
+        ]))
+    }
+
+    @Test("maps compaction content and aggregates executor iteration usage")
+    func mapsCompactionResponse() async throws {
+        let responseJSON: [String: Any] = [
+            "type": "message",
+            "id": "msg_compaction",
+            "model": "claude-opus-4-6",
+            "content": [
+                ["type": "compaction", "content": "Conversation summary"],
+                ["type": "text", "text": "Final answer"],
+            ],
+            "stop_reason": "end_turn",
+            "stop_sequence": NSNull(),
+            "usage": [
+                "input_tokens": 5,
+                "output_tokens": 6,
+                "iterations": [
+                    [
+                        "type": "compaction",
+                        "input_tokens": 100,
+                        "output_tokens": 10,
+                    ],
+                    [
+                        "type": "message",
+                        "input_tokens": 5,
+                        "output_tokens": 6,
+                    ],
+                    [
+                        "type": "advisor_message",
+                        "model": "claude-haiku-4-5",
+                        "input_tokens": 50,
+                        "output_tokens": 7,
+                    ],
+                ],
+            ],
+        ]
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .data(responseData), urlResponse: makeMetadataTestHTTPResponse())
+        }
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-opus-4-6"),
+            config: makeMetadataTestConfig(fetch: fetch)
+        )
+
+        let result = try await model.doGenerate(options: .init(prompt: metadataTestPrompt))
+
+        #expect(result.content.count == 2)
+        if case .text(let compaction) = result.content[0] {
+            #expect(compaction.text == "Conversation summary")
+            #expect(compaction.providerMetadata == [
+                "anthropic": ["type": .string("compaction")]
+            ])
+        } else {
+            Issue.record("Expected compaction text content")
+        }
+        if case .text(let answer) = result.content[1] {
+            #expect(answer.text == "Final answer")
+        } else {
+            Issue.record("Expected final text content")
+        }
+        #expect(result.usage.inputTokens.noCache == 105)
+        #expect(result.usage.outputTokens.total == 16)
+    }
 }

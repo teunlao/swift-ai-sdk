@@ -72,6 +72,44 @@ private final class UnsupportedUploadProvider: ProviderV3 {
     }
 }
 
+private final class MockFilesProviderV4: ProviderV4 {
+    private let filesAPI: any FilesV4
+
+    init(filesAPI: any FilesV4) {
+        self.filesAPI = filesAPI
+    }
+
+    func files() throws -> (any FilesV4)? {
+        filesAPI
+    }
+
+    func languageModel(modelId: String) throws -> any LanguageModelV4 {
+        throw NoSuchModelError(modelId: modelId, modelType: .languageModel)
+    }
+
+    func embeddingModel(modelId: String) throws -> any EmbeddingModelV4 {
+        throw NoSuchModelError(modelId: modelId, modelType: .textEmbeddingModel)
+    }
+
+    func imageModel(modelId: String) throws -> any ImageModelV4 {
+        throw NoSuchModelError(modelId: modelId, modelType: .imageModel)
+    }
+}
+
+private final class UnsupportedUploadProviderV4: ProviderV4 {
+    func languageModel(modelId: String) throws -> any LanguageModelV4 {
+        throw NoSuchModelError(modelId: modelId, modelType: .languageModel)
+    }
+
+    func embeddingModel(modelId: String) throws -> any EmbeddingModelV4 {
+        throw NoSuchModelError(modelId: modelId, modelType: .textEmbeddingModel)
+    }
+
+    func imageModel(modelId: String) throws -> any ImageModelV4 {
+        throw NoSuchModelError(modelId: modelId, modelType: .imageModel)
+    }
+}
+
 @Suite("uploadFile")
 struct UploadFileTests {
     @Test("detects PDF media type when not provided")
@@ -149,6 +187,29 @@ struct UploadFileTests {
         #expect(await capture.first()?.mediaType == "application/pdf")
     }
 
+    @Test("V4 provider overload routes through files capability and preserves text data")
+    func providerV4OverloadUsesFilesCapability() async throws {
+        let capture = UploadFileOptionsCapture()
+        let api = MockFilesAPI(
+            capture: capture,
+            result: .init(
+                providerReference: ["anthropic": "file-v4"],
+                mediaType: "text/plain",
+                filename: "notes.txt"
+            )
+        )
+
+        let result = try await uploadFile(
+            api: MockFilesProviderV4(filesAPI: api),
+            data: DataContentOrURL.text("hello"),
+            filename: "notes.txt"
+        )
+
+        #expect(result.providerReference["anthropic"] == "file-v4")
+        #expect(await capture.first()?.data == .text("hello"))
+        #expect(await capture.first()?.mediaType == "text/plain")
+    }
+
     @Test("rejects URL data and unsupported providers with upstream-style messages")
     func rejectsUnsupportedInputs() async throws {
         let capture = UploadFileOptionsCapture()
@@ -173,6 +234,16 @@ struct UploadFileTests {
                 data: DataContentOrURL.data(Data([0x01, 0x02]))
             )
             Issue.record("Expected unsupported provider to throw")
+        } catch let error as InvalidArgumentError {
+            #expect(error.message == "The provider does not support file uploads. Make sure it exposes a files() method.")
+        }
+
+        do {
+            _ = try await uploadFile(
+                api: UnsupportedUploadProviderV4(),
+                data: DataContentOrURL.data(Data([0x01, 0x02]))
+            )
+            Issue.record("Expected unsupported V4 provider to throw")
         } catch let error as InvalidArgumentError {
             #expect(error.message == "The provider does not support file uploads. Make sure it exposes a files() method.")
         }

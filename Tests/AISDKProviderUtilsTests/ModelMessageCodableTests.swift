@@ -266,6 +266,8 @@ struct ModelMessageCodableTests {
         let stringJSON = try encodedJSON(DataContentOrURL.string("iVBOR"))
         let urlJSON = try encodedJSON(DataContentOrURL.url(url))
         let dataJSON = try encodedJSON(DataContentOrURL.data(binary))
+        let referenceJSON = try encodedJSON(DataContentOrURL.reference(["anthropic": "file_123"]))
+        let textJSON = try encodedJSON(DataContentOrURL.text("hello"))
 
         #expect(stringJSON == .object([
             "type": .string("string"),
@@ -279,6 +281,22 @@ struct ModelMessageCodableTests {
             "type": .string("data"),
             "data": .string("AAEC"),
         ]))
+        #expect(referenceJSON == .object([
+            "type": .string("reference"),
+            "reference": .object(["anthropic": .string("file_123")]),
+        ]))
+        #expect(textJSON == .object([
+            "type": .string("text"),
+            "text": .string("hello"),
+        ]))
+
+        for value in [
+            DataContentOrURL.reference(["anthropic": "file_123"]),
+            DataContentOrURL.text("hello"),
+        ] {
+            let encoded = try JSONEncoder().encode(value)
+            #expect(try JSONDecoder().decode(DataContentOrURL.self, from: encoded) == value)
+        }
     }
 
     @Test func imageAndFilePartsPreserveDistinctStringURLAndDataStorageCases() throws {

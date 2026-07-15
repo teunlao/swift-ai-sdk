@@ -56,6 +56,71 @@ private struct AnthropicRequestArguments {
     let usedCustomProviderKey: Bool
 }
 
+private enum AnthropicPromptInput: Sendable {
+    case v3(LanguageModelV3Prompt)
+    case v4(LanguageModelV4Prompt)
+}
+
+private struct AnthropicCallSettings: Sendable {
+    let prompt: AnthropicPromptInput
+    let maxOutputTokens: Int?
+    let temperature: Double?
+    let stopSequences: [String]?
+    let topP: Double?
+    let topK: Int?
+    let presencePenalty: Double?
+    let frequencyPenalty: Double?
+    let responseFormat: LanguageModelV3ResponseFormat?
+    let seed: Int?
+    let tools: [LanguageModelV3Tool]?
+    let toolChoice: LanguageModelV3ToolChoice?
+    let includeRawChunks: Bool?
+    let abortSignal: (@Sendable () -> Bool)?
+    let headers: SharedV4Headers?
+    let reasoning: LanguageModelV4ReasoningEffort?
+    let providerOptions: SharedV4ProviderOptions?
+
+    init(v3 options: LanguageModelV3CallOptions) {
+        prompt = .v3(options.prompt)
+        maxOutputTokens = options.maxOutputTokens
+        temperature = options.temperature
+        stopSequences = options.stopSequences
+        topP = options.topP
+        topK = options.topK
+        presencePenalty = options.presencePenalty
+        frequencyPenalty = options.frequencyPenalty
+        responseFormat = options.responseFormat
+        seed = options.seed
+        tools = options.tools
+        toolChoice = options.toolChoice
+        includeRawChunks = options.includeRawChunks
+        abortSignal = options.abortSignal
+        headers = options.headers
+        reasoning = nil
+        providerOptions = options.providerOptions
+    }
+
+    init(v4 options: LanguageModelV4CallOptions) {
+        prompt = .v4(options.prompt)
+        maxOutputTokens = options.maxOutputTokens
+        temperature = options.temperature
+        stopSequences = options.stopSequences
+        topP = options.topP
+        topK = options.topK
+        presencePenalty = options.presencePenalty
+        frequencyPenalty = options.frequencyPenalty
+        responseFormat = options.responseFormat.map(convertAnthropicResponseFormatToV3)
+        seed = options.seed
+        tools = options.tools?.map(convertAnthropicToolToV3)
+        toolChoice = options.toolChoice.map(convertAnthropicToolChoiceToV3)
+        includeRawChunks = options.includeRawChunks
+        abortSignal = options.abortSignal
+        headers = options.headers
+        reasoning = options.reasoning
+        providerOptions = options.providerOptions
+    }
+}
+
 public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
     public let specificationVersion: String = "v3"
 
@@ -92,6 +157,18 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
     public func doGenerate(options: LanguageModelV3CallOptions) async throws
         -> LanguageModelV3GenerateResult
     {
+        try await doGenerate(options: AnthropicCallSettings(v3: options))
+    }
+
+    func doGenerateV4(options: LanguageModelV4CallOptions) async throws
+        -> LanguageModelV3GenerateResult
+    {
+        try await doGenerate(options: AnthropicCallSettings(v4: options))
+    }
+
+    private func doGenerate(options: AnthropicCallSettings) async throws
+        -> LanguageModelV3GenerateResult
+    {
         let prepared = try await prepareRequest(options: options)
         let requestURL = buildRequestURL(isStreaming: false)
         let headers = try getHeaders(betas: prepared.betas, additional: options.headers)
@@ -111,7 +188,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
 
         let usageAndContent = try mapResponseContent(
             response: response.value,
-            prompt: options.prompt,
+            citationDocuments: extractCitationDocuments(from: options.prompt),
             usesJsonResponseTool: prepared.usesJsonResponseTool,
             toolNameMapping: prepared.toolNameMapping
         )
@@ -148,6 +225,18 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
     public func doStream(options: LanguageModelV3CallOptions) async throws
         -> LanguageModelV3StreamResult
     {
+        try await doStream(options: AnthropicCallSettings(v3: options))
+    }
+
+    func doStreamV4(options: LanguageModelV4CallOptions) async throws
+        -> LanguageModelV3StreamResult
+    {
+        try await doStream(options: AnthropicCallSettings(v4: options))
+    }
+
+    private func doStream(options: AnthropicCallSettings) async throws
+        -> LanguageModelV3StreamResult
+    {
         let prepared = try await prepareRequest(options: options, stream: true)
 
         let betas = prepared.betas
@@ -181,9 +270,10 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                 var mcpToolCalls: [String: (toolName: String, providerMetadata: SharedV3ProviderMetadata)] = [:]
                 var finishReason: LanguageModelV3FinishReason = .init(unified: .other, raw: nil)
                 var usage = LanguageModelV3Usage()
+                var usageState = AnthropicUsageState()
                 var rawUsage: [String: JSONValue]? = nil
-                var cacheCreationInputTokens: Int? = nil
                 var stopSequence: String? = nil
+                var stopDetails: JSONValue? = nil
                 var container: JSONValue = .null
                 var contextManagement: JSONValue = .null
 
@@ -236,34 +326,12 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                             case .messageStart(let value):
                                 if let usageInfo = value.message.usage {
                                     let usageMetadata = anthropicUsageMetadata(usageInfo)
-
-                                    let inputTokens = usageInfo.inputTokens ?? usage.inputTokens.noCache ?? 0
-                                    let cacheCreationTokens = usageInfo.cacheCreationInputTokens ?? usage.inputTokens.cacheWrite ?? 0
-                                    let cacheReadTokens = usageInfo.cacheReadInputTokens ?? usage.inputTokens.cacheRead ?? 0
-                                    let outputTokensTotal: Int? = {
-                                        if let output = usageInfo.outputTokens {
-                                            return output
-                                        }
-                                        return usage.outputTokens.total
-                                    }()
-
-                                    usage = LanguageModelV3Usage(
-                                        inputTokens: .init(
-                                            total: inputTokens + cacheCreationTokens + cacheReadTokens,
-                                            noCache: inputTokens,
-                                            cacheRead: cacheReadTokens,
-                                            cacheWrite: cacheCreationTokens
-                                        ),
-                                        outputTokens: .init(
-                                            total: outputTokensTotal,
-                                            text: nil,
-                                            reasoning: nil
-                                        ),
-                                        raw: .object(usageMetadata)
-                                    )
-
-                                    cacheCreationInputTokens = usageInfo.cacheCreationInputTokens
+                                    usageState.merge(usageInfo)
                                     rawUsage = usageMetadata
+                                    usage = convertAnthropicUsage(
+                                        usageState.value,
+                                        rawUsage: usageMetadata
+                                    )
                                 }
 
                                 container = anthropicContainerMetadata(value.message.container)
@@ -354,29 +422,10 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                                     } else {
                                         rawUsage = metadata
                                     }
-
-                                    if let cacheCreation = usageInfo.cacheCreationInputTokens {
-                                        cacheCreationInputTokens = cacheCreation
-                                    }
-
-                                    let inputTokens = usageInfo.inputTokens ?? usage.inputTokens.noCache ?? 0
-                                    let cacheCreationTokens = cacheCreationInputTokens ?? usage.inputTokens.cacheWrite ?? 0
-                                    let cacheReadTokens = usageInfo.cacheReadInputTokens ?? usage.inputTokens.cacheRead ?? 0
-                                    let outputTokens = usageInfo.outputTokens ?? usage.outputTokens.total ?? 0
-
-                                    usage = LanguageModelV3Usage(
-                                        inputTokens: .init(
-                                            total: inputTokens + cacheCreationTokens + cacheReadTokens,
-                                            noCache: inputTokens,
-                                            cacheRead: cacheReadTokens,
-                                            cacheWrite: cacheCreationTokens
-                                        ),
-                                        outputTokens: .init(
-                                            total: outputTokens,
-                                            text: nil,
-                                            reasoning: nil
-                                        ),
-                                        raw: rawUsage.map { .object($0) }
+                                    usageState.merge(usageInfo)
+                                    usage = convertAnthropicUsage(
+                                        usageState.value,
+                                        rawUsage: rawUsage
                                     )
                                 }
 
@@ -389,6 +438,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                                     raw: rawFinishReason
                                 )
                                 stopSequence = value.delta.stopSequence
+                                stopDetails = anthropicStopDetailsMetadata(value.delta.stopDetails)
                                 container = anthropicContainerMetadata(value.delta.container)
 
                                 if let newContextManagement = value.contextManagement {
@@ -398,10 +448,14 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                             case .messageStop:
                                 var metadata: [String: JSONValue] = [:]
                                 metadata["usage"] = rawUsage.map(JSONValue.object) ?? .null
-                                metadata["cacheCreationInputTokens"] =
-                                    cacheCreationInputTokens.map { .number(Double($0)) } ?? .null
                                 metadata["stopSequence"] =
                                     stopSequence.map(JSONValue.string) ?? .null
+                                if let stopDetails {
+                                    metadata["stopDetails"] = stopDetails
+                                }
+                                metadata["iterations"] = anthropicIterationsMetadata(
+                                    usageState.iterations
+                                )
                                 metadata["container"] = container
                                 metadata["contextManagement"] = contextManagement
 
@@ -474,6 +528,9 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
         if let cacheControl = custom.cacheControl {
             merged.cacheControl = cacheControl
         }
+        if let metadata = custom.metadata {
+            merged.metadata = metadata
+        }
         if let mcpServers = custom.mcpServers {
             merged.mcpServers = mcpServers
         }
@@ -486,8 +543,17 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
         if let effort = custom.effort {
             merged.effort = effort
         }
+        if let taskBudget = custom.taskBudget {
+            merged.taskBudget = taskBudget
+        }
         if let speed = custom.speed {
             merged.speed = speed
+        }
+        if let inferenceGeo = custom.inferenceGeo {
+            merged.inferenceGeo = inferenceGeo
+        }
+        if let fallbacks = custom.fallbacks {
+            merged.fallbacks = fallbacks
         }
         if let contextManagement = custom.contextManagement {
             merged.contextManagement = contextManagement
@@ -499,7 +565,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
         return merged
     }
 
-    private func prepareRequest(options: LanguageModelV3CallOptions, stream: Bool = false) async throws
+    private func prepareRequest(options: AnthropicCallSettings, stream: Bool = false) async throws
         -> AnthropicRequestArguments
     {
         var warnings: [SharedV3Warning] = []
@@ -559,12 +625,40 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
 
         let usedCustomProviderKey = customOptions != nil
 
-        let anthropicOptions = mergeProviderOptions(
+        var anthropicOptions = mergeProviderOptions(
             canonical: canonicalOptions,
             custom: customOptions
         )
 
         let capabilities = getModelCapabilities(modelId: modelIdentifier.rawValue)
+        var topK = options.topK
+        var topP = options.topP
+
+        if capabilities.rejectsSamplingParameters {
+            if temperature != nil {
+                warnings.append(.unsupported(
+                    feature: "temperature",
+                    details: "temperature is not supported by \(modelIdentifier.rawValue) and will be ignored"
+                ))
+                temperature = nil
+            }
+            if topK != nil {
+                warnings.append(.unsupported(
+                    feature: "topK",
+                    details: "topK is not supported by \(modelIdentifier.rawValue) and will be ignored"
+                ))
+                topK = nil
+            }
+            if topP != nil {
+                warnings.append(.unsupported(
+                    feature: "topP",
+                    details: "topP is not supported by \(modelIdentifier.rawValue) and will be ignored"
+                ))
+                topP = nil
+            }
+        }
+
+        let isAnthropicModel = capabilities.isKnownModel || modelIdentifier.rawValue.hasPrefix("claude-")
         let supportsStructuredOutput =
             (config.supportsNativeStructuredOutput ?? true) && capabilities.supportsStructuredOutput
 
@@ -596,6 +690,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
         let toolNameMapping = AnthropicToolNameMapping.create(
             tools: options.tools,
             providerToolNames: [
+                "anthropic.advisor_20260301": "advisor",
                 "anthropic.code_execution_20250522": "code_execution",
                 "anthropic.code_execution_20250825": "code_execution",
                 "anthropic.code_execution_20260120": "code_execution",
@@ -619,14 +714,51 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
         )
 
         var conversionWarnings = warnings
-        let conversion = try await convertToAnthropicMessagesPrompt(
-            prompt: options.prompt,
-            sendReasoning: anthropicOptions?.sendReasoning ?? true,
-            toolNameMapping: toolNameMapping,
-            warnings: &conversionWarnings,
-            cacheControlValidator: cacheControlValidator
-        )
+        let conversion: AnthropicPromptConversionResult
+        switch options.prompt {
+        case .v3(let prompt):
+            conversion = try await convertToAnthropicMessagesPrompt(
+                prompt: prompt,
+                sendReasoning: anthropicOptions?.sendReasoning ?? true,
+                toolNameMapping: toolNameMapping,
+                warnings: &conversionWarnings,
+                cacheControlValidator: cacheControlValidator
+            )
+        case .v4(let prompt):
+            conversion = try await convertLanguageModelV4ToAnthropicMessagesPrompt(
+                prompt: prompt,
+                sendReasoning: anthropicOptions?.sendReasoning ?? true,
+                toolNameMapping: toolNameMapping,
+                warnings: &conversionWarnings,
+                cacheControlValidator: cacheControlValidator
+            )
+        }
         warnings = conversionWarnings
+
+        if let reasoning = options.reasoning,
+           isCustomReasoning(reasoning),
+           anthropicOptions?.effort == nil
+        {
+            var reasoningWarnings: [SharedV4Warning] = []
+            if let reasoningConfig = resolveAnthropicReasoningConfig(
+                reasoning: reasoning,
+                capabilities: capabilities,
+                warnings: &reasoningWarnings
+            ) {
+                if anthropicOptions == nil {
+                    anthropicOptions = AnthropicProviderOptions()
+                }
+                if anthropicOptions?.thinking == nil {
+                    anthropicOptions?.thinking = reasoningConfig.thinking
+                }
+                if let effort = reasoningConfig.effort,
+                   anthropicOptions?.thinking?.type != .disabled
+                {
+                    anthropicOptions?.effort = effort
+                }
+            }
+            warnings.append(contentsOf: reasoningWarnings.map(convertAnthropicWarningToV3))
+        }
 
         var betas = conversion.betas
 
@@ -649,17 +781,15 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
             args["temperature"] = .number(temperature)
         }
 
-        if let topK = options.topK {
+        if let topK {
             args["top_k"] = .number(Double(topK))
         }
-
-        var topP = options.topP
 
         let thinkingMode = anthropicOptions?.thinking?.type
         let isThinking = thinkingMode == .enabled || thinkingMode == .adaptive
         var thinkingBudget = thinkingMode == .enabled ? anthropicOptions?.thinking?.budgetTokens : nil
 
-        if !isThinking, topP != nil, temperature != nil {
+        if !isThinking, isAnthropicModel, topP != nil, temperature != nil {
             warnings.append(
                 .unsupported(
                     feature: "topP",
@@ -681,8 +811,9 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
         if isThinking {
             if thinkingMode == .enabled, thinkingBudget == nil {
                 warnings.append(
-                    .other(
-                        message:
+                    .compatibility(
+                        feature: "extended thinking",
+                        details:
                             "thinking budget is required when thinking is enabled. using default budget of 1024 tokens."
                     )
                 )
@@ -698,7 +829,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                 )
                 args.removeValue(forKey: "temperature")
             }
-            if options.topK != nil {
+            if topK != nil {
                 warnings.append(
                     .unsupported(
                         feature: "topK",
@@ -707,7 +838,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                 )
                 args.removeValue(forKey: "top_k")
             }
-            if options.topP != nil {
+            if topP != nil {
                 warnings.append(
                     .unsupported(
                         feature: "topP",
@@ -773,9 +904,21 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
             }
         }
 
-        // Effort
+        var outputConfig: [String: JSONValue] = [:]
         if let effort = anthropicOptions?.effort {
-            args["output_config"] = .object(["effort": .string(effort.rawValue)])
+            outputConfig["effort"] = .string(effort.rawValue)
+        }
+
+        if let taskBudget = anthropicOptions?.taskBudget {
+            var payload: [String: JSONValue] = [
+                "type": .string(taskBudget.type.rawValue),
+                "total": .number(Double(taskBudget.total)),
+            ]
+            if let remaining = taskBudget.remaining {
+                payload["remaining"] = .number(Double(remaining))
+            }
+            outputConfig["task_budget"] = .object(payload)
+            betas.insert("task-budgets-2026-03-13")
         }
 
         // Speed (fast mode, Opus 4.6 only)
@@ -786,15 +929,46 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
             }
         }
 
+        if let inferenceGeo = anthropicOptions?.inferenceGeo {
+            args["inference_geo"] = .string(inferenceGeo.rawValue)
+        }
+
+        if let fallbacks = anthropicOptions?.fallbacks, !fallbacks.isEmpty {
+            args["fallbacks"] = .array(fallbacks.map { fallback in
+                var payload: [String: JSONValue] = ["model": .string(fallback.model)]
+                if let maxTokens = fallback.maxTokens {
+                    payload["max_tokens"] = .number(Double(maxTokens))
+                }
+                if let thinking = fallback.thinking {
+                    payload["thinking"] = .object(thinking)
+                }
+                if let outputConfig = fallback.outputConfig {
+                    payload["output_config"] = .object(outputConfig)
+                }
+                if let speed = fallback.speed {
+                    payload["speed"] = .string(speed.rawValue)
+                }
+                return .object(payload)
+            })
+            betas.insert("server-side-fallback-2026-06-01")
+        }
+
+        if let userId = anthropicOptions?.metadata?.userId {
+            args["metadata"] = .object(["user_id": .string(userId)])
+        }
+
         // Native structured outputs
         let usingNativeOutputFormat =
             useStructuredOutput && responseFormatSchema != nil
         if usingNativeOutputFormat, let schema = responseFormatSchema {
-            args["output_format"] = .object([
+            outputConfig["format"] = .object([
                 "type": .string("json_schema"),
-                "schema": schema,
+                "schema": sanitizeAnthropicJSONSchema(schema),
             ])
-            betas.insert("structured-outputs-2025-11-13")
+        }
+
+        if !outputConfig.isEmpty {
+            args["output_config"] = .object(outputConfig)
         }
 
         // MCP servers
@@ -1033,15 +1207,34 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
     private struct AnthropicModelCapabilities: Sendable {
         let maxOutputTokens: Int
         let supportsStructuredOutput: Bool
+        let supportsAdaptiveThinking: Bool
+        let rejectsSamplingParameters: Bool
+        let supportsXhighEffort: Bool
         let isKnownModel: Bool
     }
 
     /// Port of `getModelCapabilities` from `@ai-sdk/anthropic/src/anthropic-messages-language-model.ts`.
     private func getModelCapabilities(modelId: String) -> AnthropicModelCapabilities {
-        if modelId.contains("claude-sonnet-4-6") || modelId.contains("claude-opus-4-6") {
+        if modelId.contains("claude-opus-4-8")
+            || modelId.contains("claude-opus-4-7")
+            || modelId.contains("claude-fable-5")
+            || modelId.contains("claude-sonnet-5")
+        {
             return AnthropicModelCapabilities(
                 maxOutputTokens: 128000,
                 supportsStructuredOutput: true,
+                supportsAdaptiveThinking: true,
+                rejectsSamplingParameters: true,
+                supportsXhighEffort: true,
+                isKnownModel: true
+            )
+        } else if modelId.contains("claude-sonnet-4-6") || modelId.contains("claude-opus-4-6") {
+            return AnthropicModelCapabilities(
+                maxOutputTokens: 128000,
+                supportsStructuredOutput: true,
+                supportsAdaptiveThinking: true,
+                rejectsSamplingParameters: false,
+                supportsXhighEffort: false,
                 isKnownModel: true
             )
         } else if modelId.contains("claude-sonnet-4-5")
@@ -1051,57 +1244,135 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
             return AnthropicModelCapabilities(
                 maxOutputTokens: 64000,
                 supportsStructuredOutput: true,
+                supportsAdaptiveThinking: false,
+                rejectsSamplingParameters: false,
+                supportsXhighEffort: false,
                 isKnownModel: true
             )
         } else if modelId.contains("claude-opus-4-1") {
             return AnthropicModelCapabilities(
                 maxOutputTokens: 32000,
                 supportsStructuredOutput: true,
+                supportsAdaptiveThinking: false,
+                rejectsSamplingParameters: false,
+                supportsXhighEffort: false,
                 isKnownModel: true
             )
         } else if modelId.contains("claude-sonnet-4-") || modelId.contains("claude-3-7-sonnet") {
             return AnthropicModelCapabilities(
                 maxOutputTokens: 64000,
                 supportsStructuredOutput: false,
+                supportsAdaptiveThinking: false,
+                rejectsSamplingParameters: false,
+                supportsXhighEffort: false,
                 isKnownModel: true
             )
         } else if modelId.contains("claude-opus-4-") {
             return AnthropicModelCapabilities(
                 maxOutputTokens: 32000,
                 supportsStructuredOutput: false,
+                supportsAdaptiveThinking: false,
+                rejectsSamplingParameters: false,
+                supportsXhighEffort: false,
                 isKnownModel: true
             )
         } else if modelId.contains("claude-3-5-haiku") {
             return AnthropicModelCapabilities(
                 maxOutputTokens: 8192,
                 supportsStructuredOutput: false,
+                supportsAdaptiveThinking: false,
+                rejectsSamplingParameters: false,
+                supportsXhighEffort: false,
                 isKnownModel: true
             )
         } else if modelId.contains("claude-3-haiku") {
             return AnthropicModelCapabilities(
                 maxOutputTokens: 4096,
                 supportsStructuredOutput: false,
+                supportsAdaptiveThinking: false,
+                rejectsSamplingParameters: false,
+                supportsXhighEffort: false,
                 isKnownModel: true
             )
         } else {
             return AnthropicModelCapabilities(
                 maxOutputTokens: 4096,
                 supportsStructuredOutput: false,
+                supportsAdaptiveThinking: false,
+                rejectsSamplingParameters: false,
+                supportsXhighEffort: false,
                 isKnownModel: false
             )
         }
     }
 
+    private struct AnthropicReasoningConfig {
+        let thinking: AnthropicThinkingOptions
+        let effort: AnthropicEffort?
+    }
+
+    private func resolveAnthropicReasoningConfig(
+        reasoning: LanguageModelV4ReasoningEffort,
+        capabilities: AnthropicModelCapabilities,
+        warnings: inout [SharedV4Warning]
+    ) -> AnthropicReasoningConfig? {
+        guard isCustomReasoning(reasoning) else {
+            return nil
+        }
+
+        if reasoning == .none {
+            return AnthropicReasoningConfig(
+                thinking: AnthropicThinkingOptions(type: .disabled),
+                effort: nil
+            )
+        }
+
+        if capabilities.supportsAdaptiveThinking {
+            let effort = mapReasoningToProviderEffort(
+                reasoning: reasoning,
+                effortMap: [
+                    .minimal: AnthropicEffort.low.rawValue,
+                    .low: AnthropicEffort.low.rawValue,
+                    .medium: AnthropicEffort.medium.rawValue,
+                    .high: AnthropicEffort.high.rawValue,
+                    .xhigh: capabilities.supportsXhighEffort
+                        ? AnthropicEffort.xhigh.rawValue
+                        : AnthropicEffort.max.rawValue,
+                ],
+                warnings: &warnings
+            )
+
+            return AnthropicReasoningConfig(
+                thinking: AnthropicThinkingOptions(type: .adaptive),
+                effort: effort.flatMap(AnthropicEffort.init(rawValue:))
+            )
+        }
+
+        guard let budgetTokens = mapReasoningToProviderBudget(
+            reasoning: reasoning,
+            maxOutputTokens: capabilities.maxOutputTokens,
+            maxReasoningBudget: capabilities.maxOutputTokens,
+            warnings: &warnings
+        ) else {
+            return nil
+        }
+
+        return AnthropicReasoningConfig(
+            thinking: AnthropicThinkingOptions(type: .enabled, budgetTokens: budgetTokens),
+            effort: nil
+        )
+    }
+
     private func mapResponseContent(
         response: AnthropicMessagesResponse,
-        prompt: LanguageModelV3Prompt,
+        citationDocuments: [CitationDocument],
         usesJsonResponseTool: Bool,
         toolNameMapping: AnthropicToolNameMapping
     ) throws -> (content: [LanguageModelV3Content], usage: LanguageModelV3Usage) {
         var content: [LanguageModelV3Content] = []
         var serverToolCalls: [String: String] = [:]
         var mcpToolCalls: [String: (toolName: String, providerMetadata: SharedV3ProviderMetadata)] = [:]
-        var citationDocuments = extractCitationDocuments(from: prompt)
+        var citationDocuments = citationDocuments
 
         for part in response.content {
             switch part {
@@ -1139,6 +1410,22 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                 ]
                 content.append(
                     .reasoning(LanguageModelV3Reasoning(text: "", providerMetadata: metadata)))
+
+            case .compaction(let value):
+                guard let compaction = value.content else { continue }
+                content.append(
+                    .text(
+                        LanguageModelV3Text(
+                            text: compaction,
+                            providerMetadata: [
+                                "anthropic": ["type": .string("compaction")]
+                            ]
+                        )
+                    )
+                )
+
+            case .fallback:
+                continue
 
             case .toolUse(let value):
                 let isJsonResponseTool = usesJsonResponseTool && value.name == "json"
@@ -1216,6 +1503,14 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                         providerExecuted: true
                     )
                     content.append(.toolCall(toolCall))
+                } else if value.name == "advisor" {
+                    let toolCall = LanguageModelV3ToolCall(
+                        toolCallId: value.id,
+                        toolName: toolNameMapping.toCustomToolName("advisor"),
+                        input: stringifyJSON(value.input),
+                        providerExecuted: true
+                    )
+                    content.append(.toolCall(toolCall))
                 } else {
                     continue
                 }
@@ -1251,6 +1546,12 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                     providerMetadata: toolInfo.providerMetadata
                 )
                 content.append(.toolResult(toolResult))
+
+            case .advisorToolResult(let value):
+                let toolName = toolNameMapping.toCustomToolName("advisor")
+                if let toolResult = convertAdvisorToolResult(value, toolName: toolName) {
+                    content.append(.toolResult(toolResult))
+                }
 
             case .toolSearchToolResult(let value):
                 var providerToolName = serverToolCalls[value.toolUseId]
@@ -1530,12 +1831,77 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
             }
         }
 
-        let inputTokens = response.usage.inputTokens ?? 0
-        let outputTokens = response.usage.outputTokens ?? 0
-        let cacheCreationTokens = response.usage.cacheCreationInputTokens ?? 0
-        let cacheReadTokens = response.usage.cacheReadInputTokens ?? 0
+        return (content, convertAnthropicUsage(response.usage))
+    }
 
-        let usage = LanguageModelV3Usage(
+    private struct AnthropicUsageState {
+        var inputTokens: Int?
+        var outputTokens: Int?
+        var cacheCreationInputTokens: Int?
+        var cacheReadInputTokens: Int?
+        var cacheCreation: AnthropicUsage.CacheCreation?
+        var iterations: [AnthropicUsage.Iteration]?
+
+        mutating func merge(_ usage: AnthropicUsage) {
+            if let inputTokens = usage.inputTokens {
+                self.inputTokens = inputTokens
+            }
+            if let outputTokens = usage.outputTokens {
+                self.outputTokens = outputTokens
+            }
+            if let cacheCreationInputTokens = usage.cacheCreationInputTokens {
+                self.cacheCreationInputTokens = cacheCreationInputTokens
+            }
+            if let cacheReadInputTokens = usage.cacheReadInputTokens {
+                self.cacheReadInputTokens = cacheReadInputTokens
+            }
+            if let cacheCreation = usage.cacheCreation {
+                self.cacheCreation = cacheCreation
+            }
+            if let iterations = usage.iterations {
+                self.iterations = iterations
+            }
+        }
+
+        var value: AnthropicUsage {
+            AnthropicUsage(
+                inputTokens: inputTokens,
+                outputTokens: outputTokens,
+                cacheCreationInputTokens: cacheCreationInputTokens,
+                cacheReadInputTokens: cacheReadInputTokens,
+                cacheCreation: cacheCreation,
+                iterations: iterations
+            )
+        }
+    }
+
+    private func convertAnthropicUsage(
+        _ usage: AnthropicUsage,
+        rawUsage: [String: JSONValue]? = nil
+    ) -> LanguageModelV3Usage {
+        let cacheCreationTokens = usage.cacheCreationInputTokens ?? 0
+        let cacheReadTokens = usage.cacheReadInputTokens ?? 0
+
+        var inputTokens = usage.inputTokens ?? 0
+        var outputTokens = usage.outputTokens ?? 0
+
+        let servedByFallback = usage.iterations?.contains {
+            $0.type == "fallback_message"
+        } == true
+
+        if let iterations = usage.iterations,
+           iterations.isEmpty == false,
+           servedByFallback == false {
+            let executorIterations = iterations.filter {
+                $0.type == "compaction" || $0.type == "message"
+            }
+            if executorIterations.isEmpty == false {
+                inputTokens = executorIterations.reduce(0) { $0 + $1.inputTokens }
+                outputTokens = executorIterations.reduce(0) { $0 + $1.outputTokens }
+            }
+        }
+
+        return LanguageModelV3Usage(
             inputTokens: .init(
                 total: inputTokens + cacheCreationTokens + cacheReadTokens,
                 noCache: inputTokens,
@@ -1547,10 +1913,8 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                 text: nil,
                 reasoning: nil
             ),
-            raw: .object(anthropicUsageMetadata(response.usage))
+            raw: .object(rawUsage ?? anthropicUsageMetadata(usage))
         )
-
-        return (content, usage)
     }
 
     private struct CitationDocument {
@@ -1568,6 +1932,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
         var providerMetadata: SharedV3ProviderMetadata?
         var firstDelta: Bool
         var providerToolName: String?
+        var providerToolInputType: String?
         var caller: ToolCallerInfo?
     }
 
@@ -1580,6 +1945,15 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
         case text
         case reasoning
         case toolCall(ToolCallState)
+    }
+
+    private func extractCitationDocuments(from prompt: AnthropicPromptInput) -> [CitationDocument] {
+        switch prompt {
+        case .v3(let prompt):
+            return extractCitationDocuments(from: prompt)
+        case .v4(let prompt):
+            return extractCitationDocuments(from: prompt)
+        }
     }
 
     private func extractCitationDocuments(from prompt: LanguageModelV3Prompt) -> [CitationDocument]
@@ -1606,6 +1980,32 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                         mediaType: filePart.mediaType
                     )
                 )
+            }
+        }
+        return documents
+    }
+
+    private func extractCitationDocuments(from prompt: LanguageModelV4Prompt) -> [CitationDocument] {
+        var documents: [CitationDocument] = []
+        for message in prompt {
+            guard case let .user(parts, _) = message else { continue }
+            for part in parts {
+                guard case let .file(filePart) = part else { continue }
+                guard filePart.mediaType == "application/pdf" || filePart.mediaType == "text/plain"
+                else { continue }
+                guard let anthropicOptions = filePart.providerOptions?["anthropic"],
+                      let citationsValue = anthropicOptions["citations"],
+                      case .object(let citationsObject) = citationsValue,
+                      let enabledValue = citationsObject["enabled"],
+                      case .bool(let enabled) = enabledValue,
+                      enabled
+                else { continue }
+
+                documents.append(CitationDocument(
+                    title: filePart.filename ?? "Untitled Document",
+                    filename: filePart.filename,
+                    mediaType: filePart.mediaType
+                ))
             }
         }
         return documents
@@ -1659,8 +2059,11 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
         case .text: return "text"
         case .thinking: return "thinking"
         case .redactedThinking: return "redacted_thinking"
+        case .compaction: return "compaction"
+        case .fallback: return "fallback"
         case .toolUse: return "tool_use"
         case .serverToolUse: return "server_tool_use"
+        case .advisorToolResult: return "advisor_tool_result"
         case .mcpToolUse: return "mcp_tool_use"
         case .mcpToolResult: return "mcp_tool_result"
         case .toolSearchToolResult: return "tool_search_tool_result"
@@ -1703,6 +2106,20 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
             ]
             continuation.yield(.reasoningStart(id: String(value.index), providerMetadata: metadata))
 
+        case .compaction:
+            contentBlocks[value.index] = .text
+            continuation.yield(
+                .textStart(
+                    id: String(value.index),
+                    providerMetadata: [
+                        "anthropic": ["type": .string("compaction")]
+                    ]
+                )
+            )
+
+        case .fallback:
+            return
+
         case .toolUse(let tool):
             let isJsonResponseTool = usesJsonResponseTool && tool.name == "json"
             if isJsonResponseTool {
@@ -1729,6 +2146,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                     providerMetadata: nil,
                     firstDelta: initialInput.isEmpty,
                     providerToolName: nil,
+                    providerToolInputType: nil,
                     caller: callerInfo
                 )
                 contentBlocks[value.index] = .toolCall(state)
@@ -1760,6 +2178,10 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                     (tool.name == "text_editor_code_execution" || tool.name == "bash_code_execution")
                     ? "code_execution"
                     : tool.name
+                let providerToolInputType: String? =
+                    (tool.name == "text_editor_code_execution" || tool.name == "bash_code_execution")
+                    ? tool.name
+                    : tool.name == "code_execution" ? "programmatic-tool-call" : nil
                 let customToolName = toolNameMapping.toCustomToolName(providerToolName)
 
                 let state = ToolCallState(
@@ -1770,7 +2192,8 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                     dynamic: nil,
                     providerMetadata: nil,
                     firstDelta: initialInput.isEmpty,
-                    providerToolName: tool.name,
+                    providerToolName: providerToolName,
+                    providerToolInputType: providerToolInputType,
                     caller: nil
                 )
                 contentBlocks[value.index] = .toolCall(state)
@@ -1804,6 +2227,32 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                     providerMetadata: nil,
                     firstDelta: initialInput.isEmpty,
                     providerToolName: tool.name,
+                    providerToolInputType: nil,
+                    caller: nil
+                )
+                contentBlocks[value.index] = .toolCall(state)
+                continuation.yield(
+                    .toolInputStart(
+                        id: tool.id,
+                        toolName: customToolName,
+                        providerMetadata: nil,
+                        providerExecuted: true,
+                        dynamic: nil,
+                        title: nil
+                    )
+                )
+            } else if tool.name == "advisor" {
+                let customToolName = toolNameMapping.toCustomToolName("advisor")
+                let state = ToolCallState(
+                    toolCallId: tool.id,
+                    toolName: customToolName,
+                    input: "{}",
+                    providerExecuted: true,
+                    dynamic: nil,
+                    providerMetadata: nil,
+                    firstDelta: true,
+                    providerToolName: tool.name,
+                    providerToolInputType: nil,
                     caller: nil
                 )
                 contentBlocks[value.index] = .toolCall(state)
@@ -1836,6 +2285,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                 providerMetadata: providerMetadata,
                 firstDelta: true,
                 providerToolName: nil,
+                providerToolInputType: nil,
                 caller: nil
             )
             contentBlocks[value.index] = .toolCall(state)
@@ -1861,6 +2311,12 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                 providerMetadata: toolInfo.providerMetadata
             )
             continuation.yield(.toolResult(toolResult))
+
+        case .advisorToolResult(let result):
+            let toolName = toolNameMapping.toCustomToolName("advisor")
+            if let toolResult = convertAdvisorToolResult(result, toolName: toolName) {
+                continuation.yield(.toolResult(toolResult))
+            }
 
         case .toolSearchToolResult(let result):
             var providerToolName = serverToolCalls[result.toolUseId]
@@ -1945,6 +2401,12 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
             continuation.yield(
                 .reasoningDelta(id: String(value.index), delta: "", providerMetadata: metadata))
 
+        case .compactionDelta(let content):
+            guard let content else { return }
+            continuation.yield(
+                .textDelta(id: String(value.index), delta: content, providerMetadata: nil)
+            )
+
         case .inputJSONDelta(let partialJSON):
             // Skip empty deltas to enable replacing the first character
             // in the code execution 20250825 tool.
@@ -1960,10 +2422,9 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                 // For the code execution 20250825, we need to add the type to the delta
                 // and change the tool name.
                 if toolState.firstDelta,
-                   let providerToolName = toolState.providerToolName,
-                   providerToolName == "bash_code_execution" || providerToolName == "text_editor_code_execution",
+                   let providerToolInputType = toolState.providerToolInputType,
                    delta.first == "{" {
-                    delta = "{\"type\": \"\(providerToolName)\"," + String(delta.dropFirst())
+                    delta = "{\"type\": \"\(providerToolInputType)\"," + String(delta.dropFirst())
                 }
 
                 continuation.yield(
@@ -2071,7 +2532,57 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                 } ?? .null,
             ])
         }
+        if let iterations = usage.iterations,
+           let encodedIterations = encodeToJSONValue(iterations) {
+            metadata["iterations"] = encodedIterations
+        }
         return metadata
+    }
+
+    private func anthropicIterationsMetadata(
+        _ iterations: [AnthropicUsage.Iteration]?
+    ) -> JSONValue {
+        guard let iterations else { return .null }
+
+        return .array(iterations.map { iteration in
+            var metadata: [String: JSONValue] = [
+                "type": .string(iteration.type),
+                "inputTokens": .number(Double(iteration.inputTokens)),
+                "outputTokens": .number(Double(iteration.outputTokens)),
+            ]
+            if let model = iteration.model {
+                metadata["model"] = .string(model)
+            }
+            if let cacheCreation = iteration.cacheCreationInputTokens,
+               cacheCreation != 0 {
+                metadata["cacheCreationInputTokens"] = .number(Double(cacheCreation))
+            }
+            if let cacheRead = iteration.cacheReadInputTokens,
+               cacheRead != 0 {
+                metadata["cacheReadInputTokens"] = .number(Double(cacheRead))
+            }
+            return .object(metadata)
+        })
+    }
+
+    private func anthropicStopDetailsMetadata(
+        _ stopDetails: AnthropicStopDetails?
+    ) -> JSONValue? {
+        guard let stopDetails else { return nil }
+
+        var metadata: [String: JSONValue] = [
+            "type": .string(stopDetails.type)
+        ]
+        if let category = stopDetails.category {
+            metadata["category"] = .string(category)
+        }
+        if let explanation = stopDetails.explanation {
+            metadata["explanation"] = .string(explanation)
+        }
+        if let recommendedModel = stopDetails.recommendedModel {
+            metadata["recommendedModel"] = .string(recommendedModel)
+        }
+        return .object(metadata)
     }
 
     private func encodeToJSONValue<T: Encodable>(_ value: T) -> JSONValue? {
@@ -2269,6 +2780,55 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
         return nil
     }
 
+    private func convertAdvisorToolResult(
+        _ content: AdvisorToolResultContent,
+        toolName: String
+    ) -> LanguageModelV3ToolResult? {
+        guard case .object(let payload) = content.content,
+              let typeValue = payload["type"],
+              case .string(let type) = typeValue
+        else { return nil }
+
+        switch type {
+        case "advisor_result":
+            guard let text = payload["text"] else { return nil }
+            return LanguageModelV3ToolResult(
+                toolCallId: content.toolUseId,
+                toolName: toolName,
+                result: .object([
+                    "type": .string(type),
+                    "text": text,
+                ])
+            )
+
+        case "advisor_redacted_result":
+            guard let encryptedContent = payload["encrypted_content"] else { return nil }
+            return LanguageModelV3ToolResult(
+                toolCallId: content.toolUseId,
+                toolName: toolName,
+                result: .object([
+                    "type": .string(type),
+                    "encryptedContent": encryptedContent,
+                ])
+            )
+
+        case "advisor_tool_result_error":
+            guard let errorCode = payload["error_code"] else { return nil }
+            return LanguageModelV3ToolResult(
+                toolCallId: content.toolUseId,
+                toolName: toolName,
+                result: .object([
+                    "type": .string(type),
+                    "errorCode": errorCode,
+                ]),
+                isError: true
+            )
+
+        default:
+            return nil
+        }
+    }
+
     private func convertToolSearchToolResult(
         _ content: ToolSearchToolResultContent,
         toolName: String
@@ -2407,15 +2967,16 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
             return nil
         }
 
-        let anthropicMetadata: [String: JSONValue] = [
+        var anthropicMetadata: [String: JSONValue] = [
             "usage": usageJSON,
-            "cacheCreationInputTokens": response.usage.cacheCreationInputTokens.map {
-                .number(Double($0))
-            } ?? .null,
             "stopSequence": response.stopSequence.map(JSONValue.string) ?? .null,
+            "iterations": anthropicIterationsMetadata(response.usage.iterations),
             "container": anthropicContainerMetadata(response.container),
             "contextManagement": anthropicContextManagementMetadata(response.contextManagement),
         ]
+        if let stopDetails = anthropicStopDetailsMetadata(response.stopDetails) {
+            anthropicMetadata["stopDetails"] = stopDetails
+        }
 
         return mergeProviderMetadata(
             anthropicMetadata,

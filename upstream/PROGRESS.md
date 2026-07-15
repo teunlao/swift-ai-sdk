@@ -36,14 +36,16 @@ foundation slices, plus targeted `core:provider/transcription-stream` and
 `provider:openai/native-v4-responses`, and
 `provider:openai-compatible/native-v4-chat`, and
 `provider:openai-compatible/native-v4-image`, and
-`provider:openai-compatible/package-audit`
+`provider:openai-compatible/package-audit`, and
+`provider:anthropic/native-v4`
 evidence against `c8d2726ae045a28142cb46df5e41cdd51d8dcc71`.
 
 Status:
 - `core:provider`: partial/current. Swift now has the V4 provider, model,
   realtime, middleware, shared-file, warning, and provider-reference foundation,
   plus the V4 transcription streaming contract needed by upstream realtime
-  transcription; concrete provider targets still need native V4 vertical
+  transcription; Anthropic now also has a native V4 language-model vertical,
+  while remaining concrete provider targets still need provider-first V4
   migrations.
 - `core:ai`: partial/current. Swift high-level model resolution and runtime
   entrypoints now use the V4 rail for text, object, embed, rerank, image,
@@ -53,7 +55,9 @@ Status:
   `createDownload`/`DownloadFileFunction` hooks. OpenAI's default provider now
   drives the direct V4 examples, agent settings, middleware, custom provider,
   provider registry, and docs paths without requiring `.v3(...)`/`.v4(...)`
-  wrappers at the call site.
+  wrappers at the call site. Anthropic now follows the same direct V4 path for
+  text generation, reasoning, provider-reference files, file uploads, and skill
+  uploads.
 - `core:provider-utils`: partial/current for the shared content/data helper
   support touched by the V4 prompt/upload flow and provider-reference
   detection/resolution, V4 reasoning-to-provider mapping helpers, and shared
@@ -72,6 +76,18 @@ Status:
   provider-driven integration behavior, not unidentified exported helper drift.
 
 Latest validation:
+- `2026-07-15`: `AGENT=1 swift test` passed all 4145 Swift Testing tests in
+  472 suites after the native Anthropic Provider V4 and high-level
+  provider-reference/upload slice; `swift build` also passed.
+- `2026-07-15`: `AGENT=1 swift test --filter Anthropic` passed 293 tests in
+  45 suites, including the direct `xhigh` and `max` model matrix, normalized
+  reasoning mappings, provider-reference files, and container uploads.
+- `2026-07-15`: `pnpm run examples:build`, `pnpm run docs:check`, and
+  `pnpm run docs:build` passed after the Anthropic V4 documentation update;
+  the docs build generated 53 pages and emitted the known nonfatal
+  sitemap/npx ENOENT warning.
+- `2026-07-15`: the parity scanner reports Anthropic as `verified/current` at
+  `c8d2726ae045a28142cb46df5e41cdd51d8dcc71`; `git diff --check` also passed.
 - `2026-07-15`: the complete `provider:openai-compatible/package-audit`
   passed 185 provider tests in 18 suites; exact upstream xAI fixtures,
   converter/tools/options, Chat, Completion, Embedding, Image, custom error,
@@ -345,8 +361,9 @@ Latest validation:
 
 ## Known gaps / TODO
 
-- [ ] Migrate concrete provider targets to native V4 contracts in
-  provider-first vertical slices.
+- [ ] Migrate remaining concrete provider targets to native V4 contracts in
+  provider-first vertical slices. OpenAI, OpenAI-compatible, and Anthropic now
+  have audited native V4 verticals for their documented current surfaces.
 - [ ] Keep provider-utils re-audits tied to provider-driven integration slices.
   The Swift-applicable exported helper/type surface has current evidence; JS
   runtime/type-only exports such as Node `Buffer` guards, TypeScript
@@ -365,6 +382,20 @@ Latest validation:
 3) Docs updates only after behavior parity is green
 
 ## Current upstream intake snapshot
+
+### 2026-07-15: `provider:anthropic/native-v4` against upstream `c8d2726ae045a28142cb46df5e41cdd51d8dcc71`
+
+- `anthropic` and `createAnthropic(settings:)` now expose a native Provider V4
+  Messages model while the explicitly named V3 factory remains available for
+  compatibility.
+- V4 reasoning maps normalized effort to adaptive or token-budget thinking;
+  `xhigh` remains distinct from Anthropic provider `max`, and the full current
+  model support matrix is protected at the HTTP request boundary.
+- V4 provider-reference files, container uploads, files, and skills flow
+  through the public high-level APIs without projecting V4-only data into V3.
+- The Anthropic provider page, foundation/provider-management examples, and
+  compile-checked validation executable now use the direct V4 facade and
+  current model/tool names.
 
 ### 2026-07-15: `provider:openai-compatible/package-audit` against upstream `c8d2726ae045a28142cb46df5e41cdd51d8dcc71`
 

@@ -725,6 +725,8 @@ private func downloadAssets(
                 return nil
             case .data:
                 return nil
+            case .reference, .text:
+                return nil
             }
         }
         // Check if URL is supported by model

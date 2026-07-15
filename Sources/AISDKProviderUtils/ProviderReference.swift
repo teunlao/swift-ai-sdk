@@ -1,6 +1,9 @@
 import Foundation
 import AISDKProvider
 
+/// Provider reference returned by `uploadFile` and `uploadSkill`.
+public typealias ProviderReference = SharedV4ProviderReference
+
 /**
  Checks whether a value is a provider reference mapping provider names to
  provider-specific identifiers.
