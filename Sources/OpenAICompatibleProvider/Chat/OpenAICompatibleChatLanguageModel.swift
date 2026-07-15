@@ -199,7 +199,9 @@ private struct OpenAICompatibleChatLanguageModelCore: Sendable {
             for toolCall in toolCalls {
                 let function = toolCall.function
                 let toolCallId = toolCall.id ?? generateID()
-                let thoughtSignature = toolCall.extraContent?.google?.thoughtSignature
+                let thoughtSignature = toolCall.extraContent?.google?.thoughtSignature.flatMap {
+                    $0.isEmpty ? nil : $0
+                }
                 let toolMetadata = options.contract.includesToolCallProviderMetadata
                     ? thoughtSignature.map {
                         [prepared.metadataKey: ["thoughtSignature": JSONValue.string($0)]]
@@ -267,7 +269,11 @@ private struct OpenAICompatibleChatLanguageModelCore: Sendable {
             headers: headers,
             body: JSONValue.object(transformedBody),
             failedResponseHandler: config.errorConfiguration.failedResponseHandler,
-            successfulResponseHandler: createEventSourceResponseHandler(chunkSchema: openAICompatibleChatChunkSchema),
+            successfulResponseHandler: createEventSourceResponseHandler(
+                chunkSchema: openAICompatibleChatChunkSchema(
+                    errorConfiguration: config.errorConfiguration
+                )
+            ),
             isAborted: options.abortSignal,
             fetch: config.fetch
         )
@@ -321,11 +327,9 @@ private struct OpenAICompatibleChatLanguageModelCore: Sendable {
                             case .error(let errorData):
                                 finishReason = .init(unified: .error, raw: nil)
                                 if options.contract.usesV4StreamErrorPayload {
-                                    continuation.yield(.error(error: .string(errorData.error.message)))
-                                } else if let encoded = try? JSONEncoder().encodeToJSONValue(errorData) {
-                                    continuation.yield(.error(error: encoded))
+                                    continuation.yield(.error(error: .string(errorData.message)))
                                 } else {
-                                    continuation.yield(.error(error: .string(errorData.error.message)))
+                                    continuation.yield(.error(error: errorData.rawValue))
                                 }
                             case .data(let data):
                                 if isFirstChunk {
@@ -799,7 +803,9 @@ private struct OpenAICompatibleChatLanguageModelCore: Sendable {
         tracker: StreamingToolCallTracker,
         contract: OpenAICompatibleChatContract
     ) throws {
-        let thoughtSignature = delta.extraContent?.google?.thoughtSignature
+        let thoughtSignature = delta.extraContent?.google?.thoughtSignature.flatMap {
+            $0.isEmpty ? nil : $0
+        }
         let providerMetadata = contract.includesToolCallProviderMetadata
             ? thoughtSignature.map {
                 [metadataKey: ["thoughtSignature": JSONValue.string($0)]]
@@ -1141,15 +1147,19 @@ private let openAICompatibleChatResponseSchema = FlexibleSchema(
     )
 )
 
-private let openAICompatibleChatChunkSchema = FlexibleSchema(
-    Schema<OpenAICompatibleChatStreamChunk>.codable(
-        OpenAICompatibleChatStreamChunk.self,
-        jsonSchema: genericJSONObjectSchema
+private func openAICompatibleChatChunkSchema(
+    errorConfiguration: OpenAICompatibleErrorConfiguration
+) -> FlexibleSchema<OpenAICompatibleChatStreamChunk> {
+    createOpenAICompatibleStreamSchema(
+        dataType: OpenAICompatibleChatStreamData.self,
+        errorConfiguration: errorConfiguration,
+        transformData: OpenAICompatibleChatStreamChunk.data,
+        transformError: OpenAICompatibleChatStreamChunk.error
     )
-)
+}
 
-private struct OpenAICompatibleChatExtraContent: Codable {
-    struct Google: Codable {
+private struct OpenAICompatibleChatExtraContent: Codable, Sendable {
+    struct Google: Codable, Sendable {
         let thoughtSignature: String?
 
         private enum CodingKeys: String, CodingKey {
@@ -1377,32 +1387,15 @@ private struct OpenAICompatibleChatResponse: Codable {
     }
 }
 
-private enum OpenAICompatibleChatStreamChunk: Codable {
+private enum OpenAICompatibleChatStreamChunk: Sendable {
     case data(OpenAICompatibleChatStreamData)
-    case error(OpenAICompatibleErrorData)
-
-    init(from decoder: Decoder) throws {
-        if let data = try? OpenAICompatibleChatStreamData(from: decoder) {
-            self = .data(data)
-            return
-        }
-        self = .error(try OpenAICompatibleErrorData(from: decoder))
-    }
-
-    func encode(to encoder: Encoder) throws {
-        switch self {
-        case .data(let data):
-            try data.encode(to: encoder)
-        case .error(let error):
-            try error.encode(to: encoder)
-        }
-    }
+    case error(OpenAICompatibleParsedStreamError)
 }
 
-private struct OpenAICompatibleChatStreamData: Codable {
-    struct Choice: Codable {
-        struct Delta: Codable {
-            enum Role: String, Codable {
+private struct OpenAICompatibleChatStreamData: Codable, Sendable {
+    struct Choice: Codable, Sendable {
+        struct Delta: Codable, Sendable {
+            enum Role: String, Codable, Sendable {
                 case assistant
                 case empty = ""
             }
@@ -1446,8 +1439,8 @@ private struct OpenAICompatibleChatStreamData: Codable {
     }
 }
 
-private struct OpenAICompatibleChatChunkToolCallDelta: Codable {
-    struct ToolFunction: Codable {
+private struct OpenAICompatibleChatChunkToolCallDelta: Codable, Sendable {
+    struct ToolFunction: Codable, Sendable {
         let name: String?
         let arguments: String?
 

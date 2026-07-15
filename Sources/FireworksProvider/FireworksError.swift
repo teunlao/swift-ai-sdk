@@ -44,9 +44,7 @@ private func extractFireworksErrorMessage(from value: JSONValue) throws -> Strin
 
 /// Error configuration for Fireworks OpenAI-compatible endpoints.
 public let fireworksErrorConfiguration = OpenAICompatibleErrorConfiguration(
-    failedResponseHandler: createJsonErrorResponseHandler(
-        errorSchema: fireworksErrorSchema,
-        errorToMessage: { (data: FireworksErrorData) in data.error }
-    ),
+    errorSchema: fireworksErrorSchema,
+    errorToMessage: { (data: FireworksErrorData) in data.error },
     extractMessage: extractFireworksErrorMessage
 )

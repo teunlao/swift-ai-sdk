@@ -220,8 +220,12 @@ private struct OpenAICompatibleCompletionLanguageModelCore: Sendable {
             failedResponseHandler: config.errorConfiguration.failedResponseHandler,
             successfulResponseHandler: createEventSourceResponseHandler(
                 chunkSchema: options.contract.isV4
-                    ? openAICompatibleCompletionChunkSchemaV4
-                    : openAICompatibleCompletionChunkSchema
+                    ? openAICompatibleCompletionChunkSchemaV4(
+                        errorConfiguration: config.errorConfiguration
+                    )
+                    : openAICompatibleCompletionChunkSchema(
+                        errorConfiguration: config.errorConfiguration
+                    )
             ),
             isAborted: options.abortSignal,
             fetch: config.fetch
@@ -534,7 +538,7 @@ private struct OpenAICompatibleCompletionLanguageModelCore: Sendable {
     }
 
     private func streamErrorValue(
-        _ errorData: OpenAICompatibleErrorData,
+        _ errorData: OpenAICompatibleParsedStreamError,
         rawJSON: JSONValue?,
         contract: OpenAICompatibleCompletionContract
     ) -> JSONValue {
@@ -543,11 +547,9 @@ private struct OpenAICompatibleCompletionLanguageModelCore: Sendable {
                let error = object["error"] {
                 return error
             }
-            return (try? JSONEncoder().encodeToJSONValue(errorData.error))
-                ?? .string(errorData.error.message)
+            return .string(errorData.message)
         }
-        return (try? JSONEncoder().encodeToJSONValue(errorData))
-            ?? .string(errorData.error.message)
+        return errorData.rawValue
     }
 
     private func responseMetadata(
@@ -835,26 +837,9 @@ private struct OpenAICompatibleCompletionStreamChunk: Codable, Sendable {
     let usage: OpenAICompatibleCompletionUsage?
 }
 
-private enum OpenAICompatibleCompletionStreamEvent: Codable, Sendable {
+private enum OpenAICompatibleCompletionStreamEvent: Sendable {
     case data(OpenAICompatibleCompletionStreamChunk)
-    case error(OpenAICompatibleErrorData)
-
-    init(from decoder: Decoder) throws {
-        if let chunk = try? OpenAICompatibleCompletionStreamChunk(from: decoder) {
-            self = .data(chunk)
-            return
-        }
-        self = .error(try OpenAICompatibleErrorData(from: decoder))
-    }
-
-    func encode(to encoder: Encoder) throws {
-        switch self {
-        case .data(let chunk):
-            try chunk.encode(to: encoder)
-        case .error(let error):
-            try error.encode(to: encoder)
-        }
-    }
+    case error(OpenAICompatibleParsedStreamError)
 }
 
 private struct OpenAICompatibleCompletionResponseV4: Decodable, Sendable {
@@ -947,28 +932,6 @@ private struct OpenAICompatibleCompletionStreamChunkV4: Decodable, Sendable {
     }
 }
 
-private enum OpenAICompatibleCompletionStreamEventV4: Decodable, Sendable {
-    case data(OpenAICompatibleCompletionStreamChunkV4)
-    case error(OpenAICompatibleErrorData)
-
-    init(from decoder: Decoder) throws {
-        if let chunk = try? OpenAICompatibleCompletionStreamChunkV4(from: decoder) {
-            self = .data(chunk)
-            return
-        }
-        self = .error(try OpenAICompatibleErrorData(from: decoder))
-    }
-
-    var normalized: OpenAICompatibleCompletionStreamEvent {
-        switch self {
-        case .data(let chunk):
-            return .data(chunk.normalized)
-        case .error(let error):
-            return .error(error)
-        }
-    }
-}
-
 private func openAICompatibleCompletionMappedSchema<Input: Decodable & Sendable, Output>(
     _ inputType: Input.Type,
     transform: @escaping @Sendable (Input) -> Output
@@ -1006,17 +969,27 @@ private let openAICompatibleCompletionResponseSchemaV4 = openAICompatibleComplet
     transform: { $0.normalized }
 )
 
-private let openAICompatibleCompletionChunkSchema = FlexibleSchema(
-    Schema<OpenAICompatibleCompletionStreamEvent>.codable(
-        OpenAICompatibleCompletionStreamEvent.self,
-        jsonSchema: genericJSONObjectSchema
+private func openAICompatibleCompletionChunkSchema(
+    errorConfiguration: OpenAICompatibleErrorConfiguration
+) -> FlexibleSchema<OpenAICompatibleCompletionStreamEvent> {
+    createOpenAICompatibleStreamSchema(
+        dataType: OpenAICompatibleCompletionStreamChunk.self,
+        errorConfiguration: errorConfiguration,
+        transformData: OpenAICompatibleCompletionStreamEvent.data,
+        transformError: OpenAICompatibleCompletionStreamEvent.error
     )
-)
+}
 
-private let openAICompatibleCompletionChunkSchemaV4 = openAICompatibleCompletionMappedSchema(
-    OpenAICompatibleCompletionStreamEventV4.self,
-    transform: { $0.normalized }
-)
+private func openAICompatibleCompletionChunkSchemaV4(
+    errorConfiguration: OpenAICompatibleErrorConfiguration
+) -> FlexibleSchema<OpenAICompatibleCompletionStreamEvent> {
+    createOpenAICompatibleStreamSchema(
+        dataType: OpenAICompatibleCompletionStreamChunkV4.self,
+        errorConfiguration: errorConfiguration,
+        transformData: { .data($0.normalized) },
+        transformError: OpenAICompatibleCompletionStreamEvent.error
+    )
+}
 
 private extension ParseJSONResult where Output == OpenAICompatibleCompletionStreamEvent {
     var rawJSONValue: JSONValue? {

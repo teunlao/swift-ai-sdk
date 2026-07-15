@@ -36,9 +36,7 @@ private func extractBasetenErrorMessage(from value: JSONValue) throws -> String 
 }
 
 public let basetenErrorConfiguration = OpenAICompatibleErrorConfiguration(
-    failedResponseHandler: createJsonErrorResponseHandler(
-        errorSchema: basetenErrorSchema,
-        errorToMessage: { (data: BasetenErrorData) in data.error }
-    ),
+    errorSchema: basetenErrorSchema,
+    errorToMessage: { (data: BasetenErrorData) in data.error },
     extractMessage: extractBasetenErrorMessage
 )

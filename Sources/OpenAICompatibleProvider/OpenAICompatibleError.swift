@@ -66,10 +66,20 @@ extension OpenAICompatibleErrorCode: Codable {
     }
 }
 
+struct OpenAICompatibleParsedStreamError: Sendable {
+    let rawValue: JSONValue
+    let message: String
+}
+
+private typealias OpenAICompatibleStreamErrorParser = @Sendable (
+    AnySendable
+) async -> SchemaValidationResult<OpenAICompatibleParsedStreamError>
+
 /// Configuration describing how to parse provider error payloads.
 public struct OpenAICompatibleErrorConfiguration: Sendable {
     public let failedResponseHandler: ResponseHandler<APICallError>
     private let extractMessage: @Sendable (JSONValue) throws -> String
+    private let streamErrorParser: OpenAICompatibleStreamErrorParser
 
     public init(
         failedResponseHandler: @escaping ResponseHandler<APICallError>,
@@ -77,6 +87,54 @@ public struct OpenAICompatibleErrorConfiguration: Sendable {
     ) {
         self.failedResponseHandler = failedResponseHandler
         self.extractMessage = extractMessage
+        self.streamErrorParser = { value in
+            do {
+                let rawValue = try jsonValue(from: value.value)
+                return .success(value: OpenAICompatibleParsedStreamError(
+                    rawValue: rawValue,
+                    message: try extractMessage(rawValue)
+                ))
+            } catch {
+                return .failure(error: TypeValidationError.wrap(
+                    value: value.value,
+                    cause: error
+                ))
+            }
+        }
+    }
+
+    public init<ErrorData>(
+        errorSchema: FlexibleSchema<ErrorData>,
+        errorToMessage: @escaping @Sendable (ErrorData) -> String,
+        extractMessage: @escaping @Sendable (JSONValue) throws -> String,
+        isRetryable: (@Sendable (ProviderHTTPResponse, ErrorData?) -> Bool)? = nil
+    ) {
+        self.failedResponseHandler = createJsonErrorResponseHandler(
+            errorSchema: errorSchema,
+            errorToMessage: errorToMessage,
+            isRetryable: isRetryable
+        )
+        self.extractMessage = extractMessage
+
+        let schema = errorSchema.resolve()
+        self.streamErrorParser = { value in
+            switch await schema.validate(value.value) {
+            case .success(let parsed):
+                do {
+                    return .success(value: OpenAICompatibleParsedStreamError(
+                        rawValue: try jsonValue(from: value.value),
+                        message: errorToMessage(parsed)
+                    ))
+                } catch {
+                    return .failure(error: TypeValidationError.wrap(
+                        value: value.value,
+                        cause: error
+                    ))
+                }
+            case .failure(let error):
+                return .failure(error: error)
+            }
+        }
     }
 
     /// Extracts the provider error message from a JSON payload.
@@ -89,6 +147,39 @@ public struct OpenAICompatibleErrorConfiguration: Sendable {
             return nil
         }
     }
+
+    func parseStreamError(_ value: Any) async -> SchemaValidationResult<OpenAICompatibleParsedStreamError> {
+        await streamErrorParser(AnySendable(value))
+    }
+}
+
+func createOpenAICompatibleStreamSchema<Data: Decodable & Sendable, Output>(
+    dataType: Data.Type,
+    errorConfiguration: OpenAICompatibleErrorConfiguration,
+    transformData: @escaping @Sendable (Data) -> Output,
+    transformError: @escaping @Sendable (OpenAICompatibleParsedStreamError) -> Output
+) -> FlexibleSchema<Output> {
+    let dataSchema = Schema<Data>.codable(
+        dataType,
+        jsonSchema: .object(["type": .string("object")])
+    )
+
+    return FlexibleSchema(Schema<Output>(
+        jsonSchemaResolver: { .object(["type": .string("object")]) },
+        validator: { value in
+            switch await dataSchema.validate(value) {
+            case .success(let data):
+                return .success(value: transformData(data))
+            case .failure:
+                switch await errorConfiguration.parseStreamError(value) {
+                case .success(let error):
+                    return .success(value: transformError(error))
+                case .failure(let error):
+                    return .failure(error: error)
+                }
+            }
+        }
+    ))
 }
 
 private let encoder = JSONEncoder()
@@ -127,9 +218,7 @@ private func defaultExtractMessage(from json: JSONValue) throws -> String {
 }
 
 public let defaultOpenAICompatibleErrorConfiguration = OpenAICompatibleErrorConfiguration(
-    failedResponseHandler: createJsonErrorResponseHandler(
-        errorSchema: openAICompatibleErrorDataSchema,
-        errorToMessage: { $0.error.message }
-    ),
+    errorSchema: openAICompatibleErrorDataSchema,
+    errorToMessage: { $0.error.message },
     extractMessage: defaultExtractMessage
 )
