@@ -35,7 +35,8 @@ foundation slices, plus targeted `core:provider/transcription-stream` and
 `provider:openai/native-v4-chat`, and
 `provider:openai/native-v4-responses`, and
 `provider:openai-compatible/native-v4-chat`, and
-`provider:openai-compatible/native-v4-image`
+`provider:openai-compatible/native-v4-image`, and
+`provider:openai-compatible/package-audit`
 evidence against `c8d2726ae045a28142cb46df5e41cdd51d8dcc71`.
 
 Status:
@@ -71,6 +72,14 @@ Status:
   provider-driven integration behavior, not unidentified exported helper drift.
 
 Latest validation:
+- `2026-07-15`: the complete `provider:openai-compatible/package-audit`
+  passed 185 provider tests in 18 suites; exact upstream xAI fixtures,
+  converter/tools/options, Chat, Completion, Embedding, Image, custom error,
+  and V3/V4 contracts are included.
+- `2026-07-15`: `AGENT=1 swift test` passed all 4105 Swift Testing tests in
+  469 suites; `swift build`, `git diff --check`, and the parity scanner also
+  passed. The scanner reports OpenAI-compatible as `verified/current` at
+  `c8d2726ae045a28142cb46df5e41cdd51d8dcc71`.
 - `2026-07-15`: `AGENT=1 swift test` passed all 4079 Swift Testing tests in
   464 suites after the native OpenAI-compatible V4 Image slice.
 - `2026-07-15`: `AGENT=1 swift test --filter OpenAICompatibleProviderTests`
@@ -356,6 +365,41 @@ Latest validation:
 3) Docs updates only after behavior parity is green
 
 ## Current upstream intake snapshot
+
+### 2026-07-15: `provider:openai-compatible/package-audit` against upstream `c8d2726ae045a28142cb46df5e41cdd51d8dcc71`
+
+Scope: the full `packages/openai-compatible/src/**` runtime and test surface.
+
+Result:
+- Promoted the provider tracker from `partial/current` to
+  `verified/current` after auditing factory, errors, option-key utilities,
+  Chat, Completion, Embedding, Image, tools, exports, and version owners.
+- Added byte-identical tracked copies of all four upstream xAI Chat fixtures;
+  Swift tests consume all 344 text and 230 tool-call stream payloads.
+- Matched JavaScript thought-signature coercion on input and truthiness on
+  output, request-body ownership order, metadata-key resolution, and
+  data-first stream unions.
+- Unified typed provider error schemas across HTTP and SSE paths, including
+  custom Baseten, Cerebras, Fireworks, and xAI configurations.
+- Classified JavaScript workflow symbols and the ignored partial Chat config
+  argument as explicit Swift adaptations rather than runtime gaps.
+
+Validation:
+- `AGENT=1 swift test --filter OpenAICompatibleProviderTests` passed 185 tests
+  in 18 suites.
+- Baseten, Cerebras, Fireworks, and xAI provider suites passed 26, 9, 3, and
+  163 tests respectively.
+- `swift build`, `git diff --check`, and byte-for-byte fixture `cmp` checks
+  passed.
+- `AGENT=1 swift test` passed all 4105 tests in 469 suites.
+- The component scanner reports `openai-compatible | provider | P0 | verified
+  | current`.
+
+Evidence:
+- Durable provider matrix: `upstream/providers/openai-compatible.md`.
+- Swift owners: `Sources/OpenAICompatibleProvider/**`.
+- Swift tests and tracked fixtures: `Tests/OpenAICompatibleProviderTests/**`.
+- Pinned upstream: `external/vercel-ai-sdk/packages/openai-compatible/src/**`.
 
 ### 2026-07-15: `provider:openai-compatible/native-v4-chat` against upstream `c8d2726ae045a28142cb46df5e41cdd51d8dcc71`
 

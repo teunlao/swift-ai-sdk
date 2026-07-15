@@ -1,8 +1,9 @@
 # Provider: OpenAI-compatible
 
 - Audited against upstream commit: `c8d2726ae045a28142cb46df5e41cdd51d8dcc71`
-- Status: partial/current; Chat, Completion, Embedding, and Image use native V4
-  provider-owned model facades.
+- Status: verified/current; Chat, Completion, Embedding, Image, provider
+  factory, option-key utilities, typed errors, tools, and tracked upstream
+  fixtures are audited at the pinned baseline.
 - Upstream package: `external/vercel-ai-sdk/packages/openai-compatible/src/**`
 - Swift implementation: `Sources/OpenAICompatibleProvider/**`
 
@@ -22,10 +23,16 @@
   `reasoning_effort`, function tools and tool choice, raw provider options,
   canonical camel-case provider options, request transforms, headers, and
   `supportedUrls`.
+- [x] Provider option key conversion, warning emission, metadata-key
+  selection, and V4 body precedence match upstream: provider extensions may
+  override standard settings, while SDK-owned messages, reasoning, verbosity,
+  tools, and tool choice remain authoritative.
 - [x] Non-streaming V4 output maps text, reasoning, tool calls, finish reason,
   response metadata, warnings, provider metadata, detailed usage, custom
   `convertUsage` over the complete loose usage object, reasoning fallback, and
   Google thought signatures.
+- [x] Response thought signatures follow upstream truthiness in generate and
+  stream paths: an empty signature does not create empty provider metadata.
 - [x] Non-streaming Chat rejects malformed tool calls at the response boundary:
   `function`, `function.name`, and `function.arguments` are required exactly as
   in the audited upstream response schema instead of being dropped or defaulted
@@ -45,11 +52,20 @@
   do not poison pending tracker state or terminate an otherwise valid stream at
   flush. Unmodeled tool-call fields are ignored in both generate and stream
   responses, matching the upstream loose-object schemas.
+- [x] Chat and Completion stream unions validate data first and then the
+  configured provider error schema. The same typed error configuration now
+  owns HTTP and SSE validation, including custom Baseten, Cerebras, Fireworks,
+  and xAI shapes; raw V3 and inner V4 Completion error payload semantics remain
+  intact.
 - [x] The shared tracker still forwards an upstream trailing empty argument
   delta while emitting exactly one final tool call.
 - [x] Existing OpenAI-compatible V3 Chat behavior remains covered by the full
   provider test target, including V3-specific stream ids, initial empty tool
   deltas, provider-option handling, and error payloads.
+- [x] The four upstream xAI Chat fixtures are copied byte-for-byte into tracked
+  test resources. Generate tests cover both complete responses; stream tests
+  consume all 344 text and 230 tool-call payloads and assert reasoning, text,
+  tool calls, lifecycle ordering, usage, unknown usage keys, and metadata.
 - [x] `createOpenAICompatible(settings:)` routes Completion models directly to
   `OpenAICompatibleCompletionLanguageModelV4`; Completion no longer crosses a
   V3-to-V4 adapter. The public V3 Completion facade and native V4 facade share
@@ -107,10 +123,37 @@
   tests, including the legacy `openai` provider-options namespace, request
   shape, errors, headers, warnings, and response metadata.
 
+## Audited source closure
+
+| Upstream owner | Swift owner and evidence |
+| --- | --- |
+| `src/openai-compatible-provider.ts`, `src/version.ts`, `src/index.ts` | `OpenAICompatibleProvider.swift`, `OpenAICompatibleVersion.swift`, public SwiftPM target surface, provider V3/V4 tests |
+| `src/openai-compatible-error.ts`, `src/utils/to-camel-case.ts` | `OpenAICompatibleError.swift`, `OpenAICompatibleProviderOptionKeys.swift`, custom stream-error and option-key tests |
+| `src/chat/**` including all four fixtures | `Chat/**`, tracked `Tests/OpenAICompatibleProviderTests/Fixtures/**`, converter/options/tools/model/fixture tests |
+| `src/completion/**` | `Completion/**`, V3 and native V4 Completion tests |
+| `src/embedding/**` | `Embedding/**`, V3 and native V4 Embedding tests |
+| `src/image/**` | `Image/**`, V3 and native V4 generation/edit tests |
+
+## Swift adaptations (not gaps)
+
+- TypeScript's symbol-based `WORKFLOW_SERIALIZE` / `WORKFLOW_DESERIALIZE`
+  methods are not applicable because Swift has no corresponding workflow model
+  dispatch protocol. The shared `serializeModelOptions` policy is implemented
+  and tested in `AISDKProviderUtils`; no provider hook exists to attach here.
+- The upstream provider interface declares an optional partial Chat config on
+  `languageModel`, but its concrete factory accepts only the model id and
+  ignores extra JavaScript arguments. Swift does not expose an inert argument.
+- Swift uses `Data`, `URL`, typed content enums, and `RawRepresentable` model
+  ids in place of JavaScript `Uint8Array`, loose unions, callable providers,
+  and generic string-literal ids.
+- For a custom typed stream error, Swift applies the configured
+  `errorToMessage`; the default OpenAI-compatible error remains identical to
+  upstream while providers whose `error` field is a string retain a usable
+  message. This contract is recorded in `plan/design-decisions.md`.
+
 ## Known gaps / TODO
 
-- [ ] Full upstream fixture parity for every Chat, Completion, Embedding,
-  Image, and error path is not claimed by this tracker entry.
+- None known for the audited upstream baseline.
 
 ## Evidence
 
@@ -139,6 +182,12 @@
   and `Sources/OpenAICompatibleProvider/Chat/OpenAICompatiblePrepareTools.swift`.
 - Swift provider factory:
   `Sources/OpenAICompatibleProvider/OpenAICompatibleProvider.swift`.
+- Swift error and provider-option owners:
+  `Sources/OpenAICompatibleProvider/OpenAICompatibleError.swift` and
+  `Sources/OpenAICompatibleProvider/OpenAICompatibleProviderOptionKeys.swift`.
+- Exact tracked upstream fixtures and tests:
+  `Tests/OpenAICompatibleProviderTests/Fixtures/**` and
+  `Tests/OpenAICompatibleProviderTests/OpenAICompatibleChatFixtureTests.swift`.
 - Swift V4 tests:
   `Tests/OpenAICompatibleProviderTests/OpenAICompatibleProviderV4Tests.swift`
   and
@@ -149,24 +198,40 @@
   `Tests/OpenAICompatibleProviderTests/OpenAICompatibleEmbeddingModelV4Tests.swift`
   and
   `Tests/OpenAICompatibleProviderTests/OpenAICompatibleImageModelV4Tests.swift`.
+- Additional boundary tests:
+  `Tests/OpenAICompatibleProviderTests/OpenAICompatiblePrepareToolsV4Tests.swift`,
+  `Tests/OpenAICompatibleProviderTests/OpenAICompatibleProviderOptionKeysTests.swift`,
+  `Tests/OpenAICompatibleProviderTests/OpenAICompatibleCustomStreamErrorTests.swift`,
+  and
+  `Tests/OpenAICompatibleProviderTests/OpenAICompatibleThoughtSignatureV4Tests.swift`.
 
 ## Validation
 
-- `AGENT=1 swift test --filter OpenAICompatibleProviderTests` passed 166 tests
-  in 13 suites.
-- `AGENT=1 swift test --filter OpenAICompatibleProviderV4Tests` passed 13 tests.
+- `AGENT=1 swift test --filter OpenAICompatibleProviderTests` passed 185 tests
+  in 18 suites.
+- `AGENT=1 swift test --filter OpenAICompatibleProviderV4Tests` is included in
+  that target pass with 15 tests.
 - `AGENT=1 swift test --filter OpenAICompatibleChatMessagesConverterV4Tests`
-  passed 2 tests.
+  passed 5 tests.
 - `AGENT=1 swift test --filter OpenAICompatibleCompletionLanguageModelV4Tests`
   passed 8 tests.
 - `AGENT=1 swift test --filter OpenAICompatibleEmbeddingModelV4Tests` passed 4
   tests.
 - `AGENT=1 swift test --filter OpenAICompatibleImageModel` passed 13 tests in
   2 suites.
-- `AGENT=1 swift test --filter StreamingToolCallTrackerTests` passed 15 tests.
+- The same provider-target pass includes 4 exact-fixture tests, 4 tool
+  preparation tests, 3 option-key tests, 2 custom stream-error tests, and 1
+  empty thought-signature test.
+- `AGENT=1 swift test --filter BasetenProviderTests`,
+  `CerebrasProviderTests`, `FireworksProviderTests`, and `XAIProviderTests`
+  passed 26, 9, 3, and 163 tests respectively after their typed error
+  configurations were migrated.
+- `cmp` confirmed all four tracked xAI fixtures are byte-identical to the
+  pinned upstream checkout.
 - `swift build` passed.
-- A repeated `AGENT=1 swift test` run passed all 4082 tests in 464 suites, but
-  the immediately preceding full run failed the
-  `HttpMCPTransportTests.sendCustomHeaders` timing-sensitive assertion. That
-  isolated test then passed 3 consecutive runs, so full-suite validation is
-  still classified as flaky rather than clean.
+- `AGENT=1 swift test` passed all 4105 tests in 469 suites, including the MCP
+  transport suites that had been timing-sensitive in an earlier audit slice.
+- `node .agents/skills/swift-ai-sdk-upstream/scripts/scan-upstream.js --out
+  .upstream/current` reports `openai-compatible | provider | P0 | verified |
+  current` at commit `c8d2726ae045a28142cb46df5e41cdd51d8dcc71`.
+- `git diff --check` passed.
