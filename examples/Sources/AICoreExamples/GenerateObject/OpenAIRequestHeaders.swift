@@ -52,7 +52,7 @@ struct GenerateObjectOpenAIRequestHeadersExample: Example {
         }
       }
 
-      let openAI = createOpenAIProvider(settings: .init(fetch: inspectFetch))
+      let openAI = try createOpenAIProvider(settings: .init(fetch: inspectFetch))
 
       let result = try await generateObject(
         model: try openAI("gpt-4o-mini"),

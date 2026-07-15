@@ -172,7 +172,7 @@ func testBasicProviderInstance() async throws {
 func testCustomProviderSettings() async throws {
     // From docs: createOpenAIProvider with custom settings
 
-    let provider = createOpenAIProvider(
+    let provider = try createOpenAIProvider(
         settings: OpenAIProviderSettings(
             apiKey: "test-key",
             organization: "test-org",

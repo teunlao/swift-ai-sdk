@@ -8,7 +8,7 @@ struct RegistryGenerateSpeechOpenAIExample: Example {
 
   static func run() async throws {
     do {
-      _ = createProviderRegistry(providers: ["openai": createOpenAIProvider()])
+      _ = createProviderRegistry(providers: ["openai": try createOpenAIProvider()])
       // Speech via provider directly (registry speech access optional in current SDK)
       let model = openai.speech("tts-1")
       let audio = try await generateSpeech(
