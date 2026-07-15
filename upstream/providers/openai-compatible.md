@@ -40,6 +40,11 @@
   error chunks, usage, finish metadata, and cancellation. Tool calls finalize
   once during stream flush so a parsable argument prefix is not executed as a
   truncated call.
+- [x] Streaming tool-call deltas require the upstream `function` object at the
+  response boundary. Malformed deltas produce per-chunk validation errors and
+  do not poison pending tracker state or terminate an otherwise valid stream at
+  flush. Unmodeled tool-call fields are ignored in both generate and stream
+  responses, matching the upstream loose-object schemas.
 - [x] The shared tracker still forwards an upstream trailing empty argument
   delta while emitting exactly one final tool call.
 - [x] Existing OpenAI-compatible V3 Chat behavior remains covered by the full
@@ -139,9 +144,9 @@
 
 ## Validation
 
-- `AGENT=1 swift test --filter OpenAICompatibleProviderTests` passed 162 tests
+- `AGENT=1 swift test --filter OpenAICompatibleProviderTests` passed 163 tests
   in 13 suites.
-- `AGENT=1 swift test --filter OpenAICompatibleProviderV4Tests` passed 12 tests.
+- `AGENT=1 swift test --filter OpenAICompatibleProviderV4Tests` passed 13 tests.
 - `AGENT=1 swift test --filter OpenAICompatibleChatMessagesConverterV4Tests`
   passed 2 tests.
 - `AGENT=1 swift test --filter OpenAICompatibleCompletionLanguageModelV4Tests`
