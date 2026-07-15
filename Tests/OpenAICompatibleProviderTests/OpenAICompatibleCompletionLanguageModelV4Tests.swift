@@ -205,6 +205,106 @@ struct OpenAICompatibleCompletionLanguageModelV4Tests {
         #expect(json["someCustomOption"] as? String == "camel-value")
     }
 
+    @Test("generate rejects responses that violate the upstream completion schema")
+    func generateRejectsMalformedCompletionResponses() async throws {
+        let malformedResponses: [(label: String, response: [String: Any])] = [
+            (
+                "missing text",
+                [
+                    "choices": [["finish_reason": "stop"]]
+                ]
+            ),
+            (
+                "missing finish reason",
+                [
+                    "choices": [["text": "response"]]
+                ]
+            ),
+            (
+                "partial usage",
+                [
+                    "choices": [["text": "response", "finish_reason": "stop"]],
+                    "usage": ["prompt_tokens": 1]
+                ]
+            )
+        ]
+        let targetURL = URL(string: "https://my.api.com/v1/completions")!
+
+        for malformed in malformedResponses {
+            let responseData = try JSONSerialization.data(withJSONObject: malformed.response)
+            let fetch: FetchFunction = { _ in
+                FetchResponse(
+                    body: .data(responseData),
+                    urlResponse: makeHTTPResponse(url: targetURL)
+                )
+            }
+            let provider = createOpenAICompatible(settings: .init(
+                baseURL: "https://my.api.com/v1",
+                name: "test-provider",
+                fetch: fetch
+            ))
+            let model = try provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
+
+            do {
+                _ = try await model.doGenerate(options: .init(prompt: prompt))
+                Issue.record("Expected validation failure for \(malformed.label)")
+            } catch let error as APICallError {
+                #expect(error.message == "Invalid JSON response")
+                _ = try #require(error.cause as? TypeValidationError)
+            } catch {
+                Issue.record("Expected APICallError for \(malformed.label), got \(error)")
+            }
+        }
+    }
+
+    @Test("stream rejects malformed chunks and continues with subsequent valid data")
+    func streamRejectsMalformedCompletionChunks() async throws {
+        let events = [
+            #"{"id":"cmpl-v4","choices":[{"text":"missing index","finish_reason":null}]}"#,
+            #"{"id":"cmpl-v4","choices":[{"index":0,"finish_reason":null}]}"#,
+            #"{"id":"cmpl-v4","choices":[],"usage":{"prompt_tokens":1}}"#,
+            #"{"id":"cmpl-v4","choices":[{"text":"valid","index":0,"finish_reason":"stop"}]}"#
+        ]
+        let targetURL = URL(string: "https://my.api.com/v1/completions")!
+        let fetch: FetchFunction = { _ in
+            FetchResponse(
+                body: makeStreamBody(from: events),
+                urlResponse: makeHTTPResponse(
+                    url: targetURL,
+                    headers: ["Content-Type": "text/event-stream"]
+                )
+            )
+        }
+        let provider = createOpenAICompatible(settings: .init(
+            baseURL: "https://my.api.com/v1",
+            name: "test-provider",
+            fetch: fetch
+        ))
+        let model = try provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
+        let result = try await model.doStream(options: .init(prompt: prompt))
+
+        var parts: [LanguageModelV4StreamPart] = []
+        for try await part in result.stream {
+            parts.append(part)
+        }
+
+        #expect(parts.filter {
+            if case .error = $0 { return true }
+            return false
+        }.count == 3)
+        let textDeltas = parts.compactMap { part -> String? in
+            if case let .textDelta(_, delta, _) = part { return delta }
+            return nil
+        }
+        #expect(textDeltas == ["valid"])
+        guard case let .finish(finishReason, usage, _) = parts.last else {
+            Issue.record("Expected finish after the valid trailing chunk")
+            return
+        }
+        #expect(finishReason == .init(unified: .stop, raw: "stop"))
+        #expect(usage == LanguageModelV4Usage())
+    }
+
     @Test("stream emits the native V4 text lifecycle and usage")
     func streamEmitsNativeV4TextLifecycleAndUsage() async throws {
         let events = [

@@ -174,6 +174,37 @@ struct OpenAICompatibleEmbeddingModelV4Tests {
         #expect((json["dimensions"] as? NSNumber)?.intValue == 64)
     }
 
+    @Test("V4 rejects usage objects without prompt_tokens")
+    func v4RejectsMalformedUsage() async throws {
+        let responseData = try JSONSerialization.data(withJSONObject: [
+            "data": [["embedding": [0.1, 0.2]]],
+            "usage": ["total_tokens": 2]
+        ])
+        let targetURL = URL(string: "https://my.api.com/v1/embeddings")!
+        let fetch: FetchFunction = { _ in
+            FetchResponse(
+                body: .data(responseData),
+                urlResponse: makeHTTPResponse(url: targetURL)
+            )
+        }
+        let provider = createOpenAICompatible(settings: .init(
+            baseURL: "https://my.api.com/v1",
+            name: "test-provider",
+            fetch: fetch
+        ))
+        let model = try provider.embeddingModel(modelId: "text-embedding-3-large")
+
+        do {
+            _ = try await model.doEmbed(options: .init(values: ["value"]))
+            Issue.record("Expected malformed usage to fail response validation")
+        } catch let error as APICallError {
+            #expect(error.message == "Invalid JSON response")
+            _ = try #require(error.cause as? TypeValidationError)
+        } catch {
+            Issue.record("Expected APICallError, got \(error)")
+        }
+    }
+
     @Test("direct V4 model enforces configured call limits before transport")
     func directV4ModelEnforcesConfiguredLimits() async throws {
         let probe = FetchProbe()
