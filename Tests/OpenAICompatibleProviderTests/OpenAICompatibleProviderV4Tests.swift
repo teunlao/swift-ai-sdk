@@ -75,6 +75,7 @@ struct OpenAICompatibleProviderV4Tests {
         let imageModel = try provider.imageModel(modelId: "dall-e-3")
         #expect(imageModel.specificationVersion == "v4")
         #expect(imageModel.provider == "example.image")
+        #expect(imageModel is OpenAICompatibleImageModelV4)
     }
 
     @Test("language model forwards supportedUrls")
@@ -596,7 +597,7 @@ struct OpenAICompatibleProviderV4Tests {
         }
     }
 
-    @Test("image doGenerate maps V4 base64 images warnings and response")
+    @Test("native image doGenerate maps V4 base64 images warnings and response")
     func imageDoGenerateUsesV4Surface() async throws {
         let capture = RequestCapture()
         let responseJSON: [String: Any] = [
@@ -620,6 +621,7 @@ struct OpenAICompatibleProviderV4Tests {
             fetch: fetch
         ))
         let model = try provider.imageModel(modelId: "dall-e-3")
+        #expect(model is OpenAICompatibleImageModelV4)
 
         let result = try await model.doGenerate(options: ImageModelV4CallOptions(
             prompt: "A geometric city",
@@ -627,7 +629,7 @@ struct OpenAICompatibleProviderV4Tests {
             size: "1024x1024",
             aspectRatio: "1:1",
             seed: 42,
-            providerOptions: ["openai": ["quality": .string("hd")]]
+            providerOptions: ["example": ["quality": .string("hd")]]
         ))
 
         if case .base64(let images) = result.images {
