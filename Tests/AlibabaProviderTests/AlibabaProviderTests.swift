@@ -192,7 +192,7 @@ struct AlibabaProviderTests {
             let provider = createAlibaba(settings: .init(videoBaseURL: base, apiKey: "test-key", fetch: fetch))
             let model = provider.video(modelId: AlibabaVideoModelId.wan26T2v)
             let providerOptions: SharedV3ProviderOptions = [
-                "alibaba": ["pollIntervalMs": .number(1), "pollTimeoutMs": .number(1_000)]
+                "alibaba": ["pollIntervalMs": .number(1)]
             ]
             _ = try await model.doGenerate(options: .init(
                 prompt: "p",
