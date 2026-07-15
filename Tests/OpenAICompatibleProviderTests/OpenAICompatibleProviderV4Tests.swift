@@ -227,6 +227,106 @@ struct OpenAICompatibleProviderV4Tests {
         }
     }
 
+    @Test("native V4 generate rejects unsupported response roles")
+    func nativeV4GenerateRejectsUnsupportedResponseRoles() async throws {
+        let responseJSON: [String: Any] = [
+            "choices": [[
+                "message": [
+                    "role": "user",
+                    "content": "invalid role"
+                ],
+                "finish_reason": "stop"
+            ]]
+        ]
+        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
+        let targetURL = URL(string: "https://api.example.com/v1/chat/completions")!
+        let httpResponse = makeHTTPResponse(
+            url: targetURL,
+            headers: ["Content-Type": "application/json"]
+        )
+        let fetch: FetchFunction = { _ in
+            FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+        }
+        let provider = createOpenAICompatible(settings: .init(
+            baseURL: "https://api.example.com/v1",
+            name: "example-provider",
+            fetch: fetch
+        ))
+        let model = try provider.languageModel(modelId: "chat-model")
+
+        do {
+            _ = try await model.doGenerate(options: .init(prompt: v4ChatPrompt))
+            Issue.record("Expected unsupported response role to fail validation")
+        } catch let error as APICallError {
+            #expect(error.message == "Invalid JSON response")
+            _ = try #require(error.cause as? TypeValidationError)
+        } catch {
+            Issue.record("Expected APICallError, got \(error)")
+        }
+    }
+
+    @Test("native V4 stream accepts empty role and rejects unsupported roles")
+    func nativeV4StreamValidatesResponseRoles() async throws {
+        func streamParts(role: String) async throws -> [LanguageModelV4StreamPart] {
+            let eventObject: [String: Any] = [
+                "id": "chatcmpl-role",
+                "choices": [[
+                    "delta": [
+                        "role": role,
+                        "content": "response"
+                    ],
+                    "finish_reason": "stop"
+                ]]
+            ]
+            let event = String(
+                decoding: try JSONSerialization.data(withJSONObject: eventObject),
+                as: UTF8.self
+            )
+            let targetURL = URL(string: "https://api.example.com/v1/chat/completions")!
+            let httpResponse = makeHTTPResponse(
+                url: targetURL,
+                headers: ["Content-Type": "text/event-stream"]
+            )
+            let fetch: FetchFunction = { _ in
+                FetchResponse(body: makeStreamBody(from: [event]), urlResponse: httpResponse)
+            }
+            let provider = createOpenAICompatible(settings: .init(
+                baseURL: "https://api.example.com/v1",
+                name: "example-provider",
+                fetch: fetch
+            ))
+            let model = try provider.languageModel(modelId: "chat-model")
+            let result = try await model.doStream(options: .init(prompt: v4ChatPrompt))
+
+            var parts: [LanguageModelV4StreamPart] = []
+            for try await part in result.stream {
+                parts.append(part)
+            }
+            return parts
+        }
+
+        let emptyRoleParts = try await streamParts(role: "")
+        #expect(emptyRoleParts.contains {
+            if case .textDelta(_, delta: "response", _) = $0 { return true }
+            return false
+        })
+
+        let unsupportedRoleParts = try await streamParts(role: "user")
+        #expect(!unsupportedRoleParts.contains {
+            if case .textDelta = $0 { return true }
+            return false
+        })
+        #expect(unsupportedRoleParts.contains {
+            if case .error = $0 { return true }
+            return false
+        })
+        guard case let .finish(finishReason, _, _) = unsupportedRoleParts.last else {
+            Issue.record("Expected error finish for unsupported response role")
+            return
+        }
+        #expect(finishReason.unified == .error)
+    }
+
     @Test("language doStream maps V4 text delta and finish")
     func languageDoStreamUsesV4Surface() async throws {
         let events = [

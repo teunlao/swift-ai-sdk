@@ -30,6 +30,11 @@
   `function`, `function.name`, and `function.arguments` are required exactly as
   in the audited upstream response schema instead of being dropped or defaulted
   after decoding.
+- [x] Chat response roles are validated at the decode boundary: non-streaming
+  responses allow only `assistant` when a role is present, while streaming
+  deltas preserve upstream compatibility with both `assistant` and the empty
+  role used by some providers. Other role values produce response-validation
+  errors instead of being ignored.
 - [x] Streaming V4 output preserves reasoning-before-text lifecycle ordering,
   late tool names, missing tool-call indexes, thought signatures, raw chunks,
   error chunks, usage, finish metadata, and cancellation. Tool calls finalize
@@ -134,9 +139,9 @@
 
 ## Validation
 
-- `AGENT=1 swift test --filter OpenAICompatibleProviderTests` passed 160 tests
+- `AGENT=1 swift test --filter OpenAICompatibleProviderTests` passed 162 tests
   in 13 suites.
-- `AGENT=1 swift test --filter OpenAICompatibleProviderV4Tests` passed 10 tests.
+- `AGENT=1 swift test --filter OpenAICompatibleProviderV4Tests` passed 12 tests.
 - `AGENT=1 swift test --filter OpenAICompatibleChatMessagesConverterV4Tests`
   passed 2 tests.
 - `AGENT=1 swift test --filter OpenAICompatibleCompletionLanguageModelV4Tests`
@@ -147,4 +152,8 @@
   2 suites.
 - `AGENT=1 swift test --filter StreamingToolCallTrackerTests` passed 15 tests.
 - `swift build` passed.
-- `AGENT=1 swift test` passed all 4080 tests in 464 suites.
+- A repeated `AGENT=1 swift test` run passed all 4082 tests in 464 suites, but
+  the immediately preceding full run failed the
+  `HttpMCPTransportTests.sendCustomHeaders` timing-sensitive assertion. That
+  isolated test then passed 3 consecutive runs, so full-suite validation is
+  still classified as flaky rather than clean.

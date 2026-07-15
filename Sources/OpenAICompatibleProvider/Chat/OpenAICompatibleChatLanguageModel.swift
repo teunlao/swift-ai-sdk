@@ -1303,6 +1303,10 @@ public struct OpenAICompatibleChatUsage: Codable, Sendable, Equatable {
 private struct OpenAICompatibleChatResponse: Codable {
     struct Choice: Codable {
         struct Message: Codable {
+            enum Role: String, Codable {
+                case assistant
+            }
+
             struct ToolCall: Codable {
                 struct ToolFunction: Codable {
                     let name: String
@@ -1327,12 +1331,14 @@ private struct OpenAICompatibleChatResponse: Codable {
                 }
             }
 
+            let role: Role?
             let content: String?
             let reasoningContent: String?
             let reasoning: String?
             let toolCalls: [ToolCall]?
 
             private enum CodingKeys: String, CodingKey {
+                case role
                 case content
                 case reasoningContent = "reasoning_content"
                 case reasoning
@@ -1398,12 +1404,19 @@ private enum OpenAICompatibleChatStreamChunk: Codable {
 private struct OpenAICompatibleChatStreamData: Codable {
     struct Choice: Codable {
         struct Delta: Codable {
+            enum Role: String, Codable {
+                case assistant
+                case empty = ""
+            }
+
+            let role: Role?
             let content: String?
             let reasoningContent: String?
             let reasoning: String?
             let toolCalls: [OpenAICompatibleChatChunkToolCallDelta]?
 
             private enum CodingKeys: String, CodingKey {
+                case role
                 case content
                 case reasoningContent = "reasoning_content"
                 case reasoning
