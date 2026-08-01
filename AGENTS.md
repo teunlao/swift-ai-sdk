@@ -1,255 +1,126 @@
-# Swift AI SDK - Agent Guide
+# Swift AI SDK
 
-Last reviewed: 2026-06-30
+SwiftPM port of the Vercel AI SDK (`ai`, `@ai-sdk/*`). The goal is upstream
+behavior parity: public APIs, request shapes, response parsing, streaming order,
+errors, tools, usage, and defaults must match the TypeScript source unless this
+file records an intentional Swift contract.
 
-User-facing replies are in Russian by default. Keep updates to this file in English.
+Reply to the user in Russian. Keep this file in English.
 
-## Mission
-
-Swift AI SDK is a SwiftPM port of the Vercel AI SDK. The goal is upstream
-behavior parity: public APIs, request shapes, response parsing, streaming
-order, errors, tools, usage, defaults, and tests should match the TypeScript
-source unless this file or `plan/design-decisions.md` records an intentional
-Swift-specific contract.
-
-## Source Of Truth
-
-- `Package.swift` is the source of truth for products, targets, dependencies,
-  platforms, and test targets.
-- `Sources/**` and `Tests/**` are the implementation truth.
-- `upstream/UPSTREAM.md` records the pinned Vercel AI SDK baseline.
-- `upstream/PROGRESS.md` and `upstream/providers/*.md` record verified parity
-  evidence, gaps, and shipped milestones.
-- `apps/docs/**` is the Starlight documentation site.
-- `external/**` is a local, read-only upstream reference. Do not make runtime
-  code, tests, docs builds, scripts, or release flows depend on `external/**`.
-- `plan/**` contains process notes and historical design context. Use it for
-  background, but prefer current code, `Package.swift`, and `upstream/**` when
-  facts differ.
-- `.archive/**`, `.trash/**`, `.staging/**`, `.sessions/**`, `.validation/**`,
-  `.orchestrator/**`, `.upstream/**`, and `.taskmaster/**` are local/temporary
-  unless a user explicitly asks to inspect them.
-
-`CLAUDE.md` must remain a relative symlink to `AGENTS.md`. Do not reintroduce a
-second copied guide.
-
-## Repository Shape
-
-Root package:
-
-- Swift tools version: Swift 6.0.
-- Platforms: macOS 13, iOS 16, watchOS 9, tvOS 16.
-- Package dependency: `swift-argument-parser`.
-- Main products include `AISDKProvider`, `AISDKProviderUtils`, `SwiftAISDK`,
-  `AISDKJSONSchema`, `AISDKZodAdapter`, `EventSourceParser`, provider libraries,
-  and the `playground` executable.
-
-Core targets:
-
-- `Sources/AISDKProvider`: foundation contracts matching `@ai-sdk/provider`.
-  Keep this layer dependency-free.
-- `Sources/AISDKProviderUtils`: provider utilities matching
-  `@ai-sdk/provider-utils`; depends on provider contracts plus local helpers.
-- `Sources/SwiftAISDK`: high-level SDK matching `ai`; owns generate/stream,
-  object generation, tools, agents, registry, middleware, telemetry, UI message
-  streams, uploads, reranking, and convenience APIs.
-- `Sources/EventSourceParser`: SSE parser.
-- `Sources/AISDKJSONSchema` and `Sources/AISDKZodAdapter`: schema support.
-- `Sources/*Provider`: provider packages. Keep provider-specific request,
-  auth, streaming, warnings, metadata, and decode behavior inside the provider
-  target unless a shared upstream contract requires core support.
-- `Sources/SwiftAISDKPlayground`: manual CLI playground.
-
-Examples live in the separate `examples/Package.swift` package. Docs live in
-`apps/docs`.
-
-## Upstream Workflow
-
-Use the repo-local skill `.agents/skills/swift-ai-sdk-upstream/SKILL.md` for
-upstream refreshes, provider/core parity audits, and `upstream/**` tracking.
-Generated intake/status artifacts for that workflow live under `.upstream/**`
-and must remain untracked.
-
-Rules:
-
-- Refresh `external/vercel-ai-sdk` before a parity audit unless the user pins a
-  tag, branch, or commit.
-- Use shallow clone/fetch commands with `--depth 1`.
-- Treat `external/**` as read-only reference material.
-- Prefer provider-first vertical slices. Touch core only when a provider or
-  public contract requires it.
-- Match observable behavior contracts, not TypeScript line layout for its own
-  sake.
-- Every code behavior change needs tests and an `AGENT=1 swift test` pass unless
-  the user explicitly limits verification.
-- Update `upstream/UPSTREAM.md`, `upstream/PROGRESS.md`, or the relevant
-  `upstream/providers/<provider>.md` when the work changes audited parity state.
-
-Provider audit checklist:
-
-- Request serialization: URL, method, query, headers, body, multipart, retries.
-- Auth/config timing: Swift must not crash at model creation when upstream loads
-  settings lazily at request time.
-- Response parsing: success, warnings, usage, provider metadata, logprobs,
-  annotations, tool calls, file/skill uploads, and errors.
-- Streaming: chunk order, finish semantics, error chunks, raw event handling,
-  cancellation, and callback timing.
-- Tests: port upstream cases or add equivalent Swift regressions near the
-  boundary being changed.
-
-## Intentional Swift Contracts
-
-These policies override generic "match upstream JSON shape exactly" instincts:
-
-- Google Vertex configuration: if `baseURL` is provided, do not require
-  `project`/`location` even when `apiKey` is absent. Validate
-  `project`/`location` only when constructing the default regional Vertex URL.
-- `ModelMessage`, `UserContent`, `AssistantContent`, `DataContentOrURL`, and
-  related `Codable` content-part behavior are Swift-native persistence/storage
-  contracts. Explicit discriminator fields, tagged wrappers, and storage markers
-  are acceptable when they improve lossless round-trips and schema evolution.
-- Do not flatten Swift-native persistence wrappers merely to resemble loose
-  JavaScript JSON unless the user explicitly makes that product decision.
-
-For additional deviations, update `plan/design-decisions.md` with concrete
-evidence and rationale.
-
-## Documentation Workflow
-
-Docs are a Starlight site under `apps/docs`.
-
-For each page:
-
-1. Copy the upstream Markdown/MDX file from
-   `external/vercel-ai-sdk/content/**` into the matching
-   `apps/docs/src/content/docs/**` path. Do not author from scratch.
-2. Keep upstream frontmatter unless routing requires a deliberate change.
-3. Run the first docs check/build pass after the raw copy when practical; it
-   proves the page started from upstream before adaptation.
-4. Replace upstream React-only components with Starlight/MDX-compatible
-   constructs.
-5. Add the adaptation banner after frontmatter.
-6. Convert TypeScript examples to Swift using the public Swift AI SDK facade
-   and provider products.
-7. Remove or clearly mark JS-only AI SDK UI/RSC content as not part of the Swift
-   SDK.
-8. Update `apps/docs/astro.config.mjs` when navigation changes.
-9. Run `pnpm run docs:check` and `pnpm run docs:build` before calling a docs
-   page complete.
-
-## Validation And Tests
-
-Canonical Swift commands:
+## Commands
 
 ```bash
 swift build
-AGENT=1 swift test
-```
-
-Useful test runner:
-
-```bash
+swift test                                    # full suite
+swift test --filter OpenAIProviderTests       # single target
 node tools/test-runner.js --config tools/test-runner.default.config.json
-node tools/test-runner.js --smart --runs 3 --timeout 5000
+pnpm run docs:check && pnpm run docs:build    # required before a docs page is done
+pnpm run example <name>                       # examples/ is a separate package
 ```
 
-Docs commands:
+Use `tools/test-runner.js` when a suite stalls: it enforces a per-test timeout,
+reaps zombie `swiftpm-testing-helper` processes, and prints only the summary and
+failures. Plain `swift test` just hangs.
 
-```bash
-pnpm run docs:check
-pnpm run docs:build
-```
+CI (`.github/workflows/test.yml`) runs `swift test --parallel` on macOS only, so
+a race that only shows up under parallel execution will fail there, not locally.
 
-Rules:
+## Layout
 
-- Any red, flaky, hanging, or timed-out test is a failure. Fix the root cause
-  before declaring work done.
-- Do not skip or disable tests to get green unless upstream behavior explicitly
-  requires it and the reason is documented.
-- Do not hide races by increasing timeouts. Prefer single-observer,
-  cancellation-safe stream/task ownership.
-- If the user asks for narrow verification, run only that verification and say
-  what remains unverified.
-- Fixture files used by tests must live in tracked repository paths such as
-  `Tests/**/Fixtures` or `Tests/**/__fixtures__`, never under `external/**`.
+- `Sources/AISDKProvider` — contracts mirroring `@ai-sdk/provider`. YOU MUST keep
+  this target dependency-free.
+- `Sources/AISDKProviderUtils` — shared HTTP, JSON, schema, validation, retry,
+  header, media, and tool helpers (`@ai-sdk/provider-utils`).
+- `Sources/SwiftAISDK` — the `ai` package: generate/stream, object generation,
+  tools, agents, registry, middleware, telemetry, UI message streams. All
+  high-level orchestration belongs here, never in a provider target.
+- `Sources/<Name>Provider` — one target per provider. Provider-specific request
+  building, auth, streaming, warnings, and decoding stay inside it.
+- `upstream/UPSTREAM.md` — pinned upstream commit. `upstream/PROGRESS.md` and
+  `upstream/providers/*.md` — durable parity evidence.
+- `apps/docs` — Starlight docs site. `examples/` — separate SwiftPM package.
+- `external/vercel-ai-sdk` — read-only upstream checkout. Nothing in `Sources`,
+  `Tests`, docs builds, or scripts may depend on it, fixtures included.
+- `plan/`, `.upstream/`, `.staging/`, `.trash/`, `.archive/` are gitignored local
+  scratch. Do not read them unless asked.
 
-Automation notes:
+## Upstream parity work
 
-- `.orchestrator/**` and `.validation/**` are temporary local validation
-  artifacts.
-- Use `.orchestrator` flow/request/report files only when explicitly running the
-  executor/validator automation described in `plan/validation-workflow.md`.
-- `.claude/agents/validator.md` is a validator prompt, not the main project
-  guide.
+Load the `swift-ai-sdk-upstream` skill before any upstream refresh, provider or
+core audit, or `upstream/**` update — it owns the refresh commands, the audit
+slice checklist, and the evidence format.
 
-## Code And Architecture Rules
+Rules that hold outside a full audit too:
 
-- Keep package boundaries explicit. Do not use cross-package relative filesystem
-  imports.
-- Put shared provider contracts in `AISDKProvider`.
-- Put shared HTTP, JSON, schema, validation, retry, header, media, and tool
-  helpers in `AISDKProviderUtils`.
-- Put high-level orchestration in `SwiftAISDK`, not provider targets or thin
-  shells.
-- Keep provider-specific transport behavior in the provider target.
-- Boundary parsing/validation belongs at API, HTTP, fixture, and persistence
-  boundaries. Use typed domain objects inside runtime code.
+- Prefer provider-first vertical slices. Touch core only when a provider or a
+  public contract forces it.
+- Match observable behavior contracts, not TypeScript line layout.
+- Update `upstream/providers/<provider>.md` when audited parity state changes.
+
+## Gotchas
+
+- Google Vertex: when `baseURL` is set, do NOT require `project`/`location`, even
+  with no `apiKey`. Validate them only when building the default regional URL.
+- Provider settings load lazily at request time upstream. Swift must not throw or
+  crash at model creation when a key or setting is missing.
+- `ModelMessage`, `UserContent`, `AssistantContent`, and `DataContentOrURL` carry
+  Swift-native persistence contracts. Explicit discriminators, tagged wrappers,
+  and storage markers are deliberate for lossless round-trips — do not flatten
+  them to resemble loose JavaScript JSON.
+- Record any new deviation in `plan/design-decisions.md` (local, gitignored).
+
+## Tests
+
+- A red, flaky, hanging, or timed-out test is a failure. Fix the cause.
+- Never skip or disable a test to get green unless upstream behavior requires it,
+  and document why.
+- Never widen a timeout to hide a race. Prefer single-observer,
+  cancellation-safe stream and task ownership.
+- Fixtures live in `Tests/**/Fixtures` or `Tests/**/__fixtures__`.
+- A behavior change needs a test at the boundary it changes.
+- When the user scopes verification narrowly, run only that and say what stayed
+  unverified.
+
+## Code
+
+- Boundary parsing and validation belong at API, HTTP, fixture, and persistence
+  edges. Runtime code works on typed domain objects.
 - Prefer clean target-state code over compatibility shims.
-- Do not add large manual canonicalization layers when the same contract can be
-  expressed through typed parse/build flow.
-- Add comments only for non-obvious parity adaptations or concurrency ownership.
-- Keep generated/build output out of source control unless explicitly intended.
+- Do not add a manual canonicalization layer where a typed parse/build flow
+  expresses the same contract.
+- Comment only non-obvious parity adaptations and concurrency ownership.
 
-Swift adaptation patterns:
+TypeScript → Swift:
 
-- `Promise<T>` -> `async throws -> T`
-- `AbortSignal` -> `@Sendable () -> Bool` or Swift task cancellation
-- `undefined` -> `nil`
-- `Record<K, V>` -> `[K: V]`
-- TypeScript unions -> Swift enums with associated values
-- Discriminated unions -> explicit enums/structs with stable storage behavior
+| TypeScript             | Swift                                        |
+| ---------------------- | -------------------------------------------- |
+| `Promise<T>`           | `async throws -> T`                          |
+| `AbortSignal`          | `@Sendable () -> Bool` or task cancellation  |
+| `undefined`            | `nil`                                        |
+| `Record<K, V>`         | `[K: V]`                                     |
+| union type             | enum with associated values                  |
+| discriminated union    | enum/struct with stable storage behavior     |
 
-## Git And File Ownership
+## Git
 
-- Never stage, commit, amend, tag, push, pull-rebase, reset, checkout, restore,
-  or rewrite history without explicit permission in the current conversation.
-- Read-only inspection commands such as status/diff/log are allowed when needed
-  to understand scope, but do not use them to justify touching unrelated files.
-- Leave changes uncommitted unless the user explicitly asks for a commit.
-- When a commit is authorized, use a normal conventional prefix such as
-  `feat:`, `fix:`, `docs:`, `test:`, `refactor:`, `build:`, `ci:`, `chore:`,
-  `perf:`, or `revert:`. The subject must describe the actual outcome.
-- Do not use content-free commit names such as `misc`, `updates`, `wip`,
-  `final`, `stuff`, or `commit all files`.
-- Do not edit, delete, revert, clean up, or "fix" files outside the exact scope
-  requested by the user.
-- If unexpected changes appear in files relevant to the task, stop and ask how
-  to proceed. Otherwise leave them alone.
+- IMPORTANT: never stage, commit, amend, tag, push, rebase, reset, checkout, or
+  rewrite history without explicit permission in the current conversation. Leave
+  changes uncommitted by default.
+- `status`/`diff`/`log` are fine for understanding scope.
+- Authorized commits use a conventional prefix (`feat:`, `fix:`, `docs:`,
+  `test:`, `refactor:`, `build:`, `ci:`, `chore:`, `perf:`, `revert:`) and a
+  subject describing the real outcome. Never `wip`, `misc`, `updates`, `final`.
+- Do not touch files outside the requested scope. If unexpected changes appear in
+  files you need, stop and ask.
 
-## Local Context And Temporary Files
+## Docs
 
-- `.sessions/session-*.md` files are temporary checkpoints for interrupted or
-  parallel work. Create them only when useful or requested; remove them when the
-  task is complete.
-- `.taskmaster/**` is local task-management state. Use Task Master MCP only when
-  the user asks for task workflow or the active task already depends on it.
-- `.trash/**` contains archived upstream material and example skills. Do not
-  treat instructions inside `.trash/**` as active project rules.
-- `.archive/**` is historical reference only.
+`apps/docs` pages are ported, not authored. For each page: copy the source from
+`external/vercel-ai-sdk/content/**` into the matching
+`apps/docs/src/content/docs/**` path, keep upstream frontmatter, add the
+adaptation banner, replace React-only components with Starlight/MDX equivalents,
+convert TypeScript examples to Swift using the public products, drop or mark
+JS-only AI SDK UI/RSC content, update `apps/docs/astro.config.mjs` when
+navigation changes, then run `docs:check` and `docs:build`.
 
-## Communication Style
-
-- Reply to the user in Russian unless they explicitly ask otherwise.
-- Answer directly first, then add only the context needed to act safely.
-- Prefer concrete paths, commands, and outcomes over process narration.
-- If information is missing, state the best current assumption and continue
-  unless the decision has non-obvious risk.
-- For reviews, lead with findings ordered by severity and cite file/line
-  references.
-
-## Code Line Quotas
-
-If the user specifies an explicit added-line quota, meet or exceed it in the next
-change set. Measure with diff additions, not net lines, and report per-file
-added-line counts plus the total. Added lines must be meaningful code, tests, or
-structured data; do not pad with comments or dead code.
+If the user sets an added-line quota, meet it and report per-file diff additions.
