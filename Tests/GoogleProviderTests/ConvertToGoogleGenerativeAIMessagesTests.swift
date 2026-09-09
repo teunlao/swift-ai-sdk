@@ -353,8 +353,8 @@ struct ConvertToGoogleGenerativeAIMessagesTests {
         }
     }
 
-    @Test("should convert tool result messages with content type (multipart with images)")
-    func convertToolResultMessagesWithContentTypeMultipartWithImages() throws {
+    @Test("should convert tool result content with image-data into functionResponse parts")
+    func convertToolResultContentWithImageDataIntoFunctionResponseParts() throws {
         let toolPart = LanguageModelV3ToolResultPart(
             toolCallId: "testCallId",
             toolName: "imageGenerator",
@@ -374,10 +374,58 @@ struct ConvertToGoogleGenerativeAIMessagesTests {
             return
         }
 
+        #expect(userParts.count == 1)
+
+        if case let .functionResponse(response) = userParts[0] {
+            #expect(response.id == "testCallId")
+            #expect(response.name == "imageGenerator")
+            guard case let .object(payload) = response.response else {
+                Issue.record("Expected object payload")
+                return
+            }
+            #expect(payload["name"] == .string("imageGenerator"))
+            #expect(payload["content"] == .string("Here is the generated image:"))
+
+            guard let responseParts = response.parts, responseParts.count == 1 else {
+                Issue.record("Expected 1 function response part")
+                return
+            }
+            #expect(responseParts[0].inlineData.mimeType == "image/jpeg")
+            #expect(responseParts[0].inlineData.data == "base64encodedimagedata")
+        } else {
+            Issue.record("Expected function response part")
+        }
+    }
+
+    @Test("should use legacy tool-result conversion when functionResponse parts are unsupported")
+    func legacyToolResultConversionWhenFunctionResponsePartsUnsupported() throws {
+        let toolPart = LanguageModelV3ToolResultPart(
+            toolCallId: "testCallId",
+            toolName: "imageGenerator",
+            output: .content(value: [
+                .text(text: "Here is the generated image:"),
+                .media(data: "base64encodedimagedata", mediaType: "image/jpeg")
+            ]),
+            providerOptions: nil
+        )
+        let prompt: LanguageModelV3Prompt = [
+            .tool(content: [.toolResult(toolPart)], providerOptions: nil)
+        ]
+
+        let result = try convertToGoogleGenerativeAIMessages(
+            prompt,
+            options: GoogleGenerativeAIMessagesOptions(supportsFunctionResponseParts: false)
+        )
+        guard let userParts = result.contents.first?.parts else {
+            Issue.record("Missing user parts")
+            return
+        }
+
         #expect(userParts.count == 3)
 
         // First part: function response
         if case let .functionResponse(response) = userParts[0] {
+            #expect(response.id == "testCallId")
             #expect(response.name == "imageGenerator")
             guard case let .object(payload) = response.response else {
                 Issue.record("Expected object payload")

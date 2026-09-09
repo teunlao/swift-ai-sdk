@@ -75,24 +75,47 @@ public struct GoogleGenerativeAIInlineDataPart: Sendable, Equatable {
 }
 
 public struct GoogleGenerativeAIFunctionCallPart: Sendable, Equatable {
+    public var id: String?
     public var name: String
     public var arguments: JSONValue
     public var thoughtSignature: String?
 
-    public init(name: String, arguments: JSONValue, thoughtSignature: String? = nil) {
+    public init(id: String? = nil, name: String, arguments: JSONValue, thoughtSignature: String? = nil) {
+        self.id = id
         self.name = name
         self.arguments = arguments
         self.thoughtSignature = thoughtSignature
     }
 }
 
+public struct GoogleFunctionResponsePart: Sendable, Equatable {
+    public var inlineData: GoogleGenerativeAIInlineDataPart
+
+    public init(inlineData: GoogleGenerativeAIInlineDataPart) {
+        self.inlineData = inlineData
+    }
+
+    public init(mimeType: String, data: String, thoughtSignature: String? = nil) {
+        self.inlineData = GoogleGenerativeAIInlineDataPart(mimeType: mimeType, data: data, thoughtSignature: thoughtSignature)
+    }
+}
+
 public struct GoogleGenerativeAIFunctionResponsePart: Sendable, Equatable {
+    public var id: String?
     public var name: String
     public var response: JSONValue
+    public var parts: [GoogleFunctionResponsePart]?
 
-    public init(name: String, response: JSONValue) {
+    public init(
+        id: String? = nil,
+        name: String,
+        response: JSONValue,
+        parts: [GoogleFunctionResponsePart]? = nil
+    ) {
+        self.id = id
         self.name = name
         self.response = response
+        self.parts = parts
     }
 }
 
