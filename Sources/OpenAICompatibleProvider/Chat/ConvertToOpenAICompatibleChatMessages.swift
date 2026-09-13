@@ -54,7 +54,12 @@ private func textContent(from data: SharedV4FileData) throws -> String {
 }
 
 private func encodedJSONString<T: Encodable>(_ value: T) throws -> String {
-    String(decoding: try JSONEncoder().encode(value), as: UTF8.self)
+    // Sorted keys keep serialized tool results and tool call arguments
+    // byte-identical across processes, which providers with automatic
+    // prefix caching require for prompt cache hits.
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys]
+    return String(decoding: try encoder.encode(value), as: UTF8.self)
 }
 
 private func thoughtSignature(from providerOptions: SharedV4ProviderOptions?) -> String? {
@@ -215,8 +220,7 @@ public func convertToOpenAICompatibleChatMessages(
                 case .reasoning(let reasoningPart):
                     reasoningAccumulator.append(reasoningPart.text)
                 case .toolCall(let call):
-                    let inputData = try JSONEncoder().encode(call.input)
-                    let arguments = String(data: inputData, encoding: .utf8) ?? "{}"
+                    let arguments = try encodedJSONString(call.input)
                     var payload: [String: JSONValue] = [
                         "type": .string("function"),
                         "id": .string(call.toolCallId),
@@ -263,11 +267,9 @@ public func convertToOpenAICompatibleChatMessages(
                 case .executionDenied(let reason, _):
                     contentValue = reason ?? "Tool execution denied."
                 case .json(let value, _), .errorJson(let value, _):
-                    let jsonData = try JSONEncoder().encode(value)
-                    contentValue = String(data: jsonData, encoding: .utf8) ?? "{}"
+                    contentValue = try encodedJSONString(value)
                 case .content(let parts, _):
-                    let jsonData = try JSONEncoder().encode(parts)
-                    contentValue = String(data: jsonData, encoding: .utf8) ?? "[]"
+                    contentValue = try encodedJSONString(parts)
                 }
 
                 var payload: [String: JSONValue] = [
