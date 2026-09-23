@@ -29,7 +29,8 @@ public let anthropicMessagesModelIds: [AnthropicMessagesModelId] = [
     "claude-opus-4-7",
     "claude-opus-4-8",
     "claude-fable-5",
-    "claude-sonnet-5"
+    "claude-sonnet-5",
+    "claude-opus-5-5"
 ].map(AnthropicMessagesModelId.init(rawValue:))
 
 public struct AnthropicThinkingOptions: Sendable, Equatable {
@@ -48,9 +49,15 @@ public struct AnthropicThinkingOptions: Sendable, Equatable {
     /// - `omitted`: thinking blocks are returned with an empty `thinking` field.
     ///   The `signature` is still populated for multi-turn continuity. Default
     ///   on Claude Opus 4.7 and Claude Mythos Preview.
+    /// - `updates`: returns only progress-update thinking blocks (the short
+    ///   notes written between tool calls) while other reasoning stays hidden.
+    ///   Beta — sends the `thinking-display-updates-2026-08-18` header.
+    ///   Relevant on Claude Opus 5.5, whose between-tool-call narration arrives
+    ///   as thinking blocks that are empty at the default `omitted` display.
     public enum Display: String, Sendable, Equatable {
         case summarized
         case omitted
+        case updates
     }
 
     public var type: Mode
@@ -553,7 +560,7 @@ public let anthropicProviderOptionsSchema = FlexibleSchema(
                     if let displayValue = thinkingDict["display"], displayValue != .null {
                         guard case .string(let raw) = displayValue,
                               let parsed = AnthropicThinkingOptions.Display(rawValue: raw) else {
-                            let error = SchemaValidationIssuesError(vendor: "anthropic", issues: "thinking.display must be 'summarized' or 'omitted'")
+                            let error = SchemaValidationIssuesError(vendor: "anthropic", issues: "thinking.display must be 'summarized', 'omitted', or 'updates'")
                             return .failure(error: TypeValidationError.wrap(value: displayValue, cause: error))
                         }
                         display = parsed
