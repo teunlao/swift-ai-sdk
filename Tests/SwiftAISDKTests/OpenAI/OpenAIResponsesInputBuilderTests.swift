@@ -3018,4 +3018,86 @@ struct OpenAIResponsesInputBuilderTests {
             )
         }
     }
+
+    // MARK: - JSON Key Ordering
+
+    /// The serialization every object from `equalObjectsWithDistinctStorage` must produce.
+    private static let sortedObjectJSON = #"{"alpha":1,"middle":true,"nested":{"alpha":3,"beta":2},"zebra":"z"}"#
+
+    /// Builds equal JSON objects that each own their dictionary storage, so
+    /// their iteration orders differ the way history decoded from storage does.
+    private static func equalObjectsWithDistinctStorage(count: Int) -> [JSONValue] {
+        (0..<count).map { _ in
+            .object([
+                "zebra": .string("z"),
+                "alpha": .number(1),
+                "middle": .bool(true),
+                "nested": .object(["beta": .number(2), "alpha": .number(3)])
+            ])
+        }
+    }
+
+    @Test("function_call arguments serialize equal inputs to identical sorted JSON")
+    func toolCallArgumentsUseSortedKeys() async throws {
+        let inputs = Self.equalObjectsWithDistinctStorage(count: 20)
+        let prompt: LanguageModelV3Prompt = [
+            .assistant(
+                content: inputs.enumerated().map { index, input in
+                    .toolCall(LanguageModelV3ToolCallPart(
+                        toolCallId: "call_\(index)",
+                        toolName: "search",
+                        input: input
+                    ))
+                },
+                providerOptions: nil
+            )
+        ]
+
+        let result = try await OpenAIResponsesInputBuilder.makeInput(
+            prompt: prompt,
+            systemMessageMode: .system,
+            store: false,
+            hasLocalShellTool: false
+        )
+
+        let arguments = result.input.compactMap { item -> String? in
+            guard case .object(let object) = item,
+                  case .string(let arguments) = object["arguments"] else { return nil }
+            return arguments
+        }
+        #expect(arguments.count == inputs.count)
+        #expect(arguments.allSatisfy { $0 == Self.sortedObjectJSON })
+    }
+
+    @Test("function_call_output serializes equal json outputs to identical sorted JSON")
+    func toolResultJSONOutputUsesSortedKeys() async throws {
+        let outputs = Self.equalObjectsWithDistinctStorage(count: 20)
+        let prompt: LanguageModelV3Prompt = [
+            .tool(
+                content: outputs.enumerated().map { index, output in
+                    .toolResult(LanguageModelV3ToolResultPart(
+                        toolCallId: "call_\(index)",
+                        toolName: "search",
+                        output: .json(value: output)
+                    ))
+                },
+                providerOptions: nil
+            )
+        ]
+
+        let result = try await OpenAIResponsesInputBuilder.makeInput(
+            prompt: prompt,
+            systemMessageMode: .system,
+            store: false,
+            hasLocalShellTool: false
+        )
+
+        let serializedOutputs = result.input.compactMap { item -> String? in
+            guard case .object(let object) = item,
+                  case .string(let output) = object["output"] else { return nil }
+            return output
+        }
+        #expect(serializedOutputs.count == outputs.count)
+        #expect(serializedOutputs.allSatisfy { $0 == Self.sortedObjectJSON })
+    }
 }
