@@ -1088,6 +1088,11 @@ struct OpenAIResponsesInputBuilder {
         return prefixes.contains { value.hasPrefix($0) }
     }
 
+    /// Serializes a tool call's arguments or a tool result's JSON output.
+    ///
+    /// Object keys are sorted because Swift dictionary order varies between
+    /// instances with the same contents, and provider prompt caches match
+    /// request prefixes byte for byte.
     private static func encodeJSONValue(_ value: JSONValue) throws -> String {
         func toAny(_ value: JSONValue) -> Any {
             switch value {
@@ -1106,7 +1111,7 @@ struct OpenAIResponsesInputBuilder {
         let data: Data
 
         if anyValue is [Any] || anyValue is [String: Any] {
-            data = try JSONSerialization.data(withJSONObject: anyValue, options: [])
+            data = try JSONSerialization.data(withJSONObject: anyValue, options: [.sortedKeys])
         } else {
             // For primitives (number, string, bool, null), encode them directly
             switch value {
@@ -1132,7 +1137,7 @@ struct OpenAIResponsesInputBuilder {
                 return String(arrayString.dropFirst(2).dropLast(2))
             case .array, .object:
                 // Should not reach here due to earlier check
-                data = try JSONSerialization.data(withJSONObject: anyValue, options: [])
+                data = try JSONSerialization.data(withJSONObject: anyValue, options: [.sortedKeys])
             }
         }
 

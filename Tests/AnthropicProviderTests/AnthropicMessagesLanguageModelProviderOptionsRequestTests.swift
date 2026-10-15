@@ -518,6 +518,45 @@ struct AnthropicMessagesLanguageModelProviderOptionsRequestTests {
         }
     }
 
+    @Test("sends thinking.display=updates with its beta header on adaptive thinking")
+    func sendsAdaptiveThinkingWithUpdatesDisplay() async throws {
+        let capture = RequestCapture()
+        let responseData = try makeProviderOptionsTestResponseData(model: "claude-opus-5-5")
+
+        let fetch: FetchFunction = { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(responseData), urlResponse: makeProviderOptionsTestHTTPResponse())
+        }
+
+        let model = AnthropicMessagesLanguageModel(
+            modelId: .init(rawValue: "claude-opus-5-5"),
+            config: makeProviderOptionsTestConfig(fetch: fetch)
+        )
+
+        _ = try await model.doGenerate(options: .init(
+            prompt: providerOptionsTestPrompt,
+            providerOptions: [
+                "anthropic": [
+                    "thinking": .object([
+                        "type": .string("adaptive"),
+                        "display": .string("updates"),
+                    ])
+                ]
+            ]
+        ))
+
+        let json = decodeRequestJSON(await capture.current())
+        if let thinking = json?["thinking"] as? [String: Any] {
+            #expect(thinking["type"] as? String == "adaptive")
+            #expect(thinking["display"] as? String == "updates")
+        } else {
+            Issue.record("Expected thinking payload")
+        }
+
+        let betas = try #require(anthropicBetaSet(await capture.current()))
+        #expect(betas.contains("thinking-display-updates-2026-08-18"))
+    }
+
     @Test("omits thinking.display when not set")
     func omitsDisplayWhenNotSet() async throws {
         let capture = RequestCapture()

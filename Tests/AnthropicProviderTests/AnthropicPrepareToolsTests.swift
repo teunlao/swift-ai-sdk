@@ -92,7 +92,7 @@ struct AnthropicPrepareToolsBasicTests {
             supportsStructuredOutput: true
         )
 
-        #expect(result.betas == Set(["structured-outputs-2025-11-13", "advanced-tool-use-2025-11-20"]))
+        #expect(result.betas == Set(["advanced-tool-use-2025-11-20"]))
 
         if case let .object(tool)? = result.tools?.first {
             #expect(tool["name"] == .string("tool_with_examples"))
@@ -212,7 +212,7 @@ struct AnthropicPrepareToolsBasicTests {
             supportsStructuredOutput: true
         )
 
-        #expect(result.betas == Set(["structured-outputs-2025-11-13"]))
+        #expect(result.betas.isEmpty)
         if case let .object(tool) = result.tools?.first {
             #expect(tool["defer_loading"] == .bool(false))
         } else {
@@ -244,7 +244,7 @@ struct AnthropicPrepareToolsBasicTests {
             supportsStructuredOutput: true
         )
 
-        #expect(result.betas == Set(["structured-outputs-2025-11-13", "advanced-tool-use-2025-11-20"]))
+        #expect(result.betas == Set(["advanced-tool-use-2025-11-20"]))
         if case let .object(tool) = result.tools?.first {
             #expect(tool["allowed_callers"] == .array([.string("code_execution_20250825")]))
         } else {
@@ -277,7 +277,7 @@ struct AnthropicPrepareToolsBasicTests {
             supportsStructuredOutput: true
         )
 
-        #expect(result.betas == Set(["structured-outputs-2025-11-13", "advanced-tool-use-2025-11-20"]))
+        #expect(result.betas == Set(["advanced-tool-use-2025-11-20"]))
         if case let .object(tool) = result.tools?.first {
             #expect(tool["defer_loading"] == .bool(true))
             #expect(tool["allowed_callers"] == .array([.string("code_execution_20250825")]))
@@ -311,7 +311,7 @@ struct AnthropicPrepareToolsStrictModeTests {
         }
     }
 
-    @Test("includes beta but not strict when strict is nil and supportsStructuredOutput is true")
+    @Test("omits beta and strict when strict is nil and no structured output is in use")
     func strictNilWithStructuredOutput() async throws {
         let result = try await prepareAnthropicTools(
             tools: [makeFunctionTool(
@@ -322,6 +322,28 @@ struct AnthropicPrepareToolsStrictModeTests {
             toolChoice: nil,
             disableParallelToolUse: nil,
             supportsStructuredOutput: true
+        )
+
+        #expect(result.betas.isEmpty)
+        if case let .object(tool)? = result.tools?.first {
+            #expect(tool["strict"] == nil)
+        } else {
+            Issue.record("Expected tool object")
+        }
+    }
+
+    @Test("includes beta without strict when a native output format is in use")
+    func betaWithStructuredOutputsInUse() async throws {
+        let result = try await prepareAnthropicTools(
+            tools: [makeFunctionTool(
+                name: "testFunction",
+                description: "A test function",
+                schema: .object(["type": .string("object"), "properties": .object([:])])
+            )],
+            toolChoice: nil,
+            disableParallelToolUse: nil,
+            supportsStructuredOutput: true,
+            structuredOutputsInUse: true
         )
 
         #expect(result.betas == Set(["structured-outputs-2025-11-13"]))

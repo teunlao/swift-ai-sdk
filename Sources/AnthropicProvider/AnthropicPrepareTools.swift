@@ -56,6 +56,7 @@ public func prepareAnthropicTools(
     toolChoice: LanguageModelV3ToolChoice?,
     disableParallelToolUse: Bool?,
     supportsStructuredOutput: Bool = false,
+    structuredOutputsInUse: Bool = false,
     cacheControlValidator: CacheControlValidator? = nil,
     defaultEagerInputStreaming: Bool = false
 ) async throws -> AnthropicPreparedTools {
@@ -80,9 +81,17 @@ public func prepareAnthropicTools(
             }
 
             if supportsStructuredOutput {
-                betas.insert("structured-outputs-2025-11-13")
+                // Upstream (@ai-sdk/anthropic) sends this beta on every
+                // request with function tools for capable models. We only
+                // advertise it when a structured-output feature is actually
+                // exercised (a strict tool, or a native JSON output format
+                // — passed in via `structuredOutputsInUse`), because some
+                // proxies reject requests carrying unfulfilled feature betas.
                 if let strict = functionTool.strict {
                     payload["strict"] = .bool(strict)
+                    betas.insert("structured-outputs-2025-11-13")
+                } else if structuredOutputsInUse {
+                    betas.insert("structured-outputs-2025-11-13")
                 }
             }
 

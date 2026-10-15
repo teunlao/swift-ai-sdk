@@ -869,4 +869,104 @@ struct OpenAICompatibleChatMessagesConverterTests {
         ]
         #expect(result == expected)
     }
+
+    /// Serialized JSON tool results must be byte-identical across requests for
+    /// providers with automatic prefix caching to achieve cache hits. Swift
+    /// dictionary iteration order is seeded per process, so encoding
+    /// `JSONValue.object` without a canonical key order shuffles JSON object
+    /// keys between processes and between dictionary construction paths,
+    /// invalidating the prompt-cache prefix at the first re-serialized tool
+    /// result. These tests pin the canonical form: keys in sorted order,
+    /// recursively.
+    @Test("tool result JSON output serializes with sorted keys")
+    func toolResultJSONOutputIsSorted() throws {
+        // Seven top-level keys make an accidentally-sorted hash order
+        // improbable (1/5040), so an unsorted encoder reliably fails.
+        let prompt: LanguageModelV3Prompt = [
+            .tool(
+                content: [
+                    .toolResult(LanguageModelV3ToolResultPart(
+                        toolCallId: "call1",
+                        toolName: "mcp_tool",
+                        output: .json(value: .object([
+                            "isError": .bool(false),
+                            "structuredContent": .object([
+                                "message": .string("No workspaces are currently open."),
+                                "workspaceCount": .number(0)
+                            ]),
+                            "content": .array([
+                                .object([
+                                    "type": .string("text"),
+                                    "text": .string("No workspaces are currently open.")
+                                ])
+                            ]),
+                            "toolName": .string("list_workspaces"),
+                            "durationMs": .number(12),
+                            "serverName": .string("xcode"),
+                            "requestId": .string("req-42")
+                        ]))
+                    ))
+                ],
+                providerOptions: nil
+            )
+        ]
+
+        let result = try convertToOpenAICompatibleChatMessages(prompt: prompt)
+        #expect(result.count == 1)
+
+        guard case .object(let first) = result[0] else {
+            Issue.record("Expected tool message to be an object")
+            return
+        }
+        #expect(first["role"] == .string("tool"))
+        #expect(first["tool_call_id"] == .string("call1"))
+        #expect(
+            first["content"] == .string(
+                #"{"content":[{"text":"No workspaces are currently open.","type":"text"}],"durationMs":12,"isError":false,"requestId":"req-42","serverName":"xcode","structuredContent":{"message":"No workspaces are currently open.","workspaceCount":0},"toolName":"list_workspaces"}"#
+            )
+        )
+    }
+
+    @Test("tool call arguments serialize with sorted keys")
+    func toolCallArgumentsAreSorted() throws {
+        let prompt: LanguageModelV3Prompt = [
+            .assistant(
+                content: [
+                    .toolCall(LanguageModelV3ToolCallPart(
+                        toolCallId: "call1",
+                        toolName: "grep",
+                        input: .object([
+                            "pattern": .string("cache"),
+                            "path": .string("Sources"),
+                            "limit": .number(100),
+                            "ignoreCase": .bool(true)
+                        ])
+                    ))
+                ],
+                providerOptions: nil
+            )
+        ]
+
+        let result = try convertToOpenAICompatibleChatMessages(prompt: prompt)
+        #expect(result.count == 1)
+
+        guard case .object(let first) = result[0] else {
+            Issue.record("Expected assistant message to be an object")
+            return
+        }
+        guard case .array(let toolCalls)? = first["tool_calls"], toolCalls.count == 1 else {
+            Issue.record("Expected one tool call")
+            return
+        }
+        guard case .object(let toolCall) = toolCalls[0],
+              case .object(let function)? = toolCall["function"] else {
+            Issue.record("Expected tool call with function")
+            return
+        }
+        #expect(
+            function["arguments"] == .string(
+                #"{"ignoreCase":true,"limit":100,"path":"Sources","pattern":"cache"}"#
+            )
+        )
+    }
 }

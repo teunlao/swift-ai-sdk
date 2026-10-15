@@ -1048,18 +1048,36 @@ private func encodePrompt(_ prompt: GoogleGenerativeAIPrompt) throws -> (systemI
                     "name": .string(call.name)
                 ]
                 inner["args"] = call.arguments
+                if let id = call.id {
+                    inner["id"] = .string(id)
+                }
                 var object: [String: JSONValue] = ["functionCall": .object(inner)]
                 if let signature = call.thoughtSignature {
                     object["thoughtSignature"] = .string(signature)
                 }
                 return .object(object)
             case .functionResponse(let response):
-                let responseObject = JSONValue.object([
+                var inner: [String: JSONValue] = [
                     "name": .string(response.name),
                     "response": response.response
-                ])
+                ]
+                if let id = response.id {
+                    inner["id"] = .string(id)
+                }
+                if let parts = response.parts, !parts.isEmpty {
+                    inner["parts"] = .array(parts.map { part in
+                        var obj: [String: JSONValue] = [
+                            "mimeType": .string(part.inlineData.mimeType),
+                            "data": .string(part.inlineData.data)
+                        ]
+                        if let sig = part.inlineData.thoughtSignature {
+                            obj["thoughtSignature"] = .string(sig)
+                        }
+                        return .object(["inlineData": .object(obj)])
+                    })
+                }
                 return .object([
-                    "functionResponse": responseObject
+                    "functionResponse": .object(inner)
                 ])
             case .fileData(let file):
                 return .object([

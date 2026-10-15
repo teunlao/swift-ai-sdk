@@ -5,10 +5,19 @@ import AISDKProviderUtils
 public struct GoogleGenerativeAIMessagesOptions: Sendable, Equatable {
     public var isGemmaModel: Bool
     public var providerOptionsName: String
+    public var supportsFunctionResponseParts: Bool
+    public var includeFunctionCallIds: Bool
 
-    public init(isGemmaModel: Bool = false, providerOptionsName: String = "google") {
+    public init(
+        isGemmaModel: Bool = false,
+        providerOptionsName: String = "google",
+        supportsFunctionResponseParts: Bool = true,
+        includeFunctionCallIds: Bool = true
+    ) {
         self.isGemmaModel = isGemmaModel
         self.providerOptionsName = providerOptionsName
+        self.supportsFunctionResponseParts = supportsFunctionResponseParts
+        self.includeFunctionCallIds = includeFunctionCallIds
     }
 }
 
@@ -117,6 +126,7 @@ func convertToGoogleGenerativeAIMessages(
                 case .toolCall(let toolCall):
                     return .functionCall(
                         .init(
+                            id: options.includeFunctionCallIds ? toolCall.toolCallId : nil,
                             name: toolCall.toolName,
                             arguments: toolCall.input,
                             thoughtSignature: googleThoughtSignature(
@@ -146,22 +156,22 @@ func convertToGoogleGenerativeAIMessages(
 
                 switch toolResult.output {
                 case .content(let value, _):
-                    for contentPart in value {
-                        switch contentPart {
-                        case .text(let text):
-                            let response = JSONValue.object([
-                                "name": .string(toolResult.toolName),
-                                "content": .string(text)
-                            ])
-                            converted.append(.functionResponse(.init(name: toolResult.toolName, response: response)))
-                        case .media(let data, let mediaType):
-                            converted.append(.inlineData(.init(mimeType: mediaType, data: data)))
-                            converted.append(.text(.init(text: "Tool executed successfully and returned this image as a response")))
-                        @unknown default:
-                            // Fallback for future enum cases mirrors upstream JSON.stringify behaviour
-                            let jsonString = stringifyToolResultContentPart(contentPart)
-                            converted.append(.text(.init(text: jsonString)))
-                        }
+                    if options.supportsFunctionResponseParts {
+                        appendToolResultParts(
+                            into: &converted,
+                            toolName: toolResult.toolName,
+                            toolCallId: toolResult.toolCallId,
+                            includeFunctionCallIds: options.includeFunctionCallIds,
+                            contentParts: value
+                        )
+                    } else {
+                        appendLegacyToolResultParts(
+                            into: &converted,
+                            toolName: toolResult.toolName,
+                            toolCallId: toolResult.toolCallId,
+                            includeFunctionCallIds: options.includeFunctionCallIds,
+                            contentParts: value
+                        )
                     }
 
                 case .text(let value, _):
@@ -169,35 +179,55 @@ func convertToGoogleGenerativeAIMessages(
                         "name": .string(toolResult.toolName),
                         "content": .string(value)
                     ])
-                    converted.append(.functionResponse(.init(name: toolResult.toolName, response: response)))
+                    converted.append(.functionResponse(.init(
+                        id: options.includeFunctionCallIds ? toolResult.toolCallId : nil,
+                        name: toolResult.toolName,
+                        response: response
+                    )))
 
                 case .json(let value, _):
                     let response = JSONValue.object([
                         "name": .string(toolResult.toolName),
                         "content": value
                     ])
-                    converted.append(.functionResponse(.init(name: toolResult.toolName, response: response)))
+                    converted.append(.functionResponse(.init(
+                        id: options.includeFunctionCallIds ? toolResult.toolCallId : nil,
+                        name: toolResult.toolName,
+                        response: response
+                    )))
 
                 case .executionDenied(let reason, _):
                     let response = JSONValue.object([
                         "name": .string(toolResult.toolName),
                         "content": .string(reason ?? "Tool execution denied.")
                     ])
-                    converted.append(.functionResponse(.init(name: toolResult.toolName, response: response)))
+                    converted.append(.functionResponse(.init(
+                        id: options.includeFunctionCallIds ? toolResult.toolCallId : nil,
+                        name: toolResult.toolName,
+                        response: response
+                    )))
 
                 case .errorText(let value, _):
                     let response = JSONValue.object([
                         "name": .string(toolResult.toolName),
                         "content": .string(value)
                     ])
-                    converted.append(.functionResponse(.init(name: toolResult.toolName, response: response)))
+                    converted.append(.functionResponse(.init(
+                        id: options.includeFunctionCallIds ? toolResult.toolCallId : nil,
+                        name: toolResult.toolName,
+                        response: response
+                    )))
 
                 case .errorJson(let value, _):
                     let response = JSONValue.object([
                         "name": .string(toolResult.toolName),
                         "content": value
                     ])
-                    converted.append(.functionResponse(.init(name: toolResult.toolName, response: response)))
+                    converted.append(.functionResponse(.init(
+                        id: options.includeFunctionCallIds ? toolResult.toolCallId : nil,
+                        name: toolResult.toolName,
+                        response: response
+                    )))
                 }
             }
 
@@ -238,6 +268,68 @@ private func googleThoughtSignature(
         return nil
     }
     return signature
+}
+
+private func appendToolResultParts(
+    into parts: inout [GoogleGenerativeAIContentPart],
+    toolName: String,
+    toolCallId: String?,
+    includeFunctionCallIds: Bool,
+    contentParts: [LanguageModelV3ToolResultContentPart]
+) {
+    var functionResponseParts: [GoogleFunctionResponsePart] = []
+    var responseTextParts: [String] = []
+
+    for contentPart in contentParts {
+        switch contentPart {
+        case .text(let text):
+            responseTextParts.append(text)
+        case .media(let data, let mediaType):
+            functionResponseParts.append(.init(
+                inlineData: .init(mimeType: mediaType, data: data)
+            ))
+        }
+    }
+
+    let contentText = responseTextParts.isEmpty ? "Tool executed successfully." : responseTextParts.joined(separator: "\n")
+    let response = JSONValue.object([
+        "name": .string(toolName),
+        "content": .string(contentText)
+    ])
+    parts.append(.functionResponse(.init(
+        id: includeFunctionCallIds ? toolCallId : nil,
+        name: toolName,
+        response: response,
+        parts: functionResponseParts.isEmpty ? nil : functionResponseParts
+    )))
+}
+
+private func appendLegacyToolResultParts(
+    into parts: inout [GoogleGenerativeAIContentPart],
+    toolName: String,
+    toolCallId: String?,
+    includeFunctionCallIds: Bool,
+    contentParts: [LanguageModelV3ToolResultContentPart]
+) {
+    for contentPart in contentParts {
+        switch contentPart {
+        case .text(let text):
+            let response = JSONValue.object([
+                "name": .string(toolName),
+                "content": .string(text)
+            ])
+            parts.append(.functionResponse(.init(
+                id: includeFunctionCallIds ? toolCallId : nil,
+                name: toolName,
+                response: response
+            )))
+        case .media(let data, let mediaType):
+            let topLevel = getTopLevelMediaType(mediaType)
+            let noun = topLevel == "image" ? "image" : "file"
+            parts.append(.inlineData(.init(mimeType: mediaType, data: data)))
+            parts.append(.text(.init(text: "Tool executed successfully and returned this \(noun) as a response")))
+        }
+    }
 }
 
 private func stringifyToolResultContentPart(_ part: LanguageModelV3ToolResultContentPart) -> String {

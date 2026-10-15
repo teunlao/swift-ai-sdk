@@ -866,6 +866,9 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
                 var thinkingPayload: [String: JSONValue] = ["type": .string("adaptive")]
                 if let display = anthropicOptions?.thinking?.display {
                     thinkingPayload["display"] = .string(display.rawValue)
+                    if display == .updates {
+                        betas.insert("thinking-display-updates-2026-08-18")
+                    }
                 }
                 args["thinking"] = .object(thinkingPayload)
             default:
@@ -1123,6 +1126,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
             toolChoice: jsonResponseTool != nil ? .required : options.toolChoice,
             disableParallelToolUse: jsonResponseTool != nil ? true : anthropicOptions?.disableParallelToolUse,
             supportsStructuredOutput: jsonResponseTool == nil ? supportsStructuredOutput : false,
+            structuredOutputsInUse: usingNativeOutputFormat,
             cacheControlValidator: cacheControlValidator,
             defaultEagerInputStreaming: defaultEagerInputStreaming
         )
@@ -1215,7 +1219,8 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV3 {
 
     /// Port of `getModelCapabilities` from `@ai-sdk/anthropic/src/anthropic-messages-language-model.ts`.
     private func getModelCapabilities(modelId: String) -> AnthropicModelCapabilities {
-        if modelId.contains("claude-opus-4-8")
+        if modelId.contains("claude-opus-5-5")
+            || modelId.contains("claude-opus-4-8")
             || modelId.contains("claude-opus-4-7")
             || modelId.contains("claude-fable-5")
             || modelId.contains("claude-sonnet-5")
