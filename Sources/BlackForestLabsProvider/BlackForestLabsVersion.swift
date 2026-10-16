@@ -9,5 +9,5 @@ import AISDKProviderUtils
 
 /// Version string for the Black Forest Labs provider package.
 /// Mirrors `packages/black-forest-labs/src/version.ts`.
-public let BLACK_FOREST_LABS_VERSION = SDKReleaseVersion.value
+public let VERSION = SDKReleaseVersion.value
 

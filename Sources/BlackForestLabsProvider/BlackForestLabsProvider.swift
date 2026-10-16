@@ -53,7 +53,7 @@ public final class BlackForestLabsProvider: ProviderV4 {
         let key = try loadAPIKey(apiKey: settings.apiKey, environmentVariableName: "BFL_API_KEY", description: "Black Forest Labs")
         var headers: [String: String?] = ["x-key": key]
         for (key, value) in settings.headers ?? [:] { headers[key] = value }
-        return withUserAgentSuffix(headers, "ai-sdk-black-forest-labs/\(BLACK_FOREST_LABS_VERSION)").mapValues { Optional($0) }
+        return withUserAgentSuffix(headers, "ai-sdk-black-forest-labs/\(VERSION)").mapValues { Optional($0) }
     }
 }
 
