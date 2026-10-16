@@ -144,6 +144,7 @@ func generateVideo(
     let generator = resolvedModel as? any VideoModelV4Generator
     let operations = resolvedModel as? any VideoModelV4Operations
     let useStartStatus = operations != nil && (poll != nil || webhook != nil || generator == nil)
+    if useStartStatus { try validateVideoPollOptions(poll) }
     guard generator != nil || operations != nil else {
         throw VideoGenerationFailure(message: "Video model \(resolvedModel.modelId) does not implement doGenerate or doStart/doStatus.")
     }

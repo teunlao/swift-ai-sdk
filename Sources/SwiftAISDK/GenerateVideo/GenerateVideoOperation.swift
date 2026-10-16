@@ -17,6 +17,15 @@ public struct GenerateVideoPollOptions: Sendable {
 
 public typealias GenerateVideoWebhookFactory = @Sendable () async throws -> VideoModelV4Webhook
 
+func validateVideoPollOptions(_ options: GenerateVideoPollOptions?) throws {
+    guard let options else { return }
+    for (parameter, value) in [("poll.intervalMs", options.intervalMs), ("poll.timeoutMs", options.timeoutMs)] {
+        guard value.isFinite else {
+            throw InvalidArgumentError(parameter: parameter, value: .number(value), message: "\(parameter) must be a finite number")
+        }
+    }
+}
+
 struct VideoGenerationFailure: Error, LocalizedError {
     let message: String
     var errorDescription: String? { message }

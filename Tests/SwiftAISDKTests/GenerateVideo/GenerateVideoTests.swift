@@ -140,6 +140,29 @@ struct GenerateVideoTests {
         #expect(result.videos.map(\.data) == [Data([1]), Data([1])])
     }
 
+    @Test("non-finite polling options are rejected before a billable start", arguments: [
+        ("poll.intervalMs", Double.nan, 1000.0),
+        ("poll.timeoutMs", 0.0, Double.nan),
+        ("poll.intervalMs", Double.infinity, 1000.0),
+        ("poll.timeoutMs", 0.0, Double.infinity)
+    ])
+    func rejectsNonFinitePolling(parameter: String, interval: Double, timeout: Double) async throws {
+        enum StartReached: Error { case unexpected }
+        let model = OperationsVideoModel(
+            start: { _, _ in throw StartReached.unexpected },
+            status: { _ in throw StartReached.unexpected }
+        )
+        do {
+            _ = try await experimental_generateVideo(
+                model: model, prompt: prompt, maxRetries: 0,
+                poll: .init(intervalMs: interval, timeoutMs: timeout)
+            )
+            Issue.record("Expected invalid polling configuration")
+        } catch let error as InvalidArgumentError {
+            #expect(error.parameter == parameter)
+        }
+    }
+
     @Test("operations-only models retry one idempotent start and poll to completion")
     func operationsModelPolling() async throws {
         actor Calls {
