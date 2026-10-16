@@ -6,11 +6,11 @@ import AISDKProviderUtils
 //=== Upstream Reference ====================================================//
 //===----------------------------------------------------------------------===//
 // Ported from packages/luma/src/luma-image-model.ts
-// Upstream commit: 77db222ee
+// Upstream commit: 8a5233b15b1e69573d63faee6cd0014559252ee4
 //===----------------------------------------------------------------------===//
 
 public struct LumaErrorContext: Codable, Sendable {
-    public let expected: String?
+    public let expected: String
 }
 
 public struct LumaErrorDetail: Codable, Sendable {

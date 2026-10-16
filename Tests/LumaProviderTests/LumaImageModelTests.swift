@@ -71,6 +71,27 @@ struct LumaImageModelTests {
         }
     }
 
+    @Test("API error context is nullable but requires expected when present", arguments: [JSONValue.null, .object(["expected": .string("string")]), .object([:]), .object(["expected": .null])])
+    func errorContext(_ context: JSONValue) async throws {
+        let body = JSONValue.object(["detail": .array([.object(["type": .string("string_type"), "loc": .array([.string("prompt")]), "msg": .string("Invalid prompt"), "input": .string(""), "ctx": context])])])
+        let data = try JSONEncoder().encode(body)
+        let fetch: FetchFunction = { request in
+            FetchResponse(body: .data(data), urlResponse: HTTPURLResponse(url: request.url!, statusCode: 400, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!)
+        }
+        let model = createLuma(settings: .init(apiKey: "token", fetch: fetch)).image(modelId: .photon1)
+        do {
+            _ = try await model.doGenerate(options: .init(n: 1))
+            Issue.record("Expected API error")
+        } catch let error as APICallError {
+            let valid: Bool
+            if context == .null { valid = true }
+            else if case .object(let object) = context, case .string = object["expected"] { valid = true }
+            else { valid = false }
+            #expect(error.statusCode == 400)
+            #expect(error.message == (valid ? "Invalid prompt" : HTTPURLResponse.localizedString(forStatusCode: 400).capitalized))
+        }
+    }
+
     @Test("invalid image weights fail provider option validation")
     func rejectsWeight() async throws {
         let model = createLuma(settings: .init(apiKey: "token")).image(modelId: .photon1)
