@@ -1901,7 +1901,7 @@ private extension GenerateTextTests {
                     return PrepareStepResult(
                         model: .v3(trueModel),
                         toolChoice: .tool(toolName: "tool1"),
-                        system: "system-message-0",
+                        instructions: "system-message-0",
                         messages: newMessages
                     )
                 }
@@ -1911,7 +1911,7 @@ private extension GenerateTextTests {
                     return PrepareStepResult(
                         model: .v3(trueModel),
                         activeTools: [],
-                        system: "system-message-1"
+                        instructions: "system-message-1"
                     )
                 }
 

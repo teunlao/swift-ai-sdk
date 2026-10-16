@@ -36,16 +36,13 @@ public enum Instructions: Sendable, Equatable, ExpressibleByStringLiteral, Expre
 /**
  Prompt configuration for AI function calls.
 
- Port of `@ai-sdk/ai/src/prompt/prompt.ts`: optional `instructions` (or the
- deprecated alias `system`), and either `prompt` (text or messages) or
- `messages`.
+ Port of `@ai-sdk/ai/src/prompt/prompt.ts`: optional `instructions`, and
+ either `prompt` (text or messages) or `messages`. Upstream's deprecated
+ `system` alias is not carried.
  */
 public struct Prompt: Sendable, Equatable {
     /// Instructions for the model.
     public let instructions: Instructions?
-
-    /// Deprecated alias for `instructions`.
-    public let system: Instructions?
 
     /// Whether system messages are allowed in `prompt` or `messages`. Default: `false`.
     public let allowSystemInMessages: Bool?
@@ -58,34 +55,24 @@ public struct Prompt: Sendable, Equatable {
 
     public init(
         instructions: Instructions? = nil,
-        system: Instructions? = nil,
         allowSystemInMessages: Bool? = nil,
         prompt: PromptContent? = nil,
         messages: [ModelMessage]? = nil
     ) {
         self.instructions = instructions
-        self.system = system
         self.allowSystemInMessages = allowSystemInMessages
         self.prompt = prompt
         self.messages = messages
     }
 
-    public init(system: String?, prompt: PromptContent) {
-        self.init(system: system.map(Instructions.text), prompt: prompt)
-    }
-
-    public init(system: String?, messages: [ModelMessage]) {
-        self.init(system: system.map(Instructions.text), messages: messages)
-    }
-
     /// Creates a simple text prompt.
-    public static func text(_ text: String, system: String? = nil) -> Prompt {
-        Prompt(system: system.map(Instructions.text), prompt: .text(text))
+    public static func text(_ text: String, instructions: Instructions? = nil) -> Prompt {
+        Prompt(instructions: instructions, prompt: .text(text))
     }
 
     /// Creates a prompt from messages.
-    public static func messages(_ messages: [ModelMessage], system: String? = nil) -> Prompt {
-        Prompt(system: system.map(Instructions.text), messages: messages)
+    public static func messages(_ messages: [ModelMessage], instructions: Instructions? = nil) -> Prompt {
+        Prompt(instructions: instructions, messages: messages)
     }
 }
 

@@ -13,7 +13,7 @@ import AISDKJSONSchema
 public func generateObject<ResultValue, PartialValue, ElementStream>(
     model modelArg: LanguageModel,
     output: GenerateObjectOutputSpec<ResultValue, PartialValue, ElementStream>,
-    system: String? = nil,
+    instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
     repairText: RepairTextFunction? = nil,
@@ -68,7 +68,7 @@ public func generateObject<ResultValue, PartialValue, ElementStream>(
         operationId: "ai.generateObject",
         provider: model.provider,
         modelId: model.modelId,
-        system: system.map(Instructions.text),
+        system: instructions,
         prompt: prompt.map(PromptContent.text),
         messages: messages,
         maxOutputTokens: callSettings.maxOutputTokens,
@@ -93,7 +93,7 @@ public func generateObject<ResultValue, PartialValue, ElementStream>(
 
     do {
         let standardizedPrompt = try standardizePrompt(makeGenerateObjectPrompt(
-            system: system,
+            instructions: instructions,
             prompt: prompt,
             messages: messages
         ))
@@ -242,7 +242,7 @@ public func generateObject<ResultValue, PartialValue, ElementStream>(
 public func generateObject<ObjectResult: Codable & Sendable>(
     model: LanguageModel,
     schema type: ObjectResult.Type,
-    system: String? = nil,
+    instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
     schemaName: String? = nil,
@@ -262,7 +262,7 @@ public func generateObject<ObjectResult: Codable & Sendable>(
     try await generateObject(
         model: model,
         schema: FlexibleSchema.auto(type),
-        system: system,
+        instructions: instructions,
         prompt: prompt,
         messages: messages,
         schemaName: schemaName,
@@ -285,7 +285,7 @@ public func generateObject<ObjectResult: Codable & Sendable>(
 public func generateObject<ObjectResult>(
     model: LanguageModel,
     schema: FlexibleSchema<ObjectResult>,
-    system: String? = nil,
+    instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
     schemaName: String? = nil,
@@ -310,7 +310,7 @@ public func generateObject<ObjectResult>(
             schemaDescription: schemaDescription,
             mode: mode
         ),
-        system: system,
+        instructions: instructions,
         prompt: prompt,
         messages: messages,
         repairText: repairText,
@@ -329,7 +329,7 @@ public func generateObject<ObjectResult>(
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 public func generateObjectNoSchema(
     model: LanguageModel,
-    system: String? = nil,
+    instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
     repairText: RepairTextFunction? = nil,
@@ -346,7 +346,7 @@ public func generateObjectNoSchema(
     try await generateObject(
         model: model,
         output: GenerateObjectOutput.noSchema(),
-        system: system,
+        instructions: instructions,
         prompt: prompt,
         messages: messages,
         repairText: repairText,
@@ -366,7 +366,7 @@ public func generateObjectNoSchema(
 public func generateObjectArray<ElementResult: Codable & Sendable>(
     model: LanguageModel,
     schema elementType: ElementResult.Type,
-    system: String? = nil,
+    instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
     schemaName: String? = nil,
@@ -386,7 +386,7 @@ public func generateObjectArray<ElementResult: Codable & Sendable>(
     try await generateObjectArray(
         model: model,
         schema: FlexibleSchema.auto(elementType),
-        system: system,
+        instructions: instructions,
         prompt: prompt,
         messages: messages,
         schemaName: schemaName,
@@ -409,7 +409,7 @@ public func generateObjectArray<ElementResult: Codable & Sendable>(
 public func generateObjectArray<ElementResult>(
     model: LanguageModel,
     schema: FlexibleSchema<ElementResult>,
-    system: String? = nil,
+    instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
     schemaName: String? = nil,
@@ -434,7 +434,7 @@ public func generateObjectArray<ElementResult>(
             schemaDescription: schemaDescription,
             mode: mode
         ),
-        system: system,
+        instructions: instructions,
         prompt: prompt,
         messages: messages,
         repairText: repairText,
@@ -454,7 +454,7 @@ public func generateObjectArray<ElementResult>(
 public func generateObjectEnum(
     model: LanguageModel,
     values: [String],
-    system: String? = nil,
+    instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
     repairText: RepairTextFunction? = nil,
@@ -471,7 +471,7 @@ public func generateObjectEnum(
     try await generateObject(
         model: model,
         output: GenerateObjectOutput.enumeration(values: values),
-        system: system,
+        instructions: instructions,
         prompt: prompt,
         messages: messages,
         repairText: repairText,

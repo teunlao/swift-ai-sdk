@@ -56,7 +56,7 @@ struct ConvertToLanguageModelPromptTests {
         let imageURL = URL(string: "https://example.com/image.png")!
 
         let prompt = StandardizedPrompt(
-            system: nil,
+            instructions: nil,
             messages: [
                 .user(UserModelMessage(
                     content: .parts([
@@ -110,7 +110,7 @@ struct ConvertToLanguageModelPromptTests {
         let imageURL = URL(string: "https://example.com/image.png")!
 
         let prompt = StandardizedPrompt(
-            system: nil,
+            instructions: nil,
             messages: [
                 .user(UserModelMessage(
                     content: .parts([
@@ -163,7 +163,7 @@ struct ConvertToLanguageModelPromptTests {
         let fileURL = URL(string: "https://example.com/document.pdf")!
 
         let prompt = StandardizedPrompt(
-            system: nil,
+            instructions: nil,
             messages: [
                 .user(UserModelMessage(
                     content: .parts([
@@ -215,7 +215,7 @@ struct ConvertToLanguageModelPromptTests {
         let fileURL = URL(string: "https://example.com/document.pdf")!
 
         let prompt = StandardizedPrompt(
-            system: nil,
+            instructions: nil,
             messages: [
                 .user(UserModelMessage(
                     content: .parts([
@@ -271,7 +271,7 @@ struct ConvertToLanguageModelPromptTests {
         let base64Data = "SGVsbG8sIFdvcmxkIQ==" // "Hello, World!" in base64
 
         let prompt = StandardizedPrompt(
-            system: nil,
+            instructions: nil,
             messages: [
                 .user(UserModelMessage(
                     content: .parts([
@@ -322,7 +322,7 @@ struct ConvertToLanguageModelPromptTests {
         let uint8Data = Data([72, 101, 108, 108, 111]) // "Hello" in ASCII
 
         let prompt = StandardizedPrompt(
-            system: nil,
+            instructions: nil,
             messages: [
                 .user(UserModelMessage(
                     content: .parts([
@@ -373,7 +373,7 @@ struct ConvertToLanguageModelPromptTests {
         let base64Data = "SGVsbG8sIFdvcmxkIQ=="
 
         let prompt = StandardizedPrompt(
-            system: nil,
+            instructions: nil,
             messages: [
                 .user(UserModelMessage(
                     content: .parts([
@@ -415,7 +415,7 @@ struct ConvertToLanguageModelPromptTests {
         let fileURL = URL(string: "https://example.com/document.pdf")!
 
         let prompt = StandardizedPrompt(
-            system: nil,
+            instructions: nil,
             messages: [
                 .user(UserModelMessage(
                     content: .parts([
@@ -461,7 +461,7 @@ struct ConvertToLanguageModelPromptTests {
     @Test("should combine 2 consecutive tool messages into a single tool message")
     func combinesConsecutiveToolMessages() async throws {
         let prompt = StandardizedPrompt(
-            system: nil,
+            instructions: nil,
             messages: [
                 .assistant(AssistantModelMessage(
                     content: .parts([
@@ -552,7 +552,7 @@ struct ConvertToLanguageModelPromptTests {
         ]
 
         let prompt = StandardizedPrompt(
-            system: nil,
+            instructions: nil,
             messages: [
                 .user(UserModelMessage(
                     content: .parts([
@@ -595,7 +595,7 @@ struct ConvertToLanguageModelPromptTests {
         let fileURL = URL(string: "https://example.com/document.pdf")!
 
         let prompt = StandardizedPrompt(
-            system: nil,
+            instructions: nil,
             messages: [
                 .user(UserModelMessage(
                     content: .parts([
@@ -646,7 +646,7 @@ struct ConvertToLanguageModelPromptTests {
         let fileURL = URL(string: "https://example.com/document.pdf")!
 
         let prompt = StandardizedPrompt(
-            system: nil,
+            instructions: nil,
             messages: [
                 .user(UserModelMessage(
                     content: .parts([
@@ -697,7 +697,7 @@ struct ConvertToLanguageModelPromptTests {
         let fileURL = URL(string: "https://example.com/document.pdf")!
 
         let prompt = StandardizedPrompt(
-            system: nil,
+            instructions: nil,
             messages: [
                 .user(UserModelMessage(
                     content: .parts([
@@ -753,7 +753,7 @@ struct ConvertToLanguageModelPromptTests {
         let fileURL = URL(string: "https://example.com/document.pdf")!
 
         let prompt = StandardizedPrompt(
-            system: nil,
+            instructions: nil,
             messages: [
                 .user(UserModelMessage(
                     content: .parts([
@@ -805,7 +805,7 @@ struct ConvertToLanguageModelPromptTests {
         let fileURL = URL(string: "https://example.com/document.pdf")!
 
         let prompt = StandardizedPrompt(
-            system: nil,
+            instructions: nil,
             messages: [
                 .user(UserModelMessage(
                     content: .parts([
@@ -856,7 +856,7 @@ struct ConvertToLanguageModelPromptTests {
         let imageURL = URL(string: "https://example.com/image.jpg")!
 
         let prompt = StandardizedPrompt(
-            system: nil,
+            instructions: nil,
             messages: [
                 .user(UserModelMessage(
                     content: .parts([
@@ -908,7 +908,7 @@ struct ConvertToLanguageModelPromptTests {
         let fileURL = URL(string: "https://example.com/document.txt")!
 
         let prompt = StandardizedPrompt(
-            system: nil,
+            instructions: nil,
             messages: [
                 .user(UserModelMessage(
                     content: .parts([
@@ -987,7 +987,7 @@ struct ConvertToLanguageModelPromptTests {
         }
 
         let prompt = StandardizedPrompt(
-            system: nil,
+            instructions: nil,
             messages: [
                 .user(UserModelMessage(
                     content: .parts([
@@ -1080,7 +1080,7 @@ struct ConvertToLanguageModelPromptTests {
         ])
 
         let prompt = StandardizedPrompt(
-            system: nil,
+            instructions: nil,
             messages: [
                 .user(UserModelMessage(
                     content: .parts([

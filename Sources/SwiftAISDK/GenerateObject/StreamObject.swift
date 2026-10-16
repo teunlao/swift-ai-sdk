@@ -12,7 +12,7 @@ import AISDKProviderUtils
 public func streamObject<ResultValue, PartialValue, ElementStream>(
     model modelArg: LanguageModel,
     output: GenerateObjectOutputSpec<ResultValue, PartialValue, ElementStream>,
-    system: String? = nil,
+    instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
     repairText: RepairTextFunction? = nil,
@@ -59,7 +59,7 @@ public func streamObject<ResultValue, PartialValue, ElementStream>(
         onFinish: onFinish,
         internalOptions: _internal,
         settings: settings,
-        system: system,
+        instructions: instructions,
         prompt: prompt,
         messages: messages,
         result: result,
@@ -86,7 +86,7 @@ public func streamObject<ResultValue, PartialValue, ElementStream>(
 public func streamObject<ObjectResult: Codable & Sendable>(
     model: LanguageModel,
     schema type: ObjectResult.Type,
-    system: String? = nil,
+    instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
     schemaName: String? = nil,
@@ -107,7 +107,7 @@ public func streamObject<ObjectResult: Codable & Sendable>(
     try streamObject(
         model: model,
         schema: FlexibleSchema.auto(type),
-        system: system,
+        instructions: instructions,
         prompt: prompt,
         messages: messages,
         schemaName: schemaName,
@@ -131,7 +131,7 @@ public func streamObject<ObjectResult: Codable & Sendable>(
 public func streamObject<ObjectResult>(
     model: LanguageModel,
     schema: FlexibleSchema<ObjectResult>,
-    system: String? = nil,
+    instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
     schemaName: String? = nil,
@@ -157,7 +157,7 @@ public func streamObject<ObjectResult>(
             schemaDescription: schemaDescription,
             mode: mode
         ),
-        system: system,
+        instructions: instructions,
         prompt: prompt,
         messages: messages,
         repairText: repairText,
@@ -177,7 +177,7 @@ public func streamObject<ObjectResult>(
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 public func streamObjectNoSchema(
     model: LanguageModel,
-    system: String? = nil,
+    instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
     repairText: RepairTextFunction? = nil,
@@ -195,7 +195,7 @@ public func streamObjectNoSchema(
     try streamObject(
         model: model,
         output: GenerateObjectOutput.noSchema(),
-        system: system,
+        instructions: instructions,
         prompt: prompt,
         messages: messages,
         repairText: repairText,
@@ -216,7 +216,7 @@ public func streamObjectNoSchema(
 public func streamObjectArray<ElementResult: Codable & Sendable>(
     model: LanguageModel,
     schema elementType: ElementResult.Type,
-    system: String? = nil,
+    instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
     schemaName: String? = nil,
@@ -237,7 +237,7 @@ public func streamObjectArray<ElementResult: Codable & Sendable>(
     try streamObjectArray(
         model: model,
         schema: FlexibleSchema.auto(elementType),
-        system: system,
+        instructions: instructions,
         prompt: prompt,
         messages: messages,
         schemaName: schemaName,
@@ -261,7 +261,7 @@ public func streamObjectArray<ElementResult: Codable & Sendable>(
 public func streamObjectArray<ElementResult>(
     model: LanguageModel,
     schema: FlexibleSchema<ElementResult>,
-    system: String? = nil,
+    instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
     schemaName: String? = nil,
@@ -287,7 +287,7 @@ public func streamObjectArray<ElementResult>(
             schemaDescription: schemaDescription,
             mode: mode
         ),
-        system: system,
+        instructions: instructions,
         prompt: prompt,
         messages: messages,
         repairText: repairText,
@@ -308,7 +308,7 @@ public func streamObjectArray<ElementResult>(
 public func streamObjectEnum(
     model: LanguageModel,
     values: [String],
-    system: String? = nil,
+    instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
     repairText: RepairTextFunction? = nil,
@@ -326,7 +326,7 @@ public func streamObjectEnum(
     try streamObject(
         model: model,
         output: GenerateObjectOutput.enumeration(values: values),
-        system: system,
+        instructions: instructions,
         prompt: prompt,
         messages: messages,
         repairText: repairText,
@@ -361,7 +361,7 @@ private struct StreamObjectRun<ResultValue: Sendable, PartialValue: Sendable, El
     let onFinish: GenerateObjectCallback<GenerateObjectEndEvent<ResultValue>>?
     let internalOptions: GenerateObjectInternalOptions
     let settings: CallSettings
-    let system: String?
+    let instructions: Instructions?
     let prompt: String?
     let messages: [ModelMessage]?
     let result: StreamObjectResult<PartialValue, ResultValue, ElementStream>
@@ -392,7 +392,7 @@ private struct StreamObjectRun<ResultValue: Sendable, PartialValue: Sendable, El
             operationId: "ai.streamObject",
             provider: model.provider,
             modelId: model.modelId,
-            system: system.map(Instructions.text),
+            system: instructions,
             prompt: prompt.map(PromptContent.text),
             messages: messages,
             maxOutputTokens: callSettings.maxOutputTokens,
@@ -416,7 +416,7 @@ private struct StreamObjectRun<ResultValue: Sendable, PartialValue: Sendable, El
         )
 
         let standardizedPrompt = try standardizePrompt(makeGenerateObjectPrompt(
-            system: system,
+            instructions: instructions,
             prompt: prompt,
             messages: messages
         ))

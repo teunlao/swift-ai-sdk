@@ -66,7 +66,7 @@ struct StreamTextV4Tests {
 
         let result = try streamText(
             model: model,
-            system: "You are a V4 stream test.",
+            instructions: "You are a V4 stream test.",
             prompt: "Stream hello.",
             providerOptions: ["mock": ["mode": .string("stream")]],
             settings: CallSettings(

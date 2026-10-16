@@ -75,8 +75,6 @@ public struct PrepareStepResult: Sendable {
     public var activeTools: [String]?
     public var toolOrder: [String]?
     public var instructions: Instructions?
-    /// Deprecated alias for `instructions`.
-    public var system: Instructions?
     public var messages: [ModelMessage]?
     public var toolsContext: ToolsContext?
     public var runtimeContext: Context?
@@ -90,7 +88,6 @@ public struct PrepareStepResult: Sendable {
         activeTools: [String]? = nil,
         toolOrder: [String]? = nil,
         instructions: Instructions? = nil,
-        system: Instructions? = nil,
         messages: [ModelMessage]? = nil,
         toolsContext: ToolsContext? = nil,
         runtimeContext: Context? = nil,
@@ -110,7 +107,6 @@ public struct PrepareStepResult: Sendable {
         self.activeTools = activeTools
         self.toolOrder = toolOrder
         self.instructions = instructions
-        self.system = system
         self.messages = messages
         self.toolsContext = toolsContext
         self.runtimeContext = runtimeContext
@@ -127,9 +123,6 @@ public struct PrepareStepResult: Sendable {
             reasoning: reasoning
         )
     }
-
-    /// Instructions of the step: `instructions`, then the deprecated `system`.
-    var resolvedInstructions: Instructions? { instructions ?? system }
 }
 
 /// Customizes the settings of each step.

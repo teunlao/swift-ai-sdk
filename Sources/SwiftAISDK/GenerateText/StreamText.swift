@@ -130,7 +130,6 @@ struct StreamTextConfiguration<OutputValue: Sendable, PartialOutput: Sendable>: 
     var tools: ToolSet?
     var toolChoice: ToolChoice?
     var instructions: Instructions?
-    var system: Instructions?
     var prompt: String?
     var messages: [ModelMessage]?
     var allowSystemInMessages: Bool?
@@ -183,7 +182,6 @@ public func streamText<OutputValue: Sendable, PartialOutput: Sendable>(
     tools: ToolSet? = nil,
     toolChoice: ToolChoice? = nil,
     instructions: Instructions? = nil,
-    system: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
     allowSystemInMessages: Bool? = nil,
@@ -225,7 +223,6 @@ public func streamText<OutputValue: Sendable, PartialOutput: Sendable>(
         tools: tools,
         toolChoice: toolChoice,
         instructions: instructions,
-        system: system,
         prompt: prompt,
         messages: messages,
         allowSystemInMessages: allowSystemInMessages,
@@ -278,7 +275,6 @@ public func streamText(
     tools: ToolSet? = nil,
     toolChoice: ToolChoice? = nil,
     instructions: Instructions? = nil,
-    system: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
     allowSystemInMessages: Bool? = nil,
@@ -319,7 +315,6 @@ public func streamText(
         tools: tools,
         toolChoice: toolChoice,
         instructions: instructions,
-        system: system,
         prompt: prompt,
         messages: messages,
         allowSystemInMessages: allowSystemInMessages,

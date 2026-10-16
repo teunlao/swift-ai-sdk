@@ -89,7 +89,7 @@ struct GenerateObjectV4Tests {
                 schemaName: "object-result",
                 schemaDescription: "Object result schema"
             ),
-            system: "You are a V4 object test.",
+            instructions: "You are a V4 object test.",
             prompt: "Return an object.",
             providerOptions: ["mock": ["mode": .string("object")]],
             settings: CallSettings(
@@ -200,7 +200,7 @@ struct GenerateObjectV4Tests {
                 schemaName: "stream-object-result",
                 schemaDescription: "Stream object schema"
             ),
-            system: "You are a V4 stream object test.",
+            instructions: "You are a V4 stream object test.",
             prompt: "Stream an object.",
             providerOptions: ["mock": ["mode": .string("stream-object")]],
             settings: CallSettings(

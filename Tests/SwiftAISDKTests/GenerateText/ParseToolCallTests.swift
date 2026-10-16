@@ -368,7 +368,7 @@ struct ParseToolCallTests {
         #expect(capturedOptions != nil)
 
         if let options = capturedOptions {
-            #expect(options.system == "test system")
+            #expect(options.instructions == "test system")
             #expect(options.messages.count == 1)
             #expect(options.toolCall.input == "invalid json")
             #expect(InvalidToolInputError.isInstance(options.error))

@@ -18,13 +18,6 @@ public struct StandardizedPrompt: Sendable, Equatable {
         self.instructions = instructions
         self.messages = messages
     }
-
-    public init(system: String?, messages: [ModelMessage]) {
-        self.init(instructions: system.map(Instructions.text), messages: messages)
-    }
-
-    /// The instructions as plain text when they are a string.
-    public var system: String? { instructions?.text }
 }
 
 /**
@@ -38,7 +31,7 @@ public struct StandardizedPrompt: Sendable, Equatable {
    `allowSystemInMessages`.
  */
 public func standardizePrompt(_ prompt: Prompt) throws -> StandardizedPrompt {
-    let instructions = prompt.instructions ?? prompt.system
+    let instructions = prompt.instructions
     let description = String(describing: prompt)
 
     if prompt.prompt == nil && prompt.messages == nil {

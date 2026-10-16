@@ -118,7 +118,6 @@ public func generateText<OutputValue: Sendable, PartialOutput: Sendable>(
     tools: ToolSet? = nil,
     toolChoice: ToolChoice? = nil,
     instructions: Instructions? = nil,
-    system: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
     allowSystemInMessages: Bool? = nil,
@@ -189,7 +188,6 @@ public func generateText<OutputValue: Sendable, PartialOutput: Sendable>(
 
     let initialPrompt = try standardizePrompt(Prompt(
         instructions: instructions,
-        system: system,
         allowSystemInMessages: allowSystemInMessages,
         prompt: prompt.map(PromptContent.text),
         messages: messages
@@ -352,7 +350,7 @@ public func generateText<OutputValue: Sendable, PartialOutput: Sendable>(
             ))
 
             let stepModel = try prepareStepResult?.model.map(resolveLanguageModelV4) ?? model
-            let stepInstructions = prepareStepResult?.resolvedInstructions ?? instructionsForNextStep
+            let stepInstructions = prepareStepResult?.instructions ?? instructionsForNextStep
             runtimeContext = prepareStepResult?.runtimeContext ?? runtimeContext
             toolsContext = prepareStepResult?.toolsContext ?? toolsContext
 
@@ -796,7 +794,6 @@ public func generateText(
     tools: ToolSet? = nil,
     toolChoice: ToolChoice? = nil,
     instructions: Instructions? = nil,
-    system: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
     allowSystemInMessages: Bool? = nil,
@@ -831,7 +828,6 @@ public func generateText(
         tools: tools,
         toolChoice: toolChoice,
         instructions: instructions,
-        system: system,
         prompt: prompt,
         messages: messages,
         allowSystemInMessages: allowSystemInMessages,

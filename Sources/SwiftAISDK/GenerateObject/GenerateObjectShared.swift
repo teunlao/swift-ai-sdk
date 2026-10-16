@@ -8,27 +8,27 @@ import AISDKProviderUtils
  Port of `@ai-sdk/ai/src/generate-object` shared utilities.
  */
 func makeGenerateObjectPrompt(
-    system: String?,
+    instructions: Instructions?,
     prompt: String?,
     messages: [ModelMessage]?
 ) throws -> Prompt {
     if prompt != nil, messages != nil {
         throw InvalidPromptError(
-            prompt: "Prompt(system: \(system ?? "nil"), prompt: \(prompt ?? "nil"), messages: provided)",
+            prompt: "Prompt(instructions: \(String(describing: instructions)), prompt: \(prompt ?? "nil"), messages: provided)",
             message: "Provide either `prompt` or `messages`, not both."
         )
     }
 
     if let prompt {
-        return Prompt.text(prompt, system: system)
+        return Prompt.text(prompt, instructions: instructions)
     }
 
     if let messages {
-        return Prompt.messages(messages, system: system)
+        return Prompt.messages(messages, instructions: instructions)
     }
 
     throw InvalidPromptError(
-        prompt: "Prompt(system: \(system ?? "nil"))",
+        prompt: "Prompt(instructions: \(String(describing: instructions)))",
         message: "Either `prompt` or `messages` must be provided."
     )
 }

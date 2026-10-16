@@ -35,10 +35,14 @@ public func convertToLanguageModelPrompt(
         supportedUrls: supportedUrls
     )
 
-    // Convert system message if present
     var messages: [LanguageModelV3Message] = []
-    if let system = prompt.system {
-        messages.append(.system(content: system, providerOptions: nil))
+    switch prompt.instructions {
+    case .text(let text)?:
+        messages.append(.system(content: text, providerOptions: nil))
+    case .messages(let systemMessages)?:
+        messages += systemMessages.map { .system(content: $0.content, providerOptions: $0.providerOptions) }
+    case nil:
+        break
     }
 
     // Convert all user/assistant/tool messages

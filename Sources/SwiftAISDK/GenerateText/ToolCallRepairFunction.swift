@@ -11,9 +11,6 @@ public struct ToolCallRepairOptions: Sendable {
     /// The instructions of the step.
     public let instructions: Instructions?
 
-    /// Deprecated alias for `instructions`.
-    public var system: Instructions? { instructions }
-
     /// The messages of the step.
     public let messages: [ModelMessage]
 

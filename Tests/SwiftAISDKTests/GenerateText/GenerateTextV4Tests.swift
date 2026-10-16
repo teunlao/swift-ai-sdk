@@ -79,7 +79,7 @@ struct GenerateTextV4Tests {
             model: model,
             tools: tools,
             toolChoice: .required,
-            system: "You are a V4 contract test.",
+            instructions: "You are a V4 contract test.",
             prompt: "Say hello.",
             providerOptions: ["mock": ["mode": .string("v4")]],
             settings: CallSettings(

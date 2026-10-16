@@ -451,7 +451,6 @@ final class StreamTextEngine<OutputValue: Sendable, PartialOutput: Sendable>: @u
         do {
             let initialPrompt = try standardizePrompt(Prompt(
                 instructions: configuration.instructions,
-                system: configuration.system,
                 allowSystemInMessages: configuration.allowSystemInMessages,
                 prompt: configuration.prompt.map(PromptContent.text),
                 messages: configuration.messages
@@ -684,7 +683,7 @@ final class StreamTextEngine<OutputValue: Sendable, PartialOutput: Sendable>: @u
             let stepToolOrder = prepareStepResult?.toolOrder ?? configuration.toolOrder
             let stepToolChoice = prepareStepResult?.toolChoice ?? configuration.toolChoice
             let stepMessages = prepareStepResult?.messages ?? stepInputMessages
-            let stepInstructions = prepareStepResult?.resolvedInstructions ?? instructions
+            let stepInstructions = prepareStepResult?.instructions ?? instructions
             let stepProviderOptions = mergeProviderOptions(configuration.providerOptions, prepareStepResult?.providerOptions)
             let stepCallSettings = try callSettings.overridden(by: prepareStepResult?.callOptions)
 

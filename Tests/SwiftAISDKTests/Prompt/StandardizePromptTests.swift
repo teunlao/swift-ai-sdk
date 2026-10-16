@@ -22,13 +22,13 @@ struct StandardizePromptTests {
     @Test("converts text prompt to user message")
     func convertsTextPromptToUserMessage() throws {
         let prompt = Prompt(
-            system: nil,
+            instructions: nil,
             prompt: .text("Hello, world!")
         )
 
         let result = try standardizePrompt(prompt)
 
-        #expect(result.system == nil)
+        #expect(result.instructions == nil)
         #expect(result.messages.count == 1)
 
         guard case .user(let userMessage) = result.messages[0] else {
@@ -46,13 +46,13 @@ struct StandardizePromptTests {
     @Test("converts text prompt with system message")
     func convertsTextPromptWithSystem() throws {
         let prompt = Prompt(
-            system: "You are a helpful assistant",
+            instructions: "You are a helpful assistant",
             prompt: .text("Hello!")
         )
 
         let result = try standardizePrompt(prompt)
 
-        #expect(result.system == "You are a helpful assistant")
+        #expect(result.instructions == "You are a helpful assistant")
         #expect(result.messages.count == 1)
 
         guard case .user(let userMessage) = result.messages[0] else {
@@ -80,11 +80,11 @@ struct StandardizePromptTests {
             )),
         ]
 
-        let prompt = Prompt(system: nil, messages: messages)
+        let prompt = Prompt(instructions: nil, messages: messages)
 
         let result = try standardizePrompt(prompt)
 
-        #expect(result.system == nil)
+        #expect(result.instructions == nil)
         #expect(result.messages.count == 2)
 
         guard case .user = result.messages[0] else {
@@ -106,11 +106,11 @@ struct StandardizePromptTests {
             ))
         ]
 
-        let prompt = Prompt(system: "System prompt", messages: messages)
+        let prompt = Prompt(instructions: "System prompt", messages: messages)
 
         let result = try standardizePrompt(prompt)
 
-        #expect(result.system == "System prompt")
+        #expect(result.instructions == "System prompt")
         #expect(result.messages.count == 1)
     }
 
@@ -123,11 +123,11 @@ struct StandardizePromptTests {
             ))
         ]
 
-        let prompt = Prompt(system: nil, prompt: .messages(messages))
+        let prompt = Prompt(instructions: nil, prompt: .messages(messages))
 
         let result = try standardizePrompt(prompt)
 
-        #expect(result.system == nil)
+        #expect(result.instructions == nil)
         #expect(result.messages.count == 1)
     }
 
@@ -135,7 +135,7 @@ struct StandardizePromptTests {
 
     @Test("throws InvalidPromptError for empty messages array")
     func throwsForEmptyMessages() throws {
-        let prompt = Prompt(system: nil, messages: [])
+        let prompt = Prompt(instructions: nil, messages: [])
 
         #expect(throws: InvalidPromptError.self) {
             try standardizePrompt(prompt)
@@ -144,7 +144,7 @@ struct StandardizePromptTests {
 
     @Test("throws InvalidPromptError for empty PromptContent.messages")
     func throwsForEmptyPromptContentMessages() throws {
-        let prompt = Prompt(system: nil, prompt: .messages([]))
+        let prompt = Prompt(instructions: nil, prompt: .messages([]))
 
         #expect(throws: InvalidPromptError.self) {
             try standardizePrompt(prompt)
@@ -153,7 +153,7 @@ struct StandardizePromptTests {
 
     @Test("error message for empty messages is correct")
     func errorMessageForEmptyMessages() throws {
-        let prompt = Prompt(system: nil, messages: [])
+        let prompt = Prompt(instructions: nil, messages: [])
 
         do {
             _ = try standardizePrompt(prompt)

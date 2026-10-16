@@ -16,7 +16,7 @@ import AISDKJSONSchema
 public func generateObject<ObjectResult: Codable & Sendable>(
     model: any LanguageModelV3,
     schema type: ObjectResult.Type,
-    system: String? = nil,
+    instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
     schemaName: String? = nil,
@@ -36,7 +36,7 @@ public func generateObject<ObjectResult: Codable & Sendable>(
     try await generateObject(
         model: .v3(model),
         schema: type,
-        system: system,
+        instructions: instructions,
         prompt: prompt,
         messages: messages,
         schemaName: schemaName,
@@ -59,7 +59,7 @@ public func generateObject<ObjectResult: Codable & Sendable>(
 public func generateObject<ObjectResult>(
     model: any LanguageModelV3,
     schema: FlexibleSchema<ObjectResult>,
-    system: String? = nil,
+    instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
     schemaName: String? = nil,
@@ -79,7 +79,7 @@ public func generateObject<ObjectResult>(
     try await generateObject(
         model: .v3(model),
         schema: schema,
-        system: system,
+        instructions: instructions,
         prompt: prompt,
         messages: messages,
         schemaName: schemaName,
@@ -109,7 +109,7 @@ public func generateObject<ObjectResult>(
 public func generateObjectArray<ElementResult: Codable & Sendable>(
     model: any LanguageModelV3,
     schema elementType: ElementResult.Type,
-    system: String? = nil,
+    instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
     schemaName: String? = nil,
@@ -129,7 +129,7 @@ public func generateObjectArray<ElementResult: Codable & Sendable>(
     try await generateObjectArray(
         model: .v3(model),
         schema: elementType,
-        system: system,
+        instructions: instructions,
         prompt: prompt,
         messages: messages,
         schemaName: schemaName,
@@ -152,7 +152,7 @@ public func generateObjectArray<ElementResult: Codable & Sendable>(
 public func generateObjectArray<ElementResult>(
     model: any LanguageModelV3,
     schema: FlexibleSchema<ElementResult>,
-    system: String? = nil,
+    instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
     schemaName: String? = nil,
@@ -172,7 +172,7 @@ public func generateObjectArray<ElementResult>(
     try await generateObjectArray(
         model: .v3(model),
         schema: schema,
-        system: system,
+        instructions: instructions,
         prompt: prompt,
         messages: messages,
         schemaName: schemaName,
@@ -202,7 +202,7 @@ public func generateObjectArray<ElementResult>(
 public func generateObjectEnum(
     model: any LanguageModelV3,
     values: [String],
-    system: String? = nil,
+    instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
     repairText: RepairTextFunction? = nil,
@@ -219,7 +219,7 @@ public func generateObjectEnum(
     try await generateObjectEnum(
         model: .v3(model),
         values: values,
-        system: system,
+        instructions: instructions,
         prompt: prompt,
         messages: messages,
         repairText: repairText,
@@ -240,7 +240,7 @@ public func generateObjectEnum(
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 public func generateObjectNoSchema(
     model: any LanguageModelV3,
-    system: String? = nil,
+    instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
     repairText: RepairTextFunction? = nil,
@@ -256,7 +256,7 @@ public func generateObjectNoSchema(
 ) async throws -> GenerateObjectResult<JSONValue> {
     try await generateObjectNoSchema(
         model: .v3(model),
-        system: system,
+        instructions: instructions,
         prompt: prompt,
         messages: messages,
         repairText: repairText,
@@ -283,7 +283,7 @@ public func generateObjectNoSchema(
 public func streamObject<ResultValue, PartialValue, ElementStream>(
     model: any LanguageModelV3,
     output: GenerateObjectOutputSpec<ResultValue, PartialValue, ElementStream>,
-    system: String? = nil,
+    instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
     repairText: RepairTextFunction? = nil,
@@ -301,7 +301,7 @@ public func streamObject<ResultValue, PartialValue, ElementStream>(
     try streamObject(
         model: .v3(model),
         output: output,
-        system: system,
+        instructions: instructions,
         prompt: prompt,
         messages: messages,
         repairText: repairText,
@@ -322,7 +322,7 @@ public func streamObject<ResultValue, PartialValue, ElementStream>(
 public func streamObject<ObjectResult: Codable & Sendable>(
     model: any LanguageModelV3,
     schema type: ObjectResult.Type,
-    system: String? = nil,
+    instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
     schemaName: String? = nil,
@@ -343,7 +343,7 @@ public func streamObject<ObjectResult: Codable & Sendable>(
     try streamObject(
         model: .v3(model),
         schema: type,
-        system: system,
+        instructions: instructions,
         prompt: prompt,
         messages: messages,
         schemaName: schemaName,
@@ -367,7 +367,7 @@ public func streamObject<ObjectResult: Codable & Sendable>(
 public func streamObject<ObjectResult>(
     model: any LanguageModelV3,
     schema: FlexibleSchema<ObjectResult>,
-    system: String? = nil,
+    instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
     schemaName: String? = nil,
@@ -388,7 +388,7 @@ public func streamObject<ObjectResult>(
     try streamObject(
         model: .v3(model),
         schema: schema,
-        system: system,
+        instructions: instructions,
         prompt: prompt,
         messages: messages,
         schemaName: schemaName,
@@ -411,7 +411,7 @@ public func streamObject<ObjectResult>(
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 public func streamObjectNoSchema(
     model: any LanguageModelV3,
-    system: String? = nil,
+    instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
     repairText: RepairTextFunction? = nil,
@@ -428,7 +428,7 @@ public func streamObjectNoSchema(
 ) throws -> StreamObjectResult<JSONValue, JSONValue, Never> {
     try streamObjectNoSchema(
         model: .v3(model),
-        system: system,
+        instructions: instructions,
         prompt: prompt,
         messages: messages,
         repairText: repairText,
@@ -449,7 +449,7 @@ public func streamObjectNoSchema(
 public func streamObjectArray<ElementResult: Codable & Sendable>(
     model: any LanguageModelV3,
     schema elementType: ElementResult.Type,
-    system: String? = nil,
+    instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
     schemaName: String? = nil,
@@ -470,7 +470,7 @@ public func streamObjectArray<ElementResult: Codable & Sendable>(
     try streamObjectArray(
         model: .v3(model),
         schema: elementType,
-        system: system,
+        instructions: instructions,
         prompt: prompt,
         messages: messages,
         schemaName: schemaName,
@@ -494,7 +494,7 @@ public func streamObjectArray<ElementResult: Codable & Sendable>(
 public func streamObjectArray<ElementResult>(
     model: any LanguageModelV3,
     schema: FlexibleSchema<ElementResult>,
-    system: String? = nil,
+    instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
     schemaName: String? = nil,
@@ -515,7 +515,7 @@ public func streamObjectArray<ElementResult>(
     try streamObjectArray(
         model: .v3(model),
         schema: schema,
-        system: system,
+        instructions: instructions,
         prompt: prompt,
         messages: messages,
         schemaName: schemaName,
@@ -539,7 +539,7 @@ public func streamObjectArray<ElementResult>(
 public func streamObjectEnum(
     model: any LanguageModelV3,
     values: [String],
-    system: String? = nil,
+    instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
     repairText: RepairTextFunction? = nil,
@@ -557,7 +557,7 @@ public func streamObjectEnum(
     try streamObjectEnum(
         model: .v3(model),
         values: values,
-        system: system,
+        instructions: instructions,
         prompt: prompt,
         messages: messages,
         repairText: repairText,
@@ -580,7 +580,7 @@ public func streamObjectEnum(
 public func generateObject<ResultValue, PartialValue, ElementStream>(
     model: any LanguageModelV4,
     output: GenerateObjectOutputSpec<ResultValue, PartialValue, ElementStream>,
-    system: String? = nil,
+    instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
     repairText: RepairTextFunction? = nil,
@@ -597,7 +597,7 @@ public func generateObject<ResultValue, PartialValue, ElementStream>(
     try await generateObject(
         model: .v4(model),
         output: output,
-        system: system,
+        instructions: instructions,
         prompt: prompt,
         messages: messages,
         repairText: repairText,
@@ -617,7 +617,7 @@ public func generateObject<ResultValue, PartialValue, ElementStream>(
 public func generateObject<ObjectResult: Codable & Sendable>(
     model: any LanguageModelV4,
     schema type: ObjectResult.Type,
-    system: String? = nil,
+    instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
     schemaName: String? = nil,
@@ -637,7 +637,7 @@ public func generateObject<ObjectResult: Codable & Sendable>(
     try await generateObject(
         model: .v4(model),
         schema: type,
-        system: system,
+        instructions: instructions,
         prompt: prompt,
         messages: messages,
         schemaName: schemaName,
@@ -660,7 +660,7 @@ public func generateObject<ObjectResult: Codable & Sendable>(
 public func generateObject<ObjectResult>(
     model: any LanguageModelV4,
     schema: FlexibleSchema<ObjectResult>,
-    system: String? = nil,
+    instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
     schemaName: String? = nil,
@@ -680,7 +680,7 @@ public func generateObject<ObjectResult>(
     try await generateObject(
         model: .v4(model),
         schema: schema,
-        system: system,
+        instructions: instructions,
         prompt: prompt,
         messages: messages,
         schemaName: schemaName,
@@ -703,7 +703,7 @@ public func generateObject<ObjectResult>(
 public func generateObjectArray<ElementResult: Codable & Sendable>(
     model: any LanguageModelV4,
     schema elementType: ElementResult.Type,
-    system: String? = nil,
+    instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
     schemaName: String? = nil,
@@ -723,7 +723,7 @@ public func generateObjectArray<ElementResult: Codable & Sendable>(
     try await generateObjectArray(
         model: .v4(model),
         schema: elementType,
-        system: system,
+        instructions: instructions,
         prompt: prompt,
         messages: messages,
         schemaName: schemaName,
@@ -746,7 +746,7 @@ public func generateObjectArray<ElementResult: Codable & Sendable>(
 public func generateObjectArray<ElementResult>(
     model: any LanguageModelV4,
     schema: FlexibleSchema<ElementResult>,
-    system: String? = nil,
+    instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
     schemaName: String? = nil,
@@ -766,7 +766,7 @@ public func generateObjectArray<ElementResult>(
     try await generateObjectArray(
         model: .v4(model),
         schema: schema,
-        system: system,
+        instructions: instructions,
         prompt: prompt,
         messages: messages,
         schemaName: schemaName,
@@ -789,7 +789,7 @@ public func generateObjectArray<ElementResult>(
 public func generateObjectEnum(
     model: any LanguageModelV4,
     values: [String],
-    system: String? = nil,
+    instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
     repairText: RepairTextFunction? = nil,
@@ -806,7 +806,7 @@ public func generateObjectEnum(
     try await generateObjectEnum(
         model: .v4(model),
         values: values,
-        system: system,
+        instructions: instructions,
         prompt: prompt,
         messages: messages,
         repairText: repairText,
@@ -825,7 +825,7 @@ public func generateObjectEnum(
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 public func generateObjectNoSchema(
     model: any LanguageModelV4,
-    system: String? = nil,
+    instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
     repairText: RepairTextFunction? = nil,
@@ -841,7 +841,7 @@ public func generateObjectNoSchema(
 ) async throws -> GenerateObjectResult<JSONValue> {
     try await generateObjectNoSchema(
         model: .v4(model),
-        system: system,
+        instructions: instructions,
         prompt: prompt,
         messages: messages,
         repairText: repairText,
@@ -863,7 +863,7 @@ public func generateObjectNoSchema(
 public func streamObject<ResultValue, PartialValue, ElementStream>(
     model: any LanguageModelV4,
     output: GenerateObjectOutputSpec<ResultValue, PartialValue, ElementStream>,
-    system: String? = nil,
+    instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
     repairText: RepairTextFunction? = nil,
@@ -881,7 +881,7 @@ public func streamObject<ResultValue, PartialValue, ElementStream>(
     try streamObject(
         model: .v4(model),
         output: output,
-        system: system,
+        instructions: instructions,
         prompt: prompt,
         messages: messages,
         repairText: repairText,
@@ -902,7 +902,7 @@ public func streamObject<ResultValue, PartialValue, ElementStream>(
 public func streamObject<ObjectResult: Codable & Sendable>(
     model: any LanguageModelV4,
     schema type: ObjectResult.Type,
-    system: String? = nil,
+    instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
     schemaName: String? = nil,
@@ -923,7 +923,7 @@ public func streamObject<ObjectResult: Codable & Sendable>(
     try streamObject(
         model: .v4(model),
         schema: type,
-        system: system,
+        instructions: instructions,
         prompt: prompt,
         messages: messages,
         schemaName: schemaName,
@@ -947,7 +947,7 @@ public func streamObject<ObjectResult: Codable & Sendable>(
 public func streamObject<ObjectResult>(
     model: any LanguageModelV4,
     schema: FlexibleSchema<ObjectResult>,
-    system: String? = nil,
+    instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
     schemaName: String? = nil,
@@ -968,7 +968,7 @@ public func streamObject<ObjectResult>(
     try streamObject(
         model: .v4(model),
         schema: schema,
-        system: system,
+        instructions: instructions,
         prompt: prompt,
         messages: messages,
         schemaName: schemaName,
@@ -991,7 +991,7 @@ public func streamObject<ObjectResult>(
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 public func streamObjectNoSchema(
     model: any LanguageModelV4,
-    system: String? = nil,
+    instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
     repairText: RepairTextFunction? = nil,
@@ -1008,7 +1008,7 @@ public func streamObjectNoSchema(
 ) throws -> StreamObjectResult<JSONValue, JSONValue, Never> {
     try streamObjectNoSchema(
         model: .v4(model),
-        system: system,
+        instructions: instructions,
         prompt: prompt,
         messages: messages,
         repairText: repairText,
@@ -1029,7 +1029,7 @@ public func streamObjectNoSchema(
 public func streamObjectArray<ElementResult: Codable & Sendable>(
     model: any LanguageModelV4,
     schema elementType: ElementResult.Type,
-    system: String? = nil,
+    instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
     schemaName: String? = nil,
@@ -1050,7 +1050,7 @@ public func streamObjectArray<ElementResult: Codable & Sendable>(
     try streamObjectArray(
         model: .v4(model),
         schema: elementType,
-        system: system,
+        instructions: instructions,
         prompt: prompt,
         messages: messages,
         schemaName: schemaName,
@@ -1074,7 +1074,7 @@ public func streamObjectArray<ElementResult: Codable & Sendable>(
 public func streamObjectArray<ElementResult>(
     model: any LanguageModelV4,
     schema: FlexibleSchema<ElementResult>,
-    system: String? = nil,
+    instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
     schemaName: String? = nil,
@@ -1095,7 +1095,7 @@ public func streamObjectArray<ElementResult>(
     try streamObjectArray(
         model: .v4(model),
         schema: schema,
-        system: system,
+        instructions: instructions,
         prompt: prompt,
         messages: messages,
         schemaName: schemaName,
@@ -1119,7 +1119,7 @@ public func streamObjectArray<ElementResult>(
 public func streamObjectEnum(
     model: any LanguageModelV4,
     values: [String],
-    system: String? = nil,
+    instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
     repairText: RepairTextFunction? = nil,
@@ -1137,7 +1137,7 @@ public func streamObjectEnum(
     try streamObjectEnum(
         model: .v4(model),
         values: values,
-        system: system,
+        instructions: instructions,
         prompt: prompt,
         messages: messages,
         repairText: repairText,
