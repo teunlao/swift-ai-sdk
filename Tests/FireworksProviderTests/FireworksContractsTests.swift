@@ -31,7 +31,7 @@ struct FireworksContractsTests {
 
     @Test("chat and completion request stream usage", arguments: ["chat", "completion"])
     func streamingUsage(_ kind: String) async throws {
-        let payload = kind == "chat" ? #"{"choices":[{"delta":{"content":"answer"},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":1}}"# : #"{"choices":[{"text":"answer","finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":1}}"#
+        let payload = kind == "chat" ? #"{"choices":[{"delta":{"content":"answer"},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":1,"total_tokens":3}}"# : #"{"choices":[{"index":0,"text":"answer","finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":1,"total_tokens":3}}"#
         let api = provider("data: \(payload)\n\ndata: [DONE]\n\n", stream: true, inspect: { request in
             #expect(request.url?.path.hasSuffix(kind == "chat" ? "/chat/completions" : "/completions") == true)
             let body = try JSONDecoder().decode(JSONObject.self, from: request.httpBody!)

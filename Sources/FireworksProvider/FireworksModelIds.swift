@@ -1,15 +1,5 @@
 import Foundation
 
-//===----------------------------------------------------------------------===//
-//=== Upstream Reference ====================================================//
-//===----------------------------------------------------------------------===//
-// Ported from packages/fireworks/src/fireworks-chat-options.ts
-// Ported from packages/fireworks/src/fireworks-completion-options.ts
-// Ported from packages/fireworks/src/fireworks-embedding-options.ts
-// Ported from packages/fireworks/src/fireworks-image-options.ts
-// Upstream commit: 77db222ee
-//===----------------------------------------------------------------------===//
-
 public struct FireworksChatModelId: RawRepresentable, Hashable, Sendable, ExpressibleByStringLiteral, Codable {
     public let rawValue: String
 
@@ -92,6 +82,8 @@ public struct FireworksImageModelId: RawRepresentable, Hashable, Sendable, Expre
 public extension FireworksImageModelId {
     static let flux1DevFP8: Self = "accounts/fireworks/models/flux-1-dev-fp8"
     static let flux1SchnellFP8: Self = "accounts/fireworks/models/flux-1-schnell-fp8"
+    static let fluxKontextPro: Self = "accounts/fireworks/models/flux-kontext-pro"
+    static let fluxKontextMax: Self = "accounts/fireworks/models/flux-kontext-max"
     static let playgroundV25_1024pxAesthetic: Self = "accounts/fireworks/models/playground-v2-5-1024px-aesthetic"
     static let japaneseStableDiffusionXL: Self = "accounts/fireworks/models/japanese-stable-diffusion-xl"
     static let playgroundV2_1024pxAesthetic: Self = "accounts/fireworks/models/playground-v2-1024px-aesthetic"
