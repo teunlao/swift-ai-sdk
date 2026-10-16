@@ -194,8 +194,8 @@ struct UploadSkillTests {
                 ]
             )
             Issue.record("Expected unsupported provider to throw")
-        } catch let error as InvalidArgumentError {
-            #expect(error.message == "The provider does not support skills. Make sure it exposes a skills() method.")
+        } catch {
+            #expect(error.localizedDescription == "The provider does not support skills. Make sure it exposes a skills() method.")
         }
 
         do {
@@ -204,8 +204,8 @@ struct UploadSkillTests {
                 files: [SkillsV4File(path: "index.ts", content: .data(Data([0x01])))]
             )
             Issue.record("Expected unsupported V4 provider to throw")
-        } catch let error as InvalidArgumentError {
-            #expect(error.message == "The provider does not support skills. Make sure it exposes a skills() method.")
+        } catch {
+            #expect(error.localizedDescription == "The provider does not support skills. Make sure it exposes a skills() method.")
         }
     }
 }

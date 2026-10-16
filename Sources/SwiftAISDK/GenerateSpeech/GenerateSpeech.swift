@@ -25,21 +25,38 @@ private func makeHeadersWithUserAgent(_ headers: [String: String]?) -> [String: 
     )
 }
 
-private func makeGeneratedAudioFile(from audio: SpeechModelV4Audio) -> GeneratedAudioFile {
+private func makeGeneratedAudioFile(
+    from audio: SpeechModelV4Audio,
+    headers: SharedV4Headers?,
+    outputFormat: String?
+) throws -> GeneratedAudioFile {
+    let headerMediaType = headers?.first { $0.key.lowercased() == "content-type" }?.value
+        .split(separator: ";", maxSplits: 1).first.map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+    let normalizedFormat = outputFormat?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    let formatMediaType: String?
+    switch normalizedFormat {
+    case "pcm", "audio/pcm": formatMediaType = "audio/pcm"
+    case "audio/l16": formatMediaType = "audio/l16"
+    case "mulaw", "audio/mulaw": formatMediaType = "audio/mulaw"
+    case "alaw", "audio/alaw": formatMediaType = "audio/alaw"
+    default: formatMediaType = nil
+    }
+    let fallback = (headerMediaType?.hasPrefix("audio/") == true ? headerMediaType : nil)
+        ?? formatMediaType ?? "audio/mp3"
     switch audio {
     case .binary(let data):
         let mediaType = detectMediaType(
             data: data,
-            signatures: audioMediaTypeSignatures
-        ) ?? "audio/mp3"
-        return DefaultGeneratedAudioFile(data: data, mediaType: mediaType)
+            topLevelType: "audio"
+        ) ?? fallback
+        return try DefaultGeneratedAudioFile(data: data, mediaType: mediaType)
 
     case .base64(let base64):
         let mediaType = detectMediaType(
             data: base64,
-            signatures: audioMediaTypeSignatures
-        ) ?? "audio/mp3"
-        return DefaultGeneratedAudioFile(base64: base64, mediaType: mediaType)
+            topLevelType: "audio"
+        ) ?? fallback
+        return try DefaultGeneratedAudioFile(base64: base64, mediaType: mediaType)
     }
 }
 
@@ -122,11 +139,11 @@ public func generateSpeech(
         )
     }
 
-    let audioFile = makeGeneratedAudioFile(from: result.audio)
-
     let warnings = result.warnings
     let warningEntries = warnings.map { Warning.speechModel($0) }
     logWarningsForGenerateSpeech(warningEntries)
+
+    let audioFile = try makeGeneratedAudioFile(from: result.audio, headers: result.response.headers, outputFormat: outputFormat)
 
     let responseMetadata = SpeechModelResponseMetadata(
         timestamp: result.response.timestamp,

@@ -2,72 +2,38 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-/**
- A generated audio file.
-
- Port of `@ai-sdk/ai/src/generate-speech/generated-audio-file.ts`.
- */
-
-/// Protocol for generated audio files returned by `generateSpeech`.
 public protocol GeneratedAudioFile: GeneratedFile {
-    /// Audio format of the file (e.g., "mp3", "wav").
     var format: String { get }
 }
 
-/// Default generated audio file implementation.
-public class DefaultGeneratedAudioFile: DefaultGeneratedFile, GeneratedAudioFile, @unchecked Sendable {
-    private static let defaultFormat = "mp3"
-    private static let formatErrorMessage =
-        "Audio format must be provided or determinable from media type"
-
+public class DefaultGeneratedAudioFile: GeneratedAudioFile, @unchecked Sendable {
+    private let file: DefaultGeneratedFile
     public let format: String
+    public var mediaType: String { file.mediaType }
+    public var data: Data { file.data }
+    public var base64: String { file.base64 }
+    public var providerMetadata: ProviderMetadata? { file.providerMetadata }
 
-    private static func determineFormat(mediaType: String) -> String {
-        guard !mediaType.isEmpty else {
-            return defaultFormat
+    private static func determineFormat(_ mediaType: String) throws -> String {
+        let parts = mediaType.split(separator: "/", omittingEmptySubsequences: false)
+        let format = !mediaType.isEmpty && parts.count == 2 && mediaType != "audio/mpeg" ? String(parts[1]) : "mp3"
+        guard !format.isEmpty else {
+            throw InvalidResponseDataError(data: mediaType, message: "Could not determine audio format from media type: \(mediaType)")
         }
-
-        let components = mediaType.split(separator: "/", omittingEmptySubsequences: false)
-        guard components.count == 2 else {
-            return defaultFormat
-        }
-
-        // Preserve mp3 for historical compatibility when media type is audio/mpeg.
-        if mediaType == "audio/mpeg" {
-            return defaultFormat
-        }
-
-        return String(components[1])
+        return format
     }
 
-    private static func validateFormat(_ format: String) {
-        precondition(!format.isEmpty, formatErrorMessage)
+    public init(data: Data, mediaType: String, providerMetadata: ProviderMetadata? = nil) throws {
+        self.format = try Self.determineFormat(mediaType)
+        self.file = DefaultGeneratedFile(data: data, mediaType: mediaType, providerMetadata: providerMetadata)
     }
 
-    public override init(data: Data, mediaType: String) {
-        let resolvedFormat = Self.determineFormat(mediaType: mediaType)
-        Self.validateFormat(resolvedFormat)
-        self.format = resolvedFormat
-        super.init(data: data, mediaType: mediaType)
-    }
-
-    public override init(base64: String, mediaType: String) {
-        let resolvedFormat = Self.determineFormat(mediaType: mediaType)
-        Self.validateFormat(resolvedFormat)
-        self.format = resolvedFormat
-        super.init(base64: base64, mediaType: mediaType)
+    public init(base64: String, mediaType: String, providerMetadata: ProviderMetadata? = nil) throws {
+        self.format = try Self.determineFormat(mediaType)
+        self.file = DefaultGeneratedFile(base64: base64, mediaType: mediaType, providerMetadata: providerMetadata)
     }
 }
 
-/// Default generated audio file with `type` discriminator.
 public final class DefaultGeneratedAudioFileWithType: DefaultGeneratedAudioFile, @unchecked Sendable {
     public let type = "audio"
-
-    public override init(data: Data, mediaType: String) {
-        super.init(data: data, mediaType: mediaType)
-    }
-
-    public override init(base64: String, mediaType: String) {
-        super.init(base64: base64, mediaType: mediaType)
-    }
 }

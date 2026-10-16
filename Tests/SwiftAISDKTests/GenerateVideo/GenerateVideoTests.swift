@@ -12,6 +12,20 @@ import Foundation
 
 @Suite("GenerateVideo Tests", .serialized)
 struct GenerateVideoTests {
+    private struct OperationsVideoModel: VideoModelV4Operations {
+        let provider = "test.video"
+        let modelId = "async-video"
+        let maxVideosPerCall: VideoModelV4MaxVideosPerCall = .value(1)
+        let start: @Sendable (VideoModelV4CallOptions, String?) async throws -> VideoModelV4OperationStartResult
+        let status: @Sendable (VideoModelV4StatusCallOptions) async throws -> VideoModelV4OperationStatusResult
+        func doStart(options: VideoModelV4CallOptions, webhookUrl: String?) async throws -> VideoModelV4OperationStartResult {
+            try await start(options, webhookUrl)
+        }
+        func doStatus(options: VideoModelV4StatusCallOptions) async throws -> VideoModelV4OperationStatusResult {
+            try await status(options)
+        }
+    }
+
     private let prompt = "a cat walking on a beach"
     private let testDate: Date = {
         var components = DateComponents()
@@ -98,6 +112,96 @@ struct GenerateVideoTests {
         logWarningsObserver = nil
         AI_SDK_LOG_WARNINGS = nil
         resetLogWarningsState()
+    }
+
+    @Test("video batches can make progress concurrently")
+    func concurrentVideoBatches() async throws {
+        actor Barrier {
+            var arrived = false
+            var waiter: CheckedContinuation<Bool, Never>?
+            func enter() async -> Bool {
+                if arrived { waiter?.resume(returning: true); waiter = nil; return true }
+                arrived = true
+                return await withCheckedContinuation { waiter = $0 }
+            }
+            func expire() { waiter?.resume(returning: false); waiter = nil }
+        }
+        let barrier = Barrier()
+        let deadline = Task {
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            if !Task.isCancelled { await barrier.expire() }
+        }
+        defer { deadline.cancel() }
+        let model = MockVideoModelV4(maxVideosPerCall: .value(1)) { _ in
+            let concurrent = await barrier.enter()
+            return .init(videos: [.binary(data: Data([concurrent ? 1 : 0]), mediaType: "video/mp4")], response: .init(timestamp: testDate, modelId: "concurrent"))
+        }
+        let result = try await experimental_generateVideo(model: model, prompt: prompt, n: 2)
+        #expect(result.videos.map(\.data) == [Data([1]), Data([1])])
+    }
+
+    @Test("operations-only models retry one idempotent start and poll to completion")
+    func operationsModelPolling() async throws {
+        actor Calls {
+            var keys: [String] = []
+            var statuses = 0
+            func start(_ key: String) -> Int { keys.append(key); return keys.count }
+            func status() -> Int { statuses += 1; return statuses }
+        }
+        let calls = Calls()
+        let response = VideoModelV4ResponseInfo(timestamp: testDate, modelId: "async-video")
+        let model = OperationsVideoModel(
+            start: { options, _ in
+                #expect(options.aspectRatio == "adaptive")
+                let key = options.headers?["idempotency-key"] ?? ""
+                let attempt = await calls.start(key)
+                if attempt == 1 {
+                    throw APICallError(message: "retry", url: "https://example.com/video", requestBodyValues: nil, statusCode: 503, responseHeaders: ["retry-after-ms": "0"])
+                }
+                return .init(operation: .string("operation-1"), providerMetadata: ["test": ["phase": .string("start")]], response: response)
+            },
+            status: { options in
+                #expect(options.operation == .string("operation-1"))
+                if await calls.status() == 1 {
+                    return .pending(warnings: [.other(message: "queued")], providerMetadata: nil, response: response)
+                }
+                return .completed(videos: [.binary(data: Data([1]), mediaType: "video/mp4")], warnings: [], providerMetadata: ["test": ["done": .bool(true)]], response: response)
+            }
+        )
+        let result = try await experimental_generateVideo(
+            model: model, prompt: prompt, aspectRatio: "adaptive", maxRetries: 1,
+            poll: .init(intervalMs: 0, timeoutMs: 1000, delay: { _, _ in })
+        )
+        #expect(result.video.data == Data([1]))
+        #expect(result.providerMetadata["test"] == ["phase": .string("start"), "done": .bool(true)])
+        #expect(result.warnings == [.other(message: "queued")])
+        let keys = await calls.keys
+        #expect(keys.count == 2 && !keys[0].isEmpty && keys[0] == keys[1])
+    }
+
+    @Test("poll deadline bounds a status request that ignores cancellation")
+    func boundsPendingStatusRequest() async throws {
+        let response = VideoModelV4ResponseInfo(timestamp: testDate, modelId: "async-video")
+        let pending = DelayedPromise<VideoModelV4OperationStatusResult>()
+        let model = OperationsVideoModel(
+            start: { _, _ in .init(operation: .string("slow"), response: response) },
+            status: { _ in try await pending.task.value }
+        )
+        let cleanup = Task {
+            try await Task.sleep(nanoseconds: 300_000_000)
+            pending.resolve(.completed(videos: [.binary(data: Data([1]), mediaType: "video/mp4")], warnings: [], providerMetadata: nil, response: response))
+        }
+        defer { cleanup.cancel() }
+        do {
+            _ = try await experimental_generateVideo(
+                model: model, prompt: prompt,
+                poll: .init(intervalMs: 0, timeoutMs: 20, delay: { _, _ in })
+            )
+            Issue.record("Expected the polling deadline to terminate the request")
+        } catch {
+            #expect(error.localizedDescription == "Video generation timed out after 20ms.")
+        }
+        pending.resolve(.pending(warnings: nil, providerMetadata: nil, response: response))
     }
 
     @Test("should send args to doGenerate")

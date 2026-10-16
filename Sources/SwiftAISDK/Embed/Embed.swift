@@ -11,12 +11,19 @@ import AISDKProviderUtils
 public func embed(
     model modelArg: EmbeddingModel,
     value: String,
+    dimensions: Int? = nil,
     providerOptions: ProviderOptions? = nil,
     maxRetries: Int? = nil,
     abortSignal: (@Sendable () -> Bool)? = nil,
     headers: [String: String]? = nil,
-    experimentalTelemetry telemetry: TelemetrySettings? = nil
+    experimentalTelemetry telemetry: TelemetrySettings? = nil,
+    runtimeContext: [String: any Sendable] = [:],
+    onStart: (@Sendable (EmbedStartEvent<String>) async throws -> Void)? = nil,
+    experimentalOnStart: (@Sendable (EmbedStartEvent<String>) async throws -> Void)? = nil,
+    onEnd: (@Sendable (EmbedEndEvent<String, Embedding>) async throws -> Void)? = nil,
+    experimentalOnEnd: (@Sendable (EmbedEndEvent<String, Embedding>) async throws -> Void)? = nil
 ) async throws -> DefaultEmbedResult<String> {
+    try validateEmbeddingDimensions(dimensions)
     let model = try resolveEmbeddingModelV4(modelArg)
 
     let preparedRetries = try prepareRetries(
@@ -60,11 +67,18 @@ public func embed(
         attributes: outerAttributeDescriptors
     )
 
+    let callId = try createIDGenerator(prefix: "call", size: 24)()
     return try await recordSpan(
         name: "ai.embed",
         tracer: tracer,
         attributes: outerAttributes
     ) { span in
+        try? await (onStart ?? experimentalOnStart)?(EmbedStartEvent(
+            runtimeContext: runtimeContext, callId: callId, operationId: "ai.embed",
+            provider: model.provider, modelId: model.modelId, value: value,
+            dimensions: dimensions, maxRetries: preparedRetries.maxRetries,
+            headers: headersWithUserAgent, providerOptions: providerOptions
+        ))
         let (embedding, usage, warnings, providerMetadata, providerResponse) = try await preparedRetries.retry.call {
             try await recordSpan(
                 name: "ai.embed.doEmbed",
@@ -86,13 +100,19 @@ public func embed(
                 let modelResponse = try await model.doEmbed(
                     options: EmbeddingModelV4CallOptions(
                         values: [value],
+                        dimensions: dimensions,
                         abortSignal: abortSignal,
                         providerOptions: providerOptions,
                         headers: headersWithUserAgent
                     )
                 )
 
-                let embedding = modelResponse.embeddings.first ?? []
+                guard let embedding = modelResponse.embeddings.first else {
+                    throw InvalidResponseDataError(
+                        data: modelResponse.embeddings,
+                        message: "No embedding generated."
+                    )
+                }
                 let usage = makeEmbeddingUsage(from: modelResponse.usage)
 
                 let innerAttributes = try await selectTelemetryAttributes(
@@ -103,7 +123,7 @@ public func embed(
                                 embedTelemetryJSONStringArray(from: modelResponse.embeddings.map { $0 as Any })
                             )
                         },
-                        "ai.usage.tokens": .value(.int(usage.tokens))
+                        "ai.usage.tokens": .value(embeddingTokenAttribute(usage.tokens))
                     ]
                 )
 
@@ -127,12 +147,18 @@ public func embed(
                 "ai.embedding": .output {
                     .string(embedTelemetryJSONString(from: embedding))
                 },
-                "ai.usage.tokens": .value(.int(usage.tokens))
+                "ai.usage.tokens": .value(embeddingTokenAttribute(usage.tokens))
             ]
         )
 
         span.setAttributes(outerResultAttributes)
 
+        try? await (onEnd ?? experimentalOnEnd)?(EmbedEndEvent(
+            runtimeContext: runtimeContext, callId: callId, operationId: "ai.embed",
+            provider: model.provider, modelId: model.modelId, value: value,
+            embedding: embedding, usage: usage, warnings: warnings,
+            providerMetadata: providerMetadata, response: .single(providerResponse)
+        ))
         return DefaultEmbedResult(
             value: value,
             embedding: embedding,
@@ -150,20 +176,32 @@ public func embed(
 public func embed(
     model: any EmbeddingModelV4,
     value: String,
+    dimensions: Int? = nil,
     providerOptions: ProviderOptions? = nil,
     maxRetries: Int? = nil,
     abortSignal: (@Sendable () -> Bool)? = nil,
     headers: [String: String]? = nil,
-    experimentalTelemetry telemetry: TelemetrySettings? = nil
+    experimentalTelemetry telemetry: TelemetrySettings? = nil,
+    runtimeContext: [String: any Sendable] = [:],
+    onStart: (@Sendable (EmbedStartEvent<String>) async throws -> Void)? = nil,
+    experimentalOnStart: (@Sendable (EmbedStartEvent<String>) async throws -> Void)? = nil,
+    onEnd: (@Sendable (EmbedEndEvent<String, Embedding>) async throws -> Void)? = nil,
+    experimentalOnEnd: (@Sendable (EmbedEndEvent<String, Embedding>) async throws -> Void)? = nil
 ) async throws -> DefaultEmbedResult<String> {
     try await embed(
         model: .v4(model),
         value: value,
+        dimensions: dimensions,
         providerOptions: providerOptions,
         maxRetries: maxRetries,
         abortSignal: abortSignal,
         headers: headers,
-        experimentalTelemetry: telemetry
+        experimentalTelemetry: telemetry,
+        runtimeContext: runtimeContext,
+        onStart: onStart,
+        experimentalOnStart: experimentalOnStart,
+        onEnd: onEnd,
+        experimentalOnEnd: experimentalOnEnd
     )
 }
 
@@ -171,20 +209,32 @@ public func embed(
 public func embed(
     model: any EmbeddingModelV3<String>,
     value: String,
+    dimensions: Int? = nil,
     providerOptions: ProviderOptions? = nil,
     maxRetries: Int? = nil,
     abortSignal: (@Sendable () -> Bool)? = nil,
     headers: [String: String]? = nil,
-    experimentalTelemetry telemetry: TelemetrySettings? = nil
+    experimentalTelemetry telemetry: TelemetrySettings? = nil,
+    runtimeContext: [String: any Sendable] = [:],
+    onStart: (@Sendable (EmbedStartEvent<String>) async throws -> Void)? = nil,
+    experimentalOnStart: (@Sendable (EmbedStartEvent<String>) async throws -> Void)? = nil,
+    onEnd: (@Sendable (EmbedEndEvent<String, Embedding>) async throws -> Void)? = nil,
+    experimentalOnEnd: (@Sendable (EmbedEndEvent<String, Embedding>) async throws -> Void)? = nil
 ) async throws -> DefaultEmbedResult<String> {
     try await embed(
         model: .v3(model),
         value: value,
+        dimensions: dimensions,
         providerOptions: providerOptions,
         maxRetries: maxRetries,
         abortSignal: abortSignal,
         headers: headers,
-        experimentalTelemetry: telemetry
+        experimentalTelemetry: telemetry,
+        runtimeContext: runtimeContext,
+        onStart: onStart,
+        experimentalOnStart: experimentalOnStart,
+        onEnd: onEnd,
+        experimentalOnEnd: experimentalOnEnd
     )
 }
 
@@ -192,19 +242,31 @@ public func embed(
 public func embed(
     model: any EmbeddingModelV2<String>,
     value: String,
+    dimensions: Int? = nil,
     providerOptions: ProviderOptions? = nil,
     maxRetries: Int? = nil,
     abortSignal: (@Sendable () -> Bool)? = nil,
     headers: [String: String]? = nil,
-    experimentalTelemetry telemetry: TelemetrySettings? = nil
+    experimentalTelemetry telemetry: TelemetrySettings? = nil,
+    runtimeContext: [String: any Sendable] = [:],
+    onStart: (@Sendable (EmbedStartEvent<String>) async throws -> Void)? = nil,
+    experimentalOnStart: (@Sendable (EmbedStartEvent<String>) async throws -> Void)? = nil,
+    onEnd: (@Sendable (EmbedEndEvent<String, Embedding>) async throws -> Void)? = nil,
+    experimentalOnEnd: (@Sendable (EmbedEndEvent<String, Embedding>) async throws -> Void)? = nil
 ) async throws -> DefaultEmbedResult<String> {
     try await embed(
         model: .v2(model),
         value: value,
+        dimensions: dimensions,
         providerOptions: providerOptions,
         maxRetries: maxRetries,
         abortSignal: abortSignal,
         headers: headers,
-        experimentalTelemetry: telemetry
+        experimentalTelemetry: telemetry,
+        runtimeContext: runtimeContext,
+        onStart: onStart,
+        experimentalOnStart: experimentalOnStart,
+        onEnd: onEnd,
+        experimentalOnEnd: experimentalOnEnd
     )
 }

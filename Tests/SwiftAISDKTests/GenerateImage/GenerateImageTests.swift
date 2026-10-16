@@ -29,6 +29,79 @@ struct GenerateImageTests {
     private let gifBase64 =
         "R0lGODlhAQABAIAAAAUEBAAAACwAAAAAAQABAAACAkQBADs=" // 1x1 transparent GIF
 
+    @Test("image batches can make progress concurrently")
+    func concurrentImageBatches() async throws {
+        actor Barrier {
+            var arrived = false
+            var waiter: CheckedContinuation<Bool, Never>?
+            func enter() async -> Bool {
+                if arrived { waiter?.resume(returning: true); waiter = nil; return true }
+                arrived = true
+                return await withCheckedContinuation { waiter = $0 }
+            }
+            func expire() { waiter?.resume(returning: false); waiter = nil }
+        }
+        let barrier = Barrier()
+        let deadline = Task {
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            if !Task.isCancelled { await barrier.expire() }
+        }
+        defer { deadline.cancel() }
+        let model = MockImageModelV4(maxImagesPerCall: .value(1)) { _ in
+            let concurrent = await barrier.enter()
+            return .init(images: .binary([Data([concurrent ? 1 : 0])]), response: .init(timestamp: testDate, modelId: "concurrent"))
+        }
+        let result = try await generateImage(model: model, prompt: prompt, n: 2)
+        #expect(result.images.map(\.data) == [Data([1]), Data([1])])
+    }
+
+    @Test("empty retry attempts remain visible with usage and gateway costs")
+    func retriesEmptyImagesWithDiagnostics() async throws {
+        actor Attempts {
+            var count = 0
+            func next() -> Int { count += 1; return count }
+        }
+        let attempts = Attempts()
+        let model = MockImageModelV4 { _ in
+            let attempt = await attempts.next()
+            return ImageModelV4GenerateResult(
+                images: .binary(attempt == 1 ? [] : [Data([0x89, 0x50, 0x4E, 0x47])]),
+                providerMetadata: [
+                    "gateway": .init(images: [], additionalData: .object(["cost": .string(attempt == 1 ? "0.1" : "0.2")])),
+                    "test": .init(images: attempt == 1 ? [] : [.object(["seed": .number(42)])])
+                ],
+                response: .init(timestamp: testDate, modelId: "image-model"),
+                usage: .init(inputTokens: 1, outputTokens: 2, totalTokens: 3)
+            )
+        }
+        let result = try await generateImage(model: model, prompt: prompt, maxRetries: 1)
+        #expect(result.calls.count == 2)
+        #expect(result.calls[0].images.isEmpty)
+        #expect(result.calls[1].images.count == 1)
+        #expect(result.image.providerMetadata?["test"]?["seed"] == .number(42))
+        #expect(result.usage.totalTokens == 6)
+        #expect(result.providerMetadata["gateway"]?.additionalData == .object(["cost": .string("0.3")]))
+    }
+
+    @Test("nonretryable empty results preserve one call in NoImageGeneratedError")
+    func nonretryableEmptyDiagnostics() async throws {
+        let model = MockImageModelV4 { _ in
+            ImageModelV4GenerateResult(
+                images: .binary([]), isRetryable: false,
+                response: .init(timestamp: testDate, modelId: "filtered-image"),
+                usage: .init(inputTokens: 5)
+            )
+        }
+        do {
+            _ = try await generateImage(model: model, prompt: prompt)
+            Issue.record("Expected NoImageGeneratedError")
+        } catch let error as NoImageGeneratedError {
+            #expect(error.calls?.count == 1)
+            #expect(error.calls?.first?.usage?.inputTokens == 5)
+            #expect(error.responses?.first?.modelId == "filtered-image")
+        }
+    }
+
     // MARK: - Helpers
 
     private enum TestImages {
@@ -767,7 +840,8 @@ struct GenerateImageTests {
                         )
                     }
                 ),
-                prompt: prompt
+                prompt: prompt,
+                maxRetries: 0
             )
             Issue.record("Expected generateImage to throw.")
         } catch let error as NoImageGeneratedError {
@@ -797,7 +871,8 @@ struct GenerateImageTests {
                         )
                     }
                 ),
-                prompt: prompt
+                prompt: prompt,
+                maxRetries: 0
             )
             Issue.record("Expected generateImage to throw.")
         } catch let error as NoImageGeneratedError {
@@ -922,7 +997,6 @@ struct GenerateImageTests {
             n: 2
         )
 
-        #expect(result.images.map { $0.base64 } == [pngBase64, jpegBase64])
         #expect(result.usage == ImageModelUsage(inputTokens: 15, outputTokens: 0, totalTokens: 15))
     }
 

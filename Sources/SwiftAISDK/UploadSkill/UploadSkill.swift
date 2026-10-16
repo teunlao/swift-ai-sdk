@@ -39,10 +39,7 @@ public func uploadSkill(
     providerOptions: ProviderOptions? = nil
 ) async throws -> DefaultUploadSkillResult {
     guard let skillsProvider = api as? any SkillsProvider else {
-        throw InvalidArgumentError(
-            argument: "api",
-            message: "The provider does not support skills. Make sure it exposes a skills() method."
-        )
+        throw UploadCapabilityError(message: "The provider does not support skills. Make sure it exposes a skills() method.")
     }
 
     return try await uploadSkill(
@@ -60,10 +57,7 @@ public func uploadSkill(
     providerOptions: ProviderOptions? = nil
 ) async throws -> DefaultUploadSkillResult {
     guard let skillsAPI = try api.skills() else {
-        throw InvalidArgumentError(
-            argument: "api",
-            message: "The provider does not support skills. Make sure it exposes a skills() method."
-        )
+        throw UploadCapabilityError(message: "The provider does not support skills. Make sure it exposes a skills() method.")
     }
 
     return try await uploadSkill(

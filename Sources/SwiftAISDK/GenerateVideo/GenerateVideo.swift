@@ -25,6 +25,27 @@ extension GenerateVideoPrompt {
     }
 }
 
+public struct GenerateVideoInputReference: Sendable {
+    public let data: DataContent
+    public let mediaType: String?
+
+    public init(data: DataContent, mediaType: String? = nil) {
+        self.data = data
+        self.mediaType = mediaType
+    }
+
+    func normalize() throws -> VideoModelV4File {
+        let normalized = try toVideoModelV4File(data, restrictToImages: false)
+        guard let mediaType else { return normalized }
+        switch normalized {
+        case .file(_, let data, let options):
+            return .file(mediaType: mediaType, data: data, providerOptions: options)
+        case .url(let url, _, let options):
+            return .url(url: url, mediaType: mediaType, providerOptions: options)
+        }
+    }
+}
+
 public struct GenerateVideoFrameImage: Sendable {
     public let image: DataContent
     public let frameType: VideoModelV4FrameType
@@ -53,7 +74,10 @@ func generateVideo(
     maxRetries: Int? = nil,
     abortSignal: (@Sendable () -> Bool)? = nil,
     headers: [String: String]? = nil,
-    experimentalDownload download: DownloadFileFunction? = nil
+    experimentalDownload download: DownloadFileFunction? = nil,
+    poll: GenerateVideoPollOptions? = nil,
+    webhook: GenerateVideoWebhookFactory? = nil,
+    referenceInputs: [VideoModelV4File]? = nil
 ) async throws -> DefaultGenerateVideoResult {
     let resolvedModel = try resolveVideoModelV4(model)
     let normalizedPrompt = try prompt.normalize()
@@ -63,7 +87,7 @@ func generateVideo(
             frameType: frame.frameType
         )
     }
-    let normalizedInputReferences = try inputReferences?.map(toVideoModelV4File)
+    let normalizedInputReferences = try referenceInputs ?? inputReferences?.map { try toVideoModelV4File($0, restrictToImages: false) }
     let hasFrameImages = normalizedFrameImages?.isEmpty == false
     let hasInputReferences = normalizedInputReferences?.isEmpty == false
 
@@ -106,49 +130,59 @@ func generateVideo(
         maxVideosPerCallResolved = modelLimit ?? 1
     }
 
-    let callCount = Int(
-        ceil(Double(n) / Double(maxVideosPerCallResolved))
-    )
+    guard maxVideosPerCallResolved > 0 else {
+        throw InvalidArgumentError(argument: "maxVideosPerCall", message: "maxVideosPerCall must be greater than 0")
+    }
+    let videoCount = max(n, 0)
+    let callCount = videoCount / maxVideosPerCallResolved + (videoCount % maxVideosPerCallResolved == 0 ? 0 : 1)
 
     let callVideoCounts = (0..<callCount).map { index -> Int in
         let remaining = n - index * maxVideosPerCallResolved
         return min(remaining, maxVideosPerCallResolved)
     }
 
-    // The start/status flow is not orchestrated here yet; only doGenerate models are callable.
-    guard let generator = resolvedModel as? any VideoModelV4Generator else {
-        throw UnsupportedFunctionalityError(
-            functionality: "doGenerate",
-            message: "Video model \(resolvedModel.modelId) does not implement doGenerate or doStart/doStatus."
-        )
+    let generator = resolvedModel as? any VideoModelV4Generator
+    let operations = resolvedModel as? any VideoModelV4Operations
+    let useStartStatus = operations != nil && (poll != nil || webhook != nil || generator == nil)
+    guard generator != nil || operations != nil else {
+        throw VideoGenerationFailure(message: "Video model \(resolvedModel.modelId) does not implement doGenerate or doStart/doStatus.")
+    }
+    if (poll != nil || webhook != nil) && operations == nil {
+        logWarnings([.videoModel(.other(message: "poll/webhook options were provided but the model does not support doStart/doStatus. Falling back to doGenerate."))])
     }
 
-    var results: [VideoModelV4GenerateResult] = []
-    results.reserveCapacity(callVideoCounts.count)
-
-    for videosInCall in callVideoCounts {
-        let result = try await preparedRetries.retry.call {
-            try await generator.doGenerate(
-                options: VideoModelV4CallOptions(
-                    prompt: normalizedPrompt.prompt,
-                    n: videosInCall,
-                    aspectRatio: aspectRatio,
-                    resolution: resolution,
-                    duration: duration,
-                    fps: fps,
-                    seed: seed,
-                    image: resolvedImage,
-                    frameImages: normalizedFrameImages,
-                    inputReferences: effectiveInputReferences,
-                    generateAudio: generateAudio,
-                    providerOptions: providerOptions ?? [:],
-                    abortSignal: abortSignal,
-                    headers: headersWithUserAgent
+    let results = try await withThrowingTaskGroup(of: (Int, VideoModelV4GenerateResult).self) { group in
+        for (index, videosInCall) in callVideoCounts.enumerated() {
+            group.addTask {
+                var callHeaders = headersWithUserAgent
+                if useStartStatus && !callHeaders.keys.contains(where: { $0.lowercased() == "idempotency-key" }) {
+                    callHeaders["idempotency-key"] = "aisdk_vid_\(generateID())"
+                }
+                let options = VideoModelV4CallOptions(
+                    prompt: normalizedPrompt.prompt, n: videosInCall,
+                    aspectRatio: aspectRatio, resolution: resolution, duration: duration,
+                    fps: fps, seed: seed, image: resolvedImage,
+                    frameImages: normalizedFrameImages, inputReferences: effectiveInputReferences,
+                    generateAudio: generateAudio, providerOptions: providerOptions ?? [:],
+                    abortSignal: abortSignal, headers: callHeaders
                 )
-            )
+                let result: VideoModelV4GenerateResult
+                if useStartStatus, let operations {
+                    result = try await executeVideoOperation(
+                        model: operations, options: options, statusHeaders: headersWithUserAgent,
+                        poll: poll, webhook: webhook, retries: preparedRetries
+                    )
+                } else if let generator {
+                    result = try await preparedRetries.retry.call { try await generator.doGenerate(options: options) }
+                } else {
+                    throw VideoGenerationFailure(message: "Video generation capability unavailable.")
+                }
+                return (index, result)
+            }
         }
-
-        results.append(result)
+        var ordered = Array<VideoModelV4GenerateResult?>(repeating: nil, count: callVideoCounts.count)
+        for try await (index, result) in group { ordered[index] = result }
+        return ordered.compactMap { $0 }
     }
 
     var videos: [GeneratedFile] = []
@@ -178,11 +212,14 @@ func generateVideo(
                     return type != "application/octet-stream"
                 }
 
-                let mediaType =
-                    (isUsableMediaType(providerMediaType) ? providerMediaType : nil)
-                    ?? (isUsableMediaType(downloadResult.mediaType) ? downloadResult.mediaType : nil)
-                    ?? detectMediaType(data: downloadResult.data, signatures: videoMediaTypeSignatures)
-                    ?? "video/mp4"
+                let mediaType: String
+                if isUsableMediaType(providerMediaType) {
+                    mediaType = providerMediaType
+                } else if isUsableMediaType(downloadResult.mediaType), let downloadedType = downloadResult.mediaType {
+                    mediaType = downloadedType
+                } else {
+                    mediaType = AISDKProviderUtils.detectMediaType(data: downloadResult.data, topLevelType: "video") ?? "video/mp4"
+                }
 
                 videos.append(
                     DefaultGeneratedFile(data: downloadResult.data, mediaType: mediaType)
@@ -190,14 +227,12 @@ func generateVideo(
 
             case .base64(let base64, let mediaType):
                 videos.append(
-                    DefaultGeneratedFile(base64: base64, mediaType: mediaType)
+                    DefaultGeneratedFile(base64: base64, mediaType: mediaType.isEmpty ? "video/mp4" : mediaType)
                 )
 
             case .binary(let data, let mediaType):
-                let resolvedMediaType =
-                    mediaType.isEmpty
-                    ? (detectMediaType(data: data, signatures: videoMediaTypeSignatures) ?? "video/mp4")
-                    : mediaType
+                let detected = AISDKProviderUtils.detectMediaType(data: data, topLevelType: "video")
+                let resolvedMediaType = mediaType.isEmpty ? (detected ?? "video/mp4") : mediaType
 
                 videos.append(
                     DefaultGeneratedFile(data: data, mediaType: resolvedMediaType)
@@ -217,7 +252,7 @@ func generateVideo(
         )
 
         if let metadata = result.providerMetadata {
-            mergeProviderMetadata(target: &providerMetadata, source: metadata)
+            mergeVideoProviderMetadata(target: &providerMetadata, source: metadata)
         }
     }
 
@@ -237,7 +272,7 @@ func generateVideo(
     )
 }
 
-private func mergeProviderMetadata(
+func mergeVideoProviderMetadata(
     target: inout VideoModelProviderMetadata,
     source: VideoModelProviderMetadata
 ) {
@@ -274,7 +309,8 @@ private func invokeModelMaxVideosPerCall(_ model: any VideoModelV4) async throws
     }
 }
 
-private func toVideoModelV4File(_ dataContent: DataContent) throws -> VideoModelV4File {
+func toVideoModelV4File(_ dataContent: DataContent, restrictToImages: Bool = true) throws -> VideoModelV4File {
+    let topLevelType: String? = restrictToImages ? "image" : nil
     switch dataContent {
     case .string(let string):
         if string.hasPrefix("http://") || string.hasPrefix("https://") {
@@ -287,18 +323,18 @@ private func toVideoModelV4File(_ dataContent: DataContent) throws -> VideoModel
             if let base64Content {
                 let data = try convertBase64ToData(base64Content)
                 let mediaType = dataUrlMediaType
-                    ?? detectMediaType(data: data, signatures: imageMediaTypeSignatures)
+                    ?? detectMediaType(data: data, topLevelType: topLevelType)
                     ?? "image/png"
                 return .file(mediaType: mediaType, data: .binary(data), providerOptions: nil)
             }
         }
 
         let data = try convertBase64ToData(string)
-        let mediaType = detectMediaType(data: data, signatures: imageMediaTypeSignatures) ?? "image/png"
+        let mediaType = detectMediaType(data: data, topLevelType: topLevelType) ?? "image/png"
         return .file(mediaType: mediaType, data: .binary(data), providerOptions: nil)
 
     case .data(let data):
-        let mediaType = detectMediaType(data: data, signatures: imageMediaTypeSignatures) ?? "image/png"
+        let mediaType = detectMediaType(data: data, topLevelType: topLevelType) ?? "image/png"
         return .file(mediaType: mediaType, data: .binary(data), providerOptions: nil)
     }
 }

@@ -19,6 +19,7 @@ public struct RetryFunctionWrapper: Sendable {
     private let initialDelayInMs: Int
     private let backoffFactor: Int
     private let abortSignal: (@Sendable () -> Bool)?
+    private let additionalRetryableError: (@Sendable (any Error) async -> Bool)?
 
     /// Creates a retry function wrapper.
     ///
@@ -31,12 +32,14 @@ public struct RetryFunctionWrapper: Sendable {
         maxRetries: Int,
         initialDelayInMs: Int,
         backoffFactor: Int,
-        abortSignal: (@Sendable () -> Bool)?
+        abortSignal: (@Sendable () -> Bool)?,
+        additionalRetryableError: (@Sendable (any Error) async -> Bool)? = nil
     ) {
         self.maxRetries = maxRetries
         self.initialDelayInMs = initialDelayInMs
         self.backoffFactor = backoffFactor
         self.abortSignal = abortSignal
+        self.additionalRetryableError = additionalRetryableError
     }
 
     /// Calls the retry function with a specific output type.
@@ -52,7 +55,8 @@ public struct RetryFunctionWrapper: Sendable {
             delayInMs: initialDelayInMs,
             backoffFactor: backoffFactor,
             abortSignal: abortSignal,
-            errors: []
+            errors: [],
+            additionalRetryableError: additionalRetryableError
         )
     }
 }

@@ -7,8 +7,8 @@ import AISDKProviderUtils
 
  Port of `@ai-sdk/ai/src/registry/custom-provider.ts`.
 
- Swift keeps the legacy V3 `customProvider` surface for source compatibility and
- exposes `customProviderV4` for the current upstream V4 provider contract.
+ Model references resolve lazily through the configured provider.
+ Typed V3 and V4 overloads remain available for existing callers.
  */
 
 /**
@@ -30,6 +30,7 @@ import AISDKProviderUtils
  - Throws: `NoSuchModelError` when a requested model is not found and no fallback provider is available.
  */
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+@_disfavoredOverload
 public func customProvider(
     languageModels: [String: any LanguageModelV3]? = nil,
     textEmbeddingModels: [String: any EmbeddingModelV3<String>]? = nil,
@@ -49,6 +50,31 @@ public func customProvider(
         transcriptionModels: transcriptionModels,
         speechModels: speechModels,
         fallbackProvider: fallbackProvider
+    )
+}
+
+public func customProvider(
+    languageModels: [String: LanguageModel]? = nil,
+    embeddingModels: [String: EmbeddingModel]? = nil,
+    imageModels: [String: ImageModel]? = nil,
+    transcriptionModels: [String: TranscriptionModel]? = nil,
+    speechModels: [String: SpeechModel]? = nil,
+    rerankingModels: [String: RerankingModel]? = nil,
+    videoModels: [String: VideoModel]? = nil,
+    files: (any FilesV4)? = nil,
+    skills: (any SkillsV4)? = nil,
+    fallbackProvider: (any ProviderV4)? = nil,
+    legacyFallbackProvider: (any ProviderV3)? = nil
+) -> any ProviderV4 & VideoProviderV4 {
+    CustomProviderV4Impl(
+        languageModels: languageModels, legacyLanguageModels: nil,
+        embeddingModels: embeddingModels, legacyTextEmbeddingModels: nil,
+        imageModels: imageModels, legacyImageModels: nil,
+        rerankingModels: rerankingModels, legacyRerankingModels: nil,
+        transcriptionModels: transcriptionModels, legacyTranscriptionModels: nil,
+        speechModels: speechModels, legacySpeechModels: nil,
+        videoModels: videoModels, files: files, skills: skills,
+        fallbackProvider: fallbackProvider, legacyFallbackProvider: legacyFallbackProvider
     )
 }
 
@@ -73,24 +99,26 @@ public func customProviderV4(
     legacyTranscriptionModels: [String: any TranscriptionModelV3]? = nil,
     speechModels: [String: any SpeechModelV4]? = nil,
     legacySpeechModels: [String: any SpeechModelV3]? = nil,
+    videoModels: [String: VideoModel]? = nil,
     files: (any FilesV4)? = nil,
     skills: (any SkillsV4)? = nil,
     fallbackProvider: (any ProviderV4)? = nil,
     legacyFallbackProvider: (any ProviderV3)? = nil
-) -> any ProviderV4 {
+) -> any ProviderV4 & VideoProviderV4 {
     CustomProviderV4Impl(
-        languageModels: languageModels,
+        languageModels: languageModels?.mapValues(LanguageModel.v4),
         legacyLanguageModels: legacyLanguageModels,
-        embeddingModels: embeddingModels,
+        embeddingModels: embeddingModels?.mapValues(EmbeddingModel.v4),
         legacyTextEmbeddingModels: legacyTextEmbeddingModels,
-        imageModels: imageModels,
+        imageModels: imageModels?.mapValues(ImageModel.v4),
         legacyImageModels: legacyImageModels,
-        rerankingModels: rerankingModels,
+        rerankingModels: rerankingModels?.mapValues(RerankingModel.v4),
         legacyRerankingModels: legacyRerankingModels,
-        transcriptionModels: transcriptionModels,
+        transcriptionModels: transcriptionModels?.mapValues(TranscriptionModel.v4),
         legacyTranscriptionModels: legacyTranscriptionModels,
-        speechModels: speechModels,
+        speechModels: speechModels?.mapValues(SpeechModel.v4),
         legacySpeechModels: legacySpeechModels,
+        videoModels: videoModels,
         files: files,
         skills: skills,
         fallbackProvider: fallbackProvider,
@@ -217,38 +245,40 @@ private final class CustomProviderImpl: ProviderV3 {
 
 /// Internal implementation of upstream-style V4 custom provider.
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-private final class CustomProviderV4Impl: ProviderV4 {
+private final class CustomProviderV4Impl: ProviderV4, VideoProviderV4 {
     let specificationVersion = "v4"
 
-    private let languageModels: [String: any LanguageModelV4]?
+    private let languageModels: [String: LanguageModel]?
     private let legacyLanguageModels: [String: any LanguageModelV3]?
-    private let embeddingModels: [String: any EmbeddingModelV4]?
+    private let embeddingModels: [String: EmbeddingModel]?
     private let legacyTextEmbeddingModels: [String: any EmbeddingModelV3<String>]?
-    private let imageModels: [String: any ImageModelV4]?
+    private let imageModels: [String: ImageModel]?
     private let legacyImageModels: [String: any ImageModelV3]?
-    private let rerankingModels: [String: any RerankingModelV4]?
+    private let rerankingModels: [String: RerankingModel]?
     private let legacyRerankingModels: [String: any RerankingModelV3]?
-    private let transcriptionModels: [String: any TranscriptionModelV4]?
+    private let transcriptionModels: [String: TranscriptionModel]?
     private let legacyTranscriptionModels: [String: any TranscriptionModelV3]?
-    private let speechModels: [String: any SpeechModelV4]?
+    private let speechModels: [String: SpeechModel]?
     private let legacySpeechModels: [String: any SpeechModelV3]?
+    private let videoModels: [String: VideoModel]?
     private let filesInterface: (any FilesV4)?
     private let skillsInterface: (any SkillsV4)?
     private let fallbackProvider: (any ProviderV4)?
 
     init(
-        languageModels: [String: any LanguageModelV4]?,
+        languageModels: [String: LanguageModel]?,
         legacyLanguageModels: [String: any LanguageModelV3]?,
-        embeddingModels: [String: any EmbeddingModelV4]?,
+        embeddingModels: [String: EmbeddingModel]?,
         legacyTextEmbeddingModels: [String: any EmbeddingModelV3<String>]?,
-        imageModels: [String: any ImageModelV4]?,
+        imageModels: [String: ImageModel]?,
         legacyImageModels: [String: any ImageModelV3]?,
-        rerankingModels: [String: any RerankingModelV4]?,
+        rerankingModels: [String: RerankingModel]?,
         legacyRerankingModels: [String: any RerankingModelV3]?,
-        transcriptionModels: [String: any TranscriptionModelV4]?,
+        transcriptionModels: [String: TranscriptionModel]?,
         legacyTranscriptionModels: [String: any TranscriptionModelV3]?,
-        speechModels: [String: any SpeechModelV4]?,
+        speechModels: [String: SpeechModel]?,
         legacySpeechModels: [String: any SpeechModelV3]?,
+        videoModels: [String: VideoModel]?,
         files: (any FilesV4)?,
         skills: (any SkillsV4)?,
         fallbackProvider: (any ProviderV4)?,
@@ -266,6 +296,7 @@ private final class CustomProviderV4Impl: ProviderV4 {
         self.legacyTranscriptionModels = legacyTranscriptionModels
         self.speechModels = speechModels
         self.legacySpeechModels = legacySpeechModels
+        self.videoModels = videoModels
         self.filesInterface = files
         self.skillsInterface = skills
         self.fallbackProvider = fallbackProvider ?? legacyFallbackProvider.map(asProviderV4)
@@ -273,7 +304,7 @@ private final class CustomProviderV4Impl: ProviderV4 {
 
     func languageModel(modelId: String) throws -> any LanguageModelV4 {
         if let models = languageModels, let model = models[modelId] {
-            return model
+            return try resolveLanguageModelV4(model)
         }
 
         if let models = legacyLanguageModels, let model = models[modelId] {
@@ -289,7 +320,7 @@ private final class CustomProviderV4Impl: ProviderV4 {
 
     func embeddingModel(modelId: String) throws -> any EmbeddingModelV4 {
         if let models = embeddingModels, let model = models[modelId] {
-            return model
+            return try resolveEmbeddingModelV4(model)
         }
 
         if let models = legacyTextEmbeddingModels, let model = models[modelId] {
@@ -305,7 +336,7 @@ private final class CustomProviderV4Impl: ProviderV4 {
 
     func imageModel(modelId: String) throws -> any ImageModelV4 {
         if let models = imageModels, let model = models[modelId] {
-            return model
+            return try resolveImageModelV4(model)
         }
 
         if let models = legacyImageModels, let model = models[modelId] {
@@ -321,38 +352,49 @@ private final class CustomProviderV4Impl: ProviderV4 {
 
     func transcriptionModel(modelId: String) throws -> (any TranscriptionModelV4)? {
         if let models = transcriptionModels, let model = models[modelId] {
-            return model
+            return try resolveTranscriptionModelV4(model)
         }
 
         if let models = legacyTranscriptionModels, let model = models[modelId] {
             return asTranscriptionModelV4(model)
         }
 
-        return try fallbackProvider?.transcriptionModel(modelId: modelId)
+        if let fallbackProvider { return try fallbackProvider.transcriptionModel(modelId: modelId) }
+        throw NoSuchModelError(modelId: modelId, modelType: .transcriptionModel)
     }
 
     func speechModel(modelId: String) throws -> (any SpeechModelV4)? {
         if let models = speechModels, let model = models[modelId] {
-            return model
+            return try resolveSpeechModelV4(model)
         }
 
         if let models = legacySpeechModels, let model = models[modelId] {
             return asSpeechModelV4(model)
         }
 
-        return try fallbackProvider?.speechModel(modelId: modelId)
+        if let fallbackProvider { return try fallbackProvider.speechModel(modelId: modelId) }
+        throw NoSuchModelError(modelId: modelId, modelType: .speechModel)
     }
 
     func rerankingModel(modelId: String) throws -> (any RerankingModelV4)? {
         if let models = rerankingModels, let model = models[modelId] {
-            return model
+            return try resolveRerankingModelV4(model)
         }
 
         if let models = legacyRerankingModels, let model = models[modelId] {
             return asRerankingModelV4(model)
         }
 
-        return try fallbackProvider?.rerankingModel(modelId: modelId)
+        if let fallbackProvider { return try fallbackProvider.rerankingModel(modelId: modelId) }
+        throw NoSuchModelError(modelId: modelId, modelType: .rerankingModel)
+    }
+
+    func videoModel(modelId: String) throws -> any VideoModelV4 {
+        if let model = videoModels?[modelId] { return try resolveVideoModelV4(model) }
+        if let provider = fallbackProvider as? any VideoProviderV4 {
+            return try provider.videoModel(modelId: modelId)
+        }
+        throw NoSuchModelError(modelId: modelId, modelType: .videoModel)
     }
 
     func files() throws -> (any FilesV4)? {

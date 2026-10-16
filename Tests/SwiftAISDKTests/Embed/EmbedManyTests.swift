@@ -22,6 +22,45 @@ struct EmbedManyTests {
         "snowy night in the mountains",
     ]
 
+    @Test("UTF-8 byte batches preserve per-value provider options")
+    func utf8BatchesPreserveProviderOptions() async throws {
+        struct BudgetModel: EmbeddingModelV3, EmbeddingModelMaxInputBytesPerCall, EmbeddingModelProviderOptionsTransformer {
+            typealias VALUE = String
+            let provider = "test"
+            let modelId = "byte-budget"
+            var maxEmbeddingsPerCall: Int? { get async throws { nil } }
+            var maxInputBytesPerCall: Int? { get async throws { 4 } }
+            var supportsParallelCalls: Bool { get async throws { true } }
+            func transformProviderOptions(_ options: EmbeddingModelProviderOptionsTransformerOptions) async throws -> SharedV4ProviderOptions? {
+                ["test": ["indices": .array((options.startIndex..<options.endIndex).map { .number(Double($0)) })]]
+            }
+            func doEmbed(options: EmbeddingModelV3DoEmbedOptions<String>) async throws -> EmbeddingModelV3DoEmbedResult {
+                guard options.values.reduce(0, { $0 + $1.utf8.count }) <= 4,
+                      case .array(let indices)? = options.providerOptions?["test"]?["indices"] else {
+                    return .init(embeddings: [])
+                }
+                return .init(embeddings: indices.compactMap { value in
+                    guard case .number(let index) = value else { return nil }
+                    return [index]
+                }, usage: .init(tokens: 1))
+            }
+        }
+        let result = try await embedMany(model: .v3(BudgetModel()), values: ["é", "é", "a"])
+        #expect(result.embeddings == [[0], [1], [2]])
+        #expect(result.usage.tokens == 2)
+        #expect(result.responses?.count == 2)
+    }
+
+    @Test("embedding count must match every input batch", arguments: [nil, 1] as [Int?])
+    func rejectsMissingBatchEmbeddings(limit: Int?) async throws {
+        let model = TestEmbeddingModelV4(maxEmbeddingsPerCall: limit) { _ in
+            EmbeddingModelV4Result(embeddings: [])
+        }
+        await #expect(throws: InvalidResponseDataError.self) {
+            _ = try await embedMany(model: model, values: ["first", "second"])
+        }
+    }
+
     // MARK: - Parallelisation behaviour
 
     @Test("does not parallelize when model does not support it")

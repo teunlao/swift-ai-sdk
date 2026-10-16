@@ -1,5 +1,6 @@
 import Foundation
 import AISDKProvider
+import AISDKProviderUtils
 
 /**
  Swift adapters for resolving legacy provider/model contracts through the V4 surface.
@@ -18,6 +19,10 @@ import AISDKProvider
 // MARK: - Public V4 Adapter Entry Points
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+public func asProviderV4(_ provider: any ProviderV2) -> any ProviderV4 {
+    ProviderV2ToV4Adapter(provider: provider)
+}
+
 public func asProviderV4(_ provider: any ProviderV4) -> any ProviderV4 {
     provider
 }
@@ -118,11 +123,16 @@ public func asVideoModelV4(_ model: any VideoModelV3) -> any VideoModelV4 {
 public func resolveLanguageModelV4(_ model: LanguageModel) throws -> any LanguageModelV4 {
     switch model {
     case .v4(let model):
+        try validateModelSpecification(model.specificationVersion, provider: model.provider, modelId: model.modelId)
         return model
     case .string(let id):
         return try _resolveGlobalProviderV4(modelId: id, modelType: .languageModel)
             .languageModel(modelId: id)
-    case .v3, .v2:
+    case .v3(let legacy):
+        try validateModelSpecification(legacy.specificationVersion, provider: legacy.provider, modelId: legacy.modelId)
+        return asLanguageModelV4(legacy)
+    case .v2(let legacy):
+        try validateModelSpecification(legacy.specificationVersion, provider: legacy.provider, modelId: legacy.modelId)
         return try asLanguageModelV4(resolveLanguageModel(model))
     }
 }
@@ -131,11 +141,16 @@ public func resolveLanguageModelV4(_ model: LanguageModel) throws -> any Languag
 public func resolveEmbeddingModelV4(_ model: EmbeddingModel) throws -> any EmbeddingModelV4 {
     switch model {
     case .v4(let model):
+        try validateModelSpecification(model.specificationVersion, provider: model.provider, modelId: model.modelId)
         return model
     case .string(let id):
         return try _resolveGlobalProviderV4(modelId: id, modelType: .embeddingModel)
             .embeddingModel(modelId: id)
-    case .v3, .v2:
+    case .v3(let legacy):
+        try validateModelSpecification(legacy.specificationVersion, provider: legacy.provider, modelId: legacy.modelId)
+        return asEmbeddingModelV4(legacy)
+    case .v2(let legacy):
+        try validateModelSpecification(legacy.specificationVersion, provider: legacy.provider, modelId: legacy.modelId)
         return try asEmbeddingModelV4(resolveEmbeddingModel(model))
     }
 }
@@ -159,10 +174,13 @@ public func resolveImageModelV4(_ model: any ImageModelV2) -> any ImageModelV4 {
 public func resolveImageModelV4(_ model: ImageModel) throws -> any ImageModelV4 {
     switch model {
     case .v4(let model):
+        try validateModelSpecification(model.specificationVersion, provider: model.provider, modelId: model.modelId)
         return model
     case .v3(let model):
+        try validateModelSpecification(model.specificationVersion, provider: model.provider, modelId: model.modelId)
         return asImageModelV4(model)
     case .v2(let model):
+        try validateModelSpecification(model.specificationVersion, provider: model.provider, modelId: model.modelId)
         return asImageModelV4(model)
     case .string(let id):
         return try _resolveGlobalProviderV4(modelId: id, modelType: .imageModel)
@@ -184,13 +202,15 @@ public func resolveRerankingModelV4(_ model: any RerankingModelV4) -> any Rerank
 public func resolveRerankingModelV4(_ model: RerankingModel) throws -> any RerankingModelV4 {
     switch model {
     case .v4(let model):
+        try validateModelSpecification(model.specificationVersion, provider: model.provider, modelId: model.modelId, versions: ["v3", "v4"])
         return model
     case .v3(let model):
+        try validateModelSpecification(model.specificationVersion, provider: model.provider, modelId: model.modelId, versions: ["v3", "v4"])
         return asRerankingModelV4(model)
     case .string(let id):
         let provider = try _resolveGlobalProviderV4(modelId: id, modelType: .rerankingModel)
         guard let model = try provider.rerankingModel(modelId: id) else {
-            throw NoSuchModelError(modelId: id, modelType: .rerankingModel)
+            throw ModelResolutionFailure(message: "The default provider does not support reranking models. Please use a RerankingModel object from a provider (e.g., gateway.rerankingModel(\"model-id\")).")
         }
         return model
     }
@@ -215,15 +235,18 @@ public func resolveSpeechModelV4(_ model: any SpeechModelV2) -> any SpeechModelV
 public func resolveSpeechModelV4(_ model: SpeechModel) throws -> any SpeechModelV4 {
     switch model {
     case .v4(let model):
+        try validateModelSpecification(model.specificationVersion, provider: model.provider, modelId: model.modelId)
         return model
     case .v3(let model):
+        try validateModelSpecification(model.specificationVersion, provider: model.provider, modelId: model.modelId)
         return asSpeechModelV4(model)
     case .v2(let model):
+        try validateModelSpecification(model.specificationVersion, provider: model.provider, modelId: model.modelId)
         return asSpeechModelV4(model)
     case .string(let id):
         let provider = try _resolveGlobalProviderV4(modelId: id, modelType: .speechModel)
         guard let model = try provider.speechModel(modelId: id) else {
-            throw NoSuchModelError(modelId: id, modelType: .speechModel)
+            throw ModelResolutionFailure(message: "Model could not be resolved")
         }
         return model
     }
@@ -248,15 +271,18 @@ public func resolveTranscriptionModelV4(_ model: any TranscriptionModelV2) -> an
 public func resolveTranscriptionModelV4(_ model: TranscriptionModel) throws -> any TranscriptionModelV4 {
     switch model {
     case .v4(let model):
+        try validateModelSpecification(model.specificationVersion, provider: model.provider, modelId: model.modelId)
         return model
     case .v3(let model):
+        try validateModelSpecification(model.specificationVersion, provider: model.provider, modelId: model.modelId)
         return asTranscriptionModelV4(model)
     case .v2(let model):
+        try validateModelSpecification(model.specificationVersion, provider: model.provider, modelId: model.modelId)
         return asTranscriptionModelV4(model)
     case .string(let id):
         let provider = try _resolveGlobalProviderV4(modelId: id, modelType: .transcriptionModel)
         guard let model = try provider.transcriptionModel(modelId: id) else {
-            throw NoSuchModelError(modelId: id, modelType: .transcriptionModel)
+            throw ModelResolutionFailure(message: "Model could not be resolved")
         }
         return model
     }
@@ -276,8 +302,10 @@ public func resolveVideoModelV4(_ model: any VideoModelV4) -> any VideoModelV4 {
 public func resolveVideoModelV4(_ model: VideoModel) throws -> any VideoModelV4 {
     switch model {
     case .v4(let model):
+        try validateModelSpecification(model.specificationVersion, provider: model.provider, modelId: model.modelId, versions: ["v3", "v4"])
         return model
     case .v3(let model):
+        try validateModelSpecification(model.specificationVersion, provider: model.provider, modelId: model.modelId, versions: ["v3", "v4"])
         return asVideoModelV4(model)
     case .string(let id):
         return try _resolveGlobalVideoModelV4(modelId: id)
@@ -286,30 +314,29 @@ public func resolveVideoModelV4(_ model: VideoModel) throws -> any VideoModelV4 
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 private func _resolveGlobalVideoModelV4(modelId id: String) throws -> any VideoModelV4 {
-    let disabled = disableGlobalProviderForStringResolution || _ResolveModelContext.disableGlobalProvider
-    let provider = _ResolveModelContext.overrideProvider ?? (disabled ? nil : globalDefaultProvider)
-
-    guard let provider else {
-        throw NoSuchProviderError(
-            modelId: id,
-            modelType: .videoModel,
-            providerId: "default",
-            availableProviders: [],
-            message: "No global default provider with video model support set. Set `globalDefaultProvider` before resolving string video model IDs."
-        )
+    let provider = try _resolveGlobalProviderV4(modelId: id, modelType: .videoModel)
+    guard let videoProvider = provider as? any VideoProviderV4 else {
+        throw ModelResolutionFailure(message: "The default provider does not support video models. Please use a Experimental_VideoModelV4 object from a provider (e.g., vertex.video(\"model-id\")).")
     }
+    return try videoProvider.videoModel(modelId: id)
+}
 
-    guard let model = try provider.videoModel(modelId: id) else {
-        throw NoSuchModelError(modelId: id, modelType: .videoModel)
+private struct ModelResolutionFailure: Error, LocalizedError, CustomStringConvertible {
+    let message: String
+    var errorDescription: String? { message }
+    var description: String { message }
+}
+
+private func validateModelSpecification(_ version: String, provider: String, modelId: String, versions: [String] = ["v2", "v3", "v4"]) throws {
+    guard versions.contains(version) else {
+        throw UnsupportedModelVersionError(version: version, provider: provider, modelId: modelId)
     }
-
-    return asVideoModelV4(model)
 }
 
 // MARK: - Provider Adapter
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-private final class ProviderV3ToV4Adapter: ProviderV4, @unchecked Sendable {
+private final class ProviderV3ToV4Adapter: ProviderV4, VideoProviderV4, @unchecked Sendable {
     let specificationVersion = "v4"
 
     private let provider: any ProviderV3
@@ -342,6 +369,13 @@ private final class ProviderV3ToV4Adapter: ProviderV4, @unchecked Sendable {
         try provider.rerankingModel(modelId: modelId).map(asRerankingModelV4)
     }
 
+    func videoModel(modelId: String) throws -> any VideoModelV4 {
+        guard let model = try provider.videoModel(modelId: modelId) else {
+            throw NoSuchModelError(modelId: modelId, modelType: .videoModel)
+        }
+        return asVideoModelV4(model)
+    }
+
     func files() throws -> (any FilesV4)? {
         (provider as? any FilesProvider)?.files()
     }
@@ -349,6 +383,27 @@ private final class ProviderV3ToV4Adapter: ProviderV4, @unchecked Sendable {
     func skills() throws -> (any SkillsV4)? {
         (provider as? any SkillsProvider)?.skills()
     }
+}
+
+private struct ProviderV2ToV4Adapter: ProviderV4 {
+    let provider: any ProviderV2
+    func languageModel(modelId: String) throws -> any LanguageModelV4 {
+        try resolveLanguageModelV4(.v2(provider.languageModel(modelId: modelId)))
+    }
+    func embeddingModel(modelId: String) throws -> any EmbeddingModelV4 {
+        try resolveEmbeddingModelV4(.v2(provider.textEmbeddingModel(modelId: modelId)))
+    }
+    func imageModel(modelId: String) throws -> any ImageModelV4 {
+        asImageModelV4(provider.imageModel(modelId: modelId))
+    }
+    func transcriptionModel(modelId: String) throws -> (any TranscriptionModelV4)? {
+        provider.transcriptionModel(modelId: modelId).map(asTranscriptionModelV4)
+    }
+    func speechModel(modelId: String) throws -> (any SpeechModelV4)? {
+        provider.speechModel(modelId: modelId).map(asSpeechModelV4)
+    }
+    func files() throws -> (any FilesV4)? { (provider as? any FilesProvider)?.files() }
+    func skills() throws -> (any SkillsV4)? { (provider as? any SkillsProvider)?.skills() }
 }
 
 // MARK: - Language Model Adapter
@@ -860,7 +915,7 @@ private func _convertLanguageModelV3StreamResponseInfoToV4(
 // MARK: - Embedding Model Adapter
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-private final class EmbeddingModelV3ToV4Adapter: EmbeddingModelV4, @unchecked Sendable {
+private final class EmbeddingModelV3ToV4Adapter: EmbeddingModelV4, EmbeddingModelMaxInputBytesPerCall, EmbeddingModelProviderOptionsTransformer, @unchecked Sendable {
     let specificationVersion = "v4"
 
     private let model: any EmbeddingModelV3<String>
@@ -869,6 +924,21 @@ private final class EmbeddingModelV3ToV4Adapter: EmbeddingModelV4, @unchecked Se
     var modelId: String { model.modelId }
     var maxEmbeddingsPerCall: Int? { get async throws { try await model.maxEmbeddingsPerCall } }
     var supportsParallelCalls: Bool { get async throws { try await model.supportsParallelCalls } }
+
+    var maxInputBytesPerCall: Int? {
+        get async throws {
+            try await (model as? any EmbeddingModelMaxInputBytesPerCall)?.maxInputBytesPerCall
+        }
+    }
+
+    func transformProviderOptions(
+        _ options: EmbeddingModelProviderOptionsTransformerOptions
+    ) async throws -> SharedV4ProviderOptions? {
+        guard let transformer = model as? any EmbeddingModelProviderOptionsTransformer else {
+            return options.providerOptions
+        }
+        return try await transformer.transformProviderOptions(options)
+    }
 
     init(wrapping model: any EmbeddingModelV3<String>) {
         self.model = model

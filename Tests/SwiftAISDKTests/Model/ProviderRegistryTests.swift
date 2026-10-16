@@ -6,6 +6,60 @@ import Testing
 
 @Suite("ProviderRegistry")
 struct ProviderRegistryTests {
+    @Test("custom provider aliases resolve through the current global provider lazily")
+    func resolvesModelAliasesLazily() async throws {
+        let model = TestEmbeddingModelV4 { options in
+            .init(embeddings: options.values.map { [Double($0.utf8.count)] })
+        }
+        let aliases = customProvider(embeddingModels: ["alias": .string("real")])
+        let global = customProviderV4(embeddingModels: ["real": model])
+        try await withGlobalProviderV4(global) {
+            let resolved = try aliases.embeddingModel(modelId: "alias")
+            let result = try await embed(model: resolved, value: "é")
+            #expect(result.embedding == [2])
+        }
+        #expect(throws: NoSuchModelError.self) { try aliases.speechModel(modelId: "missing") }
+    }
+
+    @Test("V4 registry resolves video aliases into usable models")
+    func videoAliasesGenerate() async throws {
+        let model = MockVideoModelV4 { options in
+            .init(videos: [.binary(data: Data((options.prompt ?? "").utf8), mediaType: "video/mp4")], response: .init(timestamp: Date(), modelId: "video-model"))
+        }
+        let provider = customProviderV4(videoModels: ["alias": .v4(model)])
+        let registry = createProviderRegistry(providers: ["p": provider])
+        let resolved = try registry.videoModel(id: "p:alias")
+        let result = try await experimental_generateVideo(model: resolved, prompt: "video")
+        #expect(result.video.data == Data("video".utf8))
+        #expect(throws: NoSuchProviderError.self) { try registry.videoModel(id: "missing:model") }
+    }
+
+    @Test("registry image middleware transforms requests in declaration order")
+    func imageMiddlewareComposition() async throws {
+        let model = MockImageModelV4 { options in
+            .init(images: .binary([Data((options.prompt ?? "").utf8)]), response: .init(timestamp: Date(), modelId: "image-model"))
+        }
+        func middleware(_ suffix: String) -> ImageModelMiddleware {
+            .init(
+                overrideSupportsFileInputs: { _ in true },
+                transformParams: { params, _ in .init(prompt: (params.prompt ?? "") + suffix, n: params.n) },
+                wrapGenerate: { generate, _, _ in
+                    let result = try await generate()
+                    guard case .binary(let images) = result.images else { return result }
+                    return .init(images: .binary(images.map { $0 + Data(suffix.utf8) }), response: result.response)
+                }
+            )
+        }
+        let registry = createProviderRegistry(
+            providers: ["p": customProviderV4(imageModels: ["alias": model])],
+            options: .init(imageModelMiddleware: .multiple([middleware("A"), middleware("B")]))
+        )
+        let resolved = try registry.imageModel(id: "p:alias")
+        let result = try await generateImage(model: resolved, prompt: "image")
+        #expect(result.image.data == Data("imageABBA".utf8))
+        #expect(try await resolved.supportsFileInputs == true)
+    }
+
     @Test("returns base model when no middleware is configured")
     func returnsBaseModel() throws {
         let baseModel = TestLanguageModel(provider: "base", modelId: "model")

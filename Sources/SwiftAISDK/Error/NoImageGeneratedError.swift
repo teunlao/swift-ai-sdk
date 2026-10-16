@@ -20,15 +20,18 @@ public struct NoImageGeneratedError: AISDKError, Sendable {
 
     /// The response metadata for each call.
     public let responses: [ImageModelResponseMetadata]?
+    public let calls: [GenerateImageCall]?
 
     public init(
         message: String? = nil,
         cause: (any Error)? = nil,
-        responses: [ImageModelResponseMetadata]? = nil
+        responses: [ImageModelResponseMetadata]? = nil,
+        calls: [GenerateImageCall]? = nil
     ) {
         self.message = message ?? "No image generated."
         self.cause = cause
         self.responses = responses
+        self.calls = calls
     }
 
     public static func isInstance(_ error: any Error) -> Bool {

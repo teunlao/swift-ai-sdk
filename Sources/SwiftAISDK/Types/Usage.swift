@@ -107,10 +107,30 @@ public struct LanguageModelUsage: Sendable, Equatable, Codable {
  */
 public struct EmbeddingModelUsage: Sendable, Equatable, Codable {
     /// The number of tokens used in the embedding.
-    public let tokens: Int
+    public let tokens: Double
+
+    public init(tokens: Double) {
+        self.tokens = tokens
+    }
 
     public init(tokens: Int) {
-        self.tokens = tokens
+        self.tokens = Double(tokens)
+    }
+
+    private enum CodingKeys: String, CodingKey { case tokens }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        tokens = try container.decodeIfPresent(Double.self, forKey: .tokens) ?? .nan
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        if tokens.isFinite {
+            try container.encode(tokens, forKey: .tokens)
+        } else {
+            try container.encodeNil(forKey: .tokens)
+        }
     }
 }
 

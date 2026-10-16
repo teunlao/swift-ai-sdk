@@ -15,7 +15,18 @@ public final class MockImageModelV3: ImageModelV3, @unchecked Sendable {
     public let modelId: String
     public let maxImagesPerCall: ImageModelV3MaxImagesPerCall
 
-    public private(set) var doGenerateCalls: [ImageModelV3CallOptions] = []
+    private let lock = NSLock()
+    private var calls: [ImageModelV3CallOptions] = []
+    public var doGenerateCalls: [ImageModelV3CallOptions] {
+        lock.lock()
+        defer { lock.unlock() }
+        return calls
+    }
+    private func record(_ options: ImageModelV3CallOptions) {
+        lock.lock()
+        defer { lock.unlock() }
+        calls.append(options)
+    }
 
     private let doGenerateHandler: @Sendable (ImageModelV3CallOptions) async throws -> ImageModelV3GenerateResult
 
@@ -41,7 +52,7 @@ public final class MockImageModelV3: ImageModelV3, @unchecked Sendable {
     }
 
     public func doGenerate(options: ImageModelV3CallOptions) async throws -> ImageModelV3GenerateResult {
-        doGenerateCalls.append(options)
+        record(options)
         return try await doGenerateHandler(options)
     }
 }

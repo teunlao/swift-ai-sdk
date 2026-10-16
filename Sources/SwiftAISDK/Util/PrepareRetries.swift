@@ -39,28 +39,26 @@ public struct PreparedRetries: Sendable {
 /// - Throws: InvalidArgumentError if maxRetries is invalid
 public func prepareRetries(
     maxRetries: Int?,
-    abortSignal: (@Sendable () -> Bool)?
+    abortSignal: (@Sendable () -> Bool)?,
+    additionalRetryableError: (@Sendable (any Error) async -> Bool)? = nil,
+    parameter: String = "maxRetries",
+    defaultMaxRetries: Int = 2
 ) throws -> PreparedRetries {
-    // Validate maxRetries if provided
-    if let maxRetries = maxRetries {
-        // Check if it's a valid integer (in Swift, Int is always an integer)
-        // But we still need to check if it's >= 0
-        if maxRetries < 0 {
-            throw InvalidArgumentError(
-                parameter: "maxRetries",
-                value: JSONValue.number(Double(maxRetries)),
-                message: "maxRetries must be >= 0"
-            )
-        }
+    if let maxRetries, maxRetries < 0 {
+        throw InvalidArgumentError(
+            parameter: parameter,
+            value: JSONValue.number(Double(maxRetries)),
+            message: "\(parameter) must be >= 0"
+        )
     }
 
-    // Use default value if not provided
-    let maxRetriesResult = maxRetries ?? 2
+    let maxRetriesResult = maxRetries ?? defaultMaxRetries
 
     // Create retry function
     let retry = retryWithExponentialBackoffRespectingRetryHeaders(
         maxRetries: maxRetriesResult,
-        abortSignal: abortSignal
+        abortSignal: abortSignal,
+        additionalRetryableError: additionalRetryableError
     )
 
     return PreparedRetries(

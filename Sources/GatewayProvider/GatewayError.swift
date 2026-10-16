@@ -17,6 +17,7 @@ public protocol GatewayError: Error, Sendable {
     var message: String { get }
     var cause: Error? { get }
     var generationId: String? { get }
+    var isRetryable: Bool { get }
 
     static func isInstance(_ error: Any?) -> Bool
     static func hasMarker(_ error: Any?) -> Bool
@@ -27,6 +28,9 @@ protocol GatewayErrorMarker {}
 
 public extension GatewayError {
     var generationId: String? { nil }
+    var isRetryable: Bool {
+        statusCode == 408 || statusCode == 409 || statusCode == 429 || statusCode >= 500
+    }
 
     static func hasMarker(_ error: Any?) -> Bool {
         return error is GatewayErrorMarker

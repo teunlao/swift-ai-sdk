@@ -285,7 +285,8 @@ private func generateImageInternal(
 
     let preparedRetries = try prepareRetries(
         maxRetries: maxRetries,
-        abortSignal: abortSignal
+        abortSignal: abortSignal,
+        additionalRetryableError: { $0 is RetryableNoImageResultError }
     )
 
     let maxImagesPerCallResolved: Int
@@ -296,9 +297,11 @@ private func generateImageInternal(
         maxImagesPerCallResolved = modelLimit ?? 1
     }
 
-    let callCount = Int(
-        ceil(Double(n) / Double(maxImagesPerCallResolved))
-    )
+    guard maxImagesPerCallResolved > 0 else {
+        throw InvalidArgumentError(argument: "maxImagesPerCall", message: "maxImagesPerCall must be greater than 0")
+    }
+    let imageCount = max(n, 0)
+    let callCount = imageCount / maxImagesPerCallResolved + (imageCount % maxImagesPerCallResolved == 0 ? 0 : 1)
 
     let callImageCounts = (0..<callCount).map { index -> Int in
         if index < callCount - 1 {
@@ -309,32 +312,51 @@ private func generateImageInternal(
         return remainder == 0 ? maxImagesPerCallResolved : remainder
     }
 
-    var results: [ImageModelV4GenerateResult] = []
-    results.reserveCapacity(callImageCounts.count)
-
-    for imagesInCall in callImageCounts {
-        let result = try await preparedRetries.retry.call {
-            try await model.doGenerate(
-                options: ImageModelV4CallOptions(
-                    prompt: prompt,
-                    n: imagesInCall,
-                    size: size,
-                    aspectRatio: aspectRatio,
-                    seed: seed,
-                    files: files,
-                    mask: mask,
-                    providerOptions: providerOptions ?? [:],
-                    abortSignal: abortSignal,
-                    headers: headersWithUserAgent
-                )
-            )
+    let resultGroups = try await withThrowingTaskGroup(of: (Int, [ImageModelV4GenerateResult]).self) { group in
+        for (index, imagesInCall) in callImageCounts.enumerated() {
+            group.addTask {
+                let attempts = ImageCallAttempts()
+                do {
+                    _ = try await preparedRetries.retry.call {
+                        let result = try await model.doGenerate(
+                            options: ImageModelV4CallOptions(
+                                prompt: prompt,
+                                n: imagesInCall,
+                                size: size,
+                                aspectRatio: aspectRatio,
+                                seed: seed,
+                                files: files,
+                                mask: mask,
+                                providerOptions: providerOptions ?? [:],
+                                abortSignal: abortSignal,
+                                headers: headersWithUserAgent
+                            )
+                        )
+                        await attempts.append(result)
+                        if result.images.isEmpty && result.isRetryable != false {
+                            throw RetryableNoImageResultError()
+                        }
+                        return result
+                    }
+                } catch {
+                    guard error is RetryableNoImageResultError
+                        || (error as? RetryError)?.lastError is RetryableNoImageResultError else {
+                        throw error
+                    }
+                }
+                return (index, await attempts.results)
+            }
         }
-        results.append(result)
+        var ordered = Array(repeating: [ImageModelV4GenerateResult](), count: callImageCounts.count)
+        for try await (index, results) in group { ordered[index] = results }
+        return ordered
     }
+    let results = resultGroups.flatMap { $0 }
 
     var generatedImages: [GeneratedFile] = []
-    generatedImages.reserveCapacity(n)
+    generatedImages.reserveCapacity(imageCount)
 
+    var calls: [GenerateImageCall] = []
     var warnings: [ImageGenerationWarning] = []
     var responses: [ImageModelResponseMetadata] = []
     responses.reserveCapacity(results.count)
@@ -343,26 +365,27 @@ private func generateImageInternal(
     var usage: ImageModelUsage = .init()
 
     for result in results {
+        let firstImageIndex = generatedImages.count
         switch result.images {
         case .base64(let base64Images):
-            for base64 in base64Images {
+            for (imageIndex, base64) in base64Images.enumerated() {
                 let mediaType = detectMediaType(
                     data: base64,
-                    signatures: imageMediaTypeSignatures
+                    topLevelType: "image"
                 ) ?? "image/png"
                 generatedImages.append(
-                    DefaultGeneratedFile(base64: base64, mediaType: mediaType)
+                    DefaultGeneratedFile(base64: base64, mediaType: mediaType, providerMetadata: imageProviderMetadata(result.providerMetadata, index: imageIndex))
                 )
             }
 
         case .binary(let dataImages):
-            for data in dataImages {
+            for (imageIndex, data) in dataImages.enumerated() {
                 let mediaType = detectMediaType(
                     data: data,
-                    signatures: imageMediaTypeSignatures
+                    topLevelType: "image"
                 ) ?? "image/png"
                 generatedImages.append(
-                    DefaultGeneratedFile(data: data, mediaType: mediaType)
+                    DefaultGeneratedFile(data: data, mediaType: mediaType, providerMetadata: imageProviderMetadata(result.providerMetadata, index: imageIndex))
                 )
             }
         }
@@ -380,23 +403,30 @@ private func generateImageInternal(
             )
         }
 
-        responses.append(
-            ImageModelResponseMetadata(
-                timestamp: result.response.timestamp,
-                modelId: result.response.modelId,
-                headers: result.response.headers
-            )
+        let response = ImageModelResponseMetadata(
+            timestamp: result.response.timestamp,
+            modelId: result.response.modelId,
+            headers: result.response.headers
         )
+        responses.append(response)
+        calls.append(GenerateImageCall(
+            images: Array(generatedImages.dropFirst(firstImageIndex)),
+            providerMetadata: result.providerMetadata,
+            response: response,
+            warnings: result.warnings,
+            usage: result.usage
+        ))
     }
 
     logWarnings(warnings.map { Warning.imageModel($0) })
 
     if generatedImages.isEmpty {
-        throw NoImageGeneratedError(responses: responses)
+        throw NoImageGeneratedError(responses: responses, calls: calls)
     }
 
     return DefaultGenerateImageResult(
         images: generatedImages,
+        calls: calls,
         warnings: warnings,
         responses: responses,
         providerMetadata: providerMetadata,
@@ -421,23 +451,23 @@ private func mergeProviderMetadata(
             continue
         }
 
-        if let existing = target[providerName] {
-            let combinedImages = existing.images + value.images
-            let additionalData = existing.additionalData ?? value.additionalData
-            target[providerName] = ImageModelV4ProviderMetadataValue(
-                images: combinedImages,
-                additionalData: additionalData
-            )
-        } else {
-            target[providerName] = value
-        }
+        target[providerName] = ImageModelV4ProviderMetadataValue(
+            images: (target[providerName]?.images ?? []) + value.images
+        )
     }
 }
 
 private func mergeGatewayAdditionalData(_ existing: JSONValue?, _ incoming: JSONValue?) -> JSONValue? {
     switch (existing, incoming) {
     case let (.object(lhs)?, .object(rhs)?):
-        return .object(lhs.merging(rhs) { _, new in new })
+        var merged = lhs.merging(rhs) { _, new in new }
+        for key in ["cost", "gatewayCost", "inferenceCost", "inputInferenceCost", "marketCost", "outputInferenceCost", "surchargeCost"] {
+            if case .string(let a)? = lhs[key], case .string(let b)? = rhs[key],
+               let sum = addDecimalStrings(a, b) {
+                merged[key] = .string(sum)
+            }
+        }
+        return .object(merged)
     case (_, let incoming?):
         return incoming
     case (let existing?, nil):
@@ -445,6 +475,35 @@ private func mergeGatewayAdditionalData(_ existing: JSONValue?, _ incoming: JSON
     case (nil, nil):
         return nil
     }
+}
+
+private func addDecimalStrings(_ lhs: String, _ rhs: String) -> String? {
+    func parts(_ value: String) -> (String, String)? {
+        let segments = value.split(separator: ".", omittingEmptySubsequences: false)
+        guard (1...2).contains(segments.count), segments.allSatisfy({ !$0.isEmpty && $0.utf8.allSatisfy { (48...57).contains($0) } }) else { return nil }
+        return (String(segments[0]), segments.count == 2 ? String(segments[1]) : "")
+    }
+    guard let a = parts(lhs), let b = parts(rhs) else { return nil }
+    let precision = max(a.1.count, b.1.count)
+    let left = Array((a.0 + a.1 + String(repeating: "0", count: precision - a.1.count)).utf8.reversed())
+    let right = Array((b.0 + b.1 + String(repeating: "0", count: precision - b.1.count)).utf8.reversed())
+    var digits: [UInt8] = []
+    var carry = 0
+    for index in 0..<max(left.count, right.count) {
+        let sum = (index < left.count ? Int(left[index]) - 48 : 0)
+            + (index < right.count ? Int(right[index]) - 48 : 0) + carry
+        digits.append(UInt8(sum % 10) + 48)
+        carry = sum / 10
+    }
+    if carry != 0 { digits.append(UInt8(carry) + 48) }
+    while digits.count > max(precision + 1, 1), digits.last == 48 { digits.removeLast() }
+    var result = String(decoding: digits.reversed(), as: UTF8.self)
+    if precision > 0 {
+        result.insert(".", at: result.index(result.endIndex, offsetBy: -precision))
+        while result.last == "0" { result.removeLast() }
+        if result.last == "." { result.removeLast() }
+    }
+    return result
 }
 
 private func convertImageModelV3FileToV4(_ value: ImageModelV3File) throws -> ImageModelV4File {
@@ -466,6 +525,34 @@ private func convertImageModelV3FileDataToV4(_ value: ImageModelV3FileData) -> I
         return .base64(base64)
     case .binary(let data):
         return .binary(data)
+    }
+}
+
+private func imageProviderMetadata(_ metadata: ImageModelProviderMetadata?, index: Int) -> ProviderMetadata? {
+    var result: ProviderMetadata = [:]
+    for (provider, value) in metadata ?? [:] {
+        if value.images.indices.contains(index), case .object(let object) = value.images[index] {
+            result[provider] = object
+        }
+    }
+    return result.isEmpty ? nil : result
+}
+
+private struct RetryableNoImageResultError: Error, LocalizedError {
+    var errorDescription: String? { "No image generated." }
+}
+
+private actor ImageCallAttempts {
+    private(set) var results: [ImageModelV4GenerateResult] = []
+    func append(_ result: ImageModelV4GenerateResult) { results.append(result) }
+}
+
+private extension ImageModelV4GeneratedImages {
+    var isEmpty: Bool {
+        switch self {
+        case .base64(let images): images.isEmpty
+        case .binary(let images): images.isEmpty
+        }
     }
 }
 
