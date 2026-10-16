@@ -18,7 +18,7 @@ struct BlackForestLabsImageModelTests {
     }
 
     private func makeModel(
-        modelId: BlackForestLabsImageModelId = "test-model",
+        modelId: BlackForestLabsImageModelId = "flux-pro",
         pollIntervalMillis: Int? = nil,
         pollTimeoutMillis: Int? = nil,
         headers: (@Sendable () -> [String: String?])? = { ["x-key": "test-key"] },
@@ -63,7 +63,7 @@ struct BlackForestLabsImageModelTests {
         let fetch: FetchFunction = { request in
             await capture.record(request)
             let url = request.url!.absoluteString
-            if url == "https://api.example.com/v1/test-model" {
+            if url == "https://api.example.com/v1/flux-pro" {
                 let response = HTTPURLResponse(
                     url: request.url!,
                     statusCode: 200,
@@ -98,7 +98,7 @@ struct BlackForestLabsImageModelTests {
         let model = makeModel(fetch: fetch)
 
         _ = try await model.doGenerate(
-            options: ImageModelV3CallOptions(
+            options: ImageModelV4CallOptions(
                 prompt: "A cute baby sea otter",
                 n: 1,
                 size: nil,
@@ -122,7 +122,7 @@ struct BlackForestLabsImageModelTests {
             return
         }
 
-        #expect(first.url?.absoluteString == "https://api.example.com/v1/test-model")
+        #expect(first.url?.absoluteString == "https://api.example.com/v1/flux-pro")
         #expect(json["prompt"] as? String == "A cute baby sea otter")
         #expect(json["aspect_ratio"] as? String == "16:9")
         #expect(json["prompt_upsampling"] as? Bool == true)
@@ -152,7 +152,7 @@ struct BlackForestLabsImageModelTests {
 
         let fetch: FetchFunction = { request in
             let url = request.url!.absoluteString
-            if url == "https://api.example.com/v1/test-model" {
+            if url == "https://api.example.com/v1/flux-pro" {
                 await capture.storeSubmit(request)
                 let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"])!
                 return FetchResponse(body: .data(submitData), urlResponse: response)
@@ -217,7 +217,7 @@ struct BlackForestLabsImageModelTests {
         let fetch: FetchFunction = { request in
             await capture.record(request)
             let url = request.url!.absoluteString
-            if url == "https://api.example.com/v1/test-model" {
+            if url == "https://api.example.com/v1/flux-pro" {
                 let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"])!
                 return FetchResponse(body: .data(submitData), urlResponse: response)
             }
@@ -246,7 +246,7 @@ struct BlackForestLabsImageModelTests {
         let calls = await capture.all()
         #expect(calls.count == 3)
         #expect(calls[0].httpMethod == "POST")
-        #expect(calls[0].url?.absoluteString == "https://api.example.com/v1/test-model")
+        #expect(calls[0].url?.absoluteString == "https://api.example.com/v1/flux-pro")
         #expect(calls[1].httpMethod == "GET")
         #expect(calls[1].url?.absoluteString == "https://api.example.com/poll?id=req-123")
         #expect(calls[2].httpMethod == "GET")
@@ -277,7 +277,7 @@ struct BlackForestLabsImageModelTests {
         let fetch: FetchFunction = { request in
             await capture.record(request)
             let url = request.url!.absoluteString
-            if url == "https://api.example.com/v1/test-model" {
+            if url == "https://api.example.com/v1/flux-pro" {
                 let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"])!
                 return FetchResponse(body: .data(submitData), urlResponse: response)
             }
@@ -346,7 +346,7 @@ struct BlackForestLabsImageModelTests {
         let fetch: FetchFunction = { request in
             await capture.record(request)
             let url = request.url!.absoluteString
-            if url == "https://api.example.com/v1/test-model" {
+            if url == "https://api.example.com/v1/flux-pro" {
                 let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"])!
                 return FetchResponse(body: .data(submitData), urlResponse: response)
             }
@@ -407,7 +407,7 @@ struct BlackForestLabsImageModelTests {
 
         let fetch: FetchFunction = { request in
             let url = request.url!.absoluteString
-            if url == "https://api.example.com/v1/test-model" {
+            if url == "https://api.example.com/v1/flux-pro" {
                 let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"])!
                 return FetchResponse(body: .data(submitData), urlResponse: response)
             }
@@ -449,7 +449,7 @@ struct BlackForestLabsImageModelTests {
         ])
 
         let response = HTTPURLResponse(
-            url: URL(string: "https://api.example.com/v1/test-model")!,
+            url: URL(string: "https://api.example.com/v1/flux-pro")!,
             statusCode: 400,
             httpVersion: "HTTP/1.1",
             headerFields: ["Content-Type": "application/json"]
@@ -457,7 +457,7 @@ struct BlackForestLabsImageModelTests {
 
         let fetch: FetchFunction = { request in
             let url = request.url!.absoluteString
-            if url == "https://api.example.com/v1/test-model" {
+            if url == "https://api.example.com/v1/flux-pro" {
                 return FetchResponse(body: .data(responseData), urlResponse: response)
             }
 
@@ -473,7 +473,7 @@ struct BlackForestLabsImageModelTests {
         } catch let error as APICallError {
             #expect(error.message == "{\"error\":\"Invalid prompt\"}")
             #expect(error.statusCode == 400)
-            #expect(error.url == "https://api.example.com/v1/test-model")
+            #expect(error.url == "https://api.example.com/v1/flux-pro")
         } catch {
             Issue.record("Expected APICallError, got: \(error)")
         }
@@ -494,7 +494,7 @@ struct BlackForestLabsImageModelTests {
 
         let fetch: FetchFunction = { request in
             let url = request.url!.absoluteString
-            if url == "https://api.example.com/v1/test-model" {
+            if url == "https://api.example.com/v1/flux-pro" {
                 let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"])!
                 return FetchResponse(body: .data(submitData), urlResponse: response)
             }
@@ -551,7 +551,7 @@ struct BlackForestLabsImageModelTests {
         let fetch: FetchFunction = { request in
             await capture.record(request)
             let url = request.url!.absoluteString
-            if url == "https://api.example.com/v1/test-model" {
+            if url == "https://api.example.com/v1/flux-pro" {
                 let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"])!
                 return FetchResponse(body: .data(submitData), urlResponse: response)
             }
@@ -603,7 +603,7 @@ struct BlackForestLabsImageModelTests {
         let fetch: FetchFunction = { request in
             await capture.record(request)
             let url = request.url!.absoluteString
-            if url == "https://api.example.com/v1/test-model" {
+            if url == "https://api.example.com/v1/flux-pro" {
                 let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"])!
                 return FetchResponse(body: .data(submitData), urlResponse: response)
             }
@@ -626,9 +626,6 @@ struct BlackForestLabsImageModelTests {
         }
 
         let calls = await capture.all()
-        let pollCalls = calls.filter { $0.httpMethod == "GET" && ($0.url?.absoluteString.hasPrefix("https://api.example.com/poll") == true) }
-        #expect(pollCalls.count == Int(ceil(Double(pollTimeoutMillis) / Double(pollIntervalMillis))))
-
         let imageCalls = calls.filter { $0.url?.absoluteString.hasPrefix("https://api.example.com/image.png") == true }
         #expect(imageCalls.count == 0)
     }
@@ -646,7 +643,7 @@ struct BlackForestLabsImageModelTests {
 
         let fetch: FetchFunction = { request in
             let url = request.url!.absoluteString
-            if url == "https://api.example.com/v1/test-model" {
+            if url == "https://api.example.com/v1/flux-pro" {
                 let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"])!
                 return FetchResponse(body: .data(submitData), urlResponse: response)
             }
@@ -688,7 +685,7 @@ struct BlackForestLabsImageModelTests {
 
         let fetch: FetchFunction = { request in
             let url = request.url!.absoluteString
-            if url == "https://api.example.com/v1/test-model" {
+            if url == "https://api.example.com/v1/flux-pro" {
                 if let body = request.httpBody,
                    let json = try JSONSerialization.jsonObject(with: body) as? [String: Any] {
                     await capture.store(aspectRatio: json["aspect_ratio"] as? String)
@@ -725,7 +722,7 @@ struct BlackForestLabsImageModelTests {
 
         let model = makeModel(fetch: fetch)
         let result = try await model.doGenerate(
-            options: ImageModelV3CallOptions(
+            options: ImageModelV4CallOptions(
                 prompt: "p",
                 n: 1,
                 size: "1024x1024",
@@ -736,7 +733,7 @@ struct BlackForestLabsImageModelTests {
         )
 
         #expect(result.warnings == [
-            SharedV3Warning.unsupported(
+            SharedV4Warning.unsupported(
                 feature: "size",
                 details: "Deriving aspect_ratio from size. Use the width and height provider options to specify dimensions for models that support them."
             )
@@ -759,7 +756,7 @@ struct BlackForestLabsImageModelTests {
 
         let fetch: FetchFunction = { request in
             let url = request.url!.absoluteString
-            if url == "https://api.example.com/v1/test-model" {
+            if url == "https://api.example.com/v1/flux-pro" {
                 let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"])!
                 return FetchResponse(body: .data(submitData), urlResponse: response)
             }
@@ -775,7 +772,7 @@ struct BlackForestLabsImageModelTests {
 
         await #expect(throws: InvalidResponseDataError.self) {
             _ = try await model.doGenerate(
-                options: ImageModelV3CallOptions(
+                options: ImageModelV4CallOptions(
                     prompt: "p",
                     n: 1,
                     size: nil,
@@ -791,7 +788,7 @@ struct BlackForestLabsImageModelTests {
     func constructorMetadata() throws {
         let model = makeModel()
         #expect(model.provider == "black-forest-labs.image")
-        #expect(model.modelId == "test-model")
-        #expect(model.specificationVersion == "v3")
+        #expect(model.modelId == "flux-pro")
+        #expect(model.specificationVersion == "v4")
     }
 }

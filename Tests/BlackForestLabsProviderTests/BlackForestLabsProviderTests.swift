@@ -8,26 +8,26 @@ import Testing
 struct BlackForestLabsProviderTests {
     @Test("creates image models via .image")
     func createsImageModels() throws {
-        let provider = createBlackForestLabsProvider(settings: .init(apiKey: "test-key"))
+        let provider = createBlackForestLabs(settings: .init(apiKey: "test-key"))
 
         let model = provider.image(modelId: .fluxPro11)
         let model2 = provider.image(.fluxPro11)
         #expect(model.provider == "black-forest-labs.image")
         #expect(model.modelId == "flux-pro-1.1")
         #expect(model2.modelId == "flux-pro-1.1")
-        #expect(model.specificationVersion == "v3")
+        #expect(model.specificationVersion == "v4")
     }
 
     @Test("throws NoSuchModelError for unsupported model types")
     func throwsForUnsupportedTypes() async throws {
-        let provider = createBlackForestLabsProvider(settings: .init(apiKey: "test-key"))
+        let provider = createBlackForestLabs(settings: .init(apiKey: "test-key"))
 
         #expect(throws: NoSuchModelError.self) {
             _ = try provider.languageModel(modelId: "some-id")
         }
 
         #expect(throws: NoSuchModelError.self) {
-            _ = try provider.textEmbeddingModel(modelId: "some-id")
+            _ = try provider.embeddingModel(modelId: "some-id")
         }
     }
 
@@ -71,7 +71,7 @@ struct BlackForestLabsProviderTests {
                 return FetchResponse(body: .data(Data("{}".utf8)), urlResponse: response)
             }
 
-            let provider = createBlackForestLabsProvider(settings: .init(
+            let provider = createBlackForestLabs(settings: .init(
                 baseURL: "https://api.example.com/v1",
                 fetch: fetch
             ))

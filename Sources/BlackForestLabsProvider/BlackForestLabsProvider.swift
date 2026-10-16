@@ -2,40 +2,15 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-//===----------------------------------------------------------------------===//
-//=== Upstream Reference ====================================================//
-//===----------------------------------------------------------------------===//
-// Ported from packages/black-forest-labs/src/black-forest-labs-provider.ts
-// Upstream commit: f3a72bc2a
-//===----------------------------------------------------------------------===//
-
 public struct BlackForestLabsProviderSettings: Sendable {
-    /// Black Forest Labs API key. Default value is taken from the `BFL_API_KEY` environment variable.
     public var apiKey: String?
-
-    /// Base URL for the API calls. Defaults to `https://api.bfl.ai/v1`.
     public var baseURL: String?
-
-    /// Custom headers to include in the requests.
     public var headers: [String: String]?
-
-    /// Custom fetch implementation.
     public var fetch: FetchFunction?
-
-    /// Poll interval in milliseconds between status checks. Defaults to 500ms.
     public var pollIntervalMillis: Int?
-
-    /// Overall timeout in milliseconds for polling before giving up. Defaults to 60s.
     public var pollTimeoutMillis: Int?
 
-    public init(
-        apiKey: String? = nil,
-        baseURL: String? = nil,
-        headers: [String: String]? = nil,
-        fetch: FetchFunction? = nil,
-        pollIntervalMillis: Int? = nil,
-        pollTimeoutMillis: Int? = nil
-    ) {
+    public init(apiKey: String? = nil, baseURL: String? = nil, headers: [String: String]? = nil, fetch: FetchFunction? = nil, pollIntervalMillis: Int? = nil, pollTimeoutMillis: Int? = nil) {
         self.apiKey = apiKey
         self.baseURL = baseURL
         self.headers = headers
@@ -45,87 +20,45 @@ public struct BlackForestLabsProviderSettings: Sendable {
     }
 }
 
-private let defaultBaseURL = "https://api.bfl.ai/v1"
+public final class BlackForestLabsProvider: ProviderV4 {
+    private let settings: BlackForestLabsProviderSettings
+    private let baseURL: String
 
-public final class BlackForestLabsProvider: ProviderV3 {
-    private let imageFactory: @Sendable (BlackForestLabsImageModelId) -> BlackForestLabsImageModel
-
-    init(imageFactory: @escaping @Sendable (BlackForestLabsImageModelId) -> BlackForestLabsImageModel) {
-        self.imageFactory = imageFactory
+    init(settings: BlackForestLabsProviderSettings) {
+        self.settings = settings
+        self.baseURL = withoutTrailingSlash(settings.baseURL) ?? "https://api.bfl.ai/v1"
     }
 
-    public func languageModel(modelId: String) throws -> any LanguageModelV3 {
+    public func languageModel(modelId: String) throws -> any LanguageModelV4 {
         throw NoSuchModelError(modelId: modelId, modelType: .languageModel)
     }
-
-    public func textEmbeddingModel(modelId: String) throws -> any EmbeddingModelV3<String> {
+    public func embeddingModel(modelId: String) throws -> any EmbeddingModelV4 {
         throw NoSuchModelError(modelId: modelId, modelType: .embeddingModel)
     }
-
-    public func imageModel(modelId: String) throws -> any ImageModelV3 {
-        imageFactory(BlackForestLabsImageModelId(rawValue: modelId))
+    public func imageModel(modelId: String) throws -> any ImageModelV4 {
+        image(.init(rawValue: modelId))
     }
-
-    public func callAsFunction(_ modelId: String) throws -> any LanguageModelV3 {
-        try languageModel(modelId: modelId)
-    }
-
-    public func image(modelId: BlackForestLabsImageModelId) -> BlackForestLabsImageModel {
-        imageFactory(modelId)
-    }
-
+    public func image(modelId: BlackForestLabsImageModelId) -> BlackForestLabsImageModel { image(modelId) }
     public func image(_ modelId: BlackForestLabsImageModelId) -> BlackForestLabsImageModel {
-        imageFactory(modelId)
+        BlackForestLabsImageModel(modelId: modelId, config: .init(provider: "black-forest-labs.image", baseURL: baseURL, headers: { try self.headers() }, fetch: settings.fetch, pollIntervalMillis: settings.pollIntervalMillis, pollTimeoutMillis: settings.pollTimeoutMillis))
     }
+    public func imageModel(_ modelId: BlackForestLabsImageModelId) -> BlackForestLabsImageModel { image(modelId) }
+    public func videoModel(modelId: String) -> any VideoModelV4 { video(.init(rawValue: modelId)) }
+    public func video(_ modelId: BlackForestLabsVideoModelId) -> BlackForestLabsVideoModel {
+        BlackForestLabsVideoModel(modelId: modelId, config: .init(provider: "black-forest-labs.video", baseURL: baseURL, headers: { try self.headers() }, fetch: settings.fetch, pollIntervalMillis: settings.pollIntervalMillis, pollTimeoutMillis: settings.pollTimeoutMillis))
+    }
+    public func videoModel(_ modelId: BlackForestLabsVideoModelId) -> BlackForestLabsVideoModel { video(modelId) }
 
-    public func imageModel(_ modelId: BlackForestLabsImageModelId) -> BlackForestLabsImageModel {
-        imageFactory(modelId)
+    private func headers() throws -> [String: String?] {
+        let key = try loadAPIKey(apiKey: settings.apiKey, environmentVariableName: "BFL_API_KEY", description: "Black Forest Labs")
+        var headers: [String: String?] = ["x-key": key]
+        for (key, value) in settings.headers ?? [:] { headers[key] = value }
+        return withUserAgentSuffix(headers, "ai-sdk-black-forest-labs/\(BLACK_FOREST_LABS_VERSION)").mapValues { Optional($0) }
     }
 }
 
-public func createBlackForestLabsProvider(settings: BlackForestLabsProviderSettings = .init()) -> BlackForestLabsProvider {
-    let baseURL = withoutTrailingSlash(settings.baseURL) ?? defaultBaseURL
-
-    let headersClosure: @Sendable () throws -> [String: String?] = {
-        let apiKey = try loadAPIKey(
-            apiKey: settings.apiKey,
-            environmentVariableName: "BFL_API_KEY",
-            description: "Black Forest Labs"
-        )
-        var computed: [String: String?] = ["x-key": apiKey]
-
-        if let customHeaders = settings.headers {
-            for (key, value) in customHeaders {
-                computed[key] = value
-            }
-        }
-
-        let withUA = withUserAgentSuffix(computed, "ai-sdk/black-forest-labs/\(BLACK_FOREST_LABS_VERSION)")
-        return withUA.mapValues { Optional($0) }
-    }
-
-    let fetch = settings.fetch
-
-    let imageFactory: @Sendable (BlackForestLabsImageModelId) -> BlackForestLabsImageModel = { modelId in
-        BlackForestLabsImageModel(
-            modelId: modelId,
-            config: BlackForestLabsImageModelConfig(
-                provider: "black-forest-labs.image",
-                baseURL: baseURL,
-                headers: headersClosure,
-                fetch: fetch,
-                pollIntervalMillis: settings.pollIntervalMillis,
-                pollTimeoutMillis: settings.pollTimeoutMillis
-            )
-        )
-    }
-
-    return BlackForestLabsProvider(imageFactory: imageFactory)
-}
-
-/// Alias matching upstream naming (`createBlackForestLabs`).
 public func createBlackForestLabs(settings: BlackForestLabsProviderSettings = .init()) -> BlackForestLabsProvider {
-    createBlackForestLabsProvider(settings: settings)
+    BlackForestLabsProvider(settings: settings)
 }
 
-public let blackForestLabs = createBlackForestLabsProvider()
+public let blackForestLabs = createBlackForestLabs()

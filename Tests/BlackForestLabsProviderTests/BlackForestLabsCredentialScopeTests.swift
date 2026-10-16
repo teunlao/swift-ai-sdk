@@ -71,6 +71,6 @@ struct BlackForestLabsCredentialScopeTests {
         try await generate(deliveryHost: "api.us1.bfl.ai", requests: requests)
 
         #expect(await requests.key(forPrefix: "https://api.us1.bfl.ai/poll") == .some("bfl-secret"))
-        #expect(await requests.key(forPrefix: "https://api.us1.bfl.ai/image.png") == .some("bfl-secret"))
+        #expect(await requests.key(forPrefix: "https://api.us1.bfl.ai/image.png") == .some(nil))
     }
 }
