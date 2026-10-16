@@ -9,21 +9,21 @@ import AISDKProviderUtils
  */
 public struct AnthropicComputerOptions: Sendable, Equatable {
     /// The width of the display being controlled by the model in pixels.
-    public var displayWidthPx: Int
+    public var displayWidthPx: Double
 
     /// The height of the display being controlled by the model in pixels.
-    public var displayHeightPx: Int
+    public var displayHeightPx: Double
 
     /// The display number to control (only relevant for X11 environments). If specified, the tool will be provided a display number in the tool definition.
-    public var displayNumber: Int?
+    public var displayNumber: Double?
 
     /// Enable zoom action (computer_20251124 only). Default: nil (provider default).
     public var enableZoom: Bool?
 
     public init(
-        displayWidthPx: Int,
-        displayHeightPx: Int,
-        displayNumber: Int? = nil,
+        displayWidthPx: Double,
+        displayHeightPx: Double,
+        displayNumber: Double? = nil,
         enableZoom: Bool? = nil
     ) {
         self.displayWidthPx = displayWidthPx
@@ -117,8 +117,13 @@ private let computer20241022Factory = createProviderDefinedToolFactory(
 ///
 /// Port of `@ai-sdk/anthropic/src/tool/computer_20241022.ts`.
 @discardableResult
-public func anthropicComputer20241022(_ options: AnthropicComputerOptions) -> Tool {
-    computer20241022Factory(.init(args: computer20241022Args(for: options)))
+public func anthropicComputer20241022(
+    _ args: AnthropicComputerOptions,
+    options: ProviderDefinedToolFactoryOptions = .init()
+) -> Tool {
+    var options = options
+    options.args.merge(computer20241022Args(for: args)) { _, value in value }
+    return computer20241022Factory(options)
 }
 
 // MARK: - Computer 20250124
@@ -239,8 +244,13 @@ private let computer20250124Factory = createProviderDefinedToolFactory(
 ///
 /// Port of `@ai-sdk/anthropic/src/tool/computer_20250124.ts`.
 @discardableResult
-public func anthropicComputer20250124(_ options: AnthropicComputerOptions) -> Tool {
-    computer20250124Factory(.init(args: computer20250124Args(for: options)))
+public func anthropicComputer20250124(
+    _ args: AnthropicComputerOptions,
+    options: ProviderDefinedToolFactoryOptions = .init()
+) -> Tool {
+    var options = options
+    options.args.merge(computer20250124Args(for: args)) { _, value in value }
+    return computer20250124Factory(options)
 }
 
 // MARK: - Computer 20251124
@@ -346,6 +356,11 @@ private let computer20251124Factory = createProviderDefinedToolFactory(
 ///
 /// Port of `@ai-sdk/anthropic/src/tool/computer_20251124.ts`.
 @discardableResult
-public func anthropicComputer20251124(_ options: AnthropicComputerOptions) -> Tool {
-    computer20251124Factory(.init(args: computer20251124Args(for: options)))
+public func anthropicComputer20251124(
+    _ args: AnthropicComputerOptions,
+    options: ProviderDefinedToolFactoryOptions = .init()
+) -> Tool {
+    var options = options
+    options.args.merge(computer20251124Args(for: args)) { _, value in value }
+    return computer20251124Factory(options)
 }

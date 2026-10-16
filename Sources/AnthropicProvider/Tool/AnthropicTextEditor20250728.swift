@@ -10,10 +10,19 @@ import AISDKProviderUtils
 public struct AnthropicTextEditor20250728Args: Codable, Sendable, Equatable {
     /// Optional parameter to control truncation when viewing large files.
     /// Only compatible with text_editor_20250728 and later versions.
-    public var maxCharacters: Int?
+    public var maxCharacters: Double?
 
-    public init(maxCharacters: Int? = nil) {
+    public init(maxCharacters: Double? = nil) {
         self.maxCharacters = maxCharacters
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        maxCharacters = container.contains(.maxCharacters) ? try container.decode(Double.self, forKey: .maxCharacters) : nil
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case maxCharacters
     }
 }
 
@@ -101,15 +110,19 @@ private let anthropicTextEditor20250728InputSchema = FlexibleSchema(
 /// - `view_range`: Optional parameter of `view` command when `path` points to a file. If none is given, the full file is shown. If provided, the file will be shown in the indicated line number range, e.g. [11, 12] will show lines 11 and 12. Indexing at 1 to start. Setting `[start_line, -1]` shows all lines from `start_line` to the end of the file.
 ///
 /// Port of `@ai-sdk/anthropic/src/tool/text-editor_20250728.ts`.
-public let anthropicTextEditor20250728: @Sendable (AnthropicTextEditor20250728Args) -> Tool =
-    createProviderDefinedToolFactory(
-        id: "anthropic.text_editor_20250728",
-        name: "str_replace_based_edit_tool",
-        inputSchema: anthropicTextEditor20250728InputSchema
-    ) { options in
-        var args: [String: JSONValue] = [:]
-        if let maxCharacters = options.maxCharacters {
-            args["maxCharacters"] = .number(Double(maxCharacters))
-        }
-        return ProviderDefinedToolFactoryOptions(args: args)
+public func anthropicTextEditor20250728(
+    _ args: AnthropicTextEditor20250728Args = .init(),
+    options: ProviderDefinedToolFactoryOptions = .init()
+) -> Tool {
+    var options = options
+    if let maxCharacters = args.maxCharacters {
+        options.args["maxCharacters"] = .number(maxCharacters)
     }
+    return anthropicTextEditor20250728Factory(options)
+}
+
+private let anthropicTextEditor20250728Factory = createProviderDefinedToolFactory(
+    id: "anthropic.text_editor_20250728",
+    name: "str_replace_based_edit_tool",
+    inputSchema: anthropicTextEditor20250728InputSchema
+)

@@ -5,6 +5,19 @@ import AISDKProviderUtils
 public struct AnthropicToolSearchToolReference: Codable, Sendable, Equatable {
     public let type: String
     public let toolName: String
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        type = try container.decode(String.self, forKey: .type)
+        toolName = try container.decode(String.self, forKey: .toolName)
+        guard type == "tool_reference" else {
+            throw DecodingError.dataCorruptedError(forKey: .type, in: container, debugDescription: "Expected tool_reference")
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case type, toolName
+    }
 }
 
 public let anthropicToolSearchRegex20251119OutputSchema = FlexibleSchema(
@@ -56,6 +69,8 @@ private let anthropicToolSearchBm2520251119InputSchema = FlexibleSchema(
     )
 )
 
+public let anthropicToolSearchBm2520251119OutputSchema = anthropicToolSearchRegex20251119OutputSchema
+
 private let anthropicToolSearchToolOutputSchema = FlexibleSchema(
     jsonSchema(
         .object([
@@ -93,11 +108,11 @@ private let anthropicToolSearchBm2520251119Factory = createProviderExecutedToolF
 )
 
 @discardableResult
-public func anthropicToolSearchRegex20251119() -> Tool {
-    anthropicToolSearchRegex20251119Factory(ProviderExecutedToolFactoryOptions(args: [:]))
+public func anthropicToolSearchRegex20251119(_ options: ProviderExecutedToolFactoryOptions = .init()) -> Tool {
+    anthropicToolSearchRegex20251119Factory(options)
 }
 
 @discardableResult
-public func anthropicToolSearchBm2520251119() -> Tool {
-    anthropicToolSearchBm2520251119Factory(ProviderExecutedToolFactoryOptions(args: [:]))
+public func anthropicToolSearchBm2520251119(_ options: ProviderExecutedToolFactoryOptions = .init()) -> Tool {
+    anthropicToolSearchBm2520251119Factory(options)
 }

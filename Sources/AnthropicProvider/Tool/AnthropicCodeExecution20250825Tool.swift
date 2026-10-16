@@ -12,13 +12,22 @@ public struct AnthropicCodeExecution20250825OutputFile: Codable, Equatable, Send
         case type
         case fileId = "file_id"
     }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        type = try container.decode(String.self, forKey: .type)
+        fileId = try container.decode(String.self, forKey: .fileId)
+        guard type == "code_execution_output" || type == "bash_code_execution_output" else {
+            throw DecodingError.dataCorruptedError(forKey: .type, in: container, debugDescription: "Unknown code execution file type")
+        }
+    }
 }
 
 public struct AnthropicCodeExecution20250825CodeExecutionResult: Codable, Equatable, Sendable {
     public let type: String
     public let stdout: String
     public let stderr: String
-    public let returnCode: Int
+    public let returnCode: Double
     public let content: [AnthropicCodeExecution20250825OutputFile]
 
     enum CodingKeys: String, CodingKey {
@@ -34,8 +43,11 @@ public struct AnthropicCodeExecution20250825CodeExecutionResult: Codable, Equata
         type = try container.decode(String.self, forKey: .type)
         stdout = try container.decode(String.self, forKey: .stdout)
         stderr = try container.decode(String.self, forKey: .stderr)
-        returnCode = try container.decode(Int.self, forKey: .returnCode)
-        content = try container.decodeIfPresent([AnthropicCodeExecution20250825OutputFile].self, forKey: .content) ?? []
+        returnCode = try container.decode(Double.self, forKey: .returnCode)
+        content = container.contains(.content) ? try container.decode([AnthropicCodeExecution20250825OutputFile].self, forKey: .content) : []
+        guard type == "code_execution_result", content.allSatisfy({ $0.type == "code_execution_output" }) else {
+            throw DecodingError.dataCorruptedError(forKey: .type, in: container, debugDescription: "Expected code execution result and files")
+        }
     }
 }
 
@@ -44,7 +56,7 @@ public struct AnthropicCodeExecution20250825BashResult: Codable, Equatable, Send
     public let content: [AnthropicCodeExecution20250825OutputFile]
     public let stdout: String
     public let stderr: String
-    public let returnCode: Int
+    public let returnCode: Double
 
     enum CodingKeys: String, CodingKey {
         case type
@@ -52,6 +64,18 @@ public struct AnthropicCodeExecution20250825BashResult: Codable, Equatable, Send
         case stdout
         case stderr
         case returnCode = "return_code"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        type = try container.decode(String.self, forKey: .type)
+        content = try container.decode([AnthropicCodeExecution20250825OutputFile].self, forKey: .content)
+        stdout = try container.decode(String.self, forKey: .stdout)
+        stderr = try container.decode(String.self, forKey: .stderr)
+        returnCode = try container.decode(Double.self, forKey: .returnCode)
+        guard type == "bash_code_execution_result", content.allSatisfy({ $0.type == "bash_code_execution_output" }) else {
+            throw DecodingError.dataCorruptedError(forKey: .type, in: container, debugDescription: "Expected bash code execution result and files")
+        }
     }
 }
 
@@ -63,15 +87,24 @@ public struct AnthropicCodeExecution20250825ToolError: Codable, Equatable, Senda
         case type
         case errorCode = "error_code"
     }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        type = try container.decode(String.self, forKey: .type)
+        errorCode = try container.decode(String.self, forKey: .errorCode)
+        guard type == "bash_code_execution_tool_result_error" || type == "text_editor_code_execution_tool_result_error" else {
+            throw DecodingError.dataCorruptedError(forKey: .type, in: container, debugDescription: "Unknown code execution error type")
+        }
+    }
 }
 
 public struct AnthropicCodeExecution20250825TextEditorViewResult: Codable, Equatable, Sendable {
     public let type: String
     public let content: String
     public let fileType: String
-    public let numLines: Int?
-    public let startLine: Int?
-    public let totalLines: Int?
+    public let numLines: Double?
+    public let startLine: Double?
+    public let totalLines: Double?
 
     enum CodingKeys: String, CodingKey {
         case type
@@ -87,6 +120,9 @@ public struct AnthropicCodeExecution20250825TextEditorViewResult: Codable, Equat
         type = try container.decode(String.self, forKey: .type)
         content = try container.decode(String.self, forKey: .content)
         fileType = try container.decode(String.self, forKey: .fileType)
+        guard type == "text_editor_code_execution_view_result" else {
+            throw DecodingError.dataCorruptedError(forKey: .type, in: container, debugDescription: "Expected text editor view result")
+        }
 
         guard container.contains(.numLines) else {
             throw DecodingError.keyNotFound(
@@ -107,9 +143,9 @@ public struct AnthropicCodeExecution20250825TextEditorViewResult: Codable, Equat
             )
         }
 
-        numLines = try container.decodeIfPresent(Int.self, forKey: .numLines)
-        startLine = try container.decodeIfPresent(Int.self, forKey: .startLine)
-        totalLines = try container.decodeIfPresent(Int.self, forKey: .totalLines)
+        numLines = try container.decodeIfPresent(Double.self, forKey: .numLines)
+        startLine = try container.decodeIfPresent(Double.self, forKey: .startLine)
+        totalLines = try container.decodeIfPresent(Double.self, forKey: .totalLines)
     }
 }
 
@@ -121,15 +157,24 @@ public struct AnthropicCodeExecution20250825TextEditorCreateResult: Codable, Equ
         case type
         case isFileUpdate = "is_file_update"
     }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        type = try container.decode(String.self, forKey: .type)
+        isFileUpdate = try container.decode(Bool.self, forKey: .isFileUpdate)
+        guard type == "text_editor_code_execution_create_result" else {
+            throw DecodingError.dataCorruptedError(forKey: .type, in: container, debugDescription: "Expected text editor create result")
+        }
+    }
 }
 
 public struct AnthropicCodeExecution20250825TextEditorStrReplaceResult: Codable, Equatable, Sendable {
     public let type: String
     public let lines: [String]?
-    public let newLines: Int?
-    public let newStart: Int?
-    public let oldLines: Int?
-    public let oldStart: Int?
+    public let newLines: Double?
+    public let newStart: Double?
+    public let oldLines: Double?
+    public let oldStart: Double?
 
     enum CodingKeys: String, CodingKey {
         case type
@@ -143,6 +188,9 @@ public struct AnthropicCodeExecution20250825TextEditorStrReplaceResult: Codable,
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         type = try container.decode(String.self, forKey: .type)
+        guard type == "text_editor_code_execution_str_replace_result" else {
+            throw DecodingError.dataCorruptedError(forKey: .type, in: container, debugDescription: "Expected text editor replacement result")
+        }
 
         guard container.contains(.lines) else {
             throw DecodingError.keyNotFound(
@@ -176,10 +224,10 @@ public struct AnthropicCodeExecution20250825TextEditorStrReplaceResult: Codable,
         }
 
         lines = try container.decodeIfPresent([String].self, forKey: .lines)
-        newLines = try container.decodeIfPresent(Int.self, forKey: .newLines)
-        newStart = try container.decodeIfPresent(Int.self, forKey: .newStart)
-        oldLines = try container.decodeIfPresent(Int.self, forKey: .oldLines)
-        oldStart = try container.decodeIfPresent(Int.self, forKey: .oldStart)
+        newLines = try container.decodeIfPresent(Double.self, forKey: .newLines)
+        newStart = try container.decodeIfPresent(Double.self, forKey: .newStart)
+        oldLines = try container.decodeIfPresent(Double.self, forKey: .oldLines)
+        oldStart = try container.decodeIfPresent(Double.self, forKey: .oldStart)
     }
 }
 
@@ -387,7 +435,7 @@ private let anthropicCodeExecution20250825OutputJSONSchema: JSONValue = .object(
 
 // MARK: - Tool definition
 
-private let anthropicCodeExecution20250825InputSchema = FlexibleSchema(
+public let anthropicCodeExecution20250825InputSchema = FlexibleSchema(
     jsonSchema(
         .object([
             "type": .string("object"),
@@ -454,9 +502,7 @@ private let anthropicCodeExecution20250825InputSchema = FlexibleSchema(
     )
 )
 
-private let anthropicCodeExecution20250825ToolOutputSchema = FlexibleSchema(
-    jsonSchema(anthropicCodeExecution20250825OutputJSONSchema)
-)
+private let anthropicCodeExecution20250825ToolOutputSchema = codeExecutionSchema(anthropicCodeExecution20250825OutputJSONSchema)
 
 private let anthropicCodeExecution20250825Factory = createProviderExecutedToolFactory(
     id: "anthropic.code_execution_20250825",
@@ -467,8 +513,8 @@ private let anthropicCodeExecution20250825Factory = createProviderExecutedToolFa
 )
 
 @discardableResult
-public func anthropicCodeExecution20250825() -> Tool {
-    anthropicCodeExecution20250825Factory(ProviderExecutedToolFactoryOptions(args: [:]))
+public func anthropicCodeExecution20250825(_ options: ProviderExecutedToolFactoryOptions = .init()) -> Tool {
+    anthropicCodeExecution20250825Factory(options)
 }
 
 private let anthropicCodeExecution20260120OutputJSONSchema: JSONValue = .object([
@@ -505,13 +551,11 @@ private let anthropicCodeExecution20260120OutputJSONSchema: JSONValue = .object(
     ] + anthropicCodeExecution20250825OutputBranches),
 ])
 
-public let anthropicCodeExecution20260120OutputSchema = FlexibleSchema(
-    jsonSchema(anthropicCodeExecution20260120OutputJSONSchema)
-)
+public let anthropicCodeExecution20260120OutputSchema = codeExecutionSchema(anthropicCodeExecution20260120OutputJSONSchema)
 
-private let anthropicCodeExecution20260120ToolOutputSchema = FlexibleSchema(
-    jsonSchema(anthropicCodeExecution20260120OutputJSONSchema)
-)
+private let anthropicCodeExecution20260120ToolOutputSchema = codeExecutionSchema(anthropicCodeExecution20260120OutputJSONSchema)
+
+public let anthropicCodeExecution20260120InputSchema = anthropicCodeExecution20250825InputSchema
 
 private let anthropicCodeExecution20260120Factory = createProviderExecutedToolFactory(
     id: "anthropic.code_execution_20260120",
@@ -522,6 +566,6 @@ private let anthropicCodeExecution20260120Factory = createProviderExecutedToolFa
 )
 
 @discardableResult
-public func anthropicCodeExecution20260120() -> Tool {
-    anthropicCodeExecution20260120Factory(ProviderExecutedToolFactoryOptions(args: [:]))
+public func anthropicCodeExecution20260120(_ options: ProviderExecutedToolFactoryOptions = .init()) -> Tool {
+    anthropicCodeExecution20260120Factory(options)
 }

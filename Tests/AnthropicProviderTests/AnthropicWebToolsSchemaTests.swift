@@ -1,115 +1,104 @@
+import Foundation
 import Testing
 import AISDKProvider
-@testable import AnthropicProvider
+import AISDKProviderUtils
+import AnthropicProvider
 
 @Suite("Anthropic web tools schemas")
 struct AnthropicWebToolsSchemaTests {
-    @Test("web_fetch_20250910 tool input/output schemas match upstream shape")
-    func webFetch20250910ToolSchemas() async throws {
-        let tool = anthropicWebFetch20250910()
-
-        let input = try await tool.inputSchema.resolve().jsonSchema()
-        let output = try await tool.outputSchema?.resolve().jsonSchema()
-
-        #expect(input == .object([
-            "type": .string("object"),
-            "required": .array([.string("url")]),
-            "properties": .object([
-                "url": .object(["type": .string("string")])
+    @Test("web fetch validates nullable metadata and document source format", arguments: [20250910, 20260209, 20260318])
+    func webFetchDocuments(version: Int) async throws {
+        let tool: Tool
+        switch version {
+        case 20250910: tool = anthropicTools.webFetch20250910()
+        case 20260209: tool = anthropicTools.webFetch20260209()
+        default: tool = anthropicTools.webFetch20260318()
+        }
+        let input = JSONValue.object(["url": .string("https://example.com")])
+        let inputSchema = tool.inputSchema.resolve()
+        guard case .success(let validatedInput) = await inputSchema.validate(input) else {
+            Issue.record("Expected a valid web fetch URL")
+            return
+        }
+        #expect(validatedInput == input)
+        let outputSchema = try #require(tool.outputSchema)
+        let schema = outputSchema.resolve()
+        let result: JSONValue = .object([
+            "type": .string("web_fetch_result"),
+            "url": .string("https://example.com"),
+            "retrievedAt": .null,
+            "content": .object([
+                "type": .string("document"),
+                "title": .null,
+                "source": .object(["type": .string("text"), "mediaType": .string("text/plain"), "data": .string("document")]),
             ]),
-            "additionalProperties": .bool(false),
-        ]))
-
-        #expect(output == .object([
-            "type": .string("object"),
-            "required": .array([.string("type"), .string("url"), .string("content"), .string("retrievedAt")]),
-            "additionalProperties": .bool(false),
-            "properties": .object([
-                "type": .object(["const": .string("web_fetch_result")]),
-                "url": .object(["type": .string("string")]),
-                "content": .object([
-                    "type": .string("object"),
-                    "required": .array([.string("type"), .string("title"), .string("source")]),
-                    "additionalProperties": .bool(false),
-                    "properties": .object([
-                        "type": .object(["const": .string("document")]),
-                        "title": .object(["type": .array([.string("string"), .string("null")])]),
-                        "citations": .object([
-                            "type": .string("object"),
-                            "required": .array([.string("enabled")]),
-                            "additionalProperties": .bool(false),
-                            "properties": .object([
-                                "enabled": .object(["type": .string("boolean")])
-                            ]),
-                        ]),
-                        "source": .object([
-                            "oneOf": .array([
-                                .object([
-                                    "type": .string("object"),
-                                    "required": .array([.string("type"), .string("mediaType"), .string("data")]),
-                                    "additionalProperties": .bool(false),
-                                    "properties": .object([
-                                        "type": .object(["const": .string("base64")]),
-                                        "mediaType": .object(["const": .string("application/pdf")]),
-                                        "data": .object(["type": .string("string")]),
-                                    ]),
-                                ]),
-                                .object([
-                                    "type": .string("object"),
-                                    "required": .array([.string("type"), .string("mediaType"), .string("data")]),
-                                    "additionalProperties": .bool(false),
-                                    "properties": .object([
-                                        "type": .object(["const": .string("text")]),
-                                        "mediaType": .object(["const": .string("text/plain")]),
-                                        "data": .object(["type": .string("string")]),
-                                    ]),
-                                ]),
-                            ])
-                        ]),
-                    ]),
-                ]),
-                "retrievedAt": .object(["type": .array([.string("string"), .string("null")])]),
+        ])
+        guard case .success(let validated) = await schema.validate(result) else {
+            Issue.record("Expected fetched content with nullable metadata")
+            return
+        }
+        #expect(validated == result)
+        let invalid: JSONValue = .object([
+            "type": .string("web_fetch_result"),
+            "url": .string("https://example.com"),
+            "retrievedAt": .null,
+            "content": .object([
+                "type": .string("document"),
+                "title": .null,
+                "source": .object(["type": .string("text"), "mediaType": .string("application/pdf"), "data": .string("document")]),
             ]),
-        ]))
+        ])
+        guard case .failure = await schema.validate(invalid) else {
+            Issue.record("Expected document media type mismatch rejection")
+            return
+        }
     }
 
-    @Test("web_search_20250305 tool input/output schemas match upstream shape")
-    func webSearch20250305ToolSchemas() async throws {
-        let tool = anthropicWebSearch20250305()
+    @Test("web search preserves encrypted citation data and requires it", arguments: [20250305, 20260209, 20260318])
+    func webSearchCitations(version: Int) async throws {
+        let tool: Tool
+        switch version {
+        case 20250305: tool = anthropicTools.webSearch20250305()
+        case 20260209: tool = anthropicTools.webSearch20260209()
+        default: tool = anthropicTools.webSearch20260318()
+        }
+        let outputSchema = try #require(tool.outputSchema)
+        let schema = outputSchema.resolve()
+        var entry: [String: JSONValue] = [
+            "type": .string("web_search_result"),
+            "url": .string("https://example.com"),
+            "title": .null,
+            "pageAge": .null,
+            "encryptedContent": .string("opaque-citation"),
+        ]
+        let result = JSONValue.array([.object(entry)])
+        guard case .success(let validated) = await schema.validate(result) else {
+            Issue.record("Expected a valid encrypted search citation")
+            return
+        }
+        #expect(validated == result)
+        entry.removeValue(forKey: "encryptedContent")
+        guard case .failure = await schema.validate(JSONValue.array([.object(entry)])) else {
+            Issue.record("Expected citation result without encrypted content rejection")
+            return
+        }
+    }
 
-        let input = try await tool.inputSchema.resolve().jsonSchema()
-        let output = try await tool.outputSchema?.resolve().jsonSchema()
-
-        #expect(input == .object([
-            "type": .string("object"),
-            "required": .array([.string("query")]),
-            "properties": .object([
-                "query": .object(["type": .string("string")])
-            ]),
-            "additionalProperties": .bool(false),
-        ]))
-
-        #expect(output == .object([
-            "type": .string("array"),
-            "items": .object([
-                "type": .string("object"),
-                "required": .array([
-                    .string("url"),
-                    .string("title"),
-                    .string("pageAge"),
-                    .string("encryptedContent"),
-                    .string("type"),
-                ]),
-                "additionalProperties": .bool(false),
-                "properties": .object([
-                    "url": .object(["type": .string("string")]),
-                    "title": .object(["type": .array([.string("string"), .string("null")])]),
-                    "pageAge": .object(["type": .array([.string("string"), .string("null")])]),
-                    "encryptedContent": .object(["type": .string("string")]),
-                    "type": .object(["const": .string("web_search_result")]),
-                ]),
-            ]),
-        ]))
+    @Test("latest web tool arguments reject unsupported response inclusion")
+    func responseInclusionValidation() async throws {
+        let fetchSchema = anthropicWebFetch20260318ArgsSchema.resolve()
+        let searchSchema = anthropicWebSearch20260318ArgsSchema.resolve()
+        guard case .failure = await fetchSchema.validate(["responseInclusion": "summary"]) else {
+            Issue.record("Expected unsupported fetch response inclusion rejection")
+            return
+        }
+        guard case .failure = await searchSchema.validate(["responseInclusion": "summary"]) else {
+            Issue.record("Expected unsupported search response inclusion rejection")
+            return
+        }
+        guard case .failure = await fetchSchema.validate(["useCache": NSNull()]) else {
+            Issue.record("Expected an explicit null cache control to be rejected")
+            return
+        }
     }
 }
-

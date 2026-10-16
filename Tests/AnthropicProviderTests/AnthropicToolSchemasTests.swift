@@ -1,9 +1,92 @@
 import Testing
 import AISDKProvider
+import AISDKProviderUtils
 @testable import AnthropicProvider
 
 @Suite("Anthropic tool schemas")
 struct AnthropicToolSchemasTests {
+    @Test("computer toolset validates action coordinates and executes client actions")
+    func computerToolsetActions() async throws {
+        let tool = anthropicTools.computerToolset20260801(options: .init(execute: { input, _ in
+            .value(input)
+        }))
+        let input: JSONValue = .object(["action": .string("key"), "text": .string("ctrl+s"), "repeat": .number(2)])
+        let schema = tool.inputSchema.resolve()
+        guard case .success(let validated) = await schema.validate(input) else {
+            Issue.record("Expected a valid computer key action")
+            return
+        }
+        let execute = try #require(tool.execute)
+        let output = try await execute(validated, ToolExecutionOptions(toolCallId: "key-1", messages: [])).resolve()
+        #expect(output == input)
+        for invalid: JSONValue in [
+            .object(["action": .string("mouse_move"), "coordinate": .array([.number(1)])]),
+            .object(["action": .string("key"), "repeat": .number(1.5)]),
+        ] {
+            guard case .failure = await schema.validate(invalid) else {
+                Issue.record("Expected malformed computer action rejection")
+                continue
+            }
+        }
+    }
+
+    @Test("code execution results default omitted files and reject null files", arguments: [20250522, 20250825, 20260120])
+    func codeExecutionFileDefaults(version: Int) async throws {
+        let tool: Tool
+        switch version {
+        case 20250522: tool = anthropicTools.codeExecution20250522()
+        case 20250825: tool = anthropicTools.codeExecution20250825()
+        default: tool = anthropicTools.codeExecution20260120()
+        }
+        let outputSchema = try #require(tool.outputSchema)
+        let schema = outputSchema.resolve()
+        var result: [String: JSONValue] = [
+            "type": .string("code_execution_result"),
+            "stdout": .string("done"),
+            "stderr": .string(""),
+            "return_code": .number(0.5),
+        ]
+        guard case .success(let output) = await schema.validate(JSONValue.object(result)) else {
+            Issue.record("Expected a code execution result with omitted files")
+            return
+        }
+        result["content"] = .array([])
+        #expect(output == .object(result))
+        result["content"] = .null
+        guard case .failure = await schema.validate(JSONValue.object(result)) else {
+            Issue.record("Expected null output files rejection")
+            return
+        }
+    }
+
+    @Test("typed code execution output rejects an unknown result discriminator")
+    func typedCodeExecutionDiscriminator() async throws {
+        let schema = anthropicCodeExecution20250522OutputSchema.resolve()
+        guard case .failure = await schema.validate([
+            "type": "unknown_result",
+            "stdout": "done",
+            "stderr": "",
+            "return_code": 0,
+        ] as [String: Any]) else {
+            Issue.record("Expected unknown code execution result rejection")
+            return
+        }
+    }
+
+    @Test("advisor token budget rejects values below the API minimum")
+    func advisorTokenBudget() async throws {
+        let schema = anthropicAdvisor20260301ArgsSchema.resolve()
+        guard case .failure = await schema.validate(["model": "advisor", "maxTokens": 1023] as [String: Any]) else {
+            Issue.record("Expected undersized advisor token budget rejection")
+            return
+        }
+        guard case .success(let args) = await schema.validate(["model": "advisor", "maxTokens": 1024] as [String: Any]) else {
+            Issue.record("Expected the minimum advisor token budget")
+            return
+        }
+        #expect(args.maxTokens == 1024)
+    }
+
     @Test("bash_20241022 tool input schema matches upstream shape")
     func bash20241022ToolSchema() async throws {
         let tool = anthropicBash20241022()
@@ -851,6 +934,7 @@ struct AnthropicToolSchemasTests {
             "properties": .object([
                 "model": .object(["type": .string("string")]),
                 "maxUses": .object(["type": .string("number")]),
+                "maxTokens": .object(["type": .string("integer"), "minimum": .number(1024)]),
                 "caching": .object([
                     "type": .string("object"),
                     "properties": .object([
@@ -873,7 +957,7 @@ struct AnthropicToolSchemasTests {
             "additionalProperties": .bool(false),
         ]))
         let outputSchema = try #require(tool.outputSchema)
-        let schema = try await outputSchema.resolve()
+        let schema = outputSchema.resolve()
         for result: JSONValue in [
             .object(["type": .string("advisor_result"), "text": .string("advice"), "stopReason": .string("max_tokens")]),
             .object(["type": .string("advisor_redacted_result"), "encryptedContent": .string("opaque"), "stopReason": .string("end_turn")]),

@@ -8,11 +8,11 @@ private func makeFunctionTool(
     name: String = "testFunction",
     description: String? = nil,
     schema: JSONValue = .object([:]),
-    inputExamples: [LanguageModelV3ToolInputExample]? = nil,
+    inputExamples: [LanguageModelV4ToolInputExample]? = nil,
     strict: Bool? = nil,
-    providerOptions: SharedV3ProviderOptions? = nil
-) -> LanguageModelV3Tool {
-    .function(LanguageModelV3FunctionTool(
+    providerOptions: SharedV4ProviderOptions? = nil
+) -> LanguageModelV4Tool {
+    .function(LanguageModelV4FunctionTool(
         name: name,
         inputSchema: schema,
         inputExamples: inputExamples,
@@ -26,12 +26,69 @@ private func makeProviderTool(
     id: String,
     name: String,
     args: [String: JSONValue] = [:]
-) -> LanguageModelV3Tool {
-    .provider(LanguageModelV3ProviderTool(id: id, name: name, args: args))
+) -> LanguageModelV4Tool {
+    .provider(LanguageModelV4ProviderTool(id: id, name: name, args: args))
 }
 
 @Suite("prepareAnthropicTools basics")
 struct AnthropicPrepareToolsBasicTests {
+    @Test("latest tool factories serialize computer configs web controls and advisor budget")
+    func latestToolDefinitions() async throws {
+        let tools = [
+            anthropicTools.computerToolset20260801(.init(configs: ["zoom": .init(enabled: false, deferLoading: true)])),
+            anthropicTools.webFetch20260318(.init(maxUses: 2.5, citations: .init(enabled: false), useCache: false, responseInclusion: .excluded)),
+            anthropicTools.webSearch20260318(.init(userLocation: .init(city: "Paris"), responseInclusion: .full)),
+            anthropicTools.advisor20260301(.init(model: "advisor", maxTokens: 2048)),
+        ]
+        let definitions = try tools.map { tool in
+            makeProviderTool(id: try #require(tool.id), name: try #require(tool.name), args: tool.args ?? [:])
+        }
+        let result = try await prepareAnthropicTools(tools: definitions, toolChoice: nil, disableParallelToolUse: nil)
+        #expect(result.tools == [
+            .object(["type": .string("computer_toolset_20260801"), "configs": .object(["zoom": .object(["enabled": .bool(false), "defer_loading": .bool(true)])])]),
+            .object(["type": .string("web_fetch_20260318"), "name": .string("web_fetch"), "max_uses": .number(2.5), "citations": .object(["enabled": .bool(false)]), "use_cache": .bool(false), "response_inclusion": .string("excluded")]),
+            .object(["type": .string("web_search_20260318"), "name": .string("web_search"), "user_location": .object(["type": .string("approximate"), "city": .string("Paris")]), "response_inclusion": .string("full")]),
+            .object(["type": .string("advisor_20260301"), "name": .string("advisor"), "model": .string("advisor"), "max_tokens": .number(2048)]),
+        ])
+        #expect(result.betas == Set(["advisor-tool-2026-03-01"]))
+        #expect(result.warnings.isEmpty)
+    }
+
+    @Test("computer toolset rejects unknown member configuration")
+    func unknownComputerMember() async throws {
+        await #expect(throws: TypeValidationError.self) {
+            _ = try await prepareAnthropicTools(
+                tools: [makeProviderTool(id: "anthropic.computer_toolset_20260801", name: "computer", args: ["configs": .object(["unknown": .object([:])])])],
+                toolChoice: nil,
+                disableParallelToolUse: nil
+            )
+        }
+    }
+
+    @Test("forced choices fall back to auto with eligible tools", arguments: [LanguageModelV4ToolChoice.required, .tool(toolName: "selected")])
+    func rejectedForcedChoice(choice: LanguageModelV4ToolChoice) async throws {
+        let selected = makeFunctionTool(name: "selected")
+        let other = makeFunctionTool(name: "other")
+        let result = try await prepareAnthropicTools(
+            tools: [selected, other],
+            toolChoice: choice,
+            disableParallelToolUse: true,
+            rejectsForcedToolUse: true
+        )
+        #expect(result.toolChoice == .object(["type": .string("auto"), "disable_parallel_tool_use": .bool(true)]))
+        let expected: [JSONValue]
+        switch choice {
+        case .tool: expected = [.object(["name": .string("selected"), "input_schema": .object([:])])]
+        default: expected = [.object(["name": .string("selected"), "input_schema": .object([:])]), .object(["name": .string("other"), "input_schema": .object([:])])]
+        }
+        #expect(result.tools == expected)
+        guard case .unsupported(let feature, _) = try #require(result.warnings.first) else {
+            Issue.record("Expected forced tool choice warning")
+            return
+        }
+        #expect(feature == "toolChoice")
+    }
+
     @Test("returns nil when tools missing")
     func nilTools() async throws {
         let result = try await prepareAnthropicTools(tools: nil, toolChoice: nil, disableParallelToolUse: nil)
@@ -83,8 +140,8 @@ struct AnthropicPrepareToolsBasicTests {
                     ])
                 ]),
                 inputExamples: [
-                    LanguageModelV3ToolInputExample(input: ["a": .number(1)]),
-                    LanguageModelV3ToolInputExample(input: ["a": .number(2)]),
+                    LanguageModelV4ToolInputExample(input: ["a": .number(1)]),
+                    LanguageModelV4ToolInputExample(input: ["a": .number(2)]),
                 ]
             )],
             toolChoice: nil,
@@ -92,7 +149,7 @@ struct AnthropicPrepareToolsBasicTests {
             supportsStructuredOutput: true
         )
 
-        #expect(result.betas == Set(["advanced-tool-use-2025-11-20"]))
+        #expect(result.betas == Set(["advanced-tool-use-2025-11-20", "structured-outputs-2025-11-13"]))
 
         if case let .object(tool)? = result.tools?.first {
             #expect(tool["name"] == .string("tool_with_examples"))
@@ -108,7 +165,7 @@ struct AnthropicPrepareToolsBasicTests {
 
     @Test("sets cache control from provider options")
     func setsCacheControl() async throws {
-        let options: SharedV3ProviderOptions = [
+        let options: SharedV4ProviderOptions = [
             "anthropic": [
                 "cacheControl": .object(["type": .string("ephemeral")])
             ]
@@ -129,7 +186,7 @@ struct AnthropicPrepareToolsBasicTests {
 
     @Test("limits cache breakpoints to 4")
     func limitsCacheBreakpointsTo4() async throws {
-        let cacheOptions: SharedV3ProviderOptions = [
+        let cacheOptions: SharedV4ProviderOptions = [
             "anthropic": [
                 "cacheControl": .object(["type": .string("ephemeral")])
             ]
@@ -137,7 +194,7 @@ struct AnthropicPrepareToolsBasicTests {
 
         let cacheControlValidator = CacheControlValidator()
 
-        let tools: [LanguageModelV3Tool] = [
+        let tools: [LanguageModelV4Tool] = [
             makeFunctionTool(name: "tool1", description: "Test 1", schema: .object([:]), providerOptions: cacheOptions),
             makeFunctionTool(name: "tool2", description: "Test 2", schema: .object([:]), providerOptions: cacheOptions),
             makeFunctionTool(name: "tool3", description: "Test 3", schema: .object([:]), providerOptions: cacheOptions),
@@ -181,7 +238,7 @@ struct AnthropicPrepareToolsBasicTests {
 
     @Test("supports defer_loading for function tools")
     func supportsDeferLoading() async throws {
-        let options: SharedV3ProviderOptions = [
+        let options: SharedV4ProviderOptions = [
             "anthropic": [
                 "deferLoading": .bool(true)
             ]
@@ -200,7 +257,7 @@ struct AnthropicPrepareToolsBasicTests {
 
     @Test("supports defer_loading false for function tools")
     func supportsDeferLoadingFalse() async throws {
-        let options: SharedV3ProviderOptions = [
+        let options: SharedV4ProviderOptions = [
             "anthropic": [
                 "deferLoading": .bool(false)
             ]
@@ -212,7 +269,7 @@ struct AnthropicPrepareToolsBasicTests {
             supportsStructuredOutput: true
         )
 
-        #expect(result.betas.isEmpty)
+        #expect(result.betas == Set(["structured-outputs-2025-11-13"]))
         if case let .object(tool) = result.tools?.first {
             #expect(tool["defer_loading"] == .bool(false))
         } else {
@@ -222,7 +279,7 @@ struct AnthropicPrepareToolsBasicTests {
 
     @Test("supports allowed_callers and advanced-tool-use beta for function tools")
     func supportsAllowedCallers() async throws {
-        let options: SharedV3ProviderOptions = [
+        let options: SharedV4ProviderOptions = [
             "anthropic": [
                 "allowedCallers": .array([.string("code_execution_20250825")])
             ]
@@ -244,7 +301,7 @@ struct AnthropicPrepareToolsBasicTests {
             supportsStructuredOutput: true
         )
 
-        #expect(result.betas == Set(["advanced-tool-use-2025-11-20"]))
+        #expect(result.betas == Set(["advanced-tool-use-2025-11-20", "structured-outputs-2025-11-13"]))
         if case let .object(tool) = result.tools?.first {
             #expect(tool["allowed_callers"] == .array([.string("code_execution_20250825")]))
         } else {
@@ -254,7 +311,7 @@ struct AnthropicPrepareToolsBasicTests {
 
     @Test("supports defer_loading + allowed_callers together")
     func supportsDeferLoadingAndAllowedCallers() async throws {
-        let options: SharedV3ProviderOptions = [
+        let options: SharedV4ProviderOptions = [
             "anthropic": [
                 "deferLoading": .bool(true),
                 "allowedCallers": .array([.string("code_execution_20250825")])
@@ -277,7 +334,7 @@ struct AnthropicPrepareToolsBasicTests {
             supportsStructuredOutput: true
         )
 
-        #expect(result.betas == Set(["advanced-tool-use-2025-11-20"]))
+        #expect(result.betas == Set(["advanced-tool-use-2025-11-20", "structured-outputs-2025-11-13"]))
         if case let .object(tool) = result.tools?.first {
             #expect(tool["defer_loading"] == .bool(true))
             #expect(tool["allowed_callers"] == .array([.string("code_execution_20250825")]))
@@ -289,113 +346,58 @@ struct AnthropicPrepareToolsBasicTests {
 
 @Suite("prepareAnthropicTools strict mode")
 struct AnthropicPrepareToolsStrictModeTests {
-    @Test("includes strict and beta when supportsStructuredOutput is true and strict is true")
-    func strictTrueWithStructuredOutput() async throws {
+    @Test("strict tool support is independent of structured output", arguments: [false, true])
+    func strictToolSupport(supported: Bool) async throws {
         let result = try await prepareAnthropicTools(
-            tools: [makeFunctionTool(
-                name: "testFunction",
-                description: "A test function",
-                schema: .object(["type": .string("object"), "properties": .object([:])]),
-                strict: true
-            )],
+            tools: [makeFunctionTool(strict: true)],
             toolChoice: nil,
             disableParallelToolUse: nil,
-            supportsStructuredOutput: true
+            supportsStructuredOutput: false,
+            supportsStrictTools: supported
         )
-
-        #expect(result.betas == Set(["structured-outputs-2025-11-13"]))
-        if case let .object(tool)? = result.tools?.first {
-            #expect(tool["strict"] == .bool(true))
-        } else {
-            Issue.record("Expected tool object")
+        guard case .object(let payload)? = result.tools?.first else {
+            Issue.record("Expected a function tool definition")
+            return
         }
-    }
-
-    @Test("omits beta and strict when strict is nil and no structured output is in use")
-    func strictNilWithStructuredOutput() async throws {
-        let result = try await prepareAnthropicTools(
-            tools: [makeFunctionTool(
-                name: "testFunction",
-                description: "A test function",
-                schema: .object(["type": .string("object"), "properties": .object([:])])
-            )],
-            toolChoice: nil,
-            disableParallelToolUse: nil,
-            supportsStructuredOutput: true
-        )
-
+        #expect(payload["strict"] == (supported ? .bool(true) : nil))
         #expect(result.betas.isEmpty)
-        if case let .object(tool)? = result.tools?.first {
-            #expect(tool["strict"] == nil)
+        if supported {
+            #expect(result.warnings.isEmpty)
         } else {
-            Issue.record("Expected tool object")
+            guard case .unsupported(let feature, _) = try #require(result.warnings.first) else {
+                Issue.record("Expected unsupported strict mode warning")
+                return
+            }
+            #expect(feature == "strict")
         }
     }
 
-    @Test("includes beta without strict when a native output format is in use")
-    func betaWithStructuredOutputsInUse() async throws {
+    @Test("structured output capability advertises its beta with non-strict tools")
+    func structuredOutputBeta() async throws {
         let result = try await prepareAnthropicTools(
-            tools: [makeFunctionTool(
-                name: "testFunction",
-                description: "A test function",
-                schema: .object(["type": .string("object"), "properties": .object([:])])
-            )],
-            toolChoice: nil,
-            disableParallelToolUse: nil,
-            supportsStructuredOutput: true,
-            structuredOutputsInUse: true
-        )
-
-        #expect(result.betas == Set(["structured-outputs-2025-11-13"]))
-        if case let .object(tool)? = result.tools?.first {
-            #expect(tool["strict"] == nil)
-        } else {
-            Issue.record("Expected tool object")
-        }
-    }
-
-    @Test("does not include strict or beta when supportsStructuredOutput is false")
-    func strictTrueWithoutStructuredOutput() async throws {
-        let result = try await prepareAnthropicTools(
-            tools: [makeFunctionTool(
-                name: "testFunction",
-                description: "A test function",
-                schema: .object(["type": .string("object"), "properties": .object([:])]),
-                strict: true
-            )],
-            toolChoice: nil,
-            disableParallelToolUse: nil,
-            supportsStructuredOutput: false
-        )
-
-        #expect(result.betas.isEmpty)
-        if case let .object(tool)? = result.tools?.first {
-            #expect(tool["strict"] == nil)
-        } else {
-            Issue.record("Expected tool object")
-        }
-    }
-
-    @Test("includes beta and strict false when supportsStructuredOutput is true")
-    func strictFalseWithStructuredOutput() async throws {
-        let result = try await prepareAnthropicTools(
-            tools: [makeFunctionTool(
-                name: "testFunction",
-                description: "A test function",
-                schema: .object(["type": .string("object"), "properties": .object([:])]),
-                strict: false
-            )],
+            tools: [makeFunctionTool()],
             toolChoice: nil,
             disableParallelToolUse: nil,
             supportsStructuredOutput: true
         )
-
         #expect(result.betas == Set(["structured-outputs-2025-11-13"]))
-        if case let .object(tool)? = result.tools?.first {
-            #expect(tool["strict"] == .bool(false))
-        } else {
-            Issue.record("Expected tool object")
+        #expect(result.warnings.isEmpty)
+    }
+
+    @Test("supported strict mode preserves explicit false")
+    func strictFalse() async throws {
+        let result = try await prepareAnthropicTools(
+            tools: [makeFunctionTool(strict: false)],
+            toolChoice: nil,
+            disableParallelToolUse: nil,
+            supportsStrictTools: true
+        )
+        guard case .object(let payload)? = result.tools?.first else {
+            Issue.record("Expected a function tool definition")
+            return
         }
+        #expect(payload["strict"] == .bool(false))
+        #expect(result.warnings.isEmpty)
     }
 }
 
@@ -774,7 +776,7 @@ struct AnthropicPrepareToolsProviderDefinedTests {
         }
     }
 
-    @Test("tool_search_regex_20251119 adds beta and payload")
+    @Test("tool_search_regex_20251119 prepares native payload")
     func toolSearchRegex20251119() async throws {
         let result = try await prepareAnthropicTools(
             tools: [makeProviderTool(id: "anthropic.tool_search_regex_20251119", name: "tool_search_tool_regex")],
@@ -782,7 +784,7 @@ struct AnthropicPrepareToolsProviderDefinedTests {
             disableParallelToolUse: nil
         )
 
-        #expect(result.betas == Set(["advanced-tool-use-2025-11-20"]))
+        #expect(result.betas.isEmpty)
         #expect(result.tools == [
             .object([
                 "type": .string("tool_search_tool_regex_20251119"),
@@ -791,7 +793,7 @@ struct AnthropicPrepareToolsProviderDefinedTests {
         ])
     }
 
-    @Test("tool_search_bm25_20251119 adds beta and payload")
+    @Test("tool_search_bm25_20251119 prepares native payload")
     func toolSearchBm2520251119() async throws {
         let result = try await prepareAnthropicTools(
             tools: [makeProviderTool(id: "anthropic.tool_search_bm25_20251119", name: "tool_search_tool_bm25")],
@@ -799,7 +801,7 @@ struct AnthropicPrepareToolsProviderDefinedTests {
             disableParallelToolUse: nil
         )
 
-        #expect(result.betas == Set(["advanced-tool-use-2025-11-20"]))
+        #expect(result.betas.isEmpty)
         #expect(result.tools == [
             .object([
                 "type": .string("tool_search_tool_bm25_20251119"),
@@ -837,7 +839,7 @@ struct AnthropicPrepareToolsProviderDefinedTests {
             return
         }
 
-        let providerTool = LanguageModelV3ProviderTool(id: id, name: name, args: tool.args ?? [:])
+        let providerTool = LanguageModelV4ProviderTool(id: id, name: name, args: tool.args ?? [:])
 
         let prepared = try await prepareAnthropicTools(
             tools: [.provider(providerTool)],
@@ -871,7 +873,7 @@ struct AnthropicPrepareToolsProviderDefinedTests {
             return
         }
 
-        let providerTool = LanguageModelV3ProviderTool(id: id, name: name, args: tool.args ?? [:])
+        let providerTool = LanguageModelV4ProviderTool(id: id, name: name, args: tool.args ?? [:])
 
         let prepared = try await prepareAnthropicTools(
             tools: [.provider(providerTool)],
@@ -900,7 +902,7 @@ struct AnthropicPrepareToolsProviderDefinedTests {
             return
         }
 
-        let providerTool = LanguageModelV3ProviderTool(id: id, name: name, args: tool.args ?? [:])
+        let providerTool = LanguageModelV4ProviderTool(id: id, name: name, args: tool.args ?? [:])
 
         let prepared = try await prepareAnthropicTools(
             tools: [.provider(providerTool)],
@@ -926,7 +928,7 @@ struct AnthropicPrepareToolsProviderDefinedTests {
             return
         }
 
-        let providerTool = LanguageModelV3ProviderTool(id: id, name: name, args: tool.args ?? [:])
+        let providerTool = LanguageModelV4ProviderTool(id: id, name: name, args: tool.args ?? [:])
 
         let prepared = try await prepareAnthropicTools(
             tools: [.provider(providerTool)],
@@ -955,7 +957,7 @@ struct AnthropicPrepareToolsProviderDefinedTests {
             return
         }
 
-        let providerTool = LanguageModelV3ProviderTool(id: id, name: name, args: tool.args ?? [:])
+        let providerTool = LanguageModelV4ProviderTool(id: id, name: name, args: tool.args ?? [:])
 
         let prepared = try await prepareAnthropicTools(
             tools: [.provider(providerTool)],
@@ -992,7 +994,7 @@ struct AnthropicPrepareToolsProviderDefinedTests {
             return
         }
 
-        let providerTool = LanguageModelV3ProviderTool(id: id, name: name, args: tool.args ?? [:])
+        let providerTool = LanguageModelV4ProviderTool(id: id, name: name, args: tool.args ?? [:])
 
         let prepared = try await prepareAnthropicTools(
             tools: [.provider(providerTool)],
@@ -1022,7 +1024,7 @@ struct AnthropicPrepareToolsProviderDefinedTests {
             return
         }
 
-        let providerTool = LanguageModelV3ProviderTool(id: id, name: name, args: tool.args ?? [:])
+        let providerTool = LanguageModelV4ProviderTool(id: id, name: name, args: tool.args ?? [:])
 
         let prepared = try await prepareAnthropicTools(
             tools: [.provider(providerTool)],
@@ -1063,15 +1065,15 @@ struct AnthropicPrepareToolsChoiceTests {
         #expect(result.toolChoice == .object(["type": .string("any")]))
     }
 
-    @Test("none choice clears tools")
+    @Test("none choice retains definitions and disables tool use")
     func noneChoice() async throws {
         let result = try await prepareAnthropicTools(
             tools: [makeFunctionTool()],
             toolChoice: .some(.none),
             disableParallelToolUse: nil
         )
-        #expect(result.tools == nil)
-        #expect(result.toolChoice == nil)
+        #expect(result.tools == [.object(["name": .string("testFunction"), "input_schema": .object([:])])])
+        #expect(result.toolChoice == .object(["type": .string("none")]))
     }
 
     @Test("tool choice names tool")

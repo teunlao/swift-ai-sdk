@@ -56,7 +56,8 @@ public func prepareAnthropicTools(
     toolChoice: LanguageModelV3ToolChoice?,
     disableParallelToolUse: Bool?,
     supportsStructuredOutput: Bool = false,
-    structuredOutputsInUse: Bool = false,
+    supportsStrictTools: Bool = false,
+    rejectsForcedToolUse: Bool = false,
     cacheControlValidator: CacheControlValidator? = nil,
     defaultEagerInputStreaming: Bool = false
 ) async throws -> AnthropicPreparedTools {
@@ -80,19 +81,16 @@ public func prepareAnthropicTools(
                 payload["description"] = .string(description)
             }
 
+            if supportsStrictTools, let strict = functionTool.strict {
+                payload["strict"] = .bool(strict)
+            } else if !supportsStrictTools, functionTool.strict == true {
+                toolWarnings.append(.unsupported(
+                    feature: "strict",
+                    details: "Tool '\(functionTool.name)' has strict: true, but strict mode is not supported by this provider. The strict property will be ignored."
+                ))
+            }
             if supportsStructuredOutput {
-                // Upstream (@ai-sdk/anthropic) sends this beta on every
-                // request with function tools for capable models. We only
-                // advertise it when a structured-output feature is actually
-                // exercised (a strict tool, or a native JSON output format
-                // — passed in via `structuredOutputsInUse`), because some
-                // proxies reject requests carrying unfulfilled feature betas.
-                if let strict = functionTool.strict {
-                    payload["strict"] = .bool(strict)
-                    betas.insert("structured-outputs-2025-11-13")
-                } else if structuredOutputsInUse {
-                    betas.insert("structured-outputs-2025-11-13")
-                }
+                betas.insert("structured-outputs-2025-11-13")
             }
 
             let cacheControl = validator.getCacheControl(
@@ -131,8 +129,8 @@ public func prepareAnthropicTools(
                 }
                 return defaultEagerInputStreaming ? true : nil
             }()
-            if let eagerInputStreaming {
-                payload["eager_input_streaming"] = .bool(eagerInputStreaming)
+            if eagerInputStreaming == true {
+                payload["eager_input_streaming"] = .bool(true)
             }
 
             if let inputExamples = functionTool.inputExamples {
@@ -158,6 +156,9 @@ public func prepareAnthropicTools(
                 ]
                 if let maxUses = parsed.maxUses {
                     payload["max_uses"] = .number(Double(maxUses))
+                }
+                if let maxTokens = parsed.maxTokens {
+                    payload["max_tokens"] = .number(Double(maxTokens))
                 }
                 if let caching = parsed.caching {
                     payload["caching"] = .object([
@@ -187,50 +188,66 @@ public func prepareAnthropicTools(
                     "name": .string("code_execution")
                 ]))
 
+            case "anthropic.computer_toolset_20260801":
+                let parsed = try await validateTypes(ValidateTypesOptions(
+                    value: foundationArgs(providerTool.args),
+                    schema: anthropicComputerToolset20260801ArgsSchema
+                ))
+                var payload: [String: JSONValue] = ["type": .string("computer_toolset_20260801")]
+                if let configs = parsed.configs {
+                    payload["configs"] = .object(configs.mapValues { config in
+                        var value: [String: JSONValue] = [:]
+                        if let enabled = config.enabled { value["enabled"] = .bool(enabled) }
+                        if let deferLoading = config.deferLoading { value["defer_loading"] = .bool(deferLoading) }
+                        return .object(value)
+                    })
+                }
+                anthropicTools.append(.object(payload))
+
             case "anthropic.computer_20250124":
                 betas.insert("computer-use-2025-01-24")
-                let width = numberValue(providerTool.args["displayWidthPx"]) ?? numberValue(providerTool.args["display_width_px"])
-                let height = numberValue(providerTool.args["displayHeightPx"]) ?? numberValue(providerTool.args["display_height_px"])
+                let width = numberValue(providerTool.args["displayWidthPx"])
+                let height = numberValue(providerTool.args["displayHeightPx"])
                 var payload: [String: JSONValue] = [
                     "name": .string("computer"),
                     "type": .string("computer_20250124")
                 ]
                 if let width { payload["display_width_px"] = .number(width) }
                 if let height { payload["display_height_px"] = .number(height) }
-                if let displayNumber = numberValue(providerTool.args["displayNumber"]) ?? numberValue(providerTool.args["display_number"]) {
+                if let displayNumber = numberValue(providerTool.args["displayNumber"]) {
                     payload["display_number"] = .number(displayNumber)
                 }
                 anthropicTools.append(.object(payload))
 
             case "anthropic.computer_20251124":
                 betas.insert("computer-use-2025-11-24")
-                let width = numberValue(providerTool.args["displayWidthPx"]) ?? numberValue(providerTool.args["display_width_px"])
-                let height = numberValue(providerTool.args["displayHeightPx"]) ?? numberValue(providerTool.args["display_height_px"])
+                let width = numberValue(providerTool.args["displayWidthPx"])
+                let height = numberValue(providerTool.args["displayHeightPx"])
                 var payload: [String: JSONValue] = [
                     "name": .string("computer"),
                     "type": .string("computer_20251124")
                 ]
                 if let width { payload["display_width_px"] = .number(width) }
                 if let height { payload["display_height_px"] = .number(height) }
-                if let displayNumber = numberValue(providerTool.args["displayNumber"]) ?? numberValue(providerTool.args["display_number"]) {
+                if let displayNumber = numberValue(providerTool.args["displayNumber"]) {
                     payload["display_number"] = .number(displayNumber)
                 }
-                if let enableZoom = boolValue(providerTool.args["enableZoom"]) ?? boolValue(providerTool.args["enable_zoom"]) {
+                if let enableZoom = boolValue(providerTool.args["enableZoom"]) {
                     payload["enable_zoom"] = .bool(enableZoom)
                 }
                 anthropicTools.append(.object(payload))
 
             case "anthropic.computer_20241022":
                 betas.insert("computer-use-2024-10-22")
-                let width = numberValue(providerTool.args["displayWidthPx"]) ?? numberValue(providerTool.args["display_width_px"])
-                let height = numberValue(providerTool.args["displayHeightPx"]) ?? numberValue(providerTool.args["display_height_px"])
+                let width = numberValue(providerTool.args["displayWidthPx"])
+                let height = numberValue(providerTool.args["displayHeightPx"])
                 var payload: [String: JSONValue] = [
                     "name": .string("computer"),
                     "type": .string("computer_20241022")
                 ]
                 if let width { payload["display_width_px"] = .number(width) }
                 if let height { payload["display_height_px"] = .number(height) }
-                if let displayNumber = numberValue(providerTool.args["displayNumber"]) ?? numberValue(providerTool.args["display_number"]) {
+                if let displayNumber = numberValue(providerTool.args["displayNumber"]) {
                     payload["display_number"] = .number(displayNumber)
                 }
                 anthropicTools.append(.object(payload))
@@ -308,8 +325,8 @@ public func prepareAnthropicTools(
                 if let blocked = parsed.blockedDomains {
                     payload["blocked_domains"] = .array(blocked.map(JSONValue.string))
                 }
-                if let citations = parsed.citations, let enabled = citations.enabled {
-                    payload["citations"] = .object(["enabled": .bool(enabled)])
+                if let citations = parsed.citations {
+                    payload["citations"] = .object(["enabled": .bool(citations.enabled)])
                 }
                 if let maxContentTokens = parsed.maxContentTokens {
                     payload["max_content_tokens"] = .number(Double(maxContentTokens))
@@ -334,12 +351,30 @@ public func prepareAnthropicTools(
                 if let blocked = parsed.blockedDomains {
                     payload["blocked_domains"] = .array(blocked.map(JSONValue.string))
                 }
-                if let citations = parsed.citations, let enabled = citations.enabled {
-                    payload["citations"] = .object(["enabled": .bool(enabled)])
+                if let citations = parsed.citations {
+                    payload["citations"] = .object(["enabled": .bool(citations.enabled)])
                 }
                 if let maxContentTokens = parsed.maxContentTokens {
                     payload["max_content_tokens"] = .number(Double(maxContentTokens))
                 }
+                anthropicTools.append(.object(payload))
+
+            case "anthropic.web_fetch_20260318":
+                let parsed = try await validateTypes(ValidateTypesOptions(
+                    value: foundationArgs(providerTool.args),
+                    schema: anthropicWebFetch20260318ArgsSchema
+                ))
+                var payload: [String: JSONValue] = [
+                    "type": .string("web_fetch_20260318"),
+                    "name": .string("web_fetch"),
+                ]
+                if let maxUses = parsed.maxUses { payload["max_uses"] = .number(maxUses) }
+                if let domains = parsed.allowedDomains { payload["allowed_domains"] = .array(domains.map(JSONValue.string)) }
+                if let domains = parsed.blockedDomains { payload["blocked_domains"] = .array(domains.map(JSONValue.string)) }
+                if let citations = parsed.citations { payload["citations"] = .object(["enabled": .bool(citations.enabled)]) }
+                if let tokens = parsed.maxContentTokens { payload["max_content_tokens"] = .number(tokens) }
+                if let useCache = parsed.useCache { payload["use_cache"] = .bool(useCache) }
+                if let inclusion = parsed.responseInclusion { payload["response_inclusion"] = .string(inclusion.rawValue) }
                 anthropicTools.append(.object(payload))
 
             case "anthropic.web_search_20250305":
@@ -361,9 +396,7 @@ public func prepareAnthropicTools(
                 }
                 if let location = parsed.userLocation {
                     var locationPayload: [String: JSONValue] = [:]
-                    if let type = location.type {
-                        locationPayload["type"] = .string(type)
-                    }
+                    locationPayload["type"] = .string(location.type.rawValue)
                     if let city = location.city {
                         locationPayload["city"] = .string(city)
                     }
@@ -402,9 +435,7 @@ public func prepareAnthropicTools(
                 }
                 if let location = parsed.userLocation {
                     var locationPayload: [String: JSONValue] = [:]
-                    if let type = location.type {
-                        locationPayload["type"] = .string(type)
-                    }
+                    locationPayload["type"] = .string(location.type.rawValue)
                     if let city = location.city {
                         locationPayload["city"] = .string(city)
                     }
@@ -423,15 +454,36 @@ public func prepareAnthropicTools(
                 }
                 anthropicTools.append(.object(payload))
 
+            case "anthropic.web_search_20260318":
+                let parsed = try await validateTypes(ValidateTypesOptions(
+                    value: foundationArgs(providerTool.args),
+                    schema: anthropicWebSearch20260318ArgsSchema
+                ))
+                var payload: [String: JSONValue] = [
+                    "type": .string("web_search_20260318"),
+                    "name": .string("web_search"),
+                ]
+                if let maxUses = parsed.maxUses { payload["max_uses"] = .number(maxUses) }
+                if let domains = parsed.allowedDomains { payload["allowed_domains"] = .array(domains.map(JSONValue.string)) }
+                if let domains = parsed.blockedDomains { payload["blocked_domains"] = .array(domains.map(JSONValue.string)) }
+                if let location = parsed.userLocation {
+                    var value: [String: JSONValue] = ["type": .string(location.type.rawValue)]
+                    if let city = location.city { value["city"] = .string(city) }
+                    if let region = location.region { value["region"] = .string(region) }
+                    if let country = location.country { value["country"] = .string(country) }
+                    if let timezone = location.timezone { value["timezone"] = .string(timezone) }
+                    payload["user_location"] = .object(value)
+                }
+                if let inclusion = parsed.responseInclusion { payload["response_inclusion"] = .string(inclusion.rawValue) }
+                anthropicTools.append(.object(payload))
+
             case "anthropic.tool_search_regex_20251119":
-                betas.insert("advanced-tool-use-2025-11-20")
                 anthropicTools.append(.object([
                     "type": .string("tool_search_tool_regex_20251119"),
                     "name": .string("tool_search_tool_regex")
                 ]))
 
             case "anthropic.tool_search_bm25_20251119":
-                betas.insert("advanced-tool-use-2025-11-20")
                 anthropicTools.append(.object([
                     "type": .string("tool_search_tool_bm25_20251119"),
                     "name": .string("tool_search_tool_bm25")
@@ -479,6 +531,18 @@ public func prepareAnthropicTools(
         )
 
     case .required:
+        if rejectsForcedToolUse {
+            toolWarnings.append(.unsupported(
+                feature: "toolChoice",
+                details: "toolChoice 'required' is not supported with this model or thinking configuration. Using 'auto' instead. Instruct the model to use a tool in the prompt and verify that a tool call was made."
+            ))
+            return AnthropicPreparedTools(
+                tools: preparedTools,
+                toolChoice: makeChoicePayload(type: "auto"),
+                warnings: toolWarnings,
+                betas: betas
+            )
+        }
         return AnthropicPreparedTools(
             tools: preparedTools,
             toolChoice: makeChoicePayload(type: "any"),
@@ -488,13 +552,28 @@ public func prepareAnthropicTools(
 
     case .none:
         return AnthropicPreparedTools(
-            tools: nil,
-            toolChoice: nil,
+            tools: preparedTools,
+            toolChoice: .object(["type": .string("none")]),
             warnings: toolWarnings,
             betas: betas
         )
 
     case .tool(let toolName):
+        if rejectsForcedToolUse {
+            toolWarnings.append(.unsupported(
+                feature: "toolChoice",
+                details: "toolChoice 'tool' is not supported with this model or thinking configuration. Only the '\(toolName)' tool is sent with 'auto' tool choice. Instruct the model to use the tool in the prompt and verify that a tool call was made."
+            ))
+            return AnthropicPreparedTools(
+                tools: preparedTools.filter { tool in
+                    guard case .object(let value) = tool else { return false }
+                    return value["name"] == .string(toolName)
+                },
+                toolChoice: makeChoicePayload(type: "auto"),
+                warnings: toolWarnings,
+                betas: betas
+            )
+        }
         return AnthropicPreparedTools(
             tools: preparedTools,
             toolChoice: makeChoicePayload(type: "tool", extra: ["name": .string(toolName)]),

@@ -23,17 +23,35 @@ public struct AnthropicAdvisor20260301Options: Codable, Sendable, Equatable {
     }
 
     public var model: String
-    public var maxUses: Int?
+    public var maxUses: Double?
+    public var maxTokens: Int?
     public var caching: Caching?
 
     public init(
         model: String,
-        maxUses: Int? = nil,
+        maxUses: Double? = nil,
+        maxTokens: Int? = nil,
         caching: Caching? = nil
     ) {
         self.model = model
         self.maxUses = maxUses
+        self.maxTokens = maxTokens
         self.caching = caching
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        model = try container.decode(String.self, forKey: .model)
+        maxUses = container.contains(.maxUses) ? try container.decode(Double.self, forKey: .maxUses) : nil
+        maxTokens = container.contains(.maxTokens) ? try container.decode(Int.self, forKey: .maxTokens) : nil
+        caching = container.contains(.caching) ? try container.decode(Caching.self, forKey: .caching) : nil
+        if let maxTokens, maxTokens < 1024 {
+            throw DecodingError.dataCorruptedError(forKey: .maxTokens, in: container, debugDescription: "maxTokens must be at least 1024")
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case model, maxUses, maxTokens, caching
     }
 }
 
@@ -45,6 +63,7 @@ public let anthropicAdvisor20260301ArgsSchema = FlexibleSchema(
             "properties": .object([
                 "model": .object(["type": .string("string")]),
                 "maxUses": .object(["type": .string("number")]),
+                "maxTokens": .object(["type": .string("integer"), "minimum": .number(1024)]),
                 "caching": .object([
                     "type": .string("object"),
                     "properties": .object([
@@ -122,12 +141,18 @@ private let anthropicAdvisor20260301Factory = createProviderExecutedToolFactory(
 )
 
 @discardableResult
-public func anthropicAdvisor20260301(_ options: AnthropicAdvisor20260301Options) -> Tool {
+public func anthropicAdvisor20260301(
+    _ options: AnthropicAdvisor20260301Options,
+    callbacks: ProviderExecutedToolFactoryOptions = .init()
+) -> Tool {
     var args: [String: JSONValue] = [
         "model": .string(options.model)
     ]
     if let maxUses = options.maxUses {
         args["maxUses"] = .number(Double(maxUses))
+    }
+    if let maxTokens = options.maxTokens {
+        args["maxTokens"] = .number(Double(maxTokens))
     }
     if let caching = options.caching {
         args["caching"] = .object([
@@ -135,7 +160,7 @@ public func anthropicAdvisor20260301(_ options: AnthropicAdvisor20260301Options)
             "ttl": .string(caching.ttl.rawValue),
         ])
     }
-    return anthropicAdvisor20260301Factory(
-        ProviderExecutedToolFactoryOptions(args: args)
-    )
+    var callbacks = callbacks
+    callbacks.args.merge(args) { _, value in value }
+    return anthropicAdvisor20260301Factory(callbacks)
 }

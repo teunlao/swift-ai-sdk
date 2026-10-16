@@ -2,6 +2,11 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
+private extension KeyedDecodingContainer {
+    func decodeIfProvided<Value: Decodable>(_ type: Value.Type, forKey key: Key) throws -> Value? {
+        contains(key) ? try decode(type, forKey: key) : nil
+    }
+}
 
 public struct AnthropicWebFetchToolResult: Codable, Equatable, Sendable {
     public struct Content: Codable, Equatable, Sendable {
@@ -184,25 +189,25 @@ public struct AnthropicWebSearchToolResult: Codable, Equatable, Sendable {
 
 public struct AnthropicWebFetchToolArgs: Codable, Sendable, Equatable {
     public struct Citations: Codable, Sendable, Equatable {
-        public var enabled: Bool?
+        public var enabled: Bool
 
-        public init(enabled: Bool? = nil) {
+        public init(enabled: Bool) {
             self.enabled = enabled
         }
     }
 
-    public var maxUses: Int?
+    public var maxUses: Double?
     public var allowedDomains: [String]?
     public var blockedDomains: [String]?
     public var citations: Citations?
-    public var maxContentTokens: Int?
+    public var maxContentTokens: Double?
 
     public init(
-        maxUses: Int? = nil,
+        maxUses: Double? = nil,
         allowedDomains: [String]? = nil,
         blockedDomains: [String]? = nil,
         citations: Citations? = nil,
-        maxContentTokens: Int? = nil
+        maxContentTokens: Double? = nil
     ) {
         self.maxUses = maxUses
         self.allowedDomains = allowedDomains
@@ -211,6 +216,18 @@ public struct AnthropicWebFetchToolArgs: Codable, Sendable, Equatable {
         self.maxContentTokens = maxContentTokens
     }
 
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        maxUses = try container.decodeIfProvided(Double.self, forKey: .maxUses)
+        allowedDomains = try container.decodeIfProvided([String].self, forKey: .allowedDomains)
+        blockedDomains = try container.decodeIfProvided([String].self, forKey: .blockedDomains)
+        citations = try container.decodeIfProvided(Citations.self, forKey: .citations)
+        maxContentTokens = try container.decodeIfProvided(Double.self, forKey: .maxContentTokens)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case maxUses, allowedDomains, blockedDomains, citations, maxContentTokens
+    }
 }
 
 public let anthropicWebFetch20250910ArgsSchema = FlexibleSchema(
@@ -361,14 +378,18 @@ private let anthropicWebFetch20250910ToolOutputSchema = FlexibleSchema(
 
 public struct AnthropicWebSearchToolArgs: Codable, Sendable, Equatable {
     public struct UserLocation: Codable, Sendable, Equatable {
-        public var type: String?
+        public enum Kind: String, Codable, Sendable {
+            case approximate
+        }
+
+        public var type: Kind
         public var city: String?
         public var region: String?
         public var country: String?
         public var timezone: String?
 
         public init(
-            type: String? = nil,
+            type: Kind = .approximate,
             city: String? = nil,
             region: String? = nil,
             country: String? = nil,
@@ -381,6 +402,15 @@ public struct AnthropicWebSearchToolArgs: Codable, Sendable, Equatable {
             self.timezone = timezone
         }
 
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            type = try container.decode(Kind.self, forKey: .type)
+            city = try container.decodeIfProvided(String.self, forKey: .city)
+            region = try container.decodeIfProvided(String.self, forKey: .region)
+            country = try container.decodeIfProvided(String.self, forKey: .country)
+            timezone = try container.decodeIfProvided(String.self, forKey: .timezone)
+        }
+
         private enum CodingKeys: String, CodingKey {
             case type
             case city
@@ -390,13 +420,13 @@ public struct AnthropicWebSearchToolArgs: Codable, Sendable, Equatable {
         }
     }
 
-    public var maxUses: Int?
+    public var maxUses: Double?
     public var allowedDomains: [String]?
     public var blockedDomains: [String]?
     public var userLocation: UserLocation?
 
     public init(
-        maxUses: Int? = nil,
+        maxUses: Double? = nil,
         allowedDomains: [String]? = nil,
         blockedDomains: [String]? = nil,
         userLocation: UserLocation? = nil
@@ -407,6 +437,17 @@ public struct AnthropicWebSearchToolArgs: Codable, Sendable, Equatable {
         self.userLocation = userLocation
     }
 
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        maxUses = try container.decodeIfProvided(Double.self, forKey: .maxUses)
+        allowedDomains = try container.decodeIfProvided([String].self, forKey: .allowedDomains)
+        blockedDomains = try container.decodeIfProvided([String].self, forKey: .blockedDomains)
+        userLocation = try container.decodeIfProvided(UserLocation.self, forKey: .userLocation)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case maxUses, allowedDomains, blockedDomains, userLocation
+    }
 }
 
 public let anthropicWebSearch20250305ArgsSchema = FlexibleSchema(
@@ -499,18 +540,18 @@ private let anthropicWebSearch20250305ToolOutputSchema = FlexibleSchema(
 )
 
 public struct AnthropicWebFetchOptions: Sendable, Equatable {
-    public var maxUses: Int?
+    public var maxUses: Double?
     public var allowedDomains: [String]?
     public var blockedDomains: [String]?
     public var citationsEnabled: Bool?
-    public var maxContentTokens: Int?
+    public var maxContentTokens: Double?
 
     public init(
-        maxUses: Int? = nil,
+        maxUses: Double? = nil,
         allowedDomains: [String]? = nil,
         blockedDomains: [String]? = nil,
         citationsEnabled: Bool? = nil,
-        maxContentTokens: Int? = nil
+        maxContentTokens: Double? = nil
     ) {
         self.maxUses = maxUses
         self.allowedDomains = allowedDomains
@@ -535,13 +576,13 @@ public struct AnthropicWebSearchOptions: Sendable, Equatable {
         }
     }
 
-    public var maxUses: Int?
+    public var maxUses: Double?
     public var allowedDomains: [String]?
     public var blockedDomains: [String]?
     public var userLocation: UserLocation?
 
     public init(
-        maxUses: Int? = nil,
+        maxUses: Double? = nil,
         allowedDomains: [String]? = nil,
         blockedDomains: [String]? = nil,
         userLocation: UserLocation? = nil
@@ -575,7 +616,10 @@ private let anthropicWebFetchFactory = createProviderExecutedToolFactory(
 )
 
 @discardableResult
-public func anthropicWebFetch20250910(_ options: AnthropicWebFetchOptions = .init()) -> Tool {
+public func anthropicWebFetch20250910(
+    _ options: AnthropicWebFetchOptions = .init(),
+    callbacks: ProviderExecutedToolFactoryOptions = .init()
+) -> Tool {
     var args: [String: JSONValue] = [:]
     if let maxUses = options.maxUses {
         args["maxUses"] = .number(Double(maxUses))
@@ -592,7 +636,9 @@ public func anthropicWebFetch20250910(_ options: AnthropicWebFetchOptions = .ini
     if let maxTokens = options.maxContentTokens {
         args["maxContentTokens"] = .number(Double(maxTokens))
     }
-    return anthropicWebFetchFactory(ProviderExecutedToolFactoryOptions(args: args))
+    var callbacks = callbacks
+    callbacks.args.merge(args) { _, value in value }
+    return anthropicWebFetchFactory(callbacks)
 }
 
 private let anthropicWebFetch20260209Factory = createProviderExecutedToolFactory(
@@ -604,7 +650,10 @@ private let anthropicWebFetch20260209Factory = createProviderExecutedToolFactory
 )
 
 @discardableResult
-public func anthropicWebFetch20260209(_ options: AnthropicWebFetchOptions = .init()) -> Tool {
+public func anthropicWebFetch20260209(
+    _ options: AnthropicWebFetchOptions = .init(),
+    callbacks: ProviderExecutedToolFactoryOptions = .init()
+) -> Tool {
     var args: [String: JSONValue] = [:]
     if let maxUses = options.maxUses {
         args["maxUses"] = .number(Double(maxUses))
@@ -621,7 +670,9 @@ public func anthropicWebFetch20260209(_ options: AnthropicWebFetchOptions = .ini
     if let maxTokens = options.maxContentTokens {
         args["maxContentTokens"] = .number(Double(maxTokens))
     }
-    return anthropicWebFetch20260209Factory(ProviderExecutedToolFactoryOptions(args: args))
+    var callbacks = callbacks
+    callbacks.args.merge(args) { _, value in value }
+    return anthropicWebFetch20260209Factory(callbacks)
 }
 
 private let anthropicWebSearchInputSchema = FlexibleSchema(
@@ -646,7 +697,10 @@ private let anthropicWebSearchFactory = createProviderExecutedToolFactory(
 )
 
 @discardableResult
-public func anthropicWebSearch20250305(_ options: AnthropicWebSearchOptions = .init()) -> Tool {
+public func anthropicWebSearch20250305(
+    _ options: AnthropicWebSearchOptions = .init(),
+    callbacks: ProviderExecutedToolFactoryOptions = .init()
+) -> Tool {
     var args: [String: JSONValue] = [:]
     if let maxUses = options.maxUses {
         args["maxUses"] = .number(Double(maxUses))
@@ -665,7 +719,9 @@ public func anthropicWebSearch20250305(_ options: AnthropicWebSearchOptions = .i
         if let timezone = location.timezone { locationObject["timezone"] = .string(timezone) }
         args["userLocation"] = .object(locationObject)
     }
-    return anthropicWebSearchFactory(ProviderExecutedToolFactoryOptions(args: args))
+    var callbacks = callbacks
+    callbacks.args.merge(args) { _, value in value }
+    return anthropicWebSearchFactory(callbacks)
 }
 
 private let anthropicWebSearch20260209Factory = createProviderExecutedToolFactory(
@@ -677,7 +733,10 @@ private let anthropicWebSearch20260209Factory = createProviderExecutedToolFactor
 )
 
 @discardableResult
-public func anthropicWebSearch20260209(_ options: AnthropicWebSearchOptions = .init()) -> Tool {
+public func anthropicWebSearch20260209(
+    _ options: AnthropicWebSearchOptions = .init(),
+    callbacks: ProviderExecutedToolFactoryOptions = .init()
+) -> Tool {
     var args: [String: JSONValue] = [:]
     if let maxUses = options.maxUses {
         args["maxUses"] = .number(Double(maxUses))
@@ -696,5 +755,190 @@ public func anthropicWebSearch20260209(_ options: AnthropicWebSearchOptions = .i
         if let timezone = location.timezone { locationObject["timezone"] = .string(timezone) }
         args["userLocation"] = .object(locationObject)
     }
-    return anthropicWebSearch20260209Factory(ProviderExecutedToolFactoryOptions(args: args))
+    var callbacks = callbacks
+    callbacks.args.merge(args) { _, value in value }
+    return anthropicWebSearch20260209Factory(callbacks)
+}
+
+public enum AnthropicWebResponseInclusion: String, Codable, Sendable {
+    case full
+    case excluded
+}
+
+public struct AnthropicWebFetch20260318Args: Codable, Sendable, Equatable {
+    public var maxUses: Double?
+    public var allowedDomains: [String]?
+    public var blockedDomains: [String]?
+    public var citations: AnthropicWebFetchToolArgs.Citations?
+    public var maxContentTokens: Double?
+    public var useCache: Bool?
+    public var responseInclusion: AnthropicWebResponseInclusion?
+
+    public init(
+        maxUses: Double? = nil,
+        allowedDomains: [String]? = nil,
+        blockedDomains: [String]? = nil,
+        citations: AnthropicWebFetchToolArgs.Citations? = nil,
+        maxContentTokens: Double? = nil,
+        useCache: Bool? = nil,
+        responseInclusion: AnthropicWebResponseInclusion? = nil
+    ) {
+        self.maxUses = maxUses
+        self.allowedDomains = allowedDomains
+        self.blockedDomains = blockedDomains
+        self.citations = citations
+        self.maxContentTokens = maxContentTokens
+        self.useCache = useCache
+        self.responseInclusion = responseInclusion
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        maxUses = try container.decodeIfProvided(Double.self, forKey: .maxUses)
+        allowedDomains = try container.decodeIfProvided([String].self, forKey: .allowedDomains)
+        blockedDomains = try container.decodeIfProvided([String].self, forKey: .blockedDomains)
+        citations = try container.decodeIfProvided(AnthropicWebFetchToolArgs.Citations.self, forKey: .citations)
+        maxContentTokens = try container.decodeIfProvided(Double.self, forKey: .maxContentTokens)
+        useCache = try container.decodeIfProvided(Bool.self, forKey: .useCache)
+        responseInclusion = try container.decodeIfProvided(AnthropicWebResponseInclusion.self, forKey: .responseInclusion)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case maxUses, allowedDomains, blockedDomains, citations, maxContentTokens, useCache, responseInclusion
+    }
+}
+
+public struct AnthropicWebSearch20260318Args: Codable, Sendable, Equatable {
+    public var maxUses: Double?
+    public var allowedDomains: [String]?
+    public var blockedDomains: [String]?
+    public var userLocation: AnthropicWebSearchToolArgs.UserLocation?
+    public var responseInclusion: AnthropicWebResponseInclusion?
+
+    public init(
+        maxUses: Double? = nil,
+        allowedDomains: [String]? = nil,
+        blockedDomains: [String]? = nil,
+        userLocation: AnthropicWebSearchToolArgs.UserLocation? = nil,
+        responseInclusion: AnthropicWebResponseInclusion? = nil
+    ) {
+        self.maxUses = maxUses
+        self.allowedDomains = allowedDomains
+        self.blockedDomains = blockedDomains
+        self.userLocation = userLocation
+        self.responseInclusion = responseInclusion
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        maxUses = try container.decodeIfProvided(Double.self, forKey: .maxUses)
+        allowedDomains = try container.decodeIfProvided([String].self, forKey: .allowedDomains)
+        blockedDomains = try container.decodeIfProvided([String].self, forKey: .blockedDomains)
+        userLocation = try container.decodeIfProvided(AnthropicWebSearchToolArgs.UserLocation.self, forKey: .userLocation)
+        responseInclusion = try container.decodeIfProvided(AnthropicWebResponseInclusion.self, forKey: .responseInclusion)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case maxUses, allowedDomains, blockedDomains, userLocation, responseInclusion
+    }
+}
+
+public let anthropicWebFetch20260318ArgsSchema = FlexibleSchema(
+    Schema<AnthropicWebFetch20260318Args>.codable(AnthropicWebFetch20260318Args.self, jsonSchema: .object([
+        "type": .string("object"),
+        "properties": .object([
+            "maxUses": .object(["type": .string("number")]),
+            "allowedDomains": .object(["type": .string("array"), "items": .object(["type": .string("string")])]),
+            "blockedDomains": .object(["type": .string("array"), "items": .object(["type": .string("string")])]),
+            "citations": .object([
+                "type": .string("object"),
+                "properties": .object(["enabled": .object(["type": .string("boolean")])]),
+                "required": .array([.string("enabled")]),
+                "additionalProperties": .bool(false),
+            ]),
+            "maxContentTokens": .object(["type": .string("number")]),
+            "useCache": .object(["type": .string("boolean")]),
+            "responseInclusion": .object(["type": .string("string"), "enum": .array([.string("full"), .string("excluded")])]),
+        ]),
+        "additionalProperties": .bool(false),
+    ]))
+)
+
+public let anthropicWebSearch20260318ArgsSchema = FlexibleSchema(
+    Schema<AnthropicWebSearch20260318Args>.codable(AnthropicWebSearch20260318Args.self, jsonSchema: .object([
+        "type": .string("object"),
+        "properties": .object([
+            "maxUses": .object(["type": .string("number")]),
+            "allowedDomains": .object(["type": .string("array"), "items": .object(["type": .string("string")])]),
+            "blockedDomains": .object(["type": .string("array"), "items": .object(["type": .string("string")])]),
+            "userLocation": .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "type": .object(["const": .string("approximate")]),
+                    "city": .object(["type": .string("string")]),
+                    "region": .object(["type": .string("string")]),
+                    "country": .object(["type": .string("string")]),
+                    "timezone": .object(["type": .string("string")]),
+                ]),
+                "required": .array([.string("type")]),
+                "additionalProperties": .bool(false),
+            ]),
+            "responseInclusion": .object(["type": .string("string"), "enum": .array([.string("full"), .string("excluded")])]),
+        ]),
+        "additionalProperties": .bool(false),
+    ]))
+)
+
+public let anthropicWebFetch20260318OutputSchema = anthropicWebFetch20250910OutputSchema
+public let anthropicWebSearch20260318OutputSchema = anthropicWebSearch20250305OutputSchema
+
+private let anthropicWebFetch20260318Factory = createProviderExecutedToolFactory(
+    id: "anthropic.web_fetch_20260318",
+    name: "web_fetch",
+    inputSchema: anthropicWebFetchInputSchema,
+    outputSchema: anthropicWebFetch20250910ToolOutputSchema,
+    supportsDeferredResults: true
+)
+
+private let anthropicWebSearch20260318Factory = createProviderExecutedToolFactory(
+    id: "anthropic.web_search_20260318",
+    name: "web_search",
+    inputSchema: anthropicWebSearchInputSchema,
+    outputSchema: anthropicWebSearch20250305ToolOutputSchema,
+    supportsDeferredResults: true
+)
+
+public func anthropicWebFetch20260318(
+    _ args: AnthropicWebFetch20260318Args = .init(),
+    callbacks: ProviderExecutedToolFactoryOptions = .init()
+) -> Tool {
+    var options = callbacks
+    if let maxUses = args.maxUses { options.args["maxUses"] = .number(maxUses) }
+    if let domains = args.allowedDomains { options.args["allowedDomains"] = .array(domains.map(JSONValue.string)) }
+    if let domains = args.blockedDomains { options.args["blockedDomains"] = .array(domains.map(JSONValue.string)) }
+    if let citations = args.citations { options.args["citations"] = .object(["enabled": .bool(citations.enabled)]) }
+    if let tokens = args.maxContentTokens { options.args["maxContentTokens"] = .number(tokens) }
+    if let useCache = args.useCache { options.args["useCache"] = .bool(useCache) }
+    if let inclusion = args.responseInclusion { options.args["responseInclusion"] = .string(inclusion.rawValue) }
+    return anthropicWebFetch20260318Factory(options)
+}
+
+public func anthropicWebSearch20260318(
+    _ args: AnthropicWebSearch20260318Args = .init(),
+    callbacks: ProviderExecutedToolFactoryOptions = .init()
+) -> Tool {
+    var options = callbacks
+    if let maxUses = args.maxUses { options.args["maxUses"] = .number(maxUses) }
+    if let domains = args.allowedDomains { options.args["allowedDomains"] = .array(domains.map(JSONValue.string)) }
+    if let domains = args.blockedDomains { options.args["blockedDomains"] = .array(domains.map(JSONValue.string)) }
+    if let location = args.userLocation {
+        var value: [String: JSONValue] = ["type": .string(location.type.rawValue)]
+        if let city = location.city { value["city"] = .string(city) }
+        if let region = location.region { value["region"] = .string(region) }
+        if let country = location.country { value["country"] = .string(country) }
+        if let timezone = location.timezone { value["timezone"] = .string(timezone) }
+        options.args["userLocation"] = .object(value)
+    }
+    if let inclusion = args.responseInclusion { options.args["responseInclusion"] = .string(inclusion.rawValue) }
+    return anthropicWebSearch20260318Factory(options)
 }

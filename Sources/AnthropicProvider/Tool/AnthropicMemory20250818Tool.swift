@@ -95,6 +95,6 @@ private let anthropicMemory20250818Factory = createProviderDefinedToolFactory(
 )
 
 @discardableResult
-public func anthropicMemory20250818() -> Tool {
-    anthropicMemory20250818Factory(ProviderDefinedToolFactoryOptions(args: [:]))
+public func anthropicMemory20250818(_ options: ProviderDefinedToolFactoryOptions = .init()) -> Tool {
+    anthropicMemory20250818Factory(options)
 }

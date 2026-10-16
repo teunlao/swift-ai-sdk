@@ -84,16 +84,16 @@ private let anthropicTextEditor20250429Factory = createProviderDefinedToolFactor
 )
 
 @discardableResult
-public func anthropicTextEditor20241022() -> Tool {
-    anthropicTextEditor20241022Factory(.init(args: [:]))
+public func anthropicTextEditor20241022(_ options: ProviderDefinedToolFactoryOptions = .init()) -> Tool {
+    anthropicTextEditor20241022Factory(options)
 }
 
 @discardableResult
-public func anthropicTextEditor20250124() -> Tool {
-    anthropicTextEditor20250124Factory(.init(args: [:]))
+public func anthropicTextEditor20250124(_ options: ProviderDefinedToolFactoryOptions = .init()) -> Tool {
+    anthropicTextEditor20250124Factory(options)
 }
 
 @discardableResult
-public func anthropicTextEditor20250429() -> Tool {
-    anthropicTextEditor20250429Factory(.init(args: [:]))
+public func anthropicTextEditor20250429(_ options: ProviderDefinedToolFactoryOptions = .init()) -> Tool {
+    anthropicTextEditor20250429Factory(options)
 }

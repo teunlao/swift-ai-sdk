@@ -2,16 +2,6 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-public struct AnthropicBashOptions: Sendable, Equatable {
-    public var command: String?
-    public var restart: Bool?
-
-    public init(command: String? = nil, restart: Bool? = nil) {
-        self.command = command
-        self.restart = restart
-    }
-}
-
 private let anthropicBashInputSchema = FlexibleSchema(
     jsonSchema(
         .object([
@@ -39,22 +29,11 @@ private let anthropicBash20250124Factory = createProviderDefinedToolFactory(
 )
 
 @discardableResult
-public func anthropicBash20241022(_ options: AnthropicBashOptions = .init()) -> Tool {
-    anthropicBash20241022Factory(.init(args: anthropicBashArgs(options)))
+public func anthropicBash20241022(_ options: ProviderDefinedToolFactoryOptions = .init()) -> Tool {
+    anthropicBash20241022Factory(options)
 }
 
 @discardableResult
-public func anthropicBash20250124(_ options: AnthropicBashOptions = .init()) -> Tool {
-    anthropicBash20250124Factory(.init(args: anthropicBashArgs(options)))
-}
-
-private func anthropicBashArgs(_ options: AnthropicBashOptions) -> [String: JSONValue] {
-    var args: [String: JSONValue] = [:]
-    if let command = options.command {
-        args["command"] = .string(command)
-    }
-    if let restart = options.restart {
-        args["restart"] = .bool(restart)
-    }
-    return args
+public func anthropicBash20250124(_ options: ProviderDefinedToolFactoryOptions = .init()) -> Tool {
+    anthropicBash20250124Factory(options)
 }

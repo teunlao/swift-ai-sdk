@@ -23,7 +23,7 @@ public struct AnthropicCodeExecutionToolResult: Codable, Equatable, Sendable {
     public let type: String
     public let stdout: String
     public let stderr: String
-    public let returnCode: Int
+    public let returnCode: Double
     public let content: [OutputFile]
 
     public struct OutputFile: Codable, Equatable, Sendable {
@@ -33,6 +33,15 @@ public struct AnthropicCodeExecutionToolResult: Codable, Equatable, Sendable {
         enum CodingKeys: String, CodingKey {
             case type
             case fileId = "file_id"
+        }
+
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            type = try container.decode(String.self, forKey: .type)
+            fileId = try container.decode(String.self, forKey: .fileId)
+            guard type == "code_execution_output" else {
+                throw DecodingError.dataCorruptedError(forKey: .type, in: container, debugDescription: "Expected code_execution_output")
+            }
         }
     }
 
@@ -49,8 +58,11 @@ public struct AnthropicCodeExecutionToolResult: Codable, Equatable, Sendable {
         type = try container.decode(String.self, forKey: .type)
         stdout = try container.decode(String.self, forKey: .stdout)
         stderr = try container.decode(String.self, forKey: .stderr)
-        returnCode = try container.decode(Int.self, forKey: .returnCode)
-        content = try container.decodeIfPresent([OutputFile].self, forKey: .content) ?? []
+        returnCode = try container.decode(Double.self, forKey: .returnCode)
+        content = container.contains(.content) ? try container.decode([OutputFile].self, forKey: .content) : []
+        guard type == "code_execution_result" else {
+            throw DecodingError.dataCorruptedError(forKey: .type, in: container, debugDescription: "Expected code_execution_result")
+        }
     }
 }
 
@@ -85,9 +97,24 @@ public let anthropicCodeExecution20250522OutputSchema = FlexibleSchema(
     )
 )
 
-private let anthropicCodeExecution20250522ToolOutputSchema = FlexibleSchema(
-    jsonSchema(anthropicCodeExecution20250522OutputJSONSchema)
-)
+private let anthropicCodeExecution20250522ToolOutputSchema = codeExecutionSchema(anthropicCodeExecution20250522OutputJSONSchema)
+
+func codeExecutionSchema(_ definition: JSONValue) -> FlexibleSchema<JSONValue> {
+    let schema = jsonSchema(definition)
+    return FlexibleSchema(Schema(jsonSchemaResolver: { definition }, validator: { value in
+        switch await schema.validate(value) {
+        case .success(let value):
+            guard case .object(var result) = value else { return .success(value: value) }
+            if result["content"] == nil,
+               result["type"] == .string("code_execution_result") || result["type"] == .string("encrypted_code_execution_result") {
+                result["content"] = .array([])
+            }
+            return .success(value: .object(result))
+        case .failure(let error):
+            return .failure(error: error)
+        }
+    }))
+}
 
 private let anthropicCodeExecutionFactory = createProviderExecutedToolFactory(
     id: "anthropic.code_execution_20250522",
@@ -97,6 +124,6 @@ private let anthropicCodeExecutionFactory = createProviderExecutedToolFactory(
 )
 
 @discardableResult
-public func anthropicCodeExecution20250522() -> Tool {
-    anthropicCodeExecutionFactory(ProviderExecutedToolFactoryOptions(args: [:]))
+public func anthropicCodeExecution20250522(_ options: ProviderExecutedToolFactoryOptions = .init()) -> Tool {
+    anthropicCodeExecutionFactory(options)
 }
