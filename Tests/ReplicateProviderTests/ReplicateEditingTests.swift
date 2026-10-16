@@ -71,6 +71,34 @@ struct ReplicateEditingTests {
         }
     }
 
+    @Test("multiple output images retain prediction order")
+    func outputOrder() async throws {
+        let fetch: FetchFunction = { request in
+            let data = request.httpMethod == "POST" ? Data(#"{"status":"succeeded","output":["https://cdn.example.com/first","https://cdn.example.com/second"],"urls":{"get":"https://api.replicate.com/v1/predictions/id"}}"#.utf8) : Data([request.url!.lastPathComponent == "first" ? 1 : 2])
+            return FetchResponse(body: .data(data), urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": request.httpMethod == "POST" ? "application/json" : "image/png"])!)
+        }
+        let model = createReplicate(settings: .init(apiToken: "token", fetch: fetch)).image("black-forest-labs/flux-2-pro")
+        let result = try await model.doGenerate(options: .init(n: 2))
+        #expect(result.images == .binary([Data([1]), Data([2])]))
+    }
+
+    @Test("HTTP error fields reject null while preserving an empty detail", arguments: ["detail-null", "error-null", "empty-detail"])
+    func httpErrorSchema(_ scenario: String) async throws {
+        let json = scenario == "detail-null" ? #"{"detail":null,"error":"Fallback"}"# : scenario == "error-null" ? #"{"detail":"Detailed error","error":null}"# : #"{"detail":"","error":"Fallback"}"#
+        let fetch: FetchFunction = { request in
+            FetchResponse(body: .data(Data(json.utf8)), urlResponse: HTTPURLResponse(url: request.url!, statusCode: 400, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!)
+        }
+        let model = createReplicate(settings: .init(apiToken: "token", fetch: fetch)).image("black-forest-labs/flux-schnell")
+        do {
+            _ = try await model.doGenerate(options: .init(n: 1))
+            Issue.record("Expected HTTP error")
+        } catch let error as APICallError {
+            #expect(error.statusCode == 400)
+            #expect(error.responseBody == json)
+            #expect(error.message == (scenario == "empty-detail" ? "" : HTTPURLResponse.localizedString(forStatusCode: 400).capitalized))
+        }
+    }
+
     @Test("invalid wait duration is rejected before the API request")
     func invalidOptions() async throws {
         let model = createReplicate(settings: .init(apiToken: "token")).image("black-forest-labs/flux-schnell")

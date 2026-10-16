@@ -162,18 +162,25 @@ public final class ReplicateImageModel: ImageModelV4 {
         guard let output = prediction.output else {
             throw InvalidResponseDataError(data: prediction, message: "Replicate image generation completed without output.")
         }
-        var images: [Data] = []
-        for url in output.urls {
-            let result = try await getFromAPI(
-                url: url,
-                failedResponseHandler: replicateFailedResponseHandler,
-                successfulResponseHandler: createBinaryResponseHandler(),
-                isAborted: options.abortSignal,
-                fetch: config.fetch,
-                validateUrl: true,
-                trustedOrigin: config.baseURL
-            )
-            images.append(result.value)
+        let urls = output.urls
+        let images = try await withThrowingTaskGroup(of: (Int, Data).self) { group in
+            for (index, url) in urls.enumerated() {
+                group.addTask { [config] in
+                    let result = try await getFromAPI(
+                        url: url,
+                        failedResponseHandler: replicateFailedResponseHandler,
+                        successfulResponseHandler: createBinaryResponseHandler(),
+                        isAborted: options.abortSignal,
+                        fetch: config.fetch,
+                        validateUrl: true,
+                        trustedOrigin: config.baseURL
+                    )
+                    return (index, result.value)
+                }
+            }
+            var images = Array(repeating: Data(), count: urls.count)
+            for try await (index, data) in group { images[index] = data }
+            return images
         }
         return .init(images: .binary(images), warnings: warnings, response: .init(timestamp: timestamp, modelId: modelId, headers: response.responseHeaders))
     }
