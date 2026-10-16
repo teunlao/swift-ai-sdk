@@ -309,7 +309,8 @@ private struct FlowProvider: OAuthClientProvider {
     func authorizationServerInformation() async throws -> OAuthAuthorizationServerInformation? { await store.pin }
     var saveClientInformation: OAuthSaveClientInformation? { { await store.saveClient($0) } }
     var saveAuthorizationServerInformation: OAuthSaveAuthorizationServerInformation? {
-        separatePin ? { await store.savePin($0) } : nil
+        guard separatePin else { return nil }
+        return { await store.savePin($0) }
     }
     var saveState: OAuthSaveState? { { await store.saveState($0) } }
     var storedState: OAuthStoredState? { { await store.savedState } }
@@ -616,7 +617,7 @@ extension OAuthAuthorizationTests {
                 Issue.record("Expected unsafe credential request refusal")
             } catch {
                 if isPrivate { #expect(error is MCPClientOAuthError) }
-                else { #expect(error is DownloadError) }
+                else { #expect(error is AISDKProviderUtils.DownloadError) }
             }
         }
     }
