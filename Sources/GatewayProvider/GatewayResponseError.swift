@@ -19,6 +19,7 @@ public struct GatewayResponseError: GatewayError, GatewayErrorMarker, @unchecked
     public let validationError: TypeValidationError?
     public let cause: Error?
     public let generationId: String?
+    public let isRetryable: Bool
 
     public init(
         message: String = "Invalid response from Gateway",
@@ -26,8 +27,10 @@ public struct GatewayResponseError: GatewayError, GatewayErrorMarker, @unchecked
         response: Any? = nil,
         validationError: TypeValidationError? = nil,
         cause: Error? = nil,
-        generationId: String? = nil
+        generationId: String? = nil,
+        isRetryable: Bool? = nil
     ) {
+        self.isRetryable = isRetryable ?? defaultRetryability(for: statusCode)
         self.generationId = generationId
         self.message = generationId.map { "\(message) [\($0)]" } ?? message
         self.statusCode = statusCode

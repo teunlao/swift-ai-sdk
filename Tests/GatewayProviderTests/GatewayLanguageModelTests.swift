@@ -53,6 +53,23 @@ struct GatewayLanguageModelTests {
         )
     }
 
+    @Test("retryable failures after HTTP success retain their retry metadata")
+    func retryableSuccessfulStatusFailure() async throws {
+        let model = makeModel(fetch: { _ in
+            throw APICallError(
+                message: "response ended early", url: "https://api.test.com/language-model",
+                requestBodyValues: nil, statusCode: 200, responseBody: "{}", isRetryable: true
+            )
+        })
+        do {
+            _ = try await model.doGenerate(options: .init(prompt: []))
+            Issue.record("Expected response error")
+        } catch let error as GatewayResponseError {
+            #expect(error.statusCode == 200)
+            #expect(error.isRetryable)
+        }
+    }
+
     @Test("doGenerate passes headers, strips abortSignal, and maps response")
     func doGenerateRequestAndResponseMapping() async throws {
         let capture = RequestCapture()

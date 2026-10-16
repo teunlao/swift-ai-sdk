@@ -23,14 +23,16 @@ public protocol GatewayError: Error, Sendable {
     static func hasMarker(_ error: Any?) -> Bool
 }
 
+func defaultRetryability(for statusCode: Int) -> Bool {
+    statusCode == 408 || statusCode == 409 || statusCode == 429 || statusCode >= 500
+}
+
 /// Internal marker protocol to support `hasMarker` checks.
 protocol GatewayErrorMarker {}
 
 public extension GatewayError {
     var generationId: String? { nil }
-    var isRetryable: Bool {
-        statusCode == 408 || statusCode == 409 || statusCode == 429 || statusCode >= 500
-    }
+    var isRetryable: Bool { defaultRetryability(for: statusCode) }
 
     static func hasMarker(_ error: Any?) -> Bool {
         return error is GatewayErrorMarker

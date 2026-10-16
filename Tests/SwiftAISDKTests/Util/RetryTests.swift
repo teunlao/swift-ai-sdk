@@ -5,6 +5,32 @@ import GatewayProvider
 
 @Suite("SDK retry boundaries")
 struct RetryTests {
+    @Test("gateway retryability overrides the HTTP status default", arguments: [(200, true), (503, false)])
+    func explicitGatewayRetryability(status: Int, retryable: Bool) async throws {
+        actor Attempts {
+            var first = true
+            func consumeFirst() -> Bool {
+                defer { first = false }
+                return first
+            }
+        }
+        let attempts = Attempts()
+        let retry = retryWithExponentialBackoffRespectingRetryHeaders(maxRetries: 1, initialDelayInMs: 0)
+        do {
+            let result = try await retry.call {
+                if await attempts.consumeFirst() {
+                    throw GatewayResponseError(statusCode: status, isRetryable: retryable)
+                }
+                return 42
+            }
+            #expect(retryable)
+            #expect(result == 42)
+        } catch let error as GatewayResponseError {
+            #expect(!retryable)
+            #expect(error.statusCode == status)
+        }
+    }
+
     @Test("exhausted gateway retries retain typed errors and their rendered message")
     func exhaustedGatewayRetries() async throws {
         let retry = retryWithExponentialBackoffRespectingRetryHeaders(maxRetries: 1, initialDelayInMs: 0)
