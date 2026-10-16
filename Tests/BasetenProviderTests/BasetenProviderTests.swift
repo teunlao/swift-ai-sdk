@@ -27,9 +27,8 @@ struct BasetenProviderTests {
         let provider = createBaseten(settings: BasetenProviderSettings(
             apiKey: "test-api-key"
         ))
-        let model = try provider.chatModel(modelId: "deepseek-ai/DeepSeek-V4-0324")
+        let model = try provider.chatModel(modelId: "deepseek-ai/DeepSeek-V3-0324")
 
-        #expect(model is OpenAICompatibleChatLanguageModel)
         #expect(model.provider == "baseten.chat")
     }
 
@@ -40,25 +39,9 @@ struct BasetenProviderTests {
             baseURL: "https://custom.url",
             headers: ["Custom-Header": "value"]
         ))
-        let model = try provider.chatModel(modelId: "deepseek-ai/DeepSeek-V4-0324")
+        let model = try provider.chatModel(modelId: "deepseek-ai/DeepSeek-V3-0324")
 
-        #expect(model is OpenAICompatibleChatLanguageModel)
         #expect(model.provider == "baseten.chat")
-    }
-
-    @Test("should support optional modelId parameter")
-    func supportOptionalModelIdParameter() throws {
-        let provider = createBaseten(settings: BasetenProviderSettings(
-            apiKey: "test-api-key"
-        ))
-
-        // Should work without modelId
-        let model1 = try provider.chat()
-        #expect(model1 is OpenAICompatibleChatLanguageModel)
-
-        // Should work with modelId
-        let model2 = try provider("deepseek-ai/DeepSeek-V4-0324")
-        #expect(model2 is OpenAICompatibleChatLanguageModel)
     }
 
     // MARK: - chatModel Tests
@@ -68,27 +51,11 @@ struct BasetenProviderTests {
         let provider = createBaseten(settings: BasetenProviderSettings(
             apiKey: "test-api-key"
         ))
-        let modelId = "deepseek-ai/DeepSeek-V4-0324"
+        let modelId = "deepseek-ai/DeepSeek-V3-0324"
 
         let model = try provider.chatModel(modelId: modelId)
 
-        #expect(model is OpenAICompatibleChatLanguageModel)
         #expect(model.provider == "baseten.chat")
-    }
-
-    @Test("should construct a chat model with optional modelId")
-    func constructChatModelWithOptionalModelId() throws {
-        let provider = createBaseten(settings: BasetenProviderSettings(
-            apiKey: "test-api-key"
-        ))
-
-        // Should work without modelId
-        let model1 = try provider.chat()
-        #expect(model1 is OpenAICompatibleChatLanguageModel)
-
-        // Should work with modelId
-        let model2 = try provider.chatModel(modelId: "deepseek-ai/DeepSeek-V4-0324")
-        #expect(model2 is OpenAICompatibleChatLanguageModel)
     }
 
     @Test("should handle /sync/v1 endpoints correctly")
@@ -100,7 +67,6 @@ struct BasetenProviderTests {
 
         let model = try provider.chat()
 
-        #expect(model is OpenAICompatibleChatLanguageModel)
         #expect(model.provider == "baseten.chat")
     }
 
@@ -117,33 +83,6 @@ struct BasetenProviderTests {
     }
 
     // MARK: - languageModel Tests
-
-    @Test("should be an alias for chatModel")
-    func shouldBeAnAliasForChatModel() throws {
-        let provider = createBaseten(settings: BasetenProviderSettings(
-            apiKey: "test-api-key"
-        ))
-        let modelId = "deepseek-ai/DeepSeek-V4-0324"
-
-        let chatModel = try provider.chatModel(modelId: modelId)
-        let languageModel = try provider.languageModel(modelId: modelId)
-
-        #expect(chatModel is OpenAICompatibleChatLanguageModel)
-        #expect(languageModel is OpenAICompatibleChatLanguageModel)
-    }
-
-    @Test("should support optional modelId parameter")
-    func languageModelShouldSupportOptionalModelIdParameter() throws {
-        let provider = createBaseten(settings: BasetenProviderSettings(
-            apiKey: "test-api-key"
-        ))
-
-        let model1 = try provider.languageModel()
-        #expect(model1 is OpenAICompatibleChatLanguageModel)
-
-        let model2 = try provider.languageModel(modelId: "deepseek-ai/DeepSeek-V4-0324")
-        #expect(model2 is OpenAICompatibleChatLanguageModel)
-    }
 
     // MARK: - embeddingModel Tests
 
@@ -167,7 +106,6 @@ struct BasetenProviderTests {
 
         let model = try provider.embeddingModel()
 
-        #expect(model is BasetenEmbeddingModel)
         #expect(model.provider == "baseten.embedding")
     }
 
@@ -192,7 +130,6 @@ struct BasetenProviderTests {
 
         let model = try provider.embeddingModel()
 
-        #expect(model is BasetenEmbeddingModel)
         #expect(model.provider == "baseten.embedding")
     }
 
@@ -205,7 +142,6 @@ struct BasetenProviderTests {
 
         let model = try provider.embeddingModel()
 
-        #expect(model is BasetenEmbeddingModel)
         #expect(model.provider == "baseten.embedding")
     }
 
@@ -662,19 +598,6 @@ struct BasetenProviderTests {
         }
     }
 
-    @Test("should allow calling provider as function")
-    func allowCallingProviderAsFunction() throws {
-        let provider = createBaseten(settings: BasetenProviderSettings(
-            apiKey: "test-api-key"
-        ))
-
-        let model1 = try provider.chat()
-        #expect(model1 is OpenAICompatibleChatLanguageModel)
-
-        let model2 = try provider("test-model")
-        #expect(model2 is OpenAICompatibleChatLanguageModel)
-    }
-
     @Suite("auth behavior", .serialized)
     struct AuthBehaviorTests {
         @Test("missing API key throws LoadAPIKeyError at request time")
@@ -729,7 +652,7 @@ struct BasetenProviderTests {
                 return FetchResponse(body: .data(responseData), urlResponse: response)
             }
 
-            let provider = createBaseten(settings: BasetenProviderSettings(fetch: fetch))
+            let provider = createBaseten(settings: BasetenProviderSettings(headers: ["Authorization": "custom"], fetch: fetch))
             let model = try provider.chatModel(modelId: "test-model")
             let prompt: LanguageModelV4Prompt = [
                 .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)

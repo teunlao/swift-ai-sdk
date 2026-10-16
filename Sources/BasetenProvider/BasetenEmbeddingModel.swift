@@ -1,135 +1,41 @@
 import Foundation
 import AISDKProvider
-import AISDKProviderUtils
-import OpenAICompatibleProvider
+
+public struct BasetenPerformanceResponse: Codable, Sendable {
+    public struct Item: Codable, Sendable {
+        public let embedding: [Double]
+        public init(embedding: [Double]) { self.embedding = embedding }
+    }
+    public struct Usage: Codable, Sendable {
+        public let totalTokens: Int?
+        public init(totalTokens: Int?) { self.totalTokens = totalTokens }
+        enum CodingKeys: String, CodingKey { case totalTokens = "total_tokens" }
+    }
+    public let data: [Item]
+    public let usage: Usage?
+    public init(data: [Item], usage: Usage? = nil) { self.data = data; self.usage = usage }
+}
+public protocol BasetenPerformanceClient: Sendable {
+    func embed(input: [String], model: String) async throws -> BasetenPerformanceResponse
+}
+public typealias BasetenPerformanceClientConstructor = @Sendable (_ baseURL: String, _ apiKey: String) throws -> any BasetenPerformanceClient
 
 final class BasetenEmbeddingModel: EmbeddingModelV4 {
-    private let delegate: OpenAICompatibleEmbeddingModel
-    private let headersClosure: @Sendable () -> [String: String]
-    private let urlBuilder: @Sendable (OpenAICompatibleURLOptions) -> String
-    private let fetch: FetchFunction?
-    private let errorConfiguration: OpenAICompatibleErrorConfiguration
-    private let performanceClient: BasetenPerformanceClient?
-
-    init(
-        delegate: OpenAICompatibleEmbeddingModel,
-        headers: @escaping @Sendable () -> [String: String],
-        urlBuilder: @escaping @Sendable (OpenAICompatibleURLOptions) -> String,
-        fetch: FetchFunction?,
-        errorConfiguration: OpenAICompatibleErrorConfiguration,
-        performanceClient: BasetenPerformanceClient?
-    ) {
-        self.delegate = delegate
-        self.headersClosure = headers
-        self.urlBuilder = urlBuilder
-        self.fetch = fetch
-        self.errorConfiguration = errorConfiguration
-        self.performanceClient = performanceClient
-    }
-
-    var provider: String { delegate.provider }
-    var modelId: String { delegate.modelId }
-
-    var maxEmbeddingsPerCall: Int? {
-        get async throws { try await delegate.maxEmbeddingsPerCall }
-    }
-
-    var supportsParallelCalls: Bool {
-        get async throws { try await delegate.supportsParallelCalls }
-    }
-
+    let specificationVersion = "v4"
+    let provider = "baseten.embedding"
+    let modelId: String
+    private let client: any BasetenPerformanceClient
+    var maxEmbeddingsPerCall: Int? { get async throws { nil } }
+    var supportsParallelCalls: Bool { get async throws { true } }
+    init(modelId: String, client: any BasetenPerformanceClient) { self.modelId = modelId; self.client = client }
     func doEmbed(options: EmbeddingModelV4CallOptions) async throws -> EmbeddingModelV4Result {
-        guard let performanceClient else {
-            return try await delegate.doEmbed(options: options)
-        }
-
-        let baseHeaders = headersClosure().mapValues { Optional($0) }
-        let requestHeaders = options.headers?.mapValues { Optional($0) }
-        let mergedHeaders = combineHeaders(baseHeaders, requestHeaders).compactMapValues { $0 }
-
-        let response = try await performanceClient.embed(
-            values: options.values,
-            modelId: delegate.modelId,
-            headers: mergedHeaders,
-            abortSignal: options.abortSignal
-        )
-
-        let embeddings = response.value.data.map { $0.embedding }
-        let usageTokens = response.value.usage?.totalTokens
-        let usage = usageTokens.map { EmbeddingModelV4Usage(tokens: $0) }
-
-        return EmbeddingModelV4Result(
-            embeddings: embeddings,
-            usage: usage,
-            response: EmbeddingModelV4ResponseInfo(
-                headers: response.responseHeaders,
-                body: response.rawValue
-            )
-        )
+        let response = try await client.embed(input: options.values, model: modelId)
+        let body = try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(response))
+        return .init(embeddings: response.data.map(\.embedding), usage: response.usage?.totalTokens.map { .init(tokens: $0) },
+                     response: .init(headers: [:], body: body), warnings: [])
     }
 }
 
-struct BasetenPerformanceEmbedRequest: Encodable {
-    let model: String
-    let input: [String]
-}
-
-struct BasetenPerformanceEmbedResponse: Codable {
-    struct DataItem: Codable {
-        let embedding: [Double]
-    }
-
-    struct Usage: Codable {
-        let totalTokens: Int?
-
-        private enum CodingKeys: String, CodingKey {
-            case totalTokens = "total_tokens"
-        }
-    }
-
-    let data: [DataItem]
-    let usage: Usage?
-}
-
-private let basetenPerformanceEmbedResponseSchema = FlexibleSchema(
-    Schema<BasetenPerformanceEmbedResponse>.codable(
-        BasetenPerformanceEmbedResponse.self,
-        jsonSchema: JSONValue.object(["type": .string("object")])
-    )
-)
-
-final class BasetenPerformanceClient: @unchecked Sendable {
-    private let urlBuilder: @Sendable (OpenAICompatibleURLOptions) -> String
-    private let errorConfiguration: OpenAICompatibleErrorConfiguration
-    private let fetch: FetchFunction?
-
-    init(
-        urlBuilder: @escaping @Sendable (OpenAICompatibleURLOptions) -> String,
-        errorConfiguration: OpenAICompatibleErrorConfiguration,
-        fetch: FetchFunction?
-    ) {
-        self.urlBuilder = urlBuilder
-        self.errorConfiguration = errorConfiguration
-        self.fetch = fetch
-    }
-
-    func embed(
-        values: [String],
-        modelId: String,
-        headers: [String: String],
-        abortSignal: (@Sendable () -> Bool)?
-    ) async throws -> ResponseHandlerResult<BasetenPerformanceEmbedResponse> {
-        let url = urlBuilder(OpenAICompatibleURLOptions(modelId: modelId, path: "/embeddings"))
-        let request = BasetenPerformanceEmbedRequest(model: modelId, input: values)
-
-        return try await postJsonToAPI(
-            url: url,
-            headers: headers,
-            body: request,
-            failedResponseHandler: errorConfiguration.failedResponseHandler,
-            successfulResponseHandler: createJsonResponseHandler(responseSchema: basetenPerformanceEmbedResponseSchema),
-            isAborted: abortSignal,
-            fetch: fetch
-        )
-    }
+public struct BasetenEmbeddingModelOptions: Codable, Sendable, Equatable {
+    public init() {}
 }
