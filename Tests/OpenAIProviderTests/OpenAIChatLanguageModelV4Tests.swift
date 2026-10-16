@@ -4,8 +4,8 @@ import Testing
 @testable import AISDKProviderUtils
 @testable import OpenAIProvider
 
-@Suite("OpenAIChatLanguageModelV4")
-struct OpenAIChatLanguageModelV4Tests {
+@Suite("OpenAI Chat contracts")
+struct OpenAIChatContractTests {
     actor RequestCapture {
         private var requests: [URLRequest] = []
 
@@ -93,7 +93,7 @@ struct OpenAIChatLanguageModelV4Tests {
             }
         ))
 
-        let model: OpenAIChatLanguageModelV4 = provider.chat("gpt-4o-mini")
+        let model: OpenAIChatLanguageModel = provider.chat("gpt-4o-mini")
         let result = try await model.doGenerate(options: .init(
             prompt: [
                 .system(content: "You are helpful.", providerOptions: nil),
@@ -260,7 +260,7 @@ struct OpenAIChatLanguageModelV4Tests {
             }
         ))
 
-        let model: OpenAIChatLanguageModelV4 = provider.chat("gpt-4o-mini")
+        let model: OpenAIChatLanguageModel = provider.chat("gpt-4o-mini")
         let streamResult = try await model.doStream(options: .init(prompt: v4TextPrompt, includeRawChunks: false))
 
         var parts: [LanguageModelV4StreamPart] = []
@@ -328,7 +328,7 @@ struct OpenAIChatLanguageModelV4Tests {
             }
         ))
 
-        let model: OpenAIChatLanguageModelV4 = provider.chat("gpt-4o-mini")
+        let model: OpenAIChatLanguageModel = provider.chat("gpt-4o-mini")
 
         do {
             _ = try await model.doStream(options: .init(prompt: v4TextPrompt, includeRawChunks: false))
@@ -408,7 +408,7 @@ struct OpenAIChatLanguageModelV4Tests {
             }
         ))
 
-        let model: OpenAIChatLanguageModelV4 = provider.chat("gpt-4o-mini")
+        let model: OpenAIChatLanguageModel = provider.chat("gpt-4o-mini")
         let generateResult = try await model.doGenerate(options: .init(prompt: v4TextPrompt))
         #expect(generateResult.response?.id == "chatcmpl-zero")
         #expect(generateResult.response?.modelId == "gpt-4o-mini")
@@ -429,6 +429,186 @@ struct OpenAIChatLanguageModelV4Tests {
         #expect(id == "chatcmpl-zero-stream")
         #expect(modelId == "gpt-4o-mini")
         #expect(timestamp == nil)
+    }
+    @Test("portable reasoning respects provider precedence and GPT-6 sampling", arguments: [false, true])
+    func portableReasoning(providerOverride: Bool) async throws {
+        var providerOptions: [String: JSONValue] = ["promptCacheRetention": .string("24h"), "reasoningSummary": .string("auto")]
+        if providerOverride { providerOptions["reasoningEffort"] = .string("high") }
+        let exchange = try await chatExchange(options: .init(
+            prompt: [], temperature: 0.4, reasoning: LanguageModelV4ReasoningEffort.none,
+            providerOptions: ["openai": providerOptions]
+        ), modelId: "gpt-6-sol")
+        #expect(exchange.body["reasoning_effort"] == .string(providerOverride ? "high" : "none"))
+        #expect(exchange.body["temperature"] == (providerOverride ? nil : .number(0.4)))
+        #expect(exchange.body["prompt_cache_retention"] == nil)
+        #expect(exchange.result.warnings.contains { if case .unsupported(feature: "promptCacheRetention", details: _) = $0 { return true }; return false })
+        #expect(exchange.result.warnings.contains { if case .unsupported(feature: "reasoningSummary", details: _) = $0 { return true }; return false })
+    }
+
+    @Test("model capability parsing honors ASCII digits strict ends and large versions", arguments: ["gpt-6\n", "gpt-６", "gpt-99999999999999999999999999999"])
+    func modelCapabilities(modelId: String) async throws {
+        let exchange = try await chatExchange(options: .init(
+            prompt: [], temperature: 0.4, reasoning: LanguageModelV4ReasoningEffort.none,
+            providerOptions: ["openai": ["promptCacheRetention": .string("24h")]]
+        ), modelId: modelId)
+        let future = modelId.hasPrefix("gpt-999")
+        #expect(exchange.body["temperature"] == (future ? nil : .number(0.4)))
+        #expect(exchange.body["prompt_cache_retention"] == (future ? nil : .string("24h")))
+        #expect(exchange.body["reasoning_effort"] == (future ? nil : .string("none")))
+    }
+
+    @Test("numeric logit bias keys use the coerced numeric identifiers")
+    func logitBiasIdentifiers() async throws {
+        let exchange = try await chatExchange(options: .init(prompt: [], providerOptions: ["openai": [
+            "logitBias": .object([" 00012 ": .number(1), "0x10": .number(2), "": .number(3), "1e20": .number(4)]),
+            "logprobs": .number(0), "serviceTier": .string("fast")
+        ]]))
+        #expect(exchange.body["logit_bias"] == .object(["12": .number(1), "16": .number(2), "0": .number(3), "100000000000000000000": .number(4)]))
+        #expect(exchange.body["logprobs"] == .bool(true))
+        #expect(exchange.body["top_logprobs"] == .number(0))
+        #expect(exchange.body["service_tier"] == .string("fast"))
+    }
+
+    @Test("audio transcript fallback and usage details survive the response boundary")
+    func audioAndUsage() async throws {
+        let data = Data(#"{"choices":[{"index":0,"message":{"content":"","audio":{"transcript":"spoken"}},"finish_reason":"stop"}],"usage":{"prompt_tokens":5,"completion_tokens":1,"total_tokens":null,"prompt_tokens_details":{"cached_tokens":2,"cache_write_tokens":4},"completion_tokens_details":{"reasoning_tokens":3}}}"#.utf8)
+        let model = OpenAIChatLanguageModel(modelId: "gpt-4o-mini", config: .init(provider: "custom.chat", url: { _ in "https://example.com/chat" }, fetch: { request in
+            FetchResponse(body: .data(data), urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!)
+        }))
+        let result = try await model.doGenerate(options: .init(prompt: []))
+        #expect(result.content == [.text(.init(text: "spoken"))])
+        #expect(result.usage.inputTokens.noCache == -1)
+        #expect(result.usage.outputTokens.text == 0)
+        #expect(result.usage.outputTokens.reasoning == 3)
+        guard case .object(let raw)? = result.usage.raw else { Issue.record("Missing raw usage"); return }
+        #expect(raw["total_tokens"] == .null)
+    }
+
+    @Test("empty choices produce a typed invalid-response failure")
+    func emptyChoices() async throws {
+        let model = OpenAIChatLanguageModel(modelId: "gpt-4o-mini", config: .init(provider: "openai.chat", url: { _ in "https://example.com/chat" }, fetch: { request in
+            FetchResponse(body: .data(Data(#"{"choices":[]}"#.utf8)), urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!)
+        }))
+        await #expect(throws: InvalidResponseDataError.self) { _ = try await model.doGenerate(options: .init(prompt: [])) }
+    }
+
+    @Test("response parsing rejects invalid roles and incomplete function calls", arguments: [
+        #"{"role":"user","content":"invalid"}"#,
+        #"{"tool_calls":[{"type":"function","function":{"name":"missing-arguments"}}]}"#
+    ])
+    func invalidResponse(message: String) async throws {
+        let data = Data(("{\"choices\":[{\"index\":0,\"message\":" + message + "}]}").utf8)
+        let model = OpenAIChatLanguageModel(modelId: "gpt-4o-mini", config: .init(provider: "openai.chat", url: { _ in "https://example.com/chat" }, fetch: { request in
+            FetchResponse(body: .data(data), urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!)
+        }))
+        do {
+            _ = try await model.doGenerate(options: .init(prompt: []))
+            Issue.record("Expected response schema validation to fail")
+        } catch let error as APICallError {
+            #expect(error.statusCode == 200)
+            #expect(error.isRetryable == false)
+        }
+    }
+
+    @Test("quota failures are nonretryable before and after output", arguments: [false, true])
+    func quotaErrors(afterOutput: Bool) async throws {
+        var events = [#"{"id":"accepted","choices":[{"index":0,"delta":{"role":"assistant","content":""}}]}"#]
+        if afterOutput { events.append(#"{"choices":[{"index":0,"delta":{"content":"hello"}}]}"#) }
+        events.append(#"{"error":{"message":"quota exhausted","type":"insufficient_quota","code":"insufficient_quota","param":null}}"#)
+        let body = streamBody(from: events)
+        let model = OpenAIChatLanguageModel(modelId: "gpt-4o-mini", config: .init(provider: "openai.chat", url: { _ in "https://example.com/chat" }, fetch: { request in
+            FetchResponse(body: body, urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "text/event-stream"])!)
+        }))
+        if afterOutput {
+            let result = try await model.doStream(options: .init(prompt: []))
+            let parts = try await convertReadableStreamToArray(result.stream)
+            let error = try #require(parts.compactMap { part -> ProviderStreamError? in
+                if case .error(.providerStreamError(let error)) = part { return error }; return nil
+            }.first)
+            #expect(error.isRetryable == false)
+            #expect(error.statusCode == 429)
+            guard case .finish(let reason, _, _) = parts.last else { Issue.record("Missing finish"); return }
+            #expect(reason.unified == .error)
+        } else {
+            do {
+                _ = try await model.doStream(options: .init(prompt: []))
+                Issue.record("Expected a pre-output API error")
+            } catch let error as APICallError {
+                #expect(error.isRetryable == false)
+                #expect(error.statusCode == 429)
+            }
+        }
+    }
+
+    @Test("stream error decoding preserves explicit null without inventing absent fields", arguments: ["", "code", "param"])
+    func errorPresence(field: String) async throws {
+        let isClassified = !field.isEmpty
+        var error: [String: JSONValue] = ["message": .string("wire failure")]
+        if isClassified { error[field] = .null }
+        let encoded = String(decoding: try JSONEncoder().encode(JSONValue.object(["error": .object(error)])), as: UTF8.self)
+        let body = streamBody(from: [#"{"choices":[{"index":0,"delta":{"content":"hello"}}]}"#, encoded])
+        let model = OpenAIChatLanguageModel(modelId: "gpt-4o-mini", config: .init(provider: "openai.chat", url: { _ in "https://example.com/chat" }, fetch: { request in
+            FetchResponse(body: body, urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "text/event-stream"])!)
+        }))
+        let result = try await model.doStream(options: .init(prompt: []))
+        let parts = try await convertReadableStreamToArray(result.stream)
+        let errors = parts.compactMap { part -> LanguageModelV4StreamError? in
+            if case .error(let error) = part { return error }; return nil
+        }
+        let received = try #require(errors.first)
+        if isClassified {
+            guard case .providerStreamError(let typed) = received else { Issue.record("Expected a typed provider error"); return }
+            #expect(typed.data == .object(error))
+        } else {
+            guard case .value(let value) = received else { Issue.record("Expected the unclassified wire failure"); return }
+            #expect(value == .object(error))
+        }
+        let preModel = OpenAIChatLanguageModel(modelId: "gpt-4o-mini", config: .init(provider: "openai.chat", url: { _ in "https://example.com/chat" }, fetch: { request in
+            FetchResponse(body: streamBody(from: [encoded]), urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "text/event-stream"])!)
+        }))
+        do {
+            _ = try await preModel.doStream(options: .init(prompt: []))
+            Issue.record("Expected a pre-output API error")
+        } catch let failure as APICallError {
+            #expect(failure.data as? JSONValue == .object(error))
+            #expect((failure.message == "wire failure") == isClassified)
+        }
+    }
+
+    @Test("a chunk matching both union members uses the data schema first")
+    func streamUnionOrder() async throws {
+        let body = streamBody(from: [#"{"choices":[{"index":0,"delta":{"content":"hello"}}],"error":{"message":"not the selected union member","code":500}}"#])
+        let model = OpenAIChatLanguageModel(modelId: "gpt-4o-mini", config: .init(provider: "openai.chat", url: { _ in "https://example.com/chat" }, fetch: { request in
+            FetchResponse(body: body, urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "text/event-stream"])!)
+        }))
+        let result = try await model.doStream(options: .init(prompt: []))
+        let parts = try await convertReadableStreamToArray(result.stream)
+        #expect(parts.contains(.textDelta(id: "0", delta: "hello", providerMetadata: nil)))
+        #expect(!parts.contains { if case .error = $0 { return true }; return false })
+    }
+
+    @Test("canceling a Chat consumer closes the underlying response body", .timeLimit(.minutes(1)))
+    func cancelConsumer() async throws {
+        let (body, bodyContinuation) = AsyncThrowingStream<Data, Error>.makeStream()
+        let (closed, closedContinuation) = AsyncStream<Void>.makeStream()
+        let (output, outputContinuation) = AsyncStream<Void>.makeStream()
+        bodyContinuation.onTermination = { _ in closedContinuation.yield(()); closedContinuation.finish() }
+        bodyContinuation.yield(Data(#"data: {"choices":[{"index":0,"delta":{"content":"hello"}}]}"#.utf8) + Data("\n\n".utf8))
+        let model = OpenAIChatLanguageModel(modelId: "gpt-4o-mini", config: .init(provider: "openai.chat", url: { _ in "https://example.com/chat" }, fetch: { request in
+            FetchResponse(body: .stream(body), urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "text/event-stream"])!)
+        }))
+        let consumer = Task {
+            let result = try await model.doStream(options: .init(prompt: []))
+            for try await part in result.stream {
+                if case .textDelta(_, "hello", _) = part { outputContinuation.yield(()); outputContinuation.finish() }
+            }
+        }
+        var outputIterator = output.makeAsyncIterator()
+        #expect(await outputIterator.next() != nil)
+        consumer.cancel()
+        _ = try? await consumer.value
+        var closedIterator = closed.makeAsyncIterator()
+        #expect(await closedIterator.next() != nil)
     }
 }
 

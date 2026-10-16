@@ -40,8 +40,8 @@ public final class BedrockMantleProvider: ProviderV4 {
         self.fetch = makeBedrockFetchFunction(settings: settings.common, service: "bedrock-mantle", inheritSessionToken: true)
     }
     public func languageModel(modelId: String) throws -> any LanguageModelV4 { chat(modelId: .init(rawValue: modelId)) }
-    public func callAsFunction(_ modelId: String) -> OpenAIChatLanguageModelV4 { chat(modelId: .init(rawValue: modelId)) }
-    public func chat(modelId: BedrockMantleModelId) -> OpenAIChatLanguageModelV4 {
+    public func callAsFunction(_ modelId: String) -> OpenAIChatLanguageModel { chat(modelId: .init(rawValue: modelId)) }
+    public func chat(modelId: BedrockMantleModelId) -> OpenAIChatLanguageModel {
         .init(modelId: .init(rawValue: modelId.rawValue), config: config(provider: "bedrock-mantle.chat"))
     }
     public func responses(modelId: BedrockMantleModelId) -> OpenAIResponsesLanguageModelV4 {

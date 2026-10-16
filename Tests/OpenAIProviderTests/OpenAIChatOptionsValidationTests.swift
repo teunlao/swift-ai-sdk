@@ -45,8 +45,8 @@ struct OpenAIChatOptionsValidationTests {
 
         do {
             _ = try await model.doGenerate(
-                options: LanguageModelV3CallOptions(
-                    prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+                options: LanguageModelV4CallOptions(
+                    prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)],
                     providerOptions: ["openai": [
                         "logitBias": JSONValue.object(["not-a-number": .number(1)])
                     ]]
@@ -115,8 +115,8 @@ struct OpenAIChatOptionsValidationTests {
 
         do {
             _ = try await model.doGenerate(
-                options: LanguageModelV3CallOptions(
-                    prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+                options: LanguageModelV4CallOptions(
+                    prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)],
                     providerOptions: ["openai": [
                         "metadata": JSONValue.object([longKey: .string("value")])
                     ]]
@@ -185,8 +185,8 @@ struct OpenAIChatOptionsValidationTests {
 
         do {
             _ = try await model.doGenerate(
-                options: LanguageModelV3CallOptions(
-                    prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+                options: LanguageModelV4CallOptions(
+                    prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)],
                     providerOptions: ["openai": [
                         "metadata": JSONValue.object(["key": .string(longValue)])
                     ]]

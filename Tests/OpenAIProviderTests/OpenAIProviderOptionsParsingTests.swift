@@ -15,7 +15,7 @@ struct OpenAIProviderOptionsParsingTests {
         ]
 
         do {
-            let _: OpenAIChatProviderOptions? = try await parseProviderOptions(
+            let _: OpenAIChatLanguageModelOptions? = try await parseProviderOptions(
                 provider: "openai",
                 providerOptions: providerOptions,
                 schema: openAIChatProviderOptionsSchema
@@ -42,7 +42,7 @@ struct OpenAIProviderOptionsParsingTests {
 
     @Test("chat options parse GPT-5.6 max effort and prompt cache options")
     func chatOptionsParseMaxEffortAndPromptCacheOptions() async throws {
-        let parsed: OpenAIChatProviderOptions? = try await parseProviderOptions(
+        let parsed: OpenAIChatLanguageModelOptions? = try await parseProviderOptions(
             provider: "openai",
             providerOptions: [
                 "openai": [

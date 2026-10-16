@@ -4,12 +4,12 @@ import Testing
 @testable import AISDKProviderUtils
 @testable import OpenAIProvider
 
-private let samplePrompt: LanguageModelV3Prompt = [
+private let samplePrompt: LanguageModelV4Prompt = [
     .system(content: "You are helpful", providerOptions: nil),
-    .user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)
+    .user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)
 ]
 
-private func totalTokens(_ usage: LanguageModelV3Usage) -> Int? {
+private func totalTokens(_ usage: LanguageModelV4Usage) -> Int? {
     if usage.inputTokens.total == nil && usage.outputTokens.total == nil {
         return nil
     }
@@ -50,10 +50,12 @@ struct OpenAIChatLanguageModelTests {
                         "annotations": [
                             [
                                 "type": "url_citation",
-                                "start_index": 0,
-                                "end_index": 5,
-                                "url": "https://example.com",
-                                "title": "Example"
+                                "url_citation": [
+                                    "start_index": 0,
+                                    "end_index": 5,
+                                    "url": "https://example.com",
+                                    "title": "Example"
+                                ]
                             ]
                         ]
                     ],
@@ -109,7 +111,7 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "gpt-4o-mini", config: config)
 
         let result = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 headers: ["Custom-Header": "request-header-value"]
             )
@@ -124,7 +126,7 @@ struct OpenAIChatLanguageModelTests {
             Issue.record("Expected text content")
         }
 
-        let toolCallElements = result.content.compactMap { content -> LanguageModelV3ToolCall? in
+        let toolCallElements = result.content.compactMap { content -> LanguageModelV4ToolCall? in
             if case .toolCall(let call) = content { return call }
             return nil
         }
@@ -133,7 +135,7 @@ struct OpenAIChatLanguageModelTests {
         #expect(toolCallElements.first?.toolName == "get_weather")
         #expect(toolCallElements.first?.input == "{\"location\":\"Berlin\"}")
 
-        let sourceElements = result.content.compactMap { content -> LanguageModelV3Source? in
+        let sourceElements = result.content.compactMap { content -> LanguageModelV4Source? in
             if case .source(let source) = content { return source }
             return nil
         }
@@ -222,8 +224,8 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "gpt-3.5-turbo", config: config)
 
         let result = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)]
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)]
             )
         )
 
@@ -279,8 +281,8 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "gpt-3.5-turbo", config: config)
 
         let result = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)]
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)]
             )
         )
 
@@ -351,8 +353,8 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "gpt-3.5-turbo", config: config)
 
         let result = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)],
                 providerOptions: ["openai": ["logprobs": 1]]
             )
         )
@@ -362,9 +364,8 @@ struct OpenAIChatLanguageModelTests {
             return
         }
 
-        guard case .object(let logprobsObj) = metadata["logprobs"],
-              case .array(let logprobsArray) = logprobsObj["content"] else {
-            Issue.record("Expected logprobs.content in provider metadata")
+        guard case .array(let logprobsArray) = metadata["logprobs"] else {
+            Issue.record("Expected logprobs in provider metadata")
             return
         }
 
@@ -415,8 +416,8 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "gpt-3.5-turbo", config: config)
 
         let result = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)]
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)]
             )
         )
 
@@ -476,7 +477,7 @@ struct OpenAIChatLanguageModelTests {
 
         let model = OpenAIChatLanguageModel(modelId: "gpt-3.5-turbo", config: config)
 
-        let testTool = LanguageModelV3FunctionTool(
+        let testTool = LanguageModelV4FunctionTool(
             name: "test-tool",
             inputSchema: .object([
                 "type": .string("object"),
@@ -490,8 +491,8 @@ struct OpenAIChatLanguageModelTests {
         )
 
         let result = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)],
                 tools: [.function(testTool)],
                 toolChoice: .required
             )
@@ -553,8 +554,8 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "gpt-3.5-turbo", config: config)
 
         let result = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)]
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)]
             )
         )
 
@@ -618,8 +619,8 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "gpt-3.5-turbo", config: config)
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)],
                 headers: ["Custom-Request-Header": "request-value"]
             )
         )
@@ -651,10 +652,12 @@ struct OpenAIChatLanguageModelTests {
                         "annotations": [
                             [
                                 "type": "url_citation",
-                                "start_index": 24,
-                                "end_index": 29,
-                                "url": "https://example.com/doc1.pdf",
-                                "title": "Document 1"
+                                "url_citation": [
+                                    "start_index": 24,
+                                    "end_index": 29,
+                                    "url": "https://example.com/doc1.pdf",
+                                    "title": "Document 1"
+                                ]
                             ]
                         ]
                     ],
@@ -688,8 +691,8 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "gpt-3.5-turbo", config: config)
 
         let result = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)]
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)]
             )
         )
 
@@ -747,7 +750,7 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "gpt-3.5-turbo", config: config)
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 providerOptions: [
                     "openai": [
@@ -816,7 +819,7 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "gpt-3.5-turbo", config: config)
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 providerOptions: [
                     "custom": [
@@ -874,8 +877,8 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "o1-mini", config: config)
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)],
                 providerOptions: ["openai": ["reasoningEffort": JSONValue.string("low")]]
             )
         )
@@ -924,8 +927,8 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "o1-mini", config: config)
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)],
                 providerOptions: ["openai": ["reasoningEffort": JSONValue.string("high")]]
             )
         )
@@ -974,8 +977,8 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "gpt-4o-2024-11-20", config: config)
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)],
                 providerOptions: ["openai": ["textVerbosity": JSONValue.string("low")]]
             )
         )
@@ -1021,7 +1024,7 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "gpt-4o-mini", config: config)
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 headers: ["X-Custom-Header": "custom-value", "X-Test-Id": "123"]
             )
@@ -1075,9 +1078,9 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "gpt-4o-2024-08-06", config: config)
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
-                responseFormat: LanguageModelV3ResponseFormat.text
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)],
+                responseFormat: LanguageModelV4ResponseFormat.text
             )
         )
 
@@ -1125,9 +1128,9 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "gpt-4o-2024-08-06", config: config)
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
-                responseFormat: LanguageModelV3ResponseFormat.json(schema: nil, name: nil, description: nil)
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)],
+                responseFormat: LanguageModelV4ResponseFormat.json(schema: nil, name: nil, description: nil)
             )
         )
 
@@ -1187,9 +1190,9 @@ struct OpenAIChatLanguageModelTests {
         ])
 
         let result = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
-                responseFormat: LanguageModelV3ResponseFormat.json(schema: schema, name: nil, description: nil),
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)],
+                responseFormat: LanguageModelV4ResponseFormat.json(schema: schema, name: nil, description: nil),
                 providerOptions: ["openai": ["structuredOutputs": .bool(false)]]
             )
         )
@@ -1259,9 +1262,9 @@ struct OpenAIChatLanguageModelTests {
         ])
 
         let result = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
-                responseFormat: LanguageModelV3ResponseFormat.json(schema: schema, name: nil, description: nil)
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)],
+                responseFormat: LanguageModelV4ResponseFormat.json(schema: schema, name: nil, description: nil)
             )
         )
 
@@ -1331,9 +1334,9 @@ struct OpenAIChatLanguageModelTests {
         ])
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
-                responseFormat: LanguageModelV3ResponseFormat.json(schema: schema, name: nil, description: nil)
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)],
+                responseFormat: LanguageModelV4ResponseFormat.json(schema: schema, name: nil, description: nil)
             )
         )
 
@@ -1399,9 +1402,9 @@ struct OpenAIChatLanguageModelTests {
         ])
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
-                responseFormat: LanguageModelV3ResponseFormat.json(
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)],
+                responseFormat: LanguageModelV4ResponseFormat.json(
                     schema: schema,
                     name: "test-name",
                     description: "test description"
@@ -1464,9 +1467,9 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "gpt-4o-2024-08-06", config: config)
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
-                responseFormat: LanguageModelV3ResponseFormat.json(
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)],
+                responseFormat: LanguageModelV4ResponseFormat.json(
                     schema: nil,
                     name: "test-name",
                     description: "test description"
@@ -1524,8 +1527,8 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "o1-preview", config: config)
 
         let result = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)],
                 temperature: 0.5,
                 topP: 0.7,
                 presencePenalty: 0.3,
@@ -1593,8 +1596,8 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "o1-preview", config: config)
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)],
                 maxOutputTokens: 1000
             )
         )
@@ -1608,8 +1611,8 @@ struct OpenAIChatLanguageModelTests {
         #expect(body["max_completion_tokens"] as? Int == 1000)
     }
 
-    @Test("Remove system messages for o1-preview and add warning")
-    func testRemoveSystemMessagesForO1Preview() async throws {
+    @Test("Use developer messages for o1-preview")
+    func testDeveloperMessagesForO1Preview() async throws {
         final class RequestCapture: @unchecked Sendable {
             var body: [String: Any]?
         }
@@ -1643,10 +1646,10 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "o1-preview", config: config)
 
         let result = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: [
                     .system(content: "You are a helpful assistant", providerOptions: nil),
-                    .user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)
+                    .user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)
                 ]
             )
         )
@@ -1703,10 +1706,10 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "o1", config: config)
 
         let result = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: [
                     .system(content: "You are a helpful assistant", providerOptions: nil),
-                    .user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)
+                    .user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)
                 ]
             )
         )
@@ -1763,8 +1766,8 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "o1-preview", config: config)
 
         let result = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)]
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)]
             )
         )
 
@@ -1811,8 +1814,8 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "o1-preview", config: config)
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)],
                 providerOptions: ["openai": ["maxCompletionTokens": JSONValue.number(255)]]
             )
         )
@@ -1861,8 +1864,8 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "gpt-3.5-turbo", config: config)
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)],
                 providerOptions: ["openai": [
                     "prediction": JSONValue.object([
                         "type": .string("content"),
@@ -1921,8 +1924,8 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "gpt-3.5-turbo", config: config)
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)],
                 providerOptions: ["openai": ["store": JSONValue.bool(true)]]
             )
         )
@@ -1971,8 +1974,8 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "gpt-3.5-turbo", config: config)
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)],
                 providerOptions: ["openai": [
                     "metadata": JSONValue.object(["custom": .string("value")])
                 ]]
@@ -2027,8 +2030,8 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "gpt-3.5-turbo", config: config)
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)],
                 providerOptions: ["openai": ["promptCacheKey": JSONValue.string("test-cache-key-123")]]
             )
         )
@@ -2077,8 +2080,8 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "gpt-3.5-turbo", config: config)
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)],
                 providerOptions: ["openai": ["safetyIdentifier": JSONValue.string("test-safety-identifier-123")]]
             )
         )
@@ -2129,8 +2132,8 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "gpt-4o-search-preview", config: config)
 
         let result = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)],
                 temperature: 0.7
             )
         )
@@ -2187,8 +2190,8 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "gpt-4o-mini-search-preview", config: config)
 
         let result = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)],
                 temperature: 0.7
             )
         )
@@ -2245,8 +2248,8 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "gpt-4o-mini-search-preview-2025-03-11", config: config)
 
         let result = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)],
                 temperature: 0.7
             )
         )
@@ -2305,8 +2308,8 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "o3-mini", config: config)
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)],
                 providerOptions: ["openai": ["serviceTier": JSONValue.string("flex")]]
             )
         )
@@ -2355,8 +2358,8 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "gpt-4o-mini", config: config)
 
         let result = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)],
                 providerOptions: ["openai": ["serviceTier": JSONValue.string("flex")]]
             )
         )
@@ -2412,8 +2415,8 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "o4-mini", config: config)
 
         let result = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)],
                 providerOptions: ["openai": ["serviceTier": JSONValue.string("flex")]]
             )
         )
@@ -2462,8 +2465,8 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "gpt-4o-mini", config: config)
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)],
                 providerOptions: ["openai": ["serviceTier": JSONValue.string("priority")]]
             )
         )
@@ -2512,8 +2515,8 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "gpt-3.5-turbo", config: config)
 
         let result = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)],
                 providerOptions: ["openai": ["serviceTier": JSONValue.string("priority")]]
             )
         )
@@ -2569,8 +2572,8 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "gpt-4o", config: config)
 
         let result = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)],
                 providerOptions: ["openai": ["serviceTier": JSONValue.string("priority")]]
             )
         )
@@ -2612,8 +2615,8 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "gpt-3.5-turbo", config: config)
 
         let result = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)]
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)]
             )
         )
 
@@ -2648,8 +2651,8 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "gpt-3.5-turbo", config: config)
 
         let result = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)]
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)]
             )
         )
 
@@ -2700,9 +2703,9 @@ struct OpenAIChatLanguageModelTests {
         ])
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
-                tools: [.function(LanguageModelV3FunctionTool(name: "test-tool", inputSchema: toolSchema))],
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)],
+                tools: [.function(LanguageModelV4FunctionTool(name: "test-tool", inputSchema: toolSchema))],
                 toolChoice: .tool(toolName: "test-tool")
             )
         )
@@ -2791,9 +2794,9 @@ struct OpenAIChatLanguageModelTests {
         ])
 
         let result = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
-                tools: [.function(LanguageModelV3FunctionTool(name: "test-tool", inputSchema: toolSchema))],
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)],
+                tools: [.function(LanguageModelV4FunctionTool(name: "test-tool", inputSchema: toolSchema))],
                 toolChoice: .tool(toolName: "test-tool")
             )
         )
@@ -2851,8 +2854,8 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "gpt-3.5-turbo", config: config)
 
         let result = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)]
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)]
             )
         )
 
@@ -2905,8 +2908,8 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "gpt-4o-mini", config: config)
 
         let result = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)]
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)]
             )
         )
 
@@ -2950,8 +2953,8 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "gpt-4o-mini", config: config)
 
         let result = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)]
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)]
             )
         )
 
@@ -3018,8 +3021,8 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "gpt-3.5-turbo", config: config)
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)]
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)]
             )
         )
 
@@ -3082,8 +3085,8 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "o3-mini", config: config)
 
         let result = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)],
                 providerOptions: ["openai": ["serviceTier": JSONValue.string("priority")]]
             )
         )
@@ -3146,12 +3149,12 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "gpt-3.5-turbo", config: config)
 
         let streamResult = try await model.doStream(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)]
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)]
             )
         )
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in streamResult.stream {
             parts.append(part)
         }
@@ -3215,8 +3218,8 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "gpt-3.5-turbo", config: config)
 
         let streamResult = try await model.doStream(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)]
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)]
             )
         )
 
@@ -3276,8 +3279,8 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "gpt-3.5-turbo", config: config)
 
         let streamResult = try await model.doStream(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)]
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)]
             )
         )
 
@@ -3347,8 +3350,8 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "gpt-3.5-turbo", config: config)
 
         let streamResult = try await model.doStream(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)],
                 headers: ["Custom-Request-Header": "request-value"]
             )
         )
@@ -3402,12 +3405,12 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "gpt-4o-mini", config: config)
 
         let streamResult = try await model.doStream(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)]
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)]
             )
         )
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in streamResult.stream {
             parts.append(part)
         }
@@ -3456,12 +3459,12 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "gpt-4o-mini", config: config)
 
         let streamResult = try await model.doStream(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)]
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)]
             )
         )
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in streamResult.stream {
             parts.append(part)
         }
@@ -3543,8 +3546,8 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "gpt-3.5-turbo", config: config)
 
         let streamResult = try await model.doStream(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)],
                 providerOptions: ["openai": ["store": JSONValue.bool(true)]]
             )
         )
@@ -3602,8 +3605,8 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "gpt-3.5-turbo", config: config)
 
         let streamResult = try await model.doStream(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)],
                 providerOptions: ["openai": ["metadata": JSONValue.object(["custom": JSONValue.string("value")])]]
             )
         )
@@ -3667,8 +3670,8 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "o3-mini", config: config)
 
         let streamResult = try await model.doStream(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)],
                 providerOptions: ["openai": ["serviceTier": JSONValue.string("flex")]]
             )
         )
@@ -3726,8 +3729,8 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "gpt-4o-mini", config: config)
 
         let streamResult = try await model.doStream(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)],
                 providerOptions: ["openai": ["serviceTier": JSONValue.string("priority")]]
             )
         )
@@ -3751,6 +3754,7 @@ struct OpenAIChatLanguageModelTests {
     @Test("Handle error stream parts")
     func testHandleErrorStreamParts() async throws {
         let events = [
+            #"{"choices":[{"index":0,"delta":{"content":"hello"}}]}"#,
             "{\"error\":{\"message\":\"The server had an error processing your request. Sorry about that!\",\"type\":\"server_error\",\"param\":null,\"code\":null}}"
         ]
 
@@ -3776,24 +3780,22 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "gpt-3.5-turbo", config: config)
 
         let streamResult = try await model.doStream(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)]
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)]
             )
         )
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in streamResult.stream {
             parts.append(part)
         }
 
-        // Verify we got error part
-        let hasError = parts.contains { part in
-            if case .error = part {
-                return true
-            }
-            return false
-        }
-        #expect(hasError)
+        let error = try #require(parts.compactMap { part -> ProviderStreamError? in
+            if case .error(.providerStreamError(let error)) = part { return error }
+            return nil
+        }.first)
+        #expect(error.statusCode == 500)
+        #expect(error.isRetryable == true)
 
         // Verify finish with error reason
         guard case let .finish(finishReason: finishReason, usage: _, providerMetadata: _) = parts.last else {
@@ -3835,12 +3837,12 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "o1-preview", config: config)
 
         let streamResult = try await model.doStream(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)]
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)]
             )
         )
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in streamResult.stream {
             parts.append(part)
         }
@@ -3899,12 +3901,12 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "o1-preview", config: config)
 
         let streamResult = try await model.doStream(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)]
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)]
             )
         )
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in streamResult.stream {
             parts.append(part)
         }
@@ -3957,13 +3959,13 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "gpt-3.5-turbo", config: config)
 
         let streamResult = try await model.doStream(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)],
                 includeRawChunks: true
             )
         )
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in streamResult.stream {
             parts.append(part)
         }
@@ -4023,13 +4025,13 @@ struct OpenAIChatLanguageModelTests {
         let model = OpenAIChatLanguageModel(modelId: "gpt-3.5-turbo", config: config)
 
         let streamResult = try await model.doStream(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)],
                 includeRawChunks: false
             )
         )
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in streamResult.stream {
             parts.append(part)
         }

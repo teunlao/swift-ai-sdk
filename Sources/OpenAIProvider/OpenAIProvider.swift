@@ -35,7 +35,7 @@ public struct OpenAIProviderSettings: Sendable {
 
 public final class OpenAIProvider: ProviderV4 {
     private let responsesFactory: @Sendable (OpenAIResponsesModelId) -> OpenAIResponsesLanguageModelV4
-    private let chatFactory: @Sendable (OpenAIChatModelId) -> OpenAIChatLanguageModelV4
+    private let chatFactory: @Sendable (OpenAIChatModelId) -> OpenAIChatLanguageModel
     private let embeddingFactory: @Sendable (OpenAIEmbeddingModelId) -> OpenAIEmbeddingModel
     private let imageFactory: @Sendable (OpenAIImageModelId) -> OpenAIImageModelV4
     private let completionFactory: @Sendable (OpenAICompletionModelId) -> OpenAICompletionLanguageModelV4
@@ -49,7 +49,7 @@ public final class OpenAIProvider: ProviderV4 {
 
     init(
         responses: @escaping @Sendable (OpenAIResponsesModelId) -> OpenAIResponsesLanguageModelV4,
-        chat: @escaping @Sendable (OpenAIChatModelId) -> OpenAIChatLanguageModelV4,
+        chat: @escaping @Sendable (OpenAIChatModelId) -> OpenAIChatLanguageModel,
         embeddings: @escaping @Sendable (OpenAIEmbeddingModelId) -> OpenAIEmbeddingModel,
         images: @escaping @Sendable (OpenAIImageModelId) -> OpenAIImageModelV4,
         completions: @escaping @Sendable (OpenAICompletionModelId) -> OpenAICompletionLanguageModelV4,
@@ -95,11 +95,11 @@ public final class OpenAIProvider: ProviderV4 {
         responses(modelId: OpenAIResponsesModelId(rawValue: modelId))
     }
 
-    public func chat(modelId: OpenAIChatModelId) -> OpenAIChatLanguageModelV4 {
+    public func chat(modelId: OpenAIChatModelId) -> OpenAIChatLanguageModel {
         chatFactory(modelId)
     }
 
-    public func chat(_ modelId: String) -> OpenAIChatLanguageModelV4 {
+    public func chat(_ modelId: String) -> OpenAIChatLanguageModel {
         chat(modelId: OpenAIChatModelId(rawValue: modelId))
     }
 
@@ -107,7 +107,7 @@ public final class OpenAIProvider: ProviderV4 {
         chat(modelId)
     }
 
-    public func chatModel(_ modelId: OpenAIChatModelId) -> OpenAIChatLanguageModelV4 {
+    public func chatModel(_ modelId: OpenAIChatModelId) -> OpenAIChatLanguageModel {
         chat(modelId: modelId)
     }
 
@@ -256,7 +256,7 @@ public func createOpenAIProvider(settings: OpenAIProviderSettings = .init()) thr
     let speechConfig = config("speech")
     return OpenAIProvider(
         responses: { OpenAIResponsesLanguageModelV4(modelId: $0, config: responsesConfig) },
-        chat: { OpenAIChatLanguageModelV4(modelId: $0, config: chatConfig) },
+        chat: { OpenAIChatLanguageModel(modelId: $0, config: chatConfig) },
         embeddings: { OpenAIEmbeddingModel(modelId: $0, config: embeddingConfig) },
         images: { OpenAIImageModelV4(modelId: $0, config: imageConfig) },
         completions: { OpenAICompletionLanguageModelV4(modelId: $0, config: completionConfig) },

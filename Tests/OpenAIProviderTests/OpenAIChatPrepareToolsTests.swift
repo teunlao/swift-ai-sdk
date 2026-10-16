@@ -1,153 +1,103 @@
 import Foundation
 import Testing
-@testable import AISDKProvider
-@testable import OpenAIProvider
+import AISDKProvider
+import AISDKProviderUtils
+import OpenAIProvider
 
-@Suite("OpenAIChatPrepareTools")
+func chatExchange(
+    options: LanguageModelV4CallOptions,
+    modelId: String = "gpt-4o-mini"
+) async throws -> (body: [String: JSONValue], result: LanguageModelV4GenerateResult) {
+    actor Capture {
+        var body: Data?
+        func store(_ data: Data?) { body = data }
+        func value() -> Data? { body }
+    }
+    let capture = Capture()
+    let model = OpenAIChatLanguageModel(modelId: .init(rawValue: modelId), config: .init(
+        provider: "custom.chat",
+        url: { _ in "https://example.com/chat/completions" },
+        fetch: { request in
+            await capture.store(request.httpBody)
+            return FetchResponse(
+                body: .data(Data(#"{"choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}"#.utf8)),
+                urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!
+            )
+        }
+    ))
+    let result = try await model.doGenerate(options: options)
+    let data = try #require(await capture.value())
+    return (try JSONDecoder().decode([String: JSONValue].self, from: data), result)
+}
+
+@Suite("OpenAI Chat tools")
 struct OpenAIChatPrepareToolsTests {
-    private func makeFunctionTool(name: String = "testFunction", description: String? = nil, strict: Bool? = nil) -> LanguageModelV3Tool {
-        .function(
-            LanguageModelV3FunctionTool(
-                name: name,
-                inputSchema: .object(["type": .string("object")]),
-                description: description,
-                strict: strict
-            )
-        )
-    }
-
-    private func makeProviderTool(id: String, name: String) -> LanguageModelV3Tool {
-        .provider(
-            LanguageModelV3ProviderTool(
-                id: id,
-                name: name,
-                args: [:]
-            )
-        )
-    }
-
-    @Test("no tools yields nil values")
-    func noToolsYieldsNil() throws {
-        let result = OpenAIChatToolPreparer.prepare(
-            tools: [],
-            toolChoice: nil
-        )
-
-        #expect(result.tools == nil)
-        #expect(result.toolChoice == nil)
-        #expect(result.warnings.isEmpty)
-    }
-
-    @Test("function tool maps to OpenAI function without strict")
-    func functionToolWithoutStructuredOutputs() throws {
-        let result = OpenAIChatToolPreparer.prepare(
-            tools: [makeFunctionTool(description: "A test function")],
-            toolChoice: nil
-        )
-
-        guard let tools = result.tools, case .array(let array) = tools, array.count == 1 else {
-            Issue.record("Expected array with single tool")
-            return
+    @Test("function tools and choices are serialized at the HTTP boundary", arguments: ["auto", "none", "required", "lookup"])
+    func toolChoices(choice: String) async throws {
+        let toolChoice: LanguageModelV4ToolChoice
+        switch choice {
+        case "auto": toolChoice = .auto
+        case "none": toolChoice = .none
+        case "required": toolChoice = .required
+        default: toolChoice = .tool(toolName: choice)
         }
-        guard case .object(let toolObject) = array.first,
-              case .object(let functionObject)? = toolObject["function"] else {
-            Issue.record("Expected function object")
-            return
-        }
-        #expect(functionObject["name"] == .string("testFunction"))
-        #expect(functionObject["description"] == .string("A test function"))
-        #expect(functionObject["strict"] == nil)
-        #expect(result.warnings.isEmpty)
+        let exchange = try await chatExchange(options: .init(
+            prompt: [],
+            tools: [.function(.init(name: "lookup", inputSchema: .object(["type": .string("object")]), description: "Lookup", strict: true))],
+            toolChoice: toolChoice
+        ))
+        #expect(exchange.body["tools"] == .array([.object([
+            "type": .string("function"), "function": .object([
+                "name": .string("lookup"), "parameters": .object(["type": .string("object")]),
+                "description": .string("Lookup"), "strict": .bool(true)
+            ])
+        ])]))
+        let expected: JSONValue = choice == "lookup"
+            ? .object(["type": .string("function"), "function": .object(["name": .string("lookup")])])
+            : .string(choice)
+        #expect(exchange.body["tool_choice"] == expected)
     }
 
-    @Test("function tool passes through strict")
-    func functionToolWithStrictSetting() throws {
-        let result = OpenAIChatToolPreparer.prepare(
-            tools: [makeFunctionTool(strict: true)],
-            toolChoice: nil
-        )
-
-        guard let tools = result.tools, case .array(let array) = tools, array.count == 1 else {
-            Issue.record("Expected tool array")
-            return
-        }
-        guard case .object(let toolObject) = array.first,
-              case .object(let functionObject)? = toolObject["function"] else {
-            Issue.record("Expected function object")
-            return
-        }
-        #expect(functionObject["strict"] == .bool(true))
+    @Test("empty tools omit tool choice and provider tools emit a typed warning")
+    func emptyAndProviderTools() async throws {
+        let empty = try await chatExchange(options: .init(prompt: [], tools: [], toolChoice: .required))
+        #expect(empty.body["tools"] == nil)
+        #expect(empty.body["tool_choice"] == nil)
+        let provider = try await chatExchange(options: .init(prompt: [], tools: [.provider(.init(id: "openai.unsupported", name: "unsupported", args: [:]))]))
+        #expect(provider.body["tools"] == .array([]))
+        #expect(provider.result.warnings == [.unsupported(feature: "tool type: provider", details: nil)])
     }
 
-    @Test("unsupported provider tool produces warning")
-    func unsupportedProviderToolProducesWarning() throws {
-        let tool = makeProviderTool(id: "openai.unsupported_tool", name: "unsupported")
-        let result = OpenAIChatToolPreparer.prepare(
-            tools: [tool],
-            toolChoice: nil
-        )
-
-        #expect(result.tools == .array([]))
-        #expect(result.warnings.count == 1)
-        if let warning = result.warnings.first {
-            if case let .unsupported(feature, details) = warning {
-                #expect(feature == "provider-defined tool openai.unsupported_tool")
-                #expect(details == nil)
-            } else {
-                Issue.record("Expected unsupported tool warning")
-            }
-        }
+    @Test("schema normalization preserves character classes and removes actual lookaround", arguments: ["(?=\u{301}x)", "[\u{301}(?=]", "(?<=x)y"])
+    func schemaPatterns(pattern: String) async throws {
+        let schema: JSONValue = .object(["type": .string("string"), "pattern": .string(pattern)])
+        let exchange = try await chatExchange(options: .init(
+            prompt: [], responseFormat: .json(schema: schema, name: nil, description: nil),
+            tools: [.function(.init(name: "lookup", inputSchema: schema))]
+        ))
+        let removes = pattern != "[\u{301}(?=]"
+        let normalized: JSONValue = removes ? .object(["type": .string("string")]) : schema
+        #expect(exchange.body["response_format"] == .object([
+            "type": .string("json_schema"), "json_schema": .object(["schema": normalized, "strict": .bool(true), "name": .string("response")])
+        ]))
+        #expect(exchange.body["tools"] == .array([.object([
+            "type": .string("function"), "function": .object(["name": .string("lookup"), "parameters": normalized])
+        ])]))
+        #expect(exchange.result.warnings.count == (removes ? 2 : 0))
     }
 
-    @Test("tool choice auto maps to string")
-    func toolChoiceAuto() throws {
-        let result = OpenAIChatToolPreparer.prepare(
-            tools: [makeFunctionTool()],
-            toolChoice: .auto
-        )
-
-        #expect(result.toolChoice == .string("auto"))
-    }
-
-    @Test("tool choice required maps to string")
-    func toolChoiceRequired() throws {
-        let result = OpenAIChatToolPreparer.prepare(
-            tools: [makeFunctionTool()],
-            toolChoice: .required
-        )
-
-        #expect(result.toolChoice == .string("required"))
-    }
-
-    // Port of openai-chat-prepare-tools.test.ts: "should handle tool choice 'none'"
-    @Test("tool choice none maps to string")
-    func toolChoiceNone() throws {
-        let tool = LanguageModelV3Tool.function(
-            LanguageModelV3FunctionTool(
-                name: "testFunction",
-                inputSchema: .object([:]),
-                description: "Test"
-            )
-        )
-
-        let result = OpenAIChatToolPreparer.prepare(
-            tools: [tool],
-            toolChoice: LanguageModelV3ToolChoice.none
-        )
-
-        #expect(result.toolChoice == .string("none"))
-    }
-
-    @Test("tool choice for specific function maps to function entry")
-    func toolChoiceForFunction() throws {
-        let result = OpenAIChatToolPreparer.prepare(
-            tools: [makeFunctionTool(name: "lookup")],
-            toolChoice: .tool(toolName: "lookup")
-        )
-
-        #expect(result.toolChoice == .object([
-            "type": .string("function"),
-            "function": .object(["name": .string("lookup")])
+    @Test("local root references resolve combining names but preserve empty and newline names", arguments: ["\u{301}entry", "", "line\nbreak"])
+    func schemaReferences(name: String) async throws {
+        let definition: JSONValue = .object(["type": .string("object"), "properties": .object([:])])
+        let schema: JSONValue = .object([
+            "allOf": .array([.object(["$ref": .string("#/$defs/" + name)])]), "$defs": .object([name: definition])
+        ])
+        let exchange = try await chatExchange(options: .init(prompt: [], responseFormat: .json(schema: schema, name: nil, description: nil)))
+        let expected: JSONValue = name == "\u{301}entry"
+            ? .object(["type": .string("object"), "properties": .object([:]), "$defs": .object([name: definition])])
+            : schema
+        #expect(exchange.body["response_format"] == .object([
+            "type": .string("json_schema"), "json_schema": .object(["schema": expected, "strict": .bool(true), "name": .string("response")])
         ]))
     }
 }

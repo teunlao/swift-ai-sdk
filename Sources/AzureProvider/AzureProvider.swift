@@ -36,7 +36,7 @@ public struct AzureProviderSettings: Sendable {
 /// Azure OpenAI provider implementation.
 /// Mirrors `packages/azure/src/azure-openai-provider.ts`.
 public final class AzureProvider: ProviderV4 {
-    private let chatFactory: @Sendable (OpenAIChatModelId) -> OpenAIChatLanguageModelV4
+    private let chatFactory: @Sendable (OpenAIChatModelId) -> OpenAIChatLanguageModel
     private let responsesFactory: @Sendable (OpenAIResponsesModelId) -> OpenAIResponsesLanguageModelV4
     private let completionFactory: @Sendable (OpenAICompletionModelId) -> OpenAICompletionLanguageModelV4
     private let embeddingFactory: @Sendable (OpenAIEmbeddingModelId) -> OpenAIEmbeddingModel
@@ -46,7 +46,7 @@ public final class AzureProvider: ProviderV4 {
     public let tools: AzureProviderTools
 
     init(
-        chatFactory: @escaping @Sendable (OpenAIChatModelId) -> OpenAIChatLanguageModelV4,
+        chatFactory: @escaping @Sendable (OpenAIChatModelId) -> OpenAIChatLanguageModel,
         responsesFactory: @escaping @Sendable (OpenAIResponsesModelId) -> OpenAIResponsesLanguageModelV4,
         completionFactory: @escaping @Sendable (OpenAICompletionModelId) -> OpenAICompletionLanguageModelV4,
         embeddingFactory: @escaping @Sendable (OpenAIEmbeddingModelId) -> OpenAIEmbeddingModel,
@@ -101,7 +101,7 @@ public final class AzureProvider: ProviderV4 {
         try languageModel(modelId: modelId)
     }
 
-    public func chat(_ modelId: OpenAIChatModelId) -> OpenAIChatLanguageModelV4 {
+    public func chat(_ modelId: OpenAIChatModelId) -> OpenAIChatLanguageModel {
         chatFactory(modelId)
     }
 
@@ -300,8 +300,8 @@ public func createAzureProvider(settings: AzureProviderSettings = .init()) -> Az
         fetch: fetch
     )
 
-    let chatFactory: @Sendable (OpenAIChatModelId) -> OpenAIChatLanguageModelV4 = { modelId in
-        OpenAIChatLanguageModelV4(
+    let chatFactory: @Sendable (OpenAIChatModelId) -> OpenAIChatLanguageModel = { modelId in
+        OpenAIChatLanguageModel(
             modelId: modelId,
             config: chatConfig
         )

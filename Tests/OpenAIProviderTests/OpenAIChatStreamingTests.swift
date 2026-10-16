@@ -17,7 +17,7 @@ struct OpenAIChatStreamingTests {
     func testStreamAnnotationsCitations() async throws {
         let events = [
             "data: {\"id\":\"chatcmpl-123\",\"object\":\"chat.completion.chunk\",\"created\":1694268190,\"model\":\"gpt-4o-mini-2024-07-18\",\"system_fingerprint\":\"fp_f33667828e\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\",\"refusal\":null},\"logprobs\":null,\"finish_reason\":null}]}",
-            "data: {\"id\":\"chatcmpl-123\",\"object\":\"chat.completion.chunk\",\"created\":1694268190,\"model\":\"gpt-4o-mini-2024-07-18\",\"system_fingerprint\":\"fp_f33667828e\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Based on search results\",\"annotations\":[{\"type\":\"url_citation\",\"text\":\"Based on search results\",\"start_index\":0,\"end_index\":22,\"url\":\"https://example.com/doc1.pdf\",\"title\":\"Document 1\"}]},\"logprobs\":null,\"finish_reason\":null}]}",
+            "data: {\"id\":\"chatcmpl-123\",\"object\":\"chat.completion.chunk\",\"created\":1694268190,\"model\":\"gpt-4o-mini-2024-07-18\",\"system_fingerprint\":\"fp_f33667828e\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Based on search results\",\"annotations\":[{\"type\":\"url_citation\",\"url_citation\":{\"start_index\":0,\"end_index\":22,\"url\":\"https://example.com/doc1.pdf\",\"title\":\"Document 1\"}}]},\"logprobs\":null,\"finish_reason\":null}]}",
             "data: {\"id\":\"chatcmpl-123\",\"object\":\"chat.completion.chunk\",\"created\":1694268190,\"model\":\"gpt-4o-mini-2024-07-18\",\"system_fingerprint\":\"fp_f33667828e\",\"choices\":[{\"index\":0,\"delta\":{},\"logprobs\":null,\"finish_reason\":\"stop\"}]}",
             "data: [DONE]"
         ]
@@ -39,12 +39,12 @@ struct OpenAIChatStreamingTests {
         )
         let model = OpenAIChatLanguageModel(modelId: "gpt-4o-mini", config: config)
 
-        let prompt: LanguageModelV3Prompt = [.system(content: "Test", providerOptions: nil)]
+        let prompt: LanguageModelV4Prompt = [.system(content: "Test", providerOptions: nil)]
         let stream = try await model.doStream(
-            options: LanguageModelV3CallOptions(prompt: prompt)
+            options: LanguageModelV4CallOptions(prompt: prompt)
         )
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in stream.stream {
             parts.append(part)
         }
@@ -114,12 +114,12 @@ struct OpenAIChatStreamingTests {
         )
         let model = OpenAIChatLanguageModel(modelId: "gpt-3.5-turbo", config: config)
 
-        let prompt: LanguageModelV3Prompt = [.user(content: [.text(LanguageModelV3TextPart(text: "Test"))], providerOptions: nil)]
+        let prompt: LanguageModelV4Prompt = [.user(content: [.text(LanguageModelV4TextPart(text: "Test"))], providerOptions: nil)]
         let stream = try await model.doStream(
-            options: LanguageModelV3CallOptions(prompt: prompt)
+            options: LanguageModelV4CallOptions(prompt: prompt)
         )
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in stream.stream {
             parts.append(part)
         }
@@ -132,16 +132,7 @@ struct OpenAIChatStreamingTests {
             return nil
         }
 
-        // Verify all 8 deltas (including initial empty string)
-        #expect(toolInputDeltas.count == 8)
-        #expect(toolInputDeltas[0] == "")
-        #expect(toolInputDeltas[1] == "{\"")
-        #expect(toolInputDeltas[2] == "value")
-        #expect(toolInputDeltas[3] == "\":\"")
-        #expect(toolInputDeltas[4] == "Spark")
-        #expect(toolInputDeltas[5] == "le")
-        #expect(toolInputDeltas[6] == " Day")
-        #expect(toolInputDeltas[7] == "\"}")
+        #expect(toolInputDeltas == ["{\"", "value", "\":\"", "Spark", "le", " Day", "\"}"])
 
         // Verify tool call completion
         let hasToolCall = parts.contains(where: { part in
@@ -199,12 +190,12 @@ struct OpenAIChatStreamingTests {
         )
         let model = OpenAIChatLanguageModel(modelId: "gpt-3.5-turbo", config: config)
 
-        let prompt: LanguageModelV3Prompt = [.user(content: [.text(LanguageModelV3TextPart(text: "Test"))], providerOptions: nil)]
+        let prompt: LanguageModelV4Prompt = [.user(content: [.text(LanguageModelV4TextPart(text: "Test"))], providerOptions: nil)]
         let stream = try await model.doStream(
-            options: LanguageModelV3CallOptions(prompt: prompt)
+            options: LanguageModelV4CallOptions(prompt: prompt)
         )
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in stream.stream {
             parts.append(part)
         }
@@ -273,12 +264,12 @@ struct OpenAIChatStreamingTests {
         )
         let model = OpenAIChatLanguageModel(modelId: "meta/llama-3.1-8b-instruct:fp8", config: config)
 
-        let prompt: LanguageModelV3Prompt = [.user(content: [.text(LanguageModelV3TextPart(text: "Test"))], providerOptions: nil)]
+        let prompt: LanguageModelV4Prompt = [.user(content: [.text(LanguageModelV4TextPart(text: "Test"))], providerOptions: nil)]
         let stream = try await model.doStream(
-            options: LanguageModelV3CallOptions(prompt: prompt)
+            options: LanguageModelV4CallOptions(prompt: prompt)
         )
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in stream.stream {
             parts.append(part)
         }
@@ -301,7 +292,7 @@ struct OpenAIChatStreamingTests {
         #expect(toolInputDeltas[5] == "")
 
         // Verify exactly 1 tool call (no duplicates)
-        let toolCalls = parts.compactMap { part -> LanguageModelV3ToolCall? in
+        let toolCalls = parts.compactMap { part -> LanguageModelV4ToolCall? in
             if case .toolCall(let toolCall) = part {
                 return toolCall
             }
@@ -349,12 +340,12 @@ struct OpenAIChatStreamingTests {
         )
         let model = OpenAIChatLanguageModel(modelId: "gpt-3.5-turbo", config: config)
 
-        let prompt: LanguageModelV3Prompt = [.user(content: [.text(LanguageModelV3TextPart(text: "Test"))], providerOptions: nil)]
+        let prompt: LanguageModelV4Prompt = [.user(content: [.text(LanguageModelV4TextPart(text: "Test"))], providerOptions: nil)]
         let stream = try await model.doStream(
-            options: LanguageModelV3CallOptions(prompt: prompt)
+            options: LanguageModelV4CallOptions(prompt: prompt)
         )
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in stream.stream {
             parts.append(part)
         }
@@ -443,8 +434,8 @@ struct OpenAIChatStreamingTests {
         let model = OpenAIChatLanguageModel(modelId: "gpt-3.5-turbo", config: config)
 
         _ = try await model.doStream(
-            options: LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+            options: LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)],
                 includeRawChunks: false
             )
         )

@@ -30,6 +30,8 @@ public enum OpenAIChatServiceTier: String, Sendable {
     case auto
     case flex
     case priority
+    case fast
+    case ultrafast
     case `default`
 }
 
@@ -50,7 +52,7 @@ public enum OpenAIChatPromptCacheRetention: String, Sendable {
     case twentyFourHours = "24h"
 }
 
-public struct OpenAIChatProviderOptions: Sendable, Equatable {
+public struct OpenAIChatLanguageModelOptions: Sendable, Equatable {
     public var logitBias: [String: Double]?
     public var logprobs: OpenAIChatLogprobsOption?
     public var parallelToolCalls: Bool?
@@ -111,16 +113,57 @@ public struct OpenAIChatProviderOptions: Sendable, Equatable {
     }
 }
 
-public typealias OpenAILanguageModelChatOptions = OpenAIChatProviderOptions
-public typealias OpenAIChatLanguageModelOptions = OpenAIChatProviderOptions
 
+private func tokenId(_ key: String) -> String? {
+    let whitespace = CharacterSet(charactersIn: "\u{9}\u{a}\u{b}\u{c}\u{d} \u{a0}\u{1680}\u{2000}\u{2001}\u{2002}\u{2003}\u{2004}\u{2005}\u{2006}\u{2007}\u{2008}\u{2009}\u{200a}\u{2028}\u{2029}\u{202f}\u{205f}\u{3000}\u{feff}")
+    let text = key.trimmingCharacters(in: whitespace)
+    let number: Double
+    if text.isEmpty { number = 0 }
+    else if text.hasPrefix("0x") || text.hasPrefix("0X") || text.hasPrefix("0b") || text.hasPrefix("0B") || text.hasPrefix("0o") || text.hasPrefix("0O") {
+        let radix = text.lowercased().hasPrefix("0x") ? 16 : (text.lowercased().hasPrefix("0b") ? 2 : 8)
+        var value = 0.0
+        guard text.count > 2 else { return nil }
+        for scalar in text.dropFirst(2).unicodeScalars {
+            let digit: UInt32
+            switch scalar.value {
+            case 48...57: digit = scalar.value - 48
+            case 65...70: digit = scalar.value - 55
+            case 97...102: digit = scalar.value - 87
+            default: return nil
+            }
+            guard digit < radix else { return nil }
+            value = value * Double(radix) + Double(digit)
+        }
+        number = value
+    } else {
+        guard text.range(of: #"^[+-]?(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?\z"#, options: .regularExpression) != nil,
+              let value = Double(text) else { return nil }
+        number = value
+    }
+    guard number.isFinite else { return nil }
+    if number == 0 { return "0" }
+    let sign = number < 0 ? "-" : ""
+    let parts = String(abs(number)).lowercased().split(separator: "e")
+    var mantissa = String(parts[0])
+    if mantissa.hasSuffix(".0") { mantissa.removeLast(2) }
+    guard parts.count == 2, let exponent = Int(parts[1]) else { return sign + mantissa }
+    if abs(number) >= 1e21 || abs(number) < 1e-6 {
+        return sign + mantissa + "e" + (exponent >= 0 ? "+" : "") + String(exponent)
+    }
+    let point = (mantissa.firstIndex(of: ".").map { mantissa.distance(from: mantissa.startIndex, to: $0) } ?? mantissa.count) + exponent
+    let digits = mantissa.replacingOccurrences(of: ".", with: "")
+    if point <= 0 { return sign + "0." + String(repeating: "0", count: -point) + digits }
+    if point >= digits.count { return sign + digits + String(repeating: "0", count: point - digits.count) }
+    let index = digits.index(digits.startIndex, offsetBy: point)
+    return sign + String(digits[..<index]) + "." + String(digits[index...])
+}
 
 private let openAIChatProviderOptionsJSONSchema: JSONValue = .object([
     "type": .string("object"),
     "additionalProperties": .bool(true)
 ])
 
-let openAIChatProviderOptionsSchema = FlexibleSchema<OpenAIChatProviderOptions>(
+let openAIChatProviderOptionsSchema = FlexibleSchema<OpenAIChatLanguageModelOptions>(
     Schema(
         jsonSchemaResolver: { openAIChatProviderOptionsJSONSchema },
         validator: { value in
@@ -131,7 +174,7 @@ let openAIChatProviderOptionsSchema = FlexibleSchema<OpenAIChatProviderOptions>(
                     return .failure(error: TypeValidationError.wrap(value: value, cause: error))
                 }
 
-                var result = OpenAIChatProviderOptions()
+                var result = OpenAIChatLanguageModelOptions()
                 func field(_ key: String, message: String) throws -> JSONValue? {
                     guard let value = dict[key] else { return nil }
                     guard value != .null else {
@@ -148,18 +191,15 @@ let openAIChatProviderOptionsSchema = FlexibleSchema<OpenAIChatProviderOptions>(
                     }
                     var bias: [String: Double] = [:]
                     for (key, value) in entries {
-                        let trimmedKey = key.trimmingCharacters(in: .whitespacesAndNewlines)
-                        if let keyNumber = Double(trimmedKey), keyNumber.isFinite {
-                            // ok
-                        } else {
+                        guard let token = tokenId(key) else {
                             let error = SchemaValidationIssuesError(vendor: "openai", issues: "logitBias keys must be numbers")
                             return .failure(error: TypeValidationError.wrap(value: value, cause: error))
                         }
-                        guard case .number(let number) = value else {
+                        guard case .number(let number) = value, number.isFinite else {
                             let error = SchemaValidationIssuesError(vendor: "openai", issues: "logitBias values must be numbers")
                             return .failure(error: TypeValidationError.wrap(value: value, cause: error))
                         }
-                        bias[key] = number
+                        bias[token] = number
                     }
                     result.logitBias = bias
                 }
@@ -168,7 +208,7 @@ let openAIChatProviderOptionsSchema = FlexibleSchema<OpenAIChatProviderOptions>(
                     switch logprobsValue {
                     case .bool(let flag):
                         result.logprobs = .bool(flag)
-                    case .number(let number):
+                    case .number(let number) where number.isFinite:
                         result.logprobs = .number(number)
                     default:
                         let error = SchemaValidationIssuesError(vendor: "openai", issues: "logprobs must be boolean or number")
@@ -202,7 +242,7 @@ let openAIChatProviderOptionsSchema = FlexibleSchema<OpenAIChatProviderOptions>(
                 }
 
                 if let maxCompletionTokens = try field("maxCompletionTokens", message: "maxCompletionTokens must be a number") {
-                    guard case .number(let number) = maxCompletionTokens else {
+                    guard case .number(let number) = maxCompletionTokens, number.isFinite else {
                         let error = SchemaValidationIssuesError(vendor: "openai", issues: "maxCompletionTokens must be a number")
                         return .failure(error: TypeValidationError.wrap(value: maxCompletionTokens, cause: error))
                     }
@@ -249,10 +289,10 @@ let openAIChatProviderOptionsSchema = FlexibleSchema<OpenAIChatProviderOptions>(
                     result.prediction = entries
                 }
 
-                if let tierValue = try field("serviceTier", message: "serviceTier must be one of auto, flex, priority, default") {
+                if let tierValue = try field("serviceTier", message: "serviceTier must be one of auto, flex, priority, fast, ultrafast, default") {
                     guard case .string(let string) = tierValue,
                           let tier = OpenAIChatServiceTier(rawValue: string) else {
-                        let error = SchemaValidationIssuesError(vendor: "openai", issues: "serviceTier must be one of auto, flex, priority, default")
+                        let error = SchemaValidationIssuesError(vendor: "openai", issues: "serviceTier must be one of auto, flex, priority, fast, ultrafast, default")
                         return .failure(error: TypeValidationError.wrap(value: tierValue, cause: error))
                     }
                     result.serviceTier = tier
