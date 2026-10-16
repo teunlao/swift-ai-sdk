@@ -86,7 +86,6 @@ component catalog even when Swift does not yet have an owner target:
 - `huggingface`
 - `hume`
 - `klingai`
-- `lmnt`
 - `luma`
 - `mistral`
 - `moonshotai`
@@ -97,7 +96,6 @@ component catalog even when Swift does not yet have an owner target:
 - `replicate`
 - `revai`
 - `togetherai`
-- `vercel`
 - `voyage`
 - `xai`
 

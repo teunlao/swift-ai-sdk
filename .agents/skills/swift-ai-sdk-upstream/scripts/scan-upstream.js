@@ -65,7 +65,6 @@ const PROVIDER_PACKAGES = new Set([
   "huggingface",
   "hume",
   "klingai",
-  "lmnt",
   "luma",
   "mistral",
   "moonshotai",
@@ -78,7 +77,6 @@ const PROVIDER_PACKAGES = new Set([
   "replicate",
   "revai",
   "togetherai",
-  "vercel",
   "voyage",
   "xai",
 ]);
@@ -112,7 +110,6 @@ const TARGET_OVERRIDES = {
   huggingface: "HuggingFaceProvider",
   hume: "HumeProvider",
   klingai: "KlingAIProvider",
-  lmnt: "LMNTProvider",
   luma: "LumaProvider",
   mistral: "MistralProvider",
   moonshotai: "MoonshotAIProvider",
@@ -125,7 +122,6 @@ const TARGET_OVERRIDES = {
   replicate: "ReplicateProvider",
   revai: "RevAIProvider",
   togetherai: "TogetherAIProvider",
-  vercel: "VercelProvider",
   voyage: "VoyageProvider",
   xai: "XAIProvider",
 };

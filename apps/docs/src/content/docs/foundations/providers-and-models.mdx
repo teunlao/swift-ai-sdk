@@ -24,7 +24,7 @@ The Swift AI SDK mirrors the AI SDK language-model specification (`AISDKProvider
 
 ## Swift AI SDK provider modules
 
-The Swift port currently ships with **38 provider modules** (one SwiftPM product per provider). Each module exports a lazily configured global shortcut plus a factory for advanced configuration, matching the TypeScript behavior. See [Providers](/providers/overview) for the full, up-to-date list.
+The Swift port currently ships with **36 provider modules** (one SwiftPM product per provider). Each module exports a lazily configured global shortcut plus a factory for advanced configuration, matching the TypeScript behavior. See [Providers](/providers/overview) for the full, up-to-date list.
 
 A few common examples:
 
@@ -32,7 +32,6 @@ A few common examples:
 - [Anthropic Provider](/providers/anthropic) — `import AnthropicProvider`, use `try anthropic("claude-sonnet-5")` or `createAnthropic(settings:)`.
 - [Google Generative AI Provider](/providers/google-generative-ai) — `import GoogleProvider`, use `google("gemini-1.5-pro")` or `createGoogleGenerativeAI(settings:)`.
 - [Alibaba Provider](/providers/alibaba) — `import AlibabaProvider`, then call `alibaba("qwen-plus")` or `createAlibaba(settings:)`.
-- Vercel Provider — `import VercelProvider`, then call `vercel("v0-1.0-md")` or `createVercelProvider(settings:)`. _(Documentation coming soon)_
 - TogetherAI Provider — `import TogetherAIProvider`, then call `togetherai("meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo")` or `createTogetherAIProvider(settings:)`. _(Documentation coming soon)_
 
 Each shortcut performs lazy API-key loading (via environment variables such as `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, `GROQ_API_KEY`) and returns a ready-to-use model for the higher-level Swift AI SDK APIs. OpenAI and Anthropic use native Provider V4 facades by default; legacy provider modules may still expose V3-backed models that are adapted by the high-level APIs.

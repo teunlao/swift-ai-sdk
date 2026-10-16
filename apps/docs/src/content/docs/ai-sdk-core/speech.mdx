@@ -22,21 +22,6 @@ let audio = try await generateSpeech(
 )
 ```
 
-### Language Setting
-
-You can specify the language for speech generation (provider support varies):
-
-```swift
-import SwiftAISDK
-import LMNTProvider
-
-let spanish = try await generateSpeech(
-  model: lmnt.speech("aurora"),
-  text: "Hola, mundo!",
-  language: "es"
-)
-```
-
 To access the generated audio:
 
 ```swift
@@ -145,8 +130,6 @@ do {
 | ElevenLabs | `eleven_flash_v2`        |
 | ElevenLabs | `eleven_turbo_v2_5`      |
 | ElevenLabs | `eleven_turbo_v2`        |
-| LMNT             | `aurora`                 |
-| LMNT             | `blizzard`               |
 | Hume             | `default`                |
 
 Above are a small subset of the speech models supported by the AI SDK providers. For more, see the respective provider documentation.

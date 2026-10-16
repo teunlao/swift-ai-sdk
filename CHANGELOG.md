@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Removed
+- BREAKING: the `LMNTProvider` and `VercelProvider` products, following their removal upstream. LMNT has shut down, and the v0 Model API behind the Vercel provider was deprecated in March 2026; neither service answers requests.
+
 ## [0.19.0] - 2026-07-15
 
 Upstream parity release against Vercel AI SDK commit `c8d2726ae045a28142cb46df5e41cdd51d8dcc71`, plus the targeted OpenAI latest-main delta at `5b4a299200ec3d061a2cae087d78d13f74d6c90f`.

@@ -91,7 +91,6 @@ export default defineConfig({
             { label: "Kling AI", link: "/providers/klingai" },
             { label: "Anthropic", link: "/providers/anthropic" },
             { label: "Google Generative AI", link: "/providers/google-generative-ai" },
-            { label: "Vercel", link: "/providers/vercel" },
             { label: "Together.ai", link: "/providers/togetherai" },
             { label: "Mistral", link: "/providers/mistral" },
             { label: "Moonshot AI", link: "/providers/moonshotai" },
@@ -101,8 +100,7 @@ export default defineConfig({
             { label: "Black Forest Labs", link: "/providers/black-forest-labs" },
             { label: "Prodia", link: "/providers/prodia" },
             { label: "Fal", link: "/providers/fal" },
-            { label: "Rev.ai", link: "/providers/revai" },
-            { label: "LMNT", link: "/providers/lmnt" }
+            { label: "Rev.ai", link: "/providers/revai" }
           ]
         }
 			],
