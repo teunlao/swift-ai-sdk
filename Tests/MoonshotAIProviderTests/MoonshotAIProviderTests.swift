@@ -4,7 +4,7 @@ import Testing
 import AISDKProvider
 import AISDKProviderUtils
 
-private let moonshotTestPrompt: LanguageModelV3Prompt = [
+private let moonshotTestPrompt: LanguageModelV4Prompt = [
     .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
 ]
 
@@ -65,7 +65,7 @@ struct MoonshotAIProviderTests {
             return FetchResponse(body: .data(responseData), urlResponse: makeHTTPResponse(url: url))
         }
 
-        let provider = createMoonshotAIProvider(settings: .init(fetch: fetch))
+        let provider = createMoonshotAI(settings: .init(fetch: fetch))
         let model = try provider.chatModel(modelId: MoonshotAIChatModelId.kimiK2.rawValue)
         _ = try await model.doGenerate(options: .init(prompt: moonshotTestPrompt))
 
@@ -77,7 +77,7 @@ struct MoonshotAIProviderTests {
         }
 
         #expect(headers["authorization"] == "Bearer env-moonshot-key")
-        #expect((headers["user-agent"] ?? "").contains("ai-sdk/moonshotai/") == true)
+        #expect((headers["user-agent"] ?? "").contains("ai-sdk-moonshotai/") == true)
     }
 
     @Test("does not override existing Authorization header")
@@ -106,7 +106,7 @@ struct MoonshotAIProviderTests {
             return FetchResponse(body: .data(responseData), urlResponse: makeHTTPResponse(url: url))
         }
 
-        let provider = createMoonshotAIProvider(settings: .init(
+        let provider = createMoonshotAI(settings: .init(
             headers: ["Authorization": "Bearer custom-auth"],
             fetch: fetch
         ))
@@ -137,7 +137,7 @@ struct MoonshotAIProviderTests {
             return FetchResponse(body: .data(responseData), urlResponse: makeHTTPResponse(url: url))
         }
 
-        let provider = createMoonshotAIProvider(settings: .init(apiKey: "test-key", fetch: fetch))
+        let provider = createMoonshotAI(settings: .init(apiKey: "test-key", fetch: fetch))
         let model = try provider.chatModel(modelId: MoonshotAIChatModelId.kimiK2Thinking.rawValue)
 
         _ = try await model.doGenerate(options: .init(
@@ -187,7 +187,7 @@ struct MoonshotAIProviderTests {
             return FetchResponse(body: .data(responseData), urlResponse: makeHTTPResponse(url: url))
         }
 
-        let provider = createMoonshotAIProvider(settings: .init(apiKey: "test-key", fetch: fetch))
+        let provider = createMoonshotAI(settings: .init(apiKey: "test-key", fetch: fetch))
         let model = try provider.chatModel(modelId: MoonshotAIChatModelId.kimiK2.rawValue)
         let result = try await model.doGenerate(options: .init(prompt: moonshotTestPrompt))
 

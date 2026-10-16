@@ -9,7 +9,7 @@ import AISDKProviderUtils
 // Upstream commit: f3a72bc2a
 //===----------------------------------------------------------------------===//
 
-public final class TogetherAIRerankingModel: RerankingModelV3 {
+public final class TogetherAIRerankingModel: RerankingModelV4 {
     public struct Config: Sendable {
         let provider: String
         let baseURL: String
@@ -40,7 +40,7 @@ public final class TogetherAIRerankingModel: RerankingModelV3 {
         self.config = config
     }
 
-    public func doRerank(options: RerankingModelV3CallOptions) async throws -> RerankingModelV3DoRerankResult {
+    public func doRerank(options: RerankingModelV4CallOptions) async throws -> RerankingModelV4Result {
         let rerankingOptions = try await parseProviderOptions(
             provider: "togetherai",
             providerOptions: options.providerOptions,
@@ -80,11 +80,11 @@ public final class TogetherAIRerankingModel: RerankingModelV3 {
             fetch: config.fetch
         )
 
-        return RerankingModelV3DoRerankResult(
+        return RerankingModelV4Result(
             ranking: response.value.results.map { result in
-                RerankingModelV3Ranking(index: result.index, relevanceScore: result.relevanceScore)
+                RerankingModelV4Ranking(index: result.index, relevanceScore: result.relevanceScore)
             },
-            response: RerankingModelV3ResponseInfo(
+            response: RerankingModelV4ResponseInfo(
                 id: response.value.id,
                 modelId: response.value.model,
                 headers: response.responseHeaders,
@@ -94,7 +94,7 @@ public final class TogetherAIRerankingModel: RerankingModelV3 {
     }
 }
 
-private func encodeDocuments(_ documents: RerankingModelV3CallOptions.Documents) -> JSONValue {
+private func encodeDocuments(_ documents: RerankingModelV4CallOptions.Documents) -> JSONValue {
     switch documents {
     case .text(let values):
         return .array(values.map(JSONValue.string))

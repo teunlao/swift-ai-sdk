@@ -6,13 +6,13 @@ import OpenAICompatibleProvider
 /// MoonshotAI chat model built on top of the OpenAI-compatible chat language model.
 ///
 /// Mirrors `packages/moonshotai/src/moonshotai-chat-language-model.ts`.
-public final class MoonshotAIChatLanguageModel: LanguageModelV3 {
-    public let specificationVersion: String = "v3"
+public final class MoonshotAIChatLanguageModel: LanguageModelV4 {
+    public let specificationVersion: String = "v4"
 
-    private let base: OpenAICompatibleChatLanguageModel
+    private let base: OpenAICompatibleChatLanguageModelV4
 
     public init(modelId: MoonshotAIChatModelId, config: OpenAICompatibleChatConfig) {
-        self.base = OpenAICompatibleChatLanguageModel(
+        self.base = OpenAICompatibleChatLanguageModelV4(
             modelId: OpenAICompatibleChatModelId(rawValue: modelId.rawValue),
             config: config
         )
@@ -25,13 +25,13 @@ public final class MoonshotAIChatLanguageModel: LanguageModelV3 {
         get async throws { try await base.supportedUrls }
     }
 
-    public func doGenerate(options: LanguageModelV3CallOptions) async throws -> LanguageModelV3GenerateResult {
+    public func doGenerate(options: LanguageModelV4CallOptions) async throws -> LanguageModelV4GenerateResult {
         let result = try await base.doGenerate(options: options)
 
         let usageRaw = extractUsage(from: result.response?.body) ?? result.usage.raw
         let converted = convertMoonshotAIChatUsage(usageRaw)
 
-        return LanguageModelV3GenerateResult(
+        return LanguageModelV4GenerateResult(
             content: result.content,
             finishReason: result.finishReason,
             usage: converted,
@@ -42,10 +42,10 @@ public final class MoonshotAIChatLanguageModel: LanguageModelV3 {
         )
     }
 
-    public func doStream(options: LanguageModelV3CallOptions) async throws -> LanguageModelV3StreamResult {
+    public func doStream(options: LanguageModelV4CallOptions) async throws -> LanguageModelV4StreamResult {
         let result = try await base.doStream(options: options)
 
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error>(bufferingPolicy: .unbounded) { continuation in
+        let stream = AsyncThrowingStream<LanguageModelV4StreamPart, Error>(bufferingPolicy: .unbounded) { continuation in
             Task {
                 do {
                     for try await part in result.stream {
@@ -68,7 +68,7 @@ public final class MoonshotAIChatLanguageModel: LanguageModelV3 {
             }
         }
 
-        return LanguageModelV3StreamResult(
+        return LanguageModelV4StreamResult(
             stream: stream,
             request: result.request,
             response: result.response

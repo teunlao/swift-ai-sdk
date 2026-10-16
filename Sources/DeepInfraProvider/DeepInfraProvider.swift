@@ -29,16 +29,16 @@ public struct DeepInfraProviderSettings: Sendable {
     }
 }
 
-public final class DeepInfraProvider: ProviderV3 {
-    private let chatFactory: @Sendable (DeepInfraChatModelId) -> OpenAICompatibleChatLanguageModel
-    private let completionFactory: @Sendable (DeepInfraCompletionModelId) -> OpenAICompatibleCompletionLanguageModel
-    private let embeddingFactory: @Sendable (DeepInfraEmbeddingModelId) -> OpenAICompatibleEmbeddingModel
+public final class DeepInfraProvider: ProviderV4 {
+    private let chatFactory: @Sendable (DeepInfraChatModelId) -> OpenAICompatibleChatLanguageModelV4
+    private let completionFactory: @Sendable (DeepInfraCompletionModelId) -> OpenAICompatibleCompletionLanguageModelV4
+    private let embeddingFactory: @Sendable (DeepInfraEmbeddingModelId) -> OpenAICompatibleEmbeddingModelV4
     private let imageFactory: @Sendable (DeepInfraImageModelId) -> DeepInfraImageModel
 
     init(
-        chatFactory: @escaping @Sendable (DeepInfraChatModelId) -> OpenAICompatibleChatLanguageModel,
-        completionFactory: @escaping @Sendable (DeepInfraCompletionModelId) -> OpenAICompatibleCompletionLanguageModel,
-        embeddingFactory: @escaping @Sendable (DeepInfraEmbeddingModelId) -> OpenAICompatibleEmbeddingModel,
+        chatFactory: @escaping @Sendable (DeepInfraChatModelId) -> OpenAICompatibleChatLanguageModelV4,
+        completionFactory: @escaping @Sendable (DeepInfraCompletionModelId) -> OpenAICompatibleCompletionLanguageModelV4,
+        embeddingFactory: @escaping @Sendable (DeepInfraEmbeddingModelId) -> OpenAICompatibleEmbeddingModelV4,
         imageFactory: @escaping @Sendable (DeepInfraImageModelId) -> DeepInfraImageModel
     ) {
         self.chatFactory = chatFactory
@@ -47,39 +47,39 @@ public final class DeepInfraProvider: ProviderV3 {
         self.imageFactory = imageFactory
     }
 
-    public func languageModel(modelId: String) throws -> any LanguageModelV3 {
+    public func languageModel(modelId: String) throws -> any LanguageModelV4 {
         chatFactory(DeepInfraChatModelId(rawValue: modelId))
     }
 
-    public func chatModel(modelId: String) throws -> any LanguageModelV3 {
+    public func chatModel(modelId: String) throws -> any LanguageModelV4 {
         try languageModel(modelId: modelId)
     }
 
-    public func completionModel(modelId: String) throws -> any LanguageModelV3 {
+    public func completionModel(modelId: String) throws -> any LanguageModelV4 {
         completionFactory(DeepInfraCompletionModelId(rawValue: modelId))
     }
 
-    public func textEmbeddingModel(modelId: String) throws -> any EmbeddingModelV3<String> {
+    public func embeddingModel(modelId: String) throws -> any EmbeddingModelV4 {
         embeddingFactory(DeepInfraEmbeddingModelId(rawValue: modelId))
     }
 
-    public func imageModel(modelId: String) throws -> any ImageModelV3 {
+    public func imageModel(modelId: String) throws -> any ImageModelV4 {
         imageFactory(DeepInfraImageModelId(rawValue: modelId))
     }
 
-    public func callAsFunction(_ modelId: String) throws -> any LanguageModelV3 {
+    public func callAsFunction(_ modelId: String) throws -> any LanguageModelV4 {
         try languageModel(modelId: modelId)
     }
 
-    public func chat(modelId: DeepInfraChatModelId) -> OpenAICompatibleChatLanguageModel {
+    public func chat(modelId: DeepInfraChatModelId) -> OpenAICompatibleChatLanguageModelV4 {
         chatFactory(modelId)
     }
 
-    public func completion(modelId: DeepInfraCompletionModelId) -> OpenAICompatibleCompletionLanguageModel {
+    public func completion(modelId: DeepInfraCompletionModelId) -> OpenAICompatibleCompletionLanguageModelV4 {
         completionFactory(modelId)
     }
 
-    public func embedding(modelId: DeepInfraEmbeddingModelId) -> OpenAICompatibleEmbeddingModel {
+    public func embedding(modelId: DeepInfraEmbeddingModelId) -> OpenAICompatibleEmbeddingModelV4 {
         embeddingFactory(modelId)
     }
 
@@ -114,7 +114,7 @@ private func createDeepInfraAuthFetch(
     }
 }
 
-public func createDeepInfraProvider(settings: DeepInfraProviderSettings = .init()) -> DeepInfraProvider {
+public func createDeepInfra(settings: DeepInfraProviderSettings = .init()) -> DeepInfraProvider {
     let baseURL = withoutTrailingSlash(settings.baseURL) ?? "https://api.deepinfra.com/v1"
 
     let headersClosure: @Sendable () -> [String: String] = {
@@ -126,7 +126,7 @@ public func createDeepInfraProvider(settings: DeepInfraProviderSettings = .init(
             }
         }
 
-        return withUserAgentSuffix(baseHeaders, "ai-sdk/deepinfra/\(DEEPINFRA_VERSION)")
+        return withUserAgentSuffix(baseHeaders, "ai-sdk-deepinfra/\(DEEPINFRA_VERSION)")
     }
 
     let fetch = createDeepInfraAuthFetch(
@@ -138,7 +138,7 @@ public func createDeepInfraProvider(settings: DeepInfraProviderSettings = .init(
         "\(baseURL)/openai\(options.path)"
     }
 
-    let chatFactory: @Sendable (DeepInfraChatModelId) -> OpenAICompatibleChatLanguageModel = { modelId in
+    let chatFactory: @Sendable (DeepInfraChatModelId) -> OpenAICompatibleChatLanguageModelV4 = { modelId in
         let config = OpenAICompatibleChatConfig(
             provider: "deepinfra.chat",
             headers: headersClosure,
@@ -146,27 +146,27 @@ public func createDeepInfraProvider(settings: DeepInfraProviderSettings = .init(
             fetch: fetch,
             usagePostprocessor: fixDeepInfraUsageForGeminiModels
         )
-        return OpenAICompatibleChatLanguageModel(modelId: OpenAICompatibleChatModelId(rawValue: modelId.rawValue), config: config)
+        return OpenAICompatibleChatLanguageModelV4(modelId: OpenAICompatibleChatModelId(rawValue: modelId.rawValue), config: config)
     }
 
-    let completionFactory: @Sendable (DeepInfraCompletionModelId) -> OpenAICompatibleCompletionLanguageModel = { modelId in
+    let completionFactory: @Sendable (DeepInfraCompletionModelId) -> OpenAICompatibleCompletionLanguageModelV4 = { modelId in
         let config = OpenAICompatibleCompletionConfig(
             provider: "deepinfra.completion",
             headers: headersClosure,
             url: urlBuilder,
             fetch: fetch
         )
-        return OpenAICompatibleCompletionLanguageModel(modelId: OpenAICompatibleCompletionModelId(rawValue: modelId.rawValue), config: config)
+        return OpenAICompatibleCompletionLanguageModelV4(modelId: OpenAICompatibleCompletionModelId(rawValue: modelId.rawValue), config: config)
     }
 
-    let embeddingFactory: @Sendable (DeepInfraEmbeddingModelId) -> OpenAICompatibleEmbeddingModel = { modelId in
+    let embeddingFactory: @Sendable (DeepInfraEmbeddingModelId) -> OpenAICompatibleEmbeddingModelV4 = { modelId in
         let config = OpenAICompatibleEmbeddingConfig(
             provider: "deepinfra.embedding",
             url: urlBuilder,
             headers: headersClosure,
             fetch: fetch
         )
-        return OpenAICompatibleEmbeddingModel(modelId: OpenAICompatibleEmbeddingModelId(rawValue: modelId.rawValue), config: config)
+        return OpenAICompatibleEmbeddingModelV4(modelId: OpenAICompatibleEmbeddingModelId(rawValue: modelId.rawValue), config: config)
     }
 
     let imageFactory: @Sendable (DeepInfraImageModelId) -> DeepInfraImageModel = { modelId in
@@ -188,12 +188,8 @@ public func createDeepInfraProvider(settings: DeepInfraProviderSettings = .init(
     )
 }
 
-/// Alias matching the upstream naming (`createDeepInfra`).
-public func createDeepInfra(settings: DeepInfraProviderSettings = .init()) -> DeepInfraProvider {
-    createDeepInfraProvider(settings: settings)
-}
 
-public let deepinfra = createDeepInfraProvider()
+public let deepinfra = createDeepInfra()
 
 // MARK: - DeepInfra-specific Usage Fix
 

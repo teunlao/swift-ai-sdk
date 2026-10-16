@@ -6,7 +6,7 @@ import Testing
 
 @Suite("DeepInfraChat usage fix", .serialized)
 struct DeepInfraChatUsageFixTests {
-    private let prompt: LanguageModelV3Prompt = [
+    private let prompt: LanguageModelV4Prompt = [
         .user(content: [.text(.init(text: "Test prompt"))], providerOptions: nil),
     ]
 
@@ -133,7 +133,7 @@ struct DeepInfraChatUsageFixTests {
         let model = try provider.languageModel(modelId: "google/gemma-2-9b-it")
         let streamResult = try await model.doStream(options: .init(prompt: prompt))
 
-        var finishPart: LanguageModelV3StreamPart?
+        var finishPart: LanguageModelV4StreamPart?
         for try await part in streamResult.stream {
             if case .finish = part {
                 finishPart = part

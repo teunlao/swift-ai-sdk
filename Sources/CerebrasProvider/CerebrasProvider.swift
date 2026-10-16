@@ -26,38 +26,38 @@ public struct CerebrasProviderSettings: Sendable {
 
 /// Cerebras provider implementation backed by the OpenAI-compatible chat client.
 /// Mirrors `packages/cerebras/src/cerebras-provider.ts`.
-public final class CerebrasProvider: ProviderV3 {
-    private let chatFactory: @Sendable (CerebrasChatModelId) -> OpenAICompatibleChatLanguageModel
+public final class CerebrasProvider: ProviderV4 {
+    private let chatFactory: @Sendable (CerebrasChatModelId) -> OpenAICompatibleChatLanguageModelV4
 
-    init(chatFactory: @escaping @Sendable (CerebrasChatModelId) -> OpenAICompatibleChatLanguageModel) {
+    init(chatFactory: @escaping @Sendable (CerebrasChatModelId) -> OpenAICompatibleChatLanguageModelV4) {
         self.chatFactory = chatFactory
     }
 
-    public func languageModel(modelId: String) throws -> any LanguageModelV3 {
+    public func languageModel(modelId: String) throws -> any LanguageModelV4 {
         chatFactory(CerebrasChatModelId(rawValue: modelId))
     }
 
-    public func chatModel(modelId: String) throws -> any LanguageModelV3 {
+    public func chatModel(modelId: String) throws -> any LanguageModelV4 {
         chatFactory(CerebrasChatModelId(rawValue: modelId))
     }
 
-    public func textEmbeddingModel(modelId: String) throws -> any EmbeddingModelV3<String> {
+    public func embeddingModel(modelId: String) throws -> any EmbeddingModelV4 {
         throw NoSuchModelError(modelId: modelId, modelType: .embeddingModel)
     }
 
-    public func imageModel(modelId: String) throws -> any ImageModelV3 {
+    public func imageModel(modelId: String) throws -> any ImageModelV4 {
         throw NoSuchModelError(modelId: modelId, modelType: .imageModel)
     }
 
-    public func callAsFunction(_ modelId: String) throws -> any LanguageModelV3 {
+    public func callAsFunction(_ modelId: String) throws -> any LanguageModelV4 {
         try languageModel(modelId: modelId)
     }
 
-    public func chat(_ modelId: CerebrasChatModelId) -> OpenAICompatibleChatLanguageModel {
+    public func chat(_ modelId: CerebrasChatModelId) -> OpenAICompatibleChatLanguageModelV4 {
         chatFactory(modelId)
     }
 
-    public func languageModel(_ modelId: CerebrasChatModelId) -> OpenAICompatibleChatLanguageModel {
+    public func languageModel(_ modelId: CerebrasChatModelId) -> OpenAICompatibleChatLanguageModelV4 {
         chatFactory(modelId)
     }
 }
@@ -88,7 +88,7 @@ private func createCerebrasAuthFetch(
     }
 }
 
-public func createCerebrasProvider(settings: CerebrasProviderSettings = .init()) -> CerebrasProvider {
+public func createCerebras(settings: CerebrasProviderSettings = .init()) -> CerebrasProvider {
     let baseURL = withoutTrailingSlash(settings.baseURL) ?? "https://api.cerebras.ai/v1"
 
     let headersClosure: @Sendable () -> [String: String] = {
@@ -100,7 +100,7 @@ public func createCerebrasProvider(settings: CerebrasProviderSettings = .init())
             }
         }
 
-        let withUA = withUserAgentSuffix(headers, "ai-sdk/cerebras/\(CEREBRAS_PROVIDER_VERSION)")
+        let withUA = withUserAgentSuffix(headers, "ai-sdk-cerebras/\(CEREBRAS_PROVIDER_VERSION)")
         return withUA
     }
 
@@ -109,8 +109,8 @@ public func createCerebrasProvider(settings: CerebrasProviderSettings = .init())
         customFetch: settings.fetch
     )
 
-    let chatFactory: @Sendable (CerebrasChatModelId) -> OpenAICompatibleChatLanguageModel = { modelId in
-        OpenAICompatibleChatLanguageModel(
+    let chatFactory: @Sendable (CerebrasChatModelId) -> OpenAICompatibleChatLanguageModelV4 = { modelId in
+        OpenAICompatibleChatLanguageModelV4(
             modelId: OpenAICompatibleChatModelId(rawValue: modelId.rawValue),
             config: OpenAICompatibleChatConfig(
                 provider: "cerebras.chat",
@@ -126,10 +126,6 @@ public func createCerebrasProvider(settings: CerebrasProviderSettings = .init())
     return CerebrasProvider(chatFactory: chatFactory)
 }
 
-/// Alias matching upstream naming (`createCerebras`).
-public func createCerebras(settings: CerebrasProviderSettings = .init()) -> CerebrasProvider {
-    createCerebrasProvider(settings: settings)
-}
 
 /// Default Cerebras provider instance (`export const cerebras = createCerebras()`).
-public let cerebras: CerebrasProvider = createCerebrasProvider()
+public let cerebras: CerebrasProvider = createCerebras()

@@ -58,7 +58,7 @@ struct TogetherAIRerankingModelTests {
         ]
 
         let result = try await model.doRerank(
-            options: RerankingModelV3CallOptions(
+            options: RerankingModelV4CallOptions(
                 documents: .object(values: documents),
                 query: "rainy day",
                 topN: 2,
@@ -71,8 +71,8 @@ struct TogetherAIRerankingModelTests {
         )
 
         #expect(result.ranking == [
-            RerankingModelV3Ranking(index: 0, relevanceScore: 0.6475887154399037),
-            RerankingModelV3Ranking(index: 5, relevanceScore: 0.6323295373206566),
+            RerankingModelV4Ranking(index: 0, relevanceScore: 0.6475887154399037),
+            RerankingModelV4Ranking(index: 5, relevanceScore: 0.6323295373206566),
         ])
 
         guard let response = result.response else {
@@ -171,7 +171,7 @@ struct TogetherAIRerankingModelTests {
         )
 
         let result = try await model.doRerank(
-            options: RerankingModelV3CallOptions(
+            options: RerankingModelV4CallOptions(
                 documents: .text(values: ["sunny day at the beach", "rainy day in the city"]),
                 query: "rainy day",
                 topN: 2,

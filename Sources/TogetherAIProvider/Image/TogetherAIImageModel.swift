@@ -134,10 +134,10 @@ private let togetheraiImageProviderOptionsSchema: FlexibleSchema<[String: JSONVa
     )
 }()
 
-public final class TogetherAIImageModel: ImageModelV3 {
+public final class TogetherAIImageModel: ImageModelV4 {
     public var provider: String { config.provider }
     public var modelId: String { modelIdentifier.rawValue }
-    public var maxImagesPerCall: ImageModelV3MaxImagesPerCall { .value(1) }
+    public var maxImagesPerCall: ImageModelV4MaxImagesPerCall { .value(1) }
 
     private let modelIdentifier: TogetherAIImageModelId
     private let config: TogetherAIImageModelConfig
@@ -147,8 +147,8 @@ public final class TogetherAIImageModel: ImageModelV3 {
         self.config = config
     }
 
-    public func doGenerate(options: ImageModelV3CallOptions) async throws -> ImageModelV3GenerateResult {
-        var warnings: [SharedV3Warning] = []
+    public func doGenerate(options: ImageModelV4CallOptions) async throws -> ImageModelV4GenerateResult {
+        var warnings: [SharedV4Warning] = []
 
         if options.mask != nil {
             throw UnsupportedFunctionalityError(
@@ -241,11 +241,11 @@ public final class TogetherAIImageModel: ImageModelV3 {
 
         let images = response.value.data.map { $0.b64JSON }
 
-        return ImageModelV3GenerateResult(
+        return ImageModelV4GenerateResult(
             images: .base64(images),
             warnings: warnings,
             providerMetadata: nil,
-            response: ImageModelV3ResponseInfo(
+            response: ImageModelV4ResponseInfo(
                 timestamp: config.currentDate(),
                 modelId: modelIdentifier.rawValue,
                 headers: response.responseHeaders
@@ -262,7 +262,7 @@ private func parseSize(_ size: String) -> (width: Int, height: Int)? {
     return (width, height)
 }
 
-private func convertImageFileToDataURI(_ file: ImageModelV3File) throws -> String {
+private func convertImageFileToDataURI(_ file: ImageModelV4File) throws -> String {
     switch file {
     case .url(let url, _):
         return url

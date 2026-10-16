@@ -65,11 +65,11 @@ struct FireworksProviderTests {
             fetch: fetch
         ))
         let model = try provider.languageModel(modelId: FireworksChatModelId.deepseekV3.rawValue)
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.text(.init(text: "hello"))], providerOptions: nil),
         ]
 
-        _ = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: prompt))
+        _ = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: prompt))
 
         guard let request = await capture.value() else {
             Issue.record("Expected request capture")
@@ -136,12 +136,12 @@ struct FireworksProviderTests {
 
             let provider = createFireworks(settings: FireworksProviderSettings(fetch: fetch))
             let model = try provider.languageModel(modelId: FireworksChatModelId.deepseekV3.rawValue)
-            let prompt: LanguageModelV3Prompt = [
+            let prompt: LanguageModelV4Prompt = [
                 .user(content: [.text(.init(text: "hello"))], providerOptions: nil),
             ]
 
             do {
-                _ = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: prompt))
+                _ = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: prompt))
                 Issue.record("Expected missing API key error")
             } catch let error as LoadAPIKeyError {
                 #expect(error.message.contains("FIREWORKS_API_KEY environment variable"))

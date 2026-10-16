@@ -8,7 +8,7 @@ import Testing
 /**
  Baseten Provider tests.
 
- Port of `@ai-sdk/baseten/src/baseten-provider.unit.test.ts`.
+ Port of `@ai-sdk-baseten/src/baseten-provider.unit.test.ts`.
  */
 
 @Suite("BasetenProvider")
@@ -27,9 +27,9 @@ struct BasetenProviderTests {
         let provider = createBaseten(settings: BasetenProviderSettings(
             apiKey: "test-api-key"
         ))
-        let model = try provider.chatModel(modelId: "deepseek-ai/DeepSeek-V3-0324")
+        let model = try provider.chatModel(modelId: "deepseek-ai/DeepSeek-V4-0324")
 
-        #expect(model is OpenAICompatibleChatLanguageModel)
+        #expect(model is OpenAICompatibleChatLanguageModelV4)
         #expect(model.provider == "baseten.chat")
     }
 
@@ -40,9 +40,9 @@ struct BasetenProviderTests {
             baseURL: "https://custom.url",
             headers: ["Custom-Header": "value"]
         ))
-        let model = try provider.chatModel(modelId: "deepseek-ai/DeepSeek-V3-0324")
+        let model = try provider.chatModel(modelId: "deepseek-ai/DeepSeek-V4-0324")
 
-        #expect(model is OpenAICompatibleChatLanguageModel)
+        #expect(model is OpenAICompatibleChatLanguageModelV4)
         #expect(model.provider == "baseten.chat")
     }
 
@@ -54,11 +54,11 @@ struct BasetenProviderTests {
 
         // Should work without modelId
         let model1 = try provider.chat()
-        #expect(model1 is OpenAICompatibleChatLanguageModel)
+        #expect(model1 is OpenAICompatibleChatLanguageModelV4)
 
         // Should work with modelId
-        let model2 = try provider("deepseek-ai/DeepSeek-V3-0324")
-        #expect(model2 is OpenAICompatibleChatLanguageModel)
+        let model2 = try provider("deepseek-ai/DeepSeek-V4-0324")
+        #expect(model2 is OpenAICompatibleChatLanguageModelV4)
     }
 
     // MARK: - chatModel Tests
@@ -68,11 +68,11 @@ struct BasetenProviderTests {
         let provider = createBaseten(settings: BasetenProviderSettings(
             apiKey: "test-api-key"
         ))
-        let modelId = "deepseek-ai/DeepSeek-V3-0324"
+        let modelId = "deepseek-ai/DeepSeek-V4-0324"
 
         let model = try provider.chatModel(modelId: modelId)
 
-        #expect(model is OpenAICompatibleChatLanguageModel)
+        #expect(model is OpenAICompatibleChatLanguageModelV4)
         #expect(model.provider == "baseten.chat")
     }
 
@@ -84,11 +84,11 @@ struct BasetenProviderTests {
 
         // Should work without modelId
         let model1 = try provider.chat()
-        #expect(model1 is OpenAICompatibleChatLanguageModel)
+        #expect(model1 is OpenAICompatibleChatLanguageModelV4)
 
         // Should work with modelId
-        let model2 = try provider.chatModel(modelId: "deepseek-ai/DeepSeek-V3-0324")
-        #expect(model2 is OpenAICompatibleChatLanguageModel)
+        let model2 = try provider.chatModel(modelId: "deepseek-ai/DeepSeek-V4-0324")
+        #expect(model2 is OpenAICompatibleChatLanguageModelV4)
     }
 
     @Test("should handle /sync/v1 endpoints correctly")
@@ -100,7 +100,7 @@ struct BasetenProviderTests {
 
         let model = try provider.chat()
 
-        #expect(model is OpenAICompatibleChatLanguageModel)
+        #expect(model is OpenAICompatibleChatLanguageModelV4)
         #expect(model.provider == "baseten.chat")
     }
 
@@ -123,13 +123,13 @@ struct BasetenProviderTests {
         let provider = createBaseten(settings: BasetenProviderSettings(
             apiKey: "test-api-key"
         ))
-        let modelId = "deepseek-ai/DeepSeek-V3-0324"
+        let modelId = "deepseek-ai/DeepSeek-V4-0324"
 
         let chatModel = try provider.chatModel(modelId: modelId)
         let languageModel = try provider.languageModel(modelId: modelId)
 
-        #expect(chatModel is OpenAICompatibleChatLanguageModel)
-        #expect(languageModel is OpenAICompatibleChatLanguageModel)
+        #expect(chatModel is OpenAICompatibleChatLanguageModelV4)
+        #expect(languageModel is OpenAICompatibleChatLanguageModelV4)
     }
 
     @Test("should support optional modelId parameter")
@@ -139,13 +139,13 @@ struct BasetenProviderTests {
         ))
 
         let model1 = try provider.languageModel()
-        #expect(model1 is OpenAICompatibleChatLanguageModel)
+        #expect(model1 is OpenAICompatibleChatLanguageModelV4)
 
-        let model2 = try provider.languageModel(modelId: "deepseek-ai/DeepSeek-V3-0324")
-        #expect(model2 is OpenAICompatibleChatLanguageModel)
+        let model2 = try provider.languageModel(modelId: "deepseek-ai/DeepSeek-V4-0324")
+        #expect(model2 is OpenAICompatibleChatLanguageModelV4)
     }
 
-    // MARK: - textEmbeddingModel Tests
+    // MARK: - embeddingModel Tests
 
     @Test("should throw error when no modelURL is provided")
     func throwErrorWhenNoModelURLIsProvided() throws {
@@ -154,7 +154,7 @@ struct BasetenProviderTests {
         ))
 
         #expect(throws: (any Error).self) {
-            _ = try provider.textEmbeddingModel()
+            _ = try provider.embeddingModel()
         }
     }
 
@@ -165,7 +165,7 @@ struct BasetenProviderTests {
             modelURL: "https://model-123.api.baseten.co/environments/production/sync"
         ))
 
-        let model = try provider.textEmbeddingModel()
+        let model = try provider.embeddingModel()
 
         #expect(model is BasetenEmbeddingModel)
         #expect(model.provider == "baseten.embedding")
@@ -179,7 +179,7 @@ struct BasetenProviderTests {
         ))
 
         #expect(throws: (any Error).self) {
-            _ = try provider.textEmbeddingModel()
+            _ = try provider.embeddingModel()
         }
     }
 
@@ -190,7 +190,7 @@ struct BasetenProviderTests {
             modelURL: "https://model-123.api.baseten.co/environments/production/sync/v1"
         ))
 
-        let model = try provider.textEmbeddingModel()
+        let model = try provider.embeddingModel()
 
         #expect(model is BasetenEmbeddingModel)
         #expect(model.provider == "baseten.embedding")
@@ -203,7 +203,7 @@ struct BasetenProviderTests {
             modelURL: "https://model-123.api.baseten.co/environments/production/sync"
         ))
 
-        let model = try provider.textEmbeddingModel()
+        let model = try provider.embeddingModel()
 
         #expect(model is BasetenEmbeddingModel)
         #expect(model.provider == "baseten.embedding")
@@ -273,11 +273,11 @@ struct BasetenProviderTests {
         ))
 
         let model = try provider.chatModel(modelId: "test-model")
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
         ]
 
-        _ = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: prompt))
+        _ = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: prompt))
 
         guard let request = await capture.value(),
               let url = request.url else {
@@ -338,11 +338,11 @@ struct BasetenProviderTests {
         ))
 
         let model = try provider.chatModel(modelId: "test-model")
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
         ]
 
-        _ = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: prompt))
+        _ = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: prompt))
 
         guard let request = await capture.value(),
               let url = request.url else {
@@ -403,11 +403,11 @@ struct BasetenProviderTests {
         ))
 
         let model = try provider.chat()
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
         ]
 
-        _ = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: prompt))
+        _ = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: prompt))
 
         guard let request = await capture.value(),
               let url = request.url else {
@@ -469,11 +469,11 @@ struct BasetenProviderTests {
         ))
 
         let model = try provider.chatModel(modelId: "test-model")
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
         ]
 
-        _ = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: prompt))
+        _ = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: prompt))
 
         guard let request = await capture.value() else {
             Issue.record("Expected to capture request")
@@ -534,11 +534,11 @@ struct BasetenProviderTests {
         ))
 
         let model = try provider.chatModel(modelId: "test-model")
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
         ]
 
-        _ = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: prompt))
+        _ = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: prompt))
 
         guard let request = await capture.value() else {
             Issue.record("Expected to capture request")
@@ -598,11 +598,11 @@ struct BasetenProviderTests {
         ))
 
         let model = try provider.chatModel(modelId: "test-model")
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
         ]
 
-        _ = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: prompt))
+        _ = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: prompt))
 
         guard let request = await capture.value() else {
             Issue.record("Expected to capture request")
@@ -610,7 +610,7 @@ struct BasetenProviderTests {
         }
 
         let userAgent = request.value(forHTTPHeaderField: "User-Agent")
-        #expect(userAgent?.contains("ai-sdk/baseten") == true)
+        #expect(userAgent?.contains("ai-sdk-baseten") == true)
     }
 
     // MARK: - Error handling Tests
@@ -622,7 +622,7 @@ struct BasetenProviderTests {
         ))
 
         #expect(throws: (any Error).self) {
-            _ = try provider.textEmbeddingModel()
+            _ = try provider.embeddingModel()
         }
     }
 
@@ -654,7 +654,7 @@ struct BasetenProviderTests {
         _ = try provider.languageModel()
 
         #expect(throws: (any Error).self) {
-            _ = try provider.textEmbeddingModel()
+            _ = try provider.embeddingModel()
         }
 
         #expect(throws: NoSuchModelError.self) {
@@ -669,10 +669,10 @@ struct BasetenProviderTests {
         ))
 
         let model1 = try provider.chat()
-        #expect(model1 is OpenAICompatibleChatLanguageModel)
+        #expect(model1 is OpenAICompatibleChatLanguageModelV4)
 
         let model2 = try provider("test-model")
-        #expect(model2 is OpenAICompatibleChatLanguageModel)
+        #expect(model2 is OpenAICompatibleChatLanguageModelV4)
     }
 
     @Suite("auth behavior", .serialized)
@@ -731,12 +731,12 @@ struct BasetenProviderTests {
 
             let provider = createBaseten(settings: BasetenProviderSettings(fetch: fetch))
             let model = try provider.chatModel(modelId: "test-model")
-            let prompt: LanguageModelV3Prompt = [
+            let prompt: LanguageModelV4Prompt = [
                 .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
             ]
 
             do {
-                _ = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: prompt))
+                _ = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: prompt))
                 Issue.record("Expected missing API key error")
             } catch let error as LoadAPIKeyError {
                 #expect(error.message.contains("BASETEN_API_KEY environment variable"))

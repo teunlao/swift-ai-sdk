@@ -62,11 +62,11 @@ struct DeepInfraProviderTests {
 
         let provider = createDeepInfra(settings: DeepInfraProviderSettings(apiKey: "test-key", fetch: fetch))
         let model = try provider.languageModel(modelId: DeepInfraChatModelId.deepinfraAiroboros70b.rawValue)
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.text(.init(text: "hello"))], providerOptions: nil),
         ]
 
-        _ = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: prompt))
+        _ = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: prompt))
 
         guard let request = await capture.value() else {
             Issue.record("Expected request capture")
@@ -117,7 +117,7 @@ struct DeepInfraProviderTests {
 
         let provider = createDeepInfra(settings: .init(apiKey: "test-key", fetch: fetch))
         let model = try provider.completionModel(modelId: "deepinfra-completion-model")
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.text(.init(text: "hello"))], providerOptions: nil),
         ]
 
@@ -168,7 +168,7 @@ struct DeepInfraProviderTests {
         }
 
         let provider = createDeepInfra(settings: .init(apiKey: "test-key", fetch: fetch))
-        let model = try provider.textEmbeddingModel(modelId: "deepinfra-embedding-model")
+        let model = try provider.embeddingModel(modelId: "deepinfra-embedding-model")
 
         _ = try await model.doEmbed(options: .init(values: ["hello"]))
 
@@ -315,12 +315,12 @@ struct DeepInfraProviderTests {
 
             let provider = createDeepInfra(settings: DeepInfraProviderSettings(fetch: fetch))
             let model = try provider.languageModel(modelId: DeepInfraChatModelId.deepinfraAiroboros70b.rawValue)
-            let prompt: LanguageModelV3Prompt = [
+            let prompt: LanguageModelV4Prompt = [
                 .user(content: [.text(.init(text: "hello"))], providerOptions: nil),
             ]
 
             do {
-                _ = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: prompt))
+                _ = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: prompt))
                 Issue.record("Expected missing API key error")
             } catch let error as LoadAPIKeyError {
                 #expect(error.message.contains("DEEPINFRA_API_KEY environment variable"))

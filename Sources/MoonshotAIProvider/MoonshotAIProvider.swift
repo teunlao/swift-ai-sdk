@@ -53,31 +53,31 @@ public struct MoonshotAIProviderSettings: Sendable {
     }
 }
 
-public final class MoonshotAIProvider: ProviderV3 {
+public final class MoonshotAIProvider: ProviderV4 {
     private let chatFactory: @Sendable (MoonshotAIChatModelId) -> MoonshotAIChatLanguageModel
 
     init(chatFactory: @escaping @Sendable (MoonshotAIChatModelId) -> MoonshotAIChatLanguageModel) {
         self.chatFactory = chatFactory
     }
 
-    public func languageModel(modelId: String) throws -> any LanguageModelV3 {
+    public func languageModel(modelId: String) throws -> any LanguageModelV4 {
         chatFactory(MoonshotAIChatModelId(rawValue: modelId))
     }
 
-    public func chatModel(modelId: String) throws -> any LanguageModelV3 {
+    public func chatModel(modelId: String) throws -> any LanguageModelV4 {
         chatFactory(MoonshotAIChatModelId(rawValue: modelId))
     }
 
-    public func textEmbeddingModel(modelId: String) throws -> any EmbeddingModelV3<String> {
+    public func embeddingModel(modelId: String) throws -> any EmbeddingModelV4 {
         throw NoSuchModelError(modelId: modelId, modelType: .embeddingModel)
     }
 
-    public func imageModel(modelId: String) throws -> any ImageModelV3 {
+    public func imageModel(modelId: String) throws -> any ImageModelV4 {
         throw NoSuchModelError(modelId: modelId, modelType: .imageModel)
     }
 }
 
-public func createMoonshotAIProvider(settings: MoonshotAIProviderSettings = .init()) -> MoonshotAIProvider {
+public func createMoonshotAI(settings: MoonshotAIProviderSettings = .init()) -> MoonshotAIProvider {
     let baseURL = withoutTrailingSlash(settings.baseURL ?? defaultMoonshotAIBaseURL) ?? defaultMoonshotAIBaseURL
 
     let headersClosure: @Sendable () -> [String: String] = {
@@ -90,7 +90,7 @@ public func createMoonshotAIProvider(settings: MoonshotAIProviderSettings = .ini
 
         return withUserAgentSuffix(
             headers,
-            "ai-sdk/moonshotai/\(MOONSHOTAI_VERSION)"
+            "ai-sdk-moonshotai/\(MOONSHOTAI_VERSION)"
         )
     }
 
@@ -146,11 +146,7 @@ public func createMoonshotAIProvider(settings: MoonshotAIProviderSettings = .ini
     return MoonshotAIProvider(chatFactory: chatFactory)
 }
 
-/// Alias matching the upstream naming (`createMoonshotAI`).
-public func createMoonshotAI(settings: MoonshotAIProviderSettings = .init()) -> MoonshotAIProvider {
-    createMoonshotAIProvider(settings: settings)
-}
 
 /// Default MoonshotAI provider instance (`export const moonshotai = createMoonshotAI()`).
-public let moonshotai: MoonshotAIProvider = createMoonshotAIProvider()
+public let moonshotai: MoonshotAIProvider = createMoonshotAI()
 

@@ -8,7 +8,7 @@ import Testing
 struct TogetherAIProviderTests {
     @Test("creates chat/completion/embedding/image/reranking models")
     func createsModels() throws {
-        let provider = createTogetherAIProvider(settings: TogetherAIProviderSettings(apiKey: "test-key"))
+        let provider = createTogetherAI(settings: TogetherAIProviderSettings(apiKey: "test-key"))
 
         let chat = try provider.languageModel(modelId: "meta-llama/Llama-3.3-70B-Instruct-Turbo")
         #expect(chat.provider == "togetherai.chat")
@@ -18,7 +18,7 @@ struct TogetherAIProviderTests {
         #expect(completion.provider == "togetherai.completion")
         #expect(provider.completion("mistralai/Mistral-7B-v0.1").provider == "togetherai.completion")
 
-        let embedding = try provider.textEmbeddingModel(modelId: "BAAI/bge-base-en-v1.5")
+        let embedding = try provider.embeddingModel(modelId: "BAAI/bge-base-en-v1.5")
         #expect(embedding.provider == "togetherai.embedding")
         #expect(provider.embedding("BAAI/bge-base-en-v1.5").provider == "togetherai.embedding")
 
@@ -92,13 +92,13 @@ struct TogetherAIProviderTests {
 
             unsetenv("TOGETHER_AI_API_KEY")
             let capture = RequestCapture()
-            let provider = createTogetherAIProvider(
+            let provider = createTogetherAI(
                 settings: TogetherAIProviderSettings(fetch: try makeFetch(capture: capture))
             )
 
             do {
-                _ = try await provider.textEmbeddingModel(modelId: "BAAI/bge-base-en-v1.5").doEmbed(
-                    options: EmbeddingModelV3DoEmbedOptions(values: ["hello"])
+                _ = try await provider.embeddingModel(modelId: "BAAI/bge-base-en-v1.5").doEmbed(
+                    options: EmbeddingModelV4CallOptions(values: ["hello"])
                 )
                 Issue.record("Expected missing API key error")
             } catch let error as LoadAPIKeyError {
@@ -113,15 +113,15 @@ struct TogetherAIProviderTests {
         @Test("injects Authorization header using apiKey at request time")
         func injectsAuthorizationHeaderAtRequestTime() async throws {
             let capture = RequestCapture()
-            let provider = createTogetherAIProvider(
+            let provider = createTogetherAI(
                 settings: TogetherAIProviderSettings(
                     apiKey: "test-key",
                     fetch: try makeFetch(capture: capture)
                 )
             )
 
-            _ = try await provider.textEmbeddingModel(modelId: "BAAI/bge-base-en-v1.5").doEmbed(
-                options: EmbeddingModelV3DoEmbedOptions(values: ["hello"])
+            _ = try await provider.embeddingModel(modelId: "BAAI/bge-base-en-v1.5").doEmbed(
+                options: EmbeddingModelV4CallOptions(values: ["hello"])
             )
 
             guard let request = await capture.current() else {

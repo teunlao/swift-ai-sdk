@@ -31,10 +31,10 @@ public struct DeepInfraImageModelConfig: Sendable {
     }
 }
 
-public final class DeepInfraImageModel: ImageModelV3 {
-    public let specificationVersion: String = "v3"
+public final class DeepInfraImageModel: ImageModelV4 {
+    public let specificationVersion: String = "v4"
     public let modelId: String
-    public var maxImagesPerCall: ImageModelV3MaxImagesPerCall { .value(1) }
+    public var maxImagesPerCall: ImageModelV4MaxImagesPerCall { .value(1) }
 
     private let modelIdentifier: DeepInfraImageModelId
     private let config: DeepInfraImageModelConfig
@@ -47,7 +47,7 @@ public final class DeepInfraImageModel: ImageModelV3 {
 
     public var provider: String { config.provider }
 
-    public func doGenerate(options: ImageModelV3CallOptions) async throws -> ImageModelV3GenerateResult {
+    public func doGenerate(options: ImageModelV4CallOptions) async throws -> ImageModelV4GenerateResult {
         let currentDate = config.currentDate()
         let headers = combineHeaders(config.headers(), options.headers?.mapValues { Optional($0) })
 
@@ -76,10 +76,10 @@ public final class DeepInfraImageModel: ImageModelV3 {
                 fetch: config.fetch
             )
 
-            return ImageModelV3GenerateResult(
+            return ImageModelV4GenerateResult(
                 images: .base64(response.value.data.map { $0.b64JSON }),
                 warnings: [],
-                response: ImageModelV3ResponseInfo(
+                response: ImageModelV4ResponseInfo(
                     timestamp: currentDate,
                     modelId: modelIdentifier.rawValue,
                     headers: response.responseHeaders
@@ -132,10 +132,10 @@ public final class DeepInfraImageModel: ImageModelV3 {
             image.replacingOccurrences(of: "^data:image/\\w+;base64,", with: "", options: [.regularExpression])
         }
 
-        return ImageModelV3GenerateResult(
+        return ImageModelV4GenerateResult(
             images: .base64(sanitizedImages),
             warnings: [],
-            response: ImageModelV3ResponseInfo(
+            response: ImageModelV4ResponseInfo(
                 timestamp: currentDate,
                 modelId: modelIdentifier.rawValue,
                 headers: response.responseHeaders
@@ -150,11 +150,11 @@ public final class DeepInfraImageModel: ImageModelV3 {
 
     private func prepareEditRequest(
         prompt: String?,
-        files: [ImageModelV3File],
-        mask: ImageModelV3File?,
+        files: [ImageModelV4File],
+        mask: ImageModelV4File?,
         n: Int,
         size: String?,
-        providerOptions: SharedV3ProviderOptions?
+        providerOptions: SharedV4ProviderOptions?
     ) async throws -> PreparedMultipartRequest {
         var builder = MultipartFormDataBuilder()
         builder.appendField(name: "model", value: modelIdentifier.rawValue)
@@ -195,7 +195,7 @@ public final class DeepInfraImageModel: ImageModelV3 {
         let data: Data
     }
 
-    private func resolveUpload(for file: ImageModelV3File, defaultFilename: String) async throws -> UploadPart {
+    private func resolveUpload(for file: ImageModelV4File, defaultFilename: String) async throws -> UploadPart {
         switch file {
         case let .file(mediaType, data, _):
             let resolvedData: Data

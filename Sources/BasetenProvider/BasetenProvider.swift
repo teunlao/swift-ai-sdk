@@ -34,47 +34,47 @@ struct BasetenProviderError: LocalizedError, Sendable {
     var errorDescription: String? { message }
 }
 
-public final class BasetenProvider: ProviderV3 {
-    private let chatFactory: @Sendable (BasetenChatModelId?) throws -> OpenAICompatibleChatLanguageModel
-    private let embeddingFactory: @Sendable (BasetenEmbeddingModelId?) throws -> any EmbeddingModelV3<String>
+public final class BasetenProvider: ProviderV4 {
+    private let chatFactory: @Sendable (BasetenChatModelId?) throws -> OpenAICompatibleChatLanguageModelV4
+    private let embeddingFactory: @Sendable (BasetenEmbeddingModelId?) throws -> any EmbeddingModelV4
 
     init(
-        chatFactory: @escaping @Sendable (BasetenChatModelId?) throws -> OpenAICompatibleChatLanguageModel,
-        embeddingFactory: @escaping @Sendable (BasetenEmbeddingModelId?) throws -> any EmbeddingModelV3<String>
+        chatFactory: @escaping @Sendable (BasetenChatModelId?) throws -> OpenAICompatibleChatLanguageModelV4,
+        embeddingFactory: @escaping @Sendable (BasetenEmbeddingModelId?) throws -> any EmbeddingModelV4
     ) {
         self.chatFactory = chatFactory
         self.embeddingFactory = embeddingFactory
     }
 
-    public func languageModel(modelId: String) throws -> any LanguageModelV3 {
+    public func languageModel(modelId: String) throws -> any LanguageModelV4 {
         try chatFactory(BasetenChatModelId(rawValue: modelId))
     }
 
-    public func chatModel(modelId: String) throws -> any LanguageModelV3 {
+    public func chatModel(modelId: String) throws -> any LanguageModelV4 {
         try chatFactory(BasetenChatModelId(rawValue: modelId))
     }
 
-    public func textEmbeddingModel(modelId: String) throws -> any EmbeddingModelV3<String> {
+    public func embeddingModel(modelId: String) throws -> any EmbeddingModelV4 {
         return try embeddingFactory(BasetenEmbeddingModelId(rawValue: modelId))
     }
 
-    public func imageModel(modelId: String) throws -> any ImageModelV3 {
+    public func imageModel(modelId: String) throws -> any ImageModelV4 {
         throw NoSuchModelError(modelId: modelId, modelType: .imageModel)
     }
 
-    public func callAsFunction(_ modelId: String) throws -> any LanguageModelV3 {
+    public func callAsFunction(_ modelId: String) throws -> any LanguageModelV4 {
         try languageModel(modelId: modelId)
     }
 
-    public func chat(modelId: BasetenChatModelId? = nil) throws -> OpenAICompatibleChatLanguageModel {
+    public func chat(modelId: BasetenChatModelId? = nil) throws -> OpenAICompatibleChatLanguageModelV4 {
         try chatFactory(modelId)
     }
 
-    public func languageModel(_ modelId: BasetenChatModelId? = nil) throws -> OpenAICompatibleChatLanguageModel {
+    public func languageModel(_ modelId: BasetenChatModelId? = nil) throws -> OpenAICompatibleChatLanguageModelV4 {
         try chatFactory(modelId)
     }
 
-    public func textEmbeddingModel(_ modelId: BasetenEmbeddingModelId? = nil) throws -> any EmbeddingModelV3<String> {
+    public func embeddingModel(_ modelId: BasetenEmbeddingModelId? = nil) throws -> any EmbeddingModelV4 {
         try embeddingFactory(modelId)
     }
 }
@@ -106,7 +106,7 @@ private func createBasetenAuthFetch(
     }
 }
 
-public func createBasetenProvider(settings: BasetenProviderSettings = .init()) -> BasetenProvider {
+public func createBaseten(settings: BasetenProviderSettings = .init()) -> BasetenProvider {
     let baseURL = withoutTrailingSlash(settings.baseURL) ?? defaultBasetenBaseURL
 
     let headersClosure: @Sendable () -> [String: String] = {
@@ -118,7 +118,7 @@ public func createBasetenProvider(settings: BasetenProviderSettings = .init()) -
             }
         }
 
-        return withUserAgentSuffix(baseHeaders, "ai-sdk/baseten/\(BASETEN_PROVIDER_VERSION)")
+        return withUserAgentSuffix(baseHeaders, "ai-sdk-baseten/\(BASETEN_PROVIDER_VERSION)")
     }
 
     @Sendable func makeURLBuilder(modelType: String, customURL: String?) -> @Sendable (OpenAICompatibleURLOptions) -> String {
@@ -139,7 +139,7 @@ public func createBasetenProvider(settings: BasetenProviderSettings = .init()) -
         customFetch: settings.fetch
     )
 
-    let chatFactory: @Sendable (BasetenChatModelId?) throws -> OpenAICompatibleChatLanguageModel = { modelId in
+    let chatFactory: @Sendable (BasetenChatModelId?) throws -> OpenAICompatibleChatLanguageModelV4 = { modelId in
         let customURL = settings.modelURL
         if let customURL, customURL.contains("/predict") {
             throw BasetenProviderError(message: "Not supported. You must use a /sync/v1 endpoint for chat models.")
@@ -159,10 +159,10 @@ public func createBasetenProvider(settings: BasetenProviderSettings = .init()) -
             errorConfiguration: basetenErrorConfiguration
         )
 
-        return OpenAICompatibleChatLanguageModel(modelId: resolvedModelId, config: config)
+        return OpenAICompatibleChatLanguageModelV4(modelId: resolvedModelId, config: config)
     }
 
-    let embeddingFactory: @Sendable (BasetenEmbeddingModelId?) throws -> any EmbeddingModelV3<String> = { modelId in
+    let embeddingFactory: @Sendable (BasetenEmbeddingModelId?) throws -> any EmbeddingModelV4 = { modelId in
         guard let modelURL = settings.modelURL else {
             throw BasetenProviderError(message: "No model URL provided for embeddings. Please set modelURL option for embeddings.")
         }
@@ -184,7 +184,7 @@ public func createBasetenProvider(settings: BasetenProviderSettings = .init()) -
             supportsParallelCalls: nil
         )
 
-        let baseEmbeddingModel = OpenAICompatibleEmbeddingModel(
+        let baseEmbeddingModel = OpenAICompatibleEmbeddingModelV4(
             modelId: resolvedModelId,
             config: embeddingConfig
         )
@@ -216,10 +216,6 @@ public func createBasetenProvider(settings: BasetenProviderSettings = .init()) -
     )
 }
 
-/// Alias matching the upstream naming (`createBaseten`).
-public func createBaseten(settings: BasetenProviderSettings = .init()) -> BasetenProvider {
-    createBasetenProvider(settings: settings)
-}
 
 /// Default Baseten provider instance (`export const baseten = createBaseten()`).
-public let baseten: BasetenProvider = createBasetenProvider()
+public let baseten: BasetenProvider = createBaseten()

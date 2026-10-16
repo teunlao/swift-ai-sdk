@@ -64,11 +64,11 @@ struct FireworksImageModelConfig: Sendable {
     }
 }
 
-public final class FireworksImageModel: ImageModelV3 {
-    public var specificationVersion: String { "v3" }
+public final class FireworksImageModel: ImageModelV4 {
+    public var specificationVersion: String { "v4" }
     public var provider: String { config.provider }
     public var modelId: String { modelIdentifier.rawValue }
-    public var maxImagesPerCall: ImageModelV3MaxImagesPerCall { .value(1) }
+    public var maxImagesPerCall: ImageModelV4MaxImagesPerCall { .value(1) }
 
     private let modelIdentifier: FireworksImageModelId
     private let config: FireworksImageModelConfig
@@ -78,8 +78,8 @@ public final class FireworksImageModel: ImageModelV3 {
         self.config = config
     }
 
-    public func doGenerate(options: ImageModelV3CallOptions) async throws -> ImageModelV3GenerateResult {
-        var warnings: [SharedV3Warning] = []
+    public func doGenerate(options: ImageModelV4CallOptions) async throws -> ImageModelV4GenerateResult {
+        var warnings: [SharedV4Warning] = []
         let backendConfig = fireworksImageModelBackendConfig[modelIdentifier]
 
         if backendConfig?.supportsSize != true, options.size != nil {
@@ -141,11 +141,11 @@ public final class FireworksImageModel: ImageModelV3 {
             fetch: config.fetch
         )
 
-        return ImageModelV3GenerateResult(
+        return ImageModelV4GenerateResult(
             images: .binary([response.value]),
             warnings: warnings,
             providerMetadata: nil,
-            response: ImageModelV3ResponseInfo(
+            response: ImageModelV4ResponseInfo(
                 timestamp: config.currentDate(),
                 modelId: modelIdentifier.rawValue,
                 headers: response.responseHeaders

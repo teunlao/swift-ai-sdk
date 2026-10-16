@@ -1,12 +1,12 @@
 import AISDKProvider
 
-/// Converts MoonshotAI chat usage data to the shared V3 usage shape.
+/// Converts MoonshotAI chat usage data to the shared V4 usage shape.
 ///
 /// Mirrors `packages/moonshotai/src/convert-moonshotai-chat-usage.ts`.
-public func convertMoonshotAIChatUsage(_ usage: JSONValue?) -> LanguageModelV3Usage {
-    guard let usage, usage != .null else { return LanguageModelV3Usage() }
+public func convertMoonshotAIChatUsage(_ usage: JSONValue?) -> LanguageModelV4Usage {
+    guard let usage, usage != .null else { return LanguageModelV4Usage() }
     guard case .object(let dict) = usage else {
-        return LanguageModelV3Usage(raw: usage)
+        return LanguageModelV4Usage(raw: usage)
     }
 
     func intOrZero(_ value: JSONValue?) -> Int {
@@ -42,7 +42,7 @@ public func convertMoonshotAIChatUsage(_ usage: JSONValue?) -> LanguageModelV3Us
         return 0
     }()
 
-    return LanguageModelV3Usage(
+    return LanguageModelV4Usage(
         inputTokens: .init(
             total: promptTokens,
             noCache: promptTokens - cacheReadTokens,

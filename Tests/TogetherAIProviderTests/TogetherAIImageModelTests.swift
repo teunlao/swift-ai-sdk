@@ -55,7 +55,7 @@ struct TogetherAIImageModelTests {
         let model = makeModel(fetch: fetch)
 
         _ = try await model.doGenerate(
-            options: ImageModelV3CallOptions(
+            options: ImageModelV4CallOptions(
                 prompt: "A cute baby sea otter",
                 n: 1,
                 size: "1024x1024",
@@ -63,9 +63,7 @@ struct TogetherAIImageModelTests {
                 seed: 42,
                 providerOptions: ["togetherai": ["additional_param": .string("value")]],
                 abortSignal: nil,
-                headers: nil,
-                files: nil,
-                mask: nil
+                headers: nil
             )
         )
 
@@ -120,7 +118,7 @@ struct TogetherAIImageModelTests {
         let model = makeModel(fetch: fetch)
 
         _ = try await model.doGenerate(
-            options: ImageModelV3CallOptions(
+            options: ImageModelV4CallOptions(
                 prompt: "p",
                 n: 3,
                 size: "1024x1024",
@@ -128,9 +126,7 @@ struct TogetherAIImageModelTests {
                 seed: 42,
                 providerOptions: [:],
                 abortSignal: nil,
-                headers: nil,
-                files: nil,
-                mask: nil
+                headers: nil
             )
         )
 
@@ -175,7 +171,7 @@ struct TogetherAIImageModelTests {
         )
 
         _ = try await model.doGenerate(
-            options: ImageModelV3CallOptions(
+            options: ImageModelV4CallOptions(
                 prompt: "p",
                 n: 1,
                 size: nil,
@@ -183,9 +179,7 @@ struct TogetherAIImageModelTests {
                 seed: nil,
                 providerOptions: [:],
                 abortSignal: nil,
-                headers: ["Custom-Request-Header": "request-header-value"],
-                files: nil,
-                mask: nil
+                headers: ["Custom-Request-Header": "request-header-value"]
             )
         )
 
@@ -224,7 +218,7 @@ struct TogetherAIImageModelTests {
 
         await #expect(throws: APICallError.self) {
             _ = try await model.doGenerate(
-                options: ImageModelV3CallOptions(
+                options: ImageModelV4CallOptions(
                     prompt: "p",
                     n: 1,
                     size: nil,
@@ -232,9 +226,7 @@ struct TogetherAIImageModelTests {
                     seed: nil,
                     providerOptions: [:],
                     abortSignal: nil,
-                    headers: nil,
-                    files: nil,
-                    mask: nil
+                    headers: nil
                 )
             )
         }
@@ -258,7 +250,7 @@ struct TogetherAIImageModelTests {
         let model = makeModel(fetch: fetch)
 
         let result = try await model.doGenerate(
-            options: ImageModelV3CallOptions(
+            options: ImageModelV4CallOptions(
                 prompt: "p",
                 n: 1,
                 size: "1024x1024",
@@ -266,9 +258,7 @@ struct TogetherAIImageModelTests {
                 seed: 123,
                 providerOptions: [:],
                 abortSignal: nil,
-                headers: nil,
-                files: nil,
-                mask: nil
+                headers: nil
             )
         )
 
@@ -299,7 +289,7 @@ struct TogetherAIImageModelTests {
 
         await #expect(throws: CancellationError.self) {
             _ = try await model.doGenerate(
-                options: ImageModelV3CallOptions(
+                options: ImageModelV4CallOptions(
                     prompt: "p",
                     n: 1,
                     size: nil,
@@ -307,9 +297,7 @@ struct TogetherAIImageModelTests {
                     seed: nil,
                     providerOptions: [:],
                     abortSignal: { true },
-                    headers: nil,
-                    files: nil,
-                    mask: nil
+                    headers: nil
                 )
             )
         }
@@ -334,7 +322,7 @@ struct TogetherAIImageModelTests {
         let model = makeModel(fetch: fetch, currentDate: { date })
 
         let result = try await model.doGenerate(
-            options: ImageModelV3CallOptions(
+            options: ImageModelV4CallOptions(
                 prompt: "p",
                 n: 1,
                 size: nil,
@@ -342,9 +330,7 @@ struct TogetherAIImageModelTests {
                 seed: nil,
                 providerOptions: [:],
                 abortSignal: nil,
-                headers: nil,
-                files: nil,
-                mask: nil
+                headers: nil
             )
         )
 
@@ -364,7 +350,7 @@ struct TogetherAIImageModelTests {
         let model = makeModel()
         #expect(model.provider == "togetherai")
         #expect(model.modelId == "stabilityai/stable-diffusion-xl")
-        #expect(model.specificationVersion == "v3")
+        #expect(model.specificationVersion == "v4")
         switch model.maxImagesPerCall {
         case .value(let maxImages):
             #expect(maxImages == 1)
@@ -399,15 +385,12 @@ struct TogetherAIImageModelTests {
         let model = makeModel(fetch: fetch)
 
         _ = try await model.doGenerate(
-            options: ImageModelV3CallOptions(
+            options: ImageModelV4CallOptions(
                 prompt: "Make the shirt yellow",
                 n: 1,
                 size: nil,
                 aspectRatio: nil,
                 seed: nil,
-                providerOptions: [:],
-                abortSignal: nil,
-                headers: nil,
                 files: [
                     .url(url: "https://example.com/input.jpg", providerOptions: nil)
                 ],
@@ -453,15 +436,12 @@ struct TogetherAIImageModelTests {
         let data = Data([137, 80, 78, 71, 13, 10, 26, 10])
 
         _ = try await model.doGenerate(
-            options: ImageModelV3CallOptions(
+            options: ImageModelV4CallOptions(
                 prompt: "Transform this image",
                 n: 1,
                 size: nil,
                 aspectRatio: nil,
                 seed: nil,
-                providerOptions: [:],
-                abortSignal: nil,
-                headers: nil,
                 files: [
                     .file(mediaType: "image/png", data: .binary(data), providerOptions: nil)
                 ],
@@ -512,15 +492,12 @@ struct TogetherAIImageModelTests {
         let base64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
 
         _ = try await model.doGenerate(
-            options: ImageModelV3CallOptions(
+            options: ImageModelV4CallOptions(
                 prompt: "Edit this",
                 n: 1,
                 size: nil,
                 aspectRatio: nil,
                 seed: nil,
-                providerOptions: [:],
-                abortSignal: nil,
-                headers: nil,
                 files: [
                     .file(mediaType: "image/png", data: .base64(base64), providerOptions: nil)
                 ],
@@ -551,15 +528,12 @@ struct TogetherAIImageModelTests {
 
         await #expect(throws: UnsupportedFunctionalityError.self) {
             _ = try await model.doGenerate(
-                options: ImageModelV3CallOptions(
+                options: ImageModelV4CallOptions(
                     prompt: "Inpaint this area",
                     n: 1,
                     size: nil,
                     aspectRatio: nil,
                     seed: nil,
-                    providerOptions: [:],
-                    abortSignal: nil,
-                    headers: nil,
                     files: [
                         .url(url: "https://example.com/input.jpg", providerOptions: nil)
                     ],
@@ -595,15 +569,12 @@ struct TogetherAIImageModelTests {
         let model = makeModel(fetch: fetch)
 
         let result = try await model.doGenerate(
-            options: ImageModelV3CallOptions(
+            options: ImageModelV4CallOptions(
                 prompt: "Edit multiple images",
                 n: 1,
                 size: nil,
                 aspectRatio: nil,
                 seed: nil,
-                providerOptions: [:],
-                abortSignal: nil,
-                headers: nil,
                 files: [
                     .url(url: "https://example.com/input1.jpg", providerOptions: nil),
                     .url(url: "https://example.com/input2.jpg", providerOptions: nil),
@@ -653,24 +624,21 @@ struct TogetherAIImageModelTests {
         let model = makeModel(fetch: fetch)
 
         _ = try await model.doGenerate(
-            options: ImageModelV3CallOptions(
+            options: ImageModelV4CallOptions(
                 prompt: "Transform the style",
                 n: 1,
                 size: nil,
                 aspectRatio: nil,
                 seed: nil,
+                files: [
+                    .url(url: "https://example.com/input.jpg", providerOptions: nil)
+                ],
                 providerOptions: [
                     "togetherai": [
                         "steps": .number(28),
                         "guidance": .number(3.5),
                     ]
-                ],
-                abortSignal: nil,
-                headers: nil,
-                files: [
-                    .url(url: "https://example.com/input.jpg", providerOptions: nil)
-                ],
-                mask: nil
+                ]
             )
         )
 

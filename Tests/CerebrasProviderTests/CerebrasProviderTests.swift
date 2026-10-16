@@ -8,7 +8,7 @@ import Testing
 /**
  Cerebras Provider tests.
 
- Port of `@ai-sdk/cerebras/src/cerebras-provider.test.ts`.
+ Port of `@ai-sdk-cerebras/src/cerebras-provider.test.ts`.
  */
 
 @Suite("CerebrasProvider")
@@ -28,7 +28,7 @@ struct CerebrasProviderTests {
 
         let model = try provider("model-id")
 
-        #expect(model is OpenAICompatibleChatLanguageModel)
+        #expect(model is OpenAICompatibleChatLanguageModelV4)
         #expect(model.provider == "cerebras.chat")
     }
 
@@ -42,7 +42,7 @@ struct CerebrasProviderTests {
 
         let model = try provider("model-id")
 
-        #expect(model is OpenAICompatibleChatLanguageModel)
+        #expect(model is OpenAICompatibleChatLanguageModelV4)
         #expect(model.provider == "cerebras.chat")
     }
 
@@ -95,11 +95,11 @@ struct CerebrasProviderTests {
         ))
 
         let model = try provider("model-id")
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
         ]
 
-        _ = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: prompt))
+        _ = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: prompt))
 
         guard let request = await capture.value() else {
             Issue.record("Expected to capture request")
@@ -107,7 +107,7 @@ struct CerebrasProviderTests {
         }
 
         let userAgent = request.value(forHTTPHeaderField: "User-Agent")
-        #expect(userAgent?.contains("ai-sdk/cerebras/\(CEREBRAS_PROVIDER_VERSION)") == true)
+        #expect(userAgent?.contains("ai-sdk-cerebras/\(CEREBRAS_PROVIDER_VERSION)") == true)
     }
 
     @Test("should return a chat model when called as a function")
@@ -119,7 +119,7 @@ struct CerebrasProviderTests {
 
         let model = try provider(modelId)
 
-        #expect(model is OpenAICompatibleChatLanguageModel)
+        #expect(model is OpenAICompatibleChatLanguageModelV4)
     }
 
     // MARK: - languageModel Tests
@@ -133,10 +133,10 @@ struct CerebrasProviderTests {
 
         let model = try provider.languageModel(modelId: modelId)
 
-        #expect(model is OpenAICompatibleChatLanguageModel)
+        #expect(model is OpenAICompatibleChatLanguageModelV4)
     }
 
-    // MARK: - textEmbeddingModel Tests
+    // MARK: - embeddingModel Tests
 
     @Test("should throw NoSuchModelError when attempting to create embedding model")
     func throwNoSuchModelErrorForEmbeddingModel() throws {
@@ -145,7 +145,7 @@ struct CerebrasProviderTests {
         ))
 
         #expect(throws: NoSuchModelError.self) {
-            _ = try provider.textEmbeddingModel(modelId: "any-model")
+            _ = try provider.embeddingModel(modelId: "any-model")
         }
     }
 
@@ -221,12 +221,12 @@ struct CerebrasProviderTests {
 
             let provider = createCerebras(settings: CerebrasProviderSettings(fetch: fetch))
             let model = try provider("model-id")
-            let prompt: LanguageModelV3Prompt = [
+            let prompt: LanguageModelV4Prompt = [
                 .user(content: [.text(.init(text: "hello"))], providerOptions: nil)
             ]
 
             do {
-                _ = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: prompt))
+                _ = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: prompt))
                 Issue.record("Expected missing API key error")
             } catch let error as LoadAPIKeyError {
                 #expect(error.message.contains("CEREBRAS_API_KEY environment variable"))
@@ -292,11 +292,11 @@ struct CerebrasProviderTests {
 
             let provider = createCerebras(settings: CerebrasProviderSettings(apiKey: "custom-key", fetch: fetch))
             let model = try provider("model-id")
-            let prompt: LanguageModelV3Prompt = [
+            let prompt: LanguageModelV4Prompt = [
                 .user(content: [.text(.init(text: "hello"))], providerOptions: nil)
             ]
 
-            _ = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: prompt))
+            _ = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: prompt))
 
             guard let request = await capture.value() else {
                 Issue.record("Expected to capture request")

@@ -74,9 +74,7 @@ struct DeepInfraImageModelTests {
                 seed: 42,
                 providerOptions: ["deepinfra": ["additional_param": .string("value")]],
                 abortSignal: nil,
-                headers: nil,
-                files: nil,
-                mask: nil
+                headers: nil
             ))
 
             guard let body = await capture.value()?.httpBody else {
@@ -123,9 +121,7 @@ struct DeepInfraImageModelTests {
                 seed: nil,
                 providerOptions: [:],
                 abortSignal: nil,
-                headers: nil,
-                files: nil,
-                mask: nil
+                headers: nil
             ))
 
             let request = await capture.value()
@@ -166,9 +162,7 @@ struct DeepInfraImageModelTests {
                 seed: nil,
                 providerOptions: [:],
                 abortSignal: nil,
-                headers: ["Custom-Request-Header": "request-header-value"],
-                files: nil,
-                mask: nil
+                headers: ["Custom-Request-Header": "request-header-value"]
             ))
 
             guard let headers = await capture.value()?.allHTTPHeaderFields else {
@@ -233,9 +227,7 @@ struct DeepInfraImageModelTests {
                 seed: 42,
                 providerOptions: [:],
                 abortSignal: nil,
-                headers: nil,
-                files: nil,
-                mask: nil
+                headers: nil
             ))
 
             guard let body = await capture.value() else {
@@ -360,7 +352,7 @@ struct DeepInfraImageModelTests {
 
         #expect(model.provider == "deepinfra")
         #expect(model.modelId == "stability-ai/sdxl")
-        #expect(model.specificationVersion == "v3")
+        #expect(model.specificationVersion == "v4")
 
         switch model.maxImagesPerCall {
         case .value(let value):
@@ -429,13 +421,12 @@ struct DeepInfraImageModelTests {
             }
 
             let model = makeEditModel(fetch: fetch)
-            let input: ImageModelV3File = .file(mediaType: "image/png", data: .binary(Data([137, 80, 78, 71])), providerOptions: nil)
+            let input: ImageModelV4File = .file(mediaType: "image/png", data: .binary(Data([137, 80, 78, 71])), providerOptions: nil)
 
             let result = try await model.doGenerate(options: .init(
                 prompt: "Turn the cat into a dog",
                 n: 1,
                 size: "1024x1024",
-                providerOptions: [:],
                 files: [input]
             ))
 
@@ -471,13 +462,12 @@ struct DeepInfraImageModelTests {
             }
 
             let model = makeEditModel(fetch: fetch)
-            let input: ImageModelV3File = .file(mediaType: "image/png", data: .binary(Data([137, 80, 78, 71])), providerOptions: nil)
-            let mask: ImageModelV3File = .file(mediaType: "image/png", data: .binary(Data([255, 255, 255, 0])), providerOptions: nil)
+            let input: ImageModelV4File = .file(mediaType: "image/png", data: .binary(Data([137, 80, 78, 71])), providerOptions: nil)
+            let mask: ImageModelV4File = .file(mediaType: "image/png", data: .binary(Data([255, 255, 255, 0])), providerOptions: nil)
 
             let result = try await model.doGenerate(options: .init(
                 prompt: "Add a flamingo to the pool",
                 n: 1,
-                providerOptions: [:],
                 files: [input],
                 mask: mask
             ))
@@ -515,13 +505,12 @@ struct DeepInfraImageModelTests {
             }
 
             let model = makeEditModel(fetch: fetch)
-            let image1: ImageModelV3File = .file(mediaType: "image/png", data: .binary(Data([137, 80, 78, 71])), providerOptions: nil)
-            let image2: ImageModelV3File = .file(mediaType: "image/png", data: .binary(Data([137, 80, 78, 71])), providerOptions: nil)
+            let image1: ImageModelV4File = .file(mediaType: "image/png", data: .binary(Data([137, 80, 78, 71])), providerOptions: nil)
+            let image2: ImageModelV4File = .file(mediaType: "image/png", data: .binary(Data([137, 80, 78, 71])), providerOptions: nil)
 
             _ = try await model.doGenerate(options: .init(
                 prompt: "Combine these images",
                 n: 1,
-                providerOptions: [:],
                 files: [image1, image2]
             ))
 
@@ -544,12 +533,11 @@ struct DeepInfraImageModelTests {
             }
 
             let model = makeEditModel(fetch: fetch, currentDate: { testDate })
-            let input: ImageModelV3File = .file(mediaType: "image/png", data: .binary(Data([137, 80, 78, 71])), providerOptions: nil)
+            let input: ImageModelV4File = .file(mediaType: "image/png", data: .binary(Data([137, 80, 78, 71])), providerOptions: nil)
 
             let result = try await model.doGenerate(options: .init(
                 prompt: "Edit this image",
                 n: 1,
-                providerOptions: [:],
                 files: [input]
             ))
 
@@ -576,13 +564,13 @@ struct DeepInfraImageModelTests {
             }
 
             let model = makeEditModel(fetch: fetch)
-            let input: ImageModelV3File = .file(mediaType: "image/png", data: .binary(Data([137, 80, 78, 71])), providerOptions: nil)
+            let input: ImageModelV4File = .file(mediaType: "image/png", data: .binary(Data([137, 80, 78, 71])), providerOptions: nil)
 
             _ = try await model.doGenerate(options: .init(
                 prompt: "Edit with custom options",
                 n: 1,
-                providerOptions: ["deepinfra": ["guidance": .number(7.5)]],
-                files: [input]
+                files: [input],
+                providerOptions: ["deepinfra": ["guidance": .number(7.5)]]
             ))
 
             guard let body = await capture.value() else {

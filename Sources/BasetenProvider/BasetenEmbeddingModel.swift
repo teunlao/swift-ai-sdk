@@ -3,10 +3,8 @@ import AISDKProvider
 import AISDKProviderUtils
 import OpenAICompatibleProvider
 
-final class BasetenEmbeddingModel: EmbeddingModelV3 {
-    typealias VALUE = String
-
-    private let delegate: OpenAICompatibleEmbeddingModel
+final class BasetenEmbeddingModel: EmbeddingModelV4 {
+    private let delegate: OpenAICompatibleEmbeddingModelV4
     private let headersClosure: @Sendable () -> [String: String]
     private let urlBuilder: @Sendable (OpenAICompatibleURLOptions) -> String
     private let fetch: FetchFunction?
@@ -14,7 +12,7 @@ final class BasetenEmbeddingModel: EmbeddingModelV3 {
     private let performanceClient: BasetenPerformanceClient?
 
     init(
-        delegate: OpenAICompatibleEmbeddingModel,
+        delegate: OpenAICompatibleEmbeddingModelV4,
         headers: @escaping @Sendable () -> [String: String],
         urlBuilder: @escaping @Sendable (OpenAICompatibleURLOptions) -> String,
         fetch: FetchFunction?,
@@ -40,7 +38,7 @@ final class BasetenEmbeddingModel: EmbeddingModelV3 {
         get async throws { try await delegate.supportsParallelCalls }
     }
 
-    func doEmbed(options: EmbeddingModelV3DoEmbedOptions<String>) async throws -> EmbeddingModelV3DoEmbedResult {
+    func doEmbed(options: EmbeddingModelV4CallOptions) async throws -> EmbeddingModelV4Result {
         guard let performanceClient else {
             return try await delegate.doEmbed(options: options)
         }
@@ -58,12 +56,12 @@ final class BasetenEmbeddingModel: EmbeddingModelV3 {
 
         let embeddings = response.value.data.map { $0.embedding }
         let usageTokens = response.value.usage?.totalTokens
-        let usage = usageTokens.map { EmbeddingModelV3Usage(tokens: $0) }
+        let usage = usageTokens.map { EmbeddingModelV4Usage(tokens: $0) }
 
-        return EmbeddingModelV3DoEmbedResult(
+        return EmbeddingModelV4Result(
             embeddings: embeddings,
             usage: usage,
-            response: EmbeddingModelV3ResponseInfo(
+            response: EmbeddingModelV4ResponseInfo(
                 headers: response.responseHeaders,
                 body: response.rawValue
             )
