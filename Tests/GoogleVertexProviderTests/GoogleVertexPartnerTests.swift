@@ -10,7 +10,7 @@ struct GoogleVertexPartnerTests {
 
     @Test func anthropicRequestTransformAndLabels() async throws {
         let requests = VertexRequests()
-        let fixture = try vertexFixture("anthropic-partner.json")
+        let fixture = try vertexFixture("anthropic-partner-json.json")
         let provider = createGoogleVertexAnthropic(settings: .init(project: "project", location: "eu", headers: ["Authorization": "Bearer configured"], fetch: { request in
             await requests.append(request)
             return try vertexResponse(request, fixture)
@@ -23,7 +23,9 @@ struct GoogleVertexPartnerTests {
             tools: [.function(.init(name: "weather", inputSchema: schema, strict: true))],
             headers: ["authorization": "Bearer request"], providerOptions: ["vertex": ["labels": .object(["team": .string("команда"), "env": .string("test")])]]
         ))
-        #expect(result.content.contains { if case .text(let value) = $0 { return value.text == "answer" }; return false })
+        let text = try #require(result.content.compactMap { if case .text(let value) = $0 { return value.text }; return nil }.first)
+        #expect(try JSONDecoder().decode(JSONValue.self, from: Data(text.utf8)) == .object(["answer": .string("answer")]))
+        #expect(result.finishReason.unified == .stop)
         #expect(result.usage.inputTokens.total == 10)
         let request = try #require(await requests.last)
         #expect(request.url?.absoluteString == "https://aiplatform.eu.rep.googleapis.com/v1/projects/project/locations/eu/publishers/anthropic/models/claude-sonnet-4-5@20250929:rawPredict")

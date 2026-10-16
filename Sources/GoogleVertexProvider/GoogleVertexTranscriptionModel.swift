@@ -75,6 +75,7 @@ public final class GoogleVertexTranscriptionModel: TranscriptionModelV4 {
         let location: @Sendable () throws -> String
         let headers: @Sendable () throws -> [String: String?]
         let fetch: FetchFunction?
+        let isExpressMode: Bool
     }
     private struct Response: Codable, Sendable {
         struct Recognition: Codable, Sendable {
@@ -95,6 +96,9 @@ public final class GoogleVertexTranscriptionModel: TranscriptionModelV4 {
     init(modelId: String, config: Config) { self.modelId = modelId; self.config = config }
 
     public func doGenerate(options: TranscriptionModelV4CallOptions) async throws -> TranscriptionModelV4Result {
+        if config.isExpressMode {
+            throw InvalidArgumentError(argument: "modelId", message: "Google Vertex transcription models do not support Express Mode API keys. Use standard Google Cloud credentials instead.")
+        }
         let timestamp = Date()
         let parsed = try await parseVertexOptions(options.providerOptions, schema: cloudOptionsSchema, namespaces: ["googleVertex", "vertex", "google"])
         let region = try parsed?.region ?? config.location()

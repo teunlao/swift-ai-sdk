@@ -724,7 +724,7 @@ public func createGoogleVertex(settings: GoogleVertexProviderSettings = .init())
         }
         return GoogleVertexTranscriptionModel(modelId: modelId, config: .init(
             provider: "google.vertex.transcription", project: loadProject, location: loadLocation,
-            headers: transcriptionHeaders, fetch: fetch
+            headers: transcriptionHeaders, fetch: fetch, isExpressMode: apiKey != nil
         ))
     }
     let interactionsFactory: @Sendable (GoogleInteractionsModelInput) -> GoogleInteractionsLanguageModel = { input in
