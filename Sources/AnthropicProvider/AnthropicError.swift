@@ -83,10 +83,9 @@ func createAnthropicStreamError(_ error: StreamError.Payload) -> ProviderStreamE
     case .number(let value): .number(value)
     default: nil
     }
-    let raw = (try? JSONEncoder().encode(error)).flatMap { try? JSONDecoder().decode(JSONValue.self, from: $0) }
     return createProviderStreamError(
         message: error.message, type: error.type, code: code,
         statusCode: error.statusCode ?? inferred.0, isRetryable: error.isRetryable ?? inferred.1,
-        data: error.data ?? raw ?? .null
+        data: error.data ?? error.jsonValue
     )
 }

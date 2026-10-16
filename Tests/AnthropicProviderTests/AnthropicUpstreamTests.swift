@@ -164,11 +164,24 @@ struct AnthropicUpstreamTests {
         } else { Issue.record("Missing finish") }
     }
 
-    @Test
-    func firstAndLaterProviderErrorsKeepRetryMetadata() async throws {
-        let error: [String: JSONValue] = ["type": .string("error"), "error": .object([
-            "type": .string("rate_limit_error"), "message": .string("Busy"), "code": .number(7), "data": .object(["retryAfter": .number(2)])
-        ])]
+    @Test(arguments: ["object", "omitted", "null"])
+    func firstAndLaterProviderErrorsKeepRetryMetadata(dataMode: String) async throws {
+        var payload: [String: JSONValue] = [
+            "type": .string("rate_limit_error"), "message": .string("Busy"), "code": .number(7),
+            "statusCode": .null, "isRetryable": .null
+        ]
+        let expectedData: JSONValue
+        switch dataMode {
+        case "object":
+            expectedData = .object(["retryAfter": .number(2)])
+            payload["data"] = expectedData
+        case "null":
+            expectedData = .null
+            payload["data"] = expectedData
+        default:
+            expectedData = .object(payload)
+        }
+        let error: [String: JSONValue] = ["type": .string("error"), "error": .object(payload)]
         let first = upstreamModel(response: try upstreamSSE([error]), stream: true)
         do {
             _ = try await first.doStream(options: .init(prompt: []))
@@ -176,7 +189,8 @@ struct AnthropicUpstreamTests {
         } catch let failure as APICallError {
             #expect(failure.statusCode == 429)
             #expect(failure.isRetryable)
-            #expect(failure.responseBody == "{\"retryAfter\":2}")
+            let body = try #require(failure.responseBody)
+            #expect(try JSONDecoder().decode(JSONValue.self, from: Data(body.utf8)) == expectedData)
         }
         let start: [String: JSONValue] = ["type": .string("message_start"), "message": .object(["id": .string("msg_error"), "model": .string("claude-opus-5-5"), "usage": .object(["input_tokens": .number(1)])])]
         let later = upstreamModel(response: try upstreamSSE([start, error]), stream: true)
@@ -185,7 +199,7 @@ struct AnthropicUpstreamTests {
             #expect(failure.code == .number(7))
             #expect(failure.statusCode == 429)
             #expect(failure.isRetryable == true)
-            #expect(failure.data == .object(["retryAfter": .number(2)]))
+            #expect(failure.data == expectedData)
         } else { Issue.record("Expected typed mid-stream provider error") }
     }
 

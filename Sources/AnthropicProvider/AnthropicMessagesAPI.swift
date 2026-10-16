@@ -1322,8 +1322,9 @@ public struct StreamError: Codable, Sendable {
         public let statusCode: Int?
         public let isRetryable: Bool?
         public let data: JSONValue?
+        private let nullFields: Set<CodingKeys>
 
-        enum CodingKeys: String, CodingKey { case type, message, code, statusCode, isRetryable, data }
+        enum CodingKeys: String, CodingKey, Hashable, Sendable { case type, message, code, statusCode, isRetryable, data }
 
         public init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -1338,7 +1339,32 @@ public struct StreamError: Codable, Sendable {
             }
             statusCode = try container.decodeIfPresent(Int.self, forKey: .statusCode)
             isRetryable = try container.decodeIfPresent(Bool.self, forKey: .isRetryable)
-            data = container.contains(.data) ? try container.decode(JSONValue.self, forKey: .data) : nil
+            if container.contains(.data) {
+                data = try container.decode(JSONValue.self, forKey: .data)
+            } else {
+                data = Optional<JSONValue>.none
+            }
+            var nulls: Set<CodingKeys> = []
+            for key in [CodingKeys.code, .statusCode, .isRetryable] where container.contains(key) {
+                if try container.decodeNil(forKey: key) { nulls.insert(key) }
+            }
+            nullFields = nulls
+        }
+
+        public func encode(to encoder: Encoder) throws {
+            try jsonValue.encode(to: encoder)
+        }
+
+        var jsonValue: JSONValue {
+            var result: [String: JSONValue] = ["type": .string(type), "message": .string(message)]
+            if let code { result["code"] = code }
+            else if nullFields.contains(.code) { result["code"] = .null }
+            if let statusCode { result["statusCode"] = .number(Double(statusCode)) }
+            else if nullFields.contains(.statusCode) { result["statusCode"] = .null }
+            if let isRetryable { result["isRetryable"] = .bool(isRetryable) }
+            else if nullFields.contains(.isRetryable) { result["isRetryable"] = .null }
+            if let data { result["data"] = data }
+            return .object(result)
         }
     }
 
