@@ -110,8 +110,6 @@ private func makeStreamTranscriptionResult(
     let responsesPromise = DelayedPromise<[TranscriptionModelResponseMetadata]>()
     let providerMetadataPromise = DelayedPromise<[String: JSONObject]>()
 
-    let state = StreamTranscribeState(startedAt: Date(), modelId: model.modelId)
-
     let rejectPending: @Sendable (any Error) -> Void = { error in
         for promise in [
             textPromise,
@@ -131,119 +129,37 @@ private func makeStreamTranscriptionResult(
         logWarningsForTranscribe(warnings.map { Warning.transcriptionModel($0) })
     }
 
-    let stream = AsyncThrowingStream<TranscriptionStreamPart, Error>(bufferingPolicy: .unbounded) { continuation in
-        let task = Task {
-            do {
-                let result = try await model.doStream(
-                    options: TranscriptionModelV4StreamOptions(
-                        audio: audio,
-                        inputAudioFormat: inputAudioFormat,
-                        providerOptions: providerOptions,
-                        abortSignal: abortSignal,
-                        headers: headersWithUserAgent,
-                        includeRawChunks: includeRawChunks
-                    )
-                )
-
-                await state.updateResponse(result.response)
-
-                for try await part in result.stream {
-                    switch part {
-                    case .streamStart(let warnings):
-                        if warningsPromise.isPending() {
-                            resolveWarnings(warnings)
-                        }
-
-                    case let .responseMetadata(timestamp, modelId, headers, _):
-                        await state.updateResponse(
-                            timestamp: timestamp,
-                            modelId: modelId,
-                            headers: headers
-                        )
-
-                    case let .transcriptDelta(id, delta, providerMetadata):
-                        continuation.yield(.transcriptDelta(id: id, delta: delta, providerMetadata: providerMetadata))
-
-                    case let .transcriptPartial(id, text, startSecond, durationInSeconds, channelIndex, providerMetadata):
-                        continuation.yield(.transcriptPartial(
-                            id: id,
-                            text: text,
-                            startSecond: startSecond,
-                            durationInSeconds: durationInSeconds,
-                            channelIndex: channelIndex,
-                            providerMetadata: providerMetadata
-                        ))
-
-                    case let .transcriptFinal(id, text, startSecond, endSecond, channelIndex, providerMetadata):
-                        continuation.yield(.transcriptFinal(
-                            id: id,
-                            text: text,
-                            startSecond: startSecond,
-                            endSecond: endSecond,
-                            channelIndex: channelIndex,
-                            providerMetadata: providerMetadata
-                        ))
-
-                    case let .raw(rawValue):
-                        continuation.yield(.raw(rawValue: rawValue))
-
-                    case let .error(error):
-                        continuation.yield(.error(error: error))
-
-                    case let .finish(text, segments, language, durationInSeconds, _, providerMetadata):
-                        if warningsPromise.isPending() {
-                            resolveWarnings([])
-                        }
-
-                        let response = await state.currentResponseMetadata()
-                        guard !text.isEmpty else {
-                            throw NoTranscriptGeneratedError(responses: [response])
-                        }
-
-                        textPromise.resolve(text)
-                        segmentsPromise.resolve(segments.map {
-                            TranscriptionSegment(
-                                text: $0.text,
-                                startSecond: $0.startSecond,
-                                endSecond: $0.endSecond
-                            )
-                        })
-                        languagePromise.resolve(language)
-                        durationInSecondsPromise.resolve(durationInSeconds)
-                        responsesPromise.resolve([response])
-                        providerMetadataPromise.resolve(providerMetadata ?? [:])
-                    }
-                }
-
-                if textPromise.isPending() {
-                    throw NoTranscriptGeneratedError(responses: [await state.currentResponseMetadata()])
-                }
-
-                continuation.finish()
-            } catch {
-                rejectPending(error)
-                continuation.finish(throwing: error)
-            }
-        }
-
-        continuation.onTermination = { @Sendable termination in
-            guard case .cancelled = termination else {
-                return
-            }
-            task.cancel()
-            rejectPending(CancellationError())
-        }
+    let cancellation = StreamTranscriptionCancellation()
+    let startedAt = Date()
+    let state = StreamTranscribeState(audio: audio, startedAt: startedAt, modelId: model.modelId,
+                                     resolveWarnings: resolveWarnings, warningsPending: { warningsPromise.isPending() },
+                                     textPending: { textPromise.isPending() }, rejectPending: rejectPending,
+                                     resolveFinish: { text, segments, language, duration, metadata, response in
+        textPromise.resolve(text)
+        segmentsPromise.resolve(segments.map {
+            TranscriptionSegment(text: $0.text, startSecond: $0.startSecond, endSecond: $0.endSecond)
+        })
+        languagePromise.resolve(language)
+        durationInSecondsPromise.resolve(duration)
+        responsesPromise.resolve([response])
+        providerMetadataPromise.resolve(metadata ?? [:])
+    })
+    Task {
+        await state.start(model: model, options: TranscriptionModelV4StreamOptions(
+            audio: audio, inputAudioFormat: inputAudioFormat, providerOptions: providerOptions,
+            abortSignal: { cancellation.isCancelled || abortSignal?() == true },
+            headers: headersWithUserAgent, includeRawChunks: includeRawChunks
+        ))
     }
-
+    let stream = AsyncIterableStream<TranscriptionStreamPart>(unfolding: { try await state.next() }, onCancel: { reason in
+        cancellation.cancel()
+        await state.cancel(reason)
+    })
     return DefaultStreamTranscriptionResult(
-        textPromise: textPromise,
-        segmentsPromise: segmentsPromise,
-        languagePromise: languagePromise,
-        durationInSecondsPromise: durationInSecondsPromise,
-        warningsPromise: warningsPromise,
-        responsesPromise: responsesPromise,
-        providerMetadataPromise: providerMetadataPromise,
-        fullStream: createAsyncIterableStream(source: stream)
+        textPromise: textPromise, segmentsPromise: segmentsPromise, languagePromise: languagePromise,
+        durationInSecondsPromise: durationInSecondsPromise, warningsPromise: warningsPromise,
+        responsesPromise: responsesPromise, providerMetadataPromise: providerMetadataPromise,
+        fullStream: stream
     )
 }
 
@@ -259,37 +175,153 @@ extension DelayedPromise: AnyDelayedPromise {
     }
 }
 
+private final class StreamTranscriptionCancellation: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cancelled = false
+    var isCancelled: Bool { lock.lock(); defer { lock.unlock() }; return cancelled }
+    func cancel() { lock.lock(); cancelled = true; lock.unlock() }
+}
+
 private actor StreamTranscribeState {
-    private let startedAt: Date
-    private let defaultModelId: String
-    private var response: TranscriptionModelResponseMetadata?
+    private enum Startup { case pending, ready, failed(Error) }
+    private var startup: Task<Void, Never>?
+    private var startupStatus: Startup = .pending
+    private var startupWaiters: [CheckedContinuation<Void, Error>] = []
+    private let audio: AsyncThrowingStream<TranscriptionModelV4StreamAudio, Error>
+    private var stream: AsyncIterableStream<TranscriptionModelV4StreamPart>?
+    private var iterator: AsyncIterableStream<TranscriptionModelV4StreamPart>.AsyncIterator?
+    private var response: TranscriptionModelResponseMetadata
+    private var cancelled = false
+    private let resolveWarnings: @Sendable ([TranscriptionWarning]) -> Void
+    private let warningsPending: @Sendable () -> Bool
+    private let textPending: @Sendable () -> Bool
+    private let rejectPending: @Sendable (Error) -> Void
+    private let resolveFinish: @Sendable (
+        String, [TranscriptionModelV4Result.Segment], String?, Double?, ProviderMetadata?, TranscriptionModelResponseMetadata
+    ) -> Void
 
-    init(startedAt: Date, modelId: String) {
-        self.startedAt = startedAt
-        self.defaultModelId = modelId
+    init(
+        audio: AsyncThrowingStream<TranscriptionModelV4StreamAudio, Error>, startedAt: Date, modelId: String,
+        resolveWarnings: @escaping @Sendable ([TranscriptionWarning]) -> Void,
+        warningsPending: @escaping @Sendable () -> Bool, textPending: @escaping @Sendable () -> Bool,
+        rejectPending: @escaping @Sendable (Error) -> Void,
+        resolveFinish: @escaping @Sendable (
+            String, [TranscriptionModelV4Result.Segment], String?, Double?, ProviderMetadata?, TranscriptionModelResponseMetadata
+        ) -> Void
+    ) {
+        self.audio = audio
+        response = TranscriptionModelResponseMetadata(timestamp: startedAt, modelId: modelId)
+        self.resolveWarnings = resolveWarnings
+        self.warningsPending = warningsPending
+        self.textPending = textPending
+        self.rejectPending = rejectPending
+        self.resolveFinish = resolveFinish
     }
 
-    func updateResponse(_ response: TranscriptionModelV4StreamResult.ResponseInfo?) {
-        self.response = TranscriptionModelResponseMetadata(
-            timestamp: response?.timestamp ?? startedAt,
-            modelId: response?.modelId ?? defaultModelId,
-            headers: response?.headers
-        )
+    func start(model: any TranscriptionModelV4, options: TranscriptionModelV4StreamOptions) {
+        guard !cancelled else { return }
+        startup = Task {
+            do { await accept(try await model.doStream(options: options)) }
+            catch {
+                startupStatus = .failed(error)
+                rejectPending(error)
+                settleStartup(error)
+                startup = nil
+                await cancelStream(audio)
+            }
+        }
     }
 
-    func updateResponse(timestamp: Date?, modelId: String?, headers: SharedV4Headers?) {
-        let current = currentResponseMetadata()
+    private func accept(_ result: TranscriptionModelV4StreamResult) async {
+        guard !cancelled else { await cancelStream(result.stream); return }
         response = TranscriptionModelResponseMetadata(
-            timestamp: timestamp ?? current.timestamp,
-            modelId: modelId ?? current.modelId,
-            headers: headers ?? current.headers
+            timestamp: result.response?.timestamp ?? response.timestamp,
+            modelId: result.response?.modelId ?? response.modelId, headers: result.response?.headers
         )
+        let stream = asAsyncIterableStream(source: result.stream)
+        self.stream = stream
+        iterator = stream.makeAsyncIterator()
+        startupStatus = .ready
+        startup = nil
+        settleStartup(nil)
     }
 
-    func currentResponseMetadata() -> TranscriptionModelResponseMetadata {
-        response ?? TranscriptionModelResponseMetadata(
-            timestamp: startedAt,
-            modelId: defaultModelId
-        )
+    private func waitForStartup() async throws {
+        switch startupStatus {
+        case .ready: return
+        case .failed(let error): throw error
+        case .pending: try await withCheckedThrowingContinuation { startupWaiters.append($0) }
+        }
+    }
+
+    private func settleStartup(_ error: Error?) {
+        let waiters = startupWaiters
+        startupWaiters.removeAll()
+        for waiter in waiters {
+            if let error { waiter.resume(throwing: error) }
+            else { waiter.resume() }
+        }
+    }
+
+    func next() async throws -> TranscriptionStreamPart? {
+        do {
+            try await waitForStartup()
+            try Task.checkCancellation()
+            guard !cancelled else { throw CancellationError() }
+            while let part = try await iterator?.next() {
+                try Task.checkCancellation()
+                switch part {
+                case .streamStart(let warnings):
+                    resolveWarnings(warnings)
+                case .responseMetadata(let timestamp, let modelId, let headers, _):
+                    response = TranscriptionModelResponseMetadata(
+                        timestamp: timestamp ?? response.timestamp, modelId: modelId ?? response.modelId,
+                        headers: headers ?? response.headers
+                    )
+                case .transcriptDelta(let id, let delta, let metadata):
+                    return .transcriptDelta(id: id, delta: delta, providerMetadata: metadata)
+                case .transcriptPartial(let id, let text, let start, let duration, let channel, let metadata):
+                    return .transcriptPartial(id: id, text: text, startSecond: start,
+                                              durationInSeconds: duration, channelIndex: channel, providerMetadata: metadata)
+                case .transcriptFinal(let id, let text, let start, let end, let channel, let metadata):
+                    return .transcriptFinal(id: id, text: text, startSecond: start,
+                                            endSecond: end, channelIndex: channel, providerMetadata: metadata)
+                case .raw(let value): return .raw(rawValue: value)
+                case .error(let error): return .error(error: error)
+                case .finish(let text, let segments, let language, let duration, _, let metadata):
+                    if warningsPending() { resolveWarnings([]) }
+                    guard !text.isEmpty else { throw NoTranscriptGeneratedError(responses: [response]) }
+                    resolveFinish(text, segments, language, duration, metadata, response)
+                }
+            }
+            try Task.checkCancellation()
+            if textPending() { throw NoTranscriptGeneratedError(responses: [response]) }
+            return nil
+        } catch {
+            rejectPending(error)
+            await stream?.cancel(.error(AnySendableError(error)))
+            await cancelStream(audio)
+            throw error
+        }
+    }
+
+    func cancel(_ reason: AsyncIterableStreamCancellationReason) async {
+        guard !cancelled else { return }
+        cancelled = true
+        let error: Error
+        switch reason {
+        case .none: error = CancellationError()
+        case .message: error = AsyncIterableStreamCancelledError(reason: reason)
+        case .error(let wrapped): error = wrapped.underlying
+        }
+        rejectPending(error)
+        startupStatus = .failed(error)
+        settleStartup(error)
+        startup?.cancel()
+        startup = nil
+        if let stream { await stream.cancel(reason) }
+        iterator = nil
+        stream = nil
+        await cancelStream(audio)
     }
 }

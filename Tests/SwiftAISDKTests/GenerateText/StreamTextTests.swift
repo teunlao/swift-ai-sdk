@@ -1790,11 +1790,12 @@ struct StreamTextBasicTests {
             .textEnd(id: "t", providerMetadata: nil),
             .finish(finishReason: LanguageModelV3FinishReason(unified: .stop), usage: LanguageModelV3Usage(), providerMetadata: nil)
         ]
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
-            parts.forEach { c.yield($0) }
-            c.finish()
-        }
-        let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
+        let model = MockLanguageModelV3(doStream: .function { _ in
+            LanguageModelV3StreamResult(stream: AsyncThrowingStream { continuation in
+                parts.forEach { continuation.yield($0) }
+                continuation.finish()
+            })
+        })
 
         // sendStart=false, sendFinish=true
         let result1: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(

@@ -1,311 +1,309 @@
 import Foundation
+import AISDKProviderUtils
 
-/**
- Creates an async iterable stream wrapper that mirrors `ReadableStream` + `AsyncIterable`.
-
- Port of `@ai-sdk/ai/src/util/async-iterable-stream.ts`.
-
- This utility converts any `AsyncSequence` into an object that can be iterated using
- `for try await` while still allowing explicit cancellation. It ensures the underlying
- source sequence is cancelled when iteration stops early, an error occurs, or when
- `cancel(_:)` is called manually.
-
- **Adaptations**:
- - Swift does not expose web `ReadableStream`, so we model the behaviour with `AsyncThrowingStream`.
- - Added optional `_internal` hook for tests to observe cancellation (`onCancel`), matching the
-   semantics of the TypeScript implementation's `reader.cancel()` callbacks.
- */
 public final class AsyncIterableStream<Element: Sendable>: AsyncSequence, @unchecked Sendable {
-    public typealias AsyncIterator = AsyncThrowingStream<Element, Error>.AsyncIterator
+    public struct AsyncIterator: AsyncIteratorProtocol, Sendable {
+        private let lease: StreamIteratorLease<Element>
 
-    private let stream: AsyncThrowingStream<Element, Error>
-    private let state: AsyncIterableStreamState<Element>
+        fileprivate init(lease: StreamIteratorLease<Element>) { self.lease = lease }
+
+        public func next() async throws -> Element? { try await lease.next() }
+    }
+
+    private let reader: PullStreamReader<Element>
+    private let lock = NSLock()
+    private var leased = false
 
     init(
-        stream: AsyncThrowingStream<Element, Error>,
-        state: AsyncIterableStreamState<Element>
+        unfolding: @escaping @Sendable () async throws -> Element?,
+        onCancel: @escaping @Sendable (AsyncIterableStreamCancellationReason) async -> Void,
+        release: @escaping @Sendable () -> Void = {}
     ) {
-        self.stream = stream
-        self.state = state
+        reader = PullStreamReader(pull: unfolding, onCancel: onCancel, release: release)
     }
 
     public func makeAsyncIterator() -> AsyncIterator {
-        stream.makeAsyncIterator()
+        lock.lock()
+        let available = !leased
+        if available { leased = true }
+        lock.unlock()
+        return AsyncIterator(lease: StreamIteratorLease(reader: reader, ownsReader: available, release: {
+            self.releaseLease()
+        }))
     }
 
-    /**
-     Cancels the stream.
-
-     - Parameter reason: Optional cancellation reason. Passing `.none` mirrors calling `cancel()`
-       without a reason; any other value results in an `AsyncIterableStreamCancelledError`.
-     */
     public func cancel(_ reason: AsyncIterableStreamCancellationReason = .none) async {
-        await state.requestCancel(reason: reason)
+        await reader.cancel(reason)
+    }
+
+    private func releaseLease() {
+        lock.lock()
+        leased = false
+        lock.unlock()
+    }
+
+    deinit {
+        let reader = reader
+        Task { await reader.cancel(.none) }
     }
 }
 
-/// Cancellation reason used when stopping an `AsyncIterableStream`.
+public struct AsyncIterableStreamLockedError: Error, LocalizedError, Sendable {
+    public init() {}
+    public var errorDescription: String? { "AsyncIterableStream already has an active iterator." }
+}
+
 public enum AsyncIterableStreamCancellationReason: Sendable, ExpressibleByStringLiteral {
     case none
     case message(String)
     case error(AnySendableError)
 
-    public init(stringLiteral value: String) {
-        self = .message(value)
-    }
+    public init(stringLiteral value: String) { self = .message(value) }
 
     public var description: String {
         switch self {
-        case .none:
-            return "cancelled"
-        case .message(let message):
-            return message
-        case .error(let error):
-            return error.description
+        case .none: return "cancelled"
+        case .message(let message): return message
+        case .error(let error): return error.description
         }
     }
 }
 
-/// Error thrown when the stream is cancelled with a non-empty reason.
 public struct AsyncIterableStreamCancelledError: Error, CustomStringConvertible, Sendable {
     public let reason: AsyncIterableStreamCancellationReason
-
-    public init(reason: AsyncIterableStreamCancellationReason) {
-        self.reason = reason
-    }
-
-    public var description: String {
-        "AsyncIterableStream was cancelled (\(reason.description))"
-    }
+    public init(reason: AsyncIterableStreamCancellationReason) { self.reason = reason }
+    public var description: String { "AsyncIterableStream was cancelled (\(reason.description))" }
 }
 
-/// Type-erased wrapper for a sendable error.
 public struct AnySendableError: Error, CustomStringConvertible, @unchecked Sendable {
     public let underlying: any Error
-
-    public init(_ underlying: any Error) {
-        self.underlying = underlying
-    }
-
-    public var description: String {
-        String(describing: underlying)
-    }
+    public init(_ underlying: any Error) { self.underlying = underlying }
+    public var description: String { String(describing: underlying) }
 }
 
-/// Internal hook used for testing.
+/// Lifecycle cancellation for composed streams.
 public struct AsyncIterableStreamInternalOptions: Sendable {
     public let onCancel: @Sendable (AsyncIterableStreamCancellationReason) async -> Void
-
     public init(onCancel: @escaping @Sendable (AsyncIterableStreamCancellationReason) async -> Void) {
         self.onCancel = onCancel
     }
 }
 
-/**
- Wraps an async sequence in an `AsyncIterableStream`.
- */
 public func createAsyncIterableStream<S: AsyncSequence & Sendable>(
     source: S,
     _internal: AsyncIterableStreamInternalOptions? = nil
 ) -> AsyncIterableStream<S.Element> where S.Element: Sendable {
-    let onCancel: @Sendable (AsyncIterableStreamCancellationReason) async -> Void
-    if let customOnCancel = _internal?.onCancel {
-        onCancel = customOnCancel
+    let cancelSource: @Sendable (AsyncIterableStreamCancellationReason) async -> Void
+    if let stream = source as? AsyncThrowingStream<S.Element, Error> {
+        cancelSource = { _ in await cancelStream(stream) }
+    } else if let stream = source as? AsyncStream<S.Element> {
+        cancelSource = { _ in await cancelStream(stream) }
+    } else if let stream = source as? AsyncIterableStream<S.Element> {
+        cancelSource = { await stream.cancel($0) }
     } else {
-        onCancel = { (_: AsyncIterableStreamCancellationReason) async in }
+        cancelSource = { _ in }
     }
-
-    let state = AsyncIterableStreamState<S.Element>(onCancel: onCancel)
-
-    let stream = AsyncThrowingStream<S.Element, Error> { continuation in
-        let producerTask = Task {
-            do {
-                var iterator = source.makeAsyncIterator()
-                while let element = try await iterator.next() {
-                    continuation.yield(element)
-                }
-                await state.finishIfNeeded()
-            } catch is CancellationError {
-                await state.didCancel()
-            } catch {
-                await state.finishIfNeeded(error: error)
-            }
-        }
-
-        Task {
-            await state.initialize(continuation: continuation, task: producerTask)
-        }
-
-        continuation.onTermination = { termination in
-            Task {
-                await state.handleTermination(termination)
-            }
-        }
-    }
-
-    return AsyncIterableStream(stream: stream, state: state)
+    return wrapSequence(source, onCancel: { reason in
+        await cancelSource(reason)
+        await _internal?.onCancel(reason)
+    })
 }
 
-// MARK: - State Management
+public func asAsyncIterableStream<Element: Sendable>(
+    source: AsyncThrowingStream<Element, Error>
+) -> AsyncIterableStream<Element> {
+    createAsyncIterableStream(source: source)
+}
 
-actor AsyncIterableStreamState<Element: Sendable> {
-    private enum Status {
-        case initializing
-        case active
-        case finishing
-        case finished
+public func asAsyncIterableStream<Element: Sendable>(
+    source: AsyncIterableStream<Element>
+) -> AsyncIterableStream<Element> {
+    source
+}
+
+private func wrapSequence<S: AsyncSequence & Sendable>(
+    _ source: S,
+    onCancel: @escaping @Sendable (AsyncIterableStreamCancellationReason) async -> Void
+) -> AsyncIterableStream<S.Element> where S.Element: Sendable {
+    let cursor = SequenceCursor(source)
+    return AsyncIterableStream(unfolding: { try await cursor.next() }, onCancel: onCancel, release: { cursor.release() })
+}
+
+// The reader serializes pulls and releases the cursor only after its active pull ends.
+private final class SequenceCursor<Source: AsyncSequence>: @unchecked Sendable {
+    private var source: Source?
+    private var iterator: Source.AsyncIterator?
+
+    init(_ source: Source) { self.source = source }
+
+    func next() async throws -> Source.Element? {
+        if iterator == nil { iterator = source?.makeAsyncIterator(); source = nil }
+        return try await iterator?.next()
     }
 
-    private enum PendingFinish {
-        case success
-        case failure(Error)
+    func release() { iterator = nil; source = nil }
+}
+
+private final class StreamCancellationRequest: @unchecked Sendable {
+    private let lock = NSLock()
+    private var requested: AsyncIterableStreamCancellationReason?
+    var reason: AsyncIterableStreamCancellationReason? { lock.lock(); defer { lock.unlock() }; return requested }
+    func request(_ reason: AsyncIterableStreamCancellationReason) {
+        lock.lock()
+        if requested == nil { requested = reason }
+        lock.unlock()
+    }
+}
+
+private actor PullStreamReader<Element: Sendable> {
+    private enum End {
+        case complete
+        case failed(Error)
+        case cancelled(AsyncIterableStreamCancellationReason)
     }
 
-    private var status: Status = .initializing
-    private var continuation: AsyncThrowingStream<Element, Error>.Continuation?
-    private var producerTask: Task<Void, Never>?
-    private var pendingCancel: AsyncIterableStreamCancellationReason?
-    private var pendingFinish: PendingFinish?
-    private let onCancel: @Sendable (AsyncIterableStreamCancellationReason) async -> Void
+    nonisolated let cancellation = StreamCancellationRequest()
+    private var pull: (@Sendable () async throws -> Element?)?
+    private var onCancel: (@Sendable (AsyncIterableStreamCancellationReason) async -> Void)?
+    private var release: (@Sendable () -> Void)?
+    private var end: End?
+    private var active: Task<Void, Never>?
+    private var waiters: [CheckedContinuation<Element?, Error>] = []
 
-    init(onCancel: @escaping @Sendable (AsyncIterableStreamCancellationReason) async -> Void) {
+    init(
+        pull: @escaping @Sendable () async throws -> Element?,
+        onCancel: @escaping @Sendable (AsyncIterableStreamCancellationReason) async -> Void,
+        release: @escaping @Sendable () -> Void
+    ) {
+        self.pull = pull
         self.onCancel = onCancel
+        self.release = release
     }
 
-    func initialize(
-        continuation: AsyncThrowingStream<Element, Error>.Continuation,
-        task: Task<Void, Never>
-    ) async {
-        self.continuation = continuation
-        self.producerTask = task
-        if status == .initializing {
-            status = .active
+    func next() async throws -> Element? {
+        if let reason = cancellation.reason { await cancel(reason) }
+        if let end { return try terminal(end) }
+        return try await withCheckedThrowingContinuation { continuation in
+            waiters.append(continuation)
+            startPull()
         }
+    }
 
-        if let pendingCancel {
-            self.pendingCancel = nil
-            await requestCancel(reason: pendingCancel)
+    func cancel(_ reason: AsyncIterableStreamCancellationReason) async {
+        cancellation.request(reason)
+        guard end == nil else { return }
+        let reason = cancellation.reason ?? reason
+        end = .cancelled(reason)
+        active?.cancel()
+        settleWaiters()
+        let onCancel = onCancel
+        self.onCancel = nil
+        await onCancel?(reason)
+        if active == nil { releaseSource() }
+    }
+
+    private func startPull() {
+        guard active == nil, !waiters.isEmpty, let pull else { return }
+        active = Task {
+            let result: Result<Element?, Error>
+            do { result = .success(try await pull()) }
+            catch { result = .failure(error) }
+            completePull(result)
+        }
+    }
+
+    private func completePull(_ result: Result<Element?, Error>) {
+        active = nil
+        if end == nil, let reason = cancellation.reason {
+            Task { await cancel(reason) }
             return
         }
-
-        if let pendingFinish {
-            self.pendingFinish = nil
-
-            // The source finished before the actor was initialized (race). Ensure the
-            // continuation is closed so consumers don't hang.
-            switch pendingFinish {
-            case .success:
-                continuation.finish()
-            case .failure(let error):
-                continuation.finish(throwing: error)
-            }
-
-            self.continuation = nil
-            self.producerTask = nil
-            status = .finished
+        if end != nil { releaseSource(); return }
+        switch result {
+        case .success(let value?):
+            waiters.removeFirst().resume(returning: value)
+            startPull()
+        case .success(nil):
+            end = .complete
+            releaseSource()
+            settleWaiters()
+        case .failure(let error):
+            end = .failed(error)
+            releaseSource()
+            settleWaiters()
         }
     }
 
-    func requestCancel(reason: AsyncIterableStreamCancellationReason) async {
-        switch status {
-        case .initializing:
-            pendingCancel = reason
-        case .active:
-            status = .finishing
-            let task = producerTask
-            producerTask = nil
-            task?.cancel()
-
-            await onCancel(reason)
-
-            switch reason {
-            case .none:
-                continuation?.finish()
-            default:
-                continuation?.finish(throwing: AsyncIterableStreamCancelledError(reason: reason))
-            }
-
-            continuation = nil
-
-            if let task {
-                await task.value
-            }
-
-            status = .finished
-        case .finishing, .finished:
-            break
+    private func terminal(_ end: End) throws -> Element? {
+        switch end {
+        case .complete, .cancelled(.none): return nil
+        case .failed(let error): throw error
+        case .cancelled(let reason): throw AsyncIterableStreamCancelledError(reason: reason)
         }
     }
 
-    func finishIfNeeded() async {
-        switch status {
-        case .initializing:
-            status = .finished
-            pendingCancel = nil
-            pendingFinish = .success
-        case .active:
-            status = .finished
-            continuation?.finish()
-            continuation = nil
-            producerTask = nil
-        case .finishing, .finished:
-            break
-        }
+    private func releaseSource() {
+        release?()
+        release = nil
+        pull = nil
+        onCancel = nil
     }
 
-    func finishIfNeeded(error: Error) async {
-        switch status {
-        case .initializing:
-            status = .finished
-            pendingCancel = nil
-            pendingFinish = .failure(error)
-        case .active:
-            status = .finished
-            continuation?.finish(throwing: error)
-            continuation = nil
-            producerTask = nil
-        case .finishing, .finished:
-            break
+    private func settleWaiters() {
+        guard let end else { return }
+        let waiters = waiters
+        self.waiters.removeAll()
+        for waiter in waiters {
+            do { waiter.resume(returning: try terminal(end)) }
+            catch { waiter.resume(throwing: error) }
         }
     }
+}
 
-    func didCancel() async {
-        if status == .finishing {
-            status = .finished
-        }
-        producerTask = nil
-        continuation = nil
+private final class StreamIteratorLease<Element: Sendable>: @unchecked Sendable {
+    private let reader: PullStreamReader<Element>
+    private let ownsReader: Bool
+    private let release: @Sendable () -> Void
+    private let lock = NSLock()
+    private var finished = false
+
+    init(reader: PullStreamReader<Element>, ownsReader: Bool, release: @escaping @Sendable () -> Void) {
+        self.reader = reader
+        self.ownsReader = ownsReader
+        self.release = release
     }
 
-    func handleTermination(_ termination: AsyncThrowingStream<Element, Error>.Continuation.Termination) async {
-        switch termination {
-        case .finished:
-            if status == .active {
-                status = .finished
+    func next() async throws -> Element? {
+        if isFinished() { return nil }
+        guard ownsReader else { finish(); throw AsyncIterableStreamLockedError() }
+        do {
+            let value = try await withTaskCancellationHandler {
+                if Task.isCancelled { await reader.cancel(.none) }
+                return try await reader.next()
+            } onCancel: {
+                self.reader.cancellation.request(.none)
+                Task { await self.reader.cancel(.none) }
             }
-            producerTask = nil
-            continuation = nil
-        case .cancelled:
-            switch status {
-            case .initializing:
-                status = .finishing
-                pendingCancel = .some(.none)
-            case .active:
-                status = .finishing
-                let task = producerTask
-                producerTask = nil
-                task?.cancel()
-                await onCancel(.none)
-                if let task {
-                    await task.value
-                }
-                status = .finished
-                continuation = nil
-            case .finishing, .finished:
-                break
-            }
-        @unknown default:
-            break
-        }
+            if value == nil { finish() }
+            return value
+        } catch { finish(); throw error }
+    }
+
+    private func isFinished() -> Bool { lock.lock(); defer { lock.unlock() }; return finished }
+
+    private func finish() {
+        lock.lock()
+        let wasFinished = finished
+        finished = true
+        lock.unlock()
+        if !wasFinished && ownsReader { release() }
+    }
+
+    deinit {
+        guard !finished && ownsReader else { return }
+        reader.cancellation.request(.none)
+        release()
+        let reader = reader
+        Task { await reader.cancel(.none) }
     }
 }
