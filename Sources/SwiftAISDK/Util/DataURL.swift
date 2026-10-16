@@ -14,9 +14,15 @@ public func getTextFromDataUrl(_ dataUrl: String) throws -> String {
     }
     let asciiWhitespace: Set<UnicodeScalar> = ["\t", "\n", "\u{0C}", "\r", " "]
     let encoded = String(String.UnicodeScalarView(segments[1].unicodeScalars.filter { !asciiWhitespace.contains($0) }))
-    let remainder = encoded.count % 4
-    guard remainder != 1,
-          let data = Data(base64Encoded: encoded + String(repeating: "=", count: remainder == 0 ? 0 : 4 - remainder)) else {
+    var content = encoded
+    if content.utf8.count % 4 == 0 {
+        if content.hasSuffix("==") { content.removeLast(2) }
+        else if content.hasSuffix("=") { content.removeLast() }
+    }
+    let remainder = content.utf8.count % 4
+    guard remainder != 1, content.utf8.allSatisfy({ byte in
+        (65...90).contains(byte) || (97...122).contains(byte) || (48...57).contains(byte) || byte == 43 || byte == 47
+    }), let data = Data(base64Encoded: content + String(repeating: "=", count: remainder == 0 ? 0 : 4 - remainder)) else {
         throw decodingError()
     }
     let pattern = #"(?:^|;)\s*charset\s*=\s*(?:"([^"]+)"|([^;\s]+))"#

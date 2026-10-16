@@ -15,6 +15,14 @@ struct DataURLTests {
         #expect(try getTextFromDataUrl(input) == expected)
     }
 
+    @Test("unpadded base64 is accepted while incomplete padding is rejected")
+    func forgivingBase64Padding() throws {
+        #expect(try getTextFromDataUrl("data:text/plain;base64,AA") == "\0")
+        #expect(throws: InvalidArgumentError.self) {
+            try getTextFromDataUrl("data:text/plain;base64,AA=")
+        }
+    }
+
     @Test(arguments: ["not-a-data-url", "data:text/plain;base64,invalid-base64", "data:text/plain;base64,aG\u{A0}k="])
     func rejectsMalformedData(input: String) {
         #expect(throws: InvalidArgumentError.self) { try getTextFromDataUrl(input) }
