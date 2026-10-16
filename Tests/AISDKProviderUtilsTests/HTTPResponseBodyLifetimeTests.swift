@@ -90,6 +90,43 @@ struct HTTPResponseBodyLifetimeTests {
         }
     }
 
+    @Test("closure abort cancels an unread body even when the producer retains its stream")
+    func abortIdleRetainedProducer() async throws {
+        let flag = AbortFlag()
+        let producer = AsyncThrowingStream<Data, Error>.makeStream()
+        let terminated = AsyncStream<Bool>.makeStream()
+        producer.continuation.onTermination = { reason in
+            switch reason {
+            case .cancelled:
+                terminated.continuation.yield(true)
+            case .finished:
+                terminated.continuation.yield(false)
+            @unknown default:
+                terminated.continuation.yield(false)
+            }
+        }
+        producer.continuation.yield(Data([1, 2, 3]))
+        let response = try await getFromAPI(
+            url: "https://api.example.com/file",
+            failedResponseHandler: createStatusCodeErrorResponseHandler(),
+            successfulResponseHandler: createBinaryStreamResponseHandler(),
+            isAborted: { flag.isAborted },
+            fetch: bodyFetch { producer.stream }
+        )
+        flag.abort()
+        try await withDeadline {
+            var endings = terminated.stream.makeAsyncIterator()
+            let wasCancelled = await endings.next()
+            try Task.checkCancellation()
+            #expect(wasCancelled == true)
+        }
+        await #expect(throws: CancellationError.self) {
+            var iterator = response.value.makeAsyncIterator()
+            _ = try await iterator.next()
+        }
+        withExtendedLifetime((response, producer)) {}
+    }
+
     @Test("EOF releases the source and abort observation while the result stays alive")
     func eofReleasesResources() async throws {
         let sourceReleased = AsyncStream<Void>.makeStream()

@@ -148,8 +148,7 @@ private final class AbortableResponseBody: @unchecked Sendable {
     }
 
     deinit {
-        observer?.cancel()
-        read?.cancel()
+        cancel()
     }
 
     private func checkAbort() -> Bool {
@@ -202,7 +201,8 @@ private final class AbortableResponseBody: @unchecked Sendable {
     private func cancel() {
         lock.lock()
         cancelled = true
-        source = nil
+        let source = self.source
+        self.source = nil
         isAborted = nil
         let read = self.read
         let observer = self.observer
@@ -210,6 +210,14 @@ private final class AbortableResponseBody: @unchecked Sendable {
         lock.unlock()
         read?.cancel()
         observer?.cancel()
+        if let source {
+            Task {
+                // Join the active pull before cancelling the iterator, including externally retained streams.
+                _ = await read?.result
+                withUnsafeCurrentTask { $0?.cancel() }
+                _ = try? await source.next()
+            }
+        }
     }
 }
 
