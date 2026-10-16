@@ -45,7 +45,7 @@ struct ProdiaProviderTests {
 
     @Test("creates image models via .image")
     func createsImageModels() throws {
-        let provider = createProdiaProvider(settings: .init(apiKey: "test-api-key"))
+        let provider = createProdia(settings: .init(apiKey: "test-api-key"))
 
         let imageModel = provider.image(modelId: .inferenceFluxFastSchnellTxt2imgV2)
         let imageModelAlt = provider.image(.inferenceFluxFastSchnellTxt2imgV2)
@@ -57,7 +57,7 @@ struct ProdiaProviderTests {
         #expect(imageModelAlt.modelId == "inference.flux-fast.schnell.txt2img.v2")
         #expect(imageModelAlt2.modelId == "inference.flux.schnell.txt2img.v2")
         #expect(imageModel2.modelId == "inference.flux.schnell.txt2img.v2")
-        #expect(imageModel.specificationVersion == "v3")
+        #expect(imageModel.specificationVersion == "v4")
     }
 
     @Test("configures baseURL and headers correctly")
@@ -76,7 +76,7 @@ struct ProdiaProviderTests {
         ])
 
         let httpResponse = HTTPURLResponse(
-            url: URL(string: "https://api.example.com/v2/job")!,
+            url: URL(string: "https://api.example.com/v2/job?price=true")!,
             statusCode: 200,
             httpVersion: "HTTP/1.1",
             headerFields: [
@@ -89,7 +89,7 @@ struct ProdiaProviderTests {
             return FetchResponse(body: .data(multipart.body), urlResponse: httpResponse)
         }
 
-        let provider = createProdiaProvider(settings: .init(
+        let provider = createProdia(settings: .init(
             apiKey: "test-api-key",
             baseURL: "https://api.example.com/v2",
             headers: [
@@ -101,7 +101,7 @@ struct ProdiaProviderTests {
         let model = provider.image(modelId: .inferenceFluxFastSchnellTxt2imgV2)
 
         _ = try await model.doGenerate(
-            options: ImageModelV3CallOptions(
+            options: ImageModelV4CallOptions(
                 prompt: "A serene mountain landscape at sunset",
                 n: 1,
                 size: nil,
@@ -109,9 +109,7 @@ struct ProdiaProviderTests {
                 seed: nil,
                 providerOptions: [:],
                 abortSignal: nil,
-                headers: nil,
-                files: nil,
-                mask: nil
+                headers: nil
             )
         )
 
@@ -127,13 +125,13 @@ struct ProdiaProviderTests {
             result[entry.key.lowercased()] = entry.value
         }
 
-        #expect(request.url?.absoluteString == "https://api.example.com/v2/job")
+        #expect(request.url?.absoluteString == "https://api.example.com/v2/job?price=true")
         #expect(request.httpMethod == "POST")
         #expect(headers["authorization"] == "Bearer test-api-key")
         #expect(headers["x-extra-header"] == "extra")
         #expect(headers["accept"] == "multipart/form-data; image/png")
 
-        #expect((headers["user-agent"] ?? "").contains("ai-sdk/prodia/"))
+        #expect((headers["user-agent"] ?? "").contains("ai-sdk-prodia/"))
 
         if let type = json["type"] as? String {
             #expect(type == "inference.flux-fast.schnell.txt2img.v2")
@@ -150,14 +148,14 @@ struct ProdiaProviderTests {
 
     @Test("throws NoSuchModelError for unsupported model types")
     func throwsForUnsupportedTypes() throws {
-        let provider = createProdiaProvider(settings: .init(apiKey: "test-api-key"))
+        let provider = createProdia(settings: .init(apiKey: "test-api-key"))
 
         #expect(throws: NoSuchModelError.self) {
             _ = try provider.languageModel(modelId: "some-id")
         }
 
         #expect(throws: NoSuchModelError.self) {
-            _ = try provider.textEmbeddingModel(modelId: "some-id")
+            _ = try provider.embeddingModel(modelId: "some-id")
         }
     }
 
@@ -201,12 +199,12 @@ struct ProdiaProviderTests {
                 return FetchResponse(body: .data(Data("{}".utf8)), urlResponse: response)
             }
 
-            let provider = createProdiaProvider(settings: .init(fetch: fetch))
+            let provider = createProdia(settings: .init(fetch: fetch))
             let model = provider.image(.inferenceFluxFastSchnellTxt2imgV2)
 
             do {
                 _ = try await model.doGenerate(
-                    options: ImageModelV3CallOptions(
+                    options: ImageModelV4CallOptions(
                         prompt: "Auth regression",
                         n: 1,
                         providerOptions: [:]

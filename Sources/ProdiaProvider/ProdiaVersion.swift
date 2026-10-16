@@ -9,5 +9,5 @@ import AISDKProviderUtils
 
 /// Version string for the Prodia provider package.
 /// Mirrors `packages/prodia/src/version.ts`.
-public let PRODIA_VERSION = SDKReleaseVersion.value
+public let VERSION = SDKReleaseVersion.value
 

@@ -53,7 +53,7 @@ struct ProdiaImageModelTests {
     ) -> ProdiaImageModel {
         ProdiaImageModel(
             modelId: .inferenceFluxFastSchnellTxt2imgV2,
-            config: ProdiaImageModelConfig(
+            config: ProdiaModelConfig(
                 provider: "prodia.image",
                 baseURL: baseURL,
                 headers: headers,
@@ -79,7 +79,7 @@ struct ProdiaImageModelTests {
         ])
 
         let httpResponse = HTTPURLResponse(
-            url: URL(string: "https://api.example.com/v2/job")!,
+            url: URL(string: "https://api.example.com/v2/job?price=true")!,
             statusCode: 200,
             httpVersion: "HTTP/1.1",
             headerFields: ["Content-Type": multipart.contentType]
@@ -93,7 +93,7 @@ struct ProdiaImageModelTests {
         let model = makeModel(fetch: fetch)
 
         _ = try await model.doGenerate(
-            options: ImageModelV3CallOptions(
+            options: ImageModelV4CallOptions(
                 prompt: "A cute baby sea otter",
                 n: 1,
                 size: nil,
@@ -101,9 +101,7 @@ struct ProdiaImageModelTests {
                 seed: 12345,
                 providerOptions: ["prodia": ["steps": .number(4)]],
                 abortSignal: nil,
-                headers: nil,
-                files: nil,
-                mask: nil
+                headers: nil
             )
         )
 
@@ -136,7 +134,7 @@ struct ProdiaImageModelTests {
         ])
 
         let httpResponse = HTTPURLResponse(
-            url: URL(string: "https://api.example.com/v2/job")!,
+            url: URL(string: "https://api.example.com/v2/job?price=true")!,
             statusCode: 200,
             httpVersion: "HTTP/1.1",
             headerFields: ["Content-Type": multipart.contentType]
@@ -150,7 +148,7 @@ struct ProdiaImageModelTests {
         let model = makeModel(fetch: fetch)
 
         _ = try await model.doGenerate(
-            options: ImageModelV3CallOptions(
+            options: ImageModelV4CallOptions(
                 prompt: "A cute baby sea otter",
                 n: 1,
                 size: "1024x768",
@@ -158,9 +156,7 @@ struct ProdiaImageModelTests {
                 seed: nil,
                 providerOptions: [:],
                 abortSignal: nil,
-                headers: nil,
-                files: nil,
-                mask: nil
+                headers: nil
             )
         )
 
@@ -193,7 +189,7 @@ struct ProdiaImageModelTests {
         ])
 
         let httpResponse = HTTPURLResponse(
-            url: URL(string: "https://api.example.com/v2/job")!,
+            url: URL(string: "https://api.example.com/v2/job?price=true")!,
             statusCode: 200,
             httpVersion: "HTTP/1.1",
             headerFields: ["Content-Type": multipart.contentType]
@@ -207,7 +203,7 @@ struct ProdiaImageModelTests {
         let model = makeModel(fetch: fetch)
 
         _ = try await model.doGenerate(
-            options: ImageModelV3CallOptions(
+            options: ImageModelV4CallOptions(
                 prompt: "A cute baby sea otter",
                 n: 1,
                 size: "1024x768",
@@ -220,9 +216,7 @@ struct ProdiaImageModelTests {
                     ]
                 ],
                 abortSignal: nil,
-                headers: nil,
-                files: nil,
-                mask: nil
+                headers: nil
             )
         )
 
@@ -255,7 +249,7 @@ struct ProdiaImageModelTests {
         ])
 
         let httpResponse = HTTPURLResponse(
-            url: URL(string: "https://api.example.com/v2/job")!,
+            url: URL(string: "https://api.example.com/v2/job?price=true")!,
             statusCode: 200,
             httpVersion: "HTTP/1.1",
             headerFields: ["Content-Type": multipart.contentType]
@@ -269,7 +263,7 @@ struct ProdiaImageModelTests {
         let model = makeModel(fetch: fetch)
 
         _ = try await model.doGenerate(
-            options: ImageModelV3CallOptions(
+            options: ImageModelV4CallOptions(
                 prompt: "A cute baby sea otter",
                 n: 1,
                 size: nil,
@@ -281,9 +275,7 @@ struct ProdiaImageModelTests {
                     ]
                 ],
                 abortSignal: nil,
-                headers: nil,
-                files: nil,
-                mask: nil
+                headers: nil
             )
         )
 
@@ -315,7 +307,7 @@ struct ProdiaImageModelTests {
         ])
 
         let httpResponse = HTTPURLResponse(
-            url: URL(string: "https://api.example.com/v2/job")!,
+            url: URL(string: "https://api.example.com/v2/job?price=true")!,
             statusCode: 200,
             httpVersion: "HTTP/1.1",
             headerFields: ["Content-Type": multipart.contentType]
@@ -329,7 +321,7 @@ struct ProdiaImageModelTests {
         let model = makeModel(fetch: fetch)
 
         _ = try await model.doGenerate(
-            options: ImageModelV3CallOptions(
+            options: ImageModelV4CallOptions(
                 prompt: "A cute baby sea otter",
                 n: 1,
                 size: nil,
@@ -344,9 +336,7 @@ struct ProdiaImageModelTests {
                     ]
                 ],
                 abortSignal: nil,
-                headers: nil,
-                files: nil,
-                mask: nil
+                headers: nil
             )
         )
 
@@ -379,7 +369,7 @@ struct ProdiaImageModelTests {
         ])
 
         let httpResponse = HTTPURLResponse(
-            url: URL(string: "https://api.example.com/v2/job")!,
+            url: URL(string: "https://api.example.com/v2/job?price=true")!,
             statusCode: 200,
             httpVersion: "HTTP/1.1",
             headerFields: ["Content-Type": multipart.contentType]
@@ -393,7 +383,7 @@ struct ProdiaImageModelTests {
         let model = makeModel(fetch: fetch)
 
         _ = try await model.doGenerate(
-            options: ImageModelV3CallOptions(
+            options: ImageModelV4CallOptions(
                 prompt: "A cute baby sea otter",
                 n: 1,
                 size: nil,
@@ -405,9 +395,7 @@ struct ProdiaImageModelTests {
                     ]
                 ],
                 abortSignal: nil,
-                headers: nil,
-                files: nil,
-                mask: nil
+                headers: nil
             )
         )
 
@@ -439,7 +427,7 @@ struct ProdiaImageModelTests {
         ])
 
         let httpResponse = HTTPURLResponse(
-            url: URL(string: "https://api.example.com/v2/job")!,
+            url: URL(string: "https://api.example.com/v2/job?price=true")!,
             statusCode: 200,
             httpVersion: "HTTP/1.1",
             headerFields: ["Content-Type": multipart.contentType]
@@ -460,7 +448,7 @@ struct ProdiaImageModelTests {
         }
 
         #expect(request.httpMethod == "POST")
-        #expect(request.url?.absoluteString == "https://api.example.com/v2/job")
+        #expect(request.url?.absoluteString == "https://api.example.com/v2/job?price=true")
     }
 
     @Test("sends Accept: multipart/form-data header")
@@ -479,7 +467,7 @@ struct ProdiaImageModelTests {
         ])
 
         let httpResponse = HTTPURLResponse(
-            url: URL(string: "https://api.example.com/v2/job")!,
+            url: URL(string: "https://api.example.com/v2/job?price=true")!,
             statusCode: 200,
             httpVersion: "HTTP/1.1",
             headerFields: ["Content-Type": multipart.contentType]
@@ -521,7 +509,7 @@ struct ProdiaImageModelTests {
         ])
 
         let httpResponse = HTTPURLResponse(
-            url: URL(string: "https://api.example.com/v2/job")!,
+            url: URL(string: "https://api.example.com/v2/job?price=true")!,
             statusCode: 200,
             httpVersion: "HTTP/1.1",
             headerFields: ["Content-Type": multipart.contentType]
@@ -551,9 +539,7 @@ struct ProdiaImageModelTests {
                 seed: nil,
                 providerOptions: [:],
                 abortSignal: nil,
-                headers: ["Custom-Request-Header": "request-header-value"],
-                files: nil,
-                mask: nil
+                headers: ["Custom-Request-Header": "request-header-value"]
             )
         )
 
@@ -582,7 +568,7 @@ struct ProdiaImageModelTests {
         ])
 
         let httpResponse = HTTPURLResponse(
-            url: URL(string: "https://api.example.com/v2/job")!,
+            url: URL(string: "https://api.example.com/v2/job?price=true")!,
             statusCode: 200,
             httpVersion: "HTTP/1.1",
             headerFields: ["Content-Type": multipart.contentType]
@@ -616,7 +602,7 @@ struct ProdiaImageModelTests {
         )
 
         let httpResponse = HTTPURLResponse(
-            url: URL(string: "https://api.example.com/v2/job")!,
+            url: URL(string: "https://api.example.com/v2/job?price=true")!,
             statusCode: 200,
             httpVersion: "HTTP/1.1",
             headerFields: ["Content-Type": multipart.contentType]
@@ -650,7 +636,7 @@ struct ProdiaImageModelTests {
         )
 
         let httpResponse = HTTPURLResponse(
-            url: URL(string: "https://api.example.com/v2/job")!,
+            url: URL(string: "https://api.example.com/v2/job?price=true")!,
             statusCode: 200,
             httpVersion: "HTTP/1.1",
             headerFields: ["Content-Type": multipart.contentType]
@@ -684,7 +670,7 @@ struct ProdiaImageModelTests {
         ])
 
         let httpResponse = HTTPURLResponse(
-            url: URL(string: "https://api.example.com/v2/job")!,
+            url: URL(string: "https://api.example.com/v2/job?price=true")!,
             statusCode: 200,
             httpVersion: "HTTP/1.1",
             headerFields: ["Content-Type": multipart.contentType]
@@ -723,7 +709,7 @@ struct ProdiaImageModelTests {
         ])
 
         let httpResponse = HTTPURLResponse(
-            url: URL(string: "https://api.example.com/v2/job")!,
+            url: URL(string: "https://api.example.com/v2/job?price=true")!,
             statusCode: 200,
             httpVersion: "HTTP/1.1",
             headerFields: ["Content-Type": multipart.contentType]
@@ -757,7 +743,7 @@ struct ProdiaImageModelTests {
         ])
 
         let httpResponse = HTTPURLResponse(
-            url: URL(string: "https://api.example.com/v2/job")!,
+            url: URL(string: "https://api.example.com/v2/job?price=true")!,
             statusCode: 200,
             httpVersion: "HTTP/1.1",
             headerFields: ["Content-Type": multipart.contentType]
@@ -795,7 +781,7 @@ struct ProdiaImageModelTests {
         ]
         let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
         let httpResponse = HTTPURLResponse(
-            url: URL(string: "https://api.example.com/v2/job")!,
+            url: URL(string: "https://api.example.com/v2/job?price=true")!,
             statusCode: 400,
             httpVersion: "HTTP/1.1",
             headerFields: ["Content-Type": "application/json"]
@@ -813,7 +799,7 @@ struct ProdiaImageModelTests {
         } catch let error as APICallError {
             #expect(error.message == "Prompt cannot be empty")
             #expect(error.statusCode == 400)
-            #expect(error.url == "https://api.example.com/v2/job")
+            #expect(error.url == "https://api.example.com/v2/job?price=true")
         }
     }
 
@@ -826,7 +812,7 @@ struct ProdiaImageModelTests {
         ])
 
         let httpResponse = HTTPURLResponse(
-            url: URL(string: "https://api.example.com/v2/job")!,
+            url: URL(string: "https://api.example.com/v2/job?price=true")!,
             statusCode: 200,
             httpVersion: "HTTP/1.1",
             headerFields: [
@@ -854,7 +840,7 @@ struct ProdiaImageModelTests {
         let model = makeModel()
         #expect(model.provider == "prodia.image")
         #expect(model.modelId == "inference.flux-fast.schnell.txt2img.v2")
-        #expect(model.specificationVersion == "v3")
+        #expect(model.specificationVersion == "v4")
         switch model.maxImagesPerCall {
         case .value(let value):
             #expect(value == 1)
