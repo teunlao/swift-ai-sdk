@@ -312,6 +312,19 @@ public struct UnsupportedStandardSchemaVendorError: Error, CustomStringConvertib
     }
 }
 
+/// A standard schema without a JSON Schema converter was asked for its JSON Schema.
+public struct StandardSchemaJSONSchemaUnsupportedError: Error, CustomStringConvertible, Sendable {
+    public let vendor: String
+
+    public init(vendor: String) {
+        self.vendor = vendor
+    }
+
+    public var description: String {
+        "Standard schema vendor '\(vendor)' does not support JSON Schema conversion."
+    }
+}
+
 public struct SchemaValidationIssuesError: Error, CustomStringConvertible, @unchecked Sendable {
     public let vendor: String
     public let issues: Any
@@ -346,15 +359,10 @@ public func standardSchema<Output>(_ schema: StandardSchemaV1<Output>) -> Schema
     }
 
     let resolver: Schema<Output>.JSONSchemaResolver = {
-        if let jsonSchema = schema.definition.jsonSchema {
-            return addAdditionalPropertiesToJsonSchema(try await jsonSchema())
+        guard let jsonSchema = schema.definition.jsonSchema else {
+            throw StandardSchemaJSONSchemaUnsupportedError(vendor: vendor)
         }
-
-        return .object([
-            "type": .string("object"),
-            "properties": .object([:]),
-            "additionalProperties": .bool(false)
-        ])
+        return addAdditionalPropertiesToJsonSchema(try await jsonSchema())
     }
 
     let validator: Schema<Output>.Validator = { value in

@@ -271,8 +271,8 @@ struct SchemaTests {
         ]))
     }
 
-    @Test("standardSchema uses fallback JSON schema when resolver missing")
-    func standardSchemaFallbackJsonSchema() async throws {
+    @Test("standardSchema without a JSON Schema converter fails JSON Schema resolution")
+    func standardSchemaWithoutJsonSchemaConverterFails() async throws {
         let definition = StandardSchemaV1<[String: Any]>.Definition(
             vendor: "custom",
             validate: { value in
@@ -284,13 +284,10 @@ struct SchemaTests {
         )
 
         let schema = standardSchema(StandardSchemaV1(definition: definition))
-        let resolved = try await schema.jsonSchema()
 
-        #expect(resolved == .object([
-            "type": .string("object"),
-            "properties": .object([:]),
-            "additionalProperties": .bool(false)
-        ]))
+        await #expect(throws: StandardSchemaJSONSchemaUnsupportedError.self) {
+            _ = try await schema.jsonSchema()
+        }
     }
 
     @Test("standardSchema normalizes provided JSON schema for other vendors")
