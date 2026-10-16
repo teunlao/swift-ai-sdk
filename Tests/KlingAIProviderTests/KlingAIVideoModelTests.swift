@@ -88,6 +88,21 @@ struct KlingAIVideoModelTests {
         }
     }
 
+    @Test("unsupported settings are surfaced without warnings for supported defaults", arguments: [false, true])
+    func unsupportedSettings(_ configured: Bool) async throws {
+        let fetch: FetchFunction = { request in
+            klingResponse(request, #"{"code":0,"message":"success","data":{"task_id":"task"}}"#)
+        }
+        let model = createKlingAI(settings: .init(apiKey: "key", fetch: fetch)).video(.klingV30T2v)
+        let result = try await model.doStart(options: .init(n: configured ? 2 : 1, resolution: configured ? "1920x1080" : "", fps: configured ? 24 : 0, seed: configured ? 42 : 0))
+        let features = result.warnings.compactMap { warning -> String? in
+            if case .unsupported(let feature, _) = warning { return feature }
+            return nil
+        }
+        #expect(features == (configured ? ["resolution", "seed", "fps", "n"] : []))
+        #expect(result.warnings.count == features.count)
+    }
+
     @Test("video references and video frames are rejected as guidance")
     func videoGuidance() async throws {
         let fetch: FetchFunction = { request in
