@@ -3,50 +3,53 @@ import AISDKProvider
 import AISDKProviderUtils
 
 /**
- A function that attempts to repair a tool call that failed to parse.
-
- It receives the error and the context as arguments and returns the repair
- tool call or nil if the repair is not possible.
+ Options of a tool call repair function.
 
  Port of `@ai-sdk/ai/src/generate-text/tool-call-repair-function.ts`.
  */
-
-/// Options for tool call repair function.
 public struct ToolCallRepairOptions: Sendable {
-    /// The system prompt.
-    public let system: String?
+    /// The instructions of the step.
+    public let instructions: Instructions?
 
-    /// The messages in the current generation step.
+    /// Deprecated alias for `instructions`.
+    public var system: Instructions? { instructions }
+
+    /// The messages of the step.
     public let messages: [ModelMessage]
 
     /// The tool call that failed to parse.
-    public let toolCall: LanguageModelV3ToolCall
+    public let toolCall: LanguageModelV4ToolCall
 
-    /// The tools that are available.
+    /// The available tools.
     public let tools: ToolSet
 
-    /// A function that returns the JSON Schema for a tool.
-    public let inputSchema: @Sendable (String) async throws -> [String: JSONValue]
+    /// Returns the JSON Schema of a tool's input.
+    public let inputSchema: @Sendable (String) async throws -> JSONValue
 
-    /// The error that occurred while parsing the tool call.
+    /// The parse error: `NoSuchToolError` or `InvalidToolInputError`.
     public let error: any Error
 
+    /// Abort signal of the generation.
+    public let abortSignal: (@Sendable () -> Bool)?
+
     public init(
-        system: String?,
+        instructions: Instructions?,
         messages: [ModelMessage],
-        toolCall: LanguageModelV3ToolCall,
+        toolCall: LanguageModelV4ToolCall,
         tools: ToolSet,
-        inputSchema: @Sendable @escaping (String) async throws -> [String: JSONValue],
-        error: any Error
+        inputSchema: @escaping @Sendable (String) async throws -> JSONValue,
+        error: any Error,
+        abortSignal: (@Sendable () -> Bool)? = nil
     ) {
-        self.system = system
+        self.instructions = instructions
         self.messages = messages
         self.toolCall = toolCall
         self.tools = tools
         self.inputSchema = inputSchema
         self.error = error
+        self.abortSignal = abortSignal
     }
 }
 
-/// A function that attempts to repair a tool call that failed to parse.
-public typealias ToolCallRepairFunction = @Sendable (ToolCallRepairOptions) async throws -> LanguageModelV3ToolCall?
+/// Attempts to repair a tool call that failed to parse; returns `nil` when no repair is possible.
+public typealias ToolCallRepairFunction = @Sendable (ToolCallRepairOptions) async throws -> LanguageModelV4ToolCall?

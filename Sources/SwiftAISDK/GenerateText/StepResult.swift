@@ -1,96 +1,185 @@
-/**
- The result of a single step in the generation process.
-
- Port of `@ai-sdk/ai/src/generate-text/step-result.ts`.
-
- Represents the output from a single step in a multi-step text generation flow.
- Contains all content generated in the step, including text, reasoning, tool calls,
- and tool results, along with usage information and metadata.
- */
-
 import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
 /**
+ Tool contexts keyed by tool name.
+
+ Port of upstream `InferToolSetContext<TOOLS>` for the untyped Swift `ToolSet`.
+ */
+public typealias ToolsContext = [String: Context]
+
+/// Provider and model that produced a result.
+public struct ModelInfo: Sendable, Equatable {
+    public let provider: String
+    public let modelId: String
+
+    public init(provider: String, modelId: String) {
+        self.provider = provider
+        self.modelId = modelId
+    }
+}
+
+/**
+ Timing statistics for the intervals between output chunks.
+
+ Port of `OutputChunkTimingStats` from `@ai-sdk/ai/src/generate-text/step-result.ts`.
+ */
+public struct OutputChunkTimingStats: Sendable, Equatable, Codable {
+    public let min: Double
+    public let p10: Double
+    public let median: Double
+    public let avg: Double
+    public let p90: Double
+    public let max: Double
+
+    public init(min: Double, p10: Double, median: Double, avg: Double, p90: Double, max: Double) {
+        self.min = min
+        self.p10 = p10
+        self.median = median
+        self.avg = avg
+        self.p90 = p90
+        self.max = max
+    }
+}
+
+/**
+ Performance metrics of a step.
+
+ Port of `StepResultPerformance` from `@ai-sdk/ai/src/generate-text/step-result.ts`.
+ */
+public struct StepResultPerformance: Sendable, Equatable, Codable {
+    /// Output tokens per second over the model response time.
+    public let effectiveOutputTokensPerSecond: Double
+
+    /// Output tokens per second after the first output chunk (streaming only).
+    public let outputTokensPerSecond: Double?
+
+    /// Input tokens per second until the first output chunk (streaming only).
+    public let inputTokensPerSecond: Double?
+
+    /// Input and output tokens per second over the model response time.
+    public let effectiveTotalTokensPerSecond: Double
+
+    /// Duration of the whole step, including tool execution, in milliseconds.
+    public let stepTimeMs: Double
+
+    /// Duration of the model response in milliseconds.
+    public let responseTimeMs: Double
+
+    /// Tool execution durations in milliseconds, keyed by tool call id.
+    public let toolExecutionMs: [String: Double]
+
+    /// Time until the first output chunk in milliseconds (streaming only).
+    public let timeToFirstOutputMs: Double?
+
+    /// Intervals between output chunks (streaming only).
+    public let timeBetweenOutputChunksMs: OutputChunkTimingStats?
+
+    public init(
+        effectiveOutputTokensPerSecond: Double,
+        outputTokensPerSecond: Double? = nil,
+        inputTokensPerSecond: Double? = nil,
+        effectiveTotalTokensPerSecond: Double,
+        stepTimeMs: Double,
+        responseTimeMs: Double,
+        toolExecutionMs: [String: Double] = [:],
+        timeToFirstOutputMs: Double? = nil,
+        timeBetweenOutputChunksMs: OutputChunkTimingStats? = nil
+    ) {
+        self.effectiveOutputTokensPerSecond = effectiveOutputTokensPerSecond
+        self.outputTokensPerSecond = outputTokensPerSecond
+        self.inputTokensPerSecond = inputTokensPerSecond
+        self.effectiveTotalTokensPerSecond = effectiveTotalTokensPerSecond
+        self.stepTimeMs = stepTimeMs
+        self.responseTimeMs = responseTimeMs
+        self.toolExecutionMs = toolExecutionMs
+        self.timeToFirstOutputMs = timeToFirstOutputMs
+        self.timeBetweenOutputChunksMs = timeBetweenOutputChunksMs
+    }
+
+    /// Zero metrics.
+    public static let empty = StepResultPerformance(
+        effectiveOutputTokensPerSecond: 0,
+        effectiveTotalTokensPerSecond: 0,
+        stepTimeMs: 0,
+        responseTimeMs: 0
+    )
+}
+
+/**
  The result of a single step in the generation process.
 
- This protocol defines the interface for accessing all outputs from a generation step,
- including generated content, tool interactions, and metadata.
+ Port of `@ai-sdk/ai/src/generate-text/step-result.ts`.
  */
 public protocol StepResult: Sendable {
-    /// The content that was generated in the last step.
+    /// Unique identifier of the generation call this step belongs to.
+    var callId: String { get }
+
+    /// Zero-based index of this step.
+    var stepNumber: Int { get }
+
+    /// The model that produced this step.
+    var model: ModelInfo { get }
+
+    /// Tool contexts used in this step.
+    var toolsContext: ToolsContext { get }
+
+    /// Runtime context of this step.
+    var runtimeContext: Context { get }
+
+    /// Content generated in this step.
     var content: [ContentPart] { get }
 
-    /// The generated text.
+    /// Generated text.
     var text: String { get }
 
-    /// The reasoning that was generated during the generation.
+    /// Reasoning parts.
     var reasoning: [ReasoningOutput] { get }
 
-    /// The reasoning text that was generated during the generation.
+    /// Reasoning text, `nil` when there is no reasoning text.
     var reasoningText: String? { get }
 
-    /// The files that were generated during the generation.
+    /// Generated files.
     var files: [GeneratedFile] { get }
 
-    /// The sources that were used to generate the text.
+    /// Sources used as references.
     var sources: [Source] { get }
 
-    /// The tool calls that were made during the generation.
     var toolCalls: [TypedToolCall] { get }
-
-    /// The static tool calls that were made in the last step.
     var staticToolCalls: [StaticToolCall] { get }
-
-    /// The dynamic tool calls that were made in the last step.
     var dynamicToolCalls: [DynamicToolCall] { get }
-
-    /// The results of the tool calls.
     var toolResults: [TypedToolResult] { get }
-
-    /// The errors from invalid or failed tool calls.
-    var toolErrors: [TypedToolError] { get }
-
-    /// The static tool results that were made in the last step.
     var staticToolResults: [StaticToolResult] { get }
-
-    /// The dynamic tool results that were made in the last step.
     var dynamicToolResults: [DynamicToolResult] { get }
 
-    /// The reason why the generation finished.
+    /// Unified finish reason.
     var finishReason: FinishReason { get }
 
-    /// The raw finish reason as returned by the underlying provider (when available).
-    ///
-    /// Upstream exposes this as `rawFinishReason` (string | undefined).
-    /// Swift providers commonly expose only a unified finish reason; in those cases
-    /// this value may equal `finishReason.rawValue` or be `nil` depending on source.
+    /// Raw finish reason from the provider.
     var rawFinishReason: String? { get }
 
-    /// The token usage of the generated text.
+    /// Token usage of this step.
     var usage: LanguageModelUsage { get }
 
-    /// Warnings from the model provider (e.g. unsupported settings).
+    /// Performance metrics of this step.
+    var performance: StepResultPerformance { get }
+
+    /// Warnings from the provider.
     var warnings: [CallWarning]? { get }
 
-    /// Additional request information.
+    /// Request metadata.
     var request: LanguageModelRequestMetadata { get }
 
-    /// Additional response information.
+    /// Response metadata, including the response messages of this step.
     var response: StepResultResponse { get }
 
-    /// Additional provider-specific metadata.
-    ///
-    /// These are passed through from the provider to the AI SDK and enable
-    /// provider-specific results that can be fully encapsulated in the provider.
+    /// Provider-specific metadata.
     var providerMetadata: ProviderMetadata? { get }
 }
 
 /**
- Response information for a step result.
-
- Extends `LanguageModelResponseMetadata` with step-specific information like
+ Response metadata of a step: `LanguageModelResponseMetadata` with the step's
  response messages and optional body.
  */
 public struct StepResultResponse: Sendable, Equatable {
@@ -106,13 +195,10 @@ public struct StepResultResponse: Sendable, Equatable {
     /// Response headers (available only for providers that use HTTP requests).
     public let headers: [String: String]?
 
-    /// The response messages that were generated during the call.
-    ///
-    /// Response messages can be either assistant messages or tool messages.
-    /// They contain a generated id.
+    /// The response messages that were generated during this step.
     public let messages: [ResponseMessage]
 
-    /// Response body (available only for providers that use HTTP requests).
+    /// Response body, when retained (`include.responseBody`).
     public let body: JSONValue?
 
     public init(
@@ -137,162 +223,173 @@ public struct StepResultResponse: Sendable, Equatable {
         messages: [ResponseMessage],
         body: JSONValue? = nil
     ) {
-        self.id = metadata.id
-        self.timestamp = metadata.timestamp
-        self.modelId = metadata.modelId
-        self.headers = metadata.headers
-        self.messages = messages
-        self.body = body
+        self.init(
+            id: metadata.id,
+            timestamp: metadata.timestamp,
+            modelId: metadata.modelId,
+            headers: metadata.headers,
+            messages: messages,
+            body: body
+        )
+    }
+
+    /// The response metadata without messages and body.
+    public var metadata: LanguageModelResponseMetadata {
+        LanguageModelResponseMetadata(id: id, timestamp: timestamp, modelId: modelId, headers: headers)
     }
 }
 
 /**
  Default implementation of `StepResult`.
 
- This class provides a concrete implementation of the `StepResult` protocol,
- storing the generated content and computing derived properties on demand.
+ Port of `DefaultStepResult` from `@ai-sdk/ai/src/generate-text/step-result.ts`.
  */
 public final class DefaultStepResult: StepResult {
-    // MARK: - Stored Properties
-
+    public let callId: String
+    public let stepNumber: Int
+    public let model: ModelInfo
+    public let toolsContext: ToolsContext
+    public let runtimeContext: Context
     public let content: [ContentPart]
     public let finishReason: FinishReason
     public let rawFinishReason: String?
     public let usage: LanguageModelUsage
+    public let performance: StepResultPerformance
     public let warnings: [CallWarning]?
     public let request: LanguageModelRequestMetadata
     public let response: StepResultResponse
     public let providerMetadata: ProviderMetadata?
 
-    // MARK: - Initialization
-
     public init(
+        callId: String = "",
+        stepNumber: Int = 0,
+        model: ModelInfo = ModelInfo(provider: "", modelId: ""),
+        toolsContext: ToolsContext = [:],
+        runtimeContext: Context = [:],
         content: [ContentPart],
         finishReason: FinishReason,
         rawFinishReason: String? = nil,
         usage: LanguageModelUsage,
+        performance: StepResultPerformance = .empty,
         warnings: [CallWarning]? = nil,
         request: LanguageModelRequestMetadata,
         response: StepResultResponse,
         providerMetadata: ProviderMetadata? = nil
     ) {
+        self.callId = callId
+        self.stepNumber = stepNumber
+        self.model = model
+        self.toolsContext = toolsContext
+        self.runtimeContext = runtimeContext
         self.content = content
         self.finishReason = finishReason
         self.rawFinishReason = rawFinishReason
         self.usage = usage
+        self.performance = performance
         self.warnings = warnings
         self.request = request
         self.response = response
         self.providerMetadata = providerMetadata
     }
 
-    // MARK: - Computed Properties
+    /// The same step with different contexts (used to restrict telemetry).
+    func with(runtimeContext: Context, toolsContext: ToolsContext) -> DefaultStepResult {
+        DefaultStepResult(
+            callId: callId,
+            stepNumber: stepNumber,
+            model: model,
+            toolsContext: toolsContext,
+            runtimeContext: runtimeContext,
+            content: content,
+            finishReason: finishReason,
+            rawFinishReason: rawFinishReason,
+            usage: usage,
+            performance: performance,
+            warnings: warnings,
+            request: request,
+            response: response,
+            providerMetadata: providerMetadata
+        )
+    }
 
     public var text: String {
-        content
-            .compactMap { part -> String? in
-                if case .text(let text, _) = part {
-                    return text
-                }
-                return nil
-            }
-            .joined()
+        content.compactMap { part -> String? in
+            if case .text(let text, _, _) = part { return text }
+            return nil
+        }.joined()
     }
 
     public var reasoning: [ReasoningOutput] {
         content.compactMap { part in
-            if case .reasoning(let output) = part {
-                return output
-            }
+            if case .reasoning(let output) = part { return output }
             return nil
         }
     }
 
     public var reasoningText: String? {
-        let reasoningParts = self.reasoning
-        guard !reasoningParts.isEmpty else {
-            return nil
-        }
-        return reasoningParts.map(\.text).joined()
+        let text = reasoning.map(\.text).joined()
+        return text.isEmpty ? nil : text
     }
 
     public var files: [GeneratedFile] {
         content.compactMap { part in
-            if case .file(let file, _) = part {
-                return file
-            }
+            if case .file(let file, _) = part { return file }
             return nil
         }
     }
 
     public var sources: [Source] {
         content.compactMap { part in
-            if case .source(_, let source) = part {
-                return source
-            }
+            if case .source(_, let source) = part { return source }
             return nil
         }
     }
 
     public var toolCalls: [TypedToolCall] {
         content.compactMap { part in
-            if case .toolCall(let toolCall, _) = part {
-                return toolCall
-            }
+            if case .toolCall(let toolCall, _) = part { return toolCall }
             return nil
         }
     }
 
     public var staticToolCalls: [StaticToolCall] {
         toolCalls.compactMap { toolCall in
-            if case .static(let staticCall) = toolCall {
-                return staticCall
-            }
+            if case .static(let call) = toolCall { return call }
             return nil
         }
     }
 
     public var dynamicToolCalls: [DynamicToolCall] {
         toolCalls.compactMap { toolCall in
-            if case .dynamic(let dynamicCall) = toolCall {
-                return dynamicCall
-            }
+            if case .dynamic(let call) = toolCall { return call }
             return nil
         }
     }
 
     public var toolResults: [TypedToolResult] {
         content.compactMap { part in
-            if case .toolResult(let result, _) = part {
-                return result
-            }
+            if case .toolResult(let result, _) = part { return result }
             return nil
         }
     }
 
     public var toolErrors: [TypedToolError] {
         content.compactMap { part in
-            if case .toolError(let error, _) = part {
-                return error
-            }
+            if case .toolError(let error, _) = part { return error }
             return nil
         }
     }
 
     public var staticToolResults: [StaticToolResult] {
         toolResults.compactMap { result in
-            if case .static(let staticResult) = result {
-                return staticResult
-            }
+            if case .static(let staticResult) = result { return staticResult }
             return nil
         }
     }
 
     public var dynamicToolResults: [DynamicToolResult] {
         toolResults.compactMap { result in
-            if case .dynamic(let dynamicResult) = result {
-                return dynamicResult
-            }
+            if case .dynamic(let dynamicResult) = result { return dynamicResult }
             return nil
         }
     }

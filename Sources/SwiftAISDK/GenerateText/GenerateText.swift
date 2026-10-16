@@ -2,1370 +2,879 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-/**
- Main non-streaming text generation entry point.
-
- Port of `@ai-sdk/ai/src/generate-text/generate-text.ts`.
-
- Orchestrates multi-step language model execution with optional tool calls,
- retries, telemetry, structured output parsing, and result aggregation.
- */
+/// Internal knobs for tests: id generators and clocks.
 public struct GenerateTextInternalOptions: Sendable {
-    /// Generator used for creating unique IDs (tool approvals, responses, etc.).
+    /// Generates response and approval ids (default prefix `aitxt`, size 24).
     public var generateId: IDGenerator
 
-    /// Clock function used when synthesising response timestamps.
+    /// Generates the call id of the operation (default prefix `call`, size 24).
+    public var generateCallId: IDGenerator
+
+    /// Clock used for response timestamps when the provider sends none.
     public var currentDate: @Sendable () -> Date
 
-    /**
-     Create internal options.
+    /// Millisecond clock used for performance measurements.
+    public var now: @Sendable () -> Double
 
-     - Parameters:
-       - generateId: Custom ID generator (defaults to `createIDGenerator(prefix:size:)` with prefix `aitxt` and size `24`).
-       - currentDate: Clock provider (defaults to `Date.init`).
-     */
     public init(
         generateId: IDGenerator? = nil,
-        currentDate: @escaping @Sendable () -> Date = Date.init
+        generateCallId: IDGenerator? = nil,
+        currentDate: @escaping @Sendable () -> Date = Date.init,
+        now: @escaping @Sendable () -> Double = { SwiftAISDK.now() }
     ) {
-        if let generateId {
-            self.generateId = generateId
-        } else {
-            // Upstream default: createIdGenerator({ prefix: 'aitxt', size: 24 })
-            self.generateId = try! createIDGenerator(prefix: "aitxt", size: 24)
-        }
+        self.generateId = generateId ?? (try! createIDGenerator(prefix: "aitxt", size: 24))
+        self.generateCallId = generateCallId ?? (try! createIDGenerator(prefix: "call", size: 24))
         self.currentDate = currentDate
+        self.now = now
     }
-}
-
-// MARK: - Helpers
-
-private actor ResponseMessageStore {
-    private var messages: [ResponseMessage] = []
-
-    func all() -> [ResponseMessage] {
-        messages
-    }
-
-    func append(contentsOf newMessages: [ResponseMessage]) {
-        messages.append(contentsOf: newMessages)
-    }
-}
-
-private struct GenerateStepIntermediate {
-    let content: [LanguageModelV4Content]
-    let finishReason: FinishReason
-    let rawFinishReason: String?
-    let usage: LanguageModelUsage
-    let warnings: [CallWarning]
-    let providerMetadata: ProviderMetadata?
-    let requestInfo: LanguageModelV4RequestInfo?
-    let responseMetadata: LanguageModelResponseMetadata
-    let responseBody: JSONValue?
-}
-
-private struct ToolCallUnknownError: LocalizedError {
-    let toolName: String
-
-    var errorDescription: String? {
-        "Tool call \"\(toolName)\" could not be parsed."
-    }
-}
-
-extension ToolCallUnknownError: CustomStringConvertible {
-    var description: String {
-        errorDescription ?? "Tool call \"\(toolName)\" could not be parsed."
-    }
-}
-
-private struct ProviderToolExecutionError: LocalizedError, CustomStringConvertible {
-    let value: JSONValue
-
-    var errorDescription: String? {
-        "Provider tool execution error."
-    }
-
-    var description: String {
-        if let json = jsonString(from: value) {
-            return json
-        }
-        return String(describing: value)
-    }
-}
-
-
-private func buildOuterTelemetryAttributes(
-    telemetry: TelemetrySettings?,
-    baseAttributes: Attributes,
-    operationId: String,
-    system: String?,
-    prompt: String?,
-    messages: [ModelMessage]?
-) -> [String: ResolvableAttributeValue?] {
-    var attributes: [String: ResolvableAttributeValue?] = [:]
-
-    for (key, value) in assembleOperationName(operationId: operationId, telemetry: telemetry) {
-        attributes[key] = .value(value)
-    }
-
-    for (key, value) in baseAttributes {
-        attributes[key] = .value(value)
-    }
-
-    attributes["ai.prompt"] = .input {
-        guard let summary = summarizePromptForTelemetry(system: system, prompt: prompt, messages: messages) else {
-            return nil
-        }
-        return .string(summary)
-    }
-
-    return attributes
-}
-
-private func buildInnerTelemetryAttributes(
-    telemetry: TelemetrySettings?,
-    baseAttributes: Attributes,
-    operationId: String,
-    prompt: LanguageModelV4Prompt,
-    tools: [LanguageModelV4Tool]?,
-    toolChoice: LanguageModelV4ToolChoice?,
-    settings: PreparedCallSettings,
-    model: any LanguageModelV4
-) -> [String: ResolvableAttributeValue?] {
-    var attributes: [String: ResolvableAttributeValue?] = [:]
-
-    for (key, value) in assembleOperationName(operationId: operationId, telemetry: telemetry) {
-        attributes[key] = .value(value)
-    }
-
-    for (key, value) in baseAttributes {
-        attributes[key] = .value(value)
-    }
-
-    attributes["ai.model.provider"] = .value(.string(model.provider))
-    attributes["ai.model.id"] = .value(.string(model.modelId))
-
-    attributes["ai.prompt.messages"] = .input {
-        guard let serialized = try? stringifyForTelemetry(prompt) else {
-            return nil
-        }
-        return .string(serialized)
-    }
-
-    attributes["ai.prompt.tools"] = .input {
-        guard let encoded = encodeToolsForTelemetry(tools) else {
-            return nil
-        }
-        return .string(encoded)
-    }
-
-    attributes["ai.prompt.toolChoice"] = .input {
-        guard let encoded = encodeToolChoiceForTelemetry(toolChoice) else {
-            return nil
-        }
-        return .string(encoded)
-    }
-
-    attributes["gen_ai.system"] = .value(.string(model.provider))
-    attributes["gen_ai.request.model"] = .value(.string(model.modelId))
-
-    if let frequencyPenalty = settings.frequencyPenalty {
-        attributes["gen_ai.request.frequency_penalty"] = .value(.double(frequencyPenalty))
-    }
-    if let maxTokens = settings.maxOutputTokens {
-        attributes["gen_ai.request.max_tokens"] = .value(.int(maxTokens))
-    }
-    if let presencePenalty = settings.presencePenalty {
-        attributes["gen_ai.request.presence_penalty"] = .value(.double(presencePenalty))
-    }
-    if let stopSequences = settings.stopSequences, !stopSequences.isEmpty {
-        attributes["gen_ai.request.stop_sequences"] = .value(.stringArray(stopSequences))
-    }
-    if let temperature = settings.temperature {
-        attributes["gen_ai.request.temperature"] = .value(.double(temperature))
-    }
-    if let topK = settings.topK {
-        attributes["gen_ai.request.top_k"] = .value(.int(topK))
-    }
-    if let topP = settings.topP {
-        attributes["gen_ai.request.top_p"] = .value(.double(topP))
-    }
-
-    return attributes
-}
-
-private func buildResponseTelemetryAttributes(
-    telemetry: TelemetrySettings?,
-    finishReason: FinishReason,
-    content: [LanguageModelV4Content],
-    providerMetadata: ProviderMetadata?,
-    usage: LanguageModelUsage,
-    responseId: String,
-    responseModelId: String,
-    responseTimestamp: Date
-) -> [String: ResolvableAttributeValue?] {
-    var attributes: [String: ResolvableAttributeValue?] = [:]
-
-    attributes["ai.response.finishReason"] = .value(.string(finishReason.rawValue))
-
-    attributes["ai.response.text"] = .output {
-        guard let text = extractTextContent(content: content) else {
-            return nil
-        }
-        return .string(text)
-    }
-
-    attributes["ai.response.toolCalls"] = .output {
-        guard let calls = asToolCalls(content),
-              let encoded = jsonString(from: calls) else {
-            return nil
-        }
-        return .string(encoded)
-    }
-
-    attributes["ai.response.providerMetadata"] = .output {
-        guard let providerMetadata,
-              let encoded = jsonString(from: providerMetadata) else {
-            return nil
-        }
-        return .string(encoded)
-    }
-
-    attributes["gen_ai.response.finish_reasons"] = .value(.stringArray([finishReason.rawValue]))
-    attributes["gen_ai.response.id"] = .value(.string(responseId))
-    attributes["gen_ai.response.model"] = .value(.string(responseModelId))
-
-    if let inputTokens = usage.inputTokens {
-        attributes["ai.usage.promptTokens"] = .value(.int(inputTokens))
-        attributes["gen_ai.usage.input_tokens"] = .value(.int(inputTokens))
-    } else {
-        attributes["ai.usage.promptTokens"] = nil
-        attributes["gen_ai.usage.input_tokens"] = nil
-    }
-
-    if let outputTokens = usage.outputTokens {
-        attributes["ai.usage.completionTokens"] = .value(.int(outputTokens))
-        attributes["gen_ai.usage.output_tokens"] = .value(.int(outputTokens))
-    } else {
-        attributes["ai.usage.completionTokens"] = nil
-        attributes["gen_ai.usage.output_tokens"] = nil
-    }
-
-    attributes["ai.response.id"] = .value(.string(responseId))
-    attributes["ai.response.model"] = .value(.string(responseModelId))
-    attributes["ai.response.timestamp"] = .value(.string(responseTimestamp.iso8601String))
-
-    return attributes
-}
-
-private func summarizePromptForTelemetry(
-    system: String?,
-    prompt: String?,
-    messages: [ModelMessage]?
-) -> String? {
-    var payload: [String: Any] = [:]
-    if let system {
-        payload["system"] = system
-    }
-    if let prompt {
-        payload["prompt"] = prompt
-    }
-    if let messages {
-        payload["messagesRoles"] = messages.map { message in
-            switch message {
-            case .system: return "system"
-            case .user: return "user"
-            case .assistant: return "assistant"
-            case .tool: return "tool"
-            }
-        }
-    }
-    payload["messagesCount"] = messages?.count ?? 0
-
-    guard JSONSerialization.isValidJSONObject(payload),
-          let data = try? JSONSerialization.data(withJSONObject: payload, options: []) else {
-        return nil
-    }
-    return String(data: data, encoding: .utf8)
-}
-
-private func encodeToolsForTelemetry(
-    _ tools: [LanguageModelV4Tool]?
-) -> String? {
-    guard let tools else { return nil }
-    return jsonString(from: tools)
-}
-
-private func encodeToolChoiceForTelemetry(
-    _ toolChoice: LanguageModelV4ToolChoice?
-) -> String? {
-    guard let toolChoice else { return nil }
-    return jsonString(from: toolChoice)
-}
-
-private func jsonString<T: Encodable>(from value: T) -> String? {
-    let encoder = JSONEncoder()
-    encoder.dateEncodingStrategy = .iso8601
-    guard let data = try? encoder.encode(value) else {
-        return nil
-    }
-    return String(data: data, encoding: .utf8)
-}
-
-private func jsonString(from jsonValue: JSONValue) -> String? {
-    jsonString(from: jsonValue, using: JSONEncoder())
-}
-
-private func jsonString(from jsonValue: JSONValue, using encoder: JSONEncoder) -> String? {
-    guard let data = try? encoder.encode(jsonValue) else {
-        return nil
-    }
-    return String(data: data, encoding: .utf8)
-}
-
-private struct ToolCallTelemetry: Encodable {
-    let toolCallId: String
-    let toolName: String
-    let input: JSONValue
-}
-
-private func asToolCalls(
-    _ content: [LanguageModelV4Content]
-) -> [ToolCallTelemetry]? {
-    let calls = content.compactMap { part -> ToolCallTelemetry? in
-        switch part {
-        case .toolCall(let toolCall):
-            let inputJSON: JSONValue
-            if let data = toolCall.input.data(using: .utf8),
-               let parsed = try? JSONDecoder().decode(JSONValue.self, from: data) {
-                inputJSON = parsed
-            } else if let parsed = try? parseJSONString(toolCall.input) {
-                inputJSON = parsed
-            } else {
-                inputJSON = .string(toolCall.input)
-            }
-            return ToolCallTelemetry(
-                toolCallId: toolCall.toolCallId,
-                toolName: toolCall.toolName,
-                input: inputJSON
-            )
-        default:
-            return nil
-        }
-    }
-    return calls.isEmpty ? nil : calls
-}
-
-private func parseToolCalls(
-    from content: [LanguageModelV4Content],
-    tools: ToolSet?,
-    repairToolCall: ToolCallRepairFunction?,
-    system: String?,
-    messages: [ModelMessage]
-) async -> [TypedToolCall] {
-    var toolCalls: [TypedToolCall] = []
-    for part in content {
-        if case .toolCall(let toolCall) = part {
-            let parsed = await parseToolCall(
-                toolCall: toolCall,
-                tools: tools,
-                repairToolCall: repairToolCall,
-                system: system,
-                messages: messages
-            )
-            toolCalls.append(parsed)
-        }
-    }
-    return toolCalls
-}
-
-private func collectInvalidToolOutputs(
-    from toolCalls: [TypedToolCall]
-) -> [ToolOutput] {
-    var outputs: [ToolOutput] = []
-    for toolCall in toolCalls {
-        switch toolCall {
-        case .dynamic(let dynamicCall):
-            if dynamicCall.invalid == true {
-                let error = dynamicCall.error ?? ToolCallUnknownError(toolName: dynamicCall.toolName)
-                let typedError = TypedToolError.dynamic(
-                    DynamicToolError(
-                        toolCallId: dynamicCall.toolCallId,
-                        toolName: dynamicCall.toolName,
-                        input: dynamicCall.input,
-                        error: error,
-                        providerExecuted: dynamicCall.providerExecuted
-                    )
-                )
-                outputs.append(.error(typedError))
-            }
-        case .static:
-            continue
-        }
-    }
-    return outputs
-}
-
-private func convertResponseBody(_ body: Any?) -> JSONValue? {
-    guard let body else { return nil }
-    return try? jsonValue(from: body)
-}
-
-private func makeRequestMetadata(
-    from info: LanguageModelV4RequestInfo?
-) -> LanguageModelRequestMetadata {
-    guard let info else { return LanguageModelRequestMetadata() }
-    let body: JSONValue?
-    if let rawBody = info.body {
-        body = try? jsonValue(from: rawBody)
-    } else {
-        body = nil
-    }
-    return LanguageModelRequestMetadata(body: body)
-}
-
-private func languageModelV4ResponseFormat(
-    from responseFormat: LanguageModelV3ResponseFormat?
-) -> LanguageModelV4ResponseFormat? {
-    guard let responseFormat else { return nil }
-
-    switch responseFormat {
-    case .text:
-        return .text
-    case let .json(schema, name, description):
-        return .json(schema: schema, name: name, description: description)
-    }
-}
-
-private struct ToolCallNotFoundError: LocalizedError, Sendable {
-    let toolCallId: String
-
-    var errorDescription: String? {
-        "Tool call \(toolCallId) not found."
-    }
-}
-
-private func asContent(
-    content languageModelContent: [LanguageModelV4Content],
-    toolCalls: [TypedToolCall],
-    toolOutputs: [ToolOutput],
-    toolApprovalRequests: [ToolApprovalRequestOutput],
-    tools: ToolSet?
-) throws -> [ContentPart] {
-    var contentParts: [ContentPart] = []
-
-    var toolCallsById: [String: TypedToolCall] = [:]
-    for toolCall in toolCalls {
-        toolCallsById[toolCall.toolCallId] = toolCall
-    }
-
-    for part in languageModelContent {
-        switch part {
-        case .text(let textPart):
-            contentParts.append(
-                .text(text: textPart.text, providerMetadata: textPart.providerMetadata)
-            )
-
-        case .custom(let customPart):
-            contentParts.append(
-                .custom(kind: customPart.kind, providerMetadata: customPart.providerMetadata)
-            )
-
-        case .reasoning(let reasoningPart):
-            contentParts.append(
-                .reasoning(
-                    ReasoningOutput(
-                        text: reasoningPart.text,
-                        providerMetadata: reasoningPart.providerMetadata
-                    )
-                )
-            )
-
-        case .reasoningFile(let filePart):
-            contentParts.append(.reasoningFile(
-                file: generatedFile(mediaType: filePart.mediaType, data: filePart.data),
-                providerMetadata: filePart.providerMetadata
-            ))
-
-        case .file(let filePart):
-            contentParts.append(.file(
-                file: generatedFile(mediaType: filePart.mediaType, data: filePart.data),
-                providerMetadata: filePart.providerMetadata
-            ))
-
-        case .source(let sourcePart):
-            contentParts.append(.source(type: "source", source: sourcePart))
-
-        case .toolApprovalRequest(let approvalRequest):
-            guard let toolCall = toolCallsById[approvalRequest.toolCallId] else {
-                continue
-            }
-            contentParts.append(.toolApprovalRequest(
-                ToolApprovalRequestOutput(
-                    approvalId: approvalRequest.approvalId,
-                    toolCall: toolCall
-                )
-            ))
-
-        case .toolCall(let toolCallPart):
-            if let typedCall = toolCallsById[toolCallPart.toolCallId] {
-                contentParts.append(.toolCall(typedCall, providerMetadata: toolCallPart.providerMetadata))
-            } else {
-                let parsedInput = (try? parseJSONString(toolCallPart.input)) ?? .string(toolCallPart.input)
-                let dynamicCall = DynamicToolCall(
-                    toolCallId: toolCallPart.toolCallId,
-                    toolName: toolCallPart.toolName,
-                    input: parsedInput,
-                    providerExecuted: toolCallPart.providerExecuted,
-                    providerMetadata: toolCallPart.providerMetadata,
-                    invalid: false,
-                    error: nil
-                )
-                contentParts.append(.toolCall(.dynamic(dynamicCall), providerMetadata: toolCallPart.providerMetadata))
-            }
-
-        case .toolResult(let toolResultPart):
-            guard let toolCall = toolCallsById[toolResultPart.toolCallId] else {
-                let tool = tools?[toolResultPart.toolName]
-                let supportsDeferredResults = tool?.type == .provider && tool?.supportsDeferredResults == true
-                if !supportsDeferredResults {
-                    throw ToolCallNotFoundError(toolCallId: toolResultPart.toolCallId)
-                }
-
-                let input: JSONValue = .null
-
-                if toolResultPart.isError == true {
-                    let errorValue = ProviderToolExecutionError(value: toolResultPart.result)
-                    let typedError: TypedToolError
-                    if toolResultPart.dynamic == true {
-                        typedError = .dynamic(
-                            DynamicToolError(
-                                toolCallId: toolResultPart.toolCallId,
-                                toolName: toolResultPart.toolName,
-                                input: input,
-                                error: errorValue,
-                                providerExecuted: true,
-                                providerMetadata: toolResultPart.providerMetadata
-                            )
-                        )
-                    } else {
-                        typedError = .static(
-                            StaticToolError(
-                                toolCallId: toolResultPart.toolCallId,
-                                toolName: toolResultPart.toolName,
-                                input: input,
-                                error: errorValue,
-                                providerExecuted: true,
-                                providerMetadata: toolResultPart.providerMetadata
-                            )
-                        )
-                    }
-
-                    contentParts.append(.toolError(typedError, providerMetadata: toolResultPart.providerMetadata))
-                } else {
-                    let typedResult: TypedToolResult
-                    if toolResultPart.dynamic == true {
-                        typedResult = .dynamic(
-                            DynamicToolResult(
-                                toolCallId: toolResultPart.toolCallId,
-                                toolName: toolResultPart.toolName,
-                                input: input,
-                                output: toolResultPart.result,
-                                providerExecuted: true,
-                                preliminary: toolResultPart.preliminary,
-                                providerMetadata: toolResultPart.providerMetadata
-                            )
-                        )
-                    } else {
-                        typedResult = .static(
-                            StaticToolResult(
-                                toolCallId: toolResultPart.toolCallId,
-                                toolName: toolResultPart.toolName,
-                                input: input,
-                                output: toolResultPart.result,
-                                providerExecuted: true,
-                                preliminary: toolResultPart.preliminary,
-                                providerMetadata: toolResultPart.providerMetadata
-                            )
-                        )
-                    }
-
-                    contentParts.append(.toolResult(typedResult, providerMetadata: toolResultPart.providerMetadata))
-                }
-
-                break
-            }
-
-            if toolResultPart.isError == true {
-                let errorValue = ProviderToolExecutionError(value: toolResultPart.result)
-                let typedError: TypedToolError
-                switch toolCall {
-                case .static(let call):
-                    typedError = .static(
-                        StaticToolError(
-                            toolCallId: call.toolCallId,
-                            toolName: call.toolName,
-                            input: call.input,
-                            error: errorValue,
-                            providerExecuted: true,
-                            providerMetadata: toolResultPart.providerMetadata
-                        )
-                    )
-                case .dynamic(let call):
-                    typedError = .dynamic(
-                        DynamicToolError(
-                            toolCallId: call.toolCallId,
-                            toolName: call.toolName,
-                            input: call.input,
-                            error: errorValue,
-                            providerExecuted: true,
-                            providerMetadata: toolResultPart.providerMetadata
-                        )
-                    )
-                }
-                contentParts.append(.toolError(typedError, providerMetadata: toolResultPart.providerMetadata))
-            } else {
-                let typedResult: TypedToolResult
-                switch toolCall {
-                case .static(let call):
-                    typedResult = .static(
-                        StaticToolResult(
-                            toolCallId: call.toolCallId,
-                            toolName: call.toolName,
-                            input: call.input,
-                            output: toolResultPart.result,
-                            providerExecuted: true,
-                            preliminary: toolResultPart.preliminary,
-                            providerMetadata: toolResultPart.providerMetadata
-                        )
-                    )
-                case .dynamic(let call):
-                    typedResult = .dynamic(
-                        DynamicToolResult(
-                            toolCallId: call.toolCallId,
-                            toolName: call.toolName,
-                            input: call.input,
-                            output: toolResultPart.result,
-                            providerExecuted: true,
-                            preliminary: toolResultPart.preliminary,
-                            providerMetadata: toolResultPart.providerMetadata
-                        )
-                    )
-                }
-                contentParts.append(.toolResult(typedResult, providerMetadata: toolResultPart.providerMetadata))
-            }
-        }
-    }
-
-    for output in toolOutputs {
-        contentParts.append(toolOutputToContentPart(output))
-    }
-
-    for approval in toolApprovalRequests {
-        contentParts.append(.toolApprovalRequest(approval))
-    }
-
-    return contentParts
-}
-
-private func generatedFile(mediaType: String, data: LanguageModelV4FileData) -> GeneratedFile {
-    switch data {
-    case .data(let data):
-        return DefaultGeneratedFileWithType(data: data, mediaType: mediaType)
-    case .base64(let base64):
-        return DefaultGeneratedFileWithType(base64: base64, mediaType: mediaType)
-    case .url(let url, _):
-        return DefaultGeneratedFileWithType(base64: url.absoluteString, mediaType: mediaType)
-    }
-}
-
-private func toolOutputToContentPart(_ output: ToolOutput) -> ContentPart {
-    switch output {
-    case .result(let result):
-        return .toolResult(result, providerMetadata: result.providerMetadata)
-    case .error(let error):
-        return .toolError(error, providerMetadata: error.providerMetadata)
-    }
-}
-
-private func cloneResponseMessages(
-    _ messages: [ResponseMessage]
-) -> [ResponseMessage] {
-    Array(messages)
-}
-
-private extension Date {
-    var iso8601String: String {
-        ISO8601DateFormatter().string(from: self)
-    }
-}
-
-private struct JSONParsingError: Error {}
-
-private func parseJSONString(_ text: String) throws -> JSONValue {
-    guard let data = text.data(using: .utf8) else {
-        throw JSONParsingError()
-    }
-
-    let raw = try JSONSerialization.jsonObject(with: data, options: [])
-    return try jsonValue(from: raw)
 }
 
 /**
- Callback invoked when a generation step completes.
+ What step results retain. Retaining bodies and messages can use a lot of memory
+ for large payloads such as images.
 
- Matches upstream `GenerateTextOnStepFinishCallback`.
- */
-public typealias GenerateTextOnStepFinishCallback = @Sendable (_ stepResult: StepResult) async throws -> Void
-
-/**
- Callback invoked after generation finishes (all steps completed).
-
- Matches upstream `GenerateTextOnFinishCallback`.
- */
-public typealias GenerateTextOnFinishCallback = @Sendable (_ event: GenerateTextFinishEvent) async throws -> Void
-
-/**
- Controls what data is retained in the result/step objects.
-
- Port of `experimental_include` from `@ai-sdk/ai/src/generate-text/generate-text.ts`.
-
- Defaults mirror upstream behavior:
- - `requestBody`: included
- - `responseBody`: included
+ Port of `GenerateTextInclude` from `@ai-sdk/ai/src/generate-text/generate-text.ts`.
+ Everything defaults to `false`.
  */
 public struct GenerateTextInclude: Sendable {
-    /// Whether to retain request body metadata in step results.
+    /// Retain the request body in step results.
     public var requestBody: Bool?
 
-    /// Whether to retain response body metadata in step results.
+    /// Retain the request messages in step results.
+    public var requestMessages: Bool?
+
+    /// Retain the response body in step results.
     public var responseBody: Bool?
 
-    public init(
-        requestBody: Bool? = nil,
-        responseBody: Bool? = nil
-    ) {
+    public init(requestBody: Bool? = nil, requestMessages: Bool? = nil, responseBody: Bool? = nil) {
         self.requestBody = requestBody
+        self.requestMessages = requestMessages
         self.responseBody = responseBody
     }
 }
 
-/**
- Event payload passed to `onFinish` callback.
- */
-public struct GenerateTextFinishEvent: Sendable {
-    public let finishReason: FinishReason
-    public let rawFinishReason: String?
-    public let usage: LanguageModelUsage
-    public let content: [ContentPart]
-    public let text: String
-    public let reasoningText: String?
-    public let reasoning: [ReasoningOutput]
-    public let files: [GeneratedFile]
-    public let sources: [Source]
-    public let toolCalls: [TypedToolCall]
-    public let staticToolCalls: [StaticToolCall]
-    public let dynamicToolCalls: [DynamicToolCall]
-    public let toolResults: [TypedToolResult]
-    public let staticToolResults: [StaticToolResult]
-    public let dynamicToolResults: [DynamicToolResult]
-    public let request: LanguageModelRequestMetadata
-    public let response: StepResultResponse
-    public let warnings: [CallWarning]?
-    public let providerMetadata: ProviderMetadata?
-    public let steps: [StepResult]
-    public let totalUsage: LanguageModelUsage
+/// Port of `@ai-sdk/ai/src/generate-text/calculate-tokens-per-second.ts`.
+func calculateTokensPerSecond(tokens: Int?, durationMs: Double?) -> Double {
+    let rate = 1000 * Double(tokens ?? 0) / (durationMs ?? 0)
+    return rate.isFinite ? rate : 0
+}
+
+/// Port of `@ai-sdk/ai/src/generate-text/sum-token-counts.ts`.
+func sumTokenCounts(_ first: Int?, _ second: Int?) -> Int? {
+    first == nil && second == nil ? nil : (first ?? 0) + (second ?? 0)
+}
+
+/// Port of `@ai-sdk/ai/src/generate-text/is-tool-execution-allowed-finish-reason.ts`.
+func isToolExecutionAllowedFinishReason(_ finishReason: FinishReason) -> Bool {
+    finishReason == .stop || finishReason == .toolCalls
+}
+
+/// The tool choice the model response must satisfy, if any.
+func enforcedToolChoice(_ toolChoice: LanguageModelV4ToolChoice) -> EnforcedToolChoice? {
+    switch toolChoice {
+    case .required: return .required
+    case .tool(let toolName): return .tool(toolName: toolName)
+    default: return nil
+    }
+}
+
+/// A step timeout that is armed per step.
+final class StepAbortTimeout: @unchecked Sendable {
+    private let lock = NSLock()
+    private var deadline: Double?
+
+    func start(_ timeoutMs: Int?) {
+        lock.lock()
+        deadline = timeoutMs.map { now() + Double($0) }
+        lock.unlock()
+    }
+
+    func clear() {
+        lock.lock()
+        deadline = nil
+        lock.unlock()
+    }
+
+    var isAborted: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let deadline else { return false }
+        return now() >= deadline
+    }
 }
 
 /**
- Generate a text response (non-streaming) with optional tool usage.
+ Generates text and calls tools with a language model, without streaming.
 
- - Parameters:
-   - model: Language model identifier or implementation.
-   - tools: Tool set accessible to the model.
-   - toolChoice: Tool selection directive (`auto`, `none`, `required`, or specific tool).
-   - system: Optional system instruction.
-   - prompt: Optional simple text prompt (mutually exclusive with `messages`).
-   - messages: Optional array of prompt messages (mutually exclusive with `prompt`).
-   - stopWhen: Stop conditions evaluated after each step (default: single-step).
-   - experimentalOutput: Structured output parser (mirrors upstream `experimental_output`).
-   - experimentalTelemetry: Telemetry configuration.
-   - providerOptions: Provider-specific call options.
-   - experimentalActiveTools: Deprecated tool filter (forwarded for parity).
-   - activeTools: Active tool whitelist.
-   - experimentalPrepareStep: Deprecated step preparation hook.
-   - prepareStep: Step preparation hook (defaults to `experimentalPrepareStep` when provided).
-   - experimentalRepairToolCall: Tool call repair function.
-   - experimentalDownload: Custom download implementation for URL media.
-   - experimentalContext: Arbitrary JSON context passed to tool execution.
-   - internalOptions: Internal knobs (ID generator, clock) used for testing.
-   - onStepFinish: Callback executed after each completed step.
-   - onFinish: Callback executed after the full generation completes.
-   - settings: Call configuration (temperature, topP, retries, headers, etc.).
+ Port of `@ai-sdk/ai/src/generate-text/generate-text.ts`. Each step calls the
+ model, executes client tool calls, and continues while all client tool calls
+ have outputs and no stop condition is met.
 
- - Returns: `DefaultGenerateTextResult` containing aggregated step information.
+ Callbacks run concurrently with the telemetry integrations; errors thrown by
+ callbacks are ignored.
  */
-@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-public func generateText<OutputValue: Sendable>(
+public func generateText<OutputValue: Sendable, PartialOutput: Sendable>(
     model modelArg: LanguageModel,
     tools: ToolSet? = nil,
     toolChoice: ToolChoice? = nil,
-    system: String? = nil,
+    instructions: Instructions? = nil,
+    system: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
-    stopWhen: [StopCondition] = [stepCountIs(1)],
-    experimentalOutput output: Output.Specification<OutputValue, JSONValue>? = nil,
-    experimentalTelemetry telemetry: TelemetrySettings? = nil,
+    allowSystemInMessages: Bool? = nil,
+    stopWhen: [StopCondition] = [isStepCount(1)],
+    output: Output.Specification<OutputValue, PartialOutput>,
+    toolApproval: ToolApprovalConfiguration? = nil,
+    telemetry: TelemetryOptions? = nil,
     providerOptions: ProviderOptions? = nil,
-    experimentalActiveTools: [String]? = nil,
     activeTools: [String]? = nil,
-    experimentalPrepareStep: PrepareStepFunction? = nil,
+    toolOrder: [String]? = nil,
+    toolCallConcurrency: Int? = nil,
     prepareStep: PrepareStepFunction? = nil,
-    experimentalRepairToolCall repairToolCall: ToolCallRepairFunction? = nil,
-    experimentalDownload download: DownloadFunction? = nil,
-    experimentalContext: JSONValue? = nil,
-    experimentalInclude include: GenerateTextInclude? = nil,
+    repairToolCall: ToolCallRepairFunction? = nil,
+    refineToolInput: ToolInputRefinement? = nil,
+    download: DownloadFunction? = nil,
+    runtimeContext initialRuntimeContext: Context = [:],
+    toolsContext initialToolsContext: ToolsContext = [:],
+    include includeOptions: GenerateTextInclude? = nil,
     internalOptions _internal: GenerateTextInternalOptions = GenerateTextInternalOptions(),
-    onStepFinish: GenerateTextOnStepFinishCallback? = nil,
-    onFinish: GenerateTextOnFinishCallback? = nil,
+    onStart: GenerateTextOnStartCallback? = nil,
+    onStepStart: GenerateTextOnStepStartCallback? = nil,
+    onLanguageModelCallStart: OnLanguageModelCallStartCallback? = nil,
+    onLanguageModelCallEnd: OnLanguageModelCallEndCallback? = nil,
+    onToolExecutionStart: OnToolExecutionStartCallback? = nil,
+    onToolExecutionEnd: OnToolExecutionEndCallback? = nil,
+    onStepEnd: GenerateTextOnStepEndCallback? = nil,
+    onEnd: GenerateTextOnEndCallback? = nil,
     settings: CallSettings = CallSettings()
 ) async throws -> DefaultGenerateTextResult<OutputValue> {
-    let resolvedModel = try resolveLanguageModelV4(modelArg)
-    let defaultLanguageModel: LanguageModel = .v4(resolvedModel)
-    let effectiveActiveTools = activeTools ?? experimentalActiveTools
-    let effectivePrepareStep = prepareStep ?? experimentalPrepareStep
-    let downloadHandler = download
-    let includeRequestBody = include?.requestBody ?? true
-    let includeResponseBody = include?.responseBody ?? true
+    let includeRequestBody = includeOptions?.requestBody ?? false
+    let includeRequestMessages = includeOptions?.requestMessages ?? false
+    let includeResponseBody = includeOptions?.responseBody ?? false
 
-    let totalTimeoutMs = getTotalTimeoutMs(settings.timeout)
+    let resolvedToolCallConcurrency = try prepareToolCallConcurrency(toolCallConcurrency)
+    let model = try resolveLanguageModelV4(modelArg)
+    let now = _internal.now
+
+    var unsupportedTimeoutWarnings: [Warning] = []
+    if getFirstChunkTimeoutMs(settings.timeout) != nil {
+        unsupportedTimeoutWarnings.append(.languageModel(.unsupported(
+            feature: "timeout.firstChunkMs",
+            details: "The firstChunkMs timeout is only supported by streaming functions."
+        )))
+    }
+    if getChunkTimeoutMs(settings.timeout) != nil {
+        unsupportedTimeoutWarnings.append(.languageModel(.unsupported(
+            feature: "timeout.chunkMs",
+            details: "The chunkMs timeout is only supported by streaming functions."
+        )))
+    }
+    if !unsupportedTimeoutWarnings.isEmpty {
+        logWarnings(unsupportedTimeoutWarnings)
+    }
+
     let stepTimeoutMs = getStepTimeoutMs(settings.timeout)
-    let timeoutController = TimeoutAbortSignalController()
-
-    let timeoutAbortSignal: (@Sendable () -> Bool)? = (totalTimeoutMs != nil || stepTimeoutMs != nil)
-        ? { @Sendable in timeoutController.isAborted() }
-        : nil
-    let effectiveAbortSignal = mergeAbortSignals(
+    let stepTimeout = StepAbortTimeout()
+    let stepAbortSignal: (@Sendable () -> Bool)? = stepTimeoutMs != nil ? { @Sendable in stepTimeout.isAborted } : nil
+    let mergedAbortSignal = mergeAbortSignals(
         settings.abortSignal,
-        timeoutAbortSignal
+        deadlineAbortSignal(getTotalTimeoutMs(settings.timeout)),
+        stepAbortSignal
     )
 
-    let totalTimeoutTask: Task<Void, Never>? = {
-        guard let totalTimeoutMs else { return nil }
-        return Task {
-            do {
-                try await sleepMs(totalTimeoutMs)
-                timeoutController.markTotalTimedOut()
-            } catch {}
-        }
-    }()
-    defer { totalTimeoutTask?.cancel() }
+    let preparedRetries = try prepareRetries(maxRetries: settings.maxRetries, abortSignal: mergedAbortSignal)
+    let callSettings = try settings.languageModelCallOptions.prepared()
+    let headersWithUserAgent = withUserAgentSuffix(settings.headers ?? [:], "ai/\(VERSION)")
 
-    let preparedRetries = try prepareRetries(
-        maxRetries: settings.maxRetries,
-        abortSignal: effectiveAbortSignal
+    let initialPrompt = try standardizePrompt(Prompt(
+        instructions: instructions,
+        system: system,
+        allowSystemInMessages: allowSystemInMessages,
+        prompt: prompt.map(PromptContent.text),
+        messages: messages
+    ))
+
+    let callId = _internal.generateCallId()
+    let dispatcher = TelemetryDispatcher(telemetry: telemetry)
+
+    let startEvent = GenerateTextStartEvent(
+        callId: callId,
+        operationId: "ai.generateText",
+        provider: model.provider,
+        modelId: model.modelId,
+        instructions: initialPrompt.instructions,
+        messages: initialPrompt.messages,
+        tools: tools,
+        toolChoice: toolChoice,
+        activeTools: activeTools,
+        toolOrder: toolOrder,
+        callOptions: callSettings,
+        maxRetries: preparedRetries.maxRetries,
+        timeout: settings.timeout,
+        headers: headersWithUserAgent,
+        providerOptions: providerOptions,
+        output: output,
+        toolsContext: initialToolsContext,
+        runtimeContext: initialRuntimeContext
     )
 
-    let preparedCallSettings = try prepareCallSettings(
-        maxOutputTokens: settings.maxOutputTokens,
-        temperature: settings.temperature,
-        topP: settings.topP,
-        topK: settings.topK,
-        presencePenalty: settings.presencePenalty,
-        frequencyPenalty: settings.frequencyPenalty,
-        stopSequences: settings.stopSequences,
-        seed: settings.seed,
-        reasoning: settings.reasoning
-    )
-
-    let headersWithUserAgent = withUserAgentSuffix(
-        settings.headers ?? [:],
-        "ai/\(VERSION)"
-    )
-
-    var telemetryCallSettings = settings
-    telemetryCallSettings.maxRetries = preparedRetries.maxRetries
-
-    let baseTelemetryAttributes = getBaseTelemetryAttributes(
-        model: TelemetryModelInfo(modelId: resolvedModel.modelId, provider: resolvedModel.provider),
-        settings: telemetryCallSettings,
-        telemetry: telemetry,
-        headers: headersWithUserAgent
-    )
-
-    let promptInput: Prompt
-    if let promptText = prompt {
-        if messages != nil {
-            throw InvalidPromptError(
-                prompt: "Prompt(system: \(system ?? "nil"), prompt: \(promptText), messages: provided)",
-                message: "Provide either `prompt` or `messages`, not both."
-            )
-        }
-        promptInput = Prompt.text(promptText, system: system)
-    } else if let messageList = messages {
-        promptInput = Prompt.messages(messageList, system: system)
-    } else {
-        throw InvalidPromptError(
-            prompt: "Prompt(system: \(system ?? "nil"))",
-            message: "Either `prompt` or `messages` must be provided."
-        )
-    }
-
-    let standardizedPrompt = try standardizePrompt(promptInput)
-    let initialMessages = standardizedPrompt.messages
-    let responseMessageStore = ResponseMessageStore()
-
-    let tracer = getTracer(
-        isEnabled: telemetry?.isEnabled ?? false,
-        tracer: telemetry?.tracer
-    )
-
-    // Execute approved tool approvals before entering the main loop.
-    let approvals = collectToolApprovals(messages: initialMessages)
-    if !approvals.approvedToolApprovals.isEmpty || !approvals.deniedToolApprovals.isEmpty {
-        let providerExecutedToolApprovals = (approvals.approvedToolApprovals + approvals.deniedToolApprovals)
-            .filter { $0.toolCall.providerExecuted == true }
-
-        let localApprovedToolApprovals = approvals.approvedToolApprovals
-            .filter { $0.toolCall.providerExecuted != true }
-
-        let executedOutputs = try await executeTools(
-            toolCalls: localApprovedToolApprovals.map { $0.toolCall },
-            tools: tools,
-            tracer: tracer,
-            telemetry: telemetry,
-            messages: initialMessages,
-            abortSignal: effectiveAbortSignal,
-            experimentalContext: experimentalContext
-        )
-
-        var toolContent: [ToolContentPart] = executedOutputs.map {
-            makeToolContentPart(output: $0, tools: tools)
-        }
-
-        for denied in approvals.deniedToolApprovals {
-            let outputProviderOptions: ProviderOptions? = denied.toolCall.providerExecuted == true ? [
-                "openai": ["approvalId": .string(denied.approvalResponse.approvalId)]
-            ] : nil
-
-            let deniedPart = ToolResultPart(
-                toolCallId: denied.toolCall.toolCallId,
-                toolName: denied.toolCall.toolName,
-                output: .executionDenied(reason: denied.approvalResponse.reason, providerOptions: outputProviderOptions),
-                providerOptions: nil
-            )
-            toolContent.append(.toolResult(deniedPart))
-        }
-
-        if !toolContent.isEmpty {
-            await responseMessageStore.append(contentsOf: [
-                .tool(ToolModelMessage(content: toolContent))
-            ])
-        }
-
-        if !providerExecutedToolApprovals.isEmpty {
-            let approvalContent: [ToolContentPart] = providerExecutedToolApprovals.map { approval in
-                .toolApprovalResponse(ToolApprovalResponse(
-                    approvalId: approval.approvalResponse.approvalId,
-                    approved: approval.approvalResponse.approved,
-                    reason: approval.approvalResponse.reason,
-                    providerExecuted: true
-                ))
-            }
-
-            await responseMessageStore.append(contentsOf: [
-                .tool(ToolModelMessage(content: approvalContent))
-            ])
-        }
-    }
-
-    let outerAttributes = try await selectTelemetryAttributes(
-        telemetry: telemetry,
-        attributes: buildOuterTelemetryAttributes(
-            telemetry: telemetry,
-            baseAttributes: baseTelemetryAttributes,
-            operationId: "ai.generateText",
-            system: system,
-            prompt: prompt,
-            messages: messages
-        )
+    await notify(
+        invoke(onStart, with: startEvent),
+        { await dispatcher.onStart(.generateText(startEvent)) }
     )
 
     do {
-        return try await recordSpan(
-            name: "ai.generateText",
-            tracer: tracer,
-            attributes: outerAttributes
-        ) { span in
-            var steps: [StepResult] = []
-            var clientToolCalls: [TypedToolCall] = []
-            var clientToolOutputs: [ToolOutput] = []
-            var pendingDeferredToolCalls: [String: String] = [:]
-            var currentModelResult: GenerateStepIntermediate?
-            var continueLoop = false
-            var currentExperimentalContext = experimentalContext
+        var runtimeContext = initialRuntimeContext
+        var toolsContext = initialToolsContext
+        let initialMessages = initialPrompt.messages
+        var initialResponseMessages: [ResponseMessage] = []
 
-            repeat {
-                let stepTimeoutTask: Task<Void, Never>? = {
-                    guard let stepTimeoutMs else { return nil }
-                    return Task {
-                        do {
-                            try await sleepMs(stepTimeoutMs)
-                            timeoutController.markStepTimedOut()
-                        } catch {}
-                    }
-                }()
-                defer { stepTimeoutTask?.cancel() }
+        let collected = try collectToolApprovals(messages: initialMessages)
+        let validated = try await validateApprovedToolApprovals(
+            collected.approvedToolApprovals.filter { $0.toolCall.providerExecuted != true },
+            tools: tools,
+            toolApproval: toolApproval,
+            messages: initialMessages,
+            toolsContext: toolsContext,
+            runtimeContext: runtimeContext,
+            refineToolInput: refineToolInput
+        )
 
-                let currentResponseMessages = await responseMessageStore.all()
-                let stepInputMessages = initialMessages + convertResponseMessagesToModelMessages(currentResponseMessages)
+        let deniedToolApprovals = collected.deniedToolApprovals + validated.denied
+        let deniedWithoutResults = deniedToolApprovals.filter { $0.existingToolResult == nil }
 
-                let prepareOptions = PrepareStepOptions(
-                    steps: steps,
-                    stepNumber: steps.count,
-                    model: defaultLanguageModel,
-                    messages: stepInputMessages,
-                    experimentalContext: currentExperimentalContext
-                )
-                let prepareStepResult = try await effectivePrepareStep?(prepareOptions)
+        if !deniedWithoutResults.isEmpty || !validated.approved.isEmpty || !validated.invalid.isEmpty {
+            let toolResults = try await executeToolCalls(
+                validated.approved.map(\.toolCall),
+                tools: tools,
+                toolsContext: toolsContext,
+                callId: callId,
+                messages: initialMessages,
+                abortSignal: mergedAbortSignal,
+                timeout: settings.timeout,
+                telemetry: dispatcher,
+                toolCallConcurrency: resolvedToolCallConcurrency,
+                onToolExecutionStart: onToolExecutionStart,
+                onToolExecutionEnd: onToolExecutionEnd
+            )
 
-                currentExperimentalContext = prepareStepResult?.experimentalContext ?? currentExperimentalContext
+            var toolContent: [ToolContentPart] = []
 
-                let stepModelSource = prepareStepResult?.model ?? defaultLanguageModel
-                let stepModel = try resolveLanguageModelV4(stepModelSource)
-
-                let stepSystem = prepareStepResult?.system ?? standardizedPrompt.system
-                let stepMessages = prepareStepResult?.messages ?? stepInputMessages
-
-                let promptForModel = try await convertToLanguageModelV4Prompt(
-                    prompt: StandardizedPrompt(system: stepSystem, messages: stepMessages),
-                    supportedUrls: try await stepModel.supportedUrls,
-                    download: downloadHandler
-                )
-
-                let toolPreparation = try await prepareToolsAndToolChoiceV4(
-                    tools: tools,
-                    toolChoice: prepareStepResult?.toolChoice ?? toolChoice,
-                    activeTools: prepareStepResult?.activeTools ?? effectiveActiveTools
-                )
-
-                let responseFormat = languageModelV4ResponseFormat(from: try await output?.responseFormat())
-                let stepProviderOptions = mergeProviderOptions(
-                    providerOptions,
-                    prepareStepResult?.providerOptions
-                )
-
-                let innerAttributes = try await selectTelemetryAttributes(
-                    telemetry: telemetry,
-                    attributes: buildInnerTelemetryAttributes(
-                        telemetry: telemetry,
-                        baseAttributes: baseTelemetryAttributes,
-                        operationId: "ai.generateText.doGenerate",
-                        prompt: promptForModel,
-                        tools: toolPreparation.tools,
-                        toolChoice: toolPreparation.toolChoice,
-                        settings: preparedCallSettings,
-                        model: stepModel
+            for result in toolResults {
+                let output = result.output
+                let isError: Bool
+                let value: Any?
+                switch output {
+                case .result(let toolResult):
+                    isError = false
+                    value = toolResult.output
+                case .error(let toolError):
+                    isError = true
+                    value = toolError.error
+                }
+                toolContent.append(.toolResult(ToolResultPart(
+                    toolCallId: output.toolCallId,
+                    toolName: output.toolName,
+                    output: try await createToolModelOutput(
+                        toolCallId: output.toolCallId,
+                        input: output.input,
+                        output: value,
+                        tool: tools?[output.toolName],
+                        errorMode: isError ? .text : .none
                     )
-                )
+                )))
+            }
 
-                let stepResult = try await preparedRetries.retry.call {
-                    try await recordSpan(
-                        name: "ai.generateText.doGenerate",
-                        tracer: tracer,
-                        attributes: innerAttributes
-                    ) { span in
-                        let result = try await stepModel.doGenerate(
-                            options: LanguageModelV4CallOptions(
-                                prompt: promptForModel,
-                                maxOutputTokens: preparedCallSettings.maxOutputTokens,
-                                temperature: preparedCallSettings.temperature,
-                                stopSequences: preparedCallSettings.stopSequences,
-                                topP: preparedCallSettings.topP,
-                                topK: preparedCallSettings.topK,
-                                presencePenalty: preparedCallSettings.presencePenalty,
-                                frequencyPenalty: preparedCallSettings.frequencyPenalty,
-                                responseFormat: responseFormat,
-                                seed: preparedCallSettings.seed,
-                                tools: toolPreparation.tools,
-                                toolChoice: toolPreparation.toolChoice,
-                                includeRawChunks: nil,
-                                abortSignal: effectiveAbortSignal,
-                                headers: headersWithUserAgent,
-                                reasoning: preparedCallSettings.reasoning,
-                                providerOptions: stepProviderOptions
-                            )
-                        )
-
-                        let responseId = result.response?.id ?? _internal.generateId()
-                        let responseTimestamp = result.response?.timestamp ?? _internal.currentDate()
-                        let responseModelId = result.response?.modelId ?? stepModel.modelId
-                        let responseHeaders = result.response?.headers
-                        let responseBody = includeResponseBody ? convertResponseBody(result.response?.body) : nil
-                        let usage = asLanguageModelUsage(result.usage)
-
-                        span.setAttributes(
-                            try await selectTelemetryAttributes(
-                                telemetry: telemetry,
-                                attributes: buildResponseTelemetryAttributes(
-                                    telemetry: telemetry,
-                                    finishReason: result.finishReason.unified,
-                                    content: result.content,
-                                    providerMetadata: result.providerMetadata,
-                                    usage: usage,
-                                    responseId: responseId,
-                                    responseModelId: responseModelId,
-                                    responseTimestamp: responseTimestamp
-                                )
-                            )
-                        )
-
-                        return GenerateStepIntermediate(
-                            content: result.content,
-                            finishReason: result.finishReason.unified,
-                            rawFinishReason: result.finishReason.raw,
-                            usage: usage,
-                            warnings: result.warnings,
-                            providerMetadata: result.providerMetadata,
-                            requestInfo: includeRequestBody ? result.request : nil,
-                            responseMetadata: LanguageModelResponseMetadata(
-                                id: responseId,
-                                timestamp: responseTimestamp,
-                                modelId: responseModelId,
-                                headers: responseHeaders
-                            ),
-                            responseBody: responseBody
-                        )
-                    }
-                }
-
-                currentModelResult = stepResult
-
-                let stepToolCalls = await parseToolCalls(
-                    from: stepResult.content,
-                    tools: tools,
-                    repairToolCall: repairToolCall,
-                    system: stepSystem,
-                    messages: stepInputMessages
-                )
-
-                var toolApprovalRequests: [String: ToolApprovalRequestOutput] = [:]
-
-                clientToolOutputs = collectInvalidToolOutputs(from: stepToolCalls)
-
-                for toolCall in stepToolCalls {
-                    guard toolCall.invalid != true, let tool = tools?[toolCall.toolName] else {
-                        continue
-                    }
-
-                    if let onInputAvailable = tool.onInputAvailable {
-                        try await onInputAvailable(
-                            ToolCallInputOptions(
-                                input: toolCall.input,
-                                toolCallId: toolCall.toolCallId,
-                                messages: stepInputMessages,
-                                abortSignal: effectiveAbortSignal,
-                                context: currentExperimentalContext.legacyToolContext
-                            )
-                        )
-                    }
-
-                    if await isApprovalNeeded(
-                        tool: tool,
-                        toolCall: toolCall,
-                        messages: stepInputMessages,
-                        experimentalContext: currentExperimentalContext
-                    ) {
-                        let approval = ToolApprovalRequestOutput(
-                            approvalId: _internal.generateId(),
-                            toolCall: toolCall
-                        )
-                        toolApprovalRequests[toolCall.toolCallId] = approval
-                    }
-                }
-
-                clientToolCalls = stepToolCalls.filter { toolCall in
-                    toolCall.providerExecuted != true
-                }
-
-                if let tools = tools {
-                    let pendingToolCalls = clientToolCalls.filter { toolCall in
-                        toolCall.invalid != true &&
-                        toolApprovalRequests[toolCall.toolCallId] == nil
-                    }
-
-                    let executedOutputs = try await executeTools(
-                        toolCalls: pendingToolCalls,
-                        tools: tools,
-                        tracer: tracer,
-                        telemetry: telemetry,
-                        messages: stepInputMessages,
-                        abortSignal: effectiveAbortSignal,
-                        experimentalContext: currentExperimentalContext
+            // Invalid approved calls are reported to the model without executing them:
+            // repairing the input after approval would change the authorized operation.
+            for invalid in validated.invalid {
+                let toolCall = invalid.approval.toolCall
+                toolContent.append(.toolResult(ToolResultPart(
+                    toolCallId: toolCall.toolCallId,
+                    toolName: toolCall.toolName,
+                    output: try await createToolModelOutput(
+                        toolCallId: toolCall.toolCallId,
+                        input: toolCall.input,
+                        output: invalid.error,
+                        tool: tools?[toolCall.toolName],
+                        errorMode: .text
                     )
-
-                    clientToolOutputs.append(contentsOf: executedOutputs)
-                }
-
-                // Track provider-executed tool calls that support deferred results.
-                // In programmatic tool calling, a server tool (e.g., code_execution) may
-                // trigger a client tool, and the server tool's result is deferred until
-                // the client tool's result is sent back.
-                for toolCall in stepToolCalls {
-                    guard toolCall.providerExecuted == true else { continue }
-                    guard let tool = tools?[toolCall.toolName] else { continue }
-                    guard tool.type == .provider, tool.supportsDeferredResults == true else { continue }
-
-                    let hasResultInResponse = stepResult.content.contains { part in
-                        guard case .toolResult(let toolResultPart) = part else { return false }
-                        return toolResultPart.toolCallId == toolCall.toolCallId
-                    }
-
-                    if !hasResultInResponse {
-                        pendingDeferredToolCalls[toolCall.toolCallId] = toolCall.toolName
-                    }
-                }
-
-                // Mark deferred tool calls as resolved when we receive their results.
-                for part in stepResult.content {
-                    guard case .toolResult(let toolResultPart) = part else { continue }
-                    pendingDeferredToolCalls.removeValue(forKey: toolResultPart.toolCallId)
-                }
-
-                let stepContent = try asContent(
-                    content: stepResult.content,
-                    toolCalls: stepToolCalls,
-                    toolOutputs: clientToolOutputs,
-                    toolApprovalRequests: Array(toolApprovalRequests.values),
-                    tools: tools
-                )
-
-                let newMessages = convertModelMessagesToResponseMessages(
-                    toResponseMessages(
-                        content: stepContent,
-                        tools: tools
-                    )
-                )
-                await responseMessageStore.append(contentsOf: newMessages)
-
-                let requestMetadata = makeRequestMetadata(from: stepResult.requestInfo)
-
-                let responseMessagesSnapshot = await responseMessageStore.all()
-                let stepResponse = StepResultResponse(
-                    from: stepResult.responseMetadata,
-                    messages: cloneResponseMessages(responseMessagesSnapshot),
-                    body: stepResult.responseBody
-                )
-
-                let currentStepResult = DefaultStepResult(
-                    content: stepContent,
-                    finishReason: stepResult.finishReason,
-                    rawFinishReason: stepResult.rawFinishReason,
-                    usage: stepResult.usage,
-                    warnings: stepResult.warnings,
-                    request: requestMetadata,
-                    response: stepResponse,
-                    providerMetadata: stepResult.providerMetadata
-                )
-
-                let languageModelWarnings = stepResult.warnings.map { Warning.languageModel($0) }
-                if !languageModelWarnings.isEmpty {
-                    logWarnings(languageModelWarnings)
-                }
-                steps.append(currentStepResult)
-                if let onStepFinish {
-                    try await onStepFinish(currentStepResult)
-                }
-
-                let hasPendingToolCalls = !clientToolCalls.isEmpty
-                let allToolCallsHaveOutputs = clientToolOutputs.count == clientToolCalls.count
-                let stopConditionMet = await isStopConditionMet(stopConditions: stopWhen, steps: steps)
-                continueLoop =
-                    ((hasPendingToolCalls && allToolCallsHaveOutputs) || !pendingDeferredToolCalls.isEmpty) &&
-                    !stopConditionMet
-            } while continueLoop
-
-            if let finalResult = currentModelResult {
-                span.setAttributes(
-                    try await selectTelemetryAttributes(
-                        telemetry: telemetry,
-                        attributes: buildResponseTelemetryAttributes(
-                            telemetry: telemetry,
-                            finishReason: finalResult.finishReason,
-                            content: finalResult.content,
-                            providerMetadata: finalResult.providerMetadata,
-                            usage: finalResult.usage,
-                            responseId: finalResult.responseMetadata.id,
-                            responseModelId: finalResult.responseMetadata.modelId,
-                            responseTimestamp: finalResult.responseMetadata.timestamp
-                        )
-                    )
-                )
+                )))
             }
 
-            guard let lastStep = steps.last else {
-                return DefaultGenerateTextResult(
-                    steps: [],
-                    totalUsage: LanguageModelUsage(),
-                    resolvedOutput: nil
-                )
+            for denied in deniedWithoutResults {
+                let outputProviderOptions: ProviderOptions? = denied.toolCall.providerExecuted == true
+                    ? ["openai": ["approvalId": .string(denied.approvalResponse.approvalId)]]
+                    : nil
+                toolContent.append(.toolResult(ToolResultPart(
+                    toolCallId: denied.toolCall.toolCallId,
+                    toolName: denied.toolCall.toolName,
+                    output: .executionDenied(reason: denied.approvalResponse.reason, providerOptions: outputProviderOptions)
+                )))
             }
 
-            var totalUsage = LanguageModelUsage()
-            for step in steps {
-                totalUsage = addLanguageModelUsage(totalUsage, step.usage)
+            initialResponseMessages.append(.tool(ToolModelMessage(content: toolContent)))
+        }
+
+        var steps: [StepResult] = []
+        var clientToolCalls: [TypedToolCall] = []
+        var clientToolOutputs: [ToolOutput] = []
+        var deniedToolApprovalResponses: [ToolApprovalResponseOutput] = []
+        var instructionsForNextStep = initialPrompt.instructions
+        var messagesForNextStep = initialMessages + initialResponseMessages.map { $0.modelMessage }
+        var pendingDeferredToolCalls: [String: String] = [:]
+
+        while true {
+            if !steps.isEmpty {
+                try checkAbort(mergedAbortSignal)
             }
 
-            if let onFinish {
-                let finishEvent = GenerateTextFinishEvent(
-                    finishReason: lastStep.finishReason,
-                    rawFinishReason: lastStep.rawFinishReason,
-                    usage: lastStep.usage,
-                    content: lastStep.content,
-                    text: lastStep.text,
-                    reasoningText: lastStep.reasoningText,
-                    reasoning: lastStep.reasoning,
-                    files: lastStep.files,
-                    sources: lastStep.sources,
-                    toolCalls: lastStep.toolCalls,
-                    staticToolCalls: lastStep.staticToolCalls,
-                    dynamicToolCalls: lastStep.dynamicToolCalls,
-                    toolResults: lastStep.toolResults,
-                    staticToolResults: lastStep.staticToolResults,
-                    dynamicToolResults: lastStep.dynamicToolResults,
-                    request: lastStep.request,
-                    response: lastStep.response,
-                    warnings: lastStep.warnings,
-                    providerMetadata: lastStep.providerMetadata,
-                    steps: steps,
-                    totalUsage: totalUsage
-                )
-                try await onFinish(finishEvent)
-            }
+            stepTimeout.start(stepTimeoutMs)
+            defer { stepTimeout.clear() }
 
-            var resolvedOutput: OutputValue?
-            if let output, lastStep.finishReason == .stop {
-                let metadata = LanguageModelResponseMetadata(
-                    id: lastStep.response.id,
-                    timestamp: lastStep.response.timestamp,
-                    modelId: lastStep.response.modelId,
-                    headers: lastStep.response.headers
-                )
-                resolvedOutput = try await output.parseOutput(
-                    text: lastStep.text,
-                    response: metadata,
-                    usage: lastStep.usage,
-                    finishReason: lastStep.finishReason
-                )
-            }
+            let stepNumber = steps.count
+            let accumulatedResponseMessages = initialResponseMessages + steps.flatMap(\.response.messages)
+            let stepInputMessages = messagesForNextStep
 
-            return DefaultGenerateTextResult(
+            let prepareStepResult = try await prepareStep?(PrepareStepOptions(
                 steps: steps,
-                totalUsage: totalUsage,
-                resolvedOutput: resolvedOutput
+                stepNumber: stepNumber,
+                model: .v4(model),
+                instructions: instructionsForNextStep,
+                initialInstructions: initialPrompt.instructions,
+                messages: stepInputMessages,
+                initialMessages: initialMessages,
+                responseMessages: accumulatedResponseMessages,
+                toolsContext: toolsContext,
+                runtimeContext: runtimeContext
+            ))
+
+            let stepModel = try prepareStepResult?.model.map(resolveLanguageModelV4) ?? model
+            let stepInstructions = prepareStepResult?.resolvedInstructions ?? instructionsForNextStep
+            runtimeContext = prepareStepResult?.runtimeContext ?? runtimeContext
+            toolsContext = prepareStepResult?.toolsContext ?? toolsContext
+
+            let stepActiveTools = prepareStepResult?.activeTools ?? activeTools
+            let stepExecutionTools = filterActiveTools(tools, activeTools: stepActiveTools)
+            let stepToolOrder = prepareStepResult?.toolOrder ?? toolOrder
+            let stepTools = try await prepareTools(
+                tools: stepExecutionTools,
+                toolOrder: stepToolOrder,
+                toolsContext: toolsContext
+            )
+            let stepToolChoiceSetting = prepareStepResult?.toolChoice ?? toolChoice
+            let stepToolChoice = prepareToolChoice(stepToolChoiceSetting)
+            let stepMessages = prepareStepResult?.messages ?? stepInputMessages
+
+            let promptMessages = try await convertToLanguageModelV4Prompt(
+                prompt: StandardizedPrompt(instructions: stepInstructions, messages: stepMessages),
+                supportedUrls: try await stepModel.supportedUrls,
+                download: download
+            )
+
+            let stepProviderOptions = mergeProviderOptions(providerOptions, prepareStepResult?.providerOptions)
+            let stepCallSettings = try callSettings.overridden(by: prepareStepResult?.callOptions)
+
+            let stepStartEvent = GenerateTextStepStartEvent(
+                callId: callId,
+                provider: stepModel.provider,
+                modelId: stepModel.modelId,
+                stepNumber: stepNumber,
+                instructions: stepInstructions,
+                messages: stepMessages,
+                tools: tools,
+                toolChoice: stepToolChoiceSetting,
+                activeTools: stepActiveTools,
+                toolOrder: stepToolOrder,
+                steps: steps,
+                providerOptions: stepProviderOptions,
+                output: output,
+                runtimeContext: runtimeContext,
+                toolsContext: toolsContext,
+                promptMessages: promptMessages,
+                stepTools: stepTools,
+                stepToolChoice: stepToolChoice
+            )
+            await notify(
+                invoke(onStepStart, with: stepStartEvent),
+                { await dispatcher.onStepStart(stepStartEvent) }
+            )
+
+            let languageModelCallStartEvent = LanguageModelCallStartEvent(
+                callId: callId,
+                provider: stepModel.provider,
+                modelId: stepModel.modelId,
+                instructions: stepInstructions,
+                messages: stepMessages,
+                tools: stepTools,
+                callOptions: stepCallSettings
+            )
+
+            let stepStartTimestampMs = now()
+
+            await notify(
+                invoke(onLanguageModelCallStart, with: languageModelCallStartEvent),
+                { await dispatcher.onLanguageModelCallStart(languageModelCallStartEvent) }
+            )
+
+            let responseFormat = try await output.responseFormat()
+            let modelResponse: ModelGenerateResponse = try await preparedRetries.retry.call {
+                let result = try await dispatcher.executeLanguageModelCall(languageModelCallStartEvent) {
+                    try await stepModel.doGenerate(options: LanguageModelV4CallOptions(
+                        prompt: promptMessages,
+                        maxOutputTokens: stepCallSettings.maxOutputTokens,
+                        temperature: stepCallSettings.temperature,
+                        stopSequences: stepCallSettings.stopSequences,
+                        topP: stepCallSettings.topP,
+                        topK: stepCallSettings.topK,
+                        presencePenalty: stepCallSettings.presencePenalty,
+                        frequencyPenalty: stepCallSettings.frequencyPenalty,
+                        responseFormat: responseFormat,
+                        seed: stepCallSettings.seed,
+                        tools: stepTools,
+                        toolChoice: stepToolChoice,
+                        abortSignal: mergedAbortSignal,
+                        headers: headersWithUserAgent,
+                        reasoning: stepCallSettings.reasoning,
+                        providerOptions: stepProviderOptions
+                    ))
+                }
+                return ModelGenerateResponse(
+                    result: result,
+                    metadata: LanguageModelResponseMetadata(
+                        id: result.response?.id ?? _internal.generateId(),
+                        timestamp: result.response?.timestamp ?? _internal.currentDate(),
+                        modelId: result.response?.modelId ?? stepModel.modelId,
+                        headers: result.response?.headers
+                    )
+                )
+            }
+            let currentModelResponse = modelResponse.result
+            let responseTimeMs = now() - stepStartTimestampMs
+            let stepUsage = asLanguageModelUsage(currentModelResponse.usage)
+            let finishReason = currentModelResponse.finishReason.unified
+
+            var stepToolCalls: [TypedToolCall] = []
+            for part in currentModelResponse.content {
+                guard case .toolCall(let toolCall) = part else { continue }
+                stepToolCalls.append(try await parseToolCall(
+                    toolCall: toolCall,
+                    tools: stepExecutionTools,
+                    repairToolCall: repairToolCall,
+                    refineToolInput: refineToolInput,
+                    instructions: stepInstructions,
+                    messages: stepMessages,
+                    abortSignal: mergedAbortSignal
+                ))
+            }
+
+            let generatedFileDataCache = GeneratedFileDataCache()
+            let modelCallContent = try await convertLanguageModelContent(
+                content: currentModelResponse.content,
+                toolCalls: stepToolCalls,
+                toolOutputs: [],
+                toolApprovalRequests: [],
+                toolApprovalResponses: [],
+                tools: tools,
+                abortSignal: mergedAbortSignal,
+                generatedFileDataCache: generatedFileDataCache
+            )
+
+            let languageModelCallEndEvent = LanguageModelCallEndEvent(
+                callId: callId,
+                provider: stepModel.provider,
+                modelId: modelResponse.metadata.modelId,
+                finishReason: finishReason,
+                usage: stepUsage,
+                content: modelCallContent,
+                responseId: modelResponse.metadata.id,
+                providerMetadata: currentModelResponse.providerMetadata,
+                performance: LanguageModelCallPerformance(
+                    responseTimeMs: responseTimeMs,
+                    effectiveOutputTokensPerSecond: calculateTokensPerSecond(
+                        tokens: stepUsage.outputTokens, durationMs: responseTimeMs
+                    ),
+                    effectiveTotalTokensPerSecond: calculateTokensPerSecond(
+                        tokens: sumTokenCounts(stepUsage.inputTokens, stepUsage.outputTokens),
+                        durationMs: responseTimeMs
+                    )
+                )
+            )
+            await notify(
+                invoke(onLanguageModelCallEnd, with: languageModelCallEndEvent),
+                { await dispatcher.onLanguageModelCallEnd(languageModelCallEndEvent) }
+            )
+
+            if let enforced = enforcedToolChoice(stepToolChoice),
+               !stepToolCalls.contains(where: { toolCall in
+                   if case .tool(let toolName) = enforced { return toolCall.toolName == toolName }
+                   return true
+               }) {
+                throw ToolChoiceViolationError(
+                    toolChoice: enforced,
+                    finishReason: finishReason,
+                    provider: stepModel.provider,
+                    modelId: stepModel.modelId,
+                    content: currentModelResponse.content
+                )
+            }
+
+            var toolApprovalRequests: [String: ToolApprovalRequestOutput] = [:]
+            var stepToolApprovalResponses: [String: ToolApprovalResponseOutput] = [:]
+            var approvalOrder: [String] = []
+            var blockedToolCallIds: Set<String> = []
+
+            for toolCall in stepToolCalls {
+                if toolCall.invalid == true { continue }
+
+                // Tool calls for unavailable tools (e.g. provider-executed dynamic tools) are skipped.
+                guard let tool = stepExecutionTools?[toolCall.toolName] else { continue }
+
+                if tool.onInputStart != nil || tool.onInputAvailable != nil {
+                    let context = try await validateToolContext(
+                        toolName: toolCall.toolName,
+                        context: toolsContext[toolCall.toolName],
+                        contextSchema: tool.contextSchema
+                    )
+                    if let onInputStart = tool.onInputStart {
+                        try await onInputStart(ToolExecutionOptions(
+                            toolCallId: toolCall.toolCallId,
+                            messages: stepMessages,
+                            abortSignal: mergedAbortSignal,
+                            context: context
+                        ))
+                    }
+                    if let onInputAvailable = tool.onInputAvailable {
+                        try await onInputAvailable(ToolCallInputOptions(
+                            input: toolCall.input,
+                            toolCallId: toolCall.toolCallId,
+                            messages: stepMessages,
+                            abortSignal: mergedAbortSignal,
+                            context: context
+                        ))
+                    }
+                }
+
+                let status = try await resolveToolApproval(
+                    tools: stepExecutionTools,
+                    toolCall: toolCall,
+                    toolApproval: toolApproval,
+                    messages: stepMessages,
+                    toolsContext: toolsContext,
+                    runtimeContext: runtimeContext
+                )
+
+                // Tools without approval must not consume an approval id, keeping id sequences stable.
+                if status == .notApplicable { continue }
+
+                let approvalId = _internal.generateId()
+                approvalOrder.append(toolCall.toolCallId)
+
+                switch status {
+                case .userApproval(let reason):
+                    toolApprovalRequests[toolCall.toolCallId] = ToolApprovalRequestOutput(
+                        approvalId: approvalId,
+                        toolCall: toolCall,
+                        reason: reason
+                    )
+                    blockedToolCallIds.insert(toolCall.toolCallId)
+
+                case .approved(let reason):
+                    toolApprovalRequests[toolCall.toolCallId] = ToolApprovalRequestOutput(
+                        approvalId: approvalId,
+                        toolCall: toolCall,
+                        isAutomatic: true
+                    )
+                    stepToolApprovalResponses[toolCall.toolCallId] = ToolApprovalResponseOutput(
+                        approvalId: approvalId,
+                        toolCall: toolCall,
+                        approved: true,
+                        reason: reason,
+                        providerExecuted: toolCall.providerExecuted
+                    )
+
+                case .denied(let reason):
+                    toolApprovalRequests[toolCall.toolCallId] = ToolApprovalRequestOutput(
+                        approvalId: approvalId,
+                        toolCall: toolCall,
+                        isAutomatic: true
+                    )
+                    stepToolApprovalResponses[toolCall.toolCallId] = ToolApprovalResponseOutput(
+                        approvalId: approvalId,
+                        toolCall: toolCall,
+                        approved: false,
+                        reason: reason,
+                        providerExecuted: toolCall.providerExecuted
+                    )
+                    blockedToolCallIds.insert(toolCall.toolCallId)
+
+                case .notApplicable:
+                    break
+                }
+            }
+
+            // Invalid dynamic client tool calls get error outputs.
+            clientToolOutputs = stepToolCalls
+                .filter { $0.invalid == true && $0.isDynamic && $0.providerExecuted != true }
+                .map { toolCall in
+                    .error(.dynamic(DynamicToolError(
+                        toolCallId: toolCall.toolCallId,
+                        toolName: toolCall.toolName,
+                        input: toolCall.input,
+                        error: InvalidToolCallMessageError(message: AISDKProvider.getErrorMessage(toolCall.error))
+                    )))
+                }
+
+            clientToolCalls = stepToolCalls.filter { $0.providerExecuted != true }
+            let toolApprovalResponses = approvalOrder.compactMap { stepToolApprovalResponses[$0] }
+            deniedToolApprovalResponses = toolApprovalResponses.filter { !$0.approved }
+            var toolExecutionMs: [String: Double] = [:]
+
+            if stepExecutionTools != nil, isToolExecutionAllowedFinishReason(finishReason) {
+                let results = try await executeToolCalls(
+                    clientToolCalls.filter { $0.invalid != true && !blockedToolCallIds.contains($0.toolCallId) },
+                    tools: stepExecutionTools,
+                    toolsContext: toolsContext,
+                    callId: callId,
+                    messages: stepMessages,
+                    abortSignal: mergedAbortSignal,
+                    timeout: settings.timeout,
+                    telemetry: dispatcher,
+                    toolCallConcurrency: resolvedToolCallConcurrency,
+                    onToolExecutionStart: onToolExecutionStart,
+                    onToolExecutionEnd: onToolExecutionEnd
+                )
+                for result in results {
+                    toolExecutionMs[result.output.toolCallId] = result.toolExecutionMs
+                    clientToolOutputs.append(result.output)
+                }
+            }
+
+            let stepPerformance = StepResultPerformance(
+                effectiveOutputTokensPerSecond: calculateTokensPerSecond(
+                    tokens: stepUsage.outputTokens, durationMs: responseTimeMs
+                ),
+                effectiveTotalTokensPerSecond: calculateTokensPerSecond(
+                    tokens: sumTokenCounts(stepUsage.inputTokens, stepUsage.outputTokens),
+                    durationMs: responseTimeMs
+                ),
+                stepTimeMs: now() - stepStartTimestampMs,
+                responseTimeMs: responseTimeMs,
+                toolExecutionMs: toolExecutionMs
+            )
+
+            // Provider-executed tools with deferred results may return their result in a later step.
+            for toolCall in stepToolCalls where toolCall.providerExecuted == true {
+                guard let tool = stepExecutionTools?[toolCall.toolName],
+                      tool.type == .provider, tool.supportsDeferredResults == true else { continue }
+                let hasResultInResponse = currentModelResponse.content.contains { part in
+                    if case .toolResult(let result) = part { return result.toolCallId == toolCall.toolCallId }
+                    return false
+                }
+                if !hasResultInResponse {
+                    pendingDeferredToolCalls[toolCall.toolCallId] = toolCall.toolName
+                }
+            }
+            for part in currentModelResponse.content {
+                if case .toolResult(let result) = part {
+                    pendingDeferredToolCalls.removeValue(forKey: result.toolCallId)
+                }
+            }
+
+            let stepContent = try await convertLanguageModelContent(
+                content: currentModelResponse.content,
+                toolCalls: stepToolCalls,
+                toolOutputs: clientToolOutputs,
+                toolApprovalRequests: approvalOrder.compactMap { toolApprovalRequests[$0] },
+                toolApprovalResponses: toolApprovalResponses,
+                tools: tools,
+                abortSignal: mergedAbortSignal,
+                generatedFileDataCache: generatedFileDataCache
+            )
+
+            let stepResponseMessages = try await toResponseMessages(content: stepContent, tools: tools)
+
+            let stepRequest = LanguageModelRequestMetadata(
+                messages: includeRequestMessages ? stepMessages : nil,
+                body: includeRequestBody ? currentModelResponse.request?.body.flatMap { try? jsonValue(from: $0) } : nil
+            )
+            let stepResponse = StepResultResponse(
+                from: modelResponse.metadata,
+                messages: stepResponseMessages,
+                body: includeResponseBody ? currentModelResponse.response?.body.flatMap { try? jsonValue(from: $0) } : nil
+            )
+
+            let currentStepResult = DefaultStepResult(
+                callId: callId,
+                stepNumber: stepNumber,
+                model: ModelInfo(provider: stepModel.provider, modelId: stepModel.modelId),
+                toolsContext: toolsContext,
+                runtimeContext: runtimeContext,
+                content: stepContent,
+                finishReason: finishReason,
+                rawFinishReason: currentModelResponse.finishReason.raw,
+                usage: stepUsage,
+                performance: stepPerformance,
+                warnings: currentModelResponse.warnings,
+                request: stepRequest,
+                response: stepResponse,
+                providerMetadata: currentModelResponse.providerMetadata
+            )
+
+            if !currentModelResponse.warnings.isEmpty {
+                logWarnings(currentModelResponse.warnings.map(Warning.languageModel))
+            }
+
+            steps.append(currentStepResult)
+            instructionsForNextStep = stepInstructions
+            messagesForNextStep = stepMessages + stepResponseMessages.map { $0.modelMessage }
+
+            await notify(
+                invoke(onStepEnd, with: currentStepResult as StepResult),
+                { await dispatcher.onStepEnd(currentStepResult) }
+            )
+
+            // Continue only when every client tool call has an output or a denial,
+            // there is something to continue with, and no stop condition is met.
+            guard clientToolOutputs.count + deniedToolApprovalResponses.count == clientToolCalls.count,
+                  !clientToolCalls.isEmpty || !pendingDeferredToolCalls.isEmpty,
+                  try await !isStopConditionMet(stopConditions: stopWhen, steps: steps) else {
+                break
+            }
+        }
+
+        let totalUsage = steps.reduce(LanguageModelUsage()) { addLanguageModelUsage($0, $1.usage) }
+        let lastStep = steps[steps.count - 1]
+
+        let endEvent = GenerateTextEndEvent(
+            callId: callId,
+            steps: steps,
+            initialResponseMessages: initialResponseMessages,
+            totalUsage: totalUsage
+        )
+        await notify(
+            invoke(onEnd, with: endEvent),
+            { await dispatcher.onEnd(.generateText(endEvent)) }
+        )
+
+        // Parse the output for stop responses and for non-empty responses without tool calls.
+        var resolvedOutput: OutputValue?
+        if lastStep.finishReason == .stop || (lastStep.finishReason != .toolCalls && !lastStep.text.isEmpty) {
+            resolvedOutput = try await output.parseOutput(
+                text: lastStep.text,
+                response: lastStep.response.metadata,
+                usage: lastStep.usage,
+                finishReason: lastStep.finishReason
             )
         }
+
+        return DefaultGenerateTextResult(
+            initialResponseMessages: initialResponseMessages,
+            steps: steps,
+            totalUsage: totalUsage,
+            resolvedOutput: resolvedOutput
+        )
     } catch {
+        await dispatcher.onError(callId: callId, error: error)
         throw (wrapGatewayError(error) as? Error) ?? error
+    }
+}
+
+/**
+ Generates text without a structured output; `result.output` is the final text.
+
+ Same as `generateText(model:output:…)` with `Output.text()`.
+ */
+public func generateText(
+    model: LanguageModel,
+    tools: ToolSet? = nil,
+    toolChoice: ToolChoice? = nil,
+    instructions: Instructions? = nil,
+    system: Instructions? = nil,
+    prompt: String? = nil,
+    messages: [ModelMessage]? = nil,
+    allowSystemInMessages: Bool? = nil,
+    stopWhen: [StopCondition] = [isStepCount(1)],
+    toolApproval: ToolApprovalConfiguration? = nil,
+    telemetry: TelemetryOptions? = nil,
+    providerOptions: ProviderOptions? = nil,
+    activeTools: [String]? = nil,
+    toolOrder: [String]? = nil,
+    toolCallConcurrency: Int? = nil,
+    prepareStep: PrepareStepFunction? = nil,
+    repairToolCall: ToolCallRepairFunction? = nil,
+    refineToolInput: ToolInputRefinement? = nil,
+    download: DownloadFunction? = nil,
+    runtimeContext: Context = [:],
+    toolsContext: ToolsContext = [:],
+    include: GenerateTextInclude? = nil,
+    internalOptions: GenerateTextInternalOptions = GenerateTextInternalOptions(),
+    onStart: GenerateTextOnStartCallback? = nil,
+    onStepStart: GenerateTextOnStepStartCallback? = nil,
+    onLanguageModelCallStart: OnLanguageModelCallStartCallback? = nil,
+    onLanguageModelCallEnd: OnLanguageModelCallEndCallback? = nil,
+    onToolExecutionStart: OnToolExecutionStartCallback? = nil,
+    onToolExecutionEnd: OnToolExecutionEndCallback? = nil,
+    onStepEnd: GenerateTextOnStepEndCallback? = nil,
+    onEnd: GenerateTextOnEndCallback? = nil,
+    settings: CallSettings = CallSettings()
+) async throws -> DefaultGenerateTextResult<String> {
+    try await generateText(
+        model: model,
+        tools: tools,
+        toolChoice: toolChoice,
+        instructions: instructions,
+        system: system,
+        prompt: prompt,
+        messages: messages,
+        allowSystemInMessages: allowSystemInMessages,
+        stopWhen: stopWhen,
+        output: Output.text(),
+        toolApproval: toolApproval,
+        telemetry: telemetry,
+        providerOptions: providerOptions,
+        activeTools: activeTools,
+        toolOrder: toolOrder,
+        toolCallConcurrency: toolCallConcurrency,
+        prepareStep: prepareStep,
+        repairToolCall: repairToolCall,
+        refineToolInput: refineToolInput,
+        download: download,
+        runtimeContext: runtimeContext,
+        toolsContext: toolsContext,
+        include: include,
+        internalOptions: internalOptions,
+        onStart: onStart,
+        onStepStart: onStepStart,
+        onLanguageModelCallStart: onLanguageModelCallStart,
+        onLanguageModelCallEnd: onLanguageModelCallEnd,
+        onToolExecutionStart: onToolExecutionStart,
+        onToolExecutionEnd: onToolExecutionEnd,
+        onStepEnd: onStepEnd,
+        onEnd: onEnd,
+        settings: settings
+    )
+}
+
+/// A model response with the normalized response metadata.
+private struct ModelGenerateResponse: @unchecked Sendable {
+    let result: LanguageModelV4GenerateResult
+    let metadata: LanguageModelResponseMetadata
+}
+
+/// Error output of an invalid dynamic tool call: the message of the parse error.
+struct InvalidToolCallMessageError: LocalizedError, CustomStringConvertible, Sendable {
+    let message: String
+    var errorDescription: String? { message }
+    var description: String { message }
+}
+
+extension ResponseMessage {
+    /// The response message as a model message.
+    var modelMessage: ModelMessage {
+        switch self {
+        case .assistant(let message): return .assistant(message)
+        case .tool(let message): return .tool(message)
+        }
     }
 }

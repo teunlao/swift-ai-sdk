@@ -5,102 +5,24 @@ import AISDKProviderUtils
 /**
  Tool call types for generation results.
 
- Port of `@ai-sdk/ai/src/generate-text/tool-call.ts`.
-
- **Swift adaptation**: TypeScript uses mapped types with `ValueOf` utility to create
- a union of all possible tool calls. Swift uses an enum with associated values instead,
- as Swift doesn't have the same type-level programming capabilities.
+ Port of `@ai-sdk/ai/src/generate-text/tool-call.ts`. The upstream union of
+ static and dynamic tool calls is an enum.
  */
-
-/// Static tool call with known tool name and typed input.
-/// Represents a tool call where the tool is known at compile time.
 public struct StaticToolCall: Sendable {
-    /// Type discriminator.
     public let type: String = "tool-call"
-
-    /// The ID of the tool call.
     public let toolCallId: String
-
-    /// The name of the tool that was called.
     public let toolName: String
-
-    /// Optional display title for the tool.
     public let title: String?
-
-    /// The input/arguments for the tool call.
     public let input: JSONValue
-
-    /// Whether the tool was executed by the provider.
     public let providerExecuted: Bool?
-
-    /// Additional provider-specific metadata.
     public let providerMetadata: ProviderMetadata?
-
-    /// Whether this is a dynamic tool call.
-    /// For StaticToolCall, this is always false or nil.
+    /// Metadata of the tool that was called (`Tool.metadata`).
+    public let toolMetadata: [String: JSONValue]?
     public let dynamic: Bool?
-
-    /// Whether this tool call is invalid (unparsable or tool doesn't exist).
-    /// For StaticToolCall, this is always false or nil.
     public let invalid: Bool?
 
-    public init(
-        toolCallId: String,
-        toolName: String,
-        title: String? = nil,
-        input: JSONValue,
-        providerExecuted: Bool? = nil,
-        providerMetadata: ProviderMetadata? = nil
-    ) {
-        self.toolCallId = toolCallId
-        self.toolName = toolName
-        self.title = title
-        self.input = input
-        self.providerExecuted = providerExecuted
-        self.providerMetadata = providerMetadata
-        self.dynamic = false
-        self.invalid = false
-    }
-}
-
-/// Dynamic tool call with unknown tool name or input type.
-/// Represents a tool call where the tool is determined at runtime.
-public struct DynamicToolCall: Sendable {
-    /// Type discriminator.
-    public let type: String = "tool-call"
-
-    /// The ID of the tool call.
-    public let toolCallId: String
-
-    /// The name of the tool that was called.
-    public let toolName: String
-
-    /// Optional display title for the tool.
-    public let title: String?
-
-    /// The input/arguments for the tool call.
-    public let input: JSONValue
-
-    /// Whether this is a dynamic tool call.
-    /// For DynamicToolCall, this is always true.
-    public let dynamic: Bool = true
-
-    /// Whether the tool was executed by the provider.
-    public let providerExecuted: Bool?
-
-    /// Additional provider-specific metadata.
-    public let providerMetadata: ProviderMetadata?
-
-    /// True if this is caused by an unparsable tool call or
-    /// a tool that does not exist.
-    ///
-    /// TODO AI SDK 6: separate into a new InvalidToolCall type
-    public let invalid: Bool?
-
-    /// The error that caused the tool call to be invalid.
-    ///
-    /// TODO AI SDK 6: separate into a new InvalidToolCall type
-    public let error: (any Error)?
+    /// The value the input schema received before transforming it, when it differs from `input`.
+    var inputSchemaInput: JSONValue?
 
     public init(
         toolCallId: String,
@@ -109,6 +31,45 @@ public struct DynamicToolCall: Sendable {
         input: JSONValue,
         providerExecuted: Bool? = nil,
         providerMetadata: ProviderMetadata? = nil,
+        toolMetadata: [String: JSONValue]? = nil
+    ) {
+        self.toolCallId = toolCallId
+        self.toolName = toolName
+        self.title = title
+        self.input = input
+        self.providerExecuted = providerExecuted
+        self.providerMetadata = providerMetadata
+        self.toolMetadata = toolMetadata
+        self.dynamic = false
+        self.invalid = false
+    }
+}
+
+public struct DynamicToolCall: Sendable {
+    public let type: String = "tool-call"
+    public let toolCallId: String
+    public let toolName: String
+    public let title: String?
+    public let input: JSONValue
+    public let dynamic: Bool = true
+    public let providerExecuted: Bool?
+    public let providerMetadata: ProviderMetadata?
+    /// Metadata of the tool that was called (`Tool.metadata`).
+    public let toolMetadata: [String: JSONValue]?
+    public let invalid: Bool?
+    public let error: (any Error)?
+
+    /// The value the input schema received before transforming it, when it differs from `input`.
+    var inputSchemaInput: JSONValue?
+
+    public init(
+        toolCallId: String,
+        toolName: String,
+        title: String? = nil,
+        input: JSONValue,
+        providerExecuted: Bool? = nil,
+        providerMetadata: ProviderMetadata? = nil,
+        toolMetadata: [String: JSONValue]? = nil,
         invalid: Bool? = nil,
         error: (any Error)? = nil
     ) {
@@ -118,20 +79,16 @@ public struct DynamicToolCall: Sendable {
         self.input = input
         self.providerExecuted = providerExecuted
         self.providerMetadata = providerMetadata
+        self.toolMetadata = toolMetadata
         self.invalid = invalid
         self.error = error
     }
 }
 
-/// A tool call that can be either static (typed) or dynamic (untyped).
 public enum TypedToolCall: Sendable {
-    /// A static tool call with known tool name and typed input.
     case `static`(StaticToolCall)
-
-    /// A dynamic tool call with unknown tool name or input type.
     case dynamic(DynamicToolCall)
 
-    /// The ID of the tool call.
     public var toolCallId: String {
         switch self {
         case .static(let call): return call.toolCallId
@@ -139,7 +96,6 @@ public enum TypedToolCall: Sendable {
         }
     }
 
-    /// The name of the tool that was called.
     public var toolName: String {
         switch self {
         case .static(let call): return call.toolName
@@ -147,7 +103,6 @@ public enum TypedToolCall: Sendable {
         }
     }
 
-    /// The input/arguments for the tool call.
     public var input: JSONValue {
         switch self {
         case .static(let call): return call.input
@@ -155,7 +110,6 @@ public enum TypedToolCall: Sendable {
         }
     }
 
-    /// Optional display title for the tool.
     public var title: String? {
         switch self {
         case .static(let call): return call.title
@@ -163,7 +117,6 @@ public enum TypedToolCall: Sendable {
         }
     }
 
-    /// Whether the tool was executed by the provider.
     public var providerExecuted: Bool? {
         switch self {
         case .static(let call): return call.providerExecuted
@@ -171,7 +124,6 @@ public enum TypedToolCall: Sendable {
         }
     }
 
-    /// Additional provider-specific metadata.
     public var providerMetadata: ProviderMetadata? {
         switch self {
         case .static(let call): return call.providerMetadata
@@ -179,15 +131,18 @@ public enum TypedToolCall: Sendable {
         }
     }
 
-    /// Whether this is a dynamic tool call.
-    public var isDynamic: Bool {
+    public var toolMetadata: [String: JSONValue]? {
         switch self {
-        case .static: return false
-        case .dynamic: return true
+        case .static(let call): return call.toolMetadata
+        case .dynamic(let call): return call.toolMetadata
         }
     }
 
-    /// Whether this tool call is invalid.
+    public var isDynamic: Bool {
+        if case .dynamic = self { return true }
+        return false
+    }
+
     public var invalid: Bool? {
         switch self {
         case .static(let call): return call.invalid
@@ -195,11 +150,60 @@ public enum TypedToolCall: Sendable {
         }
     }
 
-    /// The error that caused the tool call to be invalid (for dynamic calls only).
     public var error: (any Error)? {
         switch self {
         case .static: return nil
         case .dynamic(let call): return call.error
+        }
+    }
+
+    var inputSchemaInput: JSONValue? {
+        switch self {
+        case .static(let call): return call.inputSchemaInput
+        case .dynamic(let call): return call.inputSchemaInput
+        }
+    }
+
+    /// The same call with a different input (used by input refinement and approvals).
+    func with(input: JSONValue) -> TypedToolCall {
+        switch self {
+        case .static(let call):
+            var updated = StaticToolCall(
+                toolCallId: call.toolCallId,
+                toolName: call.toolName,
+                title: call.title,
+                input: input,
+                providerExecuted: call.providerExecuted,
+                providerMetadata: call.providerMetadata,
+                toolMetadata: call.toolMetadata
+            )
+            updated.inputSchemaInput = call.inputSchemaInput
+            return .static(updated)
+        case .dynamic(let call):
+            var updated = DynamicToolCall(
+                toolCallId: call.toolCallId,
+                toolName: call.toolName,
+                title: call.title,
+                input: input,
+                providerExecuted: call.providerExecuted,
+                providerMetadata: call.providerMetadata,
+                toolMetadata: call.toolMetadata,
+                invalid: call.invalid,
+                error: call.error
+            )
+            updated.inputSchemaInput = call.inputSchemaInput
+            return .dynamic(updated)
+        }
+    }
+
+    func with(inputSchemaInput: JSONValue?) -> TypedToolCall {
+        switch self {
+        case .static(var call):
+            call.inputSchemaInput = inputSchemaInput
+            return .static(call)
+        case .dynamic(var call):
+            call.inputSchemaInput = inputSchemaInput
+            return .dynamic(call)
         }
     }
 }

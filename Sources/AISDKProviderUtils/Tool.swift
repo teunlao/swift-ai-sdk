@@ -194,10 +194,8 @@ public struct Tool: Sendable {
     /// Used by the language model to decide whether to use the tool. Not used for provider tools.
     public let description: ToolDescription?
 
-    /// An optional title of the tool.
-    @available(*, deprecated, message: "Use `metadata` for source-specific tool display metadata.")
-    public var title: String? { _title }
-    let _title: String?
+    /// An optional title of the tool. Upstream deprecates it in favor of `metadata`.
+    public let title: String?
 
     /// Additional provider-specific metadata, passed through to the provider.
     public let providerOptions: [String: JSONValue]?
@@ -293,7 +291,7 @@ public struct Tool: Sendable {
     ) {
         self.deferLoading = deferLoading
         self.description = description
-        self._title = title
+        self.title = title
         self.providerOptions = providerOptions
         self._meta = _meta
         self.metadata = metadata

@@ -3,272 +3,171 @@ import AISDKProvider
 import AISDKProviderUtils
 
 /**
- High-level helper that encapsulates language model configuration, tool usage,
- and multi-step orchestration. Mirrors `@ai-sdk/ai/src/agent/agent.ts`.
+ Parameters of one agent call.
+
+ Port of `AgentCallParameters` from `@ai-sdk/ai/src/agent/agent.ts`. Pass
+ either `prompt` or `messages`.
  */
-public final class Agent<OutputValue: Sendable, PartialOutputValue: Sendable>: @unchecked Sendable {
-    public typealias Settings = AgentSettings<OutputValue, PartialOutputValue>
+public struct AgentCallParameters<CallOptions: Sendable>: Sendable {
+    /// Options validated by the agent's `callOptionsSchema` and passed to `prepareCall`.
+    public var options: CallOptions?
 
-    private let settings: Settings
+    /// A text prompt or a list of messages.
+    public var prompt: PromptContent?
 
-    public init(settings: Settings) {
-        self.settings = settings
+    /// A list of messages.
+    public var messages: [ModelMessage]?
+
+    public var abortSignal: (@Sendable () -> Bool)?
+
+    /// Overrides the agent's timeout. First-chunk and chunk timeouts apply to streaming calls only.
+    public var timeout: TimeoutConfiguration?
+
+    public var onStart: GenerateTextOnStartCallback?
+    public var onStepStart: GenerateTextOnStepStartCallback?
+    public var onToolExecutionStart: OnToolExecutionStartCallback?
+    public var onToolExecutionEnd: OnToolExecutionEndCallback?
+    public var onStepEnd: GenerateTextOnStepEndCallback?
+    public var onEnd: GenerateTextOnEndCallback?
+
+    public init(
+        options: CallOptions? = nil,
+        prompt: PromptContent? = nil,
+        messages: [ModelMessage]? = nil,
+        abortSignal: (@Sendable () -> Bool)? = nil,
+        timeout: TimeoutConfiguration? = nil,
+        onStart: GenerateTextOnStartCallback? = nil,
+        onStepStart: GenerateTextOnStepStartCallback? = nil,
+        onToolExecutionStart: OnToolExecutionStartCallback? = nil,
+        onToolExecutionEnd: OnToolExecutionEndCallback? = nil,
+        onStepEnd: GenerateTextOnStepEndCallback? = nil,
+        onEnd: GenerateTextOnEndCallback? = nil
+    ) {
+        self.options = options
+        self.prompt = prompt
+        self.messages = messages
+        self.abortSignal = abortSignal
+        self.timeout = timeout
+        self.onStart = onStart
+        self.onStepStart = onStepStart
+        self.onToolExecutionStart = onToolExecutionStart
+        self.onToolExecutionEnd = onToolExecutionEnd
+        self.onStepEnd = onStepEnd
+        self.onEnd = onEnd
+    }
+}
+
+/**
+ Parameters of one streaming agent call.
+
+ Port of `AgentStreamParameters` from `@ai-sdk/ai/src/agent/agent.ts`.
+ */
+public struct AgentStreamParameters<CallOptions: Sendable>: Sendable {
+    public var call: AgentCallParameters<CallOptions>
+
+    /// Stream transforms, applied in order.
+    public var transform: [StreamTextTransform]
+
+    public init(_ call: AgentCallParameters<CallOptions>, transform: [StreamTextTransform] = []) {
+        self.call = call
+        self.transform = transform
+    }
+}
+
+/**
+ An agent receives a prompt (text or messages) and generates or streams an
+ output that consists of steps, tool calls, data parts, etc.
+
+ Port of the `Agent` interface from `@ai-sdk/ai/src/agent/agent.ts`. Implement
+ it for a custom agent, or use `ToolLoopAgent`.
+ */
+public protocol Agent: Sendable {
+    associatedtype CallOptions: Sendable
+    associatedtype OutputValue: Sendable
+    associatedtype PartialOutput: Sendable
+
+    /// The specification version of the agent interface (`agent-v1`).
+    var version: String { get }
+
+    var id: String? { get }
+
+    var tools: ToolSet? { get }
+
+    /// Generates an output (non-streaming).
+    func generate(_ parameters: AgentCallParameters<CallOptions>) async throws -> DefaultGenerateTextResult<OutputValue>
+
+    /// Streams an output.
+    func stream(_ parameters: AgentStreamParameters<CallOptions>) async throws -> DefaultStreamTextResult<OutputValue, PartialOutput>
+}
+
+public extension Agent {
+    /// Generates an output from a text prompt.
+    func generate(
+        prompt: String,
+        options: CallOptions? = nil,
+        abortSignal: (@Sendable () -> Bool)? = nil,
+        timeout: TimeoutConfiguration? = nil
+    ) async throws -> DefaultGenerateTextResult<OutputValue> {
+        try await generate(AgentCallParameters(
+            options: options, prompt: .text(prompt), abortSignal: abortSignal, timeout: timeout
+        ))
     }
 
-    // MARK: - Configuration accessors
-
-    /// The configured agent name.
-    public var name: String? { settings.name }
-
-    /// Tools available to the agent.
-    public var tools: ToolSet? { settings.tools }
-
-    // MARK: - Generation APIs
-
-    /// Runs a non-streaming generation with the agent configuration.
-    @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-    public func generate(prompt options: Prompt) async throws -> DefaultGenerateTextResult<OutputValue> {
-        let mergedPrompt = try mergePrompt(options)
-        let stopConditions = settings.stopWhen ?? [stepCountIs(20)]
-
-        if let promptContent = mergedPrompt.prompt {
-            switch promptContent {
-            case .text(let text):
-                return try await generateText(
-                    model: settings.model,
-                    tools: settings.tools,
-                    toolChoice: settings.toolChoice,
-                    system: mergedPrompt.system,
-                    prompt: text,
-                    messages: nil,
-                    stopWhen: stopConditions,
-                    experimentalOutput: adaptOutputForGenerate(settings.experimentalOutput),
-                    experimentalTelemetry: settings.experimentalTelemetry,
-                    providerOptions: settings.providerOptions,
-                    experimentalActiveTools: nil,
-                    activeTools: settings.activeTools,
-                    experimentalPrepareStep: settings.experimentalPrepareStep,
-                    prepareStep: settings.prepareStep,
-                    experimentalRepairToolCall: settings.experimentalRepairToolCall,
-                    experimentalDownload: nil,
-                    experimentalContext: settings.experimentalContext,
-                    internalOptions: GenerateTextInternalOptions(),
-                    onStepFinish: settings.onStepFinish,
-                    onFinish: settings.onFinish,
-                    settings: settings.callSettings
-                )
-            case .messages(let messages):
-                return try await generateText(
-                    model: settings.model,
-                    tools: settings.tools,
-                    toolChoice: settings.toolChoice,
-                    system: mergedPrompt.system,
-                    prompt: nil,
-                    messages: messages,
-                    stopWhen: stopConditions,
-                    experimentalOutput: adaptOutputForGenerate(settings.experimentalOutput),
-                    experimentalTelemetry: settings.experimentalTelemetry,
-                    providerOptions: settings.providerOptions,
-                    experimentalActiveTools: nil,
-                    activeTools: settings.activeTools,
-                    experimentalPrepareStep: settings.experimentalPrepareStep,
-                    prepareStep: settings.prepareStep,
-                    experimentalRepairToolCall: settings.experimentalRepairToolCall,
-                    experimentalDownload: nil,
-                    experimentalContext: settings.experimentalContext,
-                    internalOptions: GenerateTextInternalOptions(),
-                    onStepFinish: settings.onStepFinish,
-                    onFinish: settings.onFinish,
-                    settings: settings.callSettings
-                )
-            }
-        }
-
-        if let messages = mergedPrompt.messages {
-            return try await generateText(
-                model: settings.model,
-                tools: settings.tools,
-                toolChoice: settings.toolChoice,
-                system: mergedPrompt.system,
-                prompt: nil,
-                messages: messages,
-                stopWhen: stopConditions,
-                experimentalOutput: adaptOutputForGenerate(settings.experimentalOutput),
-                experimentalTelemetry: settings.experimentalTelemetry,
-                providerOptions: settings.providerOptions,
-                experimentalActiveTools: nil,
-                activeTools: settings.activeTools,
-                experimentalPrepareStep: settings.experimentalPrepareStep,
-                prepareStep: settings.prepareStep,
-                experimentalRepairToolCall: settings.experimentalRepairToolCall,
-                experimentalDownload: nil,
-                experimentalContext: settings.experimentalContext,
-                internalOptions: GenerateTextInternalOptions(),
-                onStepFinish: settings.onStepFinish,
-                onFinish: settings.onFinish,
-                settings: settings.callSettings
-            )
-        }
-
-        let systemDescription = mergedPrompt.system ?? "nil"
-        throw InvalidPromptError(
-            prompt: "Prompt(system: \(systemDescription))",
-            message: "Agent requires either prompt text or messages."
-        )
+    /// Generates an output from messages.
+    func generate(
+        messages: [ModelMessage],
+        options: CallOptions? = nil,
+        abortSignal: (@Sendable () -> Bool)? = nil,
+        timeout: TimeoutConfiguration? = nil
+    ) async throws -> DefaultGenerateTextResult<OutputValue> {
+        try await generate(AgentCallParameters(
+            options: options, messages: messages, abortSignal: abortSignal, timeout: timeout
+        ))
     }
 
-    /// Starts a streaming generation with the agent configuration.
-    @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-    public func stream(prompt options: Prompt) throws -> DefaultStreamTextResult<OutputValue, PartialOutputValue> {
-        let mergedPrompt = try mergePrompt(options)
-        let standardizedPrompt = try standardizePrompt(mergedPrompt)
-        let stopConditions = settings.stopWhen ?? [stepCountIs(20)]
-
-        let result = try streamText(
-            model: settings.model,
-            system: standardizedPrompt.system,
-            messages: standardizedPrompt.messages,
-            tools: settings.tools,
-            toolChoice: settings.toolChoice,
-            providerOptions: settings.providerOptions,
-            experimentalActiveTools: nil,
-            activeTools: settings.activeTools,
-            experimentalOutput: settings.experimentalOutput,
-            experimentalTelemetry: settings.experimentalTelemetry,
-            experimentalApprove: nil,
-            experimentalTransform: [],
-            experimentalDownload: nil,
-            experimentalRepairToolCall: settings.experimentalRepairToolCall,
-            experimentalContext: settings.experimentalContext,
-            includeRawChunks: false,
-            stopWhen: stopConditions,
-            onChunk: nil,
-            onStepFinish: makeStreamOnStepFinish(),
-            onFinish: makeStreamOnFinish(),
-            onAbort: nil,
-            onError: nil,
-            internalOptions: StreamTextInternalOptions(),
-            settings: settings.callSettings
-        )
-        return result
+    /// Streams an output from a text prompt.
+    func stream(
+        prompt: String,
+        options: CallOptions? = nil,
+        abortSignal: (@Sendable () -> Bool)? = nil,
+        timeout: TimeoutConfiguration? = nil,
+        transform: [StreamTextTransform] = []
+    ) async throws -> DefaultStreamTextResult<OutputValue, PartialOutput> {
+        try await stream(AgentStreamParameters(
+            AgentCallParameters(options: options, prompt: .text(prompt), abortSignal: abortSignal, timeout: timeout),
+            transform: transform
+        ))
     }
 
-    /// Creates a UI message stream response by converting UI chat messages to model messages
-    /// and streaming the agent output back to the client.
-    @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-    public func respond<Message: UIMessageConvertible>(
-        messages: [Message],
-        ignoreIncompleteToolCalls: Bool = false,
-        options: StreamTextUIResponseOptions<Message>? = nil
-    ) throws -> UIMessageStreamResponse<Message> {
-        let modelMessages = try convertToModelMessages(
-            messages: messages,
-            options: ConvertToModelMessagesOptions(
-                tools: settings.tools,
-                ignoreIncompleteToolCalls: ignoreIncompleteToolCalls
-            )
-        )
-
-        let streamResult = try stream(prompt: Prompt(messages: modelMessages))
-        return streamResult.toUIMessageStreamResponse(options: options)
+    /// Streams an output from messages.
+    func stream(
+        messages: [ModelMessage],
+        options: CallOptions? = nil,
+        abortSignal: (@Sendable () -> Bool)? = nil,
+        timeout: TimeoutConfiguration? = nil,
+        transform: [StreamTextTransform] = []
+    ) async throws -> DefaultStreamTextResult<OutputValue, PartialOutput> {
+        try await stream(AgentStreamParameters(
+            AgentCallParameters(options: options, messages: messages, abortSignal: abortSignal, timeout: timeout),
+            transform: transform
+        ))
     }
+}
 
-    // MARK: - Helpers
+/**
+ Creates a callback that invokes the callbacks concurrently, ignoring their errors.
 
-    private func mergePrompt(_ options: Prompt) throws -> Prompt {
-        let system = options.system ?? settings.system
-
-        if let promptContent = options.prompt {
-            switch promptContent {
-            case .text(let text):
-                return Prompt(system: system, prompt: .text(text))
-            case .messages(let messages):
-                return Prompt(system: system, messages: messages)
-            }
-        }
-
-        if let messages = options.messages {
-            return Prompt(system: system, messages: messages)
-        }
-
-        let systemDescription = system ?? "nil"
-        throw InvalidPromptError(
-            prompt: "Prompt(system: \(systemDescription))",
-            message: "Agent requires either prompt text or messages."
-        )
-    }
-
-    @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-    private func makeStreamOnStepFinish() -> StreamTextOnStepFinish? {
-        guard let callback = settings.onStepFinish else { return nil }
-        return { step in
-            Task {
-                do {
-                    try await callback(step)
-                } catch {
-                    // Suppress callback failures to keep streaming alive.
-                }
-            }
-        }
-    }
-
-    private func adaptOutputForGenerate(
-        _ specification: Output.Specification<OutputValue, PartialOutputValue>?
-    ) -> Output.Specification<OutputValue, JSONValue>? {
-        guard let specification else { return nil }
-        return Output.Specification<OutputValue, JSONValue>(
-            type: specification.type,
-            responseFormat: { try await specification.responseFormat() },
-            parsePartial: { _ in nil },
-            parseOutput: { text, context in
-                try await specification.parseOutput(text: text, context: context)
-            }
-        )
-    }
-
-    @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-    private func makeStreamOnFinish() -> StreamTextOnFinish? {
-        guard let callback = settings.onFinish else { return nil }
-        return { finalStep, steps, totalUsage, finishReason in
-            Task {
-                let event = GenerateTextFinishEvent(
-                    finishReason: finishReason,
-                    rawFinishReason: finalStep.rawFinishReason,
-                    usage: finalStep.usage,
-                    content: finalStep.content,
-                    text: finalStep.text,
-                    reasoningText: finalStep.reasoningText,
-                    reasoning: finalStep.reasoning,
-                    files: finalStep.files,
-                    sources: finalStep.sources,
-                    toolCalls: finalStep.toolCalls,
-                    staticToolCalls: finalStep.staticToolCalls,
-                    dynamicToolCalls: finalStep.dynamicToolCalls,
-                    toolResults: finalStep.toolResults,
-                    staticToolResults: finalStep.staticToolResults,
-                    dynamicToolResults: finalStep.dynamicToolResults,
-                    request: finalStep.request,
-                    response: finalStep.response,
-                    warnings: finalStep.warnings,
-                    providerMetadata: finalStep.providerMetadata,
-                    steps: steps,
-                    totalUsage: totalUsage
-                )
-
-                do {
-                    try await callback(event)
-                } catch {
-                    // Suppress callback failures to keep streaming alive.
-                }
+ Port of `@ai-sdk/ai/src/util/merge-callbacks.ts`.
+ */
+func mergeCallbacks<Event: Sendable>(
+    _ callbacks: (@Sendable (Event) async throws -> Void)?...
+) -> @Sendable (Event) async throws -> Void {
+    let callbacks = callbacks.compactMap { $0 }
+    return { event in
+        await withTaskGroup(of: Void.self) { group in
+            for callback in callbacks {
+                group.addTask { try? await callback(event) }
             }
         }
     }
 }
-
-/// Convenience alias for the most common agent type (no structured outputs).
-public typealias BasicAgent = Agent<Never, Never>
-
-// MARK: - Deprecated aliases
-
-@available(*, deprecated, renamed: "Agent")
-public typealias Experimental_Agent<OutputValue: Sendable, PartialOutputValue: Sendable> = Agent<OutputValue, PartialOutputValue>

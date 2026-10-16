@@ -45,7 +45,7 @@ public func transformFullToUIMessageStream(
                         if !stepOpen { continuation.yield(.startStep); stepOpen = true }
                         continuation.yield(.textDelta(id: id, delta: text, providerMetadata: providerMetadata))
 
-                    case let .textEnd(id, providerMetadata):
+                    case let .textEnd(id, providerMetadata, _):
                         continuation.yield(.textEnd(id: id, providerMetadata: providerMetadata))
 
                     case let .reasoningStart(id, providerMetadata):
@@ -95,7 +95,7 @@ public func transformFullToUIMessageStream(
                         // a dedicated representation in this Swift surface yet.
                         break
 
-                    case let .toolInputStart(toolCallId, toolName, providerMetadata, providerExecuted, dynamic, title):
+                    case let .toolInputStart(toolCallId, toolName, providerMetadata, providerExecuted, dynamic, title, _, _):
                         continuation.yield(.toolInputStart(
                             toolCallId: toolCallId,
                             toolName: toolName,
@@ -148,6 +148,9 @@ public func transformFullToUIMessageStream(
 
                     case let .toolApprovalRequest(request):
                         continuation.yield(.toolApprovalRequest(approvalId: request.approvalId, toolCallId: request.toolCall.toolCallId))
+
+                    case .toolApprovalResponse:
+                        break
 
                     case .finishStep:
                         if stepOpen { continuation.yield(.finishStep); stepOpen = false }

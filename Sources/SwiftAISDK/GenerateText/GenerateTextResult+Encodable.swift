@@ -94,7 +94,7 @@ private enum GenerateTextResultJSONEncoder {
 
     private static func contentPart(_ part: ContentPart) -> JSONValue {
         switch part {
-        case let .text(text, metadata):
+        case let .text(text, _, metadata):
             return object([
                 "type": .string("text"),
                 "text": .string(text),
@@ -131,6 +131,14 @@ private enum GenerateTextResultJSONEncoder {
             return merge(toolError(error), providerMetadata: metadata)
         case let .toolApprovalRequest(request):
             return toolApprovalRequest(request)
+        case let .toolApprovalResponse(response):
+            return object([
+                "type": .string("tool-approval-response"),
+                "approvalId": .string(response.approvalId),
+                "toolCall": toolCall(response.toolCall),
+                "approved": .bool(response.approved),
+                "reason": response.reason.map(JSONValue.string) ?? .null
+            ])
         }
     }
 

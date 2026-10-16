@@ -579,8 +579,12 @@ private func consumeStream<ResultValue, PartialValue, ElementStream>(
             usage = asLanguageModelUsage(usageValue)
             providerMetadata = metadata
 
-       case .error(let errorJSON):
-           currentError = jsonValueToError(errorJSON)
+       case .error(let payload):
+           switch payload {
+           case .error(let error): currentError = error
+           case .providerStreamError(let error): currentError = error
+           case .value(let value): currentError = jsonValueToError(value)
+           }
             await errorHandler(StreamObjectErrorEvent(error: currentError ?? StreamObjectUnknownError()))
             await result.publish(.error(AnySendableError(currentError ?? StreamObjectUnknownError())))
 

@@ -1,241 +1,145 @@
-/**
- Parse language model tool calls and apply optional repair logic.
-
- Port of `@ai-sdk/ai/src/generate-text/parse-tool-call.ts`.
- */
 import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
 /**
- Parse a tool call from the language model response.
+ Parses a tool call from the model response, repairing and refining it when configured.
 
- Port of `@ai-sdk/ai/src/generate-text/parse-tool-call.ts`.
-
- This function:
- 1. Attempts to parse the tool call with `doParseToolCall()`
- 2. If parsing fails and a repair function is provided, attempts repair
- 3. Returns either a valid typed tool call or an invalid dynamic tool call with error
-
- ## Upstream Behavior
-
- TypeScript:
- ```typescript
- export async function parseToolCall<TOOLS extends ToolSet>({
-   toolCall,
-   tools,
-   repairToolCall,
-   system,
-   messages,
- }): Promise<TypedToolCall<TOOLS>> {
-   try {
-     if (tools == null) {
-       throw new NoSuchToolError({ toolName: toolCall.toolName });
-     }
-
-     try {
-       return await doParseToolCall({ toolCall, tools });
-     } catch (error) {
-       if (repairToolCall == null || !(NoSuchToolError.isInstance(error) || InvalidToolInputError.isInstance(error))) {
-         throw error;
-       }
-
-       let repairedToolCall = await repairToolCall({ toolCall, tools, inputSchema, system, messages, error });
-
-       if (repairedToolCall == null) {
-         throw error;
-       }
-
-       return await doParseToolCall({ toolCall: repairedToolCall, tools });
-     }
-   } catch (error) {
-     // Return invalid dynamic tool call
-     const parsedInput = await safeParseJSON({ text: toolCall.input });
-     const input = parsedInput.success ? parsedInput.value : toolCall.input;
-
-     return {
-       type: 'tool-call',
-       toolCallId: toolCall.toolCallId,
-       toolName: toolCall.toolName,
-       input,
-       dynamic: true,
-       invalid: true,
-       error,
-     };
-   }
- }
- ```
-
- Swift:
- ```swift
- let typedToolCall = try await parseToolCall(
-     toolCall: languageModelToolCall,
-     tools: tools,
-     repairToolCall: repairFunction,
-     system: systemPrompt,
-     messages: messages
- )
- ```
-
- - Parameters:
-   - toolCall: The tool call from the language model
-   - tools: The available tools (dictionary of tool name to Tool)
-   - repairToolCall: Optional function to repair failed tool calls
-   - system: Optional system prompt
-   - messages: The messages in the current generation step
-
- - Returns: A `TypedToolCall` (either static or dynamic, may be invalid)
-
- - Throws: Never throws - errors are captured in invalid dynamic tool calls
+ Port of `@ai-sdk/ai/src/generate-text/parse-tool-call.ts`. Parse failures that
+ cannot be repaired produce an invalid dynamic tool call carrying the error. An
+ abort during or after repair is thrown (`CancellationError`) instead.
  */
 public func parseToolCall(
-    toolCall: LanguageModelV3ToolCall,
+    toolCall: LanguageModelV4ToolCall,
     tools: ToolSet?,
     repairToolCall: ToolCallRepairFunction?,
-    system: String?,
-    messages: [ModelMessage]
-) async -> TypedToolCall {
+    refineToolInput: ToolInputRefinement? = nil,
+    instructions: Instructions?,
+    messages: [ModelMessage],
+    abortSignal: (@Sendable () -> Bool)? = nil
+) async throws -> TypedToolCall {
     do {
-        guard let tools = tools else {
-            // Provider-executed dynamic tools are not part of our list of tools:
+        guard let tools else {
             if toolCall.providerExecuted == true, toolCall.dynamic == true {
-                return try await parseProviderExecutedDynamicToolCall(toolCall)
+                return try await refineParsedToolCallInput(
+                    try await parseProviderExecutedDynamicToolCall(toolCall),
+                    refineToolInput: refineToolInput
+                )
             }
-
             throw NoSuchToolError(toolName: toolCall.toolName)
         }
 
         do {
-            return try await doParseToolCall(toolCall: toolCall, tools: tools)
+            return try await refineParsedToolCallInput(
+                try await doParseToolCall(toolCall: toolCall, tools: tools),
+                refineToolInput: refineToolInput
+            )
         } catch {
-            // Only attempt repair for NoSuchToolError or InvalidToolInputError
-            if repairToolCall == nil ||
-               !(NoSuchToolError.isInstance(error) || InvalidToolInputError.isInstance(error)) {
+            guard let repairToolCall,
+                  NoSuchToolError.isInstance(error) || InvalidToolInputError.isInstance(error) else {
                 throw error
             }
 
-            // Attempt repair
-            let repairOptions = ToolCallRepairOptions(
-                system: system,
-                messages: messages,
-                toolCall: toolCall,
-                tools: tools,
-                inputSchema: { toolName in
-                    guard let tool = tools[toolName] else {
-                        throw NoSuchToolError(toolName: toolName)
-                    }
-                    let schema = try await asSchema(tool.inputSchema).jsonSchema()
-                    // Convert JSONValue to [String: JSONValue] (schema is always an object)
-                    guard case .object(let schemaDict) = schema else {
-                        throw InvalidToolInputError(
-                            toolName: toolName,
-                            toolInput: "",
-                            cause: NSError(domain: "SchemaError", code: -1, userInfo: [
-                                NSLocalizedDescriptionKey: "Schema is not an object"
-                            ])
-                        )
-                    }
-                    return schemaDict
-                },
-                error: error
-            )
-
-            var repairedToolCall: LanguageModelV3ToolCall?
+            let repairedToolCall: LanguageModelV4ToolCall?
             do {
-                repairedToolCall = try await repairToolCall?(repairOptions)
+                try checkAbort(abortSignal)
+                repairedToolCall = try await repairToolCall(ToolCallRepairOptions(
+                    instructions: instructions,
+                    messages: messages,
+                    toolCall: toolCall,
+                    tools: tools,
+                    inputSchema: { toolName in
+                        guard let tool = tools[toolName] else {
+                            throw NoSuchToolError(toolName: toolName)
+                        }
+                        return try await asSchema(tool.inputSchema).jsonSchema()
+                    },
+                    error: error,
+                    abortSignal: abortSignal
+                ))
             } catch let repairError {
-                // Repair itself failed - wrap original error in enum
+                try checkAbort(abortSignal)
                 let originalError: ToolCallOriginalError
-                if let noSuchError = error as? NoSuchToolError {
-                    originalError = .noSuchTool(noSuchError)
-                } else if let invalidInputError = error as? InvalidToolInputError {
-                    originalError = .invalidToolInput(invalidInputError)
+                if let noSuchTool = error as? NoSuchToolError {
+                    originalError = .noSuchTool(noSuchTool)
                 } else {
-                    // Should not happen - we checked error type above
-                    throw error
+                    originalError = .invalidToolInput(error as! InvalidToolInputError)
                 }
                 throw ToolCallRepairError(originalError: originalError, cause: repairError)
             }
 
-            // No repaired tool call returned
-            guard let repairedToolCall = repairedToolCall else {
+            guard let repairedToolCall else {
                 throw error
             }
 
-            return try await doParseToolCall(toolCall: repairedToolCall, tools: tools)
+            let parsed = try await refineParsedToolCallInput(
+                try await doParseToolCall(toolCall: repairedToolCall, tools: tools),
+                refineToolInput: refineToolInput
+            )
+            try checkAbort(abortSignal)
+            return parsed
         }
     } catch {
-        let title = tools?[toolCall.toolName]?.title
+        try checkAbort(abortSignal)
 
-        // Use parsed input when possible
         let parsedInput = await safeParseJSON(ParseJSONOptions(text: toolCall.input))
         let input: JSONValue
         switch parsedInput {
         case .success(let value, _):
             input = value
         case .failure:
-            input = JSONValue.string(toolCall.input)
+            input = .string(toolCall.input)
         }
 
-        // Return invalid dynamic tool call
-        // TODO AI SDK 6: special invalid tool call parts
+        let tool = tools?[toolCall.toolName]
         return .dynamic(DynamicToolCall(
             toolCallId: toolCall.toolCallId,
             toolName: toolCall.toolName,
-            title: title,
+            title: tool?.title,
             input: input,
             providerExecuted: toolCall.providerExecuted,
             providerMetadata: toolCall.providerMetadata,
+            toolMetadata: tool?.metadata,
             invalid: true,
             error: error
         ))
     }
 }
 
-public func parseToolCall(
-    toolCall: LanguageModelV4ToolCall,
-    tools: ToolSet?,
-    repairToolCall: ToolCallRepairFunction?,
-    system: String?,
-    messages: [ModelMessage]
-) async -> TypedToolCall {
-    let legacyToolCall = LanguageModelV3ToolCall(
-        toolCallId: toolCall.toolCallId,
-        toolName: toolCall.toolName,
-        input: toolCall.input,
-        providerExecuted: toolCall.providerExecuted,
-        dynamic: toolCall.dynamic,
-        providerMetadata: toolCall.providerMetadata
-    )
+/// Throws `CancellationError` when the abort signal fired or the task was cancelled.
+func checkAbort(_ abortSignal: (@Sendable () -> Bool)?) throws {
+    if abortSignal?() == true {
+        throw CancellationError()
+    }
+}
 
-    return await parseToolCall(
-        toolCall: legacyToolCall,
-        tools: tools,
-        repairToolCall: repairToolCall,
-        system: system,
-        messages: messages
-    )
+/**
+ Applies the configured input refinement to a parsed tool call.
+
+ Port of `refineParsedToolCallInput` from `@ai-sdk/ai/src/generate-text/parse-tool-call.ts`.
+ */
+func refineParsedToolCallInput(
+    _ toolCall: TypedToolCall,
+    refineToolInput: ToolInputRefinement?
+) async throws -> TypedToolCall {
+    guard let refine = refineToolInput?[toolCall.toolName] else {
+        return toolCall
+    }
+    return toolCall.with(input: try await refine(toolCall.input))
 }
 
 private func parseProviderExecutedDynamicToolCall(
-    _ toolCall: LanguageModelV3ToolCall
+    _ toolCall: LanguageModelV4ToolCall
 ) async throws -> TypedToolCall {
-    let trimmed = toolCall.input.trimmingCharacters(in: .whitespacesAndNewlines)
-
     let input: JSONValue
-    if trimmed.isEmpty {
+    if toolCall.input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
         input = .object([:])
     } else {
-        let parsed = await safeParseJSON(ParseJSONOptions(text: toolCall.input))
-        switch parsed {
+        switch await safeParseJSON(ParseJSONOptions(text: toolCall.input)) {
         case .success(let value, _):
             input = value
         case .failure(let error, _):
-            throw InvalidToolInputError(
-                toolName: toolCall.toolName,
-                toolInput: toolCall.input,
-                cause: error
-            )
+            throw InvalidToolInputError(toolName: toolCall.toolName, toolInput: toolCall.input, cause: error)
         }
     }
 
@@ -248,86 +152,61 @@ private func parseProviderExecutedDynamicToolCall(
     ))
 }
 
-/**
- Internal helper to parse a tool call without error handling.
-
- Port of `@ai-sdk/ai/src/generate-text/parse-tool-call.ts` - `doParseToolCall()`.
-
- - Parameters:
-   - toolCall: The tool call from the language model
-   - tools: The available tools
-
- - Returns: A `TypedToolCall`
-
- - Throws: `NoSuchToolError` if tool doesn't exist, `InvalidToolInputError` if input is invalid
- */
 private func doParseToolCall(
-    toolCall: LanguageModelV3ToolCall,
+    toolCall: LanguageModelV4ToolCall,
     tools: ToolSet
 ) async throws -> TypedToolCall {
     let toolName = toolCall.toolName
 
     guard let tool = tools[toolName] else {
-        // Provider-executed dynamic tools are not part of our list of tools:
         if toolCall.providerExecuted == true, toolCall.dynamic == true {
             return try await parseProviderExecutedDynamicToolCall(toolCall)
         }
-
-        throw NoSuchToolError(
-            toolName: toolCall.toolName,
-            availableTools: Array(tools.keys)
-        )
+        throw NoSuchToolError(toolName: toolName, availableTools: Array(tools.keys))
     }
 
-    // When the tool call has no arguments, we try passing an empty object to the schema
-    // (many LLMs generate empty strings for tool calls with no arguments)
+    // Many models send an empty string for tools without arguments; validate an empty object instead.
     let parsedValue: JSONValue
-    if toolCall.input.trimmingCharacters(in: .whitespaces).isEmpty {
-        let validateResult = await safeValidateTypes(ValidateTypesOptions(value: JSONValue.object([:]), schema: tool.inputSchema))
-        switch validateResult {
+    let rawValue: JSONValue
+    if toolCall.input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        switch await safeValidateTypes(ValidateTypesOptions(value: [String: Any](), schema: tool.inputSchema)) {
         case .success(let value, _):
             parsedValue = value
+            rawValue = .object([:])
         case .failure(let error, _):
-            throw InvalidToolInputError(
-                toolName: toolName,
-                toolInput: toolCall.input,
-                cause: error
-            )
+            throw InvalidToolInputError(toolName: toolName, toolInput: toolCall.input, cause: error)
         }
     } else {
-        let parseResult = await safeParseJSON(ParseJSONWithSchemaOptions(text: toolCall.input, schema: tool.inputSchema))
-        switch parseResult {
-        case .success(let value, _):
+        switch await safeParseJSON(ParseJSONWithSchemaOptions(text: toolCall.input, schema: tool.inputSchema)) {
+        case .success(let value, let raw):
             parsedValue = value
+            rawValue = (try? jsonValue(from: raw)) ?? value
         case .failure(let error, _):
-            throw InvalidToolInputError(
-                toolName: toolName,
-                toolInput: toolCall.input,
-                cause: error
-            )
+            throw InvalidToolInputError(toolName: toolName, toolInput: toolCall.input, cause: error)
         }
     }
 
-    // Return static or dynamic tool call based on tool type
+    let parsed: TypedToolCall
     if tool.type == .dynamic {
-        return .dynamic(DynamicToolCall(
-            toolCallId: toolCall.toolCallId,
-            toolName: toolCall.toolName,
-            title: tool.title,
-            input: parsedValue,
-            providerExecuted: toolCall.providerExecuted,
-            providerMetadata: toolCall.providerMetadata,
-            invalid: false,
-            error: nil
-        ))
-    } else {
-        return .static(StaticToolCall(
+        parsed = .dynamic(DynamicToolCall(
             toolCallId: toolCall.toolCallId,
             toolName: toolName,
             title: tool.title,
             input: parsedValue,
             providerExecuted: toolCall.providerExecuted,
-            providerMetadata: toolCall.providerMetadata
+            providerMetadata: toolCall.providerMetadata,
+            toolMetadata: tool.metadata
+        ))
+    } else {
+        parsed = .static(StaticToolCall(
+            toolCallId: toolCall.toolCallId,
+            toolName: toolName,
+            title: tool.title,
+            input: parsedValue,
+            providerExecuted: toolCall.providerExecuted,
+            providerMetadata: toolCall.providerMetadata,
+            toolMetadata: tool.metadata
         ))
     }
+    return parsed.with(inputSchemaInput: rawValue)
 }

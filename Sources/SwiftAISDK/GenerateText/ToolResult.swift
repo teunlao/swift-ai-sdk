@@ -45,6 +45,9 @@ public struct StaticToolResult: Sendable {
     /// Provider-specific metadata for the tool result.
     public let providerMetadata: ProviderMetadata?
 
+    /// Metadata of the tool that produced the result (`Tool.metadata`).
+    public let toolMetadata: [String: JSONValue]?
+
     public init(
         toolCallId: String,
         toolName: String,
@@ -53,7 +56,8 @@ public struct StaticToolResult: Sendable {
         output: JSONValue,
         providerExecuted: Bool? = nil,
         preliminary: Bool? = nil,
-        providerMetadata: ProviderMetadata? = nil
+        providerMetadata: ProviderMetadata? = nil,
+        toolMetadata: [String: JSONValue]? = nil
     ) {
         self.toolCallId = toolCallId
         self.toolName = toolName
@@ -64,6 +68,7 @@ public struct StaticToolResult: Sendable {
         self.dynamic = false
         self.preliminary = preliminary
         self.providerMetadata = providerMetadata
+        self.toolMetadata = toolMetadata
     }
 }
 
@@ -101,6 +106,9 @@ public struct DynamicToolResult: Sendable {
     /// Provider-specific metadata for the tool result.
     public let providerMetadata: ProviderMetadata?
 
+    /// Metadata of the tool that produced the result (`Tool.metadata`).
+    public let toolMetadata: [String: JSONValue]?
+
     public init(
         toolCallId: String,
         toolName: String,
@@ -109,7 +117,8 @@ public struct DynamicToolResult: Sendable {
         output: JSONValue,
         providerExecuted: Bool? = nil,
         preliminary: Bool? = nil,
-        providerMetadata: ProviderMetadata? = nil
+        providerMetadata: ProviderMetadata? = nil,
+        toolMetadata: [String: JSONValue]? = nil
     ) {
         self.toolCallId = toolCallId
         self.toolName = toolName
@@ -119,6 +128,7 @@ public struct DynamicToolResult: Sendable {
         self.providerExecuted = providerExecuted
         self.preliminary = preliminary
         self.providerMetadata = providerMetadata
+        self.toolMetadata = toolMetadata
     }
 }
 
@@ -199,6 +209,13 @@ public enum TypedToolResult: Sendable {
         switch self {
         case .static(let result): return result.providerMetadata
         case .dynamic(let result): return result.providerMetadata
+        }
+    }
+
+    public var toolMetadata: [String: JSONValue]? {
+        switch self {
+        case .static(let result): return result.toolMetadata
+        case .dynamic(let result): return result.toolMetadata
         }
     }
 }

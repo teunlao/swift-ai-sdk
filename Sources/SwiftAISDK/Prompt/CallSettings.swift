@@ -3,17 +3,25 @@ import AISDKProvider
 import AISDKProviderUtils
 
 /**
- Timeout configuration for API calls. Can be specified as:
- - An integer representing milliseconds
- - A configuration object with `totalMs`, `stepMs`, and/or `chunkMs` fields
+ Timeout configuration for API calls: a total timeout in milliseconds, or
+ granular timeouts.
 
- Port of `@ai-sdk/ai/src/prompt/call-settings.ts` `TimeoutConfiguration`.
+ Port of `TimeoutConfiguration` from `@ai-sdk/ai/src/prompt/request-options.ts`.
+ Upstream keys per-tool timeouts as `<toolName>Ms`; `tools` here is keyed by the
+ tool name itself.
  */
 public enum TimeoutConfiguration: Sendable, Equatable, ExpressibleByIntegerLiteral {
     /// A timeout value in milliseconds (equivalent to `totalMs`).
     case milliseconds(Int)
     /// Granular timeout configuration in milliseconds.
-    case configuration(totalMs: Int? = nil, stepMs: Int? = nil, chunkMs: Int? = nil)
+    case configuration(
+        totalMs: Int? = nil,
+        stepMs: Int? = nil,
+        firstChunkMs: Int? = nil,
+        chunkMs: Int? = nil,
+        toolMs: Int? = nil,
+        tools: [String: Int]? = nil
+    )
 
     public init(integerLiteral value: Int) {
         self = .milliseconds(value)
@@ -27,53 +35,129 @@ public enum TimeoutConfiguration: Sendable, Equatable, ExpressibleByIntegerLiter
         .configuration(stepMs: value)
     }
 
+    public static func firstChunkMs(_ value: Int) -> TimeoutConfiguration {
+        .configuration(firstChunkMs: value)
+    }
+
     public static func chunkMs(_ value: Int) -> TimeoutConfiguration {
         .configuration(chunkMs: value)
     }
+
+    public static func toolMs(_ value: Int) -> TimeoutConfiguration {
+        .configuration(toolMs: value)
+    }
 }
 
-/**
- Extracts the total timeout value in milliseconds from a TimeoutConfiguration.
-
- Port of `@ai-sdk/ai/src/prompt/call-settings.ts::getTotalTimeoutMs`.
- */
+/// Port of `getTotalTimeoutMs` from `@ai-sdk/ai/src/prompt/request-options.ts`.
 public func getTotalTimeoutMs(_ timeout: TimeoutConfiguration?) -> Int? {
-    guard let timeout else { return nil }
     switch timeout {
     case .milliseconds(let value):
         return value
-    case .configuration(let totalMs, _, _):
+    case .configuration(let totalMs, _, _, _, _, _):
         return totalMs
+    case nil:
+        return nil
     }
 }
 
-/**
- Extracts the step timeout value in milliseconds from a TimeoutConfiguration.
-
- Port of `@ai-sdk/ai/src/prompt/call-settings.ts::getStepTimeoutMs`.
- */
+/// Port of `getStepTimeoutMs` from `@ai-sdk/ai/src/prompt/request-options.ts`.
 public func getStepTimeoutMs(_ timeout: TimeoutConfiguration?) -> Int? {
-    guard let timeout else { return nil }
-    switch timeout {
-    case .milliseconds:
-        return nil
-    case .configuration(_, let stepMs, _):
-        return stepMs
+    if case .configuration(_, let stepMs, _, _, _, _) = timeout { return stepMs }
+    return nil
+}
+
+/// Port of `getFirstChunkTimeoutMs` from `@ai-sdk/ai/src/prompt/request-options.ts`.
+public func getFirstChunkTimeoutMs(_ timeout: TimeoutConfiguration?) -> Int? {
+    if case .configuration(_, _, let firstChunkMs, _, _, _) = timeout { return firstChunkMs }
+    return nil
+}
+
+/// Port of `getChunkTimeoutMs` from `@ai-sdk/ai/src/prompt/request-options.ts`.
+public func getChunkTimeoutMs(_ timeout: TimeoutConfiguration?) -> Int? {
+    if case .configuration(_, _, _, let chunkMs, _, _) = timeout { return chunkMs }
+    return nil
+}
+
+/// Port of `getToolTimeoutMs` from `@ai-sdk/ai/src/prompt/request-options.ts`.
+public func getToolTimeoutMs(_ timeout: TimeoutConfiguration?, toolName: String) -> Int? {
+    if case .configuration(_, _, _, _, let toolMs, let tools) = timeout {
+        return tools?[toolName] ?? toolMs
     }
+    return nil
 }
 
 /**
- Extracts the chunk timeout value in milliseconds from a TimeoutConfiguration.
+ Language model call options shared by generation functions and step overrides.
 
- Port of `@ai-sdk/ai/src/prompt/call-settings.ts::getChunkTimeoutMs`.
+ Port of `@ai-sdk/ai/src/prompt/language-model-call-options.ts`.
  */
-public func getChunkTimeoutMs(_ timeout: TimeoutConfiguration?) -> Int? {
-    guard let timeout else { return nil }
-    switch timeout {
-    case .milliseconds:
-        return nil
-    case .configuration(_, _, let chunkMs):
-        return chunkMs
+public struct LanguageModelCallOptions: Sendable, Equatable {
+    public var maxOutputTokens: Int?
+    public var temperature: Double?
+    public var topP: Double?
+    public var topK: Int?
+    public var presencePenalty: Double?
+    public var frequencyPenalty: Double?
+    public var stopSequences: [String]?
+    public var seed: Int?
+    public var reasoning: LanguageModelV4ReasoningEffort?
+
+    public init(
+        maxOutputTokens: Int? = nil,
+        temperature: Double? = nil,
+        topP: Double? = nil,
+        topK: Int? = nil,
+        presencePenalty: Double? = nil,
+        frequencyPenalty: Double? = nil,
+        stopSequences: [String]? = nil,
+        seed: Int? = nil,
+        reasoning: LanguageModelV4ReasoningEffort? = nil
+    ) {
+        self.maxOutputTokens = maxOutputTokens
+        self.temperature = temperature
+        self.topP = topP
+        self.topK = topK
+        self.presencePenalty = presencePenalty
+        self.frequencyPenalty = frequencyPenalty
+        self.stopSequences = stopSequences
+        self.seed = seed
+        self.reasoning = reasoning
+    }
+
+    /**
+     Validates the options.
+
+     Port of `@ai-sdk/ai/src/prompt/prepare-language-model-call-options.ts`;
+     Swift types already guarantee the numeric kinds.
+     */
+    public func prepared() throws -> LanguageModelCallOptions {
+        if let maxOutputTokens, maxOutputTokens < 1 {
+            throw InvalidArgumentError(
+                parameter: "maxOutputTokens",
+                value: .number(Double(maxOutputTokens)),
+                message: "maxOutputTokens must be >= 1"
+            )
+        }
+        return self
+    }
+
+    /**
+     Step settings layered over the call settings.
+
+     Port of `@ai-sdk/ai/src/generate-text/prepare-step-call-settings.ts`.
+     */
+    public func overridden(by step: LanguageModelCallOptions?) throws -> LanguageModelCallOptions {
+        try LanguageModelCallOptions(
+            maxOutputTokens: step?.maxOutputTokens ?? maxOutputTokens,
+            temperature: step?.temperature ?? temperature,
+            topP: step?.topP ?? topP,
+            topK: step?.topK ?? topK,
+            presencePenalty: step?.presencePenalty ?? presencePenalty,
+            frequencyPenalty: step?.frequencyPenalty ?? frequencyPenalty,
+            stopSequences: step?.stopSequences ?? stopSequences,
+            seed: step?.seed ?? seed,
+            reasoning: step?.reasoning ?? reasoning
+        ).prepared()
     }
 }
 

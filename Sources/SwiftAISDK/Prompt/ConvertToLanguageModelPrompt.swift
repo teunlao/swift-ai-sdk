@@ -173,6 +173,17 @@ public func convertToLanguageModelMessage(
     }
 }
 
+/**
+ Converts a standardized prompt to the V4 provider prompt.
+
+ Port of `convertToLanguageModelPrompt` from
+ `@ai-sdk/ai/src/prompt/convert-to-language-model-prompt.ts`: instructions
+ become leading system messages, consecutive tool messages are combined, and
+ every client tool call must have a tool result before the next user or system
+ message and at the end.
+
+ - Throws: `MissingToolResultsError` when tool results are missing.
+ */
 public func convertToLanguageModelV4Prompt(
     prompt: StandardizedPrompt,
     supportedUrls: [String: [NSRegularExpression]],
@@ -185,8 +196,15 @@ public func convertToLanguageModelV4Prompt(
     )
 
     var messages: [LanguageModelV4Message] = []
-    if let system = prompt.system {
-        messages.append(.system(content: system, providerOptions: nil))
+    switch prompt.instructions {
+    case .text(let text):
+        messages.append(.system(content: text, providerOptions: nil))
+    case .messages(let systemMessages):
+        messages.append(contentsOf: systemMessages.map {
+            .system(content: $0.content, providerOptions: $0.providerOptions)
+        })
+    case nil:
+        break
     }
 
     messages.append(contentsOf: try prompt.messages.map { message in
@@ -195,18 +213,50 @@ public func convertToLanguageModelV4Prompt(
 
     var combinedMessages: [LanguageModelV4Message] = []
     for message in messages {
-        switch message {
-        case .tool(let content, let providerOptions):
-            if case .tool(var lastContent, _) = combinedMessages.last {
-                combinedMessages.removeLast()
-                lastContent.append(contentsOf: content)
-                combinedMessages.append(.tool(content: lastContent, providerOptions: providerOptions))
-            } else {
-                combinedMessages.append(message)
-            }
-        default:
+        guard case .tool(let content, let providerOptions) = message,
+              case .tool(var lastContent, let lastProviderOptions) = combinedMessages.last else {
             combinedMessages.append(message)
+            continue
         }
+
+        combinedMessages.removeLast()
+        let hadContent = !lastContent.isEmpty
+        if hadContent, let lastProviderOptions {
+            lastContent[lastContent.count - 1] = lastContent[lastContent.count - 1]
+                .withProviderOptions(mergeProviderOptions(lastProviderOptions, lastContent[lastContent.count - 1].providerOptions))
+        }
+        lastContent.append(contentsOf: content)
+        combinedMessages.append(.tool(
+            content: lastContent,
+            providerOptions: hadContent ? providerOptions : mergeProviderOptions(lastProviderOptions, providerOptions)
+        ))
+    }
+
+    var pendingToolCallIds: [String] = []
+    for message in combinedMessages {
+        switch message {
+        case .assistant(let content, _):
+            for part in content {
+                if case .toolCall(let toolCall) = part, toolCall.providerExecuted != true,
+                   !pendingToolCallIds.contains(toolCall.toolCallId) {
+                    pendingToolCallIds.append(toolCall.toolCallId)
+                }
+            }
+        case .tool(let content, _):
+            for part in content {
+                if case .toolResult(let result) = part {
+                    pendingToolCallIds.removeAll { $0 == result.toolCallId }
+                }
+            }
+        case .user, .system:
+            if !pendingToolCallIds.isEmpty {
+                throw MissingToolResultsError(toolCallIds: pendingToolCallIds)
+            }
+        }
+    }
+
+    if !pendingToolCallIds.isEmpty {
+        throw MissingToolResultsError(toolCallIds: pendingToolCallIds)
     }
 
     return combinedMessages.filter { message in
@@ -214,6 +264,34 @@ public func convertToLanguageModelV4Prompt(
             return !content.isEmpty
         }
         return true
+    }
+}
+
+private extension LanguageModelV4ToolMessagePart {
+    var providerOptions: SharedV4ProviderOptions? {
+        switch self {
+        case .toolResult(let part): return part.providerOptions
+        case .toolApprovalResponse(let part): return part.providerOptions
+        }
+    }
+
+    func withProviderOptions(_ providerOptions: SharedV4ProviderOptions?) -> LanguageModelV4ToolMessagePart {
+        switch self {
+        case .toolResult(let part):
+            return .toolResult(LanguageModelV4ToolResultPart(
+                toolCallId: part.toolCallId,
+                toolName: part.toolName,
+                output: part.output,
+                providerOptions: providerOptions
+            ))
+        case .toolApprovalResponse(let part):
+            return .toolApprovalResponse(LanguageModelV4ToolApprovalResponsePart(
+                approvalId: part.approvalId,
+                approved: part.approved,
+                reason: part.reason,
+                providerOptions: providerOptions
+            ))
+        }
     }
 }
 
