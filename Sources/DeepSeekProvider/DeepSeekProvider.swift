@@ -1,22 +1,14 @@
 import Foundation
 import AISDKProvider
 import AISDKProviderUtils
-import OpenAICompatibleProvider
 
-/// Settings for configuring the DeepSeek provider.
-/// Mirrors `packages/deepseek/src/deepseek-provider.ts`.
 public struct DeepSeekProviderSettings: Sendable {
     public var apiKey: String?
     public var baseURL: String?
     public var headers: [String: String]?
     public var fetch: FetchFunction?
 
-    public init(
-        apiKey: String? = nil,
-        baseURL: String? = nil,
-        headers: [String: String]? = nil,
-        fetch: FetchFunction? = nil
-    ) {
+    public init(apiKey: String? = nil, baseURL: String? = nil, headers: [String: String]? = nil, fetch: FetchFunction? = nil) {
         self.apiKey = apiKey
         self.baseURL = baseURL
         self.headers = headers
@@ -24,111 +16,40 @@ public struct DeepSeekProviderSettings: Sendable {
     }
 }
 
-/// DeepSeek provider backed by the OpenAI-compatible chat implementation.
-/// Mirrors `packages/deepseek/src/deepseek-provider.ts`.
-public final class DeepSeekProvider: ProviderV3 {
-    private let chatFactory: @Sendable (DeepSeekChatModelId) -> OpenAICompatibleChatLanguageModel
-
-    init(chatFactory: @escaping @Sendable (DeepSeekChatModelId) -> OpenAICompatibleChatLanguageModel) {
-        self.chatFactory = chatFactory
+public final class DeepSeekProvider: ProviderV4, FilesProvider {
+    private let settings: DeepSeekProviderSettings
+    private let baseURL: String
+    init(settings: DeepSeekProviderSettings) {
+        self.settings = settings
+        baseURL = withoutTrailingSlash(settings.baseURL) ?? "https://api.deepseek.com"
     }
-
-    public func languageModel(modelId: String) throws -> any LanguageModelV3 {
-        chatFactory(DeepSeekChatModelId(rawValue: modelId))
-    }
-
-    public func chatModel(modelId: String) throws -> any LanguageModelV3 {
-        chatFactory(DeepSeekChatModelId(rawValue: modelId))
-    }
-
-    public func textEmbeddingModel(modelId: String) throws -> any EmbeddingModelV3<String> {
+    public func languageModel(modelId: String) throws -> any LanguageModelV4 { chat(.init(rawValue: modelId)) }
+    public func chatModel(modelId: String) throws -> any LanguageModelV4 { chat(.init(rawValue: modelId)) }
+    public func embeddingModel(modelId: String) throws -> any EmbeddingModelV4 {
         throw NoSuchModelError(modelId: modelId, modelType: .embeddingModel)
     }
-
-    public func imageModel(modelId: String) throws -> any ImageModelV3 {
+    public func imageModel(modelId: String) throws -> any ImageModelV4 {
         throw NoSuchModelError(modelId: modelId, modelType: .imageModel)
     }
-
-    public func callAsFunction(_ modelId: String) throws -> any LanguageModelV3 {
-        try languageModel(modelId: modelId)
+    public func callAsFunction(_ modelId: String) -> DeepSeekChatLanguageModel { chat(.init(rawValue: modelId)) }
+    public func languageModel(_ modelId: DeepSeekChatModelId) -> DeepSeekChatLanguageModel { chat(modelId) }
+    public func chat(_ modelId: DeepSeekChatModelId) -> DeepSeekChatLanguageModel {
+        let baseURL = self.baseURL
+        return .init(modelId: modelId, config: .init(
+            provider: "deepseek.chat", headers: headerFactory(), url: { baseURL + $0.path }, fetch: settings.fetch,
+            supportsAssistantPrefixCompletion: baseURL.hasSuffix("/beta"), supportsStrictToolCalls: baseURL.hasSuffix("/beta")
+        ))
     }
-
-    public func chat(_ modelId: DeepSeekChatModelId) -> OpenAICompatibleChatLanguageModel {
-        chatFactory(modelId)
-    }
-
-    public func languageModel(_ modelId: DeepSeekChatModelId) -> OpenAICompatibleChatLanguageModel {
-        chatFactory(modelId)
-    }
-}
-
-private func createDeepSeekAuthFetch(
-    apiKey: String?,
-    customFetch: FetchFunction?
-) -> FetchFunction {
-    let baseFetch = customFetch ?? defaultFetchFunction()
-
-    return { request in
-        var modified = request
-        var headers = modified.allHTTPHeaderFields ?? [:]
-
-        let resolved = try loadAPIKey(
-            apiKey: apiKey,
-            environmentVariableName: "DEEPSEEK_API_KEY",
-            description: "DeepSeek API key"
-        )
-
-        let hasAuthorization = headers.keys.contains { $0.lowercased() == "authorization" }
-        if !hasAuthorization {
-            headers["Authorization"] = "Bearer \(resolved)"
-            modified.allHTTPHeaderFields = headers
+    public func files() -> any FilesV4 { DeepSeekFiles(baseURL: baseURL, headers: headerFactory(), fetch: settings.fetch) }
+    private func headerFactory() -> @Sendable () throws -> [String: String] {
+        let settings = self.settings
+        return {
+            var headers: [String: String?] = ["Authorization": "Bearer \(try loadAPIKey(apiKey: settings.apiKey, environmentVariableName: "DEEPSEEK_API_KEY", description: "DeepSeek API key"))"]
+            for (key, value) in settings.headers ?? [:] { headers[key] = value }
+            return withUserAgentSuffix(headers, "ai-sdk-deepseek/\(DEEPSEEK_PROVIDER_VERSION)")
         }
-
-        return try await baseFetch(modified)
     }
 }
 
-public func createDeepSeekProvider(settings: DeepSeekProviderSettings = .init()) -> DeepSeekProvider {
-    let baseURL = withoutTrailingSlash(settings.baseURL) ?? "https://api.deepseek.com"
-
-    let headersClosure: @Sendable () -> [String: String] = {
-        var headers: [String: String?] = [:]
-
-        if let customHeaders = settings.headers {
-            for (key, value) in customHeaders {
-                headers[key] = value
-            }
-        }
-
-        let withUA = withUserAgentSuffix(headers, "ai-sdk/deepseek/\(DEEPSEEK_PROVIDER_VERSION)")
-        return withUA
-    }
-
-    let fetch = createDeepSeekAuthFetch(
-        apiKey: settings.apiKey,
-        customFetch: settings.fetch
-    )
-
-    let chatFactory: @Sendable (DeepSeekChatModelId) -> OpenAICompatibleChatLanguageModel = { modelId in
-        OpenAICompatibleChatLanguageModel(
-            modelId: OpenAICompatibleChatModelId(rawValue: modelId.rawValue),
-            config: OpenAICompatibleChatConfig(
-                provider: "deepseek.chat",
-                headers: headersClosure,
-                url: { options in "\(baseURL)\(options.path)" },
-                fetch: fetch,
-                metadataExtractor: deepSeekMetadataExtractor
-            )
-        )
-    }
-
-    return DeepSeekProvider(chatFactory: chatFactory)
-}
-
-/// Alias matching the upstream naming (`createDeepSeek`).
-public func createDeepSeek(settings: DeepSeekProviderSettings = .init()) -> DeepSeekProvider {
-    createDeepSeekProvider(settings: settings)
-}
-
-/// Default DeepSeek provider instance (`export const deepseek = createDeepSeek()`).
-public let deepseek: DeepSeekProvider = createDeepSeekProvider()
+public func createDeepSeek(settings: DeepSeekProviderSettings = .init()) -> DeepSeekProvider { .init(settings: settings) }
+public let deepSeek = createDeepSeek()

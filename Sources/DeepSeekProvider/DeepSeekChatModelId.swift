@@ -15,7 +15,8 @@ public struct DeepSeekChatModelId: RawRepresentable, Hashable, Sendable, Express
 }
 
 public extension DeepSeekChatModelId {
-    /// Known DeepSeek chat models: https://api-docs.deepseek.com/quick_start/pricing
-    static let deepseekChat: Self = "deepseek-chat"
-    static let deepseekReasoner: Self = "deepseek-reasoner"
+    static let deepseekFlash: Self = "deepseek-flash"
+    static let deepseekV4Flash: Self = "deepseek-v4-flash"
+    static let deepseekV4Pro: Self = "deepseek-v4-pro"
+    static let deepseekV4FlashVisionExp: Self = "deepseek-v4-flash-vision-exp"
 }

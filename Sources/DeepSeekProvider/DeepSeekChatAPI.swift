@@ -1,0 +1,181 @@
+import Foundation
+import AISDKProvider
+import AISDKProviderUtils
+
+struct DeepSeekTokenUsage: Decodable, Sendable {
+    let raw: JSONValue
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: Key.self)
+        for key in [Key.promptTokens, .completionTokens, .totalTokens, .cacheHit, .cacheMiss] {
+            _ = try c.decodeIfPresent(Double.self, forKey: key)
+        }
+        _ = try c.decodeIfPresent(PromptDetails.self, forKey: .promptDetails)
+        _ = try c.decodeIfPresent(CompletionDetails.self, forKey: .completionDetails)
+        raw = try JSONValue(from: decoder)
+    }
+    private struct PromptDetails: Decodable { let cached_tokens: Double? }
+    private struct CompletionDetails: Decodable { let reasoning_tokens: Double? }
+    private enum Key: String, CodingKey {
+        case promptTokens = "prompt_tokens", completionTokens = "completion_tokens", totalTokens = "total_tokens"
+        case cacheHit = "prompt_cache_hit_tokens", cacheMiss = "prompt_cache_miss_tokens"
+        case promptDetails = "prompt_tokens_details", completionDetails = "completion_tokens_details"
+    }
+}
+
+struct DeepSeekLogprobs: Decodable, Sendable {
+    let raw: JSONValue
+    private struct Token: Decodable {
+        struct Alternative: Decodable { let token: String; let logprob: Double; let bytes: [Double]? }
+        let token: String
+        let logprob: Double
+        let bytes: [Double]?
+        let top_logprobs: [Alternative]
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: Key.self)
+            token = try c.decode(String.self, forKey: .token)
+            logprob = try c.decode(Double.self, forKey: .logprob)
+            bytes = try c.decode([Double]?.self, forKey: .bytes)
+            top_logprobs = try c.decode([Alternative].self, forKey: .topLogprobs)
+        }
+        private enum Key: String, CodingKey { case token, logprob, bytes; case topLogprobs = "top_logprobs" }
+    }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: Key.self)
+        _ = try c.decodeIfPresent([Token].self, forKey: .content)
+        _ = try c.decodeIfPresent([Token].self, forKey: .reasoning)
+        raw = try JSONValue(from: decoder)
+    }
+    private enum Key: String, CodingKey { case content; case reasoning = "reasoning_content" }
+}
+
+struct DeepSeekResponse: Decodable, Sendable {
+    struct ToolCall: Decodable, Sendable {
+        struct Function: Decodable, Sendable { let name: String; let arguments: String }
+        let id: String?
+        let type: String?
+        let function: Function
+    }
+    struct Message: Decodable, Sendable {
+        let role: String?
+        let content: String?
+        let reasoningContent: String?
+        let toolCalls: [ToolCall]?
+        enum CodingKeys: String, CodingKey {
+            case role, content
+            case reasoningContent = "reasoning_content"
+            case toolCalls = "tool_calls"
+        }
+    }
+    struct Choice: Decodable, Sendable {
+        let index: Double?
+        let message: Message
+        let logprobs: DeepSeekLogprobs?
+        let finishReason: String?
+        enum CodingKeys: String, CodingKey { case index, message, logprobs; case finishReason = "finish_reason" }
+    }
+    let id: String?
+    let created: Double?
+    let model: String?
+    let object: String?
+    let systemFingerprint: String?
+    let choices: [Choice]
+    let usage: DeepSeekTokenUsage?
+    enum CodingKeys: String, CodingKey { case id, created, model, object, choices, usage; case systemFingerprint = "system_fingerprint" }
+}
+
+struct DeepSeekChunk: Decodable, Sendable {
+    struct ToolCall: Decodable, Sendable {
+        struct Function: Decodable, Sendable { let name: String?; let arguments: String? }
+        let index: Int
+        let id: String?
+        let type: String?
+        let function: Function
+    }
+    struct Delta: Decodable, Sendable {
+        let role: String?
+        let content: String?
+        let reasoningContent: String?
+        let toolCalls: [ToolCall]?
+        enum CodingKeys: String, CodingKey {
+            case role, content
+            case reasoningContent = "reasoning_content"
+            case toolCalls = "tool_calls"
+        }
+    }
+    struct Choice: Decodable, Sendable {
+        let index: Double?
+        let delta: Delta?
+        let logprobs: DeepSeekLogprobs?
+        let finishReason: String?
+        enum CodingKeys: String, CodingKey { case index, delta, logprobs; case finishReason = "finish_reason" }
+    }
+    let id: String?
+    let created: Double?
+    let model: String?
+    let object: String?
+    let systemFingerprint: String?
+    let choices: [Choice]
+    let usage: DeepSeekTokenUsage?
+    enum CodingKeys: String, CodingKey { case id, created, model, object, choices, usage; case systemFingerprint = "system_fingerprint" }
+}
+
+public struct DeepSeekErrorData: Decodable, Sendable {
+    public struct Detail: Decodable, Sendable {
+        public let message: String
+        public let type: String?
+        public let param: JSONValue?
+        public let code: JSONValue?
+    }
+    public let error: Detail
+}
+
+let deepSeekErrorSchema = FlexibleSchema(Schema<DeepSeekErrorData>.codable(DeepSeekErrorData.self, jsonSchema: ["type": "object"]))
+let deepSeekFailedResponseHandler = createJsonErrorResponseHandler(errorSchema: deepSeekErrorSchema, errorToMessage: { $0.error.message })
+let deepSeekResponseSchema = FlexibleSchema(Schema<DeepSeekResponse>.codable(DeepSeekResponse.self, jsonSchema: ["type": "object"]))
+
+enum DeepSeekStreamEvent: Decodable, Sendable {
+    case data(DeepSeekChunk)
+    case error(DeepSeekErrorData.Detail)
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: Key.self)
+        if container.contains(.error) { self = .error(try container.decode(DeepSeekErrorData.Detail.self, forKey: .error)) }
+        else { self = .data(try DeepSeekChunk(from: decoder)) }
+    }
+    enum Key: String, CodingKey { case error }
+}
+let deepSeekChunkSchema = FlexibleSchema(Schema<DeepSeekStreamEvent>.codable(DeepSeekStreamEvent.self, jsonSchema: ["type": "object"]))
+
+func deepSeekStreamError(_ error: DeepSeekErrorData.Detail, raw: JSONValue) -> ProviderStreamError {
+    let code: ProviderStreamError.Code?
+    let codeText: String?
+    switch error.code {
+    case .string(let value): code = .string(value); codeText = value
+    case .number(let value): code = .number(value); codeText = String(Int(value))
+    default: code = nil; codeText = nil
+    }
+    var status: Int?
+    var retryable: Bool?
+    if codeText == "insufficient_quota" || error.type == "insufficient_quota" {
+        status = 429; retryable = false
+    } else if let number = codeText.flatMap(Int.init), (400...599).contains(number) {
+        status = number; retryable = [408, 409, 429].contains(number) || number >= 500
+    } else {
+        for value in [codeText, error.type].compactMap({ $0 }) {
+            switch value {
+            case "rate_limit_exceeded", "rate_limit_error": status = 429
+            case "server_error", "api_error", "internal_server_error": status = 500
+            case "overloaded_error", "service_unavailable": status = 503
+            case "timeout", "timeout_error": status = 504
+            case "authentication_error", "invalid_api_key": status = 401
+            case "permission_error": status = 403
+            case "not_found_error", "model_not_found": status = 404
+            case "bad_request", "context_length_exceeded", "invalid_request_error": status = 400
+            default: continue
+            }
+            retryable = status == 429 || (status ?? 0) >= 500
+            break
+        }
+    }
+    return createProviderStreamError(message: error.message, type: error.type, code: code,
+                                     statusCode: status, isRetryable: retryable, data: raw)
+}

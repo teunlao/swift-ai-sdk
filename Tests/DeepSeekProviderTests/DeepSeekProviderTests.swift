@@ -1,288 +1,127 @@
 import Foundation
 import Testing
-@testable import DeepSeekProvider
-@testable import AISDKProvider
-@testable import AISDKProviderUtils
-@testable import OpenAICompatibleProvider
+import AISDKProvider
+import AISDKProviderUtils
+import DeepSeekProvider
 
-/**
- DeepSeek Provider tests.
-
- Port of `@ai-sdk/deepseek/src/deepseek-provider.test.ts`.
- */
-
-@Suite("DeepSeekProvider")
+@Suite("DeepSeek provider")
 struct DeepSeekProviderTests {
+    actor Capture {
+        var request: URLRequest?
+        func store(_ value: URLRequest) { request = value }
+        func value() -> URLRequest? { request }
+    }
+    static let response: JSONValue = [
+        "id": "response-1", "created": 123, "model": "deepseek-v4-flash", "object": "chat.completion",
+        "choices": [["index": 0, "message": ["role": "assistant", "content": "Answer", "reasoning_content": "Reason"], "finish_reason": "stop"]],
+        "usage": ["prompt_tokens": 10, "completion_tokens": 3, "prompt_cache_hit_tokens": 4,
+                  "completion_tokens_details": ["reasoning_tokens": 5], "custom": 8]
+    ]
+    static func fetch(_ response: JSONValue = response, capture: Capture? = nil) throws -> FetchFunction {
+        let data = try JSONEncoder().encode(response)
+        return { request in
+            await capture?.store(request)
+            return FetchResponse(body: .data(data), urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!)
+        }
+    }
+    static func body(_ capture: Capture) async throws -> JSONValue {
+        let request = try #require(await capture.value())
+        return try JSONDecoder().decode(JSONValue.self, from: #require(request.httpBody))
+    }
+    static func object(_ value: JSONValue) -> [String: JSONValue] {
+        guard case .object(let object) = value else { return [:] }
+        return object
+    }
+    static let prompt: LanguageModelV4Prompt = [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)]
 
-    // MARK: - Helper Methods
-
-    static func encodeJSON(_ dict: [String: Any]) -> Data {
-        try! JSONSerialization.data(withJSONObject: dict)
+    @Test func nativeResponsePreservesUsageAndSafeMetadata() async throws {
+        let model = createDeepSeek(settings: .init(apiKey: "key", fetch: try Self.fetch()))("deepseek-v4-flash")
+        let result = try await model.doGenerate(options: .init(prompt: Self.prompt))
+        #expect(result.content == [.reasoning(.init(text: "Reason")), .text(.init(text: "Answer"))])
+        #expect(result.usage.inputTokens.total == 10)
+        #expect(result.usage.inputTokens.cacheRead == 4)
+        #expect(result.usage.outputTokens.text == 0)
+        #expect(result.usage.raw == Self.object(Self.response)["usage"])
+        #expect(result.providerMetadata?["deepseek"] == ["promptCacheHitTokens": 4, "responseObject": "chat.completion", "choiceIndex": 0, "messageRole": "assistant"])
+        _ = try JSONEncoder().encode(result.providerMetadata)
     }
 
-    @Suite("auth behavior", .serialized)
-    struct AuthBehaviorTests {
-        actor RequestCapture {
-            var request: URLRequest?
-            func store(_ request: URLRequest) { self.request = request }
-            func value() -> URLRequest? { request }
+    @Test func requestUsesThinkingDefaultsAndMapsProviderSettings() async throws {
+        let capture = Capture()
+        let model = createDeepSeek(settings: .init(apiKey: "key", fetch: try Self.fetch(capture: capture)))("deepseek-v4-flash")
+        let result = try await model.doGenerate(options: .init(prompt: Self.prompt, temperature: 0.5, topP: 0.8,
+                                                              frequencyPenalty: 1, reasoning: .medium,
+                                                              providerOptions: ["deepseek": ["topLogprobs": 2, "userId": "user_1"]]))
+        let body = Self.object(try await Self.body(capture))
+        #expect(body["thinking"] == ["type": "enabled"])
+        #expect(body["reasoning_effort"] == "high")
+        #expect(body["logprobs"] == true)
+        #expect(body["top_logprobs"] == 2)
+        #expect(body["user_id"] == "user_1")
+        #expect(body["temperature"] == nil)
+        #expect(body["top_p"] == nil)
+        #expect(body["frequency_penalty"] == nil)
+        #expect(result.warnings.contains { if case .deprecated(setting: "frequencyPenalty", message: _) = $0 { return true }; return false })
+    }
+
+    @Test func azureCapabilitiesControlRequest() async throws {
+        let capture = Capture()
+        let model = DeepSeekChatLanguageModel(modelId: "deployment", config: .init(provider: "azure.deepseek", url: { "https://azure.example\($0.path)" },
+                                                                                 fetch: try Self.fetch(capture: capture), supportsPenaltySampling: true,
+                                                                                 supportsThinking: false, supportsStructuredOutputs: true))
+        _ = try await model.doGenerate(options: .init(prompt: Self.prompt, temperature: 0.4, frequencyPenalty: 0.2,
+                                                     responseFormat: .json(schema: ["type": "object"], name: "value", description: nil),
+                                                     providerOptions: ["azure": ["thinking": ["type": "enabled"]]]))
+        let body = Self.object(try await Self.body(capture))
+        #expect(body["temperature"] == 0.4)
+        #expect(body["frequency_penalty"] == 0.2)
+        #expect(body["thinking"] == nil)
+        #expect(body["response_format"] == ["type": "json_schema", "json_schema": ["schema": ["type": "object"], "strict": true, "name": "value"]])
+    }
+
+    @Test func betaPrefixAndStrictToolsUseBetaEndpoint() async throws {
+        let capture = Capture()
+        let provider = createDeepSeek(settings: .init(apiKey: "key", baseURL: "https://api.deepseek.com/beta/", fetch: try Self.fetch(capture: capture)))
+        let prompt: LanguageModelV4Prompt = [.assistant(content: [.text(.init(text: "Start"))], providerOptions: ["deepseek": ["prefix": true, "name": "writer"]])]
+        _ = try await provider("deepseek-v4-pro").doGenerate(options: .init(prompt: prompt, tools: [.function(.init(name: "lookup", inputSchema: ["type": "object"], strict: true))]))
+        let body = Self.object(try await Self.body(capture))
+        #expect(body["messages"] == [["role": "assistant", "content": "Start", "name": "writer", "prefix": true, "reasoning_content": ""]])
+        #expect(await capture.value()?.url?.absoluteString == "https://api.deepseek.com/beta/chat/completions")
+        let normal = createDeepSeek(settings: .init(apiKey: "key", fetch: try Self.fetch()))("deepseek-v4-pro")
+        await #expect(throws: UnsupportedFunctionalityError.self) {
+            _ = try await normal.doGenerate(options: .init(prompt: prompt))
         }
+    }
 
-        @Test("missing API key throws LoadAPIKeyError at request time")
-        func missingAPIKeyThrowsAtRequestTime() async throws {
-            let original = getenv("DEEPSEEK_API_KEY").flatMap { String(validatingCString: $0) }
-            defer {
-                if let original {
-                    setenv("DEEPSEEK_API_KEY", original, 1)
-                } else {
-                    unsetenv("DEEPSEEK_API_KEY")
-                }
-            }
+    @Test func invalidOptionsFailBeforeSending() async throws {
+        let capture = Capture()
+        let model = createDeepSeek(settings: .init(apiKey: "key", fetch: try Self.fetch(capture: capture)))("deepseek-v4-flash")
+        await #expect(throws: TypeValidationError.self) {
+            _ = try await model.doGenerate(options: .init(prompt: Self.prompt, providerOptions: ["deepseek": ["userId": "invalid value"]]))
+        }
+        #expect(await capture.value() == nil)
+    }
 
+    @Test func customHeadersAndUserAgentReachHTTP() async throws {
+        let capture = Capture()
+        let provider = createDeepSeek(settings: .init(apiKey: "key", baseURL: "https://custom.example/", headers: ["Authorization": "custom", "X-Custom": "value"], fetch: try Self.fetch(capture: capture)))
+        _ = try await provider("deepseek-chat").doGenerate(options: .init(prompt: Self.prompt))
+        let request = try #require(await capture.value())
+        #expect(request.value(forHTTPHeaderField: "Authorization") == "custom")
+        #expect(request.value(forHTTPHeaderField: "X-Custom") == "value")
+        #expect(request.value(forHTTPHeaderField: "User-Agent")?.contains("ai-sdk-deepseek/") == true)
+        #expect(request.url?.absoluteString == "https://custom.example/chat/completions")
+    }
+
+    @Suite(.serialized) struct Authentication {
+        @Test func authorizationStillRequiresConfiguredKey() async throws {
+            let previous = getenv("DEEPSEEK_API_KEY").flatMap { String(validatingCString: $0) }
+            defer { if let previous { setenv("DEEPSEEK_API_KEY", previous, 1) } else { unsetenv("DEEPSEEK_API_KEY") } }
             unsetenv("DEEPSEEK_API_KEY")
-
-            let capture = RequestCapture()
-            let responseJSON: [String: Any] = [
-                "id": "test-id",
-                "object": "chat.completion",
-                "created": 1234567890,
-                "model": "model-id",
-                "choices": [[
-                    "index": 0,
-                    "message": [
-                        "role": "assistant",
-                        "content": "Hello"
-                    ],
-                    "finish_reason": "stop"
-                ]],
-                "usage": [
-                    "prompt_tokens": 10,
-                    "completion_tokens": 5,
-                    "total_tokens": 15
-                ]
-            ]
-
-            let responseData = DeepSeekProviderTests.encodeJSON(responseJSON)
-            let response = HTTPURLResponse(
-                url: URL(string: "https://api.deepseek.com/chat/completions")!,
-                statusCode: 200,
-                httpVersion: "HTTP/1.1",
-                headerFields: ["Content-Type": "application/json"]
-            )!
-
-            let fetch: FetchFunction = { request in
-                await capture.store(request)
-                return FetchResponse(body: .data(responseData), urlResponse: response)
+            let model = createDeepSeek(settings: .init(headers: ["Authorization": "custom"], fetch: try DeepSeekProviderTests.fetch()))("deepseek-chat")
+            await #expect(throws: LoadAPIKeyError.self) {
+                _ = try await model.doGenerate(options: .init(prompt: DeepSeekProviderTests.prompt))
             }
-
-            let provider = createDeepSeek(settings: DeepSeekProviderSettings(fetch: fetch))
-            let model = try provider("model-id")
-            let prompt: LanguageModelV3Prompt = [
-                .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
-            ]
-
-            do {
-                _ = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: prompt))
-                Issue.record("Expected missing API key error")
-            } catch let error as LoadAPIKeyError {
-                #expect(error.message.contains("DEEPSEEK_API_KEY environment variable"))
-            } catch {
-                Issue.record("Expected LoadAPIKeyError, got: \(error)")
-            }
-
-            #expect(await capture.value() == nil)
         }
-    }
-
-    // MARK: - createDeepSeek Tests
-
-    @Test("should create a DeepSeekProvider instance with default options")
-    func createDeepSeekProviderWithDefaultOptions() throws {
-        let provider = createDeepSeek(settings: DeepSeekProviderSettings(
-            apiKey: "test-api-key"
-        ))
-
-        let model = try provider("model-id")
-
-        #expect(model is OpenAICompatibleChatLanguageModel)
-        #expect(model.provider == "deepseek.chat")
-    }
-
-    @Test("should create a DeepSeekProvider instance with custom options")
-    func createDeepSeekProviderWithCustomOptions() throws {
-        let provider = createDeepSeek(settings: DeepSeekProviderSettings(
-            apiKey: "custom-key",
-            baseURL: "https://custom.url",
-            headers: ["Custom-Header": "value"]
-        ))
-
-        let model = try provider("model-id")
-
-        #expect(model is OpenAICompatibleChatLanguageModel)
-        #expect(model.provider == "deepseek.chat")
-    }
-
-    @Test("should return a chat model when called as a function")
-    func returnChatModelWhenCalledAsFunction() throws {
-        let provider = createDeepSeek(settings: DeepSeekProviderSettings(
-            apiKey: "test-api-key"
-        ))
-        let modelId = "foo-model-id"
-
-        let model = try provider(modelId)
-
-        #expect(model is OpenAICompatibleChatLanguageModel)
-    }
-
-    @Test("should include deepseek version in user-agent header")
-    func includeDeepSeekVersionInUserAgentHeader() async throws {
-        actor RequestCapture {
-            var request: URLRequest?
-            func store(_ request: URLRequest) { self.request = request }
-            func value() -> URLRequest? { request }
-        }
-
-        let capture = RequestCapture()
-
-        let responseJSON: [String: Any] = [
-            "id": "test-id",
-            "object": "chat.completion",
-            "created": 1234567890,
-            "model": "model-id",
-            "choices": [[
-                "index": 0,
-                "message": [
-                    "role": "assistant",
-                    "content": "Hello"
-                ],
-                "finish_reason": "stop"
-            ]],
-            "usage": [
-                "prompt_tokens": 10,
-                "completion_tokens": 5,
-                "total_tokens": 15
-            ]
-        ]
-
-        let responseData = Self.encodeJSON(responseJSON)
-        let response = HTTPURLResponse(
-            url: URL(string: "https://api.deepseek.com/v1/chat/completions")!,
-            statusCode: 200,
-            httpVersion: "HTTP/1.1",
-            headerFields: ["Content-Type": "application/json"]
-        )!
-
-        let fetch: FetchFunction = { request in
-            await capture.store(request)
-            return FetchResponse(body: .data(responseData), urlResponse: response)
-        }
-
-        let provider = createDeepSeek(settings: DeepSeekProviderSettings(
-            apiKey: "test-api-key",
-            fetch: fetch
-        ))
-
-        let model = try provider("model-id")
-        let prompt: LanguageModelV3Prompt = [
-            .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
-        ]
-
-        _ = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: prompt))
-
-        guard let request = await capture.value() else {
-            Issue.record("Expected to capture request")
-            return
-        }
-
-        let userAgent = request.value(forHTTPHeaderField: "User-Agent")
-        #expect(userAgent?.contains("ai-sdk/deepseek") == true)
-    }
-
-    @Test("should throw NoSuchModelError when attempting to create embedding model")
-    func throwNoSuchModelErrorForEmbeddingModel() throws {
-        let provider = createDeepSeek(settings: DeepSeekProviderSettings(
-            apiKey: "test-api-key"
-        ))
-
-        #expect(throws: NoSuchModelError.self) {
-            _ = try provider.textEmbeddingModel(modelId: "any-model")
-        }
-    }
-
-    // MARK: - chat Tests
-
-    @Test("should construct a chat model with correct configuration")
-    func constructChatModelWithCorrectConfiguration() throws {
-        let provider = createDeepSeek(settings: DeepSeekProviderSettings(
-            apiKey: "test-api-key"
-        ))
-        let modelId = DeepSeekChatModelId(rawValue: "deepseek-chat-model")
-
-        let model = provider.chat(modelId)
-
-        #expect(model is OpenAICompatibleChatLanguageModel)
-    }
-
-    @Test("uses default upstream base URL for requests")
-    func usesDefaultUpstreamBaseURL() async throws {
-        actor RequestCapture {
-            var request: URLRequest?
-            func store(_ request: URLRequest) { self.request = request }
-            func value() -> URLRequest? { request }
-        }
-
-        let capture = RequestCapture()
-
-        let responseJSON: [String: Any] = [
-            "id": "test-id",
-            "object": "chat.completion",
-            "created": 1234567890,
-            "model": "model-id",
-            "choices": [[
-                "index": 0,
-                "message": [
-                    "role": "assistant",
-                    "content": "Hello"
-                ],
-                "finish_reason": "stop"
-            ]],
-            "usage": [
-                "prompt_tokens": 10,
-                "completion_tokens": 5,
-                "total_tokens": 15
-            ]
-        ]
-
-        let responseData = Self.encodeJSON(responseJSON)
-        let response = HTTPURLResponse(
-            url: URL(string: "https://api.deepseek.com/chat/completions")!,
-            statusCode: 200,
-            httpVersion: "HTTP/1.1",
-            headerFields: ["Content-Type": "application/json"]
-        )!
-
-        let fetch: FetchFunction = { request in
-            await capture.store(request)
-            return FetchResponse(body: .data(responseData), urlResponse: response)
-        }
-
-        let provider = createDeepSeek(settings: DeepSeekProviderSettings(
-            apiKey: "test-api-key",
-            fetch: fetch
-        ))
-
-        let model = try provider("model-id")
-        let prompt: LanguageModelV3Prompt = [
-            .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
-        ]
-
-        _ = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: prompt))
-
-        guard let request = await capture.value() else {
-            Issue.record("Expected to capture request")
-            return
-        }
-
-        #expect(request.url?.absoluteString == "https://api.deepseek.com/chat/completions")
     }
 }
