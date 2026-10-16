@@ -11,6 +11,7 @@ public struct OpenAICompatibleChatConfig: Sendable {
     public let errorConfiguration: OpenAICompatibleErrorConfiguration
     public let metadataExtractor: OpenAICompatibleMetadataExtractor?
     public let supportsStructuredOutputs: Bool
+    public let supportsMultiPartToolContent: Bool
     public let supportedUrls: (@Sendable () async throws -> [String: [NSRegularExpression]])?
     public let transformRequestBody: (@Sendable (_ body: [String: JSONValue]) -> [String: JSONValue])?
     public let convertUsage: (@Sendable (_ usage: OpenAICompatibleChatUsage?) -> LanguageModelV4Usage)?
@@ -24,6 +25,7 @@ public struct OpenAICompatibleChatConfig: Sendable {
         errorConfiguration: OpenAICompatibleErrorConfiguration = defaultOpenAICompatibleErrorConfiguration,
         metadataExtractor: OpenAICompatibleMetadataExtractor? = nil,
         supportsStructuredOutputs: Bool = false,
+        supportsMultiPartToolContent: Bool = false,
         supportedUrls: (@Sendable () async throws -> [String: [NSRegularExpression]])? = nil,
         transformRequestBody: (@Sendable (_ body: [String: JSONValue]) -> [String: JSONValue])? = nil,
         convertUsage: (@Sendable (_ usage: OpenAICompatibleChatUsage?) -> LanguageModelV4Usage)? = nil
@@ -36,6 +38,7 @@ public struct OpenAICompatibleChatConfig: Sendable {
         self.errorConfiguration = errorConfiguration
         self.metadataExtractor = metadataExtractor
         self.supportsStructuredOutputs = supportsStructuredOutputs
+        self.supportsMultiPartToolContent = supportsMultiPartToolContent
         self.supportedUrls = supportedUrls
         self.transformRequestBody = transformRequestBody
         self.convertUsage = convertUsage
@@ -452,7 +455,11 @@ public final class OpenAICompatibleChatLanguageModel: LanguageModelV4 {
             !["user", "reasoningEffort", "textVerbosity", "strictJsonSchema"].contains(key)
         }
 
-        let messages = try convertToOpenAICompatibleChatMessages(prompt: options.prompt)
+        let messages = try convertToOpenAICompatibleChatMessages(
+            prompt: options.prompt, provider: providerOptionsName,
+            providerOptionsKey: openAICompatibleProviderOptionsKey(rawName: providerOptionsName, providerOptions: options.providerOptions),
+            supportsMultiPartToolContent: config.supportsMultiPartToolContent
+        )
 
         // Warning only if schema is present but structuredOutputs not supported
         if case let .json(schema, _, _) = options.responseFormat,
@@ -492,7 +499,7 @@ public final class OpenAICompatibleChatLanguageModel: LanguageModelV4 {
         if let seed = options.seed {
             body["seed"] = .number(Double(seed))
         }
-        if let stopSequences = options.stopSequences, !stopSequences.isEmpty {
+        if let stopSequences = options.stopSequences {
             body["stop"] = .array(stopSequences.map(JSONValue.string))
         }
 
@@ -529,9 +536,9 @@ public final class OpenAICompatibleChatLanguageModel: LanguageModelV4 {
 
         let topLevelReasoning: String?
         switch options.reasoning {
-        case .some(.minimal), .some(.low), .some(.medium), .some(.high), .some(.xhigh), .some(.max):
+        case .some(.none), .some(.minimal), .some(.low), .some(.medium), .some(.high), .some(.xhigh), .some(.max):
             topLevelReasoning = options.reasoning?.rawValue
-        case .some(.providerDefault), .some(.none), nil:
+        case .some(.providerDefault), nil:
             topLevelReasoning = nil
         }
         if let reasoning = mergedOptions.reasoningEffort ?? topLevelReasoning {

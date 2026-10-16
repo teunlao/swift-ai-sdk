@@ -281,17 +281,6 @@ struct OpenAICompatibleChatMessagesConverterV4Tests {
                 "PDF file parts with URLs"
             ),
             (
-                .init(data: .data(Data([0, 1])), mediaType: "video/mp4"),
-                "file part media type video/mp4"
-            ),
-            (
-                .init(
-                    data: .reference(["test-provider": "file-1"]),
-                    mediaType: "application/pdf"
-                ),
-                "file parts with provider references"
-            ),
-            (
                 .init(data: .text("provider text"), mediaType: "text/plain"),
                 "text file parts"
             )

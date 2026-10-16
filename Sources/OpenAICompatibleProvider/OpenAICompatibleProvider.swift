@@ -11,6 +11,7 @@ public struct OpenAICompatibleProviderSettings: Sendable {
     public var fetch: FetchFunction?
     public var includeUsage: Bool
     public var supportsStructuredOutputs: Bool
+    public var supportsMultiPartToolContent: Bool
     public var supportedUrls: (@Sendable () async throws -> [String: [NSRegularExpression]])?
     public var transformRequestBody: (@Sendable (_ body: [String: JSONValue]) -> [String: JSONValue])?
     public var metadataExtractor: OpenAICompatibleMetadataExtractor?
@@ -25,6 +26,7 @@ public struct OpenAICompatibleProviderSettings: Sendable {
         fetch: FetchFunction? = nil,
         includeUsage: Bool = false,
         supportsStructuredOutputs: Bool = false,
+        supportsMultiPartToolContent: Bool = false,
         supportedUrls: (@Sendable () async throws -> [String: [NSRegularExpression]])? = nil,
         transformRequestBody: (@Sendable (_ body: [String: JSONValue]) -> [String: JSONValue])? = nil,
         metadataExtractor: OpenAICompatibleMetadataExtractor? = nil,
@@ -38,6 +40,7 @@ public struct OpenAICompatibleProviderSettings: Sendable {
         self.fetch = fetch
         self.includeUsage = includeUsage
         self.supportsStructuredOutputs = supportsStructuredOutputs
+        self.supportsMultiPartToolContent = supportsMultiPartToolContent
         self.supportedUrls = supportedUrls
         self.transformRequestBody = transformRequestBody
         self.metadataExtractor = metadataExtractor
@@ -64,6 +67,10 @@ public final class OpenAICompatibleProvider: ProviderV4 {
         self.completionFactory = completionFactory
         self.embeddingFactory = embeddingFactory
         self.imageFactory = imageFactory
+    }
+
+    public func callAsFunction(_ modelId: String) -> any LanguageModelV4 {
+        languageFactory(OpenAICompatibleChatModelId(rawValue: modelId))
     }
 
     public func languageModel(modelId: String) throws -> any LanguageModelV4 {
@@ -135,6 +142,7 @@ private func makeOpenAICompatibleModelFactories(
     let commonFetch = settings.fetch
     let includeUsage = settings.includeUsage
     let supportsStructuredOutputs = settings.supportsStructuredOutputs
+    let supportsMultiPartToolContent = settings.supportsMultiPartToolContent
     let supportedUrls = settings.supportedUrls
     let transformRequestBody = settings.transformRequestBody
     let metadataExtractor = settings.metadataExtractor
@@ -152,6 +160,7 @@ private func makeOpenAICompatibleModelFactories(
             errorConfiguration: errorConfiguration,
             metadataExtractor: metadataExtractor,
             supportsStructuredOutputs: supportsStructuredOutputs,
+            supportsMultiPartToolContent: supportsMultiPartToolContent,
             supportedUrls: supportedUrls,
             transformRequestBody: transformRequestBody,
             convertUsage: convertUsage

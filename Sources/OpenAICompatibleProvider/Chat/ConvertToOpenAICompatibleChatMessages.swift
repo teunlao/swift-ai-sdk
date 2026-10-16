@@ -2,345 +2,169 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-private func metadata(from providerOptions: SharedV4ProviderOptions?) -> [String: JSONValue] {
-    guard let providerOptions, let metadata = providerOptions["openaiCompatible"] else {
-        return [:]
-    }
-    return metadata
-}
-
-private func mergeMetadata(_ base: [String: JSONValue], with extra: [String: JSONValue]) -> [String: JSONValue] {
-    guard !extra.isEmpty else { return base }
-    var merged = base
-    for (key, value) in extra {
-        merged[key] = value
-    }
-    return merged
-}
-
-private func audioFormat(for mediaType: String) -> String? {
-    switch mediaType {
-    case "audio/wav":
-        return "wav"
-    case "audio/mp3", "audio/mpeg":
-        return "mp3"
-    default:
-        return nil
-    }
-}
-
-private func inlineBase64(from data: SharedV4FileData) throws -> String {
-    switch data {
-    case .data(let bytes):
-        return convertToBase64(.data(bytes))
-    case .base64(let base64):
-        return convertToBase64(.string(base64))
-    case .url, .reference, .text:
-        throw UnsupportedFunctionalityError(functionality: "non-inline file data")
-    }
-}
-
-private func textContent(from data: SharedV4FileData) throws -> String {
-    switch data {
-    case .data(let bytes):
-        return String(decoding: bytes, as: UTF8.self)
-    case .base64(let base64):
-        return String(decoding: try convertBase64ToData(base64), as: UTF8.self)
-    case .url(let url, _):
-        return url.absoluteString
-    case .reference, .text:
-        throw UnsupportedFunctionalityError(functionality: "non-decodable text file data")
-    }
-}
-
-private func encodedJSONString<T: Encodable>(_ value: T) throws -> String {
-    // Sorted keys keep serialized tool results and tool call arguments
-    // byte-identical across processes, which providers with automatic
-    // prefix caching require for prompt cache hits.
+private func compatibleMetadata(_ options: SharedV4ProviderOptions?) -> [String: JSONValue] { options?["openaiCompatible"] ?? [:] }
+private func compatibleJSON<T: Encodable>(_ value: T) throws -> String {
     let encoder = JSONEncoder()
-    encoder.outputFormatting = [.sortedKeys]
+    encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
     return String(decoding: try encoder.encode(value), as: UTF8.self)
 }
-
-private func thoughtSignature(from providerOptions: SharedV4ProviderOptions?) -> String? {
-    guard let value = providerOptions?["google"]?["thoughtSignature"] else {
-        return nil
-    }
-
-    guard isJavaScriptTruthy(value) else {
-        return nil
-    }
-
-    return javaScriptString(from: value)
-}
-
-private func isJavaScriptTruthy(_ value: JSONValue) -> Bool {
-    switch value {
-    case .null:
-        return false
-    case .bool(let value):
-        return value
-    case .number(let value):
-        return value != 0 && !value.isNaN
-    case .string(let value):
-        return !value.isEmpty
-    case .array, .object:
-        return true
-    }
-}
-
-private func javaScriptString(from value: JSONValue, insideArray: Bool = false) -> String {
-    switch value {
-    case .null:
-        return insideArray ? "" : "null"
-    case .string(let value):
-        return value
-    case .number(let value):
-        if value == 0 {
-            return "0"
+private func compatibleSignature(_ options: SharedV4ProviderOptions?, key: String) -> String? {
+    func truthy(_ value: JSONValue?) -> Bool {
+        switch value {
+        case nil, .null: return false
+        case .bool(let value): return value
+        case .number(let value): return value != 0 && !value.isNaN
+        case .string(let value): return !value.isEmpty
+        case .array, .object: return true
         }
-        if let integer = Int(exactly: value) {
-            return String(integer)
-        }
-        return String(value)
-    case .bool(let value):
-        return value ? "true" : "false"
-    case .array(let values):
-        return values.map { javaScriptString(from: $0, insideArray: true) }
-            .joined(separator: ",")
-    case .object:
-        return "[object Object]"
     }
+    func string(_ value: JSONValue) -> String {
+        switch value {
+        case .string(let value): return value
+        case .number(let value): return Int(exactly: value).map(String.init) ?? String(value)
+        case .bool(let value): return value ? "true" : "false"
+        case .null: return "null"
+        case .object: return "[object Object]"
+        case .array(let values): return values.map { $0 == .null ? "" : string($0) }.joined(separator: ",")
+        }
+    }
+    let selected = options?[key]?["thoughtSignature"]
+    let value = truthy(selected) ? selected : options?["google"]?["thoughtSignature"]
+    guard let value, truthy(value) else { return nil }
+    return string(value)
+}
+private func compatibleFile(_ part: LanguageModelV4FilePart, provider: String) throws -> JSONValue {
+    var value: [String: JSONValue]
+    if case .reference(let reference) = part.data {
+        value = ["type": "file", "file": ["file_id": .string(try resolveProviderReference(reference: reference, provider: provider))]]
+    } else {
+        if case .text = part.data { throw UnsupportedFunctionalityError(functionality: "text file parts") }
+        func base64() throws -> String {
+            switch part.data {
+            case .data(let data): return data.base64EncodedString()
+            case .base64(let value): return value
+            default: throw UnsupportedFunctionalityError(functionality: "inline file data")
+            }
+        }
+        switch getTopLevelMediaType(part.mediaType) {
+        case "image", "video":
+            let url: String
+            if case .url(let source, _) = part.data { url = source.absoluteString }
+            else { url = "data:\(try resolveFullMediaType(part: part));base64,\(try base64())" }
+            if getTopLevelMediaType(part.mediaType) == "video" { value = ["type": "video_url", "video_url": ["url": .string(url)]] }
+            else { value = ["type": "image_url", "image_url": ["url": .string(url)]] }
+        case "audio":
+            if case .url = part.data { throw UnsupportedFunctionalityError(functionality: "audio file parts with URLs") }
+            let mediaType = try resolveFullMediaType(part: part)
+            let format: String
+            switch mediaType {
+            case "audio/wav", "audio/wave", "audio/x-wav": format = "wav"
+            case "audio/mpeg", "audio/mp3": format = "mp3"
+            default: throw UnsupportedFunctionalityError(functionality: "audio media type \(mediaType)")
+            }
+            value = ["type": "input_audio", "input_audio": ["data": .string(try base64()), "format": .string(format)]]
+        case "application":
+            if case .url = part.data { throw UnsupportedFunctionalityError(functionality: "PDF file parts with URLs") }
+            let mediaType = try resolveFullMediaType(part: part)
+            guard mediaType == "application/pdf" else { throw UnsupportedFunctionalityError(functionality: "file part media type \(mediaType)") }
+            value = ["type": "file", "file": ["filename": .string(part.filename ?? "document.pdf"), "file_data": .string("data:application/pdf;base64,\(try base64())")]]
+        case "text":
+            let text: String
+            switch part.data {
+            case .url(let url, _): text = url.absoluteString
+            case .data(let data): text = String(decoding: data, as: UTF8.self)
+            case .base64(let data): text = String(decoding: try convertBase64ToData(data), as: UTF8.self)
+            default: throw UnsupportedFunctionalityError(functionality: "text file data")
+            }
+            value = ["type": "text", "text": .string(text)]
+        default: throw UnsupportedFunctionalityError(functionality: "file part media type \(part.mediaType)")
+        }
+    }
+    value.merge(compatibleMetadata(part.providerOptions)) { _, new in new }
+    return .object(value)
 }
 
 public func convertToOpenAICompatibleChatMessages(
-    prompt: LanguageModelV4Prompt
+    prompt: LanguageModelV4Prompt,
+    provider: String = "openaiCompatible",
+    providerOptionsKey: String = "google",
+    supportsMultiPartToolContent: Bool = false
 ) throws -> [JSONValue] {
     var messages: [JSONValue] = []
-
     for message in prompt {
+        var payload: [String: JSONValue]
         switch message {
-        case .system(let content, let providerOptions):
-            var payload: [String: JSONValue] = [
-                "role": .string("system"),
-                "content": .string(content)
-            ]
-            for (key, value) in metadata(from: providerOptions) {
-                payload[key] = value
-            }
-            messages.append(.object(payload))
-
-        case .user(let parts, let providerOptions):
-            if parts.count == 1, case .text(let textPart) = parts[0] {
-                var payload: [String: JSONValue] = [
-                    "role": .string("user"),
-                    "content": .string(textPart.text)
-                ]
-                for (key, value) in metadata(from: textPart.providerOptions) {
-                    payload[key] = value
+        case .system(let content, let options):
+            payload = ["role": "system", "content": .string(content)]
+            payload.merge(compatibleMetadata(options)) { _, new in new }
+        case .user(let parts, let options):
+            if parts.count == 1, case .text(let text) = parts[0] {
+                payload = ["role": "user", "content": .string(text.text)]
+                payload.merge(compatibleMetadata(text.providerOptions)) { _, new in new }
+            } else {
+                let content = try parts.map { part -> JSONValue in
+                    switch part {
+                    case .text(let text):
+                        var value: [String: JSONValue] = ["type": "text", "text": .string(text.text)]
+                        value.merge(compatibleMetadata(text.providerOptions)) { _, new in new }
+                        return .object(value)
+                    case .file(let file): return try compatibleFile(file, provider: provider)
+                    }
                 }
-                messages.append(.object(payload))
-                continue
+                payload = ["role": "user", "content": .array(content)]
+                payload.merge(compatibleMetadata(options)) { _, new in new }
             }
-
-            var contentParts: [JSONValue] = []
-            for part in parts {
-                switch part {
-                case .text(let textPart):
-                    var payload: [String: JSONValue] = [
-                        "type": .string("text"),
-                        "text": .string(textPart.text)
-                    ]
-                    for (key, value) in metadata(from: textPart.providerOptions) {
-                        payload[key] = value
-                    }
-                    contentParts.append(.object(payload))
-
-                case .file(let filePart):
-                    switch filePart.data {
-                    case .reference:
-                        throw UnsupportedFunctionalityError(
-                            functionality: "file parts with provider references"
-                        )
-                    case .text:
-                        throw UnsupportedFunctionalityError(functionality: "text file parts")
-                    case .url, .data, .base64:
-                        break
-                    }
-
-                    var payload: [String: JSONValue]
-                    let topLevelMediaType = getTopLevelMediaType(filePart.mediaType)
-
-                    switch topLevelMediaType {
-                    case "image":
-                        let url: String
-                        switch filePart.data {
-                        case .url(let value, _):
-                            url = value.absoluteString
-                        case .data, .base64:
-                            let mediaType = try resolveFullMediaType(part: filePart)
-                            url = "data:\(mediaType);base64,\(try inlineBase64(from: filePart.data))"
-                        case .reference, .text:
-                            throw UnsupportedFunctionalityError(
-                                functionality: "file part media type \(filePart.mediaType)"
-                            )
-                        }
-                        payload = [
-                            "type": .string("image_url"),
-                            "image_url": .object(["url": .string(url)])
-                        ]
-
-                    case "audio":
-                        if case .url = filePart.data {
-                            throw UnsupportedFunctionalityError(
-                                functionality: "audio file parts with URLs"
-                            )
-                        }
-                        let mediaType = try resolveFullMediaType(part: filePart)
-                        guard let format = audioFormat(for: mediaType) else {
-                            throw UnsupportedFunctionalityError(
-                                functionality: "audio media type \(mediaType)"
-                            )
-                        }
-                        payload = [
-                            "type": .string("input_audio"),
-                            "input_audio": .object([
-                                "data": .string(try inlineBase64(from: filePart.data)),
-                                "format": .string(format)
-                            ])
-                        ]
-
-                    case "application":
-                        if case .url = filePart.data {
-                            throw UnsupportedFunctionalityError(
-                                functionality: "PDF file parts with URLs"
-                            )
-                        }
-                        let mediaType = try resolveFullMediaType(part: filePart)
-                        guard mediaType == "application/pdf" else {
-                            throw UnsupportedFunctionalityError(
-                                functionality: "file part media type \(mediaType)"
-                            )
-                        }
-                        payload = [
-                            "type": .string("file"),
-                            "file": .object([
-                                "filename": .string(filePart.filename ?? "document.pdf"),
-                                "file_data": .string(
-                                    "data:application/pdf;base64,\(try inlineBase64(from: filePart.data))"
-                                )
-                            ])
-                        ]
-
-                    case "text":
-                        payload = [
-                            "type": .string("text"),
-                            "text": .string(try textContent(from: filePart.data))
-                        ]
-
-                    default:
-                        throw UnsupportedFunctionalityError(
-                            functionality: "file part media type \(filePart.mediaType)"
-                        )
-                    }
-
-                    for (key, value) in metadata(from: filePart.providerOptions) {
-                        payload[key] = value
-                    }
-                    contentParts.append(.object(payload))
-                }
-            }
-
-            var payload: [String: JSONValue] = [
-                "role": .string("user"),
-                "content": .array(contentParts)
-            ]
-            for (key, value) in metadata(from: providerOptions) {
-                payload[key] = value
-            }
-            messages.append(.object(payload))
-
-        case .assistant(let parts, let providerOptions):
+        case .assistant(let parts, let options):
             var text = ""
             var reasoning = ""
-            var toolCalls: [JSONValue] = []
-
+            var tools: [JSONValue] = []
             for part in parts {
                 switch part {
-                case .text(let textPart):
-                    text += textPart.text
-                case .reasoning(let reasoningPart):
-                    reasoning += reasoningPart.text
-                case .toolCall(let toolCall):
-                    var payload: [String: JSONValue] = [
-                        "id": .string(toolCall.toolCallId),
-                        "type": .string("function"),
-                        "function": .object([
-                            "name": .string(toolCall.toolName),
-                            "arguments": .string(try encodedJSONString(toolCall.input))
-                        ])
-                    ]
-                    for (key, value) in metadata(from: toolCall.providerOptions) {
-                        payload[key] = value
-                    }
-                    if let signature = thoughtSignature(from: toolCall.providerOptions) {
-                        payload["extra_content"] = .object([
-                            "google": .object([
-                                "thought_signature": .string(signature)
-                            ])
-                        ])
-                    }
-                    toolCalls.append(.object(payload))
-                case .file, .custom, .reasoningFile, .toolResult:
-                    continue
+                case .text(let value): text += value.text
+                case .reasoning(let value): reasoning += value.text
+                case .toolCall(let value):
+                    var tool: [String: JSONValue] = ["id": .string(value.toolCallId), "type": "function", "function": ["name": .string(value.toolName), "arguments": .string(try compatibleJSON(value.input))]]
+                    tool.merge(compatibleMetadata(value.providerOptions)) { _, new in new }
+                    if let signature = compatibleSignature(value.providerOptions, key: providerOptionsKey) { tool["extra_content"] = ["google": ["thought_signature": .string(signature)]] }
+                    tools.append(.object(tool))
+                default: break
                 }
             }
-
-            var payload: [String: JSONValue] = [
-                "role": .string("assistant"),
-                "content": toolCalls.isEmpty || !text.isEmpty ? .string(text) : .null
-            ]
-            if !reasoning.isEmpty {
-                payload["reasoning_content"] = .string(reasoning)
-            }
-            if !toolCalls.isEmpty {
-                payload["tool_calls"] = .array(toolCalls)
-            }
-            for (key, value) in metadata(from: providerOptions) {
-                payload[key] = value
-            }
-            messages.append(.object(payload))
-
+            payload = ["role": "assistant", "content": !tools.isEmpty && text.isEmpty ? .null : .string(text)]
+            if !reasoning.isEmpty { payload["reasoning_content"] = .string(reasoning) }
+            if !tools.isEmpty { payload["tool_calls"] = .array(tools) }
+            payload.merge(compatibleMetadata(options)) { _, new in new }
         case .tool(let parts, _):
             for part in parts {
-                guard case .toolResult(let toolResult) = part else {
-                    continue
+                guard case .toolResult(let result) = part else { continue }
+                let content: JSONValue
+                switch result.output {
+                case .text(let text, _), .errorText(let text, _): content = .string(text)
+                case .executionDenied(let reason, _): content = .string(reason ?? "Tool call execution denied.")
+                case .json(let value, _), .errorJson(let value, _): content = .string(try compatibleJSON(value))
+                case .content(let values):
+                    if !supportsMultiPartToolContent { content = .string(try compatibleJSON(values)) }
+                    else {
+                        content = .array(try values.map { value in
+                            switch value {
+                            case .text(let text, let options):
+                                var item: [String: JSONValue] = ["type": "text", "text": .string(text)]
+                                item.merge(compatibleMetadata(options)) { _, new in new }
+                                return .object(item)
+                            case .file(let data, let mediaType, let filename, let options):
+                                return try compatibleFile(.init(data: data, mediaType: mediaType, filename: filename, providerOptions: options), provider: provider)
+                            case .custom: throw UnsupportedFunctionalityError(functionality: "tool content part type custom")
+                            }
+                        })
+                    }
                 }
-
-                let contentValue: String
-                switch toolResult.output {
-                case .text(let value, _), .errorText(let value, _):
-                    contentValue = value
-                case .executionDenied(let reason, _):
-                    contentValue = reason ?? "Tool call execution denied."
-                case .json(let value, _), .errorJson(let value, _):
-                    contentValue = try encodedJSONString(value)
-                case .content(let value):
-                    contentValue = try encodedJSONString(value)
-                }
-
-                var payload: [String: JSONValue] = [
-                    "role": .string("tool"),
-                    "tool_call_id": .string(toolResult.toolCallId),
-                    "content": .string(contentValue)
-                ]
-                for (key, value) in metadata(from: toolResult.providerOptions) {
-                    payload[key] = value
-                }
-                messages.append(.object(payload))
+                var tool: [String: JSONValue] = ["role": "tool", "tool_call_id": .string(result.toolCallId), "content": content]
+                tool.merge(compatibleMetadata(result.providerOptions)) { _, new in new }
+                messages.append(.object(tool))
             }
+            continue
         }
+        messages.append(.object(payload))
     }
-
     return messages
 }
