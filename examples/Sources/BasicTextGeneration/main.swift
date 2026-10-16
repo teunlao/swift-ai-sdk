@@ -29,7 +29,7 @@ struct BasicTextGeneration: CLIExample {
 
     let withSystem = try await generateText(
       model: openai("gpt-4o"),
-      system: "You are a professional writer. You write simple, clear, and concise content.",
+      instructions: "You are a professional writer. You write simple, clear, and concise content.",
       prompt: "Write a one-sentence summary about the benefits of using Swift for iOS development."
     )
     print(withSystem.text)

@@ -45,7 +45,7 @@ struct MathAgentExample: Example {
     let result = try await generateText(
       model: openai("gpt-4o"),
       tools: ["calculate": calculate.tool],
-      system: [
+      instructions: [
         "You are solving math problems.",
         "Reason step by step.",
         "Use the calculator when necessary.",
@@ -113,7 +113,7 @@ struct MathAgentRequiredToolChoiceExample: Example {
         "answer": answerTool.tool
       ],
       toolChoice: .required,
-      system: [
+      instructions: [
         "You are solving math problems.",
         "Reason step by step.",
         "Use the calculator when necessary.",

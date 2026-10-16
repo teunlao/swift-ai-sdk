@@ -9,7 +9,7 @@ struct AgentOpenAIGenerateOnFinishExample: Example {
   static func run() async throws {
     do {
       let settings = BasicAgentSettings(
-        system: "You are a helpful assistant.",
+        instructions: "You are a helpful assistant.",
         model: try openai("gpt-4o"),
         onFinish: { event in
           Logger.section("onFinish")

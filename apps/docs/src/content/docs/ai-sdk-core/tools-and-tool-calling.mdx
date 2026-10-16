@@ -691,7 +691,7 @@ let _ = try await generateText(
     let syntheticMessages = messages + [.assistant(AssistantModelMessage(content: .parts([.toolCall(.init(toolCallId: toolCall.toolCallId, toolName: toolCall.toolName, input: toolCall.input))]))), .tool(ToolModelMessage(content: [.toolResult(.init(toolCallId: toolCall.toolCallId, toolName: toolCall.toolName, output: .string(String(describing: error))))]))]
     let result = try await generateText(
       model: openai("gpt-4o"),
-      system: system,
+      instructions: system,
       messages: syntheticMessages,
       tools: tools
     )

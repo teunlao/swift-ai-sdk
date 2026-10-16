@@ -13,7 +13,7 @@ struct StreamTextOpenAIAudioExample: Example {
 
       let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
         model: openai("gpt-4o-audio-preview"),
-        system: nil,
+        instructions: nil,
         messages: [
           .user(UserModelMessage(
             content: .parts([

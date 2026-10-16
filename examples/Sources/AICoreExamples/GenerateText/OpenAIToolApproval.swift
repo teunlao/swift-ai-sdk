@@ -59,7 +59,7 @@ struct GenerateTextOpenAIToolApprovalExample: Example {
         let result = try await generateText(
           model: openai("gpt-4.1-mini"),
           tools: ["weather": weatherTool.tool],
-          system: "When a tool execution is not approved by the user, do not retry it. Just say that the tool execution was not approved.",
+          instructions: "When a tool execution is not approved by the user, do not retry it. Just say that the tool execution was not approved.",
           messages: messages,
           stopWhen: [isStepCount(5)]
         )

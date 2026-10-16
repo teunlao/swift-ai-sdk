@@ -14,7 +14,7 @@ struct AgentOpenAIGenerateJSONExample: Example {
     do {
       let outputSpec = Output.object(Recipe.self, name: "recipe", description: "Lasagna recipe")
       let settings = AgentSettings<Recipe, JSONValue>(
-        system: "You are a helpful assistant.",
+        instructions: "You are a helpful assistant.",
         model: try openai("gpt-4o"),
         output: outputSpec
       )

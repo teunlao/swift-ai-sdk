@@ -10,7 +10,7 @@ struct AgentOpenAIGenerateExample: Example {
     do {
       let model = try openai("gpt-4o")
       let settings = BasicAgentSettings(
-        system: "You are a helpful assistant.",
+        instructions: "You are a helpful assistant.",
         model: model
       )
       let agent = BasicAgent(settings: settings)

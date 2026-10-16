@@ -20,7 +20,7 @@ struct StreamTextOpenAIOutputObjectExample: Example {
 
       let result: DefaultStreamTextResult<Release, JSONValue> = try streamText(
         model: openai("gpt-4o"),
-        system: nil,
+        instructions: nil,
         messages: [.user(UserModelMessage(content: .text("Return a JSON object with name, version, and 3 short changes for 'Swift AI SDK'.")))],
         output: outputSpec,
         onFinish: { finalStep, _, usage, reason in

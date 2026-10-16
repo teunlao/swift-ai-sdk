@@ -14,7 +14,7 @@ struct StreamTextOpenAIResponsesReasoningSummaryExample: Example {
 
       let result = try streamText(
         model: openai.responses("o3-mini"),
-        system: "You are a helpful assistant.",
+        instructions: "You are a helpful assistant.",
         prompt: "Tell me about the debate over Taqueria La Cumbre and El Farolito and who created the San Francisco Mission-style burrito.",
         providerOptions: providerOptions
       )

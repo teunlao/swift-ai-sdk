@@ -19,7 +19,7 @@ struct AgentOpenAIGenerateCallOptionsExample: Example {
       ]
 
       let settings = AgentSettings<Recipe, JSONValue>(
-        system: "You are a helpful assistant.",
+        instructions: "You are a helpful assistant.",
         model: try openai("gpt-4o"),
         output: outputSpec,
         providerOptions: providerOptions

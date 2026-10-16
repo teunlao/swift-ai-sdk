@@ -41,7 +41,7 @@ struct GenerateObjectOpenAIMultimodalExample: Example {
       let result = try await generateObject(
         model: openai("gpt-4o"),
         schema: Response.self,
-        system: "You are an art critic reviewing a piece of art.",
+        instructions: "You are an art critic reviewing a piece of art.",
         messages: messages
       )
 

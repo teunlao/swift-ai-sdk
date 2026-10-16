@@ -734,7 +734,7 @@ import GoogleProvider
 
 let result = try await generateText(
   model: google("gemma-3-27b-it"),
-  system: "You are a helpful assistant that responds concisely.",
+  instructions: "You are a helpful assistant that responds concisely.",
   prompt: "What is machine learning?"
 )
 let text = result.text

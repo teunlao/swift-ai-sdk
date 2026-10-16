@@ -114,7 +114,7 @@ func handleCustomerQuery(_ query: String) async throws -> (String, RoutingDecisi
     "technical": "You are a technical support specialist with deep product knowledge. Focus on clear step-by-step troubleshooting."
   ]
   let model = decision.complexity == "simple" ? openai("gpt-4.1-mini") : openai("o4-mini")
-  let response = try await generateText(model: model, system: systemMap[decision.type], prompt: query)
+  let response = try await generateText(model: model, instructions: systemMap[decision.type], prompt: query)
   return (response.text, decision)
 }
 ```
@@ -141,7 +141,7 @@ func parallelCodeReview(_ code: String) async throws -> (reviews: [Review], summ
   async let security = generateText(
     model: openai("gpt-4o"),
     output: Output.object(ReviewDetails.self, name: "security_review"),
-    system: "Security expert.",
+    instructions: "Security expert.",
     prompt: """
     Review:
     \(code)
@@ -150,7 +150,7 @@ func parallelCodeReview(_ code: String) async throws -> (reviews: [Review], summ
   async let performance = generateText(
     model: openai("gpt-4o"),
     output: Output.object(ReviewDetails.self, name: "performance_review"),
-    system: "Performance expert.",
+    instructions: "Performance expert.",
     prompt: """
     Review:
     \(code)
@@ -159,7 +159,7 @@ func parallelCodeReview(_ code: String) async throws -> (reviews: [Review], summ
   async let quality = generateText(
     model: openai("gpt-4o"),
     output: Output.object(ReviewDetails.self, name: "quality_review"),
-    system: "Code quality expert.",
+    instructions: "Code quality expert.",
     prompt: """
     Review:
     \(code)
@@ -178,7 +178,7 @@ func parallelCodeReview(_ code: String) async throws -> (reviews: [Review], summ
 
   let summary = try await generateText(
     model: openai("gpt-4o"),
-    system: "You are a technical lead summarizing multiple code reviews.",
+    instructions: "You are a technical lead summarizing multiple code reviews.",
     prompt: """
     Synthesize these code review results into a concise summary with key actions:
     \(summaryPrompt)
@@ -207,7 +207,7 @@ func implementFeature(_ feature: String) async throws -> (plan: ImplementationPl
   let plan = try await generateText(
     model: openai("o4-mini"),
     output: Output.object(ImplementationPlan.self, name: "implementation_plan"),
-    system: "You are a senior software architect planning feature implementations.",
+    instructions: "You are a senior software architect planning feature implementations.",
     prompt: "Analyze this feature request and create an implementation plan: \(feature)"
   ).output
 
@@ -236,7 +236,7 @@ struct TranslationEvaluation: Codable, Sendable {
 func translateWithFeedback(text: String, targetLanguage: String) async throws -> (final: String, iterations: Int) {
   var current = try await generateText(
     model: openai("gpt-4.1-mini"),
-    system: "You are an expert literary translator.",
+    instructions: "You are an expert literary translator.",
     prompt: """
     Translate this text to \(targetLanguage), preserving tone and cultural nuances:
     \(text)
@@ -248,7 +248,7 @@ func translateWithFeedback(text: String, targetLanguage: String) async throws ->
     let evaluation = try await generateText(
       model: openai("gpt-4o"),
       output: Output.object(TranslationEvaluation.self, name: "translation_evaluation"),
-      system: "You are an expert in evaluating literary translations.",
+      instructions: "You are an expert in evaluating literary translations.",
       prompt: """
       Evaluate this translation.
 
@@ -264,7 +264,7 @@ func translateWithFeedback(text: String, targetLanguage: String) async throws ->
     let feedback = (evaluation.specificIssues + evaluation.improvementSuggestions).joined(separator: "\n")
     current = try await generateText(
       model: openai("gpt-4o"),
-      system: "You are an expert literary translator.",
+      instructions: "You are an expert literary translator.",
       prompt: """
       Improve this translation based on the following feedback:
       \(feedback)

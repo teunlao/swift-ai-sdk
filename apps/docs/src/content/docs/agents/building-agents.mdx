@@ -30,7 +30,7 @@ import OpenAIProvider
 
 let myAgent = Agent<Never, Never>(settings: .init(
   model: openai("gpt-4o"),
-  system: "You are a helpful assistant.",
+  instructions: "You are a helpful assistant.",
   tools: [:]
 ))
 ```
@@ -44,7 +44,7 @@ The Agent class accepts all the same settings as `generateText` and `streamText`
 ```swift
 let agent = Agent<Never, Never>(settings: .init(
   model: openai("gpt-4o"),
-  system: "You are an expert software engineer."
+  instructions: "You are an expert software engineer."
 ))
 ```
 
@@ -158,7 +158,7 @@ Set the agent's role and expertise:
 ```swift
 let agent = Agent<Never, Never>(settings: .init(
   model: openai("gpt-4o"),
-  system: "You are an expert data analyst. You provide clear insights from complex data."
+  instructions: "You are an expert data analyst. You provide clear insights from complex data."
 ))
 ```
 
@@ -169,7 +169,7 @@ Provide specific guidelines for agent behavior:
 ```swift
 let codeReviewAgent = Agent<Never, Never>(settings: .init(
   model: openai("gpt-4o"),
-  system: """
+  instructions: """
   You are a senior software engineer conducting code reviews.
   
   Your approach:
@@ -189,7 +189,7 @@ Set boundaries and ensure consistent behavior:
 ```swift
 let customerSupportAgent = Agent<Never, Never>(settings: .init(
   model: openai("gpt-4o"),
-  system: """
+  instructions: """
   You are a customer support specialist for an e-commerce platform.
 
   Rules:
@@ -214,7 +214,7 @@ Guide how the agent should use available tools:
 ```swift
 let researchAgent = Agent<Never, Never>(settings: .init(
   model: openai("gpt-4o"),
-  system: """
+  instructions: """
   You are a research assistant with access to search and document tools.
 
   When researching:
@@ -239,7 +239,7 @@ Control the output format and communication style:
 ```swift
 let technicalWriterAgent = Agent<Never, Never>(settings: .init(
   model: openai("gpt-4o"),
-  system: """
+  instructions: """
   You are a technical documentation writer.
 
   Writing style:

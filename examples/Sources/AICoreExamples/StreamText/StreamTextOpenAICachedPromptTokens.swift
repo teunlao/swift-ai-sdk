@@ -14,7 +14,7 @@ struct StreamTextOpenAICachedPromptTokensExample: Example {
       let start = Date()
       let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
         model: openai("gpt-4o-mini"),
-        system: nil,
+        instructions: nil,
         messages: [
           .user(UserModelMessage(content: .text("What book is the following text from?: <text>\(longPrompt)</text>")))
         ],

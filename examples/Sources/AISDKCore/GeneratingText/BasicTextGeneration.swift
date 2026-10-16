@@ -30,7 +30,7 @@ struct BasicTextGeneration: CLIExample {
 
     let withSystem = try await generateText(
       model: openai("gpt-4o"),
-      system: "You are a professional writer. You write simple, clear, and concise content.",
+      instructions: "You are a professional writer. You write simple, clear, and concise content.",
       prompt: "Summarize the following article in 3-5 sentences: \(article)"
     )
     print(withSystem.text)

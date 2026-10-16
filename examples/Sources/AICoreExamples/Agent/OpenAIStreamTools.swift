@@ -21,7 +21,7 @@ struct AgentOpenAIStreamToolsExample: Example {
 
       let model = try openai("gpt-5")
       let settings = BasicAgentSettings(
-        system: "You are a helpful assistant that answers questions about the weather.",
+        instructions: "You are a helpful assistant that answers questions about the weather.",
         model: model,
         tools: ["weather": weather.tool]
       )

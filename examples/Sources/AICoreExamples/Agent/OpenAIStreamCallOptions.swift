@@ -16,7 +16,7 @@ struct AgentOpenAIStreamCallOptionsExample: Example {
       ]
 
       let settings = BasicAgentSettings(
-        system: "You are a helpful assistant.",
+        instructions: "You are a helpful assistant.",
         model: try openai("gpt-5-mini"),
         onStepFinish: { step in
           Logger.section("Step finished")

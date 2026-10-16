@@ -10,7 +10,7 @@ struct AgentOpenAIStreamExample: Example {
     do {
       let model = try openai("gpt-5")
       let settings = BasicAgentSettings(
-        system: "You are a helpful assistant.",
+        instructions: "You are a helpful assistant.",
         model: model
       )
       let agent = BasicAgent(settings: settings)
