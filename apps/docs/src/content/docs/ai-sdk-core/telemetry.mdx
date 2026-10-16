@@ -3,292 +3,171 @@ title: Telemetry
 description: Using OpenTelemetry with AI SDK Core
 ---
 
-_This page adapts the original AI SDK documentation: [Telemetry](https://ai-sdk.dev/docs/ai-sdk-core/telemetry)._
-
-:::caution
-AI SDK Telemetry is experimental and may change in the future.
-:::
-
-The AI SDK uses [OpenTelemetry](https://opentelemetry.io/) to collect telemetry data.
-OpenTelemetry is an open-source observability framework designed to provide
-standardized instrumentation for collecting telemetry data.
+Telemetry integrations receive the lifecycle events of each operation. `OpenTelemetry`
+exports spans using the OpenTelemetry GenAI semantic conventions through a `Tracer`
+you supply. Implement `Tracer` and `Span` to bridge to your observability backend.
 
 ## Enabling telemetry
-
-Telemetry is delivered to integrations: types conforming to `Telemetry` that receive the lifecycle events of
-each call. `LegacyOpenTelemetry` records the `ai.*` spans described below with a `Tracer` you provide.
-Register integrations for every call with `registerTelemetry`, or pass them to one call:
 
 ```swift
 import SwiftAISDK
 import OpenAIProvider
 
+let integration = OpenTelemetry(tracer: myTracer)
 let result = try await generateText(
   model: openai("gpt-4o"),
   prompt: "Write a short story about a cat.",
-  telemetry: TelemetryOptions(integrations: [LegacyOpenTelemetry(tracer: myTracer)])
+  telemetry: TelemetryOptions(
+    functionId: "story",
+    integrations: [integration]
+  )
 )
 ```
 
-Per-call integrations replace the registered ones; `TelemetryOptions(isEnabled: false)` turns telemetry off for a call.
+Use `registerTelemetry(integration)` to register integrations for all calls.
+Per-call integrations replace the registered ones. `TelemetryOptions(isEnabled: false)`
+turns telemetry off for that call.
 
-You can also control if you want to record the input values and the output values for the function.
-By default, both are enabled. You can disable them by setting the `recordInputs` and `recordOutputs` options to `false`.
+## Privacy controls
 
-Disabling the recording of inputs and outputs can be useful for privacy, data transfer, and performance reasons.
-You might for example want to disable recording inputs if they contain sensitive information.
+Inputs and outputs are recorded by default. Disable them independently:
 
 ```swift
 let result = try await generateText(
   model: openai("gpt-4o"),
   prompt: "Sensitive user data...",
-  telemetry: TelemetryOptions(recordInputs: false, recordOutputs: false)
+  telemetry: TelemetryOptions(
+    recordInputs: false,
+    recordOutputs: false,
+    integrations: [integration]
+  )
 )
 ```
 
-## Telemetry Metadata
+`recordInputs` controls system instructions, input messages, tool definitions and arguments,
+embedding values, schema contents and audio inputs. `recordOutputs` controls output messages,
+tool results, embedding vectors and audio outputs. Model identifiers, settings and usage
+remain available. Supplemental request headers, runtime context and provider metadata have
+separate opt-in controls; input/output flags do not redact them.
 
-You can provide a `functionId` to identify the function that the telemetry data is for.
-Runtime context keys are recorded only when `includeRuntimeContext` marks them.
+## Span tree
+
+`generateText` and `streamText` produce:
+
+```text
+invoke_agent <model>
+└─ step 1
+   ├─ chat <model>
+   │  └─ execute_tool <provider-tool>
+   └─ execute_tool <client-tool>
+```
+
+Each additional step is a child of the operation. Client tools are children of their step;
+provider-executed tools are children of the inference span. A generation started inside a
+tool inherits that tool's span through `OpenTelemetry.activeSpan`. Provider calls similarly
+run with the inference span active.
+
+`generateObject` and `streamObject` create `invoke_agent <model>` with a `chat <model>`
+child. Both carry `gen_ai.output.type = "json"`.
+
+`embed` and `embedMany` create an `embeddings <model>` operation with an `embeddings <model>`
+child per model call. The child records `gen_ai.usage.input_tokens`. `rerank` creates a
+`rerank <model>` operation and model-call child. Speech and transcription operations use
+their operation identifier and model in the span name, with `gen_ai.output.type` set to
+`speech` or `text` and `gen_ai.request.stream` indicating streaming transcription.
+
+## Attributes
+
+Operation and inference spans identify the operation, provider and model with
+`gen_ai.operation.name`, `gen_ai.provider.name` and `gen_ai.request.model`.
+Provider names are mapped to semantic-convention names, for example `openai`,
+`gcp.gemini`, `gcp.vertex_ai`, `aws.bedrock` and `azure.ai.openai`.
+`TelemetryOptions.functionId` becomes `gen_ai.agent.name` on generation and audio operations.
+
+Generation attributes include:
+
+- `gen_ai.request.max_tokens`, `temperature`, `top_p`, `top_k`, `presence_penalty`,
+  `frequency_penalty`, `stop_sequences` and `seed` when supplied.
+- `gen_ai.system_instructions`: JSON parts with `type` and `content`.
+- `gen_ai.input.messages`: JSON messages with `role` and `parts`.
+- `gen_ai.output.messages`: JSON messages with `role`, `parts` and `finish_reason`.
+- `gen_ai.response.finish_reasons`, `gen_ai.response.id` and `gen_ai.response.model`.
+- `gen_ai.usage.input_tokens`, `output_tokens`, `cache_read.input_tokens` and
+  `cache_creation.input_tokens`, where available.
+- `gen_ai.tool.definitions`: JSON tool definitions on inference spans.
+
+Message parts preserve text, reasoning, tool calls and tool responses. Input files and images
+use `uri` or `blob` parts with `modality` and `mime_type`. Output files use base64 blob parts.
+
+Inference timing is recorded in seconds:
+
+- `gen_ai.client.operation.duration`
+- `gen_ai.client.operation.time_to_first_chunk`
+- `gen_ai.client.operation.time_per_output_chunk`
+
+Tool spans record `gen_ai.tool.name`, `gen_ai.tool.call.id`, `gen_ai.tool.type`
+(`function` or `extension`), `gen_ai.tool.call.arguments`, `gen_ai.tool.call.result`
+and, for client tools, `gen_ai.execute_tool.duration` in seconds. Failures record an exception
+and error status. Aborts and errors close every open span for the operation.
+
+## Supplemental attributes
+
+Supplemental groups are disabled by default:
+
+```swift
+let integration = OpenTelemetry(
+  tracer: myTracer,
+  usage: true,
+  providerMetadata: true,
+  embedding: true,
+  reranking: true,
+  runtimeContext: true,
+  headers: true,
+  toolChoice: true,
+  schema: true
+)
+```
+
+| Option | Additional attributes |
+| --- | --- |
+| `usage` | `ai.usage.inputTokenDetails.noCacheTokens`, `ai.usage.outputTokenDetails.textTokens`, `ai.usage.outputTokenDetails.reasoningTokens`; audio `ai.response.usage` |
+| `providerMetadata` | `ai.response.providerMetadata` |
+| `embedding` | `ai.value`, `ai.values`, `ai.embedding`, `ai.embeddings` |
+| `reranking` | `ai.documents`, `ai.ranking.type`, `ai.ranking` |
+| `runtimeContext` | `ai.settings.context.*`, with nested objects flattened |
+| `headers` | `ai.request.headers.*` |
+| `toolChoice` | `ai.prompt.toolChoice` on step spans |
+| `schema` | `ai.schema`, `ai.schema.name`, `ai.schema.description`, `ai.settings.output` |
+
+Audio operations always expose applicable `ai.request.text`, `ai.request.audio.size`,
+`ai.request.audio.media_type`, `ai.response.text`, `ai.response.audio.size`,
+`ai.response.audio.media_type` and `ai.response.audio.format`, subject to input/output flags.
+Provider-reported audio usage is normalized under `gen_ai.usage.*`.
+
+Runtime context is delivered to integrations only for keys explicitly allowed by
+`TelemetryOptions.includeRuntimeContext`:
 
 ```swift
 let result = try await generateText(
   model: openai("gpt-4o"),
-  prompt: "Write a short story about a cat.",
+  prompt: "Write a short story.",
   telemetry: TelemetryOptions(
-    functionId: "my-awesome-function",
-    includeRuntimeContext: ["tenant": true]
+    includeRuntimeContext: ["tenant": true],
+    integrations: [OpenTelemetry(tracer: myTracer, runtimeContext: true)]
   ),
   runtimeContext: ["tenant": "acme"]
 )
 ```
 
-## Collected Data
+## Custom span attributes
 
-### generateText function
+`enrichSpan` receives the span type, operation identifier, call identifier and permitted
+runtime context when each span starts. SDK-owned attributes take precedence over custom
+attributes. Exceptions thrown by this closure are ignored, and non-finite numeric attributes
+are dropped.
 
-`generateText` records 3 types of spans:
-
-- **`ai.generateText`** (span): the full length of the generateText call. It contains 1 or more `ai.generateText.doGenerate` spans.
-  It contains the [basic LLM span information](#basic-llm-span-information) and the following attributes:
-
-  - `operation.name`: `ai.generateText` and the functionId that was set through `telemetry.functionId`
-  - `ai.operationId`: `"ai.generateText"`
-  - `ai.prompt`: the prompt that was used when calling `generateText`
-  - `ai.response.text`: the text that was generated
-  - `ai.response.toolCalls`: the tool calls that were made as part of the generation (stringified JSON)
-  - `ai.response.finishReason`: the reason why the generation finished
-  - `ai.settings.maxOutputTokens`: the maximum number of output tokens that were set
-
-- **`ai.generateText.doGenerate`** (span): a provider doGenerate call. It can contain `ai.toolCall` spans.
-  It contains the [call LLM span information](#call-llm-span-information) and the following attributes:
-
-  - `operation.name`: `ai.generateText.doGenerate` and the functionId that was set through `telemetry.functionId`
-  - `ai.operationId`: `"ai.generateText.doGenerate"`
-  - `ai.prompt.messages`: the messages that were passed into the provider
-  - `ai.prompt.tools`: array of stringified tool definitions
-  - `ai.prompt.toolChoice`: the stringified tool choice setting (JSON)
-  - `ai.response.text`: the text that was generated
-  - `ai.response.toolCalls`: the tool calls that were made as part of the generation (stringified JSON)
-  - `ai.response.finishReason`: the reason why the generation finished
-
-- **`ai.toolCall`** (span): a tool call that is made as part of the generateText call. See [Tool call spans](#tool-call-spans) for more details.
-
-### streamText function
-
-`streamText` records 3 types of spans and 2 types of events:
-
-- **`ai.streamText`** (span): the full length of the streamText call. It contains a `ai.streamText.doStream` span.
-  It contains the [basic LLM span information](#basic-llm-span-information) and the following attributes:
-
-  - `operation.name`: `ai.streamText` and the functionId that was set through `telemetry.functionId`
-  - `ai.operationId`: `"ai.streamText"`
-  - `ai.prompt`: the prompt that was used when calling `streamText`
-  - `ai.response.text`: the text that was generated
-  - `ai.response.toolCalls`: the tool calls that were made as part of the generation (stringified JSON)
-  - `ai.response.finishReason`: the reason why the generation finished
-  - `ai.settings.maxOutputTokens`: the maximum number of output tokens that were set
-
-- **`ai.streamText.doStream`** (span): a provider doStream call.
-  This span contains an `ai.stream.firstChunk` event and `ai.toolCall` spans.
-  It contains the [call LLM span information](#call-llm-span-information) and the following attributes:
-
-  - `operation.name`: `ai.streamText.doStream` and the functionId that was set through `telemetry.functionId`
-  - `ai.operationId`: `"ai.streamText.doStream"`
-  - `ai.prompt.messages`: the messages that were passed into the provider
-  - `ai.prompt.tools`: array of stringified tool definitions
-  - `ai.prompt.toolChoice`: the stringified tool choice setting (JSON)
-  - `ai.response.text`: the text that was generated
-  - `ai.response.toolCalls`: the tool calls that were made as part of the generation (stringified JSON)
-  - `ai.response.msToFirstChunk`: the time it took to receive the first chunk in milliseconds
-  - `ai.response.msToFinish`: the time it took to receive the finish part of the LLM stream in milliseconds
-  - `ai.response.avgCompletionTokensPerSecond`: the average number of completion tokens per second
-  - `ai.response.finishReason`: the reason why the generation finished
-
-- **`ai.toolCall`** (span): a tool call that is made as part of the streamText call. See [Tool call spans](#tool-call-spans) for more details.
-
-- **`ai.stream.firstChunk`** (event): an event that is emitted when the first chunk of the stream is received.
-  - `ai.response.msToFirstChunk`: the time it took to receive the first chunk
-
-- **`ai.stream.finish`** (event): an event that is emitted when the finish part of the LLM stream is received.
-
-### generateObject function
-
-`generateObject` records 2 types of spans:
-
-- **`ai.generateObject`** (span): the full length of the generateObject call. It contains 1 or more `ai.generateObject.doGenerate` spans.
-  It contains the [basic LLM span information](#basic-llm-span-information) and the following attributes:
-
-  - `operation.name`: `ai.generateObject` and the functionId that was set through `telemetry.functionId`
-  - `ai.operationId`: `"ai.generateObject"`
-  - `ai.prompt`: the prompt that was used when calling `generateObject`
-  - `ai.schema`: Stringified JSON schema version of the schema that was passed into the `generateObject` function
-  - `ai.schema.name`: the name of the schema that was passed into the `generateObject` function
-  - `ai.schema.description`: the description of the schema that was passed into the `generateObject` function
-  - `ai.response.object`: the object that was generated (stringified JSON)
-  - `ai.settings.output`: the output type that was used, e.g. `object` or `no-schema`
-
-- **`ai.generateObject.doGenerate`** (span): a provider doGenerate call.
-  It contains the [call LLM span information](#call-llm-span-information) and the following attributes:
-
-  - `operation.name`: `ai.generateObject.doGenerate` and the functionId that was set through `telemetry.functionId`
-  - `ai.operationId`: `"ai.generateObject.doGenerate"`
-  - `ai.prompt.messages`: the messages that were passed into the provider
-  - `ai.response.object`: the object that was generated (stringified JSON)
-  - `ai.response.finishReason`: the reason why the generation finished
-
-### streamObject function
-
-`streamObject` records 2 types of spans and 1 type of event:
-
-- **`ai.streamObject`** (span): the full length of the streamObject call. It contains 1 or more `ai.streamObject.doStream` spans.
-  It contains the [basic LLM span information](#basic-llm-span-information) and the following attributes:
-
-  - `operation.name`: `ai.streamObject` and the functionId that was set through `telemetry.functionId`
-  - `ai.operationId`: `"ai.streamObject"`
-  - `ai.prompt`: the prompt that was used when calling `streamObject`
-  - `ai.schema`: Stringified JSON schema version of the schema that was passed into the `streamObject` function
-  - `ai.schema.name`: the name of the schema that was passed into the `streamObject` function
-  - `ai.schema.description`: the description of the schema that was passed into the `streamObject` function
-  - `ai.response.object`: the object that was generated (stringified JSON)
-  - `ai.settings.output`: the output type that was used, e.g. `object` or `no-schema`
-
-- **`ai.streamObject.doStream`** (span): a provider doStream call.
-  This span contains an `ai.stream.firstChunk` event.
-  It contains the [call LLM span information](#call-llm-span-information) and the following attributes:
-
-  - `operation.name`: `ai.streamObject.doStream` and the functionId that was set through `telemetry.functionId`
-  - `ai.operationId`: `"ai.streamObject.doStream"`
-  - `ai.prompt.messages`: the messages that were passed into the provider
-  - `ai.response.object`: the object that was generated (stringified JSON)
-  - `ai.response.msToFirstChunk`: the time it took to receive the first chunk
-  - `ai.response.finishReason`: the reason why the generation finished
-
-- **`ai.stream.firstChunk`** (event): an event that is emitted when the first chunk of the stream is received.
-  - `ai.response.msToFirstChunk`: the time it took to receive the first chunk
-
-### embed function
-
-`embed` records 2 types of spans:
-
-- **`ai.embed`** (span): the full length of the embed call. It contains 1 `ai.embed.doEmbed` span.
-  It contains the [basic embedding span information](#basic-embedding-span-information) and the following attributes:
-
-  - `operation.name`: `ai.embed` and the functionId that was set through `telemetry.functionId`
-  - `ai.operationId`: `"ai.embed"`
-  - `ai.value`: the value that was passed into the `embed` function
-  - `ai.embedding`: a JSON-stringified embedding
-
-- **`ai.embed.doEmbed`** (span): a provider doEmbed call.
-  It contains the [basic embedding span information](#basic-embedding-span-information) and the following attributes:
-
-  - `operation.name`: `ai.embed.doEmbed` and the functionId that was set through `telemetry.functionId`
-  - `ai.operationId`: `"ai.embed.doEmbed"`
-  - `ai.values`: the values that were passed into the provider (array)
-  - `ai.embeddings`: an array of JSON-stringified embeddings
-
-### embedMany function
-
-`embedMany` records 2 types of spans:
-
-- **`ai.embedMany`** (span): the full length of the embedMany call. It contains 1 or more `ai.embedMany.doEmbed` spans.
-  It contains the [basic embedding span information](#basic-embedding-span-information) and the following attributes:
-
-  - `operation.name`: `ai.embedMany` and the functionId that was set through `telemetry.functionId`
-  - `ai.operationId`: `"ai.embedMany"`
-  - `ai.values`: the values that were passed into the `embedMany` function
-  - `ai.embeddings`: an array of JSON-stringified embeddings
-
-- **`ai.embedMany.doEmbed`** (span): a provider doEmbed call.
-  It contains the [basic embedding span information](#basic-embedding-span-information) and the following attributes:
-
-  - `operation.name`: `ai.embedMany.doEmbed` and the functionId that was set through `telemetry.functionId`
-  - `ai.operationId`: `"ai.embedMany.doEmbed"`
-  - `ai.values`: the values that were sent to the provider
-  - `ai.embeddings`: an array of JSON-stringified embeddings for each value
-
-## Span Details
-
-### Basic LLM span information
-
-Many spans that use LLMs (`ai.generateText`, `ai.generateText.doGenerate`, `ai.streamText`, `ai.streamText.doStream`,
-`ai.generateObject`, `ai.generateObject.doGenerate`, `ai.streamObject`, `ai.streamObject.doStream`) contain the following attributes:
-
-- `resource.name`: the functionId that was set through `telemetry.functionId`
-- `ai.model.id`: the id of the model
-- `ai.model.provider`: the provider of the model
-- `ai.request.headers.*`: the request headers that were passed in through `headers`
-- `ai.response.providerMetadata`: provider specific metadata returned with the generation response
-- `ai.settings.maxRetries`: the maximum number of retries that were set
-- `ai.telemetry.functionId`: the functionId that was set through `telemetry.functionId`
-- `ai.telemetry.metadata.*`: the metadata that was passed in through `telemetry.metadata`
-- `ai.usage.completionTokens`: the number of completion tokens that were used
-- `ai.usage.promptTokens`: the number of prompt tokens that were used
-
-### Call LLM span information
-
-Spans that correspond to individual LLM calls (`ai.generateText.doGenerate`, `ai.streamText.doStream`, `ai.generateObject.doGenerate`, `ai.streamObject.doStream`) contain
-[basic LLM span information](#basic-llm-span-information) and the following attributes:
-
-- `ai.response.model`: the model that was used to generate the response
-- `ai.response.id`: the id of the response
-- `ai.response.timestamp`: the timestamp of the response
-- [Semantic Conventions for GenAI operations](https://opentelemetry.io/docs/specs/semconv/gen-ai/gen-ai-spans/)
-  - `gen_ai.system`: the provider that was used
-  - `gen_ai.request.model`: the model that was requested
-  - `gen_ai.request.temperature`: the temperature that was set
-  - `gen_ai.request.max_tokens`: the maximum number of tokens that were set
-  - `gen_ai.request.frequency_penalty`: the frequency penalty that was set
-  - `gen_ai.request.presence_penalty`: the presence penalty that was set
-  - `gen_ai.request.top_k`: the topK parameter value that was set
-  - `gen_ai.request.top_p`: the topP parameter value that was set
-  - `gen_ai.request.stop_sequences`: the stop sequences
-  - `gen_ai.response.finish_reasons`: the finish reasons that were returned by the provider
-  - `gen_ai.response.model`: the model that was used to generate the response
-  - `gen_ai.response.id`: the id of the response
-  - `gen_ai.usage.input_tokens`: the number of prompt tokens that were used
-  - `gen_ai.usage.output_tokens`: the number of completion tokens that were used
-
-### Basic embedding span information
-
-Many spans that use embedding models (`ai.embed`, `ai.embed.doEmbed`, `ai.embedMany`, `ai.embedMany.doEmbed`) contain the following attributes:
-
-- `ai.model.id`: the id of the model
-- `ai.model.provider`: the provider of the model
-- `ai.request.headers.*`: the request headers that were passed in through `headers`
-- `ai.settings.maxRetries`: the maximum number of retries that were set
-- `ai.telemetry.functionId`: the functionId that was set through `telemetry.functionId`
-- `ai.telemetry.metadata.*`: the metadata that was passed in through `telemetry.metadata`
-- `ai.usage.tokens`: the number of tokens that were used
-- `resource.name`: the functionId that was set through `telemetry.functionId`
-
-### Tool call spans
-
-Tool call spans (`ai.toolCall`) contain the following attributes:
-
-- `operation.name`: `"ai.toolCall"`
-- `ai.operationId`: `"ai.toolCall"`
-- `ai.toolCall.name`: the name of the tool
-- `ai.toolCall.id`: the id of the tool call
-- `ai.toolCall.args`: the input parameters of the tool call
-- `ai.toolCall.result`: the output result of the tool call. Only available if the tool call is successful and the result is serializable.
+```swift
+let integration = OpenTelemetry(tracer: myTracer, enrichSpan: { event in
+  ["app.span_type": .string(event.spanType.rawValue)]
+})
+```
