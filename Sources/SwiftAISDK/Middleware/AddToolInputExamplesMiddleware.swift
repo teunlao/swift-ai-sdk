@@ -18,14 +18,14 @@ public struct AddToolInputExamplesOptions: Sendable {
 
     /// Optional custom formatter for each example.
     /// Receives the example object and its index.
-    public let format: (@Sendable (_ example: LanguageModelV3ToolInputExample, _ index: Int) -> String)?
+    public let format: (@Sendable (_ example: LanguageModelV4ToolInputExample, _ index: Int) -> String)?
 
     /// Whether to remove the `inputExamples` property after adding them to the description.
     public let remove: Bool
 
     public init(
         prefix: String = "Input Examples:",
-        format: (@Sendable (_ example: LanguageModelV3ToolInputExample, _ index: Int) -> String)? = nil,
+        format: (@Sendable (_ example: LanguageModelV4ToolInputExample, _ index: Int) -> String)? = nil,
         remove: Bool = true
     ) {
         self.prefix = prefix
@@ -34,8 +34,33 @@ public struct AddToolInputExamplesOptions: Sendable {
     }
 }
 
-private func defaultFormatExample(_ example: LanguageModelV3ToolInputExample, index: Int) -> String {
-    (try? JSONValue.object(example.input).toJSONString(prettyPrinted: false, sortedKeys: true)) ?? "{}"
+/// Upstream `JSON.stringify(example.input)`. Swift objects carry no key order,
+/// so keys are sorted to keep the description deterministic.
+private func defaultFormatExample(_ example: LanguageModelV4ToolInputExample, index: Int) -> String {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+    guard let data = try? encoder.encode(JSONValue.object(example.input)) else { return "{}" }
+    return String(decoding: data, as: UTF8.self)
+}
+
+/// Returns the description with the examples section appended, or `nil` when the tool has no examples.
+private func describeExamples(
+    _ inputExamples: [LanguageModelV4ToolInputExample]?,
+    description: String?,
+    options: AddToolInputExamplesOptions
+) -> String? {
+    guard let inputExamples, !inputExamples.isEmpty else { return nil }
+
+    let format = options.format ?? { example, index in defaultFormatExample(example, index: index) }
+    let formattedExamples = inputExamples.enumerated()
+        .map { index, example in format(example, index) }
+        .joined(separator: "\n")
+    let examplesSection = "\(options.prefix)\n\(formattedExamples)"
+
+    if let description, !description.isEmpty {
+        return "\(description)\n\n\(examplesSection)"
+    }
+    return examplesSection
 }
 
 /**
@@ -46,6 +71,60 @@ private func defaultFormatExample(_ example: LanguageModelV3ToolInputExample, in
  */
 public func addToolInputExamplesMiddleware(
     options: AddToolInputExamplesOptions = AddToolInputExamplesOptions()
+) -> LanguageModelV4Middleware {
+    LanguageModelV4Middleware(
+        transformParams: { _, params, _ in
+            guard let tools = params.tools, !tools.isEmpty else {
+                return params
+            }
+
+            let transformedTools: [LanguageModelV4Tool] = tools.map { tool in
+                guard case .function(let functionTool) = tool,
+                      let toolDescription = describeExamples(
+                          functionTool.inputExamples,
+                          description: functionTool.description,
+                          options: options
+                      )
+                else {
+                    return tool
+                }
+
+                return .function(LanguageModelV4FunctionTool(
+                    name: functionTool.name,
+                    inputSchema: functionTool.inputSchema,
+                    inputExamples: options.remove ? nil : functionTool.inputExamples,
+                    description: toolDescription,
+                    strict: functionTool.strict,
+                    providerOptions: functionTool.providerOptions
+                ))
+            }
+
+            return LanguageModelV4CallOptions(
+                prompt: params.prompt,
+                maxOutputTokens: params.maxOutputTokens,
+                temperature: params.temperature,
+                stopSequences: params.stopSequences,
+                topP: params.topP,
+                topK: params.topK,
+                presencePenalty: params.presencePenalty,
+                frequencyPenalty: params.frequencyPenalty,
+                responseFormat: params.responseFormat,
+                seed: params.seed,
+                tools: transformedTools,
+                toolChoice: params.toolChoice,
+                includeRawChunks: params.includeRawChunks,
+                abortSignal: params.abortSignal,
+                headers: params.headers,
+                reasoning: params.reasoning,
+                providerOptions: params.providerOptions
+            )
+        }
+    )
+}
+
+/// Creates a V3 middleware that appends tool input examples to function tool descriptions.
+public func addToolInputExamplesMiddleware(
+    options: AddToolInputExamplesOptions = AddToolInputExamplesOptions()
 ) -> LanguageModelV3Middleware {
     LanguageModelV3Middleware(
         middlewareVersion: "v3",
@@ -54,42 +133,25 @@ public func addToolInputExamplesMiddleware(
                 return params
             }
 
-            let format = options.format ?? { example, index in
-                defaultFormatExample(example, index: index)
-            }
-
             let transformedTools: [LanguageModelV3Tool] = tools.map { tool in
                 guard case .function(let functionTool) = tool,
-                      let inputExamples = functionTool.inputExamples,
-                      !inputExamples.isEmpty
+                      let toolDescription = describeExamples(
+                          functionTool.inputExamples?.map { LanguageModelV4ToolInputExample(input: $0.input) },
+                          description: functionTool.description,
+                          options: options
+                      )
                 else {
                     return tool
                 }
 
-                let formattedExamples = inputExamples.enumerated().map { index, example in
-                    format(example, index)
-                }.joined(separator: "\n")
-
-                let examplesSection = "\(options.prefix)\n\(formattedExamples)"
-
-                let baseDescription = functionTool.description
-                let toolDescription: String
-                if let baseDescription, !baseDescription.isEmpty {
-                    toolDescription = "\(baseDescription)\n\n\(examplesSection)"
-                } else {
-                    toolDescription = examplesSection
-                }
-
-                let transformedTool = LanguageModelV3FunctionTool(
+                return .function(LanguageModelV3FunctionTool(
                     name: functionTool.name,
                     inputSchema: functionTool.inputSchema,
-                    inputExamples: options.remove ? nil : inputExamples,
+                    inputExamples: options.remove ? nil : functionTool.inputExamples,
                     description: toolDescription,
                     strict: functionTool.strict,
                     providerOptions: functionTool.providerOptions
-                )
-
-                return .function(transformedTool)
+                ))
             }
 
             return LanguageModelV3CallOptions(

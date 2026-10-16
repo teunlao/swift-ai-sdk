@@ -3,195 +3,141 @@
 
  Port of `@ai-sdk/ai/src/middleware/simulate-streaming-middleware.ts`.
 
- This middleware converts a non-streaming generate result into a stream by
- emitting appropriate stream parts for text, reasoning, and other content types.
-
- **Note**: Full tests pending Block E implementation (requires `streamText()` function).
- See upstream tests: `simulate-streaming-middleware.test.ts`
+ The stream operation calls `doGenerate()` and replays its result as
+ `stream-start`, `response-metadata`, one start/delta/end block per text and
+ reasoning part, every other content part as is, and `finish`.
  */
 
 import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-/**
- Creates a middleware that simulates streaming from a generate result.
-
- This middleware wraps the streaming operation by calling `doGenerate()` instead
- of `doStream()`, then converting the result into stream parts.
-
- - Returns: A middleware that simulates streaming behavior.
-
- Example usage:
- ```swift
- let model = wrapLanguageModel(
-     model: baseModel,
-     middleware: simulateStreamingMiddleware()
- )
- ```
- */
-public func simulateStreamingMiddleware() -> LanguageModelV3Middleware {
-    return LanguageModelV3Middleware(
-        middlewareVersion: "v3",
-        wrapStream: { doGenerate, _, _, _ in
-            // Call generate instead of stream
-            let result = try await doGenerate()
-
-            var id = 0
-
-            // Create simulated stream
-            let simulatedStream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
-                // Emit stream-start with warnings
-                continuation.yield(.streamStart(warnings: result.warnings))
-
-                // Emit response-metadata
-                if let response = result.response {
-                    continuation.yield(.responseMetadata(
-                        id: response.id,
-                        modelId: response.modelId,
-                        timestamp: response.timestamp
-                    ))
-                }
-
-                // Process content parts
-                for content in result.content {
-                    switch content {
-                    case .text(let textContent):
-                        // Only emit text parts if text is non-empty
-                        if !textContent.text.isEmpty {
-                            continuation.yield(.textStart(id: String(id), providerMetadata: textContent.providerMetadata))
-                            continuation.yield(.textDelta(id: String(id), delta: textContent.text, providerMetadata: textContent.providerMetadata))
-                            continuation.yield(.textEnd(id: String(id), providerMetadata: textContent.providerMetadata))
-                            id += 1
-                        }
-
-                    case .reasoning(let reasoningContent):
-                        // Emit reasoning parts
-                        continuation.yield(.reasoningStart(id: String(id), providerMetadata: reasoningContent.providerMetadata))
-                        continuation.yield(.reasoningDelta(id: String(id), delta: reasoningContent.text, providerMetadata: reasoningContent.providerMetadata))
-                        continuation.yield(.reasoningEnd(id: String(id), providerMetadata: reasoningContent.providerMetadata))
-                        id += 1
-
-                    case .toolCall(let toolCall):
-                        // Pass through tool-calls as-is
-                        continuation.yield(.toolCall(toolCall))
-
-                    case .toolResult(let toolResult):
-                        // Pass through tool-results as-is
-                        continuation.yield(.toolResult(toolResult))
-
-                    case .toolApprovalRequest(let request):
-                        continuation.yield(.toolApprovalRequest(request))
-
-                    case .custom(let custom):
-                        continuation.yield(.custom(custom))
-
-                    case .file(let file):
-                        // Pass through files as-is
-                        continuation.yield(.file(file))
-
-                    case .source(let source):
-                        // Pass through sources as-is
-                        continuation.yield(.source(source))
-                    }
-                }
-
-                // Emit finish
-                continuation.yield(.finish(
-                    finishReason: result.finishReason,
-                    usage: result.usage,
-                    providerMetadata: result.providerMetadata
-                ))
-
-                // Close stream
-                continuation.finish()
-            }
-
-            return LanguageModelV3StreamResult(
-                stream: simulatedStream,
-                request: result.request,
-                response: result.response.map { response in
-                    LanguageModelV3StreamResponseInfo(headers: response.headers)
-                }
-            )
-        }
-    )
-}
-
-/// Creates a V4 middleware that simulates streaming from a generate result.
+/// Creates a middleware that simulates streaming from a generate result.
 public func simulateStreamingMiddleware() -> LanguageModelV4Middleware {
     LanguageModelV4Middleware(
         wrapStream: { doGenerate, _, _, _ in
             let result = try await doGenerate()
 
+            var parts: [LanguageModelV4StreamPart] = [
+                .streamStart(warnings: result.warnings),
+                .responseMetadata(
+                    id: result.response?.id,
+                    modelId: result.response?.modelId,
+                    timestamp: result.response?.timestamp
+                ),
+            ]
+
             var id = 0
-
-            let simulatedStream = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { continuation in
-                continuation.yield(.streamStart(warnings: result.warnings))
-
-                if let response = result.response {
-                    continuation.yield(.responseMetadata(
-                        id: response.id,
-                        modelId: response.modelId,
-                        timestamp: response.timestamp
-                    ))
+            for content in result.content {
+                switch content {
+                case .text(let text):
+                    guard !text.text.isEmpty || !(text.citations ?? []).isEmpty else { continue }
+                    parts.append(.textStart(id: String(id), providerMetadata: text.providerMetadata))
+                    parts.append(.textDelta(id: String(id), delta: text.text, providerMetadata: nil))
+                    parts.append(.textEnd(id: String(id), providerMetadata: nil, citations: text.citations))
+                    id += 1
+                case .reasoning(let reasoning):
+                    parts.append(.reasoningStart(id: String(id), providerMetadata: reasoning.providerMetadata))
+                    parts.append(.reasoningDelta(id: String(id), delta: reasoning.text, providerMetadata: nil))
+                    parts.append(.reasoningEnd(id: String(id), providerMetadata: nil))
+                    id += 1
+                case .toolCall(let toolCall):
+                    parts.append(.toolCall(toolCall))
+                case .toolResult(let toolResult):
+                    parts.append(.toolResult(toolResult))
+                case .toolApprovalRequest(let request):
+                    parts.append(.toolApprovalRequest(request))
+                case .custom(let custom):
+                    parts.append(.custom(custom))
+                case .file(let file):
+                    parts.append(.file(file))
+                case .reasoningFile(let file):
+                    parts.append(.reasoningFile(file))
+                case .source(let source):
+                    parts.append(.source(source))
                 }
-
-                for content in result.content {
-                    switch content {
-                    case .text(let textContent):
-                        if !textContent.text.isEmpty {
-                            continuation.yield(.textStart(id: String(id), providerMetadata: textContent.providerMetadata))
-                            continuation.yield(.textDelta(id: String(id), delta: textContent.text, providerMetadata: textContent.providerMetadata))
-                            continuation.yield(.textEnd(id: String(id), providerMetadata: textContent.providerMetadata))
-                            id += 1
-                        }
-
-                    case .reasoning(let reasoningContent):
-                        continuation.yield(.reasoningStart(id: String(id), providerMetadata: reasoningContent.providerMetadata))
-                        continuation.yield(.reasoningDelta(id: String(id), delta: reasoningContent.text, providerMetadata: reasoningContent.providerMetadata))
-                        continuation.yield(.reasoningEnd(id: String(id), providerMetadata: reasoningContent.providerMetadata))
-                        id += 1
-
-                    case .toolCall(let toolCall):
-                        continuation.yield(.toolCall(toolCall))
-
-                    case .toolResult(let toolResult):
-                        continuation.yield(.toolResult(toolResult))
-
-                    case .toolApprovalRequest(let request):
-                        continuation.yield(.toolApprovalRequest(request))
-
-                    case .custom(let custom):
-                        continuation.yield(.custom(custom))
-
-                    case .file(let file):
-                        continuation.yield(.file(file))
-
-                    case .reasoningFile(let file):
-                        continuation.yield(.reasoningFile(file))
-
-                    case .source(let source):
-                        continuation.yield(.source(source))
-                    }
-                }
-
-                continuation.yield(.finish(
-                    finishReason: result.finishReason,
-                    usage: result.usage,
-                    providerMetadata: result.providerMetadata
-                ))
-
-                continuation.finish()
             }
 
+            parts.append(.finish(
+                finishReason: result.finishReason,
+                usage: result.usage,
+                providerMetadata: result.providerMetadata
+            ))
+
             return LanguageModelV4StreamResult(
-                stream: simulatedStream,
+                stream: replay(parts),
                 request: result.request,
-                response: result.response.map { response in
-                    LanguageModelV4StreamResponseInfo(headers: response.headers)
-                }
+                response: result.response.map { LanguageModelV4StreamResponseInfo(headers: $0.headers) }
             )
         }
     )
+}
+
+/// Creates a V3 middleware that simulates streaming from a generate result.
+public func simulateStreamingMiddleware() -> LanguageModelV3Middleware {
+    LanguageModelV3Middleware(
+        middlewareVersion: "v3",
+        wrapStream: { doGenerate, _, _, _ in
+            let result = try await doGenerate()
+
+            var parts: [LanguageModelV3StreamPart] = [
+                .streamStart(warnings: result.warnings),
+                .responseMetadata(
+                    id: result.response?.id,
+                    modelId: result.response?.modelId,
+                    timestamp: result.response?.timestamp
+                ),
+            ]
+
+            var id = 0
+            for content in result.content {
+                switch content {
+                case .text(let text):
+                    guard !text.text.isEmpty else { continue }
+                    parts.append(.textStart(id: String(id), providerMetadata: text.providerMetadata))
+                    parts.append(.textDelta(id: String(id), delta: text.text, providerMetadata: nil))
+                    parts.append(.textEnd(id: String(id), providerMetadata: nil))
+                    id += 1
+                case .reasoning(let reasoning):
+                    parts.append(.reasoningStart(id: String(id), providerMetadata: reasoning.providerMetadata))
+                    parts.append(.reasoningDelta(id: String(id), delta: reasoning.text, providerMetadata: nil))
+                    parts.append(.reasoningEnd(id: String(id), providerMetadata: nil))
+                    id += 1
+                case .toolCall(let toolCall):
+                    parts.append(.toolCall(toolCall))
+                case .toolResult(let toolResult):
+                    parts.append(.toolResult(toolResult))
+                case .toolApprovalRequest(let request):
+                    parts.append(.toolApprovalRequest(request))
+                case .custom(let custom):
+                    parts.append(.custom(custom))
+                case .file(let file):
+                    parts.append(.file(file))
+                case .source(let source):
+                    parts.append(.source(source))
+                }
+            }
+
+            parts.append(.finish(
+                finishReason: result.finishReason,
+                usage: result.usage,
+                providerMetadata: result.providerMetadata
+            ))
+
+            return LanguageModelV3StreamResult(
+                stream: replay(parts),
+                request: result.request,
+                response: result.response.map { LanguageModelV3StreamResponseInfo(headers: $0.headers) }
+            )
+        }
+    )
+}
+
+private func replay<Part: Sendable>(_ parts: [Part]) -> AsyncThrowingStream<Part, Error> {
+    AsyncThrowingStream { continuation in
+        for part in parts {
+            continuation.yield(part)
+        }
+        continuation.finish()
+    }
 }
