@@ -39,6 +39,9 @@ public extension FireworksChatModelId {
     static let qwq32b: Self = "accounts/fireworks/models/qwq-32b"
     static let yiLarge: Self = "accounts/fireworks/models/yi-large"
     static let kimiK2Instruct: Self = "accounts/fireworks/models/kimi-k2-instruct"
+    static let kimiK2Thinking: Self = "accounts/fireworks/models/kimi-k2-thinking"
+    static let kimiK2p6: Self = "accounts/fireworks/models/kimi-k2p6"
+    static let minimaxM2: Self = "accounts/fireworks/models/minimax-m2"
 }
 
 public struct FireworksCompletionModelId: RawRepresentable, Hashable, Sendable, ExpressibleByStringLiteral, Codable {

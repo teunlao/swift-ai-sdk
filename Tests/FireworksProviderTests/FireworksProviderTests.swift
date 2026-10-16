@@ -10,10 +10,10 @@ struct FireworksProviderTests {
         try! JSONSerialization.data(withJSONObject: dict)
     }
 
-    @Test("supports upstream createFireworks alias")
-    func supportsCreateFireworksAlias() throws {
+    @Test("creates chat models in the Fireworks provider namespace")
+    func createsChatModelNamespace() {
         let provider = createFireworks(settings: FireworksProviderSettings(apiKey: "test-key"))
-        let model = try provider.languageModel(modelId: FireworksChatModelId.deepseekV3.rawValue)
+        let model = provider.languageModel(modelId: FireworksChatModelId.deepseekV3.rawValue)
         #expect(model.provider == "fireworks.chat")
     }
 
@@ -64,7 +64,7 @@ struct FireworksProviderTests {
             apiKey: "test-key",
             fetch: fetch
         ))
-        let model = try provider.languageModel(modelId: FireworksChatModelId.deepseekV3.rawValue)
+        let model = provider.languageModel(modelId: FireworksChatModelId.deepseekV3.rawValue)
         let prompt: LanguageModelV4Prompt = [
             .user(content: [.text(.init(text: "hello"))], providerOptions: nil),
         ]
@@ -135,7 +135,7 @@ struct FireworksProviderTests {
             }
 
             let provider = createFireworks(settings: FireworksProviderSettings(fetch: fetch))
-            let model = try provider.languageModel(modelId: FireworksChatModelId.deepseekV3.rawValue)
+            let model = provider.languageModel(modelId: FireworksChatModelId.deepseekV3.rawValue)
             let prompt: LanguageModelV4Prompt = [
                 .user(content: [.text(.init(text: "hello"))], providerOptions: nil),
             ]
@@ -150,6 +150,20 @@ struct FireworksProviderTests {
             }
 
             #expect(await capture.value() == nil)
+        }
+
+        @Test("custom Authorization never bypasses API key loading", arguments: [false, true])
+        func customAuthorizationStillRequiresKey(_ requestHeader: Bool) async throws {
+            let original = getenv("FIREWORKS_API_KEY").map { String(cString: $0) }
+            unsetenv("FIREWORKS_API_KEY")
+            defer { if let original { setenv("FIREWORKS_API_KEY", original, 1) } else { unsetenv("FIREWORKS_API_KEY") } }
+            let provider = createFireworks(settings: .init(headers: requestHeader ? nil : ["Authorization": "Bearer config"], fetch: { _ in
+                Issue.record("Missing credentials must reject before fetch")
+                throw CancellationError()
+            }))
+            await #expect(throws: LoadAPIKeyError.self) {
+                _ = try await provider("model").doGenerate(options: .init(prompt: [], headers: requestHeader ? ["Authorization": "Bearer request"] : nil))
+            }
         }
     }
 }
