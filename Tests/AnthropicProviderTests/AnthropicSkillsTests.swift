@@ -134,6 +134,43 @@ struct AnthropicSkillsTests {
         #expect(versionHeaders["Content-Type"] == nil)
     }
 
+    @Test("uploadSkill keeps skill and version identifiers inside encoded metadata URL segments", arguments: ["skill/part?# %", ".", ".."])
+    func uploadSkillEncodesVersionLookup(segment: String) async throws {
+        let encodedSegment = switch segment {
+        case ".": "%252E"
+        case "..": "%252E%252E"
+        default: "skill%2Fpart%3F%23%20%25"
+        }
+        let createData = try JSONEncoder().encode(JSONValue.object([
+            "id": .string(segment), "latest_version": .string(segment), "source": .string("custom"),
+            "created_at": .string("2026-01-01T00:00:00Z"), "updated_at": .string("2026-01-01T00:00:00Z"),
+        ]))
+        let metadataData = try JSONEncoder().encode(JSONValue.object([
+            "type": .string("skill_version"), "skill_id": .string(segment), "name": .string("encoded-skill"),
+            "description": .string("Version metadata"),
+        ]))
+        let capture = URLRequestCapture()
+        let provider = createAnthropic(settings: .init(apiKey: "test-key", fetch: { request in
+            await capture.append(request)
+            return FetchResponse(
+                body: .data(request.httpMethod == "POST" ? createData : metadataData),
+                urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            )
+        }))
+
+        let result = try await provider.skills().uploadSkill(options: .init(files: [
+            .init(path: "SKILL.md", data: .text("# Skill")),
+        ]))
+
+        let request = try #require(await capture.all().last)
+        #expect(request.httpMethod == "GET")
+        #expect(request.url?.absoluteString == "https://api.anthropic.com/v1/skills/\(encodedSegment)/versions/\(encodedSegment)")
+        #expect(result.providerReference["anthropic"] == segment)
+        #expect(result.latestVersion == segment)
+        #expect(result.name == "encoded-skill")
+        #expect(result.description == "Version metadata")
+    }
+
     @Test("uploadSkill accepts upstream data initializer and text file data")
     func uploadSkillAcceptsDataInitializerAndTextFileData() async throws {
         let capture = URLRequestCapture()

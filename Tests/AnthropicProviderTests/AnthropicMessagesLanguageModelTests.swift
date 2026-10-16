@@ -4573,7 +4573,7 @@ struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
                 if case .object(let searchResult) = resultsArray[0] {
                     #expect(searchResult["type"] == .string("web_search_result"))
                     #expect(searchResult["url"] == .string("https://example.com/ai-news"))
-                    #expect(searchResult["title"] == .null)
+                    #expect(searchResult["title"] == nil)
                     #expect(searchResult["encryptedContent"] == .string("encrypted_content_123"))
                     #expect(searchResult["pageAge"] == .null)
                 } else {

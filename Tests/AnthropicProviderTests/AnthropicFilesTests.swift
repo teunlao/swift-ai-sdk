@@ -87,6 +87,73 @@ struct AnthropicFilesTests {
         #expect(result.providerReference["anthropic"] == "file-abc123")
     }
 
+    @Test("uploadFile call headers override defaults and preserve other provider headers")
+    func uploadFileHeaderOverrides() async throws {
+        let capture = URLRequestCapture()
+        let provider = createAnthropic(settings: .init(
+            apiKey: "provider-key",
+            headers: ["x-upload-scope": "provider", "x-provider-only": "retained"],
+            fetch: makeFetch(capture: capture)
+        ))
+
+        _ = try await provider.files().uploadFile(options: .init(
+            data: .text("file"),
+            mediaType: "text/plain",
+            headers: [
+                "x-upload-scope": "request", "x-upload-extra": "forwarded",
+                "x-api-key": "request-key", "anthropic-beta": "custom-upload-beta",
+            ]
+        ))
+
+        let request = try #require(await capture.first())
+        #expect(request.value(forHTTPHeaderField: "x-upload-scope") == "request")
+        #expect(request.value(forHTTPHeaderField: "x-provider-only") == "retained")
+        #expect(request.value(forHTTPHeaderField: "x-upload-extra") == "forwarded")
+        #expect(request.value(forHTTPHeaderField: "x-api-key") == "request-key")
+        #expect(request.value(forHTTPHeaderField: "anthropic-beta") == "custom-upload-beta")
+    }
+
+    @Test("uploadFile preserves cancellation from an already aborted signal")
+    func uploadFileCancellation() async throws {
+        let provider = createAnthropic(settings: .init(
+            apiKey: "test-key",
+            fetch: makeFetch(capture: URLRequestCapture())
+        ))
+
+        await #expect(throws: CancellationError.self) {
+            _ = try await provider.files().uploadFile(options: .init(
+                data: .text("file"), mediaType: "text/plain", abortSignal: { true }
+            ))
+        }
+    }
+
+    @Test("uploadFile rejects malformed successful responses as API errors", arguments: ["filename", "mime_type", "type", "wrong-type"])
+    func uploadFileResponseValidation(invalidField: String) async throws {
+        var payload: [String: JSONValue] = [
+            "id": .string("file_invalid"), "type": .string("file"), "filename": .string("file.txt"),
+            "mime_type": .string("text/plain"), "size_bytes": .number(4), "created_at": .string("2026-01-01T00:00:00Z"),
+        ]
+        if invalidField == "wrong-type" {
+            payload["type"] = .string("message")
+        } else {
+            payload.removeValue(forKey: invalidField)
+        }
+        let responseData = try JSONEncoder().encode(payload)
+        let provider = createAnthropic(settings: .init(apiKey: "test-key", fetch: { request in
+            FetchResponse(body: .data(responseData), urlResponse: HTTPURLResponse(
+                url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["content-type": "application/json"]
+            )!)
+        }))
+
+        do {
+            _ = try await provider.files().uploadFile(options: .init(data: .text("file"), mediaType: "text/plain"))
+            Issue.record("Expected upload response rejection")
+        } catch let error as APICallError {
+            #expect(error.statusCode == 200)
+            #expect(error.cause is TypeValidationError)
+        }
+    }
+
     @Test("uploadFile maps anthropic provider metadata")
     func uploadFileMapsProviderMetadata() async throws {
         let capture = URLRequestCapture()
