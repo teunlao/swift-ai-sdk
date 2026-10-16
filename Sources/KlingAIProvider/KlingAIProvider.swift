@@ -62,7 +62,7 @@ public final class KlingAIProvider: ProviderV4 {
         throw NoSuchModelError(modelId: modelId, modelType: .imageModel)
     }
 
-    public func videoModel(modelId: String) throws -> (any VideoModelV4)? {
+    public func videoModel(modelId: String) -> KlingAIVideoModel {
         videoFactory(KlingAIVideoModelId(rawValue: modelId))
     }
 
