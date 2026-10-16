@@ -60,6 +60,14 @@ public final class XAIProvider: ProviderV4 {
         XAIImageModel(modelId: modelId, config: .init(provider: "xai.image", baseURL: baseURL, headers: headers, fetch: settings.fetch))
     }
 
+    public func speech() -> XAISpeechModel {
+        XAISpeechModel(config: .init(provider: "xai.speech", baseURL: baseURL, headers: headers, fetch: settings.fetch))
+    }
+
+    public func speechModel() -> XAISpeechModel { speech() }
+
+    public func speechModel(modelId: String) -> (any SpeechModelV4)? { speech() }
+
     public func videoModel(modelId: String) -> XAIVideoModel {
         video(modelId: XAIVideoModelId(rawValue: modelId))
     }
