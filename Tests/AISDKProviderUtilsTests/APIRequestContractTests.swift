@@ -202,4 +202,33 @@ struct APIRequestContractTests {
         }
         #expect(error?.requestBodyValues as? [String: String] == ["file": "<file:a.txt>"])
     }
+
+    @Test("multipart validation releases an unopened file stream before returning an invalid URL error")
+    func multipartInvalidURLReleasesSource() async {
+        final class Lifetime: @unchecked Sendable {
+            private let lock = NSLock()
+            private var cancelled = false
+            func cancel() { lock.withLock { cancelled = true } }
+            var isCancelled: Bool { lock.withLock { cancelled } }
+        }
+        let lifetime = Lifetime()
+        let (source, continuation) = AsyncThrowingStream<Data, Error>.makeStream()
+        continuation.onTermination = { reason in
+            if case .cancelled = reason { lifetime.cancel() }
+        }
+        defer { continuation.finish() }
+
+        let error = await #expect(throws: APICallError.self) {
+            _ = try await postMultipartStreamToAPI(
+                url: "http://[",
+                parts: [.file(name: "file", content: .stream(source))],
+                failedResponseHandler: createStatusCodeErrorResponseHandler(),
+                successfulResponseHandler: createJsonResponseHandler(responseSchema: Self.anyJSON),
+                fetch: { _ in throw URLError(.unsupportedURL) }
+            )
+        }
+        #expect(error?.url == "http://[")
+        #expect(error?.cause == nil)
+        #expect(lifetime.isCancelled)
+    }
 }

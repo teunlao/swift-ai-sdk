@@ -67,14 +67,21 @@ public func postMultipartStreamToAPI<T>(
     var requestHeaders = headers ?? [:]
     requestHeaders["Content-Type"] = "multipart/form-data; boundary=\(boundary)"
 
-    var request = try makeAPIRequest(
-        url: url,
-        method: "POST",
-        headers: requestHeaders,
-        requestBodyValues: requestBodyValues
-    )
+    let source = MultipartBodySource(parts: parts, boundary: boundary)
+    var request: URLRequest
+    do {
+        request = try makeAPIRequest(
+            url: url,
+            method: "POST",
+            headers: requestHeaders,
+            requestBodyValues: requestBodyValues
+        )
+    } catch {
+        await source.cancelUnfinishedStreams()
+        throw error
+    }
 
-    let body = StreamingRequestBody(source: MultipartBodySource(parts: parts, boundary: boundary))
+    let body = StreamingRequestBody(source: source)
     request.httpBodyStream = body.inputStream
 
     let requestTask = Task { [request, requestBodyValues] in
