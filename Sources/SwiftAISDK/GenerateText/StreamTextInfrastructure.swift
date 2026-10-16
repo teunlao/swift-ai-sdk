@@ -27,7 +27,8 @@ final class StreamAbortController: @unchecked Sendable {
     private let lock = NSLock()
     private var abortReason: (any Error)?
     private var aborted = false
-    private var listeners: [@Sendable ((any Error)?) -> Void] = []
+    private var listeners: [Int: @Sendable ((any Error)?) -> Void] = [:]
+    private var nextListenerId = 0
 
     var isAborted: Bool {
         lock.lock()
@@ -50,8 +51,8 @@ final class StreamAbortController: @unchecked Sendable {
         }
         aborted = true
         abortReason = reason
-        let current = listeners
-        listeners = []
+        let current = listeners.sorted { $0.key < $1.key }.map(\.value)
+        listeners = [:]
         lock.unlock()
         for listener in current {
             listener(reason)
@@ -60,15 +61,91 @@ final class StreamAbortController: @unchecked Sendable {
 
     /// Calls `listener` on abort, immediately when already aborted.
     func onAbort(_ listener: @escaping @Sendable ((any Error)?) -> Void) {
+        _ = addListener(listener)
+    }
+
+    /// Registers `listener`; returns its id, or `nil` when it already ran because the controller had aborted.
+    private func addListener(_ listener: @escaping @Sendable ((any Error)?) -> Void) -> Int? {
         lock.lock()
         if aborted {
             let reason = abortReason
             lock.unlock()
             listener(reason)
+            return nil
+        }
+        let id = nextListenerId
+        nextListenerId += 1
+        listeners[id] = listener
+        lock.unlock()
+        return id
+    }
+
+    private func removeListener(_ id: Int) {
+        lock.lock()
+        listeners[id] = nil
+        lock.unlock()
+    }
+
+    /// Suspends until the controller aborts or the calling task is cancelled.
+    func waitForAbort() async {
+        let waiter = AbortWaiter()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                waiter.install(continuation)
+                if let id = addListener({ _ in waiter.resume() }) {
+                    waiter.onResume { [weak self] in self?.removeListener(id) }
+                }
+            }
+        } onCancel: {
+            waiter.resume()
+        }
+    }
+}
+
+/// Resumes one continuation once, whichever of abort and cancellation comes first.
+private final class AbortWaiter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var cleanup: (@Sendable () -> Void)?
+    private var resumed = false
+
+    func install(_ continuation: CheckedContinuation<Void, Never>) {
+        lock.lock()
+        if resumed {
+            lock.unlock()
+            continuation.resume()
             return
         }
-        listeners.append(listener)
+        self.continuation = continuation
         lock.unlock()
+    }
+
+    /// Runs `cleanup` once resumed, immediately when already resumed.
+    func onResume(_ cleanup: @escaping @Sendable () -> Void) {
+        lock.lock()
+        if resumed {
+            lock.unlock()
+            cleanup()
+            return
+        }
+        self.cleanup = cleanup
+        lock.unlock()
+    }
+
+    func resume() {
+        lock.lock()
+        guard !resumed else {
+            lock.unlock()
+            return
+        }
+        resumed = true
+        let continuation = self.continuation
+        let cleanup = self.cleanup
+        self.continuation = nil
+        self.cleanup = nil
+        lock.unlock()
+        continuation?.resume()
+        cleanup?()
     }
 }
 

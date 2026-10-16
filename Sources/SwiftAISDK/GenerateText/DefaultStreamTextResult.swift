@@ -1490,10 +1490,9 @@ final class StreamTextEngine<OutputValue: Sendable, PartialOutput: Sendable>: @u
         }
         return try await withThrowingTaskGroup(of: InternalStreamPart?.self) { group in
             group.addTask { try await source.next() }
+            // The abort waiter must end on cancellation, or the group outlives the read.
             group.addTask {
-                await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-                    controller.onAbort { _ in continuation.resume() }
-                }
+                await controller.waitForAbort()
                 return nil
             }
             let first = try await group.next() ?? nil
