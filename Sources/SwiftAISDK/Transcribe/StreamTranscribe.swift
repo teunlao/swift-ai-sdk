@@ -14,7 +14,8 @@ public func streamTranscribe(
     providerOptions: ProviderOptions = [:],
     abortSignal: (@Sendable () -> Bool)? = nil,
     headers: [String: String]? = nil,
-    includeRawChunks: Bool? = nil
+    includeRawChunks: Bool? = nil,
+    telemetry: TelemetryOptions? = nil
 ) throws -> any StreamTranscriptionResult {
     guard let resolvedModel = try resolveTranscriptionModelV4(model) else {
         throw ModelResolutionFailure(message: "Model could not be resolved")
@@ -26,7 +27,8 @@ public func streamTranscribe(
         providerOptions: providerOptions,
         abortSignal: abortSignal,
         headers: headers,
-        includeRawChunks: includeRawChunks
+        includeRawChunks: includeRawChunks,
+        telemetry: telemetry
     )
 }
 
@@ -37,7 +39,8 @@ public func streamTranscribe(
     providerOptions: ProviderOptions = [:],
     abortSignal: (@Sendable () -> Bool)? = nil,
     headers: [String: String]? = nil,
-    includeRawChunks: Bool? = nil
+    includeRawChunks: Bool? = nil,
+    telemetry: TelemetryOptions? = nil
 ) throws -> any StreamTranscriptionResult {
     try streamTranscribe(
         model: .v4(model),
@@ -46,7 +49,8 @@ public func streamTranscribe(
         providerOptions: providerOptions,
         abortSignal: abortSignal,
         headers: headers,
-        includeRawChunks: includeRawChunks
+        includeRawChunks: includeRawChunks,
+        telemetry: telemetry
     )
 }
 
@@ -57,7 +61,8 @@ public func streamTranscribe(
     providerOptions: ProviderOptions = [:],
     abortSignal: (@Sendable () -> Bool)? = nil,
     headers: [String: String]? = nil,
-    includeRawChunks: Bool? = nil
+    includeRawChunks: Bool? = nil,
+    telemetry: TelemetryOptions? = nil
 ) throws -> any StreamTranscriptionResult {
     try streamTranscribe(
         model: .v3(model),
@@ -66,7 +71,8 @@ public func streamTranscribe(
         providerOptions: providerOptions,
         abortSignal: abortSignal,
         headers: headers,
-        includeRawChunks: includeRawChunks
+        includeRawChunks: includeRawChunks,
+        telemetry: telemetry
     )
 }
 
@@ -77,11 +83,25 @@ private func makeStreamTranscriptionResult(
     providerOptions: ProviderOptions,
     abortSignal: (@Sendable () -> Bool)?,
     headers: [String: String]?,
-    includeRawChunks: Bool?
+    includeRawChunks: Bool?,
+    telemetry: TelemetryOptions?
 ) -> any StreamTranscriptionResult {
     let headersWithUserAgent = withUserAgentSuffix(
         headers ?? [:],
         "ai/\(VERSION)"
+    )
+
+    let callId = (try? createIDGenerator(prefix: "call", size: 24))?() ?? UUID().uuidString
+    let dispatcher = TelemetryDispatcher(telemetry: telemetry)
+    let telemetryState = StreamTranscriptionTelemetryState()
+    let audioFormatMediaType = inputAudioFormat.type
+    let audio = dispatcher.isActive ? countingAudioBytes(audio, into: telemetryState) : audio
+    let startEvent = StreamTranscriptionStartEvent(
+        callId: callId, operationId: "ai.streamTranscribe",
+        provider: model.provider, modelId: model.modelId,
+        audio: .init(byteLength: nil, mediaType: audioFormatMediaType),
+        inputAudioFormat: inputAudioFormat, maxRetries: nil,
+        headers: headers, providerOptions: providerOptions
     )
 
     let textPromise = DelayedPromise<String>()
@@ -104,9 +124,13 @@ private func makeStreamTranscriptionResult(
         ] as [AnyDelayedPromise] {
             promise.rejectIfPending(error)
         }
+        if telemetryState.settle() {
+            Task { await dispatcher.onError(callId: callId, error: error) }
+        }
     }
 
     let resolveWarnings: @Sendable ([TranscriptionWarning]) -> Void = { warnings in
+        telemetryState.setWarnings(warnings)
         warningsPromise.resolve(warnings)
         logWarningsForTranscribe(warnings.map { Warning.transcriptionModel($0) })
     }
@@ -116,17 +140,29 @@ private func makeStreamTranscriptionResult(
     let state = StreamTranscribeState(audio: audio, startedAt: startedAt, modelId: model.modelId,
                                      resolveWarnings: resolveWarnings, warningsPending: { warningsPromise.isPending() },
                                      textPending: { textPromise.isPending() }, rejectPending: rejectPending,
-                                     resolveFinish: { text, segments, language, duration, metadata, response in
-        textPromise.resolve(text)
-        segmentsPromise.resolve(segments.map {
+                                     resolveFinish: { text, segments, language, duration, usage, metadata, response in
+        let segments = segments.map {
             TranscriptionSegment(text: $0.text, startSecond: $0.startSecond, endSecond: $0.endSecond)
-        })
+        }
+        textPromise.resolve(text)
+        segmentsPromise.resolve(segments)
         languagePromise.resolve(language)
         durationInSecondsPromise.resolve(duration)
         responsesPromise.resolve([response])
         providerMetadataPromise.resolve(metadata ?? [:])
+
+        guard telemetryState.settle() else { return }
+        await dispatcher.onStreamTranscriptionEnd(StreamTranscriptionEndEvent(
+            callId: callId, operationId: "ai.streamTranscribe",
+            provider: model.provider, modelId: model.modelId,
+            audio: .init(byteLength: telemetryState.audioByteLength, mediaType: audioFormatMediaType),
+            text: text, segments: segments, language: language, durationInSeconds: duration,
+            usage: usage, warnings: telemetryState.warnings, providerMetadata: metadata,
+            response: response
+        ))
     })
     Task {
+        await dispatcher.onStreamTranscriptionStart(startEvent)
         await state.start(model: model, options: TranscriptionModelV4StreamOptions(
             audio: audio, inputAudioFormat: inputAudioFormat, providerOptions: providerOptions,
             abortSignal: { cancellation.isCancelled || abortSignal?() == true },
@@ -157,6 +193,57 @@ extension DelayedPromise: AnyDelayedPromise {
     }
 }
 
+/// Telemetry facts of one streaming transcription; it settles once, by finish or by failure.
+private final class StreamTranscriptionTelemetryState: @unchecked Sendable {
+    private let lock = NSLock()
+    private var settled = false
+    private var byteLength = 0
+    private var resolvedWarnings: [TranscriptionWarning] = []
+
+    func settle() -> Bool {
+        lock.withLock {
+            defer { settled = true }
+            return !settled
+        }
+    }
+
+    func addAudioBytes(_ count: Int) { lock.withLock { byteLength += count } }
+    var audioByteLength: Int { lock.withLock { byteLength } }
+
+    func setWarnings(_ warnings: [TranscriptionWarning]) { lock.withLock { resolvedWarnings = warnings } }
+    var warnings: [TranscriptionWarning] { lock.withLock { resolvedWarnings } }
+}
+
+/// Passes the audio through on demand while counting its decoded bytes.
+private func countingAudioBytes(
+    _ audio: AsyncThrowingStream<TranscriptionModelV4StreamAudio, Error>,
+    into state: StreamTranscriptionTelemetryState
+) -> AsyncThrowingStream<TranscriptionModelV4StreamAudio, Error> {
+    let iterator = AudioIteratorBox(audio.makeAsyncIterator())
+    return AsyncThrowingStream {
+        guard let chunk = try await iterator.next() else { return nil }
+        switch chunk {
+        case .binary(let data):
+            state.addAudioBytes(data.count)
+        case .base64(let base64):
+            state.addAudioBytes(Data(base64Encoded: base64, options: .ignoreUnknownCharacters)?.count ?? 0)
+        }
+        return chunk
+    }
+}
+
+private final class AudioIteratorBox: @unchecked Sendable {
+    private var iterator: AsyncThrowingStream<TranscriptionModelV4StreamAudio, Error>.AsyncIterator
+
+    init(_ iterator: AsyncThrowingStream<TranscriptionModelV4StreamAudio, Error>.AsyncIterator) {
+        self.iterator = iterator
+    }
+
+    func next() async throws -> TranscriptionModelV4StreamAudio? {
+        try await iterator.next()
+    }
+}
+
 private final class StreamTranscriptionCancellation: @unchecked Sendable {
     private let lock = NSLock()
     private var cancelled = false
@@ -179,8 +266,9 @@ private actor StreamTranscribeState {
     private let textPending: @Sendable () -> Bool
     private let rejectPending: @Sendable (Error) -> Void
     private let resolveFinish: @Sendable (
-        String, [TranscriptionModelV4Result.Segment], String?, Double?, ProviderMetadata?, TranscriptionModelResponseMetadata
-    ) -> Void
+        String, [TranscriptionModelV4Result.Segment], String?, Double?, JSONObject?, ProviderMetadata?,
+        TranscriptionModelResponseMetadata
+    ) async -> Void
 
     init(
         audio: AsyncThrowingStream<TranscriptionModelV4StreamAudio, Error>, startedAt: Date, modelId: String,
@@ -188,8 +276,9 @@ private actor StreamTranscribeState {
         warningsPending: @escaping @Sendable () -> Bool, textPending: @escaping @Sendable () -> Bool,
         rejectPending: @escaping @Sendable (Error) -> Void,
         resolveFinish: @escaping @Sendable (
-            String, [TranscriptionModelV4Result.Segment], String?, Double?, ProviderMetadata?, TranscriptionModelResponseMetadata
-        ) -> Void
+            String, [TranscriptionModelV4Result.Segment], String?, Double?, JSONObject?, ProviderMetadata?,
+            TranscriptionModelResponseMetadata
+        ) async -> Void
     ) {
         self.audio = audio
         response = TranscriptionModelResponseMetadata(timestamp: startedAt, modelId: modelId)
@@ -270,10 +359,10 @@ private actor StreamTranscribeState {
                                             endSecond: end, channelIndex: channel, providerMetadata: metadata)
                 case .raw(let value): return .raw(rawValue: value)
                 case .error(let error): return .error(error: error)
-                case .finish(let text, let segments, let language, let duration, _, let metadata):
+                case .finish(let text, let segments, let language, let duration, let usage, let metadata):
                     if warningsPending() { resolveWarnings([]) }
                     guard !text.isEmpty else { throw NoTranscriptGeneratedError(responses: [response]) }
-                    resolveFinish(text, segments, language, duration, metadata, response)
+                    await resolveFinish(text, segments, language, duration, usage, metadata, response)
                 }
             }
             try Task.checkCancellation()

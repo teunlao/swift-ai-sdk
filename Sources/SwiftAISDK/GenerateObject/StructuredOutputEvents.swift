@@ -167,11 +167,11 @@ public struct GenerateObjectStepEndEvent: Sendable {
  Event passed to `onEnd` when an object generation finishes, successfully or not.
 
  Port of `GenerateObjectEndEvent` from `@ai-sdk/ai/src/generate-object/structured-output-events.ts`.
- The object is carried as JSON.
+ Telemetry integrations receive the object as JSON.
  */
-public struct GenerateObjectEndEvent: Sendable {
+public struct GenerateObjectEndEvent<Object: Sendable>: Sendable {
     public let callId: String
-    public let object: JSONValue?
+    public let object: Object?
     public let error: (any Error)?
     public let reasoning: String?
     public let finishReason: FinishReason
@@ -183,7 +183,7 @@ public struct GenerateObjectEndEvent: Sendable {
 
     public init(
         callId: String,
-        object: JSONValue?,
+        object: Object?,
         error: (any Error)?,
         reasoning: String?,
         finishReason: FinishReason,
@@ -205,3 +205,24 @@ public struct GenerateObjectEndEvent: Sendable {
         self.providerMetadata = providerMetadata
     }
 }
+
+extension GenerateObjectEndEvent {
+    /// The event with its object as JSON, as telemetry integrations receive it.
+    var json: GenerateObjectEndEvent<JSONValue> {
+        GenerateObjectEndEvent<JSONValue>(
+            callId: callId,
+            object: object.flatMap { object in (object as? JSONValue) ?? (try? jsonValue(from: object)) },
+            error: error,
+            reasoning: reasoning,
+            finishReason: finishReason,
+            usage: usage,
+            warnings: warnings,
+            request: request,
+            response: response,
+            providerMetadata: providerMetadata
+        )
+    }
+}
+
+/// Callback for an object generation lifecycle event. Errors it throws are ignored.
+public typealias GenerateObjectCallback<Event: Sendable> = @Sendable (Event) async throws -> Void

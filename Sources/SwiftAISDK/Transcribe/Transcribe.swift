@@ -17,7 +17,8 @@ public func transcribe(
     maxRetries: Int? = nil,
     abortSignal: (@Sendable () -> Bool)? = nil,
     headers: [String: String]? = nil,
-    experimentalDownload download: DownloadFileFunction? = nil
+    experimentalDownload download: DownloadFileFunction? = nil,
+    telemetry: TelemetryOptions? = nil
 ) async throws -> any TranscriptionResult {
     guard let resolvedModel = try resolveTranscriptionModelV4(model) else {
         throw ModelResolutionFailure(message: "Model could not be resolved")
@@ -33,25 +34,53 @@ public func transcribe(
         "ai/\(VERSION)"
     )
 
-    let audioData = try await resolveAudioData(
-        audio,
-        download: download ?? createDownload(),
-        abortSignal: abortSignal
-    )
+    let callId = try createIDGenerator(prefix: "call", size: 24)()
+    let dispatcher = TelemetryDispatcher(telemetry: telemetry)
 
-    let result = try await preparedRetries.retry.call {
-        try await resolvedModel.doGenerate(
-            options: TranscriptionModelV4CallOptions(
-                audio: .binary(audioData.data),
-                mediaType: audioData.mediaType ?? detectMediaType(
-                    data: audioData.data,
-                    topLevelType: "audio"
-                ) ?? "audio/wav",
-                providerOptions: providerOptions,
-                abortSignal: abortSignal,
-                headers: headersWithUserAgent
-            )
+    func startEvent(byteLength: Int?, mediaType: String?) -> TranscriptionStartEvent {
+        TranscriptionStartEvent(
+            callId: callId, operationId: "ai.transcribe",
+            provider: resolvedModel.provider, modelId: resolvedModel.modelId,
+            audio: .init(byteLength: byteLength, mediaType: mediaType),
+            inputAudioFormat: nil, maxRetries: preparedRetries.maxRetries,
+            headers: headers, providerOptions: providerOptions
         )
+    }
+
+    let audioData: (data: Data, mediaType: String?)
+    do {
+        audioData = try await resolveAudioData(
+            audio,
+            download: download ?? createDownload(),
+            abortSignal: abortSignal
+        )
+    } catch {
+        await dispatcher.onStart(.transcribe(startEvent(byteLength: nil, mediaType: nil)))
+        await dispatcher.onError(callId: callId, error: error)
+        throw error
+    }
+
+    let mediaType = audioData.mediaType
+        ?? detectMediaType(data: audioData.data, topLevelType: "audio")
+        ?? "audio/wav"
+    await dispatcher.onStart(.transcribe(startEvent(byteLength: audioData.data.count, mediaType: mediaType)))
+
+    let result: TranscriptionModelV4Result
+    do {
+        result = try await preparedRetries.retry.call {
+            try await resolvedModel.doGenerate(
+                options: TranscriptionModelV4CallOptions(
+                    audio: .binary(audioData.data),
+                    mediaType: mediaType,
+                    providerOptions: providerOptions,
+                    abortSignal: abortSignal,
+                    headers: headersWithUserAgent
+                )
+            )
+        }
+    } catch {
+        await dispatcher.onError(callId: callId, error: error)
+        throw error
     }
 
     logWarningsForTranscribe(result.warnings.map { Warning.transcriptionModel($0) })
@@ -69,6 +98,16 @@ public func transcribe(
         modelId: result.response.modelId,
         headers: result.response.headers
     )
+
+    await dispatcher.onEnd(.transcribe(TranscriptionEndEvent(
+        callId: callId, operationId: "ai.transcribe",
+        provider: resolvedModel.provider, modelId: resolvedModel.modelId,
+        audio: .init(byteLength: audioData.data.count, mediaType: mediaType),
+        text: result.text, segments: segments, language: result.language,
+        durationInSeconds: result.durationInSeconds, usage: result.usage,
+        warnings: result.warnings, providerMetadata: result.providerMetadata,
+        response: responseMetadata
+    )))
 
     return DefaultTranscriptionResult(
         text: result.text,
@@ -88,7 +127,8 @@ public func transcribe(
     maxRetries: Int? = nil,
     abortSignal: (@Sendable () -> Bool)? = nil,
     headers: [String: String]? = nil,
-    experimentalDownload download: DownloadFileFunction? = nil
+    experimentalDownload download: DownloadFileFunction? = nil,
+    telemetry: TelemetryOptions? = nil
 ) async throws -> any TranscriptionResult {
     try await transcribe(
         model: .v4(model),
@@ -97,7 +137,8 @@ public func transcribe(
         maxRetries: maxRetries,
         abortSignal: abortSignal,
         headers: headers,
-        experimentalDownload: download
+        experimentalDownload: download,
+        telemetry: telemetry
     )
 }
 
@@ -108,7 +149,8 @@ public func transcribe(
     maxRetries: Int? = nil,
     abortSignal: (@Sendable () -> Bool)? = nil,
     headers: [String: String]? = nil,
-    experimentalDownload download: DownloadFileFunction? = nil
+    experimentalDownload download: DownloadFileFunction? = nil,
+    telemetry: TelemetryOptions? = nil
 ) async throws -> any TranscriptionResult {
     try await transcribe(
         model: .v3(model),
@@ -117,7 +159,8 @@ public func transcribe(
         maxRetries: maxRetries,
         abortSignal: abortSignal,
         headers: headers,
-        experimentalDownload: download
+        experimentalDownload: download,
+        telemetry: telemetry
     )
 }
 

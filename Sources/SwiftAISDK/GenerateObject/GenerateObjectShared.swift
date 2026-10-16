@@ -87,15 +87,3 @@ func convertGenerateObjectResponseBody(_ body: Any?) -> JSONValue? {
 
     return try? jsonValue(from: body)
 }
-
-func encodeGenerateObjectTelemetryValue<ResultValue>(_ value: ResultValue) -> String? {
-    if let jsonValue = value as? JSONValue {
-        return encodeJSONValueForTelemetry(jsonValue)
-    }
-
-    if let converted = try? jsonValue(from: value) {
-        return encodeJSONValueForTelemetry(converted)
-    }
-
-    return nil
-}

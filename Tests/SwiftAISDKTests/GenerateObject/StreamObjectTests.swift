@@ -399,10 +399,10 @@ private actor ErrorEventCollector {
 }
 
 private actor FinishEventCollector<ResultValue: Sendable> {
-    private var storedEvent: StreamObjectFinishEvent<ResultValue>?
-    private var waiters: [CheckedContinuation<StreamObjectFinishEvent<ResultValue>, Never>] = []
+    private var storedEvent: GenerateObjectEndEvent<ResultValue>?
+    private var waiters: [CheckedContinuation<GenerateObjectEndEvent<ResultValue>, Never>] = []
 
-    func set(_ event: StreamObjectFinishEvent<ResultValue>) {
+    func set(_ event: GenerateObjectEndEvent<ResultValue>) {
         storedEvent = event
         for waiter in waiters {
             waiter.resume(returning: event)
@@ -410,7 +410,7 @@ private actor FinishEventCollector<ResultValue: Sendable> {
         waiters.removeAll()
     }
 
-    func wait() async -> StreamObjectFinishEvent<ResultValue> {
+    func wait() async -> GenerateObjectEndEvent<ResultValue> {
         if let event = storedEvent {
             return event
         }

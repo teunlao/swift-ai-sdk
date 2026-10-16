@@ -523,7 +523,7 @@ struct GenerateObjectTests {
             model: .v3(model),
             output: GenerateObjectOutput.object(schema: defaultObjectSchema()),
             prompt: "prompt",
-            experimentalRepairText: { options in
+            repairText: { options in
                 #expect(options.text == "{ \"content\": \"provider metadata test\" ")
                 if case .parse = options.error { } else { Issue.record("Expected parse error") }
                 return options.text + "}"
@@ -545,7 +545,7 @@ struct GenerateObjectTests {
             model: .v3(model),
             output: GenerateObjectOutput.object(schema: defaultObjectSchema()),
             prompt: "prompt",
-            experimentalRepairText: { options in
+            repairText: { options in
                 if case .validation = options.error { } else { Issue.record("Expected validation error") }
                 return "{ \"content\": \"provider metadata test\" }"
             }
@@ -567,7 +567,7 @@ struct GenerateObjectTests {
                 model: .v3(model),
                 output: GenerateObjectOutput.object(schema: defaultObjectSchema()),
                 prompt: "prompt",
-                experimentalRepairText: { _ in nil }
+                repairText: { _ in nil }
             )
         }
     }
@@ -649,7 +649,7 @@ struct GenerateObjectTests {
                 model: .v3(model),
                 output: GenerateObjectOutput.object(schema: defaultObjectSchema()),
                 prompt: "prompt",
-                experimentalRepairText: { options in
+                repairText: { options in
                     #expect(options.text == "{ broken json")
                     return options.text + "{"
                 }
@@ -763,7 +763,7 @@ struct GenerateObjectTests {
             )),
             output: GenerateObjectOutput.object(schema: defaultObjectSchema()),
             prompt: "prompt",
-            experimentalTelemetry: TelemetrySettings(tracer: tracer)
+            telemetry: TelemetryOptions(isEnabled: false, integrations: [LegacyOpenTelemetry(tracer: tracer)])
         ) as GenerateObjectResult<JSONValue>
 
         #expect(tracer.spanRecords.isEmpty)
@@ -792,14 +792,9 @@ struct GenerateObjectTests {
                 schemaDescription: "test description"
             ),
             prompt: "prompt",
-            experimentalTelemetry: TelemetrySettings(
-                isEnabled: true,
+            telemetry: TelemetryOptions(
                 functionId: "test-function-id",
-                metadata: [
-                    "test1": .string("value1"),
-                    "test2": .bool(false)
-                ],
-                tracer: tracer
+                integrations: [LegacyOpenTelemetry(tracer: tracer)]
             ),
             settings: CallSettings(
                 temperature: 0.5,
@@ -830,14 +825,12 @@ struct GenerateObjectTests {
             #expect(outer.attributes["ai.schema.name"] == .string("test-name"))
             #expect(outer.attributes["ai.schema.description"] == .string("test description"))
             #expect(outer.attributes["ai.telemetry.functionId"] == .string("test-function-id"))
-            #expect(outer.attributes["ai.telemetry.metadata.test1"] == .string("value1"))
-            #expect(outer.attributes["ai.telemetry.metadata.test2"] == .bool(false))
             #expect(outer.attributes["ai.settings.topK"] == .int(1))
             #expect(outer.attributes["ai.settings.topP"] == .double(0.2))
             #expect(outer.attributes["ai.settings.frequencyPenalty"] == .double(0.3))
             #expect(outer.attributes["ai.settings.presencePenalty"] == .double(0.4))
-            #expect(outer.attributes["ai.usage.promptTokens"] == .int(10))
-            #expect(outer.attributes["ai.usage.completionTokens"] == .int(20))
+            #expect(outer.attributes["ai.usage.inputTokens"] == .int(10))
+            #expect(outer.attributes["ai.usage.outputTokens"] == .int(20))
 
             let inner = spans[1]
             #expect(inner.name == "ai.generateObject.doGenerate")
@@ -851,7 +844,7 @@ struct GenerateObjectTests {
             #expect(inner.attributes["ai.response.id"] == .string("test-id-from-model"))
             #expect(inner.attributes["ai.response.model"] == .string("test-response-model-id"))
             #expect(inner.attributes["ai.response.timestamp"] == .string("1970-01-01T00:00:10.000Z"))
-            #expect(inner.attributes["ai.response.object"] == .string("{ \"content\": \"Hello, world!\" }"))
+            #expect(inner.attributes["ai.response.object"] == .string("{\"content\":\"Hello, world!\"}"))
             #expect(inner.attributes["ai.response.providerMetadata"] == .string("{\"testProvider\":{\"testKey\":\"testValue\"}}"))
         }
     }
@@ -873,11 +866,10 @@ struct GenerateObjectTests {
             )),
             output: GenerateObjectOutput.object(schema: defaultObjectSchema()),
             prompt: "prompt",
-            experimentalTelemetry: TelemetrySettings(
-                isEnabled: true,
+            telemetry: TelemetryOptions(
                 recordInputs: false,
                 recordOutputs: false,
-                tracer: tracer
+                integrations: [LegacyOpenTelemetry(tracer: tracer)]
             )
         ) as GenerateObjectResult<JSONValue>
 

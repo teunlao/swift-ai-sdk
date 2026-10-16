@@ -110,6 +110,17 @@ public final class StreamObjectResult<PartialValue: Sendable, ResultValue: Senda
         objectPromise.reject(error)
     }
 
+    /// Rejects every promised value that is still pending.
+    internal func rejectPending(_ error: any Error) {
+        if objectPromise.isPending() { objectPromise.reject(error) }
+        if usagePromise.isPending() { usagePromise.reject(error) }
+        if providerMetadataPromise.isPending() { providerMetadataPromise.reject(error) }
+        if warningsPromise.isPending() { warningsPromise.reject(error) }
+        if requestPromise.isPending() { requestPromise.reject(error) }
+        if responsePromise.isPending() { responsePromise.reject(error) }
+        if finishReasonPromise.isPending() { finishReasonPromise.reject(error) }
+    }
+
     internal func resolveUsage(_ usage: LanguageModelUsage) {
         usagePromise.resolve(usage)
     }

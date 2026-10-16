@@ -3,9 +3,10 @@ import AISDKProvider
 import AISDKProviderUtils
 
 /**
- Streams an object (JSON/array/enum/no-schema) from a language model with partial updates and telemetry.
+ Streams an object (JSON/array/enum/no-schema) from a language model with partial updates.
 
- Port of `@ai-sdk/ai/src/generate-object/stream-object.ts`.
+ Port of `@ai-sdk/ai/src/generate-object/stream-object.ts`. Callbacks run
+ concurrently with the telemetry integrations; errors they throw are ignored.
  */
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 public func streamObject<ResultValue, PartialValue, ElementStream>(
@@ -14,21 +15,23 @@ public func streamObject<ResultValue, PartialValue, ElementStream>(
     system: String? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
-    experimentalRepairText repairText: RepairTextFunction? = nil,
-    experimentalTelemetry telemetry: TelemetrySettings? = nil,
+    repairText: RepairTextFunction? = nil,
+    telemetry: TelemetryOptions? = nil,
     experimentalDownload download: DownloadFunction? = nil,
     providerOptions: ProviderOptions? = nil,
+    onStart: GenerateObjectCallback<GenerateObjectStartEvent>? = nil,
+    onStepStart: GenerateObjectCallback<GenerateObjectStepStartEvent>? = nil,
+    onStepEnd: GenerateObjectCallback<GenerateObjectStepEndEvent>? = nil,
     onError: StreamObjectOnErrorCallback? = nil,
-    onFinish: StreamObjectOnFinishCallback<ResultValue>? = nil,
+    onFinish: GenerateObjectCallback<GenerateObjectEndEvent<ResultValue>>? = nil,
     internalOptions _internal: GenerateObjectInternalOptions = GenerateObjectInternalOptions(),
     settings: CallSettings = CallSettings()
 ) throws -> StreamObjectResult<PartialValue, ResultValue, ElementStream> {
-    let resolvedModel = try resolveLanguageModelV4(modelArg)
+    let model = try resolveLanguageModelV4(modelArg)
 
-    let hasSchema = output.kind == .object || output.kind == .array
     try validateObjectGenerationInput(
         output: output.kind,
-        hasSchema: hasSchema,
+        hasSchema: output.kind == .object || output.kind == .array,
         schemaName: output.schemaName,
         schemaDescription: output.schemaDescription,
         enumValues: output.enumValues
@@ -42,28 +45,35 @@ public func streamObject<ResultValue, PartialValue, ElementStream>(
         fputs("streamObject error: \(event.error)\n", stderr)
     }
 
+    let run = StreamObjectRun(
+        model: model,
+        output: output,
+        repairText: repairText,
+        dispatcher: TelemetryDispatcher(telemetry: telemetry),
+        download: download,
+        providerOptions: providerOptions,
+        onStart: onStart,
+        onStepStart: onStepStart,
+        onStepEnd: onStepEnd,
+        errorHandler: errorHandler,
+        onFinish: onFinish,
+        internalOptions: _internal,
+        settings: settings,
+        system: system,
+        prompt: prompt,
+        messages: messages,
+        result: result,
+        callId: _internal.generateId()
+    )
+
     Task {
         do {
-            try await runStreamObject(
-                model: resolvedModel,
-                output: output,
-                repairText: repairText,
-                telemetry: telemetry,
-                download: download,
-                providerOptions: providerOptions,
-                errorHandler: errorHandler,
-                onFinish: onFinish,
-                internalOptions: _internal,
-                settings: settings,
-                system: system,
-                prompt: prompt,
-                messages: messages,
-                result: result
-            )
+            try await run.start()
         } catch {
             let normalized = (wrapGatewayError(error) as? Error) ?? error
+            result.rejectPending(normalized)
+            await run.dispatcher.onError(callId: run.callId, error: normalized)
             await errorHandler(StreamObjectErrorEvent(error: normalized))
-            result.rejectObject(normalized)
             await result.publish(.error(AnySendableError(normalized)))
             await result.endStream(error: normalized)
         }
@@ -82,12 +92,15 @@ public func streamObject<ObjectResult: Codable & Sendable>(
     schemaName: String? = nil,
     schemaDescription: String? = nil,
     mode: GenerateObjectJSONMode = .auto,
-    experimentalRepairText repairText: RepairTextFunction? = nil,
-    experimentalTelemetry telemetry: TelemetrySettings? = nil,
+    repairText: RepairTextFunction? = nil,
+    telemetry: TelemetryOptions? = nil,
     experimentalDownload download: DownloadFunction? = nil,
     providerOptions: ProviderOptions? = nil,
+    onStart: GenerateObjectCallback<GenerateObjectStartEvent>? = nil,
+    onStepStart: GenerateObjectCallback<GenerateObjectStepStartEvent>? = nil,
+    onStepEnd: GenerateObjectCallback<GenerateObjectStepEndEvent>? = nil,
     onError: StreamObjectOnErrorCallback? = nil,
-    onFinish: StreamObjectOnFinishCallback<ObjectResult>? = nil,
+    onFinish: GenerateObjectCallback<GenerateObjectEndEvent<ObjectResult>>? = nil,
     internalOptions: GenerateObjectInternalOptions = GenerateObjectInternalOptions(),
     settings: CallSettings = CallSettings()
 ) throws -> StreamObjectResult<[String: JSONValue], ObjectResult, Never> {
@@ -100,10 +113,13 @@ public func streamObject<ObjectResult: Codable & Sendable>(
         schemaName: schemaName,
         schemaDescription: schemaDescription,
         mode: mode,
-        experimentalRepairText: repairText,
-        experimentalTelemetry: telemetry,
+        repairText: repairText,
+        telemetry: telemetry,
         experimentalDownload: download,
         providerOptions: providerOptions,
+        onStart: onStart,
+        onStepStart: onStepStart,
+        onStepEnd: onStepEnd,
         onError: onError,
         onFinish: onFinish,
         internalOptions: internalOptions,
@@ -121,12 +137,15 @@ public func streamObject<ObjectResult>(
     schemaName: String? = nil,
     schemaDescription: String? = nil,
     mode: GenerateObjectJSONMode = .auto,
-    experimentalRepairText repairText: RepairTextFunction? = nil,
-    experimentalTelemetry telemetry: TelemetrySettings? = nil,
+    repairText: RepairTextFunction? = nil,
+    telemetry: TelemetryOptions? = nil,
     experimentalDownload download: DownloadFunction? = nil,
     providerOptions: ProviderOptions? = nil,
+    onStart: GenerateObjectCallback<GenerateObjectStartEvent>? = nil,
+    onStepStart: GenerateObjectCallback<GenerateObjectStepStartEvent>? = nil,
+    onStepEnd: GenerateObjectCallback<GenerateObjectStepEndEvent>? = nil,
     onError: StreamObjectOnErrorCallback? = nil,
-    onFinish: StreamObjectOnFinishCallback<ObjectResult>? = nil,
+    onFinish: GenerateObjectCallback<GenerateObjectEndEvent<ObjectResult>>? = nil,
     internalOptions: GenerateObjectInternalOptions = GenerateObjectInternalOptions(),
     settings: CallSettings = CallSettings()
 ) throws -> StreamObjectResult<[String: JSONValue], ObjectResult, Never> {
@@ -141,10 +160,13 @@ public func streamObject<ObjectResult>(
         system: system,
         prompt: prompt,
         messages: messages,
-        experimentalRepairText: repairText,
-        experimentalTelemetry: telemetry,
+        repairText: repairText,
+        telemetry: telemetry,
         experimentalDownload: download,
         providerOptions: providerOptions,
+        onStart: onStart,
+        onStepStart: onStepStart,
+        onStepEnd: onStepEnd,
         onError: onError,
         onFinish: onFinish,
         internalOptions: internalOptions,
@@ -158,12 +180,15 @@ public func streamObjectNoSchema(
     system: String? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
-    experimentalRepairText repairText: RepairTextFunction? = nil,
-    experimentalTelemetry telemetry: TelemetrySettings? = nil,
+    repairText: RepairTextFunction? = nil,
+    telemetry: TelemetryOptions? = nil,
     experimentalDownload download: DownloadFunction? = nil,
     providerOptions: ProviderOptions? = nil,
+    onStart: GenerateObjectCallback<GenerateObjectStartEvent>? = nil,
+    onStepStart: GenerateObjectCallback<GenerateObjectStepStartEvent>? = nil,
+    onStepEnd: GenerateObjectCallback<GenerateObjectStepEndEvent>? = nil,
     onError: StreamObjectOnErrorCallback? = nil,
-    onFinish: StreamObjectOnFinishCallback<JSONValue>? = nil,
+    onFinish: GenerateObjectCallback<GenerateObjectEndEvent<JSONValue>>? = nil,
     internalOptions: GenerateObjectInternalOptions = GenerateObjectInternalOptions(),
     settings: CallSettings = CallSettings()
 ) throws -> StreamObjectResult<JSONValue, JSONValue, Never> {
@@ -173,10 +198,13 @@ public func streamObjectNoSchema(
         system: system,
         prompt: prompt,
         messages: messages,
-        experimentalRepairText: repairText,
-        experimentalTelemetry: telemetry,
+        repairText: repairText,
+        telemetry: telemetry,
         experimentalDownload: download,
         providerOptions: providerOptions,
+        onStart: onStart,
+        onStepStart: onStepStart,
+        onStepEnd: onStepEnd,
         onError: onError,
         onFinish: onFinish,
         internalOptions: internalOptions,
@@ -194,12 +222,15 @@ public func streamObjectArray<ElementResult: Codable & Sendable>(
     schemaName: String? = nil,
     schemaDescription: String? = nil,
     mode: GenerateObjectJSONMode = .auto,
-    experimentalRepairText repairText: RepairTextFunction? = nil,
-    experimentalTelemetry telemetry: TelemetrySettings? = nil,
+    repairText: RepairTextFunction? = nil,
+    telemetry: TelemetryOptions? = nil,
     experimentalDownload download: DownloadFunction? = nil,
     providerOptions: ProviderOptions? = nil,
+    onStart: GenerateObjectCallback<GenerateObjectStartEvent>? = nil,
+    onStepStart: GenerateObjectCallback<GenerateObjectStepStartEvent>? = nil,
+    onStepEnd: GenerateObjectCallback<GenerateObjectStepEndEvent>? = nil,
     onError: StreamObjectOnErrorCallback? = nil,
-    onFinish: StreamObjectOnFinishCallback<[ElementResult]>? = nil,
+    onFinish: GenerateObjectCallback<GenerateObjectEndEvent<[ElementResult]>>? = nil,
     internalOptions: GenerateObjectInternalOptions = GenerateObjectInternalOptions(),
     settings: CallSettings = CallSettings()
 ) throws -> StreamObjectResult<[ElementResult], [ElementResult], AsyncIterableStream<ElementResult>> {
@@ -212,10 +243,13 @@ public func streamObjectArray<ElementResult: Codable & Sendable>(
         schemaName: schemaName,
         schemaDescription: schemaDescription,
         mode: mode,
-        experimentalRepairText: repairText,
-        experimentalTelemetry: telemetry,
+        repairText: repairText,
+        telemetry: telemetry,
         experimentalDownload: download,
         providerOptions: providerOptions,
+        onStart: onStart,
+        onStepStart: onStepStart,
+        onStepEnd: onStepEnd,
         onError: onError,
         onFinish: onFinish,
         internalOptions: internalOptions,
@@ -233,12 +267,15 @@ public func streamObjectArray<ElementResult>(
     schemaName: String? = nil,
     schemaDescription: String? = nil,
     mode: GenerateObjectJSONMode = .auto,
-    experimentalRepairText repairText: RepairTextFunction? = nil,
-    experimentalTelemetry telemetry: TelemetrySettings? = nil,
+    repairText: RepairTextFunction? = nil,
+    telemetry: TelemetryOptions? = nil,
     experimentalDownload download: DownloadFunction? = nil,
     providerOptions: ProviderOptions? = nil,
+    onStart: GenerateObjectCallback<GenerateObjectStartEvent>? = nil,
+    onStepStart: GenerateObjectCallback<GenerateObjectStepStartEvent>? = nil,
+    onStepEnd: GenerateObjectCallback<GenerateObjectStepEndEvent>? = nil,
     onError: StreamObjectOnErrorCallback? = nil,
-    onFinish: StreamObjectOnFinishCallback<[ElementResult]>? = nil,
+    onFinish: GenerateObjectCallback<GenerateObjectEndEvent<[ElementResult]>>? = nil,
     internalOptions: GenerateObjectInternalOptions = GenerateObjectInternalOptions(),
     settings: CallSettings = CallSettings()
 ) throws -> StreamObjectResult<[ElementResult], [ElementResult], AsyncIterableStream<ElementResult>> {
@@ -253,10 +290,13 @@ public func streamObjectArray<ElementResult>(
         system: system,
         prompt: prompt,
         messages: messages,
-        experimentalRepairText: repairText,
-        experimentalTelemetry: telemetry,
+        repairText: repairText,
+        telemetry: telemetry,
         experimentalDownload: download,
         providerOptions: providerOptions,
+        onStart: onStart,
+        onStepStart: onStepStart,
+        onStepEnd: onStepEnd,
         onError: onError,
         onFinish: onFinish,
         internalOptions: internalOptions,
@@ -271,12 +311,15 @@ public func streamObjectEnum(
     system: String? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
-    experimentalRepairText repairText: RepairTextFunction? = nil,
-    experimentalTelemetry telemetry: TelemetrySettings? = nil,
+    repairText: RepairTextFunction? = nil,
+    telemetry: TelemetryOptions? = nil,
     experimentalDownload download: DownloadFunction? = nil,
     providerOptions: ProviderOptions? = nil,
+    onStart: GenerateObjectCallback<GenerateObjectStartEvent>? = nil,
+    onStepStart: GenerateObjectCallback<GenerateObjectStepStartEvent>? = nil,
+    onStepEnd: GenerateObjectCallback<GenerateObjectStepEndEvent>? = nil,
     onError: StreamObjectOnErrorCallback? = nil,
-    onFinish: StreamObjectOnFinishCallback<String>? = nil,
+    onFinish: GenerateObjectCallback<GenerateObjectEndEvent<String>>? = nil,
     internalOptions: GenerateObjectInternalOptions = GenerateObjectInternalOptions(),
     settings: CallSettings = CallSettings()
 ) throws -> StreamObjectResult<String, String, Never> {
@@ -286,10 +329,13 @@ public func streamObjectEnum(
         system: system,
         prompt: prompt,
         messages: messages,
-        experimentalRepairText: repairText,
-        experimentalTelemetry: telemetry,
+        repairText: repairText,
+        telemetry: telemetry,
         experimentalDownload: download,
         providerOptions: providerOptions,
+        onStart: onStart,
+        onStepStart: onStepStart,
+        onStepEnd: onStepEnd,
         onError: onError,
         onFinish: onFinish,
         internalOptions: internalOptions,
@@ -299,413 +345,334 @@ public func streamObjectEnum(
 
 // MARK: - Internal implementation
 
+/// One `streamObject` call: starts the model stream and owns its consumption.
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-private func runStreamObject<ResultValue, PartialValue, ElementStream>(
-    model: any LanguageModelV4,
-    output: GenerateObjectOutputSpec<ResultValue, PartialValue, ElementStream>,
-    repairText: RepairTextFunction?,
-    telemetry: TelemetrySettings?,
-    download: DownloadFunction?,
-    providerOptions: ProviderOptions?,
-    errorHandler: StreamObjectOnErrorCallback,
-    onFinish: StreamObjectOnFinishCallback<ResultValue>?,
-    internalOptions: GenerateObjectInternalOptions,
-    settings: CallSettings,
-    system: String?,
-    prompt: String?,
-    messages: [ModelMessage]?,
-    result: StreamObjectResult<PartialValue, ResultValue, ElementStream>
-) async throws {
-    let promptInput = try makeGenerateObjectPrompt(
-        system: system,
-        prompt: prompt,
-        messages: messages
-    )
+private struct StreamObjectRun<ResultValue: Sendable, PartialValue: Sendable, ElementStream>: @unchecked Sendable {
+    let model: any LanguageModelV4
+    let output: GenerateObjectOutputSpec<ResultValue, PartialValue, ElementStream>
+    let repairText: RepairTextFunction?
+    let dispatcher: TelemetryDispatcher
+    let download: DownloadFunction?
+    let providerOptions: ProviderOptions?
+    let onStart: GenerateObjectCallback<GenerateObjectStartEvent>?
+    let onStepStart: GenerateObjectCallback<GenerateObjectStepStartEvent>?
+    let onStepEnd: GenerateObjectCallback<GenerateObjectStepEndEvent>?
+    let errorHandler: StreamObjectOnErrorCallback
+    let onFinish: GenerateObjectCallback<GenerateObjectEndEvent<ResultValue>>?
+    let internalOptions: GenerateObjectInternalOptions
+    let settings: CallSettings
+    let system: String?
+    let prompt: String?
+    let messages: [ModelMessage]?
+    let result: StreamObjectResult<PartialValue, ResultValue, ElementStream>
+    let callId: String
 
-    let preparedRetries = try prepareRetries(
-        maxRetries: settings.maxRetries,
-        abortSignal: settings.abortSignal
-    )
+    func start() async throws {
+        let preparedRetries = try prepareRetries(
+            maxRetries: settings.maxRetries,
+            abortSignal: settings.abortSignal
+        )
 
-    let preparedCallSettings = try prepareCallSettings(
-        maxOutputTokens: settings.maxOutputTokens,
-        temperature: settings.temperature,
-        topP: settings.topP,
-        topK: settings.topK,
-        presencePenalty: settings.presencePenalty,
-        frequencyPenalty: settings.frequencyPenalty,
-        stopSequences: settings.stopSequences,
-        seed: settings.seed,
-        reasoning: settings.reasoning
-    )
+        let callSettings = try prepareCallSettings(
+            maxOutputTokens: settings.maxOutputTokens,
+            temperature: settings.temperature,
+            topP: settings.topP,
+            topK: settings.topK,
+            presencePenalty: settings.presencePenalty,
+            frequencyPenalty: settings.frequencyPenalty,
+            stopSequences: settings.stopSequences,
+            seed: settings.seed,
+            reasoning: settings.reasoning
+        )
 
-    var telemetryCallSettings = settings
-    telemetryCallSettings.maxRetries = preparedRetries.maxRetries
+        let jsonSchema = try await output.strategy.jsonSchema()
 
-    let baseTelemetryAttributes = getBaseTelemetryAttributes(
-        model: TelemetryModelInfo(modelId: model.modelId, provider: model.provider),
-        settings: telemetryCallSettings,
-        telemetry: telemetry,
-        headers: settings.headers
-    )
-
-    let tracer = getTracer(
-        isEnabled: telemetry?.isEnabled ?? false,
-        tracer: telemetry?.tracer
-    )
-
-    let standardizedPrompt = try standardizePrompt(promptInput)
-    let promptMessages = try await convertToLanguageModelV4Prompt(
-        prompt: standardizedPrompt,
-        supportedUrls: try await model.supportedUrls,
-        download: download
-    )
-
-    let jsonSchema = try await output.strategy.jsonSchema()
-
-    let outerAttributes = try await selectTelemetryAttributes(
-        telemetry: telemetry,
-        attributes: makeGenerateObjectOuterTelemetryAttributes(
-            telemetry: telemetry,
-            baseAttributes: baseTelemetryAttributes,
-            system: system,
-            prompt: prompt,
+        let startEvent = GenerateObjectStartEvent(
+            callId: callId,
+            operationId: "ai.streamObject",
+            provider: model.provider,
+            modelId: model.modelId,
+            system: system.map(Instructions.text),
+            prompt: prompt.map(PromptContent.text),
             messages: messages,
+            maxOutputTokens: callSettings.maxOutputTokens,
+            temperature: callSettings.temperature,
+            topP: callSettings.topP,
+            topK: callSettings.topK,
+            presencePenalty: callSettings.presencePenalty,
+            frequencyPenalty: callSettings.frequencyPenalty,
+            seed: callSettings.seed,
+            maxRetries: preparedRetries.maxRetries,
+            headers: settings.headers,
+            providerOptions: providerOptions,
+            output: output.kind.rawValue,
             schema: jsonSchema,
             schemaName: output.schemaName,
-            schemaDescription: output.schemaDescription,
-            outputKind: output.kind
+            schemaDescription: output.schemaDescription
         )
-    )
+        await notify(
+            invoke(onStart, with: startEvent),
+            { await dispatcher.onStart(.generateObject(startEvent)) }
+        )
 
-    try await recordSpan(
-        name: "ai.streamObject",
-        tracer: tracer,
-        attributes: outerAttributes,
-        fn: { rootSpan in
-            let innerAttributes = try await selectTelemetryAttributes(
-                telemetry: telemetry,
-                attributes: makeGenerateObjectInnerTelemetryAttributes(
-                    telemetry: telemetry,
-                    baseAttributes: baseTelemetryAttributes,
-                    promptMessages: promptMessages,
-                    callSettings: preparedCallSettings,
-                    model: model
-                )
+        let standardizedPrompt = try standardizePrompt(makeGenerateObjectPrompt(
+            system: system,
+            prompt: prompt,
+            messages: messages
+        ))
+        let promptMessages = try await convertToLanguageModelV4Prompt(
+            prompt: standardizedPrompt,
+            supportedUrls: try await model.supportedUrls,
+            download: download
+        )
+
+        let stepStartEvent = GenerateObjectStepStartEvent(
+            callId: callId,
+            provider: model.provider,
+            modelId: model.modelId,
+            providerOptions: providerOptions,
+            headers: settings.headers,
+            promptMessages: promptMessages
+        )
+        await notify(
+            invoke(onStepStart, with: stepStartEvent),
+            { await dispatcher.onObjectStepStart(stepStartEvent) }
+        )
+
+        // A schema-less output still asks for JSON, as upstream does.
+        let options = LanguageModelV4CallOptions(
+            prompt: promptMessages,
+            maxOutputTokens: callSettings.maxOutputTokens,
+            temperature: callSettings.temperature,
+            stopSequences: callSettings.stopSequences,
+            topP: callSettings.topP,
+            topK: callSettings.topK,
+            presencePenalty: callSettings.presencePenalty,
+            frequencyPenalty: callSettings.frequencyPenalty,
+            responseFormat: .json(
+                schema: jsonSchema,
+                name: output.schemaName,
+                description: output.schemaDescription
+            ),
+            seed: callSettings.seed,
+            includeRawChunks: false,
+            abortSignal: settings.abortSignal,
+            headers: settings.headers,
+            reasoning: callSettings.reasoning,
+            providerOptions: providerOptions
+        )
+
+        let startTimestampMs = internalOptions.now()
+        let streamResult = try await preparedRetries.retry.call {
+            try await model.doStream(options: options)
+        }
+        let request = convertGenerateObjectRequestMetadata(streamResult.request)
+        result.resolveRequest(request)
+
+        do {
+            try await consume(streamResult, request: request, startTimestampMs: startTimestampMs)
+        } catch {
+            let normalized = (wrapGatewayError(error) as? Error) ?? error
+            result.rejectPending(normalized)
+            await dispatcher.onError(callId: callId, error: normalized)
+            await errorHandler(StreamObjectErrorEvent(error: normalized))
+            await result.endStream(error: normalized)
+        }
+    }
+
+    private func consume(
+        _ streamResult: LanguageModelV4StreamResult,
+        request: LanguageModelRequestMetadata,
+        startTimestampMs: Double
+    ) async throws {
+        var accumulatedText = ""
+        var pendingDelta = ""
+        var latestJSON: JSONValue?
+        var latestPartial: PartialValue?
+        var isFirstDelta = true
+        var isFirstChunk = true
+        var msToFirstChunk: Double?
+
+        var warnings: [CallWarning]?
+        var usage = LanguageModelUsage()
+        var providerMetadata: ProviderMetadata?
+        var finishReason: FinishReason?
+        var terminalError: (any Error)?
+        var parseError: (any Error)?
+        var object: ResultValue?
+
+        var responseId = internalOptions.generateId()
+        var responseTimestamp = internalOptions.currentDate()
+        var responseModelId = model.modelId
+        let responseHeaders = streamResult.response?.headers
+
+        func responseMetadata() -> LanguageModelResponseMetadata {
+            LanguageModelResponseMetadata(
+                id: responseId,
+                timestamp: responseTimestamp,
+                modelId: responseModelId,
+                headers: responseHeaders
             )
-
-            let execution = try await preparedRetries.retry.call {
-                try await recordSpan(
-                    name: "ai.streamObject.doStream",
-                    tracer: tracer,
-                    attributes: innerAttributes,
-                    fn: { span in
-                        let options = LanguageModelV4CallOptions(
-                            prompt: promptMessages,
-                            maxOutputTokens: preparedCallSettings.maxOutputTokens,
-                            temperature: preparedCallSettings.temperature,
-                            stopSequences: preparedCallSettings.stopSequences,
-                            topP: preparedCallSettings.topP,
-                            topK: preparedCallSettings.topK,
-                            presencePenalty: preparedCallSettings.presencePenalty,
-                            frequencyPenalty: preparedCallSettings.frequencyPenalty,
-                            responseFormat: jsonSchema.map {
-                                .json(
-                                    schema: $0,
-                                    name: output.schemaName,
-                                    description: output.schemaDescription
-                                )
-                            },
-                            seed: preparedCallSettings.seed,
-                            abortSignal: settings.abortSignal,
-                            headers: settings.headers,
-                            reasoning: preparedCallSettings.reasoning,
-                            providerOptions: providerOptions
-                        )
-
-                        let streamResult = try await model.doStream(options: options)
-                        let requestMetadata = convertGenerateObjectRequestMetadata(streamResult.request)
-                        result.resolveRequest(requestMetadata)
-
-                        return StreamExecution(
-                            span: span,
-                            startTimestampMs: internalOptions.now(),
-                            streamResult: streamResult
-                        )
-                    },
-                    endWhenDone: false
-                )
-            }
-
-            try await consumeStream(
-                execution: execution,
-                model: model,
-                output: output,
-                repairText: repairText,
-                telemetry: telemetry,
-                baseTelemetryAttributes: baseTelemetryAttributes,
-                errorHandler: errorHandler,
-                onFinish: onFinish,
-                internalOptions: internalOptions,
-                result: result,
-                rootSpan: rootSpan
-            )
-        },
-        endWhenDone: false
-    )
-}
-
-private struct StreamExecution: Sendable {
-    let span: any Span
-    let startTimestampMs: Double
-    let streamResult: LanguageModelV4StreamResult
-}
-
-@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-private func consumeStream<ResultValue, PartialValue, ElementStream>(
-    execution: StreamExecution,
-    model: any LanguageModelV4,
-    output: GenerateObjectOutputSpec<ResultValue, PartialValue, ElementStream>,
-    repairText: RepairTextFunction?,
-    telemetry: TelemetrySettings?,
-    baseTelemetryAttributes: Attributes,
-    errorHandler: StreamObjectOnErrorCallback,
-    onFinish: StreamObjectOnFinishCallback<ResultValue>?,
-    internalOptions: GenerateObjectInternalOptions,
-    result: StreamObjectResult<PartialValue, ResultValue, ElementStream>,
-    rootSpan: any Span
-) async throws {
-    let stream = execution.streamResult.stream
-    let responseInfo = execution.streamResult.response
-
-    var accumulatedText = ""
-    var pendingDelta = ""
-
-    var latestJSON: JSONValue?
-    var latestPartial: PartialValue?
-    var isFirstDelta = true
-
-    var warnings: [CallWarning]?
-    var usage = LanguageModelUsage()
-    var providerMetadata: ProviderMetadata?
-    var finishReason: FinishReason = .other
-    var currentError: Error?
-
-    var responseId = internalOptions.generateId()
-    var responseTimestamp = internalOptions.currentDate()
-    var responseModelId = model.modelId
-    let responseHeaders = responseInfo?.headers
-
-    var msToFirstChunkRecorded = false
-
-    for try await part in stream {
-        if Task.isCancelled { break }
-        if !msToFirstChunkRecorded {
-            msToFirstChunkRecorded = true
-            let elapsed = internalOptions.now() - execution.startTimestampMs
-            execution.span.addEvent(
-                "ai.stream.firstChunk",
-                attributes: makeStreamFirstChunkAttributes(msToFirstChunk: elapsed)
-            )
-            execution.span.setAttributes(makeStreamFirstChunkAttributes(msToFirstChunk: elapsed))
         }
 
-        switch part {
-        case .streamStart(let streamWarnings):
-            warnings = streamWarnings
-
-        case .responseMetadata(let id, let modelId, let timestamp):
-            if let id { responseId = id }
-            if let modelId { responseModelId = modelId }
-            if let timestamp { responseTimestamp = timestamp }
-
-        case .textDelta(_, let delta, _):
-            // Accumulate raw deltas; we will emit a consolidated text chunk
-            // only when a valid partial is produced by the strategy. This
-            // matches upstream semantics where textStream surfaces the
-            // strategy-computed deltaText, not every raw provider chunk.
-            accumulatedText.append(delta)
-            pendingDelta.append(delta)
-
-            let parseResult = await parsePartialJson(accumulatedText)
-            guard let currentJSON = parseResult.value else { continue }
-
-            if latestJSON == currentJSON {
+        for try await part in streamResult.stream {
+            if case .streamStart(let streamWarnings) = part {
+                warnings = streamWarnings
                 continue
             }
 
-            let validation = await output.strategy.validatePartial(
-                currentJSON,
-                pendingDelta,
-                isFirstDelta,
-                parseResult.state == .successfulParse,
-                latestPartial
-            )
-
-            guard case let .success(validationResult) = validation else {
-                continue
+            if isFirstChunk {
+                isFirstChunk = false
+                msToFirstChunk = internalOptions.now() - startTimestampMs
             }
 
-            if let latestPartial,
-               isDeepEqualData(validationResult.partial, latestPartial) {
-                continue
-            }
+            switch part {
+            case .responseMetadata(let id, let modelId, let timestamp):
+                if let id { responseId = id }
+                if let modelId { responseModelId = modelId }
+                if let timestamp { responseTimestamp = timestamp }
 
-            latestJSON = currentJSON
-            latestPartial = validationResult.partial
-            isFirstDelta = false
+            case .textDelta(_, let delta, _):
+                accumulatedText.append(delta)
+                pendingDelta.append(delta)
 
-            // Publish consolidated text delta produced by the strategy
-            // (e.g., for arrays: brackets/commas; for objects: buffered raw).
-            if !validationResult.textDelta.isEmpty {
-                await result.publish(.textDelta(validationResult.textDelta))
-            }
+                let parseResult = await parsePartialJson(accumulatedText)
+                guard let currentJSON = parseResult.value, latestJSON != currentJSON else { continue }
 
-            pendingDelta = ""
+                let validation = await output.strategy.validatePartial(
+                    currentJSON,
+                    pendingDelta,
+                    isFirstDelta,
+                    parseResult.state == .successfulParse,
+                    latestPartial
+                )
+                guard case let .success(validationResult) = validation else { continue }
+                if let latestPartial, isDeepEqualData(validationResult.partial, latestPartial) { continue }
 
-            // Then publish the partial object snapshot.
-            await result.publish(.object(validationResult.partial))
+                latestJSON = currentJSON
+                latestPartial = validationResult.partial
+                isFirstDelta = false
 
-        case .finish(let reason, let usageValue, let metadata):
-            // Flush any remaining buffered text that didn't result in a new
-            // partial (e.g., closing braces), so the textStream reflects the
-            // full JSON output as expected by upstream tests.
-            if !pendingDelta.isEmpty {
-                await result.publish(.textDelta(pendingDelta))
+                await result.publish(.object(validationResult.partial))
+                if !validationResult.textDelta.isEmpty {
+                    await result.publish(.textDelta(validationResult.textDelta))
+                }
                 pendingDelta = ""
+
+            case .error(let payload):
+                let error = (wrapGatewayError(normalizeStreamProviderError(payload)) as? Error)
+                    ?? normalizeStreamProviderError(payload)
+                if terminalError == nil {
+                    terminalError = error
+                    finishReason = .error
+                    result.rejectPending(error)
+                }
+                await result.publish(.error(AnySendableError(error)))
+                await errorHandler(StreamObjectErrorEvent(error: error))
+
+            case .finish(let reason, let usageValue, let metadata):
+                if !pendingDelta.isEmpty {
+                    await result.publish(.textDelta(pendingDelta))
+                    pendingDelta = ""
+                }
+
+                finishReason = terminalError == nil ? reason.unified : .error
+                usage = asLanguageModelUsage(usageValue)
+                providerMetadata = metadata
+
+                await result.publish(.finish(GenerateObjectStreamFinish(
+                    finishReason: finishReason ?? .other,
+                    usage: usage,
+                    response: responseMetadata(),
+                    providerMetadata: providerMetadata
+                )))
+
+                logWarnings((warnings ?? []).map { Warning.languageModel($0) })
+
+                guard terminalError == nil else { break }
+
+                result.resolveUsage(usage)
+                result.resolveProviderMetadata(providerMetadata)
+                result.resolveWarnings(warnings)
+                result.resolveResponse(responseMetadata())
+                result.resolveFinishReason(finishReason ?? .other)
+
+                do {
+                    let value = try await parseAndValidateObjectResultWithRepair(
+                        text: accumulatedText,
+                        strategy: output.strategy,
+                        repairText: repairText,
+                        context: GenerateObjectValidationContext(
+                            text: accumulatedText,
+                            response: responseMetadata(),
+                            usage: usage,
+                            finishReason: finishReason ?? .other
+                        )
+                    )
+                    object = value
+                    result.resolveObject(value)
+                } catch {
+                    parseError = error
+                    result.rejectObject(error)
+                }
+
+            case .streamStart, .raw, .textStart, .textEnd, .reasoningStart, .reasoningDelta, .reasoningEnd,
+                 .toolInputStart, .toolInputDelta, .toolInputEnd, .toolApprovalRequest, .toolCall,
+                 .toolResult, .custom, .file, .reasoningFile, .source:
+                continue
             }
-
-            finishReason = reason.unified
-            usage = asLanguageModelUsage(usageValue)
-            providerMetadata = metadata
-
-       case .error(let payload):
-           switch payload {
-           case .error(let error): currentError = error
-           case .providerStreamError(let error): currentError = error
-           case .value(let value): currentError = jsonValueToError(value)
-           }
-            await errorHandler(StreamObjectErrorEvent(error: currentError ?? StreamObjectUnknownError()))
-            await result.publish(.error(AnySendableError(currentError ?? StreamObjectUnknownError())))
-
-        case .raw,
-             .textStart,
-             .textEnd,
-             .reasoningStart,
-             .reasoningDelta,
-             .reasoningEnd,
-             .toolInputStart,
-             .toolInputDelta,
-             .toolInputEnd,
-             .toolApprovalRequest,
-             .toolCall,
-             .toolResult,
-             .custom,
-             .file,
-             .reasoningFile,
-             .source:
-            continue
         }
-    }
 
-    let responseMetadata = LanguageModelResponseMetadata(
-        id: responseId,
-        timestamp: responseTimestamp,
-        modelId: responseModelId,
-        headers: responseHeaders
-    )
+        if finishReason == nil {
+            result.rejectPending(NoObjectGeneratedError(
+                message: "No object generated: the stream ended without a finish part.",
+                response: responseMetadata(),
+                usage: usage,
+                finishReason: .other
+            ))
+        }
 
-    let context = GenerateObjectValidationContext(
-        text: accumulatedText,
-        response: responseMetadata,
-        usage: usage,
-        finishReason: finishReason
-    )
-
-    var parsedObject: ResultValue?
-
-    do {
-        let value = try await parseAndValidateObjectResultWithRepair(
-            text: accumulatedText,
-            strategy: output.strategy,
-            repairText: repairText,
-            context: context
-        )
-        parsedObject = value
-        result.resolveObject(value)
-   } catch {
-       currentError = error
-       result.rejectObject(error)
-        await errorHandler(StreamObjectErrorEvent(error: error))
-        await result.publish(.error(AnySendableError(error)))
-    }
-
-    logWarnings((warnings ?? []).map { Warning.languageModel($0) })
-
-    result.resolveUsage(usage)
-    result.resolveProviderMetadata(providerMetadata)
-    result.resolveWarnings(warnings)
-    result.resolveResponse(responseMetadata)
-    result.resolveFinishReason(finishReason)
-
-    let finishEvent = GenerateObjectStreamFinish(
-        finishReason: finishReason,
-        usage: usage,
-        response: responseMetadata,
-        providerMetadata: providerMetadata
-    )
-    await result.publish(.finish(finishEvent))
-    await result.endStream(error: currentError)
-
-    let objectTelemetry = parsedObject.flatMap { encodeGenerateObjectTelemetryValue($0) }
-
-    let responseAttributes = try await selectTelemetryAttributes(
-        telemetry: telemetry,
-        attributes: makeGenerateObjectResponseTelemetryAttributes(
-            telemetry: telemetry,
-            finishReason: finishReason,
-            objectOutput: { objectTelemetry },
-            responseId: responseMetadata.id,
-            responseModelId: responseMetadata.modelId,
-            responseTimestamp: responseMetadata.timestamp,
-            providerMetadata: providerMetadata,
-            usage: usage
-        )
-    )
-    execution.span.setAttributes(responseAttributes)
-    execution.span.end()
-
-    let rootFinishAttributes = try await selectTelemetryAttributes(
-        telemetry: telemetry,
-        attributes: makeGenerateObjectRootFinishTelemetryAttributes(
-            telemetry: telemetry,
-            baseAttributes: baseTelemetryAttributes,
+        let stepEndEvent = GenerateObjectStepEndEvent(
+            callId: callId,
+            provider: model.provider,
+            modelId: model.modelId,
+            finishReason: finishReason ?? .other,
             usage: usage,
-            providerMetadata: providerMetadata,
-            finishReason: finishReason,
-            objectOutput: { objectTelemetry }
-        )
-    )
-    rootSpan.setAttributes(rootFinishAttributes)
-
-    if let onFinish {
-        let event = StreamObjectFinishEvent(
-            usage: usage,
-            object: parsedObject,
-            error: currentError,
-            response: responseMetadata,
+            objectText: accumulatedText,
+            reasoning: nil,
             warnings: warnings,
+            request: request,
+            response: responseMetadata(),
             providerMetadata: providerMetadata,
-            finishReason: finishReason
+            msToFirstChunk: msToFirstChunk
         )
-        await onFinish(event)
+        await notify(
+            invoke(onStepEnd, with: stepEndEvent),
+            { await dispatcher.onObjectStepEnd(stepEndEvent) }
+        )
+
+        let endEvent = GenerateObjectEndEvent<ResultValue>(
+            callId: callId,
+            object: object,
+            error: terminalError ?? parseError,
+            reasoning: nil,
+            finishReason: finishReason ?? .other,
+            usage: usage,
+            warnings: warnings,
+            request: request,
+            response: responseMetadata(),
+            providerMetadata: providerMetadata
+        )
+        await notify(
+            invoke(onFinish, with: endEvent),
+            { await dispatcher.onEnd(.generateObject(endEvent.json)) }
+        )
+
+        await result.endStream()
     }
-
-    rootSpan.end()
-
 }
 
-// MARK: - Helpers
+// MARK: - Callbacks
 
 public struct StreamObjectErrorEvent: Sendable {
     public let error: Error
@@ -715,48 +682,4 @@ public struct StreamObjectErrorEvent: Sendable {
     }
 }
 
-public struct StreamObjectFinishEvent<ResultValue>: Sendable where ResultValue: Sendable {
-    public let usage: LanguageModelUsage
-    public let object: ResultValue?
-    public let error: Error?
-    public let response: LanguageModelResponseMetadata
-    public let warnings: [CallWarning]?
-    public let providerMetadata: ProviderMetadata?
-    public let finishReason: FinishReason
-
-    public init(
-        usage: LanguageModelUsage,
-        object: ResultValue?,
-        error: Error?,
-        response: LanguageModelResponseMetadata,
-        warnings: [CallWarning]?,
-        providerMetadata: ProviderMetadata?,
-        finishReason: FinishReason
-    ) {
-        self.usage = usage
-        self.object = object
-        self.error = error
-        self.response = response
-        self.warnings = warnings
-        self.providerMetadata = providerMetadata
-        self.finishReason = finishReason
-    }
-}
-
 public typealias StreamObjectOnErrorCallback = @Sendable (StreamObjectErrorEvent) async -> Void
-public typealias StreamObjectOnFinishCallback<ResultValue> = @Sendable (StreamObjectFinishEvent<ResultValue>) async -> Void
-
-private func jsonValueToError(_ value: JSONValue) -> Error {
-    if case let .string(message) = value {
-        return StreamObjectUnknownError(message: message)
-    }
-    return StreamObjectUnknownError()
-}
-
-private struct StreamObjectUnknownError: Error {
-    let message: String
-
-    init(message: String = "Unknown stream error") {
-        self.message = message
-    }
-}

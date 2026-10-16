@@ -83,7 +83,7 @@ public enum TelemetryStartEvent: Sendable {
  */
 public enum TelemetryEndEvent: Sendable {
     case generateText(GenerateTextEndEvent)
-    case generateObject(GenerateObjectEndEvent)
+    case generateObject(GenerateObjectEndEvent<JSONValue>)
     case embed(EmbedEndEvent<String, Embedding>)
     case embedMany(EmbedEndEvent<[String], [Embedding]>)
     /// Rerank documents are carried as JSON: a string or an object per document.

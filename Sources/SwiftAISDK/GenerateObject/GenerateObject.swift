@@ -3,6 +3,12 @@ import AISDKProvider
 import AISDKProviderUtils
 import AISDKJSONSchema
 
+/**
+ Generates a structured object for a prompt and schema, without streaming.
+
+ Port of `@ai-sdk/ai/src/generate-object/generate-object.ts`. Callbacks run
+ concurrently with the telemetry integrations; errors they throw are ignored.
+ */
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 public func generateObject<ResultValue, PartialValue, ElementStream>(
     model modelArg: LanguageModel,
@@ -10,14 +16,18 @@ public func generateObject<ResultValue, PartialValue, ElementStream>(
     system: String? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
-    experimentalRepairText repairText: RepairTextFunction? = nil,
-    experimentalTelemetry telemetry: TelemetrySettings? = nil,
+    repairText: RepairTextFunction? = nil,
+    telemetry: TelemetryOptions? = nil,
     experimentalDownload download: DownloadFunction? = nil,
     providerOptions: ProviderOptions? = nil,
+    onStart: GenerateObjectCallback<GenerateObjectStartEvent>? = nil,
+    onStepStart: GenerateObjectCallback<GenerateObjectStepStartEvent>? = nil,
+    onStepEnd: GenerateObjectCallback<GenerateObjectStepEndEvent>? = nil,
+    onFinish: GenerateObjectCallback<GenerateObjectEndEvent<ResultValue>>? = nil,
     internalOptions _internal: GenerateObjectInternalOptions = GenerateObjectInternalOptions(),
     settings: CallSettings = CallSettings()
 ) async throws -> GenerateObjectResult<ResultValue> {
-    let resolvedModel = try resolveLanguageModelV4(modelArg)
+    let model = try resolveLanguageModelV4(modelArg)
 
     try validateObjectGenerationInput(
         output: output.kind,
@@ -27,18 +37,12 @@ public func generateObject<ResultValue, PartialValue, ElementStream>(
         enumValues: output.enumValues
     )
 
-    let promptInput = try makeGenerateObjectPrompt(
-        system: system,
-        prompt: prompt,
-        messages: messages
-    )
-
     let preparedRetries = try prepareRetries(
         maxRetries: settings.maxRetries,
         abortSignal: settings.abortSignal
     )
 
-    let preparedCallSettings = try prepareCallSettings(
+    let callSettings = try prepareCallSettings(
         maxOutputTokens: settings.maxOutputTokens,
         temperature: settings.temperature,
         topP: settings.topP,
@@ -55,223 +59,184 @@ public func generateObject<ResultValue, PartialValue, ElementStream>(
         "ai/\(VERSION)"
     )
 
-    var telemetryCallSettings = settings
-    telemetryCallSettings.maxRetries = preparedRetries.maxRetries
-
-    let baseTelemetryAttributes = getBaseTelemetryAttributes(
-        model: TelemetryModelInfo(modelId: resolvedModel.modelId, provider: resolvedModel.provider),
-        settings: telemetryCallSettings,
-        telemetry: telemetry,
-        headers: headersWithUserAgent
-    )
-
-    let tracer = getTracer(
-        isEnabled: telemetry?.isEnabled ?? false,
-        tracer: telemetry?.tracer
-    )
-
+    let dispatcher = TelemetryDispatcher(telemetry: telemetry)
     let jsonSchema = try await output.strategy.jsonSchema()
+    let callId = _internal.generateId()
 
-    let outerAttributes = try await selectTelemetryAttributes(
-        telemetry: telemetry,
-        attributes: makeGenerateObjectOuterTelemetryAttributes(
-            telemetry: telemetry,
-            baseAttributes: baseTelemetryAttributes,
-            system: system,
-            prompt: prompt,
-            messages: messages,
-            schema: jsonSchema,
-            schemaName: output.schemaName,
-            schemaDescription: output.schemaDescription,
-            outputKind: output.kind
-        )
+    let startEvent = GenerateObjectStartEvent(
+        callId: callId,
+        operationId: "ai.generateObject",
+        provider: model.provider,
+        modelId: model.modelId,
+        system: system.map(Instructions.text),
+        prompt: prompt.map(PromptContent.text),
+        messages: messages,
+        maxOutputTokens: callSettings.maxOutputTokens,
+        temperature: callSettings.temperature,
+        topP: callSettings.topP,
+        topK: callSettings.topK,
+        presencePenalty: callSettings.presencePenalty,
+        frequencyPenalty: callSettings.frequencyPenalty,
+        seed: callSettings.seed,
+        maxRetries: preparedRetries.maxRetries,
+        headers: headersWithUserAgent,
+        providerOptions: providerOptions,
+        output: output.kind.rawValue,
+        schema: jsonSchema,
+        schemaName: output.schemaName,
+        schemaDescription: output.schemaDescription
+    )
+    await notify(
+        invoke(onStart, with: startEvent),
+        { await dispatcher.onStart(.generateObject(startEvent)) }
     )
 
     do {
-        return try await recordSpan(
-            name: "ai.generateObject",
-            tracer: tracer,
-            attributes: outerAttributes
-        ) { rootSpan in
-            let standardizedPrompt = try standardizePrompt(promptInput)
+        let standardizedPrompt = try standardizePrompt(makeGenerateObjectPrompt(
+            system: system,
+            prompt: prompt,
+            messages: messages
+        ))
 
-            let promptMessages = try await convertToLanguageModelV4Prompt(
-                prompt: standardizedPrompt,
-                supportedUrls: try await resolvedModel.supportedUrls,
-                download: download
-            )
+        let promptMessages = try await convertToLanguageModelV4Prompt(
+            prompt: standardizedPrompt,
+            supportedUrls: try await model.supportedUrls,
+            download: download
+        )
 
-            let innerAttributes = try await selectTelemetryAttributes(
-                telemetry: telemetry,
-                attributes: makeGenerateObjectInnerTelemetryAttributes(
-                    telemetry: telemetry,
-                    baseAttributes: baseTelemetryAttributes,
-                    promptMessages: promptMessages,
-                    callSettings: preparedCallSettings,
-                    model: resolvedModel
+        let stepStartEvent = GenerateObjectStepStartEvent(
+            callId: callId,
+            provider: model.provider,
+            modelId: model.modelId,
+            providerOptions: providerOptions,
+            headers: headersWithUserAgent,
+            promptMessages: promptMessages
+        )
+        await notify(
+            invoke(onStepStart, with: stepStartEvent),
+            { await dispatcher.onObjectStepStart(stepStartEvent) }
+        )
+
+        let generateResult = try await preparedRetries.retry.call {
+            try await model.doGenerate(
+                options: LanguageModelV4CallOptions(
+                    prompt: promptMessages,
+                    maxOutputTokens: callSettings.maxOutputTokens,
+                    temperature: callSettings.temperature,
+                    stopSequences: callSettings.stopSequences,
+                    topP: callSettings.topP,
+                    topK: callSettings.topK,
+                    presencePenalty: callSettings.presencePenalty,
+                    frequencyPenalty: callSettings.frequencyPenalty,
+                    responseFormat: .json(
+                        schema: jsonSchema,
+                        name: output.schemaName,
+                        description: output.schemaDescription
+                    ),
+                    seed: callSettings.seed,
+                    abortSignal: settings.abortSignal,
+                    headers: headersWithUserAgent,
+                    reasoning: callSettings.reasoning,
+                    providerOptions: providerOptions
                 )
-            )
-
-            let intermediate = try await preparedRetries.retry.call {
-                try await recordSpan(
-                    name: "ai.generateObject.doGenerate",
-                    tracer: tracer,
-                    attributes: innerAttributes
-                ) { span in
-                    let generateResult = try await resolvedModel.doGenerate(
-                        options: LanguageModelV4CallOptions(
-                            prompt: promptMessages,
-                            maxOutputTokens: preparedCallSettings.maxOutputTokens,
-                            temperature: preparedCallSettings.temperature,
-                            stopSequences: preparedCallSettings.stopSequences,
-                            topP: preparedCallSettings.topP,
-                            topK: preparedCallSettings.topK,
-                            presencePenalty: preparedCallSettings.presencePenalty,
-                            frequencyPenalty: preparedCallSettings.frequencyPenalty,
-                            responseFormat: .json(
-                                schema: jsonSchema,
-                                name: output.schemaName,
-                                description: output.schemaDescription
-                            ),
-                            seed: preparedCallSettings.seed,
-                            abortSignal: settings.abortSignal,
-                            headers: headersWithUserAgent,
-                            reasoning: preparedCallSettings.reasoning,
-                            providerOptions: providerOptions
-                        )
-                    )
-
-                    let responseId = generateResult.response?.id ?? _internal.generateId()
-                    let responseTimestamp = generateResult.response?.timestamp ?? _internal.currentDate()
-                    let responseModelId = generateResult.response?.modelId ?? resolvedModel.modelId
-                    let responseHeaders = generateResult.response?.headers
-                    let responseBody = convertGenerateObjectResponseBody(generateResult.response?.body)
-                    let usage = asLanguageModelUsage(generateResult.usage)
-
-                    guard let text = extractTextContent(content: generateResult.content) else {
-                        throw NoObjectGeneratedError(
-                            message: "No object generated: the model did not return a response.",
-                            response: LanguageModelResponseMetadata(
-                                id: responseId,
-                                timestamp: responseTimestamp,
-                                modelId: responseModelId,
-                                headers: responseHeaders
-                            ),
-                            usage: usage,
-                            finishReason: generateResult.finishReason.unified
-                        )
-                    }
-
-                    let reasoning = extractReasoningContent(content: generateResult.content)
-
-                    let responseMetadata = LanguageModelResponseMetadataWithBody(
-                        id: responseId,
-                        timestamp: responseTimestamp,
-                        modelId: responseModelId,
-                        headers: responseHeaders,
-                        body: responseBody
-                    )
-
-                    let responseAttributes = try await selectTelemetryAttributes(
-                        telemetry: telemetry,
-                        attributes: makeGenerateObjectResponseTelemetryAttributes(
-                            telemetry: telemetry,
-                            finishReason: generateResult.finishReason.unified,
-                            objectOutput: { text },
-                            responseId: responseId,
-                            responseModelId: responseModelId,
-                            responseTimestamp: responseTimestamp,
-                            providerMetadata: generateResult.providerMetadata,
-                            usage: usage
-                        )
-                    )
-                    span.setAttributes(responseAttributes)
-
-                    return GenerateObjectIntermediateResult(
-                        text: text,
-                        reasoning: reasoning,
-                        finishReason: generateResult.finishReason.unified,
-                        usage: usage,
-                        warnings: generateResult.warnings,
-                        providerMetadata: generateResult.providerMetadata,
-                        request: convertGenerateObjectRequestMetadata(generateResult.request),
-                        response: responseMetadata
-                    )
-                }
-            }
-
-            // Warnings already logged above when the generate result was received.
-
-            let responseMetadata = LanguageModelResponseMetadata(
-                id: intermediate.response.id,
-                timestamp: intermediate.response.timestamp,
-                modelId: intermediate.response.modelId,
-                headers: intermediate.response.headers
-            )
-
-            let context = GenerateObjectValidationContext(
-                text: intermediate.text,
-                response: responseMetadata,
-                usage: intermediate.usage,
-                finishReason: intermediate.finishReason
-            )
-
-            let parsedObject = try await parseAndValidateObjectResultWithRepair(
-                text: intermediate.text,
-                strategy: output.strategy,
-                repairText: repairText,
-                context: context
-            )
-
-            let objectTelemetry = encodeGenerateObjectTelemetryValue(parsedObject)
-
-            let finishAttributes = try await selectTelemetryAttributes(
-                telemetry: telemetry,
-                attributes: makeGenerateObjectRootFinishTelemetryAttributes(
-                    telemetry: telemetry,
-                    baseAttributes: baseTelemetryAttributes,
-                    usage: intermediate.usage,
-                    providerMetadata: intermediate.providerMetadata,
-                    finishReason: intermediate.finishReason,
-                    objectOutput: { objectTelemetry }
-                )
-            )
-            rootSpan.setAttributes(finishAttributes)
-
-            // Notify warning observers again just before returning the result to
-            // coalesce any listeners that might have been installed later in
-            // the call. This mirrors upstream test expectations where the
-            // observer should reliably receive the warnings for the call.
-            let __warnings = intermediate.warnings ?? []
-            logWarnings(__warnings.map { Warning.languageModel($0) })
-
-            return GenerateObjectResult(
-                object: parsedObject,
-                reasoning: intermediate.reasoning,
-                finishReason: intermediate.finishReason,
-                usage: intermediate.usage,
-                warnings: intermediate.warnings,
-                request: intermediate.request,
-                response: intermediate.response,
-                providerMetadata: intermediate.providerMetadata
             )
         }
+
+        let response = LanguageModelResponseMetadataWithBody(
+            id: generateResult.response?.id ?? _internal.generateId(),
+            timestamp: generateResult.response?.timestamp ?? _internal.currentDate(),
+            modelId: generateResult.response?.modelId ?? model.modelId,
+            headers: generateResult.response?.headers,
+            body: convertGenerateObjectResponseBody(generateResult.response?.body)
+        )
+        let responseMetadata = LanguageModelResponseMetadata(
+            id: response.id,
+            timestamp: response.timestamp,
+            modelId: response.modelId,
+            headers: response.headers
+        )
+        let finishReason = generateResult.finishReason.unified
+        let usage = asLanguageModelUsage(generateResult.usage)
+
+        guard let text = extractTextContent(content: generateResult.content) else {
+            throw NoObjectGeneratedError(
+                message: "No object generated: the model did not return a response.",
+                response: responseMetadata,
+                usage: usage,
+                finishReason: finishReason
+            )
+        }
+
+        let reasoning = extractReasoningContent(content: generateResult.content)
+        let warnings = generateResult.warnings
+        let request = convertGenerateObjectRequestMetadata(generateResult.request)
+
+        logWarnings((warnings ?? []).map { Warning.languageModel($0) })
+
+        let stepEndEvent = GenerateObjectStepEndEvent(
+            callId: callId,
+            provider: model.provider,
+            modelId: model.modelId,
+            finishReason: finishReason,
+            usage: usage,
+            objectText: text,
+            reasoning: reasoning,
+            warnings: warnings,
+            request: request,
+            response: responseMetadata,
+            responseBody: response.body,
+            providerMetadata: generateResult.providerMetadata,
+            msToFirstChunk: nil
+        )
+        await notify(
+            invoke(onStepEnd, with: stepEndEvent),
+            { await dispatcher.onObjectStepEnd(stepEndEvent) }
+        )
+
+        let object = try await parseAndValidateObjectResultWithRepair(
+            text: text,
+            strategy: output.strategy,
+            repairText: repairText,
+            context: GenerateObjectValidationContext(
+                text: text,
+                response: responseMetadata,
+                usage: usage,
+                finishReason: finishReason
+            )
+        )
+
+        let endEvent = GenerateObjectEndEvent<ResultValue>(
+            callId: callId,
+            object: object,
+            error: nil,
+            reasoning: reasoning,
+            finishReason: finishReason,
+            usage: usage,
+            warnings: warnings,
+            request: request,
+            response: responseMetadata,
+            providerMetadata: generateResult.providerMetadata
+        )
+        await notify(
+            invoke(onFinish, with: endEvent),
+            { await dispatcher.onEnd(.generateObject(endEvent.json)) }
+        )
+
+        return GenerateObjectResult(
+            object: object,
+            reasoning: reasoning,
+            finishReason: finishReason,
+            usage: usage,
+            warnings: warnings,
+            request: request,
+            response: response,
+            providerMetadata: generateResult.providerMetadata
+        )
     } catch {
+        await dispatcher.onError(callId: callId, error: error)
         throw (wrapGatewayError(error) as? Error) ?? error
     }
 }
-
-private struct GenerateObjectIntermediateResult: Sendable {
-    let text: String
-    let reasoning: String?
-    let finishReason: FinishReason
-    let usage: LanguageModelUsage
-    let warnings: [CallWarning]?
-    let providerMetadata: ProviderMetadata?
-    let request: LanguageModelRequestMetadata
-    let response: LanguageModelResponseMetadataWithBody
-}
-
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 public func generateObject<ObjectResult: Codable & Sendable>(
@@ -283,10 +248,14 @@ public func generateObject<ObjectResult: Codable & Sendable>(
     schemaName: String? = nil,
     schemaDescription: String? = nil,
     mode: GenerateObjectJSONMode = .auto,
-    experimentalRepairText repairText: RepairTextFunction? = nil,
-    experimentalTelemetry telemetry: TelemetrySettings? = nil,
+    repairText: RepairTextFunction? = nil,
+    telemetry: TelemetryOptions? = nil,
     experimentalDownload download: DownloadFunction? = nil,
     providerOptions: ProviderOptions? = nil,
+    onStart: GenerateObjectCallback<GenerateObjectStartEvent>? = nil,
+    onStepStart: GenerateObjectCallback<GenerateObjectStepStartEvent>? = nil,
+    onStepEnd: GenerateObjectCallback<GenerateObjectStepEndEvent>? = nil,
+    onFinish: GenerateObjectCallback<GenerateObjectEndEvent<ObjectResult>>? = nil,
     internalOptions: GenerateObjectInternalOptions = GenerateObjectInternalOptions(),
     settings: CallSettings = CallSettings()
 ) async throws -> GenerateObjectResult<ObjectResult> {
@@ -299,10 +268,14 @@ public func generateObject<ObjectResult: Codable & Sendable>(
         schemaName: schemaName,
         schemaDescription: schemaDescription,
         mode: mode,
-        experimentalRepairText: repairText,
-        experimentalTelemetry: telemetry,
+        repairText: repairText,
+        telemetry: telemetry,
         experimentalDownload: download,
         providerOptions: providerOptions,
+        onStart: onStart,
+        onStepStart: onStepStart,
+        onStepEnd: onStepEnd,
+        onFinish: onFinish,
         internalOptions: internalOptions,
         settings: settings
     )
@@ -318,10 +291,14 @@ public func generateObject<ObjectResult>(
     schemaName: String? = nil,
     schemaDescription: String? = nil,
     mode: GenerateObjectJSONMode = .auto,
-    experimentalRepairText repairText: RepairTextFunction? = nil,
-    experimentalTelemetry telemetry: TelemetrySettings? = nil,
+    repairText: RepairTextFunction? = nil,
+    telemetry: TelemetryOptions? = nil,
     experimentalDownload download: DownloadFunction? = nil,
     providerOptions: ProviderOptions? = nil,
+    onStart: GenerateObjectCallback<GenerateObjectStartEvent>? = nil,
+    onStepStart: GenerateObjectCallback<GenerateObjectStepStartEvent>? = nil,
+    onStepEnd: GenerateObjectCallback<GenerateObjectStepEndEvent>? = nil,
+    onFinish: GenerateObjectCallback<GenerateObjectEndEvent<ObjectResult>>? = nil,
     internalOptions: GenerateObjectInternalOptions = GenerateObjectInternalOptions(),
     settings: CallSettings = CallSettings()
 ) async throws -> GenerateObjectResult<ObjectResult> {
@@ -336,10 +313,14 @@ public func generateObject<ObjectResult>(
         system: system,
         prompt: prompt,
         messages: messages,
-        experimentalRepairText: repairText,
-        experimentalTelemetry: telemetry,
+        repairText: repairText,
+        telemetry: telemetry,
         experimentalDownload: download,
         providerOptions: providerOptions,
+        onStart: onStart,
+        onStepStart: onStepStart,
+        onStepEnd: onStepEnd,
+        onFinish: onFinish,
         internalOptions: internalOptions,
         settings: settings
     )
@@ -351,10 +332,14 @@ public func generateObjectNoSchema(
     system: String? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
-    experimentalRepairText repairText: RepairTextFunction? = nil,
-    experimentalTelemetry telemetry: TelemetrySettings? = nil,
+    repairText: RepairTextFunction? = nil,
+    telemetry: TelemetryOptions? = nil,
     experimentalDownload download: DownloadFunction? = nil,
     providerOptions: ProviderOptions? = nil,
+    onStart: GenerateObjectCallback<GenerateObjectStartEvent>? = nil,
+    onStepStart: GenerateObjectCallback<GenerateObjectStepStartEvent>? = nil,
+    onStepEnd: GenerateObjectCallback<GenerateObjectStepEndEvent>? = nil,
+    onFinish: GenerateObjectCallback<GenerateObjectEndEvent<JSONValue>>? = nil,
     internalOptions: GenerateObjectInternalOptions = GenerateObjectInternalOptions(),
     settings: CallSettings = CallSettings()
 ) async throws -> GenerateObjectResult<JSONValue> {
@@ -364,15 +349,18 @@ public func generateObjectNoSchema(
         system: system,
         prompt: prompt,
         messages: messages,
-        experimentalRepairText: repairText,
-        experimentalTelemetry: telemetry,
+        repairText: repairText,
+        telemetry: telemetry,
         experimentalDownload: download,
         providerOptions: providerOptions,
+        onStart: onStart,
+        onStepStart: onStepStart,
+        onStepEnd: onStepEnd,
+        onFinish: onFinish,
         internalOptions: internalOptions,
         settings: settings
     )
 }
-
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 public func generateObjectArray<ElementResult: Codable & Sendable>(
@@ -384,10 +372,14 @@ public func generateObjectArray<ElementResult: Codable & Sendable>(
     schemaName: String? = nil,
     schemaDescription: String? = nil,
     mode: GenerateObjectJSONMode = .auto,
-    experimentalRepairText repairText: RepairTextFunction? = nil,
-    experimentalTelemetry telemetry: TelemetrySettings? = nil,
+    repairText: RepairTextFunction? = nil,
+    telemetry: TelemetryOptions? = nil,
     experimentalDownload download: DownloadFunction? = nil,
     providerOptions: ProviderOptions? = nil,
+    onStart: GenerateObjectCallback<GenerateObjectStartEvent>? = nil,
+    onStepStart: GenerateObjectCallback<GenerateObjectStepStartEvent>? = nil,
+    onStepEnd: GenerateObjectCallback<GenerateObjectStepEndEvent>? = nil,
+    onFinish: GenerateObjectCallback<GenerateObjectEndEvent<[ElementResult]>>? = nil,
     internalOptions: GenerateObjectInternalOptions = GenerateObjectInternalOptions(),
     settings: CallSettings = CallSettings()
 ) async throws -> GenerateObjectResult<[ElementResult]> {
@@ -400,10 +392,14 @@ public func generateObjectArray<ElementResult: Codable & Sendable>(
         schemaName: schemaName,
         schemaDescription: schemaDescription,
         mode: mode,
-        experimentalRepairText: repairText,
-        experimentalTelemetry: telemetry,
+        repairText: repairText,
+        telemetry: telemetry,
         experimentalDownload: download,
         providerOptions: providerOptions,
+        onStart: onStart,
+        onStepStart: onStepStart,
+        onStepEnd: onStepEnd,
+        onFinish: onFinish,
         internalOptions: internalOptions,
         settings: settings
     )
@@ -419,10 +415,14 @@ public func generateObjectArray<ElementResult>(
     schemaName: String? = nil,
     schemaDescription: String? = nil,
     mode: GenerateObjectJSONMode = .auto,
-    experimentalRepairText repairText: RepairTextFunction? = nil,
-    experimentalTelemetry telemetry: TelemetrySettings? = nil,
+    repairText: RepairTextFunction? = nil,
+    telemetry: TelemetryOptions? = nil,
     experimentalDownload download: DownloadFunction? = nil,
     providerOptions: ProviderOptions? = nil,
+    onStart: GenerateObjectCallback<GenerateObjectStartEvent>? = nil,
+    onStepStart: GenerateObjectCallback<GenerateObjectStepStartEvent>? = nil,
+    onStepEnd: GenerateObjectCallback<GenerateObjectStepEndEvent>? = nil,
+    onFinish: GenerateObjectCallback<GenerateObjectEndEvent<[ElementResult]>>? = nil,
     internalOptions: GenerateObjectInternalOptions = GenerateObjectInternalOptions(),
     settings: CallSettings = CallSettings()
 ) async throws -> GenerateObjectResult<[ElementResult]> {
@@ -437,10 +437,14 @@ public func generateObjectArray<ElementResult>(
         system: system,
         prompt: prompt,
         messages: messages,
-        experimentalRepairText: repairText,
-        experimentalTelemetry: telemetry,
+        repairText: repairText,
+        telemetry: telemetry,
         experimentalDownload: download,
         providerOptions: providerOptions,
+        onStart: onStart,
+        onStepStart: onStepStart,
+        onStepEnd: onStepEnd,
+        onFinish: onFinish,
         internalOptions: internalOptions,
         settings: settings
     )
@@ -453,10 +457,14 @@ public func generateObjectEnum(
     system: String? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
-    experimentalRepairText repairText: RepairTextFunction? = nil,
-    experimentalTelemetry telemetry: TelemetrySettings? = nil,
+    repairText: RepairTextFunction? = nil,
+    telemetry: TelemetryOptions? = nil,
     experimentalDownload download: DownloadFunction? = nil,
     providerOptions: ProviderOptions? = nil,
+    onStart: GenerateObjectCallback<GenerateObjectStartEvent>? = nil,
+    onStepStart: GenerateObjectCallback<GenerateObjectStepStartEvent>? = nil,
+    onStepEnd: GenerateObjectCallback<GenerateObjectStepEndEvent>? = nil,
+    onFinish: GenerateObjectCallback<GenerateObjectEndEvent<String>>? = nil,
     internalOptions: GenerateObjectInternalOptions = GenerateObjectInternalOptions(),
     settings: CallSettings = CallSettings()
 ) async throws -> GenerateObjectResult<String> {
@@ -466,10 +474,14 @@ public func generateObjectEnum(
         system: system,
         prompt: prompt,
         messages: messages,
-        experimentalRepairText: repairText,
-        experimentalTelemetry: telemetry,
+        repairText: repairText,
+        telemetry: telemetry,
         experimentalDownload: download,
         providerOptions: providerOptions,
+        onStart: onStart,
+        onStepStart: onStepStart,
+        onStepEnd: onStepEnd,
+        onFinish: onFinish,
         internalOptions: internalOptions,
         settings: settings
     )

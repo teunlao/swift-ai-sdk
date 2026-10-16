@@ -99,7 +99,8 @@ public func generateSpeech(
     providerOptions: ProviderOptions = [:],
     maxRetries: Int? = nil,
     abortSignal: (@Sendable () -> Bool)? = nil,
-    headers: [String: String]? = nil
+    headers: [String: String]? = nil,
+    telemetry: TelemetryOptions? = nil
 ) async throws -> any SpeechResult {
     guard let model = try resolveSpeechModelV4(model) else {
         throw ModelResolutionFailure(message: "Model could not be resolved")
@@ -112,7 +113,46 @@ public func generateSpeech(
 
     let headersWithUserAgent = makeHeadersWithUserAgent(headers)
 
-    let result = try await preparedRetries.retry.call {
+    let callId = try createIDGenerator(prefix: "call", size: 24)()
+    let dispatcher = TelemetryDispatcher(telemetry: telemetry)
+    await dispatcher.onStart(.generateSpeech(GenerateSpeechStartEvent(
+        callId: callId, operationId: "ai.generateSpeech",
+        provider: model.provider, modelId: model.modelId,
+        text: text, voice: voice, outputFormat: outputFormat, instructions: instructions,
+        speed: speed, language: language, maxRetries: preparedRetries.maxRetries,
+        headers: headers, providerOptions: providerOptions
+    )))
+
+    do {
+        return try await generateSpeechCall(
+            model: model, text: text, voice: voice, outputFormat: outputFormat,
+            instructions: instructions, speed: speed, language: language,
+            providerOptions: providerOptions, abortSignal: abortSignal,
+            headers: headersWithUserAgent, retry: preparedRetries.retry,
+            callId: callId, dispatcher: dispatcher
+        )
+    } catch {
+        await dispatcher.onError(callId: callId, error: error)
+        throw error
+    }
+}
+
+private func generateSpeechCall(
+    model: any SpeechModelV4,
+    text: String,
+    voice: String?,
+    outputFormat: String?,
+    instructions: String?,
+    speed: Double?,
+    language: String?,
+    providerOptions: ProviderOptions,
+    abortSignal: (@Sendable () -> Bool)?,
+    headers headersWithUserAgent: [String: String],
+    retry: RetryFunctionWrapper,
+    callId: String,
+    dispatcher: TelemetryDispatcher
+) async throws -> any SpeechResult {
+    let result = try await retry.call {
         try await model.doGenerate(
             options: SpeechModelV4CallOptions(
                 text: text,
@@ -154,6 +194,19 @@ public func generateSpeech(
         body: result.response.body
     )
 
+    await dispatcher.onEnd(.generateSpeech(GenerateSpeechEndEvent(
+        callId: callId, operationId: "ai.generateSpeech",
+        provider: model.provider, modelId: model.modelId, text: text,
+        audio: .init(byteLength: audioFile.data.count, mediaType: audioFile.mediaType, format: audioFile.format),
+        usage: result.usage, warnings: warnings, providerMetadata: result.providerMetadata,
+        response: SpeechModelResponseMetadata(
+            timestamp: result.response.timestamp,
+            modelId: result.response.modelId,
+            headers: result.response.headers,
+            body: nil
+        )
+    )))
+
     return DefaultSpeechResult(
         audio: audioFile,
         warnings: warnings,
@@ -173,7 +226,8 @@ public func generateSpeech(
     providerOptions: ProviderOptions = [:],
     maxRetries: Int? = nil,
     abortSignal: (@Sendable () -> Bool)? = nil,
-    headers: [String: String]? = nil
+    headers: [String: String]? = nil,
+    telemetry: TelemetryOptions? = nil
 ) async throws -> any SpeechResult {
     try await generateSpeech(
         model: .v4(model),
@@ -186,7 +240,8 @@ public func generateSpeech(
         providerOptions: providerOptions,
         maxRetries: maxRetries,
         abortSignal: abortSignal,
-        headers: headers
+        headers: headers,
+        telemetry: telemetry
     )
 }
 
@@ -201,7 +256,8 @@ public func generateSpeech(
     providerOptions: ProviderOptions = [:],
     maxRetries: Int? = nil,
     abortSignal: (@Sendable () -> Bool)? = nil,
-    headers: [String: String]? = nil
+    headers: [String: String]? = nil,
+    telemetry: TelemetryOptions? = nil
 ) async throws -> any SpeechResult {
     try await generateSpeech(
         model: .v3(model),
@@ -214,6 +270,7 @@ public func generateSpeech(
         providerOptions: providerOptions,
         maxRetries: maxRetries,
         abortSignal: abortSignal,
-        headers: headers
+        headers: headers,
+        telemetry: telemetry
     )
 }

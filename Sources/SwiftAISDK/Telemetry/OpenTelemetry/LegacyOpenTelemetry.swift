@@ -715,7 +715,7 @@ public final class LegacyOpenTelemetry: Telemetry, @unchecked Sendable {
         state.rootSpan.setAttributes(select(state.recording, specs))
     }
 
-    private func onObjectOperationEnd(_ event: GenerateObjectEndEvent, state: CallState) {
+    private func onObjectOperationEnd(_ event: GenerateObjectEndEvent<JSONValue>, state: CallState) {
         if event.finishReason == .error {
             state.rootSpan.setStatus(SpanStatus(code: .error))
         }
