@@ -118,6 +118,10 @@ public enum ToolExecutionResultError: Error, LocalizedError {
  */
 
 public struct Tool: Sendable {
+    /// Defers exposing the tool until it is discovered by tool search.
+    /// Discovered tools become available on the next model step.
+    public let deferLoading: Bool?
+
     /// An optional description of what the tool does.
     /// Will be used by the language model to decide whether to use the tool.
     /// Not used for provider-defined tools.
@@ -200,6 +204,7 @@ public struct Tool: Sendable {
     public let supportsDeferredResults: Bool?
 
     public init(
+        deferLoading: Bool? = nil,
         description: String? = nil,
         title: String? = nil,
         providerOptions: [String: JSONValue]? = nil,
@@ -220,6 +225,7 @@ public struct Tool: Sendable {
         args: [String: JSONValue]? = nil,
         supportsDeferredResults: Bool? = nil
     ) {
+        self.deferLoading = deferLoading
         self.description = description
         self.title = title
         self.providerOptions = providerOptions

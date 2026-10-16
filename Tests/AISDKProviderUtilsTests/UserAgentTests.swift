@@ -12,37 +12,30 @@ import Testing
 struct UserAgentTests {
     // MARK: - GetRuntimeEnvironmentUserAgent
 
-    @Test("getRuntimeEnvironmentUserAgent defaults to unknown runtime")
+    @Test("getRuntimeEnvironmentUserAgent omits an unknown runtime")
     func testRuntimeEnvironmentUnknown() throws {
-        let userAgent = getRuntimeEnvironmentUserAgent()
-        #expect(userAgent == "runtime/unknown")
+        #expect(getRuntimeEnvironmentUserAgent(RuntimeEnvironmentSnapshot()) == "")
     }
 
-    @Test("getRuntimeEnvironmentUserAgent detects browser")
-    func testRuntimeEnvironmentBrowser() throws {
-        let snapshot = RuntimeEnvironmentSnapshot(hasWindow: true)
-        #expect(getRuntimeEnvironmentUserAgent(snapshot) == "runtime/browser")
-    }
-
-    @Test("getRuntimeEnvironmentUserAgent uses navigator user agent")
+    @Test("getRuntimeEnvironmentUserAgent uses the lowercased navigator user agent")
     func testRuntimeEnvironmentNavigator() throws {
-        let snapshot = RuntimeEnvironmentSnapshot(navigatorUserAgent: "Test-UA")
-        #expect(getRuntimeEnvironmentUserAgent(snapshot) == "runtime/test-ua")
+        let snapshot = RuntimeEnvironmentSnapshot(hasWindow: true, navigatorUserAgent: "Mozilla/5.0 Test")
+        #expect(getRuntimeEnvironmentUserAgent(snapshot) == "mozilla/5.0 test")
     }
 
     @Test("getRuntimeEnvironmentUserAgent detects Node.js")
     func testRuntimeEnvironmentNode() throws {
         let snapshot = RuntimeEnvironmentSnapshot(
-            processVersionsNode: "v20.0.0",
+            processVersionsNode: "20.0.0",
             processVersion: "v20.0.0"
         )
-        #expect(getRuntimeEnvironmentUserAgent(snapshot) == "runtime/node.js/v20.0.0")
+        #expect(getRuntimeEnvironmentUserAgent(snapshot) == "node.js/v20.0.0")
     }
 
     @Test("getRuntimeEnvironmentUserAgent detects Edge runtime")
     func testRuntimeEnvironmentEdgeRuntime() throws {
         let snapshot = RuntimeEnvironmentSnapshot(edgeRuntime: true)
-        #expect(getRuntimeEnvironmentUserAgent(snapshot) == "runtime/vercel-edge")
+        #expect(getRuntimeEnvironmentUserAgent(snapshot) == "vercel-edge")
     }
 
     @Test("isBrowserRuntime returns true when a window is present")

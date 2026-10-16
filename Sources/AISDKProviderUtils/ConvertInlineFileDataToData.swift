@@ -17,3 +17,22 @@ public func convertInlineFileDataToData(_ data: SharedV4DataContent) throws -> D
         return try convertBase64ToData(base64)
     }
 }
+
+/**
+ Converts file upload data into raw bytes.
+
+ Stream data is rejected with `UnsupportedFunctionalityError`: providers without
+ streaming upload support funnel here. The stream is never consumed on this path.
+ */
+public func convertInlineFileDataToData(_ data: FilesV4UploadFileData) throws -> Data {
+    switch data {
+    case .text(let text):
+        return Data(text.utf8)
+    case .data(let data):
+        return data
+    case .base64(let base64):
+        return try convertBase64ToData(base64)
+    case .stream:
+        throw UnsupportedFunctionalityError(functionality: "streaming file upload")
+    }
+}

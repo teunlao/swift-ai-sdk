@@ -26,6 +26,15 @@ import AISDKProvider
    - successfulResponseHandler: Handler for successful responses
    - isAborted: Optional closure to check if request should be cancelled
    - fetch: Optional custom fetch function (for testing)
+   - validateUrl: `true` when `url` is untrusted (e.g. taken from a provider
+     response): it is fetched through `fetchWithValidatedRedirects`, which rejects
+     private targets and re-validates redirect hops (`DownloadError`). `false`
+     only for URLs built from a developer-configured endpoint.
+   - credentialedOrigin: When set, `headers` are sent only if `url` is same-origin
+     with it (the user-agent is always kept), so credentials never reach a
+     response-supplied host. Redirects that cross origin drop caller headers regardless.
+   - trustedOrigin: Developer-configured origin exempt from URL validation when
+     `validateUrl` is `true`. Never derived from response data.
 
  - Returns: The result from successfulResponseHandler
  - Throws: APICallError or handler errors
@@ -36,10 +45,11 @@ public func getFromAPI<T>(
     failedResponseHandler: ResponseHandler<APICallError>,
     successfulResponseHandler: ResponseHandler<T>,
     isAborted: (@Sendable () -> Bool)? = nil,
-    fetch: FetchFunction? = nil
+    fetch: FetchFunction? = nil,
+    validateUrl: Bool = false,
+    credentialedOrigin: String? = nil,
+    trustedOrigin: String? = nil
 ) async throws -> ResponseHandlerResult<T> {
-    let fetchImpl = fetch ?? defaultFetchFunction()
-
     do {
         // Prepare request
         guard let requestURL = URL(string: url) else {
@@ -50,49 +60,67 @@ public func getFromAPI<T>(
             )
         }
 
-        var request = URLRequest(url: requestURL)
-        request.httpMethod = "GET"
-        request.timeoutInterval = PROVIDER_UTILS_DEFAULT_REQUEST_TIMEOUT_INTERVAL
+        // Withhold caller headers when the URL is not same-origin with the
+        // origin allowed to receive credentials.
+        let outgoingHeaders: [String: String]
+        if let credentialedOrigin, !isSameOrigin(url, credentialedOrigin) {
+            outgoingHeaders = [:]
+        } else {
+            outgoingHeaders = headers ?? [:]
+        }
 
-        // Add headers with User-Agent
         let headersWithUA = withUserAgentSuffix(
-            headers ?? [:],
-            "ai-sdk/provider-utils/\(PROVIDER_UTILS_VERSION)",
+            outgoingHeaders,
+            "ai-sdk-provider-utils/\(PROVIDER_UTILS_VERSION)",
             getRuntimeEnvironmentUserAgent()
         )
-
-        for (key, value) in headersWithUA {
-            request.setValue(value, forHTTPHeaderField: key)
-        }
 
         // Check cancellation before fetch
         if isAborted?() == true {
             throw CancellationError()
         }
 
-        // Execute request
-        let fetchResponse = try await fetchWithAbortCheck(
-            fetch: fetchImpl,
-            request: request,
-            isAborted: isAborted
-        )
-
-        guard let httpResponse = fetchResponse.urlResponse as? HTTPURLResponse else {
-            throw APICallError(
-                message: "Invalid response type",
+        let providerResponse: ProviderHTTPResponse
+        if validateUrl {
+            providerResponse = try await fetchWithValidatedRedirects(
                 url: url,
-                requestBodyValues: nil
+                headers: headersWithUA,
+                isAborted: isAborted,
+                fetch: fetch,
+                trustedOrigin: trustedOrigin
+            )
+        } else {
+            var request = URLRequest(url: requestURL)
+            request.httpMethod = "GET"
+            request.timeoutInterval = PROVIDER_UTILS_DEFAULT_REQUEST_TIMEOUT_INTERVAL
+
+            for (key, value) in headersWithUA {
+                request.setValue(value, forHTTPHeaderField: key)
+            }
+
+            let fetchResponse = try await fetchWithAbortCheck(
+                fetch: fetch ?? defaultFetchFunction(),
+                request: request,
+                isAborted: isAborted
+            )
+
+            guard let httpResponse = fetchResponse.urlResponse as? HTTPURLResponse else {
+                throw APICallError(
+                    message: "Invalid response type",
+                    url: url,
+                    requestBodyValues: nil
+                )
+            }
+
+            providerResponse = ProviderHTTPResponse(
+                url: requestURL,
+                httpResponse: httpResponse,
+                body: fetchResponse.body
             )
         }
 
+        let httpResponse = providerResponse.httpResponse
         let responseHeaders = extractResponseHeaders(from: httpResponse)
-
-        // Create ProviderHTTPResponse
-        let providerResponse = ProviderHTTPResponse(
-            url: requestURL,
-            httpResponse: httpResponse,
-            body: fetchResponse.body
-        )
 
         // Handle non-2xx responses
         if !(200...299).contains(httpResponse.statusCode) {

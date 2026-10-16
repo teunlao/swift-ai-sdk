@@ -6,7 +6,13 @@ func addAdditionalPropertiesToJsonSchema(_ jsonSchema: JSONValue) -> JSONValue {
     }
 
     if schemaTypeIncludesObject(schemaObject["type"]) {
-        schemaObject["additionalProperties"] = .bool(false)
+        // A schema for additional properties is kept (and visited); anything else becomes `false`.
+        switch schemaObject["additionalProperties"] {
+        case .some(let additionalProperties) where additionalProperties != .null && !isBool(additionalProperties):
+            schemaObject["additionalProperties"] = visitJsonSchemaDefinition(additionalProperties)
+        default:
+            schemaObject["additionalProperties"] = .bool(false)
+        }
 
         if case .object(let properties) = schemaObject["properties"] {
             schemaObject["properties"] = .object(properties.mapValues(visitJsonSchemaDefinition))
@@ -42,6 +48,13 @@ private func visitJsonSchemaDefinition(_ definition: JSONValue) -> JSONValue {
     }
 
     return addAdditionalPropertiesToJsonSchema(definition)
+}
+
+private func isBool(_ value: JSONValue) -> Bool {
+    if case .bool = value {
+        return true
+    }
+    return false
 }
 
 private func schemaTypeIncludesObject(_ type: JSONValue?) -> Bool {

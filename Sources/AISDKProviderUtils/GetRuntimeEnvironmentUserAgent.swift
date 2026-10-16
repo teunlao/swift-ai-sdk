@@ -58,21 +58,19 @@ public func isBrowserRuntime(
 public func getRuntimeEnvironmentUserAgent(
     _ snapshot: RuntimeEnvironmentSnapshot = .current
 ) -> String {
-    if snapshot.hasWindow {
-        return "runtime/browser"
+    // Browsers / Cloudflare Workers / Deno / Bun / Node.js >= 21.1
+    if let navigator = snapshot.navigatorUserAgent, !navigator.isEmpty {
+        return navigator.lowercased()
     }
 
-    if let navigator = snapshot.navigatorUserAgent?.lowercased() {
-        return "runtime/\(navigator)"
-    }
-
-    if let nodeVersion = snapshot.processVersion ?? snapshot.processVersionsNode {
-        return "runtime/node.js/\(nodeVersion)"
+    if snapshot.processVersionsNode != nil, let nodeVersion = snapshot.processVersion {
+        return "node.js/\(nodeVersion)"
     }
 
     if snapshot.edgeRuntime {
-        return "runtime/vercel-edge"
+        return "vercel-edge"
     }
 
-    return "runtime/unknown"
+    // Unknown runtimes are omitted from the user agent.
+    return ""
 }

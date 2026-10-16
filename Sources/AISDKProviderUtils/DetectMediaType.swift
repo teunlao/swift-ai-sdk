@@ -6,7 +6,8 @@ private struct ProviderUtilsMediaTypeSignature: Sendable {
 }
 
 private let providerUtilsImageMediaTypeSignatures: [ProviderUtilsMediaTypeSignature] = [
-    .init(mediaType: "image/gif", bytesPrefix: [0x47, 0x49, 0x46]),
+    .init(mediaType: "image/gif", bytesPrefix: [0x47, 0x49, 0x46, 0x38, 0x37, 0x61]), // GIF87a
+    .init(mediaType: "image/gif", bytesPrefix: [0x47, 0x49, 0x46, 0x38, 0x39, 0x61]), // GIF89a
     .init(mediaType: "image/png", bytesPrefix: [0x89, 0x50, 0x4E, 0x47]),
     .init(mediaType: "image/jpeg", bytesPrefix: [0xFF, 0xD8]),
     .init(
@@ -17,16 +18,17 @@ private let providerUtilsImageMediaTypeSignatures: [ProviderUtilsMediaTypeSignat
             0x57, 0x45, 0x42, 0x50,
         ]
     ),
-    .init(mediaType: "image/bmp", bytesPrefix: [0x42, 0x4D]),
+    .init(mediaType: "image/bmp", bytesPrefix: [0x42, 0x4D, nil, nil, nil, nil, 0x00, 0x00, 0x00, 0x00]),
     .init(mediaType: "image/tiff", bytesPrefix: [0x49, 0x49, 0x2A, 0x00]),
     .init(mediaType: "image/tiff", bytesPrefix: [0x4D, 0x4D, 0x00, 0x2A]),
+    // ftyp box sizes vary, so the size byte is a wildcard.
     .init(
         mediaType: "image/avif",
-        bytesPrefix: [0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70, 0x61, 0x76, 0x69, 0x66]
+        bytesPrefix: [0x00, 0x00, 0x00, nil, 0x66, 0x74, 0x79, 0x70, 0x61, 0x76, 0x69, 0x66]
     ),
     .init(
         mediaType: "image/heic",
-        bytesPrefix: [0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70, 0x68, 0x65, 0x69, 0x63]
+        bytesPrefix: [0x00, 0x00, 0x00, nil, 0x66, 0x74, 0x79, 0x70, 0x68, 0x65, 0x69, 0x63]
     ),
 ]
 
@@ -34,7 +36,11 @@ private let providerUtilsDocumentMediaTypeSignatures: [ProviderUtilsMediaTypeSig
     .init(mediaType: "application/pdf", bytesPrefix: [0x25, 0x50, 0x44, 0x46]),
 ]
 
-private let providerUtilsAudioMediaTypeSignatures: [ProviderUtilsMediaTypeSignature] = [
+private let providerUtilsAudioMediaTypeSignaturesWithoutMp4: [ProviderUtilsMediaTypeSignature] = [
+    .init(mediaType: "audio/aac", bytesPrefix: [0xFF, 0xF0]), // MPEG-4 ADTS with CRC
+    .init(mediaType: "audio/aac", bytesPrefix: [0xFF, 0xF1]), // MPEG-4 ADTS without CRC
+    .init(mediaType: "audio/aac", bytesPrefix: [0xFF, 0xF8]), // MPEG-2 ADTS with CRC
+    .init(mediaType: "audio/aac", bytesPrefix: [0xFF, 0xF9]), // MPEG-2 ADTS without CRC
     .init(mediaType: "audio/mpeg", bytesPrefix: [0xFF, 0xFB]),
     .init(mediaType: "audio/mpeg", bytesPrefix: [0xFF, 0xFA]),
     .init(mediaType: "audio/mpeg", bytesPrefix: [0xFF, 0xF3]),
@@ -52,9 +58,13 @@ private let providerUtilsAudioMediaTypeSignatures: [ProviderUtilsMediaTypeSignat
     .init(mediaType: "audio/ogg", bytesPrefix: [0x4F, 0x67, 0x67, 0x53]),
     .init(mediaType: "audio/flac", bytesPrefix: [0x66, 0x4C, 0x61, 0x43]),
     .init(mediaType: "audio/aac", bytesPrefix: [0x40, 0x15, 0x00, 0x00]),
-    .init(mediaType: "audio/mp4", bytesPrefix: [0x66, 0x74, 0x79, 0x70]),
     .init(mediaType: "audio/webm", bytesPrefix: [0x1A, 0x45, 0xDF, 0xA3]),
 ]
+
+private let providerUtilsAudioMediaTypeSignatures: [ProviderUtilsMediaTypeSignature] =
+    providerUtilsAudioMediaTypeSignaturesWithoutMp4 + [
+        .init(mediaType: "audio/mp4", bytesPrefix: [0x00, 0x00, 0x00, nil, 0x66, 0x74, 0x79, 0x70]),
+    ]
 
 private let providerUtilsVideoMediaTypeSignatures: [ProviderUtilsMediaTypeSignature] = [
     .init(
@@ -69,8 +79,25 @@ private let providerUtilsVideoMediaTypeSignatures: [ProviderUtilsMediaTypeSignat
     .init(mediaType: "video/x-msvideo", bytesPrefix: [0x52, 0x49, 0x46, 0x46]),
 ]
 
+private let defaultSniffBytes = 18
+
+// Longest signature prefix in the tables above.
+private let maxSignatureBytes = 12
+
+/// Largest ID3v2 tag (header and body) skipped to reach the audio frame. Bounds
+/// the decode so it stays independent of the input size.
+let maxID3TagBytes = 128 * 1024
+
+// Prefix decoded when an ID3 tag is present: the tag plus room for the trailing signature.
+private let id3ScanBytes = maxID3TagBytes + maxSignatureBytes
+
 /**
  Detects the IANA media type of a file from raw bytes.
+
+ When `topLevelType` is `nil`, every known signature is considered; MP4
+ containers are reported as `video/mp4`, since `ftyp` cannot tell audio from
+ video. Otherwise only signatures of that top-level segment are considered, and
+ unsupported segments (e.g. `text`) return `nil`.
 
  Swift port of `@ai-sdk/provider-utils/src/detect-media-type.ts`.
  */
@@ -131,7 +158,7 @@ private func detectMediaTypeInternal(
     case nil:
         signatures = providerUtilsImageMediaTypeSignatures
             + providerUtilsDocumentMediaTypeSignatures
-            + providerUtilsAudioMediaTypeSignatures
+            + providerUtilsAudioMediaTypeSignaturesWithoutMp4
             + providerUtilsVideoMediaTypeSignatures
     case "image":
         signatures = providerUtilsImageMediaTypeSignatures
@@ -152,27 +179,18 @@ private func detectMediaTypeBySignatures(
     data: ProviderUtilsDataOrBase64,
     signatures: [ProviderUtilsMediaTypeSignature]
 ) -> String? {
-    let processedData = stripID3TagsIfPresent(data)
-    let bytes: Data
+    var bytes = decodePrefix(data, maxBytes: defaultSniffBytes)
 
-    switch processedData {
-    case .data(let data):
-        bytes = data
-    case .base64(let base64):
-        guard let decoded = decodeBase64ForSignatureDetection(base64, maxEncodedLength: 24) else {
-            return nil
-        }
-        bytes = decoded
+    // ID3v2-tagged MP3s carry the audio frame after the tag; scan a bounded
+    // prefix past it rather than decoding the whole input.
+    if hasID3(bytes) {
+        bytes = stripID3(decodePrefix(data, maxBytes: id3ScanBytes))
     }
 
-    for signature in signatures {
-        guard bytes.count >= signature.bytesPrefix.count else {
-            continue
-        }
-
+    for signature in signatures where bytes.count >= signature.bytesPrefix.count {
         let matches = signature.bytesPrefix.enumerated().allSatisfy { index, byte in
             guard let byte else { return true }
-            return bytes[index] == byte
+            return bytes[bytes.startIndex + index] == byte
         }
 
         if matches {
@@ -183,56 +201,40 @@ private func detectMediaTypeBySignatures(
     return nil
 }
 
-private func stripID3TagsIfPresent(_ data: ProviderUtilsDataOrBase64) -> ProviderUtilsDataOrBase64 {
-    let bytes: Data
-
+/// Decodes exactly the first `maxBytes` bytes, so detection does not depend on
+/// whether the input is raw bytes or base64.
+private func decodePrefix(_ data: ProviderUtilsDataOrBase64, maxBytes: Int) -> Data {
     switch data {
     case .data(let data):
-        bytes = data
+        return data.count > maxBytes ? data.prefix(maxBytes) : data
     case .base64(let base64):
-        guard base64.hasPrefix("SUQz"),
-              let decoded = decodeBase64ForSignatureDetection(base64)
-        else {
-            return data
-        }
-        bytes = decoded
-    }
-
-    guard bytes.count > 10,
-          bytes[0] == 0x49,
-          bytes[1] == 0x44,
-          bytes[2] == 0x33
-    else {
-        return data
-    }
-
-    let id3Size = ((Int(bytes[6]) & 0x7F) << 21)
-        | ((Int(bytes[7]) & 0x7F) << 14)
-        | ((Int(bytes[8]) & 0x7F) << 7)
-        | (Int(bytes[9]) & 0x7F)
-
-    let strippedData = Data(bytes.dropFirst(id3Size + 10))
-
-    switch data {
-    case .data:
-        return .data(strippedData)
-    case .base64:
-        return .base64(strippedData.base64EncodedString())
+        // 4 base64 characters decode to 3 bytes: decode whole groups, then trim.
+        let maxChars = Int((Double(maxBytes) / 3).rounded(.up)) * 4
+        let bytes = decodeBase64ForSignatureDetection(String(base64.prefix(maxChars))) ?? Data()
+        return bytes.count > maxBytes ? bytes.prefix(maxBytes) : bytes
     }
 }
 
-private func decodeBase64ForSignatureDetection(
-    _ string: String,
-    maxEncodedLength: Int? = nil
-) -> Data? {
-    let truncated: String
-    if let maxEncodedLength {
-        truncated = String(string.prefix(min(string.count, maxEncodedLength)))
-    } else {
-        truncated = string
-    }
+private func hasID3(_ bytes: Data) -> Bool {
+    let start = bytes.startIndex
+    return bytes.count > 10
+        && bytes[start] == 0x49 // 'I'
+        && bytes[start + 1] == 0x44 // 'D'
+        && bytes[start + 2] == 0x33 // '3'
+}
 
-    let normalized = truncated
+private func stripID3(_ bytes: Data) -> Data {
+    let start = bytes.startIndex
+    let id3Size = ((Int(bytes[start + 6]) & 0x7F) << 21)
+        | ((Int(bytes[start + 7]) & 0x7F) << 14)
+        | ((Int(bytes[start + 8]) & 0x7F) << 7)
+        | (Int(bytes[start + 9]) & 0x7F)
+
+    return Data(bytes.dropFirst(id3Size + 10))
+}
+
+private func decodeBase64ForSignatureDetection(_ string: String) -> Data? {
+    let normalized = string
         .replacingOccurrences(of: "-", with: "+")
         .replacingOccurrences(of: "_", with: "/")
 

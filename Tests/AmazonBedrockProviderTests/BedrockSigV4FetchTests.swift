@@ -161,7 +161,6 @@ struct BedrockSigV4FetchTests {
         }
 
         #expect(headers["user-agent"]?.contains("ai-sdk/amazon-bedrock/") == true)
-        #expect(headers["user-agent"]?.contains("runtime/") == true)
     }
 
     @Test("createSigV4FetchFunction propagates credential provider errors and does not call fetch")

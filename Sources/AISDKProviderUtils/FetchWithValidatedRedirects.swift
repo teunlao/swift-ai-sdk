@@ -3,19 +3,112 @@ import Foundation
 import FoundationNetworking
 #endif
 
-/// Fetches a URL while enforcing the download URL guard on every redirect hop.
+// Redirect status codes per the fetch spec. 300 and 304 are not redirects,
+// even when a server attaches a Location header.
+private let redirectStatusCodes: Set<Int> = [301, 302, 303, 307, 308]
+
+/// How `fetchWithValidatedEndpoint` treats a redirect response.
+public enum ValidatedEndpointRedirect: Sendable {
+    /// A redirect fails the request.
+    case error
+    /// The redirect response is returned; the caller validates `Location` before following it.
+    case manual
+}
+
+/**
+ Fetches one validated URL without following redirects.
+
+ Unless `request.url` is same-origin with `trustedOrigin` (a developer-configured
+ origin that may resolve to a private address), it is checked with
+ `validateDownloadUrl` first. Redirects are rejected by default; with `.manual`
+ the redirect response is returned for the caller to validate.
+
+ Swift port of `fetchWithValidatedEndpoint` from
+ `@ai-sdk/provider-utils/src/fetch-with-validated-redirects.ts`. URLSession has
+ no connect-time DNS hook, so an injected fetch is responsible for equivalent
+ connect-time validation.
+ */
+public func fetchWithValidatedEndpoint(
+    request: URLRequest,
+    fetch: FetchFunction? = nil,
+    trustedOrigin: String? = nil,
+    redirect: ValidatedEndpointRedirect = .error,
+    isAborted: (@Sendable () -> Bool)? = nil
+) async throws -> ProviderHTTPResponse {
+    guard let requestURL = request.url else {
+        throw DownloadError(url: "", message: "Invalid URL: ")
+    }
+    let urlText = requestURL.absoluteString
+
+    let isTrusted = trustedOrigin.map { isSameOrigin(urlText, $0) } ?? false
+    if !isTrusted {
+        try validateDownloadUrl(urlText)
+    }
+
+    let fetchResponse = try await fetchWithAbortCheck(
+        fetch: fetch ?? defaultManualRedirectFetchFunction(),
+        request: request,
+        isAborted: isAborted
+    )
+
+    guard let httpResponse = fetchResponse.urlResponse as? HTTPURLResponse else {
+        throw DownloadError(url: urlText, cause: URLError(.badServerResponse))
+    }
+
+    let response = ProviderHTTPResponse(
+        url: requestURL,
+        httpResponse: httpResponse,
+        body: fetchResponse.body
+    )
+
+    if redirect == .error, redirectStatusCodes.contains(httpResponse.statusCode) {
+        startCancellingResponseBody(response)
+        throw DownloadError(
+            url: urlText,
+            message: "Redirect from \(urlText) was blocked"
+        )
+    }
+
+    return response
+}
+
+/**
+ Fetches a URL while enforcing the download guard on every hop.
+
+ Redirects are followed manually so each hop is checked with `validateDownloadUrl`
+ before it is requested. A hop that is same-origin with `trustedOrigin` (the
+ developer-configured provider endpoint, never response data) skips validation.
+
+ Request headers are sanitized with `sanitizeRequestHeaders` before the first
+ request, and every caller header except `user-agent` is dropped on a redirect
+ that crosses origin, so credentials in custom headers cannot reach a foreign
+ host. Credentials still reach the first hop; use `fetchUntrustedUrl` for URLs
+ that need first-hop credential isolation.
+
+ The returned response is the final non-redirect response; the caller checks the
+ status and reads the body.
+
+ Swift port of `@ai-sdk/provider-utils/src/fetch-with-validated-redirects.ts`.
+
+ - Throws: `DownloadError` if a hop is unsafe or the redirect limit is exceeded.
+ */
 public func fetchWithValidatedRedirects(
     url: String,
     headers: [String: String]? = nil,
     isAborted: (@Sendable () -> Bool)? = nil,
     maxRedirects: Int = 10,
-    fetch: FetchFunction? = nil
+    fetch: FetchFunction? = nil,
+    trustedOrigin: String? = nil
 ) async throws -> ProviderHTTPResponse {
     let fetchImpl = fetch ?? defaultManualRedirectFetchFunction()
+    var currentHeaders = headers.map(sanitizeRequestHeaders)
     var currentUrl = url
 
     for _ in 0...maxRedirects {
-        try validateDownloadUrl(currentUrl)
+        let isTrustedHop = trustedOrigin.map { isSameOrigin(currentUrl, $0) } ?? false
+        if !isTrustedHop {
+            try validateDownloadUrl(currentUrl)
+        }
 
         guard let requestURL = URL(string: currentUrl) else {
             throw DownloadError(url: url, message: "Invalid URL: \(currentUrl)")
@@ -25,8 +118,8 @@ public func fetchWithValidatedRedirects(
         request.httpMethod = "GET"
         request.timeoutInterval = PROVIDER_UTILS_DEFAULT_REQUEST_TIMEOUT_INTERVAL
 
-        if let headers {
-            for (name, value) in headers {
+        if let currentHeaders {
+            for (name, value) in currentHeaders {
                 request.setValue(value, forHTTPHeaderField: name)
             }
         }
@@ -47,15 +140,23 @@ public func fetchWithValidatedRedirects(
             body: fetchResponse.body
         )
 
-        if (300..<400).contains(httpResponse.statusCode),
-           let location = httpResponse.value(forHTTPHeaderField: "Location") {
-            await cancelResponseBody(response)
+        if redirectStatusCodes.contains(httpResponse.statusCode),
+           let location = httpResponse.value(forHTTPHeaderField: "Location"),
+           !location.isEmpty {
+            // Release the redirect body without waiting: cancellation may stay
+            // pending while another consumer holds the stream.
+            startCancellingResponseBody(response)
 
             guard let nextURL = URL(string: location, relativeTo: requestURL)?.absoluteURL else {
                 throw DownloadError(url: url, message: "Invalid redirect URL: \(location)")
             }
+            let nextUrl = nextURL.absoluteString
 
-            currentUrl = nextURL.absoluteString
+            if let headersBeforeRedirect = currentHeaders, !isSameOrigin(nextUrl, currentUrl) {
+                currentHeaders = headersBeforeRedirect["user-agent"].map { ["user-agent": $0] } ?? [:]
+            }
+
+            currentUrl = nextUrl
             continue
         }
 
@@ -66,6 +167,12 @@ public func fetchWithValidatedRedirects(
         url: url,
         message: "Too many redirects (max \(maxRedirects))"
     )
+}
+
+private func startCancellingResponseBody(_ response: ProviderHTTPResponse) {
+    Task {
+        await cancelResponseBody(response)
+    }
 }
 
 private final class NoRedirectURLSessionDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
@@ -80,7 +187,7 @@ private final class NoRedirectURLSessionDelegate: NSObject, URLSessionTaskDelega
     }
 }
 
-private func defaultManualRedirectFetchFunction() -> FetchFunction {
+func defaultManualRedirectFetchFunction() -> FetchFunction {
     { request in
         let delegate = NoRedirectURLSessionDelegate()
         let configuration = URLSessionConfiguration.default

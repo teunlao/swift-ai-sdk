@@ -238,22 +238,28 @@ struct IsUrlSupportedTests {
                 mediaType: "text/plain",
                 url: "https://EXAMPLE.com/path", // Uppercase domain
                 supportedUrls: [
-                    "text/plain": [regex("https://example\\.com/path")]
+                    "text/plain": [try NSRegularExpression(pattern: "https://example\\.com/path", options: [.caseInsensitive])]
                 ]
             )
             #expect(result == true)
         }
 
-        @Test("is case-insensitive for URL paths by default regex")
-        func caseInsensitiveForUrlPaths() throws {
-            let result = isUrlSupported(
+        @Test("is case-sensitive for URL paths and query values unless the regex specifies otherwise")
+        func caseSensitiveForUrlPaths() throws {
+            #expect(!isUrlSupported(
                 mediaType: "text/plain",
                 url: "https://example.com/PATH", // Uppercase path
                 supportedUrls: [
                     "text/plain": [regex("https://example\\.com/path")] // Lowercase path in regex
                 ]
-            )
-            #expect(result == true)
+            ))
+            #expect(isUrlSupported(
+                mediaType: "image/png",
+                url: "https://assets.example/photo.png?token=AbC123",
+                supportedUrls: [
+                    "image/*": [regex("^https://assets\\.example/photo\\.png\\?token=AbC123$")]
+                ]
+            ))
         }
     }
 

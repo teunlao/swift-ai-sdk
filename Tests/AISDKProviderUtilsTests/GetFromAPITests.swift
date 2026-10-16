@@ -78,9 +78,7 @@ struct GetFromAPITests {
         // Verify headers include Authorization and User-Agent
         let headers = capturedRequest?.allHTTPHeaderFields ?? [:]
         #expect(headers["Authorization"] == "Bearer test")
-        #expect(headers["User-Agent"]?.contains("ai-sdk/provider-utils") == true)
-        // Note: getRuntimeEnvironmentUserAgent() returns platform-specific string (e.g., "runtime/macOS-14.0")
-        #expect(headers["User-Agent"]?.contains("runtime/") == true)
+        #expect(headers["User-Agent"]?.contains("ai-sdk-provider-utils/") == true)
     }
 
     @Test("should handle API errors")
@@ -241,7 +239,7 @@ struct GetFromAPITests {
         let capturedHeaders = await capture.get()
         // Verify only Authorization and User-Agent are present (no nil/undefined values)
         #expect(capturedHeaders?["Authorization"] == "Bearer test")
-        #expect(capturedHeaders?["User-Agent"]?.contains("ai-sdk/provider-utils") == true)
+        #expect(capturedHeaders?["User-Agent"]?.contains("ai-sdk-provider-utils/") == true)
         // X-Custom-Header should not be present (equivalent to undefined in TS)
     }
 

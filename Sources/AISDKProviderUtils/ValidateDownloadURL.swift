@@ -131,9 +131,14 @@ private func isPrivateIPv4(_ parts: [Int]) -> Bool {
     if a == 169 && b == 254 { return true }
     if a == 172 && (16...31).contains(b) { return true }
     if a == 192 && b == 0 && c == 0 { return true }
+    // 192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24 (documentation)
+    if a == 192 && b == 0 && c == 2 { return true }
     if a == 192 && b == 168 { return true }
     if a == 198 && (b == 18 || b == 19) { return true }
-    if a >= 240 { return true }
+    if a == 198 && b == 51 && c == 100 { return true }
+    if a == 203 && b == 0 && c == 113 { return true }
+    // 224.0.0.0/4 (multicast) and 240.0.0.0/4 (reserved, incl. broadcast)
+    if a >= 224 { return true }
 
     return false
 }
@@ -197,6 +202,9 @@ private func isPrivateIPv6(_ ip: String) -> Bool {
     if (groups[0] & 0xffc0) == 0xfe80 { return true }
     if (groups[0] & 0xffc0) == 0xfec0 { return true }
     if (groups[0] & 0xff00) == 0xff00 { return true }
+    // 2001:db8::/32 and 3fff::/20 (documentation)
+    if groups[0] == 0x2001 && groups[1] == 0x0db8 { return true }
+    if groups[0] == 0x3fff && (groups[1] & 0xf000) == 0 { return true }
 
     let embedsIPv4 =
         topZero(6) ||

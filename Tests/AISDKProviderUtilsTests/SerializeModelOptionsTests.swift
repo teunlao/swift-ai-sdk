@@ -132,7 +132,7 @@ struct SerializeModelOptionsTests {
             ["x-api-key": "sk-test"]
         }
 
-        #expect(throws: SerializeModelOptionsError.promiseReturnedFromResolveSync) {
+        #expect(throws: SerializationError.self) {
             _ = try serializeModelOptions(
                 modelId: "model",
                 config: [

@@ -427,19 +427,48 @@ public struct ToolApprovalRequest: Sendable, Equatable, Codable {
     /// ID of the tool call that the approval request is for.
     public let toolCallId: String
 
-    public init(approvalId: String, toolCallId: String) {
+    /// Reason why the tool call requires approval.
+    public let reason: String?
+
+    /// Whether the tool was automatically approved or denied. Defaults to `false` upstream.
+    public let isAutomatic: Bool?
+
+    /// HMAC-SHA256 signature binding this approval to its tool call, when a
+    /// tool approval secret is configured.
+    public let signature: String?
+
+    /// Tool input before input schema validation and transformation, included
+    /// when it differs from the validated input so approved calls can be revalidated.
+    public let inputSchemaInput: JSONValue?
+
+    public init(
+        approvalId: String,
+        toolCallId: String,
+        reason: String? = nil,
+        isAutomatic: Bool? = nil,
+        signature: String? = nil,
+        inputSchemaInput: JSONValue? = nil
+    ) {
         self.approvalId = approvalId
         self.toolCallId = toolCallId
+        self.reason = reason
+        self.isAutomatic = isAutomatic
+        self.signature = signature
+        self.inputSchemaInput = inputSchemaInput
     }
 
     private enum CodingKeys: String, CodingKey {
-        case type, approvalId, toolCallId
+        case type, approvalId, toolCallId, reason, isAutomatic, signature, inputSchemaInput
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         approvalId = try container.decode(String.self, forKey: .approvalId)
         toolCallId = try container.decode(String.self, forKey: .toolCallId)
+        reason = try container.decodeIfPresent(String.self, forKey: .reason)
+        isAutomatic = try container.decodeIfPresent(Bool.self, forKey: .isAutomatic)
+        signature = try container.decodeIfPresent(String.self, forKey: .signature)
+        inputSchemaInput = try container.decodeIfPresent(JSONValue.self, forKey: .inputSchemaInput)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -447,6 +476,10 @@ public struct ToolApprovalRequest: Sendable, Equatable, Codable {
         try container.encode(type, forKey: .type)
         try container.encode(approvalId, forKey: .approvalId)
         try container.encode(toolCallId, forKey: .toolCallId)
+        try container.encodeIfPresent(reason, forKey: .reason)
+        try container.encodeIfPresent(isAutomatic, forKey: .isAutomatic)
+        try container.encodeIfPresent(signature, forKey: .signature)
+        try container.encodeIfPresent(inputSchemaInput, forKey: .inputSchemaInput)
     }
 }
 

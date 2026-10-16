@@ -196,45 +196,47 @@ struct StreamingToolCallTrackerTests {
         ])
     }
 
-    @Test("keeps empty ids instead of generating a fallback")
-    func keepsEmptyIdsInsteadOfGeneratingFallback() throws {
+    @Test("generates unique ids for blank and missing wire ids")
+    func generatesUniqueIdsForBlankAndMissingIds() throws {
         let collector = StreamPartCollector()
         let tracker = StreamingToolCallTracker(
             enqueue: collector.enqueue,
             options: .init(generateId: { "generated" })
         )
 
-        try tracker.processDelta(.init(
-            index: 0,
-            id: "",
-            type: "function",
-            function: .init(name: "fn", arguments: "{}")
-        ))
+        try tracker.processDelta(.init(index: 0, id: "", function: .init(name: "fn", arguments: "{}")))
+        try tracker.processDelta(.init(index: 1, function: .init(name: "fn", arguments: "{}")))
         tracker.flush()
 
         #expect(collector.take() == [
-            .toolInputStart(id: "", toolName: "fn", providerMetadata: nil, providerExecuted: nil, dynamic: nil, title: nil),
-            .toolInputDelta(id: "", delta: "{}", providerMetadata: nil),
-            .toolInputEnd(id: "", providerMetadata: nil),
-            .toolCall(.init(toolCallId: "", toolName: "fn", input: "{}")),
+            .toolInputStart(id: "generated", toolName: "fn", providerMetadata: nil, providerExecuted: nil, dynamic: nil, title: nil),
+            .toolInputDelta(id: "generated", delta: "{}", providerMetadata: nil),
+            .toolInputStart(id: "generated-1", toolName: "fn", providerMetadata: nil, providerExecuted: nil, dynamic: nil, title: nil),
+            .toolInputDelta(id: "generated-1", delta: "{}", providerMetadata: nil),
+            .toolInputEnd(id: "generated", providerMetadata: nil),
+            .toolCall(.init(toolCallId: "generated", toolName: "fn", input: "{}")),
+            .toolInputEnd(id: "generated-1", providerMetadata: nil),
+            .toolCall(.init(toolCallId: "generated-1", toolName: "fn", input: "{}")),
         ])
     }
 
-    @Test("throws when id is missing")
-    func throwsWhenIdIsMissing() throws {
+    @Test("keeps parallel calls apart when a provider reuses an index")
+    func keepsParallelCallsApartOnReusedIndex() throws {
         let collector = StreamPartCollector()
         let tracker = StreamingToolCallTracker(enqueue: collector.enqueue)
 
-        do {
-            try tracker.processDelta(.init(
-                index: 0,
-                type: "function",
-                function: .init(name: "fn")
-            ))
-            Issue.record("Expected InvalidResponseDataError")
-        } catch let error as InvalidResponseDataError {
-            #expect(error.message == "Expected 'id' to be a string.")
+        try tracker.processDelta(.init(index: 0, id: "call_a", function: .init(name: "a", arguments: #"{"x":1}"#)))
+        try tracker.processDelta(.init(index: 0, id: "call_b", function: .init(name: "b", arguments: #"{"y":2}"#)))
+        tracker.flush()
+
+        let toolCalls = collector.take().compactMap { part -> LanguageModelV4ToolCall? in
+            if case .toolCall(let toolCall) = part { return toolCall }
+            return nil
         }
+        #expect(toolCalls == [
+            .init(toolCallId: "call_a", toolName: "a", input: #"{"x":1}"#),
+            .init(toolCallId: "call_b", toolName: "b", input: #"{"y":2}"#),
+        ])
     }
 
     @Test("throws when function name is missing")

@@ -24,7 +24,7 @@ public func downloadBlob(
             return try decodeDataURLBlob(url, maxBytes: maxBytes)
         }
 
-        let response = try await fetchWithValidatedRedirects(
+        let response = try await fetchUntrustedUrl(
             url: url,
             headers: headers,
             isAborted: isAborted,

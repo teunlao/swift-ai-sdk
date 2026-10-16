@@ -109,6 +109,75 @@ struct FetchWithValidatedRedirectsTests {
         ])
     }
 
+    @Test("strips blocked headers and drops caller headers except user-agent on a cross-origin redirect")
+    func dropsCallerHeadersOnCrossOriginRedirect() async throws {
+        let fetch = FetchSequence([
+            makeFetchResponse(
+                url: "https://api.example.com/file",
+                statusCode: 302,
+                headers: ["Location": "https://cdn.other.com/file"]
+            ),
+            makeFetchResponse(url: "https://cdn.other.com/file", body: Data("ok".utf8)),
+        ])
+
+        _ = try await fetchWithValidatedRedirects(
+            url: "https://api.example.com/file",
+            headers: ["Authorization": "Bearer key", "x-key": "secret", "Cookie": "a=b", "User-Agent": "test-agent"],
+            fetch: fetch.fetch
+        )
+
+        let requests = await fetch.requests()
+        #expect(requests.count == 2)
+        #expect(requests[0].value(forHTTPHeaderField: "Authorization") == "Bearer key")
+        #expect(requests[0].value(forHTTPHeaderField: "x-key") == "secret")
+        #expect(requests[0].value(forHTTPHeaderField: "Cookie") == nil)
+        #expect(requests[1].allHTTPHeaderFields?.count == 1)
+        #expect(requests[1].value(forHTTPHeaderField: "User-Agent") == "test-agent")
+    }
+
+    @Test("skips validation for hops on the trusted origin only")
+    func skipsValidationForTrustedOrigin() async throws {
+        let fetch = FetchSequence([
+            makeFetchResponse(
+                url: "http://localhost:8080/file",
+                statusCode: 302,
+                headers: ["Location": "http://127.0.0.1/file"]
+            ),
+        ])
+
+        await #expect(throws: DownloadError.self) {
+            _ = try await fetchWithValidatedRedirects(
+                url: "http://localhost:8080/file",
+                fetch: fetch.fetch,
+                trustedOrigin: "http://localhost:8080"
+            )
+        }
+
+        #expect(await fetch.requests().map { $0.url?.absoluteString } == ["http://localhost:8080/file"])
+    }
+
+    @Test("fetchUntrustedUrl sends credentials on the first hop only to the credentialed origin")
+    func untrustedFetchIsolatesFirstHopCredentials() async throws {
+        let headers = ["Authorization": "Bearer key", "Accept": "image/png"]
+        let fetch = FetchSequence([
+            makeFetchResponse(url: "https://cdn.example.com/file"),
+            makeFetchResponse(url: "https://cdn.example.com/file"),
+        ])
+
+        _ = try await fetchUntrustedUrl(url: "https://cdn.example.com/file", headers: headers, fetch: fetch.fetch)
+        _ = try await fetchUntrustedUrl(
+            url: "https://cdn.example.com/file",
+            headers: headers,
+            fetch: fetch.fetch,
+            credentialedOrigin: "https://cdn.example.com"
+        )
+
+        let requests = await fetch.requests()
+        #expect(requests[0].allHTTPHeaderFields?.count == 1)
+        #expect(requests[0].value(forHTTPHeaderField: "Accept") == "image/png")
+        #expect(requests[1].value(forHTTPHeaderField: "Authorization") == "Bearer key")
+    }
+
     @Test("rejects once redirect limit is exceeded")
     func rejectsWhenRedirectLimitExceeded() async throws {
         let fetch = RepeatingRedirectFetch()

@@ -6,7 +6,10 @@ import Testing
 struct ProviderUtilsDetectMediaTypeTests {
     @Test("detects image signatures from bytes and base64")
     func detectsImageSignatures() {
-        #expect(detectMediaType(data: Data([0x47, 0x49, 0x46, 0xFF]), topLevelType: "image") == "image/gif")
+        #expect(detectMediaType(data: Data("GIF89a".utf8), topLevelType: "image") == "image/gif")
+        // Plain text starting with "GIF" or "BM" is not an image.
+        #expect(detectMediaType(data: Data("GIF is a format".utf8), topLevelType: "image") == nil)
+        #expect(detectMediaType(data: Data("BMW owners manual".utf8), topLevelType: "image") == nil)
         #expect(detectMediaType(data: "iVBORwabc123", topLevelType: "image") == "image/png")
         #expect(detectMediaType(data: Data([0xFF, 0xD8, 0xFF]), topLevelType: "image") == "image/jpeg")
     }
@@ -41,6 +44,18 @@ struct ProviderUtilsDetectMediaTypeTests {
 
         #expect(detectMediaType(data: Data([0xFF, 0xFB]), topLevelType: "audio") == "audio/mpeg")
         #expect(detectMediaType(data: mp3WithID3Bytes, topLevelType: "audio") == "audio/mpeg")
+    }
+
+    @Test("detects ADTS AAC, ftyp boxes of any size, and MP4 as audio or video by top-level type")
+    func detectsAacAndVariableFtypBoxes() {
+        #expect(detectMediaType(data: Data([0xFF, 0xF1, 0x50, 0x80]), topLevelType: "audio") == "audio/aac")
+
+        let avif = Data([0x00, 0x00, 0x00, 0x1C, 0x66, 0x74, 0x79, 0x70, 0x61, 0x76, 0x69, 0x66])
+        #expect(detectMediaType(data: avif, topLevelType: "image") == "image/avif")
+
+        let m4a = Data([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x4D, 0x34, 0x41, 0x20])
+        #expect(detectMediaType(data: m4a, topLevelType: "audio") == "audio/mp4")
+        #expect(detectMediaType(data: m4a) == "video/mp4")
     }
 
     @Test("detects video signatures")

@@ -96,8 +96,7 @@ struct PostToAPITests {
         let headers = capturedRequest?.allHTTPHeaderFields ?? [:]
         #expect(headers["Authorization"] == "Bearer test")
         #expect(headers["Content-Type"] == "application/json")
-        #expect(headers["User-Agent"]?.contains("ai-sdk/provider-utils") == true)
-        #expect(headers["User-Agent"]?.contains("runtime/") == true)
+        #expect(headers["User-Agent"]?.contains("ai-sdk-provider-utils/") == true)
 
         // Verify body
         if let body = capturedRequest?.httpBody {
@@ -276,7 +275,7 @@ struct PostToAPITests {
         let capturedHeaders = await capture.get()
         #expect(capturedHeaders?["Authorization"] == "Bearer test")
         #expect(capturedHeaders?["Content-Type"] == "application/json")
-        #expect(capturedHeaders?["User-Agent"]?.contains("ai-sdk/provider-utils") == true)
+        #expect(capturedHeaders?["User-Agent"]?.contains("ai-sdk-provider-utils/") == true)
     }
 
     @Test("should handle errors in response handlers")

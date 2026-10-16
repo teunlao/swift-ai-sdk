@@ -29,21 +29,6 @@ public struct SerializeModelOptionsOptions {
     }
 }
 
-/// Error thrown when model options cannot be serialized synchronously.
-public struct SerializeModelOptionsError: Error, Equatable, CustomStringConvertible, Sendable {
-    public let message: String
-
-    public init(message: String) {
-        self.message = message
-    }
-
-    public var description: String { message }
-
-    public static let promiseReturnedFromResolveSync = SerializeModelOptionsError(
-        message: "Promise returned from resolveSync"
-    )
-}
-
 /// Serializes a model instance for workflow step boundaries.
 ///
 /// Non-JSON config values are omitted. The `headers` key is the only key whose
@@ -91,7 +76,7 @@ private func resolveHeadersValue(_ value: Any?) throws -> Any? {
     }
 
     if value is AsyncModelOptionsHeadersResolver {
-        throw SerializeModelOptionsError.promiseReturnedFromResolveSync
+        throw SerializationError(message: "Cannot serialize asynchronous model options.")
     }
 
     return value

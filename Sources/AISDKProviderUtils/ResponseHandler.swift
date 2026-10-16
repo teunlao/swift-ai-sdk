@@ -43,6 +43,54 @@ public struct ResponseHandlerResult<Value>: @unchecked Sendable {
 
 public typealias ResponseHandler<Value> = @Sendable (ResponseHandlerInput) async throws -> ResponseHandlerResult<Value>
 
+/**
+ Passes a successful response body through while turning a failed read into an
+ `APICallError` ("Failed to process successful response"), retryable when a
+ network failure caused it. Abort errors pass through unchanged.
+ */
+private func wrapResponseBodyStream(_ input: ResponseHandlerInput) -> AsyncThrowingStream<Data, Error> {
+    let source = input.response.body.makeStream()
+
+    return AsyncThrowingStream { continuation in
+        let task = Task {
+            do {
+                for try await chunk in source {
+                    continuation.yield(chunk)
+                }
+                continuation.finish()
+            } catch {
+                if isAbortError(error) {
+                    continuation.finish(throwing: error)
+                    return
+                }
+
+                continuation.finish(
+                    throwing: handleFetchError(
+                        error: APICallError(
+                            message: "Failed to process successful response",
+                            url: input.url,
+                            requestBodyValues: input.requestBodyValues,
+                            statusCode: input.response.statusCode,
+                            responseHeaders: extractResponseHeaders(from: input.response.httpResponse),
+                            cause: error
+                        ),
+                        url: input.url,
+                        requestBodyValues: input.requestBodyValues
+                    )
+                )
+            }
+        }
+
+        continuation.onTermination = { @Sendable _ in
+            task.cancel()
+        }
+    }
+}
+
+private func readResponseBodyAsText(_ input: ResponseHandlerInput) async throws -> String {
+    try await readResponseWithSizeLimit(response: input.response, url: input.url).utf8String()
+}
+
 // MARK: - JSON Error Response Handler
 
 public func createJsonErrorResponseHandler<T>(
@@ -52,8 +100,8 @@ public func createJsonErrorResponseHandler<T>(
 ) -> ResponseHandler<APICallError> {
     { input in
         let response = input.response
+        let bodyText = try await readResponseBodyAsText(input)
         let headers = extractResponseHeaders(from: response.httpResponse)
-        let bodyText = try await response.body.collectData().utf8String()
         let trimmed = bodyText.trimmingCharacters(in: .whitespacesAndNewlines)
 
         if trimmed.isEmpty {
@@ -122,7 +170,7 @@ public func createEventSourceResponseHandler<T>(
 
         return ResponseHandlerResult(
             value: parseJsonEventStream(
-                stream: response.body.makeStream(),
+                stream: wrapResponseBodyStream(input),
                 schema: chunkSchema
             ),
             responseHeaders: headers
@@ -142,7 +190,7 @@ public func createJsonStreamResponseHandler<T>(
         }
 
         let headers = extractResponseHeaders(from: response.httpResponse)
-        let sourceStream = response.body.makeStream()
+        let sourceStream = wrapResponseBodyStream(input)
         let schema = chunkSchema
 
         let outputStream = AsyncThrowingStream<ParseJSONResult<T>, Error> { continuation in
@@ -192,8 +240,8 @@ public func createJsonResponseHandler<T>(
 ) -> ResponseHandler<T> {
     { input in
         let response = input.response
+        let bodyText = try await readResponseBodyAsText(input)
         let headers = extractResponseHeaders(from: response.httpResponse)
-        let bodyText = try await response.body.collectData().utf8String()
 
         let parsed = await safeParseJSON(
             ParseJSONWithSchemaOptions(text: bodyText, schema: responseSchema)
@@ -258,13 +306,32 @@ public func createBinaryResponseHandler() -> ResponseHandler<Data> {
     }
 }
 
+// MARK: - Binary Stream Response Handler
+
+/**
+ Passes the response body through as a byte stream without buffering it
+ (unlike `createBinaryResponseHandler`). The consumer drains or drops the stream.
+ */
+public func createBinaryStreamResponseHandler() -> ResponseHandler<AsyncThrowingStream<Data, Error>> {
+    { input in
+        if case .none = input.response.body {
+            throw EmptyResponseBodyError()
+        }
+
+        return ResponseHandlerResult(
+            value: wrapResponseBodyStream(input),
+            responseHeaders: extractResponseHeaders(from: input.response.httpResponse)
+        )
+    }
+}
+
 // MARK: - Status Code Error Handler
 
 public func createStatusCodeErrorResponseHandler() -> ResponseHandler<APICallError> {
     { input in
         let response = input.response
         let headers = extractResponseHeaders(from: response.httpResponse)
-        let bodyText = try await response.body.collectData().utf8String()
+        let bodyText = try await readResponseBodyAsText(input)
 
         return ResponseHandlerResult(
             value: APICallError(

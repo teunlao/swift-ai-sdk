@@ -7,11 +7,11 @@ struct ValidateDownloadURLTests {
     func allowsPublicDownloadURLs() throws {
         try validateDownloadUrl("https://example.com/image.png")
         try validateDownloadUrl("http://example.com/image.png")
-        try validateDownloadUrl("https://203.0.113.1/file")
+        try validateDownloadUrl("https://93.184.216.34/file")
         try validateDownloadUrl("https://example.com:8080/file")
         try validateDownloadUrl("data:text/plain;base64,aGVsbG8=")
         try validateDownloadUrl("https://example.com./image.png")
-        try validateDownloadUrl("http://[2001:db8::1]/file")
+        try validateDownloadUrl("http://[2606:4700:4700::1111]/file")
     }
 
     @Test("blocks unsafe schemes and malformed URLs")
@@ -49,6 +49,10 @@ struct ValidateDownloadURLTests {
             "http://192.168.1.1/file",
             "http://198.18.0.1/file",
             "http://198.19.255.255/file",
+            "http://192.0.2.1/file",
+            "http://198.51.100.1/file",
+            "http://203.0.113.1/file",
+            "http://224.0.0.1/file",
             "http://240.0.0.1/file",
             "http://255.255.255.255/file",
         ].forEach(expectDownloadURLBlocked)
@@ -79,6 +83,8 @@ struct ValidateDownloadURLTests {
             "http://[fe80::1]/file",
             "http://[fec0::1]/file",
             "http://[ff02::1]/file",
+            "http://[2001:db8::1]/file",
+            "http://[3fff::1]/file",
             "http://[::ffff:127.0.0.1]/file",
             "http://[::ffff:10.0.0.1]/file",
             "http://[::ffff:169.254.169.254]/file",
@@ -92,8 +98,8 @@ struct ValidateDownloadURLTests {
 
     @Test("allows IPv6 forms with public embedded IPv4")
     func allowsPublicEmbeddedIPv4InIPv6() throws {
-        try validateDownloadUrl("http://[::ffff:203.0.113.1]/file")
-        try validateDownloadUrl("http://[64:ff9b::203.0.113.1]/file")
+        try validateDownloadUrl("http://[::ffff:93.184.216.34]/file")
+        try validateDownloadUrl("http://[64:ff9b::93.184.216.34]/file")
     }
 
     private func expectDownloadURLBlocked(_ url: String) {
