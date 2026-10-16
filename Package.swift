@@ -66,7 +66,7 @@ let package = Package(
         .testTarget(name: "EventSourceParserTests", dependencies: ["EventSourceParser"]),
 
         // AISDKProvider - Foundation types (matches @ai-sdk/provider)
-        // Language model interfaces (V2/V3), provider errors, JSONValue, shared types
+        // Language model interfaces (V3/V4), provider errors, JSONValue, shared types
         .target(name: "AISDKProvider", dependencies: []),
         .testTarget(name: "AISDKProviderTests", dependencies: ["AISDKProvider"]),
 

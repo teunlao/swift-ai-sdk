@@ -406,41 +406,6 @@ public func embedMany(
     )
 }
 
-@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-public func embedMany(
-    model: any EmbeddingModelV2<String>,
-    values: [String],
-    dimensions: Int? = nil,
-    maxParallelCalls: Int? = nil,
-    maxRetries: Int? = nil,
-    abortSignal: (@Sendable () -> Bool)? = nil,
-    headers: [String: String]? = nil,
-    providerOptions: ProviderOptions? = nil,
-    experimentalTelemetry telemetry: TelemetrySettings? = nil,
-    runtimeContext: [String: any Sendable] = [:],
-    onStart: (@Sendable (EmbedStartEvent<[String]>) async throws -> Void)? = nil,
-    experimentalOnStart: (@Sendable (EmbedStartEvent<[String]>) async throws -> Void)? = nil,
-    onEnd: (@Sendable (EmbedEndEvent<[String], [Embedding]>) async throws -> Void)? = nil,
-    experimentalOnEnd: (@Sendable (EmbedEndEvent<[String], [Embedding]>) async throws -> Void)? = nil
-) async throws -> DefaultEmbedManyResult<String> {
-    try await embedMany(
-        model: .v2(model),
-        values: values,
-        dimensions: dimensions,
-        maxParallelCalls: maxParallelCalls,
-        maxRetries: maxRetries,
-        abortSignal: abortSignal,
-        headers: headers,
-        providerOptions: providerOptions,
-        experimentalTelemetry: telemetry,
-        runtimeContext: runtimeContext,
-        onStart: onStart,
-        experimentalOnStart: experimentalOnStart,
-        onEnd: onEnd,
-        experimentalOnEnd: experimentalOnEnd
-    )
-}
-
 // MARK: - Internal Types
 
 private struct SingleCallResult {

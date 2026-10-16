@@ -62,7 +62,7 @@ Upstream parity refresh against Vercel AI SDK commit `85a80fc6e71558717899e30c9f
 
 ### Added
 - Core: add the V4 provider contract foundation across language, embedding, image, speech, transcription, video, reranking, realtime, middleware, files, skills, warnings, provider references, and shared file-data types.
-- Core: route high-level text, object, embedding, rerank, image, speech, transcription, and video flows through V4-compatible adapters while preserving existing V2/V3 provider compatibility.
+- Core: route high-level text, object, embedding, rerank, image, speech, transcription, and video flows through V4-compatible adapters while preserving existing V3 provider compatibility.
 - Core: add AI-level `uploadFile` and `uploadSkill` helpers with provider capability checks, media-type detection, multipart support, and direct regression coverage.
 - Provider utils: add V4 parity helpers for provider references, reasoning mapping, header normalization, same-origin and filename handling, nullable filtering, line extraction, media-type detection, inline file-data conversion, multipart form data, validated downloads, size-limited reads, model option serialization, streaming tool-call tracking, tool-name mapping, standard-schema normalization, response cancellation, delayed promises, and browser runtime detection.
 - OpenAI Compatible: add V4 provider-surface adapters and regression coverage for the OpenAI-compatible chat path.

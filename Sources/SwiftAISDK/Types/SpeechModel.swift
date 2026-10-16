@@ -17,9 +17,8 @@ import AISDKProviderUtils
  - A string identifier (model ID that will be resolved via the default/global provider)
  - A `SpeechModelV4` protocol implementation
  - A `SpeechModelV3` protocol implementation
- - A `SpeechModelV2` protocol implementation
 
- TypeScript equivalent: `string | SpeechModelV4 | SpeechModelV3 | SpeechModelV2`
+ TypeScript equivalent: `string | SpeechModelV4 | SpeechModelV3`
  */
 public enum SpeechModel: Sendable {
     /// Model identifier string (will be resolved via the global/default provider).
@@ -31,8 +30,6 @@ public enum SpeechModel: Sendable {
     /// Speech model V3 implementation.
     case v3(any SpeechModelV3)
 
-    /// Speech model V2 implementation.
-    case v2(any SpeechModelV2)
 }
 
 /**

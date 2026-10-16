@@ -136,35 +136,6 @@ public func generateImage(
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 public func generateImage(
-    model: any ImageModelV2,
-    prompt: GenerateImagePrompt,
-    n: Int = 1,
-    maxImagesPerCall: Int? = nil,
-    size: String? = nil,
-    aspectRatio: String? = nil,
-    seed: Int? = nil,
-    providerOptions: ProviderOptions? = nil,
-    maxRetries: Int? = nil,
-    abortSignal: (@Sendable () -> Bool)? = nil,
-    headers: [String: String]? = nil
-) async throws -> DefaultGenerateImageResult {
-    try await generateImage(
-        model: .v2(model),
-        prompt: prompt,
-        n: n,
-        maxImagesPerCall: maxImagesPerCall,
-        size: size,
-        aspectRatio: aspectRatio,
-        seed: seed,
-        providerOptions: providerOptions,
-        maxRetries: maxRetries,
-        abortSignal: abortSignal,
-        headers: headers
-    )
-}
-
-@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-public func generateImage(
     model: any ImageModelV4,
     prompt: String,
     n: Int = 1,
@@ -222,37 +193,6 @@ public func generateImage(
         seed: seed,
         files: try files?.map(convertImageModelV3FileToV4),
         mask: try mask.map(convertImageModelV3FileToV4),
-        providerOptions: providerOptions,
-        maxRetries: maxRetries,
-        abortSignal: abortSignal,
-        headers: headers
-    )
-}
-
-@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-public func generateImage(
-    model: any ImageModelV2,
-    prompt: String,
-    n: Int = 1,
-    maxImagesPerCall: Int? = nil,
-    size: String? = nil,
-    aspectRatio: String? = nil,
-    seed: Int? = nil,
-    providerOptions: ProviderOptions? = nil,
-    maxRetries: Int? = nil,
-    abortSignal: (@Sendable () -> Bool)? = nil,
-    headers: [String: String]? = nil
-) async throws -> DefaultGenerateImageResult {
-    try await generateImage(
-        model: .v2(model),
-        prompt: prompt,
-        n: n,
-        maxImagesPerCall: maxImagesPerCall,
-        size: size,
-        aspectRatio: aspectRatio,
-        seed: seed,
-        files: nil,
-        mask: nil,
         providerOptions: providerOptions,
         maxRetries: maxRetries,
         abortSignal: abortSignal,

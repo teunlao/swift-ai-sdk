@@ -192,47 +192,6 @@ public struct AgentSettings<OutputValue: Sendable, PartialOutputValue: Sendable>
             callSettings: callSettings
         )
     }
-
-    /// Convenience initializer that accepts a `LanguageModelV2` directly.
-    public init(
-        name: String? = nil,
-        system: String? = nil,
-        model: any LanguageModelV2,
-        tools: ToolSet? = nil,
-        toolChoice: ToolChoice? = nil,
-        stopWhen: [StopCondition]? = nil,
-        experimentalTelemetry: TelemetrySettings? = nil,
-        activeTools: [String]? = nil,
-        experimentalOutput: Output.Specification<OutputValue, PartialOutputValue>? = nil,
-        experimentalPrepareStep: PrepareStepFunction? = nil,
-        prepareStep: PrepareStepFunction? = nil,
-        experimentalRepairToolCall: ToolCallRepairFunction? = nil,
-        onStepFinish: GenerateTextOnStepFinishCallback? = nil,
-        onFinish: GenerateTextOnFinishCallback? = nil,
-        providerOptions: ProviderOptions? = nil,
-        experimentalContext: JSONValue? = nil,
-        callSettings: CallSettings = CallSettings()
-    ) {
-        self.init(
-            name: name,
-            system: system,
-            model: .v2(model),
-            tools: tools,
-            toolChoice: toolChoice,
-            stopWhen: stopWhen,
-            experimentalTelemetry: experimentalTelemetry,
-            activeTools: activeTools,
-            experimentalOutput: experimentalOutput,
-            experimentalPrepareStep: experimentalPrepareStep,
-            prepareStep: prepareStep,
-            experimentalRepairToolCall: experimentalRepairToolCall,
-            onStepFinish: onStepFinish,
-            onFinish: onFinish,
-            providerOptions: providerOptions,
-            experimentalContext: experimentalContext,
-            callSettings: callSettings
-        )
-    }
 }
 
 /// Convenience alias for the most common agent configuration (no structured outputs).

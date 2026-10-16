@@ -17,9 +17,8 @@ Can be one of:
  - A string identifier (model ID that will be resolved via registry)
  - An `EmbeddingModelV4` protocol implementation
  - An `EmbeddingModelV3` protocol implementation
- - An `EmbeddingModelV2` protocol implementation
 
- TypeScript equivalent: `string | EmbeddingModelV4 | EmbeddingModelV3 | EmbeddingModelV2<string>`
+ TypeScript equivalent: `string | EmbeddingModelV4 | EmbeddingModelV3`
  */
 public enum EmbeddingModel: Sendable {
     /// Model identifier string (will be resolved via registry)
@@ -31,8 +30,6 @@ public enum EmbeddingModel: Sendable {
     /// Embedding model V3 implementation
     case v3(any EmbeddingModelV3<String>)
 
-    /// Embedding model V2 implementation
-    case v2(any EmbeddingModelV2<String>)
 }
 
 /**

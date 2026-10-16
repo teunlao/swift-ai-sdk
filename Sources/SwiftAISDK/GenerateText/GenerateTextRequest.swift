@@ -194,50 +194,6 @@ public struct GenerateTextRequest<OutputValue: Sendable>: Sendable {
     }
 
     public init(
-        model: any LanguageModelV2,
-        tools: ToolSet? = nil,
-        toolChoice: ToolChoice? = nil,
-        system: String? = nil,
-        prompt: String? = nil,
-        messages: [ModelMessage]? = nil,
-        stopWhen: [StopCondition] = [stepCountIs(1)],
-        telemetry: TelemetrySettings? = nil,
-        providerOptions: ProviderOptions? = nil,
-        activeTools: [String]? = nil,
-        prepareStep: PrepareStepFunction? = nil,
-        repairToolCall: ToolCallRepairFunction? = nil,
-        download: DownloadFunction? = nil,
-        context: JSONValue? = nil,
-        include: GenerateTextInclude? = nil,
-        internalOptions: GenerateTextInternalOptions = GenerateTextInternalOptions(),
-        onStepFinish: GenerateTextOnStepFinishCallback? = nil,
-        onFinish: GenerateTextOnFinishCallback? = nil,
-        settings: CallSettings = CallSettings()
-    ) where OutputValue == JSONValue {
-        self.init(
-            model: .v2(model),
-            tools: tools,
-            toolChoice: toolChoice,
-            system: system,
-            prompt: prompt,
-            messages: messages,
-            stopWhen: stopWhen,
-            telemetry: telemetry,
-            providerOptions: providerOptions,
-            activeTools: activeTools,
-            prepareStep: prepareStep,
-            repairToolCall: repairToolCall,
-            download: download,
-            context: context,
-            include: include,
-            internalOptions: internalOptions,
-            onStepFinish: onStepFinish,
-            onFinish: onFinish,
-            settings: settings
-        )
-    }
-
-    public init(
         model: any LanguageModelV3,
         experimentalOutput: Output.Specification<OutputValue, JSONValue>,
         tools: ToolSet? = nil,
@@ -261,52 +217,6 @@ public struct GenerateTextRequest<OutputValue: Sendable>: Sendable {
     ) {
         self.init(
             model: .v3(model),
-            experimentalOutput: experimentalOutput,
-            tools: tools,
-            toolChoice: toolChoice,
-            system: system,
-            prompt: prompt,
-            messages: messages,
-            stopWhen: stopWhen,
-            telemetry: telemetry,
-            providerOptions: providerOptions,
-            activeTools: activeTools,
-            prepareStep: prepareStep,
-            repairToolCall: repairToolCall,
-            download: download,
-            context: context,
-            include: include,
-            internalOptions: internalOptions,
-            onStepFinish: onStepFinish,
-            onFinish: onFinish,
-            settings: settings
-        )
-    }
-
-    public init(
-        model: any LanguageModelV2,
-        experimentalOutput: Output.Specification<OutputValue, JSONValue>,
-        tools: ToolSet? = nil,
-        toolChoice: ToolChoice? = nil,
-        system: String? = nil,
-        prompt: String? = nil,
-        messages: [ModelMessage]? = nil,
-        stopWhen: [StopCondition] = [stepCountIs(1)],
-        telemetry: TelemetrySettings? = nil,
-        providerOptions: ProviderOptions? = nil,
-        activeTools: [String]? = nil,
-        prepareStep: PrepareStepFunction? = nil,
-        repairToolCall: ToolCallRepairFunction? = nil,
-        download: DownloadFunction? = nil,
-        context: JSONValue? = nil,
-        include: GenerateTextInclude? = nil,
-        internalOptions: GenerateTextInternalOptions = GenerateTextInternalOptions(),
-        onStepFinish: GenerateTextOnStepFinishCallback? = nil,
-        onFinish: GenerateTextOnFinishCallback? = nil,
-        settings: CallSettings = CallSettings()
-    ) {
-        self.init(
-            model: .v2(model),
             experimentalOutput: experimentalOutput,
             tools: tools,
             toolChoice: toolChoice,

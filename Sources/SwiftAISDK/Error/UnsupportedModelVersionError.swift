@@ -32,6 +32,6 @@ public struct UnsupportedModelVersionError: AISDKError, Sendable {
         self.version = version
         self.provider = provider
         self.modelId = modelId
-        self.message = "Unsupported model version \(version) for provider \"\(provider)\" and model \"\(modelId)\". AI SDK 5 only supports models that implement specification version \"v2\"."
+        self.message = "Unsupported model version \(version) for provider \"\(provider)\" and model \"\(modelId)\". Supported model specification versions are \"v3\" and \"v4\"."
     }
 }

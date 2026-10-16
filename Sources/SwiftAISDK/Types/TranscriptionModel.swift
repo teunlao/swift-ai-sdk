@@ -17,9 +17,8 @@ import AISDKProviderUtils
  - A string identifier (model ID that will be resolved via the default/global provider)
  - A `TranscriptionModelV4` protocol implementation
  - A `TranscriptionModelV3` protocol implementation
- - A `TranscriptionModelV2` protocol implementation
 
- TypeScript equivalent: `string | TranscriptionModelV4 | TranscriptionModelV3 | TranscriptionModelV2`
+ TypeScript equivalent: `string | TranscriptionModelV4 | TranscriptionModelV3`
  */
 public enum TranscriptionModel: Sendable {
     /// Model identifier string (will be resolved via the global/default provider).
@@ -31,8 +30,6 @@ public enum TranscriptionModel: Sendable {
     /// Transcription model V3 implementation.
     case v3(any TranscriptionModelV3)
 
-    /// Transcription model V2 implementation.
-    case v2(any TranscriptionModelV2)
 }
 
 /**

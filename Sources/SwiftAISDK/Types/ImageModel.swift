@@ -17,9 +17,8 @@ import AISDKProviderUtils
  - A string identifier (model ID that will be resolved via the default/global provider)
  - An `ImageModelV4` protocol implementation
  - An `ImageModelV3` protocol implementation
- - An `ImageModelV2` protocol implementation
 
- TypeScript equivalent: `string | ImageModelV4 | ImageModelV3 | ImageModelV2`
+ TypeScript equivalent: `string | ImageModelV4 | ImageModelV3`
  */
 public enum ImageModel: Sendable {
     /// Model identifier string (will be resolved via the global/default provider).
@@ -31,8 +30,6 @@ public enum ImageModel: Sendable {
     /// Image model V3 implementation.
     case v3(any ImageModelV3)
 
-    /// Image model V2 implementation.
-    case v2(any ImageModelV2)
 }
 
 /**

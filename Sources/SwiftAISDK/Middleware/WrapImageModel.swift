@@ -50,15 +50,6 @@ public func wrapImageModel(
     wrapImageModel(model: asImageModelV4(model), middleware: middleware, modelId: modelId, providerId: providerId)
 }
 
-public func wrapImageModel(
-    model: any ImageModelV2,
-    middleware: ImageModelMiddlewareInput,
-    modelId: String? = nil,
-    providerId: String? = nil
-) -> any ImageModelV4 {
-    wrapImageModel(model: asImageModelV4(model), middleware: middleware, modelId: modelId, providerId: providerId)
-}
-
 private struct WrappedImageModel: ImageModelV4 {
     let model: any ImageModelV4
     let middleware: ImageModelMiddleware

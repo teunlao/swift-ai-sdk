@@ -86,7 +86,7 @@ public func wrapLanguageModel(
 /**
  Wraps a legacy LanguageModelV3 instance with V4 middleware by adapting the model to V4 first.
 
- This mirrors upstream's `wrapLanguageModel` behavior, where V2/V3/V4 input models resolve to
+ This mirrors upstream's `wrapLanguageModel` behavior, where V3/V4 input models resolve to
  the V4 surface before middleware is applied.
  */
 public func wrapLanguageModel(

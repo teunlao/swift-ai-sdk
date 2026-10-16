@@ -112,30 +112,4 @@ struct LanguageModelV3ToolResultTests {
         #expect(decoded2.toolCallId == "img_gen_1")
         #expect(decodedFinal.toolCallId == "img_gen_1")
     }
-
-    // MARK: - V2 compatibility (all V2 fields still work)
-
-    @Test("ToolResult: V2 fields still work in V3")
-    func toolResult_v2Compatibility() throws {
-        // Create V3 ToolResult with only V2 fields (no preliminary)
-        let result = LanguageModelV3ToolResult(
-            toolCallId: "call_v2",
-            toolName: "searchWeb",
-            result: ["results": .array([.string("result1"), .string("result2")])],
-            isError: false,
-            providerMetadata: ["provider": ["cached": .bool(true)]]
-        )
-
-        let encoded = try JSONEncoder().encode(result)
-        let decoded = try JSONDecoder().decode(LanguageModelV3ToolResult.self, from: encoded)
-
-        // All V2 fields work as before
-        #expect(decoded.toolCallId == "call_v2")
-        #expect(decoded.toolName == "searchWeb")
-        #expect(decoded.isError == false)
-        #expect(decoded.providerMetadata != nil)
-
-        // preliminary defaults to nil when not specified
-        #expect(decoded.preliminary == nil)
-    }
 }

@@ -31,7 +31,7 @@ final class GatewayLanguageModel: LanguageModelV3 {
             "Authorization": "Bearer \(apiKey)",
             "ai-gateway-protocol-version": Constants.protocolVersion,
             "ai-gateway-auth-method": "api-key",
-            "ai-language-model-specification-version": "2",
+            "ai-language-model-specification-version": "3",
             "ai-language-model-id": modelId,
             "ai-language-model-streaming": String(streaming),
             "Content-Type": "application/json",
