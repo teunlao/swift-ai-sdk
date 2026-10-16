@@ -27,9 +27,9 @@ public struct CerebrasProviderSettings: Sendable {
 /// Cerebras provider implementation backed by the OpenAI-compatible chat client.
 /// Mirrors `packages/cerebras/src/cerebras-provider.ts`.
 public final class CerebrasProvider: ProviderV4 {
-    private let chatFactory: @Sendable (CerebrasChatModelId) -> OpenAICompatibleChatLanguageModel
+    private let chatFactory: @Sendable (CerebrasChatModelId) -> CerebrasChatLanguageModel
 
-    init(chatFactory: @escaping @Sendable (CerebrasChatModelId) -> OpenAICompatibleChatLanguageModel) {
+    init(chatFactory: @escaping @Sendable (CerebrasChatModelId) -> CerebrasChatLanguageModel) {
         self.chatFactory = chatFactory
     }
 
@@ -49,15 +49,15 @@ public final class CerebrasProvider: ProviderV4 {
         throw NoSuchModelError(modelId: modelId, modelType: .imageModel)
     }
 
-    public func callAsFunction(_ modelId: String) throws -> any LanguageModelV4 {
-        try languageModel(modelId: modelId)
+    public func callAsFunction(_ modelId: String) -> CerebrasChatLanguageModel {
+        chatFactory(CerebrasChatModelId(rawValue: modelId))
     }
 
-    public func chat(_ modelId: CerebrasChatModelId) -> OpenAICompatibleChatLanguageModel {
+    public func chat(_ modelId: CerebrasChatModelId) -> CerebrasChatLanguageModel {
         chatFactory(modelId)
     }
 
-    public func languageModel(_ modelId: CerebrasChatModelId) -> OpenAICompatibleChatLanguageModel {
+    public func languageModel(_ modelId: CerebrasChatModelId) -> CerebrasChatLanguageModel {
         chatFactory(modelId)
     }
 }
@@ -88,6 +88,24 @@ private func createCerebrasAuthFetch(
     }
 }
 
+private func transformCerebrasRequestBody(_ args: [String: JSONValue]) -> [String: JSONValue] {
+    var result = args
+    for (from, to) in [("max_tokens", "max_completion_tokens"), ("parallelToolCalls", "parallel_tool_calls"),
+                       ("topLogprobs", "top_logprobs"), ("logitBias", "logit_bias"), ("serviceTier", "service_tier"),
+                       ("reasoningFormat", "reasoning_format"), ("promptCacheKey", "prompt_cache_key")] {
+        if let value = result.removeValue(forKey: from) { result[to] = value }
+    }
+    if case .array(let messages) = args["messages"] {
+        result["messages"] = .array(messages.map { message in
+            guard case .object(var value) = message, value["role"] == "assistant",
+                  let reasoning = value.removeValue(forKey: "reasoning_content") else { return message }
+            if value["reasoning"] == nil { value["reasoning"] = reasoning }
+            return .object(value)
+        })
+    }
+    return result
+}
+
 public func createCerebras(settings: CerebrasProviderSettings = .init()) -> CerebrasProvider {
     let baseURL = withoutTrailingSlash(settings.baseURL) ?? "https://api.cerebras.ai/v1"
 
@@ -109,16 +127,17 @@ public func createCerebras(settings: CerebrasProviderSettings = .init()) -> Cere
         customFetch: settings.fetch
     )
 
-    let chatFactory: @Sendable (CerebrasChatModelId) -> OpenAICompatibleChatLanguageModel = { modelId in
-        OpenAICompatibleChatLanguageModel(
-            modelId: OpenAICompatibleChatModelId(rawValue: modelId.rawValue),
+    let chatFactory: @Sendable (CerebrasChatModelId) -> CerebrasChatLanguageModel = { modelId in
+        CerebrasChatLanguageModel(
+            modelId: modelId,
             config: OpenAICompatibleChatConfig(
                 provider: "cerebras.chat",
                 headers: headersClosure,
                 url: { options in "\(baseURL)\(options.path)" },
                 fetch: fetch,
                 errorConfiguration: cerebrasErrorConfiguration,
-                supportsStructuredOutputs: true
+                supportsStructuredOutputs: true,
+                transformRequestBody: transformCerebrasRequestBody
             )
         )
     }

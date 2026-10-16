@@ -19,6 +19,7 @@ public extension CerebrasChatModelId {
     static let llama33_70b: Self = "llama-3.3-70b"
     static let llama31_8b: Self = "llama3.1-8b"
     static let gptOss120b: Self = "gpt-oss-120b"
+    static let gemma4_31b: Self = "gemma-4-31b"
     static let qwen3_235bA22bInstruct2507: Self = "qwen-3-235b-a22b-instruct-2507"
     static let qwen3_235bA22bThinking2507: Self = "qwen-3-235b-a22b-thinking-2507"
     static let qwen3_32b: Self = "qwen-3-32b"
