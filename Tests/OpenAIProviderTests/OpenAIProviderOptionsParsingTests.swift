@@ -68,7 +68,7 @@ struct OpenAIProviderOptionsParsingTests {
             ]
         ]
 
-        let parsed: OpenAICompletionProviderOptions? = try await parseProviderOptions(
+        let parsed: OpenAILanguageModelCompletionOptions? = try await parseProviderOptions(
             provider: "openai",
             providerOptions: providerOptions,
             schema: openAICompletionProviderOptionsSchema
@@ -96,7 +96,7 @@ struct OpenAIProviderOptionsParsingTests {
         ]
 
         do {
-            let _: OpenAICompletionProviderOptions? = try await parseProviderOptions(
+            let _: OpenAILanguageModelCompletionOptions? = try await parseProviderOptions(
                 provider: "openai",
                 providerOptions: providerOptions,
                 schema: openAICompletionProviderOptionsSchema

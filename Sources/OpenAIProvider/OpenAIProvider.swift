@@ -38,7 +38,7 @@ public final class OpenAIProvider: ProviderV4 {
     private let chatFactory: @Sendable (OpenAIChatModelId) -> OpenAIChatLanguageModel
     private let embeddingFactory: @Sendable (OpenAIEmbeddingModelId) -> OpenAIEmbeddingModel
     private let imageFactory: @Sendable (OpenAIImageModelId) -> OpenAIImageModelV4
-    private let completionFactory: @Sendable (OpenAICompletionModelId) -> OpenAICompletionLanguageModelV4
+    private let completionFactory: @Sendable (OpenAICompletionModelId) -> OpenAICompletionLanguageModel
     private let transcriptionFactory: @Sendable (OpenAITranscriptionModelId) -> OpenAITranscriptionModelV4
     private let speechFactory: @Sendable (OpenAISpeechModelId) -> OpenAISpeechModelV4
     private let filesFactory: @Sendable () -> any FilesV4
@@ -52,7 +52,7 @@ public final class OpenAIProvider: ProviderV4 {
         chat: @escaping @Sendable (OpenAIChatModelId) -> OpenAIChatLanguageModel,
         embeddings: @escaping @Sendable (OpenAIEmbeddingModelId) -> OpenAIEmbeddingModel,
         images: @escaping @Sendable (OpenAIImageModelId) -> OpenAIImageModelV4,
-        completions: @escaping @Sendable (OpenAICompletionModelId) -> OpenAICompletionLanguageModelV4,
+        completions: @escaping @Sendable (OpenAICompletionModelId) -> OpenAICompletionLanguageModel,
         transcriptions: @escaping @Sendable (OpenAITranscriptionModelId) -> OpenAITranscriptionModelV4,
         speeches: @escaping @Sendable (OpenAISpeechModelId) -> OpenAISpeechModelV4,
         files: @escaping @Sendable () -> any FilesV4,
@@ -111,11 +111,11 @@ public final class OpenAIProvider: ProviderV4 {
         chat(modelId: modelId)
     }
 
-    public func completion(modelId: OpenAICompletionModelId) -> OpenAICompletionLanguageModelV4 {
+    public func completion(modelId: OpenAICompletionModelId) -> OpenAICompletionLanguageModel {
         completionFactory(modelId)
     }
 
-    public func completion(_ modelId: String) -> OpenAICompletionLanguageModelV4 {
+    public func completion(_ modelId: String) -> OpenAICompletionLanguageModel {
         completion(modelId: OpenAICompletionModelId(rawValue: modelId))
     }
 
@@ -123,7 +123,7 @@ public final class OpenAIProvider: ProviderV4 {
         completion(modelId)
     }
 
-    public func completionModel(_ modelId: OpenAICompletionModelId) -> OpenAICompletionLanguageModelV4 {
+    public func completionModel(_ modelId: OpenAICompletionModelId) -> OpenAICompletionLanguageModel {
         completion(modelId: modelId)
     }
 
@@ -259,7 +259,7 @@ public func createOpenAIProvider(settings: OpenAIProviderSettings = .init()) thr
         chat: { OpenAIChatLanguageModel(modelId: $0, config: chatConfig) },
         embeddings: { OpenAIEmbeddingModel(modelId: $0, config: embeddingConfig) },
         images: { OpenAIImageModelV4(modelId: $0, config: imageConfig) },
-        completions: { OpenAICompletionLanguageModelV4(modelId: $0, config: completionConfig) },
+        completions: { OpenAICompletionLanguageModel(modelId: $0, config: completionConfig) },
         transcriptions: { OpenAITranscriptionModelV4(modelId: $0, config: transcriptionConfig) },
         speeches: { OpenAISpeechModelV4(modelId: $0, config: speechConfig) },
         files: { OpenAIFiles(config: .init(provider: "\(providerName).files", baseURL: baseURL, headers: headers, fetch: settings.fetch)) },

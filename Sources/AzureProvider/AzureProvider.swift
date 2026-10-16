@@ -38,7 +38,7 @@ public struct AzureProviderSettings: Sendable {
 public final class AzureProvider: ProviderV4 {
     private let chatFactory: @Sendable (OpenAIChatModelId) -> OpenAIChatLanguageModel
     private let responsesFactory: @Sendable (OpenAIResponsesModelId) -> OpenAIResponsesLanguageModelV4
-    private let completionFactory: @Sendable (OpenAICompletionModelId) -> OpenAICompletionLanguageModelV4
+    private let completionFactory: @Sendable (OpenAICompletionModelId) -> OpenAICompletionLanguageModel
     private let embeddingFactory: @Sendable (OpenAIEmbeddingModelId) -> OpenAIEmbeddingModel
     private let imageFactory: @Sendable (OpenAIImageModelId) -> OpenAIImageModelV4
     private let transcriptionFactory: @Sendable (OpenAITranscriptionModelId) -> OpenAITranscriptionModelV4
@@ -48,7 +48,7 @@ public final class AzureProvider: ProviderV4 {
     init(
         chatFactory: @escaping @Sendable (OpenAIChatModelId) -> OpenAIChatLanguageModel,
         responsesFactory: @escaping @Sendable (OpenAIResponsesModelId) -> OpenAIResponsesLanguageModelV4,
-        completionFactory: @escaping @Sendable (OpenAICompletionModelId) -> OpenAICompletionLanguageModelV4,
+        completionFactory: @escaping @Sendable (OpenAICompletionModelId) -> OpenAICompletionLanguageModel,
         embeddingFactory: @escaping @Sendable (OpenAIEmbeddingModelId) -> OpenAIEmbeddingModel,
         imageFactory: @escaping @Sendable (OpenAIImageModelId) -> OpenAIImageModelV4,
         transcriptionFactory: @escaping @Sendable (OpenAITranscriptionModelId) -> OpenAITranscriptionModelV4,
@@ -109,7 +109,7 @@ public final class AzureProvider: ProviderV4 {
         responsesFactory(modelId)
     }
 
-    public func completion(_ modelId: OpenAICompletionModelId) -> OpenAICompletionLanguageModelV4 {
+    public func completion(_ modelId: OpenAICompletionModelId) -> OpenAICompletionLanguageModel {
         completionFactory(modelId)
     }
 
@@ -314,8 +314,8 @@ public func createAzureProvider(settings: AzureProviderSettings = .init()) -> Az
         )
     }
 
-    let completionFactory: @Sendable (OpenAICompletionModelId) -> OpenAICompletionLanguageModelV4 = { modelId in
-        OpenAICompletionLanguageModelV4(
+    let completionFactory: @Sendable (OpenAICompletionModelId) -> OpenAICompletionLanguageModel = { modelId in
+        OpenAICompletionLanguageModel(
             modelId: modelId,
             config: completionConfig
         )

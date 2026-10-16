@@ -254,7 +254,7 @@ struct OpenAIProviderTests {
 
         #expect(provider.responses("gpt-5").provider == "custom-openai.responses")
         #expect(provider.chat("gpt-5").provider == "custom-openai.chat")
-        let completionModel: OpenAICompletionLanguageModelV4 = provider.completion("gpt-3.5-turbo-instruct")
+        let completionModel: OpenAICompletionLanguageModel = provider.completion("gpt-3.5-turbo-instruct")
         #expect(completionModel.specificationVersion == "v4")
         #expect(completionModel.provider == "custom-openai.completion")
         #expect(provider.embedding("text-embedding-3-small").provider == "custom-openai.embedding")

@@ -16,7 +16,7 @@ public enum OpenAICompletionLogprobsOption: Sendable, Equatable {
     }
 }
 
-public struct OpenAICompletionProviderOptions: Sendable, Equatable {
+public struct OpenAILanguageModelCompletionOptions: Sendable, Equatable {
     public var echo: Bool?
     public var logitBias: [String: Double]?
     public var suffix: String?
@@ -38,8 +38,6 @@ public struct OpenAICompletionProviderOptions: Sendable, Equatable {
     }
 }
 
-public typealias OpenAILanguageModelCompletionOptions = OpenAICompletionProviderOptions
-
 private let openAICompletionProviderOptionsJSONSchema: JSONValue = .object([
     "type": .string("object"),
     "additionalProperties": .bool(true),
@@ -52,7 +50,7 @@ private let openAICompletionProviderOptionsJSONSchema: JSONValue = .object([
     ])
 ])
 
-let openAICompletionProviderOptionsSchema = FlexibleSchema<OpenAICompletionProviderOptions>(
+let openAICompletionProviderOptionsSchema = FlexibleSchema<OpenAILanguageModelCompletionOptions>(
     Schema(
         jsonSchemaResolver: { openAICompletionProviderOptionsJSONSchema },
         validator: { value in
@@ -63,7 +61,7 @@ let openAICompletionProviderOptionsSchema = FlexibleSchema<OpenAICompletionProvi
                     return .failure(error: TypeValidationError.wrap(value: value, cause: error))
                 }
 
-                var options = OpenAICompletionProviderOptions()
+                var options = OpenAILanguageModelCompletionOptions()
                 func field(_ key: String, message: String) throws -> JSONValue? {
                     guard let value = dict[key] else { return nil }
                     guard value != .null else {
@@ -88,7 +86,7 @@ let openAICompletionProviderOptionsSchema = FlexibleSchema<OpenAICompletionProvi
                     }
                     var bias: [String: Double] = [:]
                     for (key, entry) in biasObject {
-                        guard case .number(let number) = entry else {
+                        guard case .number(let number) = entry, number.isFinite else {
                             let error = SchemaValidationIssuesError(vendor: "openai", issues: "logitBias values must be numbers")
                             return .failure(error: TypeValidationError.wrap(value: entry, cause: error))
                         }
@@ -104,7 +102,7 @@ let openAICompletionProviderOptionsSchema = FlexibleSchema<OpenAICompletionProvi
                     switch logprobsValue {
                     case .bool(let flag):
                         options.logprobs = .bool(flag)
-                    case .number(let number):
+                    case .number(let number) where number.isFinite:
                         options.logprobs = .number(number)
                     default:
                         let error = SchemaValidationIssuesError(vendor: "openai", issues: "logprobs must be boolean or number")
